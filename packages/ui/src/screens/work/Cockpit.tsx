@@ -201,9 +201,7 @@ export function CockpitView(p: {
           {C.repos}
         </h3>
         {c.repos.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {C.noRepos}
-          </p>
+          <OpenWorkspace change={c.id} />
         ) : (
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {c.repos.map((r) => (
@@ -224,6 +222,67 @@ export function CockpitView(p: {
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Eighth UX walk: no repo has the change's branch yet. The app makes them on the person's click
+ * (the change's workspace, over the repos it names); the command stays under "Or in a terminal".
+ * A change that names no repo says so, with the command.
+ */
+export function OpenWorkspace({ change, onDone }: { change: string; onDone?: () => void }) {
+  const detail = useApi<{ repos: string[] }>(`/api/changes/${encodeURIComponent(change)}`);
+  const act = useAction();
+  const repos = detail.state === "ready" ? detail.data.repos : [];
+  const command = `atticus workspace open ${change} --repos ${repos.length ? repos.join(",") : "<repo>,<repo>"}`;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="muted" style={{ margin: 0 }}>
+        {C.noRepos}
+      </p>
+      <View of={detail}>
+        {() =>
+          repos.length > 0 ? (
+            <>
+              <p style={{ margin: 0 }}>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={act.busy}
+                  onClick={() =>
+                    void act.run(
+                      () =>
+                        api(`/api/changes/${encodeURIComponent(change)}/workspace`, {
+                          method: "POST",
+                          body: { repos },
+                        }).then((r) => {
+                          onDone?.();
+                          return r;
+                        }),
+                      C.workspaceOpened,
+                    )
+                  }
+                >
+                  {C.openWorkspace(repos.length)}
+                </button>
+              </p>
+              <Note note={act.note} />
+              <details className="work-terminal">
+                <summary>{COPY.runNext.orTerminal}</summary>
+                <Command text={command} label={C.copyCommand} noRun />
+              </details>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: 0 }}>
+                {C.noReposToOpen}
+              </p>
+              <Command text={command} label={C.copyCommand} noRun />
+            </>
+          )
+        }
+      </View>
     </div>
   );
 }

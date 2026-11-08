@@ -207,6 +207,11 @@ export interface NextState {
     /** Fifth UX walk: its proposal or specs aren't written yet (the draft is the next step). */
     undrafted?: boolean;
     /**
+     * Eighth UX walk: at build or QA, its open blocking findings (and knowledge gaps) on the gates
+     * that stop the state's hand-off, as the gate counts them: they are resolved before it is raised.
+     */
+    blocking?: number;
+    /**
      * Sixth UX walk: its brief, metarepo-relative, when it is missing or still holds only the
      * template (writing it is the next step).
      */
@@ -494,6 +499,8 @@ export async function readNextState(root: string): Promise<NextState> {
         c.state === "define" || c.state === "returned"
           ? await draftMissing(changeContext, c).catch(() => ({ draft: false, brief: false }))
           : { draft: false, brief: false };
+      const blocking =
+        stageOf(c.state) === "tasks" ? await blockingOf(changeContext, c).catch(() => 0) : 0;
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
         active = { id: c.id, at: busy };
       changes.push({
@@ -511,6 +518,7 @@ export async function readNextState(root: string): Promise<NextState> {
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(missing.draft ? { undrafted: true } : {}),
+        ...(blocking ? { blocking } : {}),
         ...(stageOf(c.state) === "release" ? await releasePrsOf(root, c.id) : {}),
         ...(missing.brief ? { brief: `${changesRelOf(root)}/${c.id}/brief.md` } : {}),
         ...(questions.length ? { questions } : {}),
@@ -662,6 +670,15 @@ async function draftMissing(
         (b.code === "missing-artifact" || b.code === "unfilled-artifact") && b.artifact === "brief",
     ),
   };
+}
+
+/**
+ * Eighth UX walk: the open blocking findings and knowledge gaps that stop the change's hand-off,
+ * as the gate's assessment lists them (the cockpit's "What blocks it").
+ */
+async function blockingOf(ctx: () => Promise<ChangeContext>, c: ChangeLifecycle): Promise<number> {
+  const a = await assess(await ctx(), c);
+  return a.blockers.filter((b) => b.code === "blocking-finding" || b.code === "open-gap").length;
 }
 
 /** ADR 0184: what the release PRs still need, for a change on its way to release. */
@@ -979,17 +996,28 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           },
         ];
       // Seventh UX walk: every task ticked, the state's hand-off is next, raised by a person.
-      if (!t)
+      // Eighth: blocking findings hold the hand-off, so resolving them comes first.
+      const handoffStep: NextStep = {
+        step: "handoff",
+        command: `atticus change handoff ${id} --approve`,
+        where: METAREPO,
+        why: `Every task of ${id} is ticked: a person raises its ${c.state} hand-off PR, and merging it approves the ${c.state} gate and moves it on (ADR 0073).`,
+        change: id,
+        person: true,
+      };
+      if (!t && c.blocking)
         return [
           {
-            step: "handoff",
-            command: `atticus change handoff ${id} --approve`,
+            step: "findings",
+            command: `atticus change status ${id}`,
             where: METAREPO,
-            why: `Every task of ${id} is ticked: a person raises its ${c.state} hand-off PR, and merging it approves the ${c.state} gate and moves it on (ADR 0073).`,
+            why: `Every task of ${id} is ticked, but ${plural(c.blocking, "blocking finding")} hold${c.blocking === 1 ? "s" : ""} its ${c.state} hand-off: a person resolves each (Apply fix, Not relevant or Waive, on the change's page), then raises the hand-off PR.`,
             change: id,
             person: true,
           },
+          handoffStep,
         ];
+      if (!t) return [handoffStep];
       return [
         {
           step: "task",

@@ -1,10 +1,15 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api, ApiError, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { Note, useAction } from "../screens/know/common.js";
 
 const P = COPY.propose;
+
+/** Eighth UX walk: the app's work changed files that wait to be proposed; Home reads them again. */
+const WORK_CHANGED = "atticus:work-changed";
+const work = new EventTarget();
+export const workChanged = () => void work.dispatchEvent(new Event(WORK_CHANGED));
 
 /**
  * Windows review: Apply, Propose and Bring in run as server jobs (an editor panel waits 30 s for
@@ -258,6 +263,13 @@ export function BringIn() {
  */
 export function PendingProposals() {
   const plan = useApi<Plan>("/api/propose?scope=work");
+  // Eighth UX walk: a page action that wrote files (Accept the catalog on Home) says so, and the
+  // count is read again (it stayed 6 until a reload, then 7).
+  const reload = plan.reload;
+  useEffect(() => {
+    work.addEventListener(WORK_CHANGED, reload);
+    return () => work.removeEventListener(WORK_CHANGED, reload);
+  }, [reload]);
   // Sixth UX walk: after Push, the lines about what waited go (the push's own lines stay), and
   // the list is read again for the next time.
   const [pushed, setPushed] = useState(false);

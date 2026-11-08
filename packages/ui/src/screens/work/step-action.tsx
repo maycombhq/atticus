@@ -21,21 +21,44 @@ const C = COPY.cockpit;
 const changeHref = (screen: string, change: string | undefined) =>
   `#/${screen}${change ? `?change=${encodeURIComponent(change)}` : ""}`;
 
-/** Raise hand-off in place: held while the gate's status says something blocks it. */
+/**
+ * Raise hand-off in place: held while the gate's status loads or says something blocks it, and
+ * then it says what (eighth UX walk: Raise was enabled for a moment, then disabled with no reason,
+ * under "Raise it here").
+ */
 export function HandoffHere({ change }: { change: string }) {
-  const status = useApi<{ blockers: unknown[] }>(
+  const status = useApi<{ blockers: { message: string }[] }>(
     `/api/changes/${encodeURIComponent(change)}/status`,
   );
   // Seventh UX walk: what blocks the gate is read again when its files change.
   useReloadOnFiles(status);
+  const blockers = status.state === "ready" ? status.data.blockers : [];
   return (
     <div className="stack" style={{ gap: 4 }}>
-      <p className="muted" style={{ margin: 0 }}>
-        {C.raiseHere}
-      </p>
+      {status.state === "loading" ? (
+        <p className="muted" role="status" style={{ margin: 0 }}>
+          {C.raiseChecking}
+        </p>
+      ) : blockers.length > 0 ? (
+        <div className="stack" style={{ gap: 2 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            {C.raiseHeld(blockers.length)}
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
+            {blockers.map((b, i) => (
+              <li key={`${i}:${b.message}`}>{b.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          {C.raiseHere}
+        </p>
+      )}
       <RaiseHandoff
         change={change}
-        blockers={status.state === "ready" ? status.data.blockers.length : 0}
+        blockers={blockers.length}
+        held={status.state === "loading"}
         onDone={status.reload}
       />
     </div>
@@ -49,7 +72,8 @@ export function hasAction(p: {
   change?: string | undefined;
   pr?: string | undefined;
 }) {
-  if (p.kind === "handoff" || p.kind === "task" || p.kind === "release") return !!p.change;
+  if (p.kind === "handoff" || p.kind === "task" || p.kind === "release" || p.kind === "findings")
+    return !!p.change;
   if (p.kind === "merge") return !!p.pr;
   return !!p.kind || stepArgs(p.command) !== undefined;
 }
@@ -88,6 +112,16 @@ export function StepAction(p: {
       return link(changeHref("questions", p.change), R.answerOnQuestions);
     case "release":
       return p.change ? link(`#/release/${encodeURIComponent(p.change)}`, R.openRelease) : null;
+    case "findings":
+      // Eighth UX walk: blocking findings hold the hand-off; each is resolved on the change's page.
+      return p.change ? (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            {R.resolveFindingsSay}
+          </p>
+          {link(`#/changes/${encodeURIComponent(p.change)}`, R.resolveFindings)}
+        </div>
+      ) : null;
     case "merge":
       // A manual Git host's PR isn't open until a person opens it: never its manual:// link.
       if (!p.pr) return null;

@@ -5,19 +5,20 @@ import { Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Table } from "../know/common.js";
 import { trustChip } from "../map/Trust.js";
-import type { QuestionListView } from "../Questions.js";
+import { isMapQuestion, type QuestionListView } from "../Questions.js";
 import {
   changeStep,
   dashboardStep,
   inFlight,
-  onboarded,
   onboardingProgress,
+  reposOnboarded,
   STAGE_SCREEN,
   stageOf,
   type ChangeRow,
   type OnboardingData,
 } from "./next.js";
 import { Command, Problems, RunNextPanel } from "./RunNext.js";
+import { hasAction, StepAction } from "./step-action.js";
 
 const T = COPY.dashboardExtra;
 
@@ -117,10 +118,40 @@ export function InFlight({ changes }: { changes: ChangeRow[] }) {
         },
         {
           label: W.commandCol,
-          cell: (c) => <Command text={changeStep(c).command} label={R.copy} />,
+          cell: (c) => <InFlightAction c={c} />,
         },
       ]}
     />
+  );
+}
+
+/**
+ * Eighth UX walk: a change's Run cell is its step's in-app action (the Task board, Raise
+ * hand-off, Release), or its At a glance where the app has no control for the step; the command
+ * stays copyable under "Or in a terminal".
+ */
+export function InFlightAction({ c }: { c: ChangeRow }) {
+  const own = changeStep(c);
+  const step = {
+    ...own,
+    change: own.change ?? c.id,
+    // A change on its way to release is worked on Release.
+    ...(stageOf(c.state) === "release" && !own.kind ? { kind: "release" as const } : {}),
+  };
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      {hasAction(step) ? (
+        <StepAction {...step} />
+      ) : (
+        <p style={{ margin: 0 }}>
+          <a href={`#/cockpit?change=${encodeURIComponent(c.id)}`}>{R.openGlance}</a>
+        </p>
+      )}
+      <details className="work-terminal">
+        <summary>{R.orTerminal}</summary>
+        <Command text={step.command} label={R.copy} noRun />
+      </details>
+    </div>
   );
 }
 
@@ -178,10 +209,9 @@ export function HomeNext(p: {
   // Seventh UX walk: the change in flight's own next step, from its cockpit (its state and gate),
   // not the stage its state names: Home said "at the feature stage" while its PR waited.
   const all = together(p.onboarding, p.changes, p.questions);
-  // Only once onboarding is done is the change's step the one shown.
+  // Only once onboarding is done (the repos read and verified) is the change's step the one shown.
   const first =
-    all.state === "ready" &&
-    onboarded(all.data.onboarding, all.data.questions.questions.length, trust)
+    all.state === "ready" && reposOnboarded(all.data.onboarding, trust)
       ? all.data.changes.find(inFlight)?.id
       : undefined;
   const cockpit = useApi<Api.ChangeCockpitT>(
@@ -196,7 +226,8 @@ export function HomeNext(p: {
         <RunNextPanel
           step={dashboardStep(
             d.onboarding,
-            d.questions.questions.length,
+            // Eighth UX walk: the map's questions; a change's own are its step's.
+            d.questions.questions.filter(isMapQuestion).length,
             d.changes,
             trust,
             cockpit.state === "ready" ? cockpit.data : undefined,

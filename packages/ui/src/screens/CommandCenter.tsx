@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BringIn, PendingProposals } from "../app/propose.js";
+import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
 import { COPY } from "../copy.js";
 import { api, ApiError, isOffline, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
@@ -220,6 +220,8 @@ export function SetupChecklist() {
       await api("/api/baseline", { method: "POST", body: {} });
       setAccepted(true);
       setup.reload();
+      // Eighth UX walk: the baseline is one more file to propose; Home's count reads it again.
+      workChanged();
     } catch (e) {
       setNote({
         ok: false,
@@ -869,12 +871,8 @@ export function CommandCenter() {
 
       <div className="bento" role="list" aria-label={T.keyNumbers}>
         {[
-          // A count not loaded shows a dash, never a 0 that reads as "none".
-          {
-            label: T.changesInFlight2,
-            value: changes.state === "ready" ? inFlight.length : undefined,
-            color: "var(--text)",
-          },
+          // A count not loaded shows a dash, never a 0 that reads as "none". Eighth UX walk: the
+          // changes in flight are counted once, on their panel above.
           {
             label: T.blockingFindings,
             value: findings.state === "ready" ? blocking.length : undefined,
@@ -891,7 +889,7 @@ export function CommandCenter() {
             color: "var(--accent)",
           },
         ].map((k) => (
-          <div key={k.label} role="listitem" className="panel" style={{ gridColumn: "span 3" }}>
+          <div key={k.label} role="listitem" className="panel" style={{ gridColumn: "span 4" }}>
             <div className="hud" style={{ fontSize: 10 }}>
               {k.label}
             </div>

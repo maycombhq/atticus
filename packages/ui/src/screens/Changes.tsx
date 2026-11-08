@@ -832,7 +832,16 @@ function Detail({ id }: { id: string }) {
                         {r.errors.join("; ")}
                       </span>
                     )}
-                    {r.taskRun && <TaskRunLine of={r.taskRun} />}
+                    {r.taskRun && (
+                      <TaskRunLine
+                        of={r.taskRun}
+                        pr={
+                          tasks.state === "ready"
+                            ? tasks.data.find((x) => x.id === r.taskRun!.task)?.taskRun?.pr?.state
+                            : undefined
+                        }
+                      />
+                    )}
                   </span>
                   <span className="row" style={{ gap: 6 }}>
                     <span
@@ -926,7 +935,6 @@ export function Changes({ hash }: { hash: string }) {
         <Panel title={T.noChangeSelected} span="span 9">
           <p className="muted" style={{ margin: 0 }}>
             {T.pickAChangeOn}
-            <code className="mono">{T.atticusChangeNew}</code>.
           </p>
         </Panel>
       )}
@@ -935,13 +943,20 @@ export function Changes({ hash }: { hash: string }) {
 }
 
 /** Where a run's task stands: its state, its last note (stopped, a person takes over) and log. */
-export function TaskRunLine({ of: t }: { of: TaskRunOfRun }) {
+export function TaskRunLine({
+  of: t,
+  pr,
+}: {
+  of: TaskRunOfRun;
+  /** Eighth UX walk: the task's PR state on the Git host now, from the tasks view. */
+  pr?: "open" | "merged" | "closed" | undefined;
+}) {
   const alert = t.state === "needs-person" || t.state === "failed";
   const last = t.notes.at(-1);
   return (
     <span className="stack" style={{ gap: 2, fontSize: 12 }}>
       <span className={`chip ${alert ? "blocking" : t.state === "waiting" ? "ai" : "done"}`}>
-        {T.taskRunLine(t.task, t.state)}
+        {T.taskRunLine(t.task, t.state, pr)}
       </span>
       {last && (
         <span

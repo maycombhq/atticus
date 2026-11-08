@@ -189,6 +189,40 @@ describe("what to run next (plan 4.5)", () => {
     expect(dashboardStep(done, 0, []).command).toBe('atticus change new "<title>" --type <type>');
   });
 
+  it("has open map questions never hold Home's step once the repos are read (eighth UX walk)", () => {
+    const c = dashboardStep(done, 4, [change("lock-card", "release-ready")]);
+    expect(c.command).toBe("atticus change status lock-card");
+    expect(c.aside).toEqual({
+      text: R.mapQuestions(4),
+      link: { href: "#/questions", label: R.mapQuestionsLink },
+    });
+    // With the change's cockpit, its own step, the questions still beside it.
+    const glance = dashboardStep(done, 4, [change("lock-card", "release-ready")], undefined, {
+      id: "lock-card",
+      state: "release-ready",
+      next: { step: "release", command: "atticus change status lock-card", why: "Check it." },
+      nextStep: "",
+      reasons: [],
+      risk: { level: "low", score: 0 },
+      stages: [],
+      openQuestions: 0,
+      repos: [],
+    });
+    expect(glance).toMatchObject({ kind: "release", change: "lock-card" });
+    expect(glance.aside?.text).toBe(R.mapQuestions(4));
+    // No change in flight: start one, the questions beside it.
+    const fresh = dashboardStep(done, 1, []);
+    expect(fresh.kind).toBe("new-change");
+    expect(fresh.aside?.text).toBe(R.mapQuestions(1));
+    expect(dashboardStep(done, 0, []).aside).toBeUndefined();
+    // A repo not read yet still comes first.
+    const unread = view([repo("forge-ledger", { lastScan: null })]);
+    expect(dashboardStep(unread, 4, [change("lock-card", "build")]).command).toBe(
+      "atticus map forge-ledger",
+    );
+    expect(html(<RunNextPanel step={c} />)).toContain(esc(R.mapQuestionsLink));
+  });
+
   it("has the Architecture page follow a change at the design stage, else read again", () => {
     expect(architectureStep([change("a", "design")]).command).toBe("atticus change architecture a");
     const again = architectureStep([change("a", "plan")]);
@@ -331,7 +365,11 @@ describe("an entry's tabs", () => {
   it("gives Change All changes, At a glance and the four stages, keeping the change", () => {
     const hash = "#/stories?change=add-fraud-check";
     const out = html(<SectionTabs current={screenOf(hash)} hash={hash} />);
-    expect(out).toContain("change add-fraud-check");
+    // Eighth UX walk: "Change › add-fraud-check › Stories", never "Change › change …".
+    expect(out).toContain(
+      '<span>Change</span><span aria-hidden="true"> › </span><span>add-fraud-check</span>',
+    );
+    expect(out).not.toContain("change add-fraud-check");
     expect(out).toContain('href="#/stories?change=add-fraud-check" aria-current="page"');
     const order = [
       'href="#/changes/add-fraud-check">All changes</a>',
@@ -449,17 +487,65 @@ describe("Home's overview: the next step, the estate and the changes in flight",
     expect(failed.match(/role="alert"/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("says what to run next: a waiting question before a new change", () => {
-    const out = html(
+  it("says what to run next: the change's step, with the map questions open beside it (eighth UX walk)", () => {
+    // Its cockpit loading, Home waits for the change's own step.
+    const waiting = html(
       <HomeNext
         onboarding={{ state: "ready", data: done }}
         changes={{ state: "ready", data: [change("add-limit", "plan")] }}
         questions={{ state: "ready", data: { questions: [question], problems: [] } }}
       />,
     );
+    expect(waiting).toContain('aria-busy="true"');
+    expect(waiting).not.toContain("atticus questions list --state open");
+    const out = html(
+      <HomeNext
+        onboarding={{ state: "ready", data: done }}
+        changes={{ state: "ready", data: [] }}
+        questions={{ state: "ready", data: { questions: [question], problems: [] } }}
+      />,
+    );
     expect(out).toContain(R.title);
-    // Onboarding isn't done while a question waits: Run next sends the person to answer it.
-    expect(out).toContain("atticus questions list --state open");
+    // The repos are read and verified: a map question no longer holds Home on answering.
+    expect(out).toContain("atticus change new &quot;&lt;title&gt;&quot; --type &lt;type&gt;");
+    expect(out).not.toContain("atticus questions list --state open");
+    expect(out).toContain(esc(R.mapQuestions(1)));
+    expect(out).toContain('href="#/questions"');
+    // A change's own question isn't a map question.
+    const asked = {
+      ...question,
+      id: "q-b4a06bcb15a5",
+      askedBy: { ...question.askedBy, command: "atticus change feature add-limit" },
+      rerun: "atticus change feature add-limit",
+    };
+    const theirs = html(
+      <HomeNext
+        onboarding={{ state: "ready", data: done }}
+        changes={{ state: "ready", data: [] }}
+        questions={{ state: "ready", data: { questions: [asked], problems: [] } }}
+      />,
+    );
+    expect(theirs).not.toContain(esc(R.mapQuestions(1)));
+  });
+
+  it("shows each change in flight once, its Run cell the in-app action (eighth UX walk)", () => {
+    const out = html(
+      <HomeEstate
+        onboarding={{ state: "ready", data: done }}
+        trust={{ state: "ready", data: trustOf() }}
+        changes={{
+          state: "ready",
+          data: [change("lock-card", "release-ready"), change("add-limit", "build")],
+        }}
+      />,
+    );
+    // On its way to release: Release is the action; the command is under Or in a terminal.
+    expect(out).toContain('href="#/release/lock-card"');
+    expect(out).toContain(esc(R.openRelease));
+    // No control for the step here: its At a glance.
+    expect(out).toContain('href="#/cockpit?change=add-limit"');
+    expect(out).toContain(esc(R.openGlance));
+    expect(out).toContain(`<summary>${R.orTerminal}</summary>`);
   });
 
   it("shows what is read and trusted, and each change in flight with its stage", () => {

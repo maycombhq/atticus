@@ -12,11 +12,13 @@ const T = COPY.nextStep;
  */
 
 const W = COPY.work;
+const T2 = COPY.runNext;
 
 export type OnboardingData = Api.OnboardingViewT;
 
 /** Seventh UX walk: the kinds of step the app can take in place (step-action.tsx). */
-export type StepKind = "new-change" | "handoff" | "task" | "brief" | "answer" | "merge" | "release";
+export type StepKind =
+  "new-change" | "handoff" | "task" | "brief" | "answer" | "merge" | "release" | "findings";
 
 /** The kind of step `atticus next` names (its `step`), where the app can take it in place. */
 export function kindOfStep(step: string | undefined): StepKind | undefined {
@@ -27,6 +29,7 @@ export function kindOfStep(step: string | undefined): StepKind | undefined {
     case "merge":
     case "release":
     case "task":
+    case "findings": // Eighth UX walk: blocking findings hold the hand-off; resolved first.
       return step;
     case "handoff":
     case "small-handoff":
@@ -69,6 +72,11 @@ export interface Step {
   why: string;
   slash?: Slash;
   link?: { href: string; label: string };
+  /**
+   * Eighth UX walk: a line under the step about something that doesn't hold it, with where to
+   * see to it (Home: the map questions still open while a change is followed).
+   */
+  aside?: { text: string; link: { href: string; label: string } };
   after?: { command: string; why: string; slash?: Slash }[];
   /** Onboarding has nothing left to do: this step only says so. */
   done?: boolean;
@@ -385,38 +393,61 @@ export function cockpitStep(c: ChangeRow, next: NonNullable<Api.ChangeCockpitT["
 }
 
 /**
- * The dashboard's one step: onboarding first, then the first change in flight, then a new one.
- * With that change's cockpit, its own next step (seventh UX walk: Home said "at the feature
- * stage" while the change waited on its hand-off PR).
+ * Eighth UX walk: Home's onboarding is done once every repo is read and its facts verified. The
+ * map questions still open don't hold it (they never block a change): Home says how many beside
+ * the change's step.
+ */
+export function reposOnboarded(v: OnboardingData, trust?: Api.TrustViewT): boolean {
+  return onboarded(v, 0, trust);
+}
+
+/**
+ * The dashboard's one step: onboarding first (the repos read and verified), then the first change
+ * in flight, then a new one. With that change's cockpit, its own next step (seventh UX walk: Home
+ * said "at the feature stage" while the change waited on its hand-off PR). Open map questions are
+ * a line under the step, linking to Questions (eighth UX walk: Home stayed on "4 questions are
+ * waiting" for a whole change, even at release-ready).
  */
 export function dashboardStep(
   v: OnboardingData,
+  /** Open map questions (not a change's); undefined while they haven't loaded. */
   openQuestions: number | undefined,
   changes: ChangeRow[],
   trust?: Api.TrustViewT,
   cockpit?: Api.ChangeCockpitT,
 ): Step {
-  if (!onboarded(v, openQuestions, trust)) {
+  if (!reposOnboarded(v, trust)) {
     const s = onboardingStep(v, openQuestions, trust);
     return s.link ? s : { ...s, link: { href: "#/onboarding", label: W.openOnboarding } };
   }
+  const aside = openQuestions
+    ? {
+        aside: {
+          text: T2.mapQuestions(openQuestions),
+          link: { href: "#/questions", label: T2.mapQuestionsLink },
+        },
+      }
+    : {};
   const c = changes.find(inFlight);
   if (!c)
     return {
       command: 'atticus change new "<title>" --type <type>',
       why: W.why.newChange,
       kind: "new-change",
+      ...aside,
     };
   const stage = stageOf(c.state);
   const screen = STAGE_SCREEN[stage];
   const link = screen
     ? { link: { href: href(screen.id, c.id), label: W.goStage(screen.label) } }
     : {};
-  if (cockpit?.id === c.id && cockpit.next) return { ...cockpitStep(c, cockpit.next), ...link };
+  if (cockpit?.id === c.id && cockpit.next)
+    return { ...cockpitStep(c, cockpit.next), ...link, ...aside };
   return {
     ...changeStep(c),
     why: W.why.change(c.id, W.stage[stage]),
     ...link,
+    ...aside,
   };
 }
 

@@ -1,11 +1,18 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
+import { Finding, parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
+import { writeFinding } from "@maycombhq/naysayer";
 import { main } from "../src/main.js";
-import { changeSteps, nextSteps, type NextState, type NextStep } from "../src/next-commands.js";
+import {
+  changeSteps,
+  nextSteps,
+  readNextState,
+  type NextState,
+  type NextStep,
+} from "../src/next-commands.js";
 
 /** `atticus next` (ADR 0086): the next step from the metarepo's files, in several states. */
 
@@ -840,9 +847,80 @@ describe("the next step follows the change's state and gate (seventh UX walk)", 
     });
     expect(s!.why).toContain("a person raises its build hand-off PR");
   });
+
+  it("with every task ticked and blocking findings open: resolve them first (eighth UX walk)", () => {
+    const steps = changeSteps(
+      at({ state: "build", tasks: [{ id: "1.1", repo: "forge-ledger", done: true }], blocking: 3 }),
+    );
+    expect(steps[0]).toMatchObject({
+      step: "findings",
+      command: "atticus change status show-status",
+      person: true,
+      change: "show-status",
+    });
+    expect(steps[0]!.why).toContain("3 blocking findings");
+    expect(steps[0]!.why).not.toContain("Raise it here");
+    // Raise comes after them.
+    expect(steps[1]).toMatchObject({ step: "handoff" });
+    const [one] = changeSteps(
+      at({ state: "qa", tasks: [{ id: "1.1", repo: "forge-ledger", done: true }], blocking: 1 }),
+    );
+    expect(one!.why).toContain("1 blocking finding ");
+  });
 });
 
 describe("atticus next with a change in hand, and the assistant that was probed", () => {
+  it("counts a build change's open blocking findings, the ones that stop its hand-off (eighth UX walk)", async () => {
+    const root = await metarepo({ clone: true });
+    const dir = join(root, "openspec/changes/add-fraud-check");
+    await cp(join(FIXTURES, "stages/changes/add-fraud-check"), dir, { recursive: true });
+    const yaml = await readFile(join(dir, "change.yaml"), "utf8");
+    const moves = [
+      ["define", "design"],
+      ["design", "plan"],
+      ["plan", "build"],
+    ]
+      .map(
+        ([from, to]) =>
+          `  - from: ${from}\n    to: ${to}\n    at: 2026-10-21T09:00:00Z\n    by: pat\n`,
+      )
+      .join("");
+    await writeFile(
+      join(dir, "change.yaml"),
+      `${yaml.replace("state: define", "state: build").trimEnd()}\n${moves}`,
+    );
+    const finding = (id: string, state: "open" | "applied") =>
+      Finding.parse({
+        schemaVersion: 1,
+        id,
+        kind: "issue",
+        change: "add-fraud-check",
+        gate: "conform",
+        round: 1,
+        rule: "conform.missing-call",
+        layer: "team",
+        lens: "code-and-test",
+        severity: "blocking",
+        artifact: "target-flows/forge-notes.screen.yaml",
+        locator: { line: 2 },
+        summary: `forge-notes makes no call (${id}).`,
+        why: "Because.",
+        fix: { text: "Make the call." },
+        evidence: [{ source: "artifact", path: "target-flows/forge-notes.screen.yaml", line: 2 }],
+        waivable: true,
+        state,
+        ...(state === "applied"
+          ? { resolution: { action: "apply", by: "ari", at: "2026-10-20T09:00:00Z" } }
+          : {}),
+        createdAt: "2026-10-20T09:00:00Z",
+      });
+    for (const f of [finding("conform-a", "open"), finding("conform-b", "open")])
+      await writeFinding(root, f);
+    await writeFinding(root, finding("conform-c", "applied"));
+    const s = await readNextState(root);
+    expect(s.changes.find((c) => c.id === "add-fraud-check")?.blocking).toBe(2);
+  });
+
   it("hands off a placed change on the stage path, never drafting what its gate doesn't need (round 40)", async () => {
     const root = await metarepo({ clone: true });
     await component(root, "forge-notes");

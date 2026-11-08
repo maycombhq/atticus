@@ -312,13 +312,14 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
             <nav aria-label={R.rounds}>
               <h3 className="hud runs-h">{R.rounds}</h3>
               <ol className="runs-rounds">
-                {t.rounds.map((r) => (
+                {/* Eighth UX walk: numbered in order; two runs of one step can both record attempt 1. */}
+                {t.rounds.map((r, i) => (
                   <li key={r.runId}>
                     <a
                       href={runsHref({ run: r.runId })}
                       aria-current={r.runId === t.run.runId ? "page" : undefined}
                     >
-                      {R.round(r.attempt)}
+                      {R.round(i + 1)}
                     </a>{" "}
                     <span className="muted">{stateText(r.state)}</span>
                     {r.runId === t.run.runId && <span className="muted"> {R.thisRound}</span>}
@@ -451,6 +452,36 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
   );
 }
 
+/** A run's round: its place among its step's rounds (eighth UX walk), else its recorded attempt. */
+export function roundOf(t: Api.RunTranscript): number {
+  const i = t.rounds.findIndex((r) => r.runId === t.run.runId);
+  return i >= 0 ? i + 1 : t.run.attempt;
+}
+
+/**
+ * Eighth UX walk: where a finished run goes on (the last run of a chain had only "Back to every
+ * run"): the run of its change that waits next; else, for a change's run, the Task board for a
+ * task's run and At a glance for the others. Nothing for a run still waiting (its Done is the
+ * step), or one that isn't a change's (a knowledge scan, a read).
+ */
+export function afterRun(
+  t: Api.RunTranscript,
+  runs: readonly Api.RunListItem[] | undefined,
+  changes: ReadonlySet<string> | undefined,
+): { href: string; label: string } | undefined {
+  const open = (s: string) => s === "waiting" || s === "prepared";
+  if (open(t.run.state)) return undefined;
+  const next = runs?.find(
+    (r) => r.change === t.run.change && r.runId !== t.run.runId && open(r.state),
+  );
+  if (next) return { href: runsHref({ run: next.runId }), label: R.toNextRun };
+  if (!changes?.has(t.run.change)) return undefined;
+  const change = encodeURIComponent(t.run.change);
+  return t.run.taskRun
+    ? { href: `#/tasks?change=${change}`, label: R.toTaskBoard(t.run.taskRun.task) }
+    : { href: `#/cockpit?change=${change}`, label: R.toGlance(t.run.change) };
+}
+
 /** The Model runs screen: #/runs, ?change= for one change or step, ?q= to filter, ?run= for one. */
 export function Runs({ hash }: { hash: string }) {
   const change = queryParam(hash, "change");
@@ -470,21 +501,36 @@ export function Runs({ hash }: { hash: string }) {
       if (current) one.reload();
     }
   });
+  // Eighth UX walk: which runs are a change's, so a finished one can go back to it.
+  const changes = useApi<{ id: string }[]>(current ? "/api/changes" : undefined);
   const shownOne =
     one.state === "ready" && one.data.run.runId === current ? one : ({ state: "loading" } as const);
+  const after =
+    shownOne.state === "ready"
+      ? afterRun(
+          shownOne.data,
+          list.state === "ready" ? list.data.runs : undefined,
+          changes.state === "ready" ? new Set(changes.data.map((c) => c.id)) : undefined,
+        )
+      : undefined;
   return (
     <div className="bento">
       {current && (
         <Panel
           title={
             shownOne.state === "ready"
-              ? R.runTitle(shownOne.data.run.change, shownOne.data.run.attempt)
+              ? R.runTitle(shownOne.data.run.change, roundOf(shownOne.data))
               : R.title
           }
           span="1 / -1"
           labelledBy="run-detail"
         >
-          <p style={{ margin: "0 0 10px" }}>
+          <p className="row" style={{ margin: "0 0 10px", gap: 12, flexWrap: "wrap" }}>
+            {after && (
+              <a className="btn primary" href={after.href}>
+                {after.label}
+              </a>
+            )}
             <a href={runsHref(change ? { change } : {})}>{R.back}</a>
           </p>
           {one.state === "error" ? (

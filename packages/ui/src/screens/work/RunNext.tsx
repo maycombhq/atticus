@@ -72,6 +72,11 @@ export function RunNextPanel({ step }: { step: Step }) {
         {R.title}
       </h2>
       <p className="work-why">{step.why}</p>
+      {step.aside && (
+        <p className="work-say">
+          {step.aside.text} <a href={step.aside.link.href}>{step.aside.link.label}</a>
+        </p>
+      )}
       {inApp ? (
         <>
           {action && <StepAction {...step} />}

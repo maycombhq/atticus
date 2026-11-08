@@ -197,6 +197,11 @@ export const COPY = {
     title: "Questions",
     intro:
       "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then Apply puts it in the map, and Propose for review sends it for review.",
+    /** Eighth UX walk: Questions opened for one change (?change=) shows the questions its steps asked. */
+    changeIntro: (id: string) =>
+      `The questions ${id}'s steps asked. Your answer is written to the question's file in questions/; then the step that asked it runs again and reads it.`,
+    onlyChange: (id: string) => `Only the questions ${id}'s steps asked.`,
+    showAll: "Show every question",
     filter: "Show",
     filterOpen: "Open",
     filterAll: "All",
@@ -303,7 +308,7 @@ export const COPY = {
       `${path} isn't there yet, so the answer is kept in the question file, with that path.`,
     next: "Apply it to the map, then propose it for review.",
     nextStage: "Run the step it came from again, from here:",
-    orCommandLine: "Or on the command line:",
+    orCommandLine: "Or in a terminal:",
     copy: "Copy the command",
     answered: (by: string, day: string) => `Answered by ${by} on ${day}`,
     retired: "This question is retired; nothing reads its answer.",
@@ -772,7 +777,6 @@ export const COPY = {
     /** The tabs of a section, and where you are. */
     tabs: (section: string) => `${section} pages`,
     youAreHere: "You are here",
-    ofChange: (id: string) => `change ${id}`,
     /** The pages, by screen id. */
     screens: {
       home: "Home",
@@ -1387,6 +1391,15 @@ export const COPY = {
     answerOnQuestions: "Answer them on Questions",
     openPr: "Open the hand-off PR",
     openRelease: "Open Release",
+    /** Eighth UX walk: blocking findings hold the hand-off; they are resolved on the change's page. */
+    resolveFindings: "Resolve them on the change's page",
+    resolveFindingsSay:
+      "Each blocking finding is resolved on the change's page: Apply fix, Not relevant or Waive, with a reason.",
+    /** Eighth UX walk: a step the app has no control for opens the change's At a glance. */
+    openGlance: "Open At a glance",
+    /** Eighth UX walk: map questions don't hold a change's step; Home says how many are open. */
+    mapQuestions: (n: number) => `${n} map question${n === 1 ? "" : "s"} open.`,
+    mapQuestionsLink: "Answer them on Questions",
     whatNext:
       "Not sure what comes next? Type /atticus-next in Copilot Chat or Claude Code, or run atticus next.",
     after: "After that",
@@ -2156,8 +2169,14 @@ export const COPY = {
     runCancelled: "Cancelled. The task can run again.",
     noAiRunsYet: "No AI runs yet.",
     /** A run that is part of a task run: where the task stands (ADR 0036 addendum, review). */
-    taskRunLine: (task: string, state: string) =>
+    taskRunLine: (task: string, state: string, pr?: "open" | "merged" | "closed") =>
       `Task ${task}: ${
+        // Eighth UX walk: the PR's state on the Git host now, where the tasks view says it.
+        (state === "pr-open" && pr === "merged"
+          ? "PR merged"
+          : state === "pr-open" && pr === "closed"
+            ? "PR closed"
+            : undefined) ??
         (
           {
             planned: "planned",
@@ -2168,12 +2187,12 @@ export const COPY = {
             "needs-person": "needs a person",
             failed: "failed",
           } as Record<string, string>
-        )[state] ?? state
+        )[state] ??
+        state
       }`,
     taskRunLog: (path: string) => `Last build: ${path}`,
     aiRuns: "AI runs",
-    pickAChangeOn: "Pick a change on the left, or start one with ",
-    atticusChangeNew: "atticus change new",
+    pickAChangeOn: "Pick a change on the left, or start one with New change.",
     noChangeSelected: "No change selected",
   },
   commandCenter: {
@@ -2212,7 +2231,6 @@ export const COPY = {
     theCatalogIsAccepted:
       "The catalog is accepted as the baseline, with your name, in catalog/baseline.yaml. Propose it for review: merging the pull request makes it the baseline on main.",
     baselineAccepted: "Baseline accepted",
-    changesInFlight2: "Changes in flight",
     blockingFindings: "Blocking findings",
     openOwnerQuestions: "Open owner questions",
     factsInTheCatalog: "Facts in the catalog",
@@ -2248,7 +2266,7 @@ export const COPY = {
     currentPhase: (v: string | number) => `${v}: current phase`,
     done2: "done",
     toCome: "to come",
-    noChangeInFlight: "No change in flight. Start one with atticus change new.",
+    noChangeInFlight: "No change in flight. Start one with New change.",
     gatePipeline: (id: string | number) => `Gate pipeline · ${id}`,
     gatePipeline2: "Gate pipeline",
     interfacesInTheCatalog: "Interfaces in the catalog",
@@ -2460,7 +2478,7 @@ export const COPY = {
     changesParties: (journey: string | number, v: string | number, size: string | number) =>
       `${journey} · ${v} changes · ${size} parties`,
     noInitiativesYet: "No initiatives yet. Start one from a guided journey with New initiative.",
-    startOneFromA: "Or from the command line: ",
+    startOneFromA: "Or in a terminal: ",
     atticusInitiativeNewTitle: 'atticus initiative new "<title>" --journey new-feature',
     initiatives: "Initiatives",
     /** UX review: initiatives start, are planned and have their commitments recorded here. */
@@ -3520,9 +3538,19 @@ export const COPY = {
     copyCommand: "Copy the command",
     writeBrief: "Write the brief on Feature brief",
     blocks: "What blocks it",
-    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} wait for a person`,
+    questions: (n: number) => `${n} question${n === 1 ? " waits" : "s wait"} for a person`,
     repos: "Repos and branches",
-    noRepos: "No repo has a branch for this change yet: atticus workspace open makes them.",
+    noRepos: "No repo has a branch for this change yet.",
+    /** Eighth UX walk: the change's branches are made here, on the person's click. */
+    openWorkspace: (repos: number) =>
+      `Make the change's branch in ${repos === 1 ? "its repo" : `its ${repos} repos`}`,
+    workspaceOpened: "The change's branches are made in your clones.",
+    noReposToOpen:
+      "The change names no repo yet, so there is no branch to make. Name its repos on its brief, or in a terminal:",
+    /** Eighth UX walk: Raise hand-off held while the gate's status loads or something blocks it. */
+    raiseHeld: (n: number) =>
+      `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off, so Raise hand-off waits:`,
+    raiseChecking: "Checking what blocks the hand-off…",
     branchOn: (branch: string, base: string) => `${branch}, from ${base}`,
     pr: "the pull request",
     /** Sixth UX walk: a task drafted and waiting for its PR isn't the step to run again. */
@@ -4098,6 +4126,10 @@ export const COPY = {
     showAll: "Show every run",
     pick: "Open a run from the list to read what it was asked and what it answered.",
     back: "Back to every run",
+    /** Eighth UX walk: a finished run with no next one goes back to its change, or its task. */
+    toGlance: (change: string) => `Go on with ${change} on At a glance`,
+    toTaskBoard: (task: string) => `Go on with task ${task} on the Task board`,
+    toNextRun: "Open the run that waits next",
     missing: (id: string) => `There is no run ${id}. It may have been removed from .runs/.`,
     runTitle: (change: string, round: number) => `${change}, round ${round}`,
     prompt: "Prompt",

@@ -48,7 +48,7 @@ export function SectionTabs({
         {change && (
           <>
             <span aria-hidden="true"> › </span>
-            <span>{T.ofChange(change)}</span>
+            <span>{change}</span>
           </>
         )}
         <span aria-hidden="true"> › </span>

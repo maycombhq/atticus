@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { RunStep } from "../../app/runstep.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
@@ -172,17 +172,22 @@ export function GateHeader(p: {
 export function RaiseHandoff(p: {
   change: string;
   blockers: number;
+  /** Eighth UX walk: what blocks the gate isn't read yet, so it waits rather than flicker on. */
+  held?: boolean;
   onDone?: () => void;
   act?: ReturnType<typeof useAction>;
 }) {
   const own = useAction();
   const act = p.act ?? own;
+  const why = useId();
+  const blocked = p.blockers > 0;
   const button = (
     <button
       type="button"
       className="btn primary"
-      disabled={act.busy || p.blockers > 0}
-      title={p.blockers > 0 ? T.blockedBy(p.blockers) : undefined}
+      disabled={act.busy || blocked || p.held === true}
+      title={blocked ? T.blockedBy(p.blockers) : undefined}
+      aria-describedby={blocked ? why : undefined}
       onClick={() =>
         void act.run(
           () =>
@@ -200,10 +205,23 @@ export function RaiseHandoff(p: {
       {T.raiseHandOff}
     </button>
   );
-  if (p.act) return button;
+  // Eighth UX walk: held, it says why where it is seen, not only in a tooltip.
+  const reason = blocked && (
+    <span id={why} className="muted" style={{ fontSize: 12 }}>
+      {T.blockedBy(p.blockers)}
+    </span>
+  );
+  if (p.act)
+    return (
+      <>
+        {button}
+        {reason}
+      </>
+    );
   return (
     <div className="stack" style={{ gap: 4 }}>
       <div>{button}</div>
+      {reason}
       <Note note={act.note} />
     </div>
   );

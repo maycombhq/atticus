@@ -244,7 +244,9 @@ describe("At a glance's next step after a task's draft", () => {
       />,
     );
     expect(html).toContain(T.raiseHandOff);
-    expect(html).toContain(esc(C.raiseHere));
+    // Eighth UX walk: until the gate's status is read, it says so and Raise waits (eighth-walk
+    // test: then "Raise it here", or what blocks it).
+    expect(html).toContain(esc(C.raiseChecking));
   });
 
   it("a repo's PR on a manual Git host points to Manual steps, not a manual:// link", () => {

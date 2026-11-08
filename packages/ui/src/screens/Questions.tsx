@@ -8,6 +8,7 @@ import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
+import { queryParam } from "./know/common.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -407,6 +408,8 @@ export function QuestionList(p: {
   /** The questions picked to answer together, and how one is picked or let go. */
   selected?: ReadonlySet<string>;
   onSelect?: (ids: string[], on: boolean) => void;
+  /** Eighth UX walk: the change the page is opened for; a question's link keeps it. */
+  change?: string | undefined;
 }) {
   const text = p.text ?? "";
   const pickable = (q: QuestionView) => !!p.onSelect && q.state === "open";
@@ -488,7 +491,7 @@ export function QuestionList(p: {
                           p.onSelect && <span className="q-check-gap" aria-hidden="true" />
                         )}
                         <a
-                          href={`#/questions/${q.id}`}
+                          href={`#/questions/${q.id}${p.change ? `?change=${encodeURIComponent(p.change)}` : ""}`}
                           aria-current={q.id === p.current ? "true" : undefined}
                           className="q-item"
                           title={q.question}
@@ -582,6 +585,26 @@ export const isChangeQuestion = (q: QuestionView) => {
   const words = (q.askedBy?.command ?? "").trim().split(/\s+/);
   return /^atticus (change|plan) /.test(q.askedBy?.command ?? "") && words.includes(q.repo);
 };
+
+/**
+ * Eighth UX walk: a command is a step of a change (`atticus change <step> <id>`, `atticus plan
+ * <step> <id>`, `atticus critic <id>`), and of the change `id` when one is given: the rule of
+ * namesChange in packages/changes/src/handoff.ts, which a hand-off reads its questions by.
+ */
+export function namesChange(command: string | undefined, id?: string): boolean {
+  const w = (command ?? "").trim().split(/\s+/);
+  if (w[0] !== "atticus") return false;
+  if (w[1] !== "change" && w[1] !== "plan" && w[1] !== "critic") return false;
+  return id === undefined ? w.length > 2 : w.slice(2).includes(id);
+}
+
+/** The questions a change's steps asked: the step that asked it, or the one its answer reruns. */
+export const askedForChange = (q: QuestionView, id: string) =>
+  namesChange(q.askedBy?.command, id) || namesChange(q.rerun, id);
+
+/** A question about the map (a repo's read), not one a change's step asked. */
+export const isMapQuestion = (q: QuestionView) =>
+  !namesChange(q.askedBy?.command) && !namesChange(q.rerun);
 
 /** What happened after the answer was saved: the file, the skill file, the command to run next. */
 export function AnsweredView({ result }: { result: AnsweredResult }) {
@@ -1166,13 +1189,49 @@ export function QuestionCounts(p: {
   );
 }
 
+/** Eighth UX walk: the change Questions is opened for (`?change=`), if any. */
+export const changeOfHash = (hash: string) => queryParam(hash, "change") || undefined;
+
+/**
+ * The list a change's Questions shows: the questions its steps asked (askedForChange), counted
+ * from those alone. Without a change, the list as read.
+ */
+export function scopeToChange<L extends Loaded<QuestionListView>>(
+  list: L,
+  change: string | undefined,
+): L {
+  if (!change || list.state !== "ready") return list;
+  const { counts: _all, ...rest } = list.data;
+  return {
+    ...list,
+    data: { ...rest, questions: list.data.questions.filter((q) => askedForChange(q, change)) },
+  };
+}
+
+/** The page's opening words: a change's own, or the map's. */
+export function QuestionsIntro({ change }: { change?: string | undefined }) {
+  return change ? (
+    <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
+      {C.changeIntro(change)} {C.onlyChange(change)} <a href="#/questions">{C.showAll}</a>
+    </p>
+  ) : (
+    <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
+      {C.intro}
+    </p>
+  );
+}
+
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
-  const list = useApi<QuestionListView>(questionsUrl(filter, whose));
+  const fetched = useApi<QuestionListView>(questionsUrl(filter, whose));
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
-  useReloadOnFiles(list, owner);
+  useReloadOnFiles(fetched, owner);
+  // Eighth UX walk: opened for a change (?change=, "Answer them on Questions"), the page shows
+  // the questions its steps asked, says so, and links to every question.
+  const forChange = changeOfHash(hash);
+  const list = scopeToChange(fetched, forChange);
   const [kind, setKind] = useState<QuestionsKind>(questionsKind(hash));
   useEffect(() => setKind(questionsKind(hash)), [hash]);
 
@@ -1232,24 +1291,27 @@ export function Questions({ hash }: { hash: string }) {
           <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
             <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
               <FilterBox id={FILTER_ID} value={text} onChange={setText} />
-              <div className="stack" style={{ gap: 4 }}>
-                <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
-                  {COPY.filter.repo}
-                </label>
-                <select
-                  id="questions-repo"
-                  className="field"
-                  value={repo}
-                  onChange={(e) => setRepo(e.target.value)}
-                >
-                  <option value="">{COPY.filter.allRepos}</option>
-                  {repos.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* A change's questions are one change's, so no repo to pick among. */}
+              {!forChange && (
+                <div className="stack" style={{ gap: 4 }}>
+                  <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
+                    {COPY.filter.repo}
+                  </label>
+                  <select
+                    id="questions-repo"
+                    className="field"
+                    value={repo}
+                    onChange={(e) => setRepo(e.target.value)}
+                  >
+                    <option value="">{COPY.filter.allRepos}</option>
+                    {repos.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <Choice
                 label={C.whose}
                 value={whose}
@@ -1270,9 +1332,7 @@ export function Questions({ hash }: { hash: string }) {
               />
             </div>
           </div>
-          <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-            {C.intro}
-          </p>
+          <QuestionsIntro change={forChange} />
           {list.state === "ready" && (
             <QuestionCounts
               counts={countsOf(list.data, repo)}
@@ -1297,6 +1357,7 @@ export function Questions({ hash }: { hash: string }) {
                 }}
                 selected={selected}
                 onSelect={select}
+                change={forChange}
               />
             </Panel>
             <section className="panel" style={{ gridColumn: "span 7" }}>
