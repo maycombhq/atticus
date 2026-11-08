@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { NewChange } from "./NewChange.js";
 import type { Loaded } from "../../api/client.js";
 import { Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -67,7 +68,13 @@ export function CoverageView({ v }: { v: OnboardingData }) {
 
 export function InFlight({ changes }: { changes: ChangeRow[] }) {
   const rows = changes.filter(inFlight);
-  if (rows.length === 0) return <div className="state">{W.noChanges}</div>;
+  if (rows.length === 0)
+    return (
+      <div className="stack" style={{ gap: 6 }}>
+        <div className="state">{W.noChanges}</div>
+        <NewChange />
+      </div>
+    );
   return (
     <Table
       caption={W.inFlight}

@@ -328,6 +328,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   return (
     r
+      .add("GET", "/api/change-types", async () => {
+        const op = await loadOrgPack(orgPackDirOf(root));
+        return {
+          status: 200,
+          body: op.changeTypes.types.map((t) => ({
+            id: t.id,
+            name: t.name,
+            ...(t.description ? { description: t.description } : {}),
+          })),
+        };
+      })
       .add("POST", "/api/changes", async ({ body }) => {
         const b = parseBody(NewChange, body);
         const owners = Object.entries(b.owners ?? {}).map(

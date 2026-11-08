@@ -311,7 +311,7 @@ export async function checkFindings(
         if (l.state === "waiting")
           reasons.push({
             code: "lens-waiting",
-            message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) is waiting for its hand-off answer${l.runId ? ` (atticus handoff done ${l.runId})` : ""}.`,
+            message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) is waiting for its hand-off answer${l.runId ? ` (Done on run ${l.runId} in Model runs, or atticus handoff done ${l.runId})` : ""}.`,
           });
         else if (l.state === "failed")
           reasons.push({

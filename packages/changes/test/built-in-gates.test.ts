@@ -176,7 +176,7 @@ describe("built-in gates in the lifecycle", () => {
       (await canAdvance(ID, root)).reasons.filter((r) => r.code === "lens-waiting");
     await write("waiting");
     expect((await waiting()).map((r) => r.message)).toEqual([
-      "The code-and-test lens on the hand-up gate (round 1) is waiting for its hand-off answer (atticus handoff done r-0001).",
+      "The code-and-test lens on the hand-up gate (round 1) is waiting for its hand-off answer (Done on run r-0001 in Model runs, or atticus handoff done r-0001).",
     ]);
     await write("ran");
     expect(await waiting()).toEqual([]);

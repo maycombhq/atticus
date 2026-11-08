@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { NewChange } from "./work/NewChange.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
@@ -128,6 +129,7 @@ function ChangeList({
   const [state, setState] = useState("");
   return (
     <Panel title={T.changes} span="span 3" rows="span 3">
+      <NewChange />
       <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
         {(all) => {
           const states = [...new Set(all.map((c) => c.state))];

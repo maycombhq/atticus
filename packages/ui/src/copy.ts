@@ -1477,7 +1477,7 @@ export const COPY = {
     notTrusted: "Not trusted yet",
     openTrust: "Open Map › Trust",
     inFlight: "Changes in flight",
-    noChanges: 'No change is in flight. Start one with atticus change new "<title>" --type <type>.',
+    noChanges: "No change is in flight. Start one with New change.",
     stageCol: "Stage",
     changeCol: "Change",
     stateCol: "State",
@@ -1536,7 +1536,7 @@ export const COPY = {
     syncSources: "Read the wikis:",
     // The stage screens
     pickChange: "Change",
-    noChangeYet: 'No change yet. Start one with atticus change new "<title>" --type <type>.',
+    noChangeYet: "No change yet. Start one with New change, or on the command line:",
     noChangeTitle: "No change yet",
     noChangeCommand: 'atticus change new "<title>" --type <type>',
     noChangeLink: "All changes lists every change once you start one.",
@@ -1926,7 +1926,7 @@ export const COPY = {
     noChangeMatches: "No change matches.",
     changes: "Changes",
     acrossAllChanges: "Across all changes",
-    noChangesYetStart: "No changes yet. Start one with atticus change new.",
+    noChangesYetStart: "No changes yet. Start one with New change.",
     currentPhase: (v: string | number) => `${v}: current phase`,
     done: "done",
     toCome: "to come",
@@ -2523,7 +2523,7 @@ export const COPY = {
   phase: {
     runPrepared: (runId: string) => `Run ${runId} prepared: your assistant takes it from here.`,
     theRuleChecksRan:
-      "The rule checks ran; any AI lens is with your assistant. Finish each with atticus handoff done.",
+      "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
     handOffPrRaised: "Hand-off PR raised. A person approves and merges it.",
     syncedWithTheHand: "Synced with the hand-off PR.",
@@ -3679,7 +3679,28 @@ export const COPY = {
     start: "Start",
   },
   /** ADR 0106: what Atticus asked a model and what it answered, run by run. */
+  /** UX review: starting a change in the app. */
+  newChange: {
+    start: "New change",
+    title: "New change",
+    titleLabel: "Title",
+    titleHint: "Raise the daily transfer limit",
+    idLabel: "Id (the folder and branch name)",
+    typeLabel: "Type",
+    noTypes: (why: string) => `The change types didn't load: ${why}`,
+    create: "Start the change",
+    starting: "Starting…",
+    cancel: "Cancel",
+    created: (id: string) => `Started ${id}. Its brief is next.`,
+  },
   runs: {
+    /** UX review: a run waiting on its hand-off answer is finished or cancelled here. */
+    waitingSay:
+      "This run waits for its answer. Paste the prompt into your assistant; when it has written the answer, Done checks it.",
+    done: "Done: check the answer",
+    doneOk: "Checked the answer.",
+    cancel: "Cancel the run",
+    cancelled: "Cancelled. The step can run again.",
     title: "Model runs",
     intro:
       "What Atticus asked a model and what came back, for every AI step, newest first. A prompt and an answer are shown as text, as they were written.",

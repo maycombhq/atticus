@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
-import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { Note, useAction } from "../know/common.js";
 import {
   FilterBox,
   FilterCount,
@@ -176,6 +177,37 @@ function TextBox({ text, label }: { text: string; label: string }) {
 }
 
 /** One run: its facts, the prompt beside the answer, what was handed back, its step's rounds. */
+/** UX review: a waiting run's Done and Cancel, so no one needs `atticus handoff done`. */
+export function WaitingActions(p: { runId: string; reload?: (() => void) | undefined }) {
+  const act = useAction();
+  const go = (path: string, ok: string) =>
+    void act.run(() => api(path, { method: "POST", body: {} }).then(() => p.reload?.()), ok);
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="work-say">{R.waitingSay}</p>
+      <div className="row" style={{ gap: 6 }}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={act.busy}
+          onClick={() => go(`/api/runs/${p.runId}/done`, R.doneOk)}
+        >
+          {R.done}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={act.busy}
+          onClick={() => go(`/api/runs/${p.runId}/cancel`, R.cancelled)}
+        >
+          {R.cancel}
+        </button>
+      </div>
+      <Note note={act.note} />
+    </div>
+  );
+}
+
 export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => void } }) {
   return (
     <View of={p.of}>
@@ -213,6 +245,9 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
                 : []),
             ]}
           />
+          {(t.run.state === "waiting" || t.run.state === "prepared") && (
+            <WaitingActions runId={t.run.runId} reload={p.of.reload} />
+          )}
           {t.rounds.length > 1 && (
             <nav aria-label={R.rounds}>
               <h3 className="hud runs-h">{R.rounds}</h3>

@@ -1,4 +1,5 @@
 import type { Loaded } from "../../api/client.js";
+import { NewChange } from "./NewChange.js";
 import { RunStep } from "../../app/runstep.js";
 import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -117,6 +118,7 @@ export function NoChangeYet({ title }: { title?: string }) {
         {title ?? W.noChangeTitle}
       </h2>
       <p className="work-why">{W.noChangeYet}</p>
+      <NewChange />
       <p className="work-say">{R.terminal}</p>
       <Command text={W.noChangeCommand} label={R.copy} />
       <p className="work-say">

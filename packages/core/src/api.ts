@@ -186,8 +186,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   showed; a manifest changed since (a teammate's pull) is 409, never written over. Additive.
  * 2.63.0 (review): GET /api/catalog/{kind} takes `confidence`, so a page counts the verified
  *   records of a large estate by `total` instead of reading them all. Additive only.
+ * 2.64.0 (UX review): GET /api/change-types, the org pack's change types for the app's New change
+ *   form (POST /api/changes was there; nothing listed what `type` could be). Additive only.
  */
-export const API_VERSION = "2.63.0";
+export const API_VERSION = "2.64.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2203,6 +2205,13 @@ export const NewChangeRequest = z.strictObject({
   template: z.string().optional(),
   /** WP7.6: an archived change to start from (its folder or its id), attached as an example. */
   like: z.string().min(1).optional(),
+});
+
+/** 2.64.0: a change type, as the New change form offers it. */
+export const ChangeTypeView = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
 });
 
 /** WP7.6: an archived change near a new brief. */
@@ -4369,6 +4378,14 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409, 422],
     },
   },
+  "/api/change-types": {
+    get: {
+      id: "listChangeTypes",
+      summary: "2.64.0: the org pack's change types, for the New change form",
+      tag: "changes",
+      ok: { status: 200, schema: arrayOf("ChangeTypeView"), description: "OK" },
+    },
+  },
   "/api/changes/{changeId}": {
     get: {
       id: "getChange",
@@ -5507,6 +5524,7 @@ export function openApiDocument(): Record<string, unknown> {
     Job,
     JobAccepted,
     ChangeSummary,
+    ChangeTypeView,
     ChangeDetail,
     ArtifactContent,
     Task,
