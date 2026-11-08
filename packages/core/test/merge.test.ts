@@ -103,6 +103,16 @@ describe("endpointId", () => {
     expect(endpointId("ledger-api", "GET", "/accounts/{}/balance")).toBe("ledger-api.get-balance");
     expect(endpointId("ledger-api", "POST", "/transfers")).toBe("ledger-api.post-transfer");
   });
+
+  it("keeps a word that only ends in s whole (sixth UX walk: put-statu)", () => {
+    expect(endpointId("ledger-core", "PUT", "/accounts/{}/status")).toBe("ledger-core.put-status");
+    expect(endpointId("ledger-core", "GET", "/responses")).toBe("ledger-core.get-response");
+    expect(endpointId("ledger-core", "GET", "/cases")).toBe("ledger-core.get-case");
+    expect(endpointId("ledger-core", "GET", "/addresses")).toBe("ledger-core.get-address");
+    expect(endpointId("ledger-core", "GET", "/analysis")).toBe("ledger-core.get-analysis");
+    expect(endpointId("ledger-core", "GET", "/branches")).toBe("ledger-core.get-branch");
+    expect(endpointId("ledger-core", "GET", "/policies")).toBe("ledger-core.get-policy");
+  });
 });
 
 describe("mergeCatalog: data stores", () => {

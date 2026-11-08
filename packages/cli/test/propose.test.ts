@@ -441,6 +441,10 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
     expect(g(root, "log", "-1", "--format=%s").trim()).toBe("hand-off merged");
     expect(await readFile(join(root, rel, "change.yaml"), "utf8")).toBe("state: design\n");
+    // Sixth UX walk: the merged record is said as merged, never as an edit left out.
+    expect(said.join("\n")).not.toContain("Your own edits stay");
+    expect(said.join("\n")).toContain(`Merged with your copy's newer state: ${rel}/change.yaml`);
+    expect(said.join("\n")).toContain("1 file was already the same");
   });
 
   it("keeps a reviewer's edit to the change's record as well as Sync's newer state (round 40)", async () => {

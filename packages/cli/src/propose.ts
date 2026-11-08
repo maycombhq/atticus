@@ -485,6 +485,13 @@ export async function bringInMerged(
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+  // Sixth UX walk: what this copy keeps of its own, in short. A change's record that was merged
+  // is said as such, not as an edit left out, and a long list names a few and counts the rest.
+  const ownEdits = kept.filter((k) => !held.has(k));
+  const editsText = (list: string[]) =>
+    list.length > 5
+      ? `${list.slice(0, 5).join(", ")} and ${list.length - 5} more`
+      : list.join(", ");
   const restoreHeld = async () => {
     for (const [k, text] of held) await writeFile(join(root, k), text, "utf8");
   };
@@ -515,18 +522,22 @@ export async function bringInMerged(
     await putBack();
     for (const [k, text] of original) await writeFile(join(root, k), text, "utf8");
     io.err(
-      `Your copy couldn't be brought up to ${up}: ${first(e)}. Your files are as they were${kept.length ? `, and your own edits stay: ${kept.join(", ")}` : ""}.`,
+      `Your copy couldn't be brought up to ${up}: ${first(e)}. Your files are as they were${kept.length ? `, and your own edits stay: ${editsText(kept)}` : ""}.`,
     );
     return 1;
   }
   if (!incoming.size && !done.length) {
     io.out(`Nothing new has merged on ${up} yet: your copy is up to date with it.`);
-    if (kept.length) io.out(`Your own edits stay as they were: ${kept.join(", ")}.`);
+    if (kept.length) io.out(`Your own edits stay as they were: ${editsText(kept)}.`);
     return 0;
   }
   io.out(
-    `Brought in what merged on ${up}${done.length ? ` (${done.length} file${done.length === 1 ? "" : "s"} were already the same)` : ""}.`,
+    `Brought in what merged on ${up}${done.length ? ` (${done.length === 1 ? "1 file was" : `${done.length} files were`} already the same)` : ""}.`,
   );
-  if (kept.length) io.out(`Your own edits stay as they were: ${kept.join(", ")}.`);
+  if (held.size)
+    io.out(
+      `Merged with your copy's newer state: ${[...held.keys()].join(", ")} (Sync's state and the reviewer's edits are both kept).`,
+    );
+  if (ownEdits.length) io.out(`Your own edits stay as they were: ${editsText(ownEdits)}.`);
   return 0;
 }

@@ -170,10 +170,13 @@ function combine(a: Rec, b: Rec, known: ReadonlySet<string> = DOCUMENTED_TYPES):
 }
 
 /** "transfers" → "transfer", "policies" → "policy"; good enough for endpoint names. */
+// Sixth UX walk: "status" and "analysis" are singular already, and "responses" or "cases" lose
+// only their s ("ses" alone isn't "sses": "addresses" loses es, "responses" s).
 function singular(word: string): string {
   if (/ies$/.test(word) && word.length > 4) return word.slice(0, -3) + "y";
-  if (/(ses|xes|zes|ches|shes)$/.test(word)) return word.slice(0, -2);
-  if (/s$/.test(word) && !/ss$/.test(word) && word.length > 3) return word.slice(0, -1);
+  if (/(us|is|ss)$/.test(word)) return word;
+  if (/(sses|xes|zes|ches|shes)$/.test(word)) return word.slice(0, -2);
+  if (/s$/.test(word) && word.length > 3) return word.slice(0, -1);
   return word;
 }
 

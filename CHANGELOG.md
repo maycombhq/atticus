@@ -54,6 +54,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Sixth UX walk (Bring in and ids):
+  - **Bring in says a change's merged record is merged**, not one of "your own edits", and a long list of edits names five and counts the rest. "1 file were already the same" reads "1 file was".
+  - **An endpoint's id keeps a word that only ends in s whole**: `PUT /accounts/{id}/status` is `put-status`, not `put-statu`; `/responses` and `/cases` lose only their s.
 - Round 41 (review, continued):
   - One AI step and one local step at a time (local API 2.68.0): the server's job list tracks every running job of a kind, so a second job ending no longer hides the first, still running; `POST /api/runs` answers 409 while another AI step runs (two at once could each report the other's run), and Apply, Propose for review and Bring in answer 409 while another of them runs (Bring in moving the working tree while Apply writes facts). Each refusal names the job that runs, and the app's Apply says the server's words instead of "Verify found problems".
   - Org pack: two dialects or two checklist packs of one name (a copy in a subfolder, say), or a pack reusing another's rule id, are load problems naming both files; only the first is loaded, so the scanner no longer runs both and `extends` no longer resolves to the last. Problems about dialects, patterns, agents, service-desk templates and procedures name the file they are in, not one built from the record's id.
