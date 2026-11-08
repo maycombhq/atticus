@@ -17,6 +17,8 @@ import {
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 import type { QuestionListView } from "./Questions.js";
+import { waitingQuestions } from "./OwnerQuestions.js";
+import { Propose } from "../app/propose.js";
 import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 
@@ -106,9 +108,23 @@ function HowStepsRun() {
 }
 
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
-function SetupChecklist() {
+export function SetupChecklist() {
   const setup = useApi<Setup>("/api/setup");
   const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  // UX review (2026-11-08): the checklist hides once baselined, but the note and Propose for
+  // review of catalog/baseline.yaml stay after this page's accept (ADR 0183).
+  const [accepted, setAccepted] = useState(false);
+  if (accepted)
+    return (
+      <div className="bento">
+        <Panel title={T.baselineAccepted} kind="hero" span="1 / -1">
+          <p role="status" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
+            {T.theCatalogIsAccepted}
+          </p>
+          <Propose scope="baseline" />
+        </Panel>
+      </div>
+    );
   if (setup.state !== "ready" || setup.data.baselined) return null;
   const s = setup.data;
   const done = s.steps.filter((x) => x.done).length;
@@ -116,10 +132,7 @@ function SetupChecklist() {
   const accept = async () => {
     try {
       await api("/api/baseline", { method: "POST", body: {} });
-      setNote({
-        ok: true,
-        text: T.theCatalogIsAccepted,
-      });
+      setAccepted(true);
       setup.reload();
     } catch (e) {
       setNote({
@@ -241,12 +254,14 @@ function DigestButtons() {
  */
 export function WaitingSections(p: {
   questions: number | undefined;
+  /** Where Questions to answer opens: the owner questions when only they wait. */
+  questionsHref?: string;
   needs: number | undefined;
   steps: number | undefined;
   blocking: number | undefined;
 }) {
   const rows = [
-    { label: T.waitQuestions, n: p.questions, href: "#/questions" },
+    { label: T.waitQuestions, n: p.questions, href: p.questionsHref ?? "#/questions" },
     { label: T.waitNeeds, n: p.needs, href: "#/changes?across=needs" },
     { label: T.waitSteps, n: p.steps, href: "#/todo" },
     { label: T.waitBlocking, n: p.blocking, href: "#/changes?across=findings" },
@@ -573,7 +588,8 @@ export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
   const kinds = useApi<KindCount[]>("/api/catalog/kinds");
-  const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
+  // UX review (2026-11-08): the owner questions the Questions page answers, by the same call.
+  const qs = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
   const asked = useApi<QuestionListView>("/api/questions?state=open");
@@ -593,7 +609,7 @@ export function CommandCenter() {
     needs: allNeeds,
     changes: changes.state === "ready" ? changes.data : [],
     findings: findings.state === "ready" ? findings.data : [],
-    questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
+    questions: qs.state === "ready" ? qs.data.questions.filter((q) => q.state !== "answered") : [],
     triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
     steps: todo.state === "ready" ? todo.data.steps : [],
     questionFiles: asked.state === "ready" ? asked.data.questions : [],
@@ -649,7 +665,11 @@ export function CommandCenter() {
   const open = findings.state === "ready" ? findings.data : [];
   const blocking = open.filter((f) => f.severity === "blocking");
   const gaps = open.filter((f) => f.severity === "gap");
-  const questions = qs.state === "ready" ? (qs.data.data?.questions?.length ?? 0) : 0;
+  const questions = qs.state === "ready" ? qs.data.open : 0;
+  const waitingQs = waitingQuestions(
+    asked.state === "ready" ? asked.data.questions.length : undefined,
+    qs.state === "ready" ? questions : undefined,
+  );
   const facts = kinds.state === "ready" ? kinds.data.reduce((a, k) => a + k.count, 0) : 0;
   const interfaces =
     kinds.state === "ready" ? (kinds.data.find((k) => k.kind === "Interface")?.count ?? 0) : 0;
@@ -683,7 +703,8 @@ export function CommandCenter() {
             {T.waitingIntro}
           </p>
           <WaitingSections
-            questions={qs.state === "ready" ? questions : undefined}
+            questions={waitingQs.n}
+            questionsHref={waitingQs.href}
             needs={
               needs.state === "ready"
                 ? allNeeds.filter((n) => n.status === "open").length

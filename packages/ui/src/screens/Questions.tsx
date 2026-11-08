@@ -6,6 +6,7 @@ import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
+import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -1040,7 +1041,11 @@ export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
   const list = useApi<QuestionListView>(questionsUrl(filter, whose));
-  useReloadOnFiles(list);
+  // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
+  const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
+  useReloadOnFiles(list, owner);
+  const [kind, setKind] = useState<QuestionsKind>(questionsKind(hash));
+  useEffect(() => setKind(questionsKind(hash)), [hash]);
 
   const current = questionRoute(hash);
   const [text, setText] = useState("");
@@ -1068,99 +1073,129 @@ export function Questions({ hash }: { hash: string }) {
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {C.title}
         </p>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <FilterBox id={FILTER_ID} value={text} onChange={setText} />
-          <div className="stack" style={{ gap: 4 }}>
-            <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
-              {COPY.filter.repo}
-            </label>
-            <select
-              id="questions-repo"
-              className="field"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-            >
-              <option value="">{COPY.filter.allRepos}</option>
-              {repos.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Choice
-            label={C.whose}
-            value={whose}
-            options={[
-              { value: "all", label: C.whoseAll },
-              { value: "mine", label: C.whoseMine },
-            ]}
-            onChange={setWhose}
-          />
-          <Choice
-            label={C.filter}
-            value={filter}
-            options={[
-              { value: "open", label: C.filterOpen },
-              { value: "all", label: C.filterAll },
-            ]}
-            onChange={setFilter}
-          />
-        </div>
-      </div>
-      <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-        {C.intro}
-      </p>
-      {list.state === "ready" && (
-        <QuestionCounts
-          counts={countsOf(list.data, repo)}
-          {...(repo ? { repo } : {})}
-          filter={filter}
-          onFilter={setFilter}
+        <Choice
+          label={C.kind}
+          value={kind}
+          options={[
+            {
+              value: "steps",
+              label: C.kindSteps(list.state === "ready" ? countsOf(list.data).open : undefined),
+            },
+            {
+              value: "owner",
+              label: C.kindOwner(owner.state === "ready" ? owner.data.open : undefined),
+            },
+          ]}
+          onChange={setKind}
         />
-      )}
-      <div className="bento">
-        <Panel title={C.listTitle} span="span 5">
-          <QuestionList
-            of={list}
-            current={current}
-            all={filter === "all"}
-            mine={whose === "mine"}
-            text={text}
-            repo={repo}
-            onClear={() => {
-              setText("");
-              setRepo("");
-            }}
-            selected={selected}
-            onSelect={select}
-          />
-        </Panel>
-        <section className="panel" style={{ gridColumn: "span 7" }}>
-          {picked.length > 0 ? (
-            <BulkAnswer
-              key={picked.map((q) => q.id).join(",")}
-              ids={picked.map((q) => q.id)}
-              questions={picked}
-              onDone={() => list.reload()}
-              onClear={() => setSelected(new Set())}
-            />
-          ) : current ? (
-            <Detail
-              id={current}
-              onAnswered={list.reload}
-              {...(list.state === "ready" && list.data.about?.[current]?.proposal
-                ? { proposal: list.data.about[current].proposal }
-                : {})}
-              {...(list.state === "ready" && list.data.about?.[current]?.rule
-                ? { rule: list.data.about[current].rule }
-                : {})}
-            />
-          ) : (
-            <div className="state">{C.pickFromList}</div>
-          )}
-        </section>
       </div>
+      {kind === "owner" ? (
+        <>
+          <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
+            {C.ownerQuestions.intro}
+          </p>
+          <section className="stack" aria-label={C.ownerQuestions.title}>
+            <OwnerQuestionList of={owner} onAnswered={owner.reload} />
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <FilterBox id={FILTER_ID} value={text} onChange={setText} />
+              <div className="stack" style={{ gap: 4 }}>
+                <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
+                  {COPY.filter.repo}
+                </label>
+                <select
+                  id="questions-repo"
+                  className="field"
+                  value={repo}
+                  onChange={(e) => setRepo(e.target.value)}
+                >
+                  <option value="">{COPY.filter.allRepos}</option>
+                  {repos.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Choice
+                label={C.whose}
+                value={whose}
+                options={[
+                  { value: "all", label: C.whoseAll },
+                  { value: "mine", label: C.whoseMine },
+                ]}
+                onChange={setWhose}
+              />
+              <Choice
+                label={C.filter}
+                value={filter}
+                options={[
+                  { value: "open", label: C.filterOpen },
+                  { value: "all", label: C.filterAll },
+                ]}
+                onChange={setFilter}
+              />
+            </div>
+          </div>
+          <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
+            {C.intro}
+          </p>
+          {list.state === "ready" && (
+            <QuestionCounts
+              counts={countsOf(list.data, repo)}
+              {...(repo ? { repo } : {})}
+              filter={filter}
+              onFilter={setFilter}
+            />
+          )}
+          <div className="bento">
+            <Panel title={C.listTitle} span="span 5">
+              <QuestionList
+                of={list}
+                current={current}
+                all={filter === "all"}
+                mine={whose === "mine"}
+                text={text}
+                repo={repo}
+                onClear={() => {
+                  setText("");
+                  setRepo("");
+                }}
+                selected={selected}
+                onSelect={select}
+              />
+            </Panel>
+            <section className="panel" style={{ gridColumn: "span 7" }}>
+              {picked.length > 0 ? (
+                <BulkAnswer
+                  key={picked.map((q) => q.id).join(",")}
+                  ids={picked.map((q) => q.id)}
+                  questions={picked}
+                  onDone={() => list.reload()}
+                  onClear={() => setSelected(new Set())}
+                />
+              ) : current ? (
+                <Detail
+                  id={current}
+                  onAnswered={list.reload}
+                  {...(list.state === "ready" && list.data.about?.[current]?.proposal
+                    ? { proposal: list.data.about[current].proposal }
+                    : {})}
+                  {...(list.state === "ready" && list.data.about?.[current]?.rule
+                    ? { rule: list.data.about[current].rule }
+                    : {})}
+                />
+              ) : (
+                <div className="state">{C.pickFromList}</div>
+              )}
+            </section>
+          </div>
+        </>
+      )}
     </>
   );
 }

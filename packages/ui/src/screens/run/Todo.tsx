@@ -720,6 +720,18 @@ export function Todo({ hash = "" }: { hash?: string }) {
                         {f.state.toUpperCase()}
                       </span>
                       <CopyButton text={f.question!.text} label={T.copyQuestionText} />
+                      {/* UX review (2026-11-08): the owner's answer is recorded on Questions. */}
+                      <a
+                        className="btn"
+                        href="#/questions?kind=owner"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          textDecoration: "none",
+                        }}
+                      >
+                        {T.answerOnQuestions}
+                      </a>
                       <a
                         className="btn"
                         href={`#/changes/${f.change}`}

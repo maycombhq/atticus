@@ -196,8 +196,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   brings in what merged; a proposal takes the branch it was shown; a hand-off's ChangeDetail
  *   carries its `notes`. Apply, Propose and Bring in answer 202 with a job (an editor panel
  *   waits 30 s for one answer). Additive only.
+ * 2.67.0 (UX review, 2026-11-08): the knowledge gaps' owner questions answered in the app:
+ *   GET /api/owner-questions and POST /api/owner-questions/{id}/answer (writing
+ *   catalog/curated/ownerquestion/<id>.yaml, as atticus questions owner); ProposeScope adds
+ *   owner-answers and baseline. Additive only.
  */
-export const API_VERSION = "2.66.0";
+export const API_VERSION = "2.67.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2220,7 +2224,16 @@ export const NewChangeRequest = z.strictObject({
 });
 
 /** 2.65.0 (ADR 0183): what Propose for review commits, and the person's yes to it. */
-export const ProposeScope = z.enum(["answers", "corrections", "audit", "org-pack"]);
+export const ProposeScope = z.enum([
+  "answers",
+  "corrections",
+  "audit",
+  "org-pack",
+  /** 2.67.0 (UX review): owners' answers to the knowledge gaps, catalog/curated/ownerquestion/. */
+  "owner-answers",
+  /** 2.67.0 (UX review): the accepted baseline, catalog/baseline.yaml, over the catalog. */
+  "baseline",
+]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
   files: z.array(z.object({ path: z.string(), status: z.string(), from: z.string().optional() })),
@@ -2239,6 +2252,44 @@ export const LinesView = z.object({
   code: z.number().int().optional(),
   lines: z.array(z.string()),
 });
+
+/**
+ * 2.67.0 (UX review, 2026-11-08): a knowledge gap's owner question (ADR 0021), as the Questions
+ * page lists it and answers it. The answer is written to `file`, a curated OwnerQuestion record
+ * (the same `atticus questions owner <id> --text` writes); the gap closes once the fact is in
+ * the catalog.
+ */
+export const OwnerQuestionView = z.object({
+  id: RecordId,
+  system: z.string(),
+  owner: z.string(),
+  question: z.string(),
+  neededFact: z.string(),
+  channel: z.string(),
+  state: z.enum(["sent", "answered", "overdue"]),
+  answer: z.string().optional(),
+  routeTo: z.string().optional(),
+  fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),
+  records: z.array(z.string()),
+  file: z.string(),
+});
+export const OwnerQuestionList = z.object({
+  /** The catalog has no records yet. */
+  empty: z.boolean(),
+  /** Not answered yet: the number Home shows. */
+  open: z.number().int().nonnegative(),
+  questions: z.array(OwnerQuestionView),
+});
+export const OwnerAnswerRequest = z.strictObject({
+  answer: z.string().max(4000),
+});
+export const OwnerAnswerResult = z.object({
+  file: z.string(),
+  question: OwnerQuestionView,
+});
+export type OwnerQuestionViewT = z.infer<typeof OwnerQuestionView>;
+export type OwnerQuestionListT = z.infer<typeof OwnerQuestionList>;
+export type OwnerAnswerResultT = z.infer<typeof OwnerAnswerResult>;
 
 /** 2.64.0: a change type, as the New change form offers it. */
 export const ChangeTypeView = z.object({
@@ -4432,7 +4483,7 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "2.65.0 (ADR 0183): the files a kind of work changed, the branch and the title Propose for review would use",
       tag: "workspace",
-      params: [q("scope", str, "answers, corrections, audit or org-pack")],
+      params: [q("scope", str, "answers, corrections, audit, org-pack, owner-answers or baseline")],
       ok: { status: 200, schema: "ProposePlanView", description: "OK" },
       errors: [400, 422],
     },
@@ -4448,6 +4499,27 @@ const OPS: Record<string, Record<string, Op>> = {
         description: "Started: its job's result is the code and the lines",
       },
       errors: [400],
+    },
+  },
+  "/api/owner-questions": {
+    get: {
+      id: "listOwnerQuestions",
+      summary:
+        "2.67.0 (UX review): the knowledge gaps' owner questions, answered or not, and how many are open",
+      tag: "questions",
+      ok: { status: 200, schema: "OwnerQuestionList", description: "OK" },
+    },
+  },
+  "/api/owner-questions/{id}/answer": {
+    post: {
+      id: "answerOwnerQuestion",
+      summary:
+        "2.67.0 (UX review): record an owner's answer as the signed-in person, in catalog/curated/ownerquestion/<id>.yaml (as atticus questions owner); the gap closes once the fact is in the catalog",
+      tag: "questions",
+      params: [p("id")],
+      body: OwnerAnswerRequest,
+      ok: { status: 200, schema: "OwnerAnswerResult", description: "Recorded" },
+      errors: [400, 404],
     },
   },
   "/api/propose/bring-in": {
@@ -5623,6 +5695,10 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeSummary,
     ChangeTypeView,
     ProposePlanView,
+    OwnerQuestionView,
+    OwnerQuestionList,
+    OwnerAnswerRequest,
+    OwnerAnswerResult,
     PreparedStepView,
     ProposeRequest,
     LinesView,

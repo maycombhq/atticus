@@ -30,7 +30,7 @@ export async function followJob(
     await wait(700);
   }
 }
-type Scope = "answers" | "corrections" | "audit" | "org-pack";
+type Scope = "answers" | "corrections" | "audit" | "org-pack" | "owner-answers" | "baseline";
 interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string }[];

@@ -80,6 +80,29 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
         };
         return { status: 200, body };
       })
+      // UX review (2026-11-08): the knowledge gaps' owner questions, answered on the Questions
+      // page by the same function `atticus questions owner` uses.
+      .add("GET", "/api/owner-questions", async () => {
+        const { ownerQuestions } = await import("./owner-questions.js");
+        return { status: 200, body: await ownerQuestions(ctx.root, { now: now() }) };
+      })
+      .add("POST", "/api/owner-questions/{id}/answer", async ({ params, body }) => {
+        const b = Api.OwnerAnswerRequest.safeParse(body ?? {});
+        if (!b.success || !b.data.answer.trim())
+          throw badRequest('Answer with { answer: "what the owner said" }.');
+        const { answerOwnerQuestion, OwnerQuestionError } = await import("./owner-questions.js");
+        try {
+          const r = await answerOwnerQuestion(ctx.root, params.id!, b.data.answer, {
+            by: ctx.user,
+            now: now(),
+          });
+          return { status: 200, body: r };
+        } catch (e) {
+          if (e instanceof OwnerQuestionError)
+            throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+          throw e;
+        }
+      })
       .add("GET", "/api/questions/{id}", async ({ params }) => {
         const q = await readQuestion(ctx.root, params.id!).catch(() => {
           throw new HttpError(

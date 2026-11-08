@@ -18,7 +18,14 @@ import { createGit, type GitRunner } from "@maycombhq/workspace";
  * branch (without touching the person's working tree, index or checked-out branch), pushed, and
  * opened as a PR, after the person's yes. A human approves and merges on the Git host.
  */
-export const PROPOSE_SCOPES = ["answers", "corrections", "audit", "org-pack"] as const;
+export const PROPOSE_SCOPES = [
+  "answers",
+  "corrections",
+  "audit",
+  "org-pack",
+  "owner-answers",
+  "baseline",
+] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
 const TITLES: Record<ProposeScope, string> = {
@@ -26,6 +33,8 @@ const TITLES: Record<ProposeScope, string> = {
   corrections: "Corrections to the map",
   audit: "A sample audit's answers",
   "org-pack": "Org pack and settings",
+  "owner-answers": "Owners' answers to the knowledge gaps",
+  baseline: "Accept the catalog as the baseline",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
@@ -45,6 +54,12 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
       return [facts];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];
+    // UX review (2026-11-08): an owner's answer to a knowledge gap is a curated record.
+    case "owner-answers":
+      return [`${catalog}/curated/ownerquestion`];
+    // Accepting the baseline writes catalog/baseline.yaml, over the catalog it accepts.
+    case "baseline":
+      return [catalog];
   }
 }
 

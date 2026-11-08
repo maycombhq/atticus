@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.66.0",
+    "version": "2.67.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4997,7 +4997,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "answers, corrections, audit or org-pack",
+            "description": "answers, corrections, audit, org-pack, owner-answers or baseline",
             "required": false
           }
         ],
@@ -5063,7 +5063,9 @@
                       "answers",
                       "corrections",
                       "audit",
-                      "org-pack"
+                      "org-pack",
+                      "owner-answers",
+                      "baseline"
                     ]
                   },
                   "files": {
@@ -5115,6 +5117,118 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-questions": {
+      "get": {
+        "operationId": "listOwnerQuestions",
+        "summary": "2.67.0 (UX review): the knowledge gaps' owner questions, answered or not, and how many are open",
+        "tags": [
+          "questions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerQuestionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-questions/{id}/answer": {
+      "post": {
+        "operationId": "answerOwnerQuestion",
+        "summary": "2.67.0 (UX review): record an owner's answer as the signed-in person, in catalog/curated/ownerquestion/<id>.yaml (as atticus questions owner); the gap closes once the fact is in the catalog",
+        "tags": [
+          "questions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "answer"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAnswerResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21294,7 +21408,9 @@
               "answers",
               "corrections",
               "audit",
-              "org-pack"
+              "org-pack",
+              "owner-answers",
+              "baseline"
             ]
           },
           "files": {
@@ -21334,6 +21450,144 @@
         ],
         "additionalProperties": false
       },
+      "OwnerQuestionView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "system": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "neededFact": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "answered",
+              "overdue"
+            ]
+          },
+          "answer": {
+            "type": "string"
+          },
+          "routeTo": {
+            "type": "string"
+          },
+          "fill": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "what": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "field",
+                "what"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "system",
+          "owner",
+          "question",
+          "neededFact",
+          "channel",
+          "state",
+          "records",
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "OwnerQuestionList": {
+        "type": "object",
+        "properties": {
+          "empty": {
+            "type": "boolean"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerQuestionView"
+            }
+          }
+        },
+        "required": [
+          "empty",
+          "open",
+          "questions"
+        ],
+        "additionalProperties": false
+      },
+      "OwnerAnswerRequest": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "additionalProperties": false
+      },
+      "OwnerAnswerResult": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "question": {
+            "$ref": "#/components/schemas/OwnerQuestionView"
+          }
+        },
+        "required": [
+          "file",
+          "question"
+        ],
+        "additionalProperties": false
+      },
       "PreparedStepView": {
         "type": "object",
         "properties": {
@@ -21362,7 +21616,9 @@
               "answers",
               "corrections",
               "audit",
-              "org-pack"
+              "org-pack",
+              "owner-answers",
+              "baseline"
             ]
           },
           "files": {
