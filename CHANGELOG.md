@@ -59,6 +59,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Round 34 (review) and the UX review:
   - **The app runs the local steps and proposes them for review (ADR 0183, the product owner's decision; API 2.65.0).** After an answer or a correction, **Apply** runs `atticus verify <repo> --write`. **Propose for review** (after an answer, a correction, a sample audit or the AI settings) lists the changed files, the branch and the title. On your yes it pushes exactly the ticked files to that branch and opens the pull request. A person merges on the Git host.
   - **A hand-off's branch is pushed before its PR is asked for.** Before, nothing in production pushed it, so a live Git host refused the PR and a manual one's step named a branch nobody had made. If Atticus can't push, it says so and names the branch.
+  - **Raise hand-off waits until nothing blocks the gate**, and says how many things do. Before, it stayed the primary button and a click returned the whole list as an error.
+  - **The Stories and Tasks tabs open with the page where the work is done**: _Write stories with AI_ (Breakdown) and _Run tasks with AI_ (the Task board).
+  - **Set up › AI offers Copilot, unattended (copilot-acp, ADR 0171).** Choosing it on a version 2 `runtime.yaml` lifts the file to version 3.
   - **A change starts in the app.** _New change_ (on Changes, Home and Run next) takes a title, an id made from it and a type from the org pack (`GET /api/change-types`, API 2.64.0).
   - **A run waiting on its hand-off answer has Done and Cancel on its Model runs page**, and the gate's waiting lines point there instead of only to `atticus handoff done`.
   - **Task board › Run with AI opens the task's worktree itself** (and clones the repo first when it isn't cloned yet), so it no longer stops at "has no worktree… run atticus workspace open".

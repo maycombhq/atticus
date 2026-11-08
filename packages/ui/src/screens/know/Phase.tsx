@@ -28,7 +28,7 @@ const SEV_CHIP: Record<string, string> = {
 };
 
 /** The change a phase screen works on, its phase, the gate and what to do next. */
-function GateHeader(p: {
+export function GateHeader(p: {
   part: "hero" | "gate";
   id: string;
   title: string;
@@ -111,7 +111,8 @@ function GateHeader(p: {
               <button
                 type="button"
                 className="btn primary"
-                disabled={act.busy}
+                disabled={act.busy || s.blockers.length > 0}
+                title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
                 onClick={() =>
                   void act.run(
                     () =>

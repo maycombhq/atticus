@@ -68,7 +68,8 @@ export function limitsOf(l: AiLimits):
   };
 }
 
-const MODES = ["hand-off", "model", "headless-claude-code"] as const;
+// UX review: copilot-acp (ADR 0171) is offered too; saving it lifts a version 2 file to 3.
+const MODES = ["hand-off", "model", "headless-claude-code", "copilot-acp"] as const;
 const AI = ["on", "text-only", "off"] as const;
 
 /** The body of PUT /api/settings/ai: only what the tab changes, and no empty settings. */

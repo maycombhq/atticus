@@ -141,6 +141,14 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           }
           raw.adapters = adapters;
         }
+        // UX review: choosing copilot-acp on a version 2 file lifts it to 3, which only adds the
+        // mode (ADR 0171). A version 1 file still needs atticus upgrade first (the message says).
+        const names = (m: unknown) => {
+          const x = m as { allowed?: unknown[]; default?: unknown } | undefined;
+          return [...(x?.allowed ?? []), x?.default].includes("copilot-acp");
+        };
+        const lifted = names(b.modes) && raw.schemaVersion === 2;
+        if (lifted) raw.schemaVersion = 3;
         const checked = Runtime.safeParse(raw);
         if (!checked.success)
           throw unprocessable(
@@ -155,6 +163,7 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           const doc = parseDocument(text);
           for (const f of FIELDS) if (b[f] !== undefined) doc.set(f, raw[f]);
           if (b.model !== undefined) doc.set("adapters", raw.adapters);
+          if (lifted) doc.set("schemaVersion", 3);
           return doc.toString({ lineWidth: 0 });
         })();
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
@@ -165,7 +174,7 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           body: {
             ok: true,
             path: rel(),
-            note: `Saved ${rel()}. Commit it in a pull request: the org pack is reviewed like code.`,
+            note: `Saved ${rel()}. Propose it for review: the org pack is reviewed like code.`,
           },
         };
       })

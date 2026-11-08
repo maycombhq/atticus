@@ -558,7 +558,8 @@ function Detail({ id }: { id: string }) {
                       <button
                         type="button"
                         className="btn primary"
-                        disabled={handoff.busy}
+                        disabled={handoff.busy || s.blockers.length > 0}
+                        title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
                         onClick={() =>
                           void handoff.run(
                             () =>

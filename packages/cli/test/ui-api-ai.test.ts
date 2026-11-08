@@ -112,7 +112,7 @@ describe("the AI tab's API (ADR 0121)", () => {
       },
     });
     expect(r.status).toBe(200);
-    expect(r.body.note).toMatch(/pull request/);
+    expect(r.body.note).toMatch(/Propose it for review/);
     const saved = parse(await runtimeFile()) as Record<string, unknown>;
     expect(saved.modes).toEqual({ allowed: ["hand-off", "model"], default: "hand-off" });
     expect(saved.assistants).toEqual({ allowed: ["copilot", "cursor"], default: "copilot" });
@@ -126,6 +126,23 @@ describe("the AI tab's API (ADR 0121)", () => {
     expect(await runtimeFile()).toContain("# the autonomy caps are the platform team's");
     const after = (await call("GET", "/api/settings/ai")).body as { keySet: boolean };
     expect(after.keySet).toBe(true);
+  });
+
+  it("lifts a version 2 file to 3 when copilot-acp is chosen (UX review)", async () => {
+    const rt = join(root, "org-pack", "runtime.yaml");
+    const before = await readFile(rt, "utf8");
+    await writeFile(rt, before.replace(/^schemaVersion: \d+/m, "schemaVersion: 2"));
+    try {
+      const r = await call("PUT", "/api/settings/ai", {
+        modes: { allowed: ["hand-off", "copilot-acp"], default: "copilot-acp" },
+      });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const saved = parse(await readFile(rt, "utf8")) as Record<string, unknown>;
+      expect(saved.schemaVersion).toBe(3);
+      expect(saved.modes).toEqual({ allowed: ["hand-off", "copilot-acp"], default: "copilot-acp" });
+    } finally {
+      await writeFile(rt, before);
+    }
   });
 
   it("refuses a key typed where a variable's name goes, and a setting that doesn't read", async () => {

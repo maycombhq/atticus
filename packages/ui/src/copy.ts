@@ -1538,6 +1538,12 @@ export const COPY = {
     pickChange: "Change",
     noChangeYet: "No change yet. Start one with New change, or on the command line:",
     noChangeTitle: "No change yet",
+    /** UX review: the stage's work is on these pages. */
+    openBreakdown: "Write stories with AI",
+    openBreakdownWhy: "on Breakdown, with the story bar and what no story covers yet.",
+    openTaskBoard: "Run tasks with AI",
+    openTaskBoardWhy:
+      "on the Task board: each task runs on its repo and ends as a pull request a person approves.",
     noChangeCommand: 'atticus change new "<title>" --type <type>',
     noChangeLink: "All changes lists every change once you start one.",
     /** A change's tab opened with no change in its address. */
@@ -1956,6 +1962,9 @@ export const COPY = {
     handOff: (v: string | number, v2: string | number, v3: string | number) =>
       `${v} HAND-OFF · ${v2}${v3}`,
     whatBlocksTheHand: "What blocks the hand-off",
+    /** UX review: Raise hand-off waits until nothing blocks it, and says why. */
+    blockedBy: (n: number) =>
+      `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,
     raiseHandOff: "Raise hand-off",
     syncAndMergeWhen: "Sync and merge when approved",
     runTheCriticYour: "Run the critic (your assistant)",
@@ -2526,6 +2535,8 @@ export const COPY = {
       "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
     handOffPrRaised: "Hand-off PR raised. A person approves and merges it.",
+    blockedBy: (n: number) =>
+      `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,
     syncedWithTheHand: "Synced with the hand-off PR.",
     sourceField: "Source field",
     targetField: "Target field",
@@ -3333,6 +3344,8 @@ export const COPY = {
       "hand-off": "Hand-off: the person's own assistant does the step",
       model: "Model: Atticus calls the provider below",
       "headless-claude-code": "Headless Claude Code: Claude Code runs the step on this machine",
+      "copilot-acp":
+        "Copilot, unattended: Atticus drives your own Copilot seat through its Agent Client Protocol (ADR 0171)",
     } as Record<string, string>,
     defaultMode: "Default",
     providerLabel: "Model provider",

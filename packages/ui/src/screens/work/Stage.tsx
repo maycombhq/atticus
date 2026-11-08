@@ -185,6 +185,18 @@ export function StagePage(p: {
                 <ChangePicker list={list} current={c.id} screen={screen} />
               </div>
             </div>
+            {/* UX review: where the stage's work is done in the app, first. */}
+            {(p.stage === "stories" || p.stage === "tasks") && (
+              <p className="work-say" style={{ margin: 0 }}>
+                <a
+                  className="btn primary"
+                  href={`#/${p.stage === "stories" ? "breakdown" : "tasks"}?change=${encodeURIComponent(c.id)}`}
+                >
+                  {p.stage === "stories" ? W.openBreakdown : W.openTaskBoard}
+                </a>{" "}
+                {p.stage === "stories" ? W.openBreakdownWhy : W.openTaskBoardWhy}
+              </p>
+            )}
             {p.stage === "tasks" && p.tasks?.state === "loading" ? (
               <View of={p.tasks}>{() => null}</View>
             ) : p.cockpit?.state === "loading" ? (
