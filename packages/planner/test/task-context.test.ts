@@ -126,6 +126,20 @@ describe("atticus task context", () => {
     expect(md).toBe(readFileSync(join(FIX, "small/expected/task-context.md"), "utf8"));
   });
 
+  it("names a task run's own worktree and branch when the run passes them", async () => {
+    const root = await planned();
+    const at = {
+      worktree: `workspace/.worktrees/${CHANGE}/.tasks/1.1/forge-orders`,
+      branch: `task/${CHANGE}/1.1`,
+    };
+    const c = await taskContext(root, CHANGE, "1.1", { at });
+    expect(c.task).toMatchObject(at);
+    expect(c.notes.join("\n")).not.toContain("has no worktree");
+    expect(renderTaskContext(c)).toContain(
+      `- Work in \`${at.worktree}\` on \`${at.branch}\` only.`,
+    );
+  });
+
   it("says which tasks there are when the task isn't one", async () => {
     const root = await planned();
     await expect(taskContext(root, CHANGE, "9.9")).rejects.toThrow(

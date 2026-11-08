@@ -112,6 +112,35 @@ export function contractFile(t: TaskContext): string {
   return `contracts/${t.component}.yaml`;
 }
 
+/**
+ * plan.md's Summary from design.md: its Approach section (a design a person wrote); else, in the
+ * design the architecture stage writes, this repo's flows under Target flows ("### … (<repo>,
+ * <change>)"); else OpenSpec's Decisions. A placeholder only when design.md says none of these.
+ */
+function designSummary(t: TaskContext): string {
+  const design = docOf(t.files, "design.md");
+  const body = (s: { line: number; end: number }, from = s.line) =>
+    design!.rawLines.slice(from, s.end).join("\n").trim();
+  const approach = sectionMatching(design, /^approach$/i);
+  if (design && approach) return body(approach);
+  const flows = sectionMatching(design, /^target flows$/i);
+  if (design && flows) {
+    const repo = `(${t.repo.id}, `;
+    const mine = design.sections.filter(
+      (s) =>
+        s.level === flows.level + 1 &&
+        s.line > flows.line &&
+        s.line <= flows.end &&
+        s.heading.endsWith(")") &&
+        s.heading.includes(repo),
+    );
+    if (mine.length) return mine.map((s) => body(s, s.line - 1)).join("\n\n");
+  }
+  const decisions = sectionMatching(design, /^decisions$/i);
+  if (design && decisions) return body(decisions);
+  return `[${NC}: the change's design.md has no Approach, Decisions or target flow for ${t.repo.id}]`;
+}
+
 export function renderPlan(t: TaskContext): string {
   const { calls, serves } = repoHops(t);
   const data = repoData(t);
@@ -132,12 +161,7 @@ export function renderPlan(t: TaskContext): string {
         .map((r) => (r as RecordOf<"Deployment">).platform),
     ),
   ].sort();
-  const design = docOf(t.files, "design.md");
-  const approach = sectionMatching(design, /^approach$/i);
-  const summary =
-    design && approach
-      ? design.rawLines.slice(approach.line, approach.end).join("\n").trim()
-      : `[${NC}: the change's design.md has no Approach section]`;
+  const summary = designSummary(t);
   const status = (s: string) => (/^planned-(new|modify|retire)$/.test(s) ? s : "planned-new");
   const mapping = mappingSections(docOf(t.files, "mappings.md")).filter((m) =>
     [...calls, ...serves].some((h) => h.method === m.method && h.path === m.path),

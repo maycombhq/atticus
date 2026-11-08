@@ -50,7 +50,10 @@ export const StageStep = z.strictObject({
   loop: z.string().min(1),
   /** The command that runs it; `<change>` stands for the change's id. */
   command: z.string().min(1),
-  /** Files it writes, relative to the change folder; a folder ends in "/". They ride with the hand-off. */
+  /**
+   * Files it writes, relative to the change folder; a folder ends in "/", and a "*" in the last
+   * part matches any name in that folder ("tasks/*.prompt.md"). They ride with the hand-off.
+   */
   writes: z.array(z.string().min(1)).default([]),
   /** The change type's artifacts of the phase that this stage writes: on the stage path, only these are due. */
   artifacts: z.array(ChangeArtifact).default([]),
@@ -63,7 +66,7 @@ const DEFAULT_STAGES: StageStep[] = [
     phase: "define",
     loop: "stage/feature.yaml",
     command: "atticus change feature <change>",
-    writes: ["feature.yaml", "feature.md", "design/"],
+    writes: ["feature.yaml", "feature.md", "proposal.md", "design/"],
     artifacts: [],
   },
   {
@@ -71,7 +74,7 @@ const DEFAULT_STAGES: StageStep[] = [
     phase: "design",
     loop: "stage/architecture.yaml",
     command: "atticus change architecture <change>",
-    writes: ["target-flows/"],
+    writes: ["target-flows/", "stage/architecture-deploy.yaml", "stage/architecture-reads.yaml"],
     artifacts: ["design", "data"],
   },
   {
@@ -79,10 +82,34 @@ const DEFAULT_STAGES: StageStep[] = [
     phase: "plan",
     loop: "stage/stories.yaml",
     command: "atticus plan stories <change>",
-    writes: ["requests.md", "stage/stories-answer.yaml"],
+    writes: [
+      "requests.md",
+      "proposal.md",
+      "needs.yaml",
+      "needs.md",
+      "specs/",
+      "tasks/*.prompt.md",
+      "stage/stories-answer.yaml",
+    ],
     artifacts: ["stories", "tasks"],
   },
 ];
+
+/** Whether a stage's write entry is a pattern ("tasks/*.prompt.md") rather than a file or folder. */
+export const isWritePattern = (w: string): boolean => w.includes("*");
+
+/** Whether a path in the change folder is one a stage's write entry names. */
+export function writeMatches(w: string, path: string): boolean {
+  if (w.endsWith("/")) return path.startsWith(w);
+  if (!isWritePattern(w)) return path === w;
+  const re = new RegExp(
+    `^${w
+      .split("*")
+      .map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join("[^/]*")}$`,
+  );
+  return re.test(path);
+}
 
 const Privacy = z.strictObject({
   role: RecordId.default("privacy-officer"),

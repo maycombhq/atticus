@@ -13,7 +13,7 @@ import {
 import type { ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
 import type { Footprint } from "./footprint.js";
-import type { StageStep } from "./policy.js";
+import { isWritePattern, writeMatches, type StageStep } from "./policy.js";
 import { isFilled } from "./markdown.js";
 import { changeFolder } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
@@ -174,7 +174,13 @@ export async function checkStage(
       return reason(`${step.loop} doesn't read as a stage's loop state: run ${run} again.`);
   }
   const out: Reason[] = [];
-  for (const w of step.writes.filter((x) => !x.endsWith("/") && !x.startsWith("stage/")))
+  // A folder, a pattern, the loop's own files and a type's artifact (proposal.md, which the
+  // artifacts the stage writes decide) aren't due by name: the stage writes them when it has them.
+  const artifactFile = new Set(Object.values(FILE));
+  for (const w of step.writes.filter(
+    (x) =>
+      !x.endsWith("/") && !x.startsWith("stage/") && !isWritePattern(x) && !artifactFile.has(x),
+  ))
     if (
       !(await readFile(join(dir, ...w.split("/"))).then(
         () => true,
@@ -192,7 +198,10 @@ export async function stageFiles(dir: string, step: StageStep): Promise<string[]
   const out: string[] = [];
   for (const w of [...step.writes, step.loop]) {
     if (w.endsWith("/")) out.push(...(await walk(dir, w.slice(0, -1))));
-    else if (
+    else if (isWritePattern(w)) {
+      const parent = w.split("/").slice(0, -1).join("/");
+      out.push(...(await walk(dir, parent)).filter((p) => writeMatches(w, p)));
+    } else if (
       await readFile(join(dir, ...w.split("/"))).then(
         () => true,
         () => false,
