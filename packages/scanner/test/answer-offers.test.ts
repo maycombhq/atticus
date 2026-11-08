@@ -72,7 +72,7 @@ describe("answerRuleOffers (ADR 0162)", () => {
       repos: ["forge-cards", "forge-payments"],
       match: "/limits/**",
       type: "spring-boot",
-      command: `atticus questions answer ${first.id} --option 2 --match /limits/** --scope repo-type --type spring-boot`,
+      command: `atticus questions answer ${first.id} --option 2 --match "/limits/**" --scope repo-type --type spring-boot`,
     });
     expect(o).not.toHaveProperty("note");
     expect(o!.line).toContain(

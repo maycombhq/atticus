@@ -1783,7 +1783,7 @@ export function answerRuleOffers(input: {
     // claim the reader writes from a person's words, not from code (ADR 0163 notes say what terms
     // mean); with no rule to offer (no match, or no type the repos share) nothing is offered.
     if (!match || !type) continue;
-    const command = `atticus questions answer ${first.id} ${pick} --match ${match} --scope repo-type --type ${type}`;
+    const command = `atticus questions answer ${first.id} ${pick} --match "${match}" --scope repo-type --type ${type}`;
     out.push({
       via,
       label,

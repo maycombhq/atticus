@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -227,6 +227,25 @@ describe("starting atticus", { timeout: 120_000 }, () => {
       });
       expect(c.file === "node" || c.file.endsWith("atticus.cmd"), JSON.stringify(c)).toBe(true);
     }
+  });
+
+  it("reads the offline bundle's shim, exactly as the bundle writes it", async () => {
+    // The line install.ps1 writes, taken from the generator so the two can't drift apart.
+    const gen = await readFile(
+      join(__dirname, "..", "..", "..", "scripts", "bundle", "offline-bundle.mjs"),
+      "utf8",
+    );
+    const line = /atticus\.cmd"\) -Value "(.*)"$/m.exec(gen)![1]!;
+    const version = "2.0.0-beta.21";
+    const shim = line.replace(/\\`"/g, '"').replace(/\\\\/g, "\\").replace("$version", version);
+    expect(shim).toBe('@node "%~dp0..\\2.0.0-beta.21\\dist\\bin.js" %*');
+    const dir = await mkdtemp(join(tmpdir(), "atticus-bundle-"));
+    const js = join(dir, version, "dist", "bin.js");
+    await mkdir(join(js, ".."), { recursive: true });
+    await writeFile(js, "");
+    await mkdir(join(dir, "bin"));
+    await writeFile(join(dir, "bin", "atticus.cmd"), `${shim}\r\n`);
+    expect(shimTarget(join(dir, "bin", "atticus.cmd"))).toBe(js);
   });
 
   it("quotes what it logs, and reads the one JSON object", () => {

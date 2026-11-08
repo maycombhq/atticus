@@ -48,7 +48,8 @@ class CommandLine(
         /** The command line as a person would type it, for the log. */
         fun text(args: List<String>): String = "atticus " + args.joinToString(" ") { quote(it) }
 
-        private val RELATIVE_JS = Regex("\"%~?dp0%?\\\\([^\"]*?\\.[cm]?js)\"", RegexOption.IGNORE_CASE)
+        // npm's and pnpm's "%~dp0\node_modules\…\bin.js", or the offline bundle's "%~dp0..\<version>\dist\bin.js".
+        private val RELATIVE_JS = Regex("\"%~?dp0%?\\\\?([^\"]*?\\.[cm]?js)\"", RegexOption.IGNORE_CASE)
         private val ABSOLUTE_JS = Regex("\"((?:[A-Za-z]:\\\\|/)[^\"]*?\\.[cm]?js)\"", RegexOption.IGNORE_CASE)
     }
 

@@ -214,7 +214,7 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
   );
 }
 
-function StepDetail({ step, done }: { step: Step; done: () => void }) {
+export function StepDetail({ step, done }: { step: Step; done: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const copyAll = useAction();
@@ -302,28 +302,46 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
         </div>
       )}
       {step.state === "open" ? (
-        <form onSubmit={submit} className="stack">
-          <span className="hud" style={{ fontSize: 10 }}>
-            {T.whenItsDoneRecord}
-          </span>
-          <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
-            {step.result.map((f) => (
-              <label key={f.name} className="run-label" htmlFor={`r-${step.id}-${f.name}`}>
-                {f.label}
-                {f.required ? "" : T.optional}
-                <ResultInput
-                  f={f}
-                  id={`r-${step.id}-${f.name}`}
-                  value={values[f.name] ?? ""}
-                  onChange={(v) => setValues((x) => ({ ...x, [f.name]: v }))}
-                />
-              </label>
-            ))}
-            <button type="submit" className="btn primary" disabled={act.busy}>
-              {T.markDone}
-            </button>
-          </div>
-          <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div className="stack">
+          <form onSubmit={submit} className="stack">
+            <span className="hud" style={{ fontSize: 10 }}>
+              {T.whenItsDoneRecord}
+            </span>
+            <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+              {step.result.map((f) => (
+                <label key={f.name} className="run-label" htmlFor={`r-${step.id}-${f.name}`}>
+                  {f.label}
+                  {f.required ? "" : T.optional}
+                  <ResultInput
+                    f={f}
+                    id={`r-${step.id}-${f.name}`}
+                    value={values[f.name] ?? ""}
+                    onChange={(v) => setValues((x) => ({ ...x, [f.name]: v }))}
+                  />
+                </label>
+              ))}
+              <button type="submit" className="btn primary" disabled={act.busy}>
+                {T.markDone}
+              </button>
+            </div>
+          </form>
+          {/* Its own form: Enter in the reason skips the step, never marks it done. */}
+          <form
+            className="row"
+            style={{ flexWrap: "wrap", alignItems: "flex-end" }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!note.trim() || act.busy) return;
+              void act.run(
+                () =>
+                  api(`/api/todo/${step.id}/done`, {
+                    method: "POST",
+                    body: { skip: true, note, ...(step.change ? { change: step.change } : {}) },
+                  }).then(done),
+                T.skippedStep(step.id),
+              );
+            }}
+          >
             <label className="run-label" htmlFor={`skip-${step.id}`} style={{ flex: "1 1 240px" }}>
               {T.reasonToSkip}
               <input
@@ -333,27 +351,13 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
                 onChange={(e) => setNote(e.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className="btn"
-              disabled={act.busy || !note.trim()}
-              onClick={() =>
-                void act.run(
-                  () =>
-                    api(`/api/todo/${step.id}/done`, {
-                      method: "POST",
-                      body: { skip: true, note, ...(step.change ? { change: step.change } : {}) },
-                    }).then(done),
-                  T.skippedStep(step.id),
-                )
-              }
-            >
+            <button type="submit" className="btn" disabled={act.busy || !note.trim()}>
               {T.skipWithThisReason}
             </button>
-          </div>
+          </form>
           <Note note={act.note} />
           <LocalTool step={step} done={done} />
-        </form>
+        </div>
       ) : (
         <p className="run-note ok">
           {T.byOn(

@@ -314,7 +314,11 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
                 },
               });
               // What the manifest holds now: a second save in the same form is its own, not stale.
-              setShown({ defaultBranch: def, branches: branchesOf(branches) });
+              // As the server keeps them: the default trimmed, an empty one left as it was.
+              setShown({
+                defaultBranch: def.trim() || shown.defaultBranch,
+                branches: branchesOf(branches),
+              });
               onChanged?.();
               return res;
             }, R.saved);

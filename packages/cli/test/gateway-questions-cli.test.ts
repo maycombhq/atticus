@@ -100,7 +100,7 @@ describe("old-shape target questions on a gateway estate (beta.12, ADR 0168)", (
     const shown = await questions(root, ["show", OLD.putAccount]);
     expect(shown.code).toBe(0);
     expect(shown.out).toContain(
-      `  Answer once for all 3: atticus questions answer ${OLD.putAccount} --option <n> --match '/accounts/**' covers the 3 calls of these 3 questions, and the other 2 retire on the next verify --write (${OLD.getAccount}, ${OLD.putStatus}).`,
+      `  Answer once for all 3: atticus questions answer ${OLD.putAccount} --option <n> --match "/accounts/**" covers the 3 calls of these 3 questions, and the other 2 retire on the next verify --write (${OLD.getAccount}, ${OLD.putStatus}).`,
     );
     const json = await questions(root, ["show", OLD.tellerRename, "--json"]);
     expect(JSON.parse(json.out.join("\n")).rule).toEqual({

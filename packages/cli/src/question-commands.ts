@@ -128,7 +128,7 @@ export function ruleOfferLine(
   r: NonNullable<RoutedQuestions["about"][string]["rule"]>,
 ): string {
   const others = r.ids.length - 1;
-  return `  Answer once for all ${r.ids.length}: atticus questions answer ${id} --option <n> --match '${r.match}' covers the ${plural(r.calls, "call")} of these ${r.ids.length} questions, and the other ${others === 1 ? "one retires" : `${others} retire`} on the next verify --write (${r.ids.filter((x) => x !== id).join(", ")}).`;
+  return `  Answer once for all ${r.ids.length}: atticus questions answer ${id} --option <n> --match "${r.match}" covers the ${plural(r.calls, "call")} of these ${r.ids.length} questions, and the other ${others === 1 ? "one retires" : `${others} retire`} on the next verify --write (${r.ids.filter((x) => x !== id).join(", ")}).`;
 }
 
 /** The lines `atticus questions list` prints for one question; `change`: it is a change's. */

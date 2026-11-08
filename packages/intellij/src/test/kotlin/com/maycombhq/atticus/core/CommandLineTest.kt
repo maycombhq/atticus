@@ -59,7 +59,16 @@ class CommandLineTest {
     }
 
     @Test
-    fun `reads the offline bundle's shim, which names its bin js in full`() {
+    fun `reads the offline bundle's shim, which finds its version beside itself`() {
+        // As scripts/bundle/offline-bundle.mjs writes it: no path in it, so an accented profile folder is safe.
+        val js = write("Atticus/2.0.0-beta.21/dist/bin.js")
+        write("Atticus/bin/atticus.cmd", "@node \"%~dp0..\\2.0.0-beta.21\\dist\\bin.js\" %*\r\n")
+        val l = windows(dir.resolve("Atticus/bin")).resolve("atticus", dir.toString())
+        assertEquals(Launch("node", listOf(js.toString())), l)
+    }
+
+    @Test
+    fun `reads an older bundle's shim, which named its bin js in full`() {
         val js = write("Atticus/1.0.0/dist/bin.js")
         write("Atticus/bin/atticus.cmd", "@node \"$js\" %*\r\n")
         val l = windows(dir.resolve("Atticus/bin")).resolve("atticus", dir.toString())

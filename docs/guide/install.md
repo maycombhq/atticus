@@ -199,7 +199,13 @@ That next pass is best done in a fresh session, which holds only what the first 
 A repo of a few thousand files with a few thousand facts needs a few hundred megabytes while it is verified. If `atticus verify` says a repo's facts need more memory than Node was given, run it again with more, or a repo at a time:
 
 ```bash
-ATTICUS_MAX_OLD_SPACE=4096 atticus verify <repo> --write   # megabytes Node may use
+# megabytes Node may use. bash, Git Bash, macOS:
+ATTICUS_MAX_OLD_SPACE=4096 atticus verify <repo> --write
+# PowerShell:
+$env:ATTICUS_MAX_OLD_SPACE=4096; atticus verify <repo> --write
+# cmd (two lines: "set X=4096 &&" would keep the space before && in the value):
+set ATTICUS_MAX_OLD_SPACE=4096
+atticus verify <repo> --write
 ```
 
 Closing an IDE usually frees enough on its own. Atticus checks its own memory as it reads and stops with that message, so the command never dies without saying anything.

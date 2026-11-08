@@ -45,9 +45,10 @@ export function shimTarget(cmdFile: string): string | undefined {
   } catch {
     return undefined;
   }
-  const m = /"%~?dp0%?\\([^"]*?\.[cm]?js)"/i.exec(text);
+  // npm's and pnpm's "%~dp0\node_modules\…\bin.js", or the offline bundle's "%~dp0..\<version>\dist\bin.js".
+  const m = /"%~?dp0%?\\?([^"]*?\.[cm]?js)"/i.exec(text);
   if (!m) return undefined;
-  const js = resolve(dirname(cmdFile), m[1]!);
+  const js = resolve(dirname(cmdFile), m[1]!.replace(/\\/g, "/"));
   return isFile(js) ? js : undefined;
 }
 
