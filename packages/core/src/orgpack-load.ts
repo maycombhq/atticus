@@ -207,16 +207,48 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     profiles.push({ platform, ...(profile ? { profile } : {}), ...(repos ? { repos } : {}) });
   }
 
-  const many = async <T>(sub: string, re: RegExp, schema: z.ZodType<T>) => {
+  // Review round 41: the file each loaded record came from, relative to the pack, so a problem
+  // names the real file (a record's id need not be its file name, and subfolders are read).
+  // Kept here, beside the records: the C6 records themselves stay as validated.
+  const fileOf = new WeakMap<object, string>();
+  const many = async <T extends object>(sub: string, re: RegExp, schema: z.ZodType<T>) => {
     const out: T[] = [];
     for (const f of await listFiles(join(dir, sub), re)) {
       const v = await load(f, schema);
-      if (v) out.push(v);
+      if (!v) continue;
+      fileOf.set(v, rel(f));
+      out.push(v);
     }
     return out;
   };
+  const fileFor = (v: object, fallback: string) => fileOf.get(v) ?? fallback;
+  /**
+   * Review round 41: two files of one name (a copy in a subfolder, say) are a problem on the
+   * later file, naming the first; only the first is loaded, as files are read in order.
+   */
+  const firstOfName = <T extends object>(items: T[], nameOf: (v: T) => string, what: string) => {
+    const seen = new Map<string, string>();
+    return items.filter((v) => {
+      const name = nameOf(v);
+      const first = seen.get(name);
+      if (first === undefined) {
+        seen.set(name, fileFor(v, ""));
+        return true;
+      }
+      problems.push({
+        file: fileFor(v, ""),
+        path: "name",
+        message: `${what} ${name} is also in ${first}; only that one is loaded`,
+      });
+      return false;
+    });
+  };
   const patterns = await many("patterns", /\.ya?ml$/, IntegrationPattern);
-  const dialects = await many("dialects", /\.ya?ml$/, Dialect);
+  const dialects = firstOfName(
+    await many("dialects", /\.ya?ml$/, Dialect),
+    (d) => d.name,
+    "dialect",
+  );
   const frameworks = await many("frameworks", /\.ya?ml$/, FrameworkModel);
   // One file per repo, named after it: a file whose repo doesn't match its name is refused.
   const scanSettings: ScanSettings[] = [];
@@ -265,7 +297,29 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
       });
     else modelProviders.push({ manifest: v, dir: join(mpRoot, e.name) });
   }
-  const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
+  // A rule id is one rule across the packs (findings name it): a later pack that
+  // reuses one is not loaded, as the review would refuse it, and each clash names both files.
+  const ruleFile = new Map<string, string>();
+  const checklists = firstOfName(
+    await many("checklists", /\.ya?ml$/, ChecklistPack),
+    (c) => c.name,
+    "checklist pack",
+  ).filter((c) => {
+    const file = fileFor(c, "");
+    const clashes = c.rules.flatMap((r, i) => {
+      const first = ruleFile.get(r.id);
+      return first === undefined ? [] : [{ i, id: r.id, first }];
+    });
+    for (const x of clashes)
+      problems.push({
+        file,
+        path: `rules.${x.i}.id`,
+        message: `rule ${x.id} is also in ${x.first}; this pack is not loaded`,
+      });
+    if (clashes.length) return false;
+    for (const r of c.rules) ruleFile.set(r.id, file);
+    return true;
+  });
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
   const procedures = await many("process/procedures", /\.ya?ml$/, Procedure);
   const agents = await many("agents", /\.ya?ml$/, AgentDefinition);
@@ -446,7 +500,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     for (const r of p.checklist)
       if (!ruleIds.has(r))
         problems.push({
-          file: `patterns/${p.code}.yaml`,
+          file: fileFor(p, `patterns/${p.code}.yaml`),
           path: "checklist",
           message: `no checklist rule ${r}`,
         });
@@ -473,7 +527,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     for (const e of d.extends)
       if (!dialectNames.has(e))
         problems.push({
-          file: `dialects/${d.name}.yaml`,
+          file: fileFor(d, `dialects/${d.name}.yaml`),
           path: "extends",
           message: `no dialect ${e}`,
         });
@@ -491,23 +545,24 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     for (const a of s.alsoNeeds)
       if (!snowIds.has(a))
         problems.push({
-          file: `process/snow/${s.id}.yaml`,
+          file: fileFor(s, `process/snow/${s.id}.yaml`),
           path: "alsoNeeds",
           message: `no template ${a}`,
         });
   }
-  const procedureIds = new Set<string>();
+  const procedureIds = new Map<string, string>();
   for (const p of procedures) {
-    if (procedureIds.has(p.id))
+    const firstFile = procedureIds.get(p.id);
+    if (firstFile !== undefined)
       problems.push({
-        file: `process/procedures/${p.id}.yaml`,
+        file: fileFor(p, `process/procedures/${p.id}.yaml`),
         path: "id",
-        message: `duplicate procedure ${p.id}`,
+        message: `duplicate procedure ${p.id} (also in ${firstFile})`,
       });
-    procedureIds.add(p.id);
+    else procedureIds.set(p.id, fileFor(p, `process/procedures/${p.id}.yaml`));
     if (p.template && !snowIds.has(p.template))
       problems.push({
-        file: `process/procedures/${p.id}.yaml`,
+        file: fileFor(p, `process/procedures/${p.id}.yaml`),
         path: "template",
         message: `no template ${p.template}`,
       });
@@ -516,20 +571,20 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   for (const a of agents) {
     if (a.checklist && !packNames.has(a.checklist))
       problems.push({
-        file: `agents/${a.id}.yaml`,
+        file: fileFor(a, `agents/${a.id}.yaml`),
         path: "checklist",
         message: `no checklist pack named ${a.checklist}`,
       });
     if (!a.allowedRuntimes.some((r) => allowedModes.has(r))) {
       problems.push({
-        file: `agents/${a.id}.yaml`,
+        file: fileFor(a, `agents/${a.id}.yaml`),
         path: "allowedRuntimes",
         message: "none of its runtimes is allowed by runtime.yaml",
       });
     }
     if (!roleIds.has(a.role))
       problems.push({
-        file: `agents/${a.id}.yaml`,
+        file: fileFor(a, `agents/${a.id}.yaml`),
         path: "role",
         message: `unknown role ${a.role}`,
       });

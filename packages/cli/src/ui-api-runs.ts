@@ -110,6 +110,13 @@ export function uiModelRunRoutes(
           throw conflict(
             "This server's runtime.yaml configures no model, so it can't run an AI step. Run it in your assistant (its slash command), or from VS Code with Copilot.",
           );
+        // Round 41: one AI step at a time (as a Copilot run checks): two at once would each take
+        // the other's run as the one it made. Checked and started in one tick.
+        const busy = ctx.jobs.runningOf("step");
+        if (busy)
+          throw conflict(
+            `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
+          );
         const job = ctx.jobs.start("step", async (c) => {
           c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
           // The run the step made: the newest one that wasn't there before it.

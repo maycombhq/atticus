@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
-import { startServer, type RunningServer } from "@maycombhq/server";
+import { startServer, type RunningServer, type ServerContext } from "@maycombhq/server";
 import { uiModelRunRoutes } from "../src/ui-api-runs.js";
 
 /**
@@ -101,6 +101,7 @@ const post = async (path: string, body: unknown) => {
 };
 const setModel = (yaml: string) => writeFile(join(root, "org-pack", "runtime.yaml"), yaml);
 
+let srvCtx: ServerContext;
 let first: string;
 let second: string;
 let third: string;
@@ -128,7 +129,10 @@ beforeAll(async () => {
     root,
     user: "pat",
     version: "1.0.0",
-    extend: (r, ctx) => uiModelRunRoutes(r, ctx, { runStep: fakeStep }),
+    extend: (r, ctx) => {
+      srvCtx = ctx;
+      return uiModelRunRoutes(r, ctx, { runStep: fakeStep });
+    },
   });
 });
 afterAll(async () => srv?.close());
@@ -217,6 +221,30 @@ describe("model runs (ADR 0106)", () => {
       expect((await post("/api/runs", { args: ["scan", "survey", "--force"] })).status).toBe(400);
       expect((await post("/api/runs", { args: [] })).status).toBe(400);
       expect(started).toHaveLength(1);
+    });
+
+    // Round 41: one AI step at a time; a second would also take the other's run as its own.
+    it("refuses a second AI step while one runs, naming the one that runs", async () => {
+      await setModel("schemaVersion: 1\nadapters:\n  model: { type: anthropic }\n");
+      let release!: () => void;
+      const busy = srvCtx.jobs.start("step", () => new Promise<void>((x) => (release = x)));
+      const before = started.length;
+      try {
+        const r = await post("/api/runs", { args: ["scan", "survey", "forge-ledger"] });
+        expect(r.status).toBe(409);
+        expect(String(r.body.detail)).toContain(busy.id);
+        expect(String(r.body.detail)).toMatch(/AI step is running/);
+        expect(started).toHaveLength(before);
+      } finally {
+        release();
+        await srvCtx.jobs.settle(busy.id);
+      }
+      expect((await post("/api/runs", { args: ["scan", "survey", "forge-ledger"] })).status).toBe(
+        202,
+      );
+      for (let i = 0; i < 50 && started.length === before; i++)
+        await new Promise((x) => setTimeout(x, 20));
+      await srvCtx.jobs.settle(srvCtx.jobs.runningOf("step")?.id ?? busy.id);
     });
 
     it("gives the step the configured model's limit when runtime.yaml says it (ADR 0112)", async () => {

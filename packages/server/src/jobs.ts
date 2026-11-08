@@ -38,17 +38,24 @@ export class JobManager {
   private cancelledIds = new Set<string>();
   private aborts = new Map<string, AbortController>();
   private seq = 0;
-  private running = new Map<JobKind, string>();
+  /** Round 41: every running job of a kind, in start order (a later one never hides an earlier). */
+  private running = new Map<JobKind, Set<string>>();
 
   constructor(
     private readonly publish: Publish,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  /** The running job of a kind, if any (one scan at a time: a second asks gets 409). */
+  /**
+   * A running job of a kind, if any: the earliest still running (one scan at a time: a second
+   * ask gets 409).
+   */
   runningOf(kind: JobKind): Job | undefined {
-    const id = this.running.get(kind);
-    return id ? this.jobs.get(id) : undefined;
+    for (const id of this.running.get(kind) ?? []) {
+      const j = this.jobs.get(id);
+      if (j?.state === "running") return j;
+    }
+    return undefined;
   }
 
   get(id: string): Job | undefined {
@@ -66,7 +73,9 @@ export class JobManager {
       errors: [],
     };
     this.jobs.set(id, job);
-    this.running.set(kind, id);
+    const ofKind = this.running.get(kind) ?? new Set<string>();
+    ofKind.add(id);
+    this.running.set(kind, ofKind);
     const abort = new AbortController();
     this.aborts.set(id, abort);
     const cancelled = this.cancelledIds;
@@ -94,7 +103,8 @@ export class JobManager {
       }
       this.aborts.delete(id);
       job.finishedAt = this.now().toISOString();
-      if (this.running.get(kind) === id) this.running.delete(kind);
+      ofKind.delete(id);
+      if (!ofKind.size && this.running.get(kind) === ofKind) this.running.delete(kind);
       this.publish({ type: "job.done", jobId: id, state: job.state });
     })();
     return job;

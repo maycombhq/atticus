@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.67.0",
+    "version": "2.68.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -5381,6 +5381,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5530,6 +5540,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5666,6 +5686,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6742,7 +6772,7 @@
       },
       "post": {
         "operationId": "startStep",
-        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
+        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs",
         "tags": [
           "ai"
         ],
