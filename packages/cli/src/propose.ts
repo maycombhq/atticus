@@ -1,4 +1,6 @@
-import { relative } from "node:path";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { join, relative } from "node:path";
 import {
   catalogDirOf,
   factsDirOf,
@@ -33,8 +35,10 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
   const facts = rel(root, factsDirOf(root));
   const catalog = rel(root, catalogDirOf(root));
   switch (scope) {
+    // An answer also writes in the org pack (a repo type's skill file, a host in the manifest,
+    // an outside system in a profile): its PR carries those too (review round 35).
     case "answers":
-      return [rel(root, questionsDirOf(root)), facts, catalog];
+      return [rel(root, questionsDirOf(root)), facts, catalog, rel(root, orgPackDirOf(root))];
     case "corrections":
       return [facts, catalog];
     case "audit":
@@ -46,7 +50,8 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
 
 export interface ProposePlan {
   scope: ProposeScope;
-  files: { path: string; status: string }[];
+  /** A rename's old path is `from`: proposing the new one records the old one's removal. */
+  files: { path: string; status: string; from?: string }[];
   branch: string;
   title: string;
 }
@@ -74,16 +79,20 @@ export async function proposePlan(
       root,
     )
   ).stdout;
-  const files: { path: string; status: string }[] = [];
+  const files: { path: string; status: string; from?: string }[] = [];
   const parts = out.split("\0");
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i]!;
     if (e.length < 4) continue;
     const status = e.slice(0, 2).trim() || "M";
-    files.push({ path: e.slice(3), status });
-    if (status.startsWith("R")) i++; // a rename's old path follows; the new one is kept
+    // A rename's old path follows it (with -z): kept as `from`, so its removal goes too.
+    if (status.startsWith("R")) files.push({ path: e.slice(3), status, from: parts[++i]! });
+    else files.push({ path: e.slice(3), status });
   }
-  const day = (o.now ?? new Date()).toISOString().slice(0, 10);
+  // Review round 35: each proposal its own branch (a second one the same day isn't added to
+  // the first's PR).
+  const stamp = (o.now ?? new Date()).toISOString();
+  const day = `${stamp.slice(0, 10)}-${stamp.slice(11, 19).replace(/:/g, "")}`;
   const who = (o.by ?? "someone")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -104,6 +113,8 @@ export async function proposeForReview(
     by: string;
     files: string[];
     title?: string;
+    /** The branch the person was shown (GET's plan); a new one is made when it isn't one of ours. */
+    branch?: string;
     git?: GitRunner;
     gitHost?: GitHost;
     publisher?: HandoffPublisher;
@@ -116,9 +127,14 @@ export async function proposeForReview(
     ...(o.now ? { now: o.now } : {}),
     by: o.by,
   });
-  const seen = new Set(plan.files.map((f) => f.path));
-  const files = o.files.filter((f) => seen.has(f));
-  if (!files.length) {
+  if (o.branch && new RegExp(`^propose/${o.scope}/[0-9a-z-]+$`).test(o.branch))
+    plan.branch = o.branch;
+  const seen = new Map(plan.files.map((f) => [f.path, f] as const));
+  const picked = o.files.filter((f) => seen.has(f));
+  const files = [
+    ...new Set(picked.flatMap((f) => [f, ...(seen.get(f)!.from ? [seen.get(f)!.from!] : [])])),
+  ];
+  if (!picked.length) {
     io.err("Nothing to propose: none of those files has a change now. Look at the list again.");
     return 2;
   }
@@ -151,23 +167,104 @@ export async function proposeForReview(
       `The branch ${plan.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}): push it yourself before the PR is opened.`,
     );
   }
-  const pr = await gitHost.createPullRequest(
-    {
-      repo,
-      head: plan.branch,
-      base,
-      title,
-      body: [
-        `${title}, proposed from the Atticus app by ${o.by}.`,
-        "",
-        "Files:",
-        ...files.map((f) => `- ${f}`),
-        "",
-        "A person reviews and merges this PR; Atticus never merges.",
-      ].join("\n"),
-    },
-    approval,
-  );
+  // A host's refusal (an open PR from this branch, a branch it can't see) is said, with what was
+  // already done, never a 500 (review round 35).
+  let pr: { number: number; url: string };
+  try {
+    pr = await gitHost.createPullRequest(
+      {
+        repo,
+        head: plan.branch,
+        base,
+        title,
+        body: [
+          `${title}, proposed from the Atticus app by ${o.by}.`,
+          "",
+          "Files:",
+          ...files.map((f) => `- ${f}`),
+          "",
+          "A person reviews and merges this PR; Atticus never merges.",
+        ].join("\n"),
+      },
+      approval,
+    );
+  } catch (e) {
+    io.err(`The PR wasn't opened: ${(e as Error).message.split("\n")[0]}`);
+    return 1;
+  }
   io.out(`PR #${pr.number} is open for review: ${pr.url}`);
+  io.out("When it merges, Bring in what merged updates your copy of the metarepo.");
+  return 0;
+}
+
+/**
+ * Review round 35: after a proposal (or a hand-off) merges, the person's copy still has the same
+ * edits uncommitted, so `git pull` refuses. Each changed file whose content is already what the
+ * upstream branch has is put back (tracked) or set aside (new), then the branch fast-forwards.
+ * Files with edits the upstream doesn't have are left as they are and named.
+ */
+export async function bringInMerged(
+  root: string,
+  io: Output,
+  o: { git?: GitRunner } = {},
+): Promise<number> {
+  const git = o.git ?? createGit();
+  const run = async (args: string[]) => (await git(args, root)).stdout;
+  const up = (
+    await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")
+  ).trim();
+  if (!up) {
+    io.err("This branch follows no remote branch, so there is nothing to bring in.");
+    return 2;
+  }
+  const remote = up.split("/")[0]!;
+  await run(["fetch", "--quiet", remote]);
+  const status = await run([
+    "-c",
+    "core.quotePath=false",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+  ]);
+  const parts = status.split("\0");
+  const kept: string[] = [];
+  let tidied = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i]!;
+    if (e.length < 4) continue;
+    const st = e.slice(0, 2);
+    const path = e.slice(3);
+    if (st.startsWith("R")) {
+      i++;
+      kept.push(path);
+      continue;
+    }
+    const theirs = (
+      await run(["rev-parse", "--verify", "--quiet", `${up}:${path}`]).catch(() => "")
+    ).trim();
+    const mine = existsSync(join(root, path))
+      ? (await run(["hash-object", "--", path]).catch(() => "")).trim()
+      : "";
+    if (!theirs || theirs !== mine) {
+      kept.push(path);
+      continue;
+    }
+    if (st === "??") await rm(join(root, path), { force: true });
+    else await run(["checkout", "HEAD", "--", path]);
+    tidied++;
+  }
+  try {
+    await run(["merge", "--ff-only", "--quiet", up]);
+  } catch (e) {
+    io.err(
+      `Your copy couldn't be brought up to ${up}: ${(e as Error).message.split("\n")[0]}${kept.length ? `. Your own edits stay: ${kept.join(", ")}` : ""}`,
+    );
+    return 1;
+  }
+  io.out(
+    `Brought in what merged on ${up}${tidied ? ` (${tidied} file${tidied === 1 ? "" : "s"} were already the same)` : ""}.`,
+  );
+  if (kept.length) io.out(`Your own edits stay as they were: ${kept.join(", ")}.`);
   return 0;
 }

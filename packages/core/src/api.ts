@@ -191,8 +191,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.65.0 (ADR 0183): POST /api/facts/{repo}/apply runs verify --write; GET and POST
  *   /api/propose list what a kind of work changed and, on the person's yes, push it to a branch
  *   and open the PR. Additive only.
- * 2.66.0 (UX review): POST /api/runs takes `mode: hand-off`, which prepares the step for the
- *   person's own assistant (201 with its run) where no model is configured. Additive only.
+ * 2.66.0 (UX review, round 35): POST /api/runs/handoff prepares a step for the person's own
+ *   assistant (201 with its run) where no model is configured; POST /api/propose/bring-in
+ *   brings in what merged; a proposal takes the branch it was shown; a hand-off's ChangeDetail
+ *   carries its `notes`. Additive only.
  */
 export const API_VERSION = "2.66.0";
 export const DEFAULT_PORT = 4321;
@@ -540,6 +542,8 @@ export const ChangeSummary = z.object({
 });
 
 export const ChangeDetail = ChangeSummary.extend({
+  /** 2.66.0 (review round 35): what a hand-off said, such as a branch it couldn't push. */
+  notes: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactStatus),
   repos: z.array(RecordId),
   workspace: ChangeRepos.optional(),
@@ -609,11 +613,9 @@ export const RunListItem = RunView.extend({
 });
 export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
-export const StartStepRequest = z.object({
-  args: z.array(z.string().min(1)).min(2),
-  /** 2.66.0 (UX review): hand-off prepares the step for the person's own assistant (201, its run). */
-  mode: z.enum(["model", "hand-off"]).optional(),
-});
+export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
+/** 2.66.0 (UX review): the step prepared for the person's own assistant, and its run. */
+export const PreparedStepView = z.object({ runId: z.string(), lines: z.array(z.string()) });
 export type StartStepRequest = z.infer<typeof StartStepRequest>;
 
 export const RunList = z.object({
@@ -2220,7 +2222,7 @@ export const NewChangeRequest = z.strictObject({
 export const ProposeScope = z.enum(["answers", "corrections", "audit", "org-pack"]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
-  files: z.array(z.object({ path: z.string(), status: z.string() })),
+  files: z.array(z.object({ path: z.string(), status: z.string(), from: z.string().optional() })),
   branch: z.string(),
   title: z.string(),
 });
@@ -2229,6 +2231,8 @@ export const ProposeRequest = z.strictObject({
   /** Exactly the files the person saw listed; one that changed back since is left out. */
   files: z.array(z.string().min(1)).min(1),
   title: z.string().max(200).optional(),
+  /** The branch GET's plan showed, so the PR is on the branch the person saw. */
+  branch: z.string().max(200).optional(),
 });
 export const LinesView = z.object({
   code: z.number().int().optional(),
@@ -4425,7 +4429,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       params: [q("scope", str, "answers, corrections, audit or org-pack")],
       ok: { status: 200, schema: "ProposePlanView", description: "OK" },
-      errors: [422],
+      errors: [400, 422],
     },
     post: {
       id: "proposeForReview",
@@ -4435,6 +4439,16 @@ const OPS: Record<string, Record<string, Op>> = {
       body: ProposeRequest,
       ok: { status: 201, schema: "LinesView", description: "Proposed" },
       errors: [400, 422],
+    },
+  },
+  "/api/propose/bring-in": {
+    post: {
+      id: "bringInMerged",
+      summary:
+        "2.66.0 (review round 35): after a proposal or hand-off merges, put back each edit the upstream branch already has and fast-forward; the person's own edits stay",
+      tag: "workspace",
+      ok: { status: 200, schema: "LinesView", description: "Brought in" },
+      errors: [422],
     },
   },
   "/api/change-types": {
@@ -4594,7 +4608,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "startStep",
       summary:
-        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured. 2.66.0: mode hand-off prepares it for the person's own assistant instead (201, with the run)",
+        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
       tag: "ai",
       body: StartStepRequest,
       ok: {
@@ -4602,7 +4616,18 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: { type: "object", required: ["jobId", "model"] },
         description: "Started",
       },
-      errors: [400, 409, 422],
+      errors: [400, 409],
+    },
+  },
+  "/api/runs/handoff": {
+    post: {
+      id: "prepareStep",
+      summary:
+        "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+      tag: "ai",
+      body: StartStepRequest,
+      ok: { status: 201, schema: "PreparedStepView", description: "Prepared" },
+      errors: [400, 422],
     },
   },
   "/api/links/candidates": {
@@ -5585,6 +5610,7 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeSummary,
     ChangeTypeView,
     ProposePlanView,
+    PreparedStepView,
     ProposeRequest,
     LinesView,
     ChangeDetail,

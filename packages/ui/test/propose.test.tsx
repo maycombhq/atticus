@@ -57,6 +57,10 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
     "/api/propose?scope=answers",
     "/api/propose",
   ]);
-  expect(calls[2]!.body).toEqual({ scope: "answers", files: ["questions/q1.yaml"] });
+  expect(calls[2]!.body).toEqual({
+    scope: "answers",
+    files: ["questions/q1.yaml"],
+    branch: "propose/answers/2026-11-08-pat",
+  });
   expect(text(n.tree)).toContain("PR #7 is open for review");
 });

@@ -26,7 +26,7 @@ it("prepares the step as a hand-off and links to its run", async () => {
   (b.props.onClick as () => void)();
   await new Promise((r) => setTimeout(r, 0));
   m.render();
-  expect(posted).toEqual([{ args: ["plan", "stories", "c1"], mode: "hand-off" }]);
+  expect(posted).toEqual([{ args: ["plan", "stories", "c1"] }]);
   const link = all(m.tree).find((e) => e.type === "a")!;
   expect(link.props.href).toBe("#/runs?run=run-9");
 });

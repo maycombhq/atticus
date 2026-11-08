@@ -116,8 +116,14 @@ export function GateHeader(p: {
                 onClick={() =>
                   void act.run(
                     () =>
-                      api(`/api/changes/${p.id}/handoff`, { method: "POST", body: {} }).then(done),
-                    T.handOffPrRaised,
+                      api<{ notes?: string[] }>(`/api/changes/${p.id}/handoff`, {
+                        method: "POST",
+                        body: {},
+                      }).then((r) => {
+                        done();
+                        return r;
+                      }),
+                    (r) => [T.handOffPrRaised, ...(r.notes ?? [])].join(" "),
                   )
                 }
               >

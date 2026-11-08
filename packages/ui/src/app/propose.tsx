@@ -7,7 +7,7 @@ const P = COPY.propose;
 type Scope = "answers" | "corrections" | "audit" | "org-pack";
 interface Plan {
   scope: Scope;
-  files: { path: string; status: string }[];
+  files: { path: string; status: string; from?: string }[];
   branch: string;
   title: string;
 }
@@ -65,12 +65,15 @@ export function Propose({ scope }: { scope: Scope }) {
   const id = useId();
   if (done)
     return (
-      <div role="status" className="stack" style={{ gap: 4 }}>
-        {done.map((l) => (
-          <p key={l} style={{ margin: 0 }}>
-            {l}
-          </p>
-        ))}
+      <div className="stack" style={{ gap: 4 }}>
+        <div role="status" className="stack" style={{ gap: 4 }}>
+          {done.map((l) => (
+            <p key={l} style={{ margin: 0 }}>
+              {l}
+            </p>
+          ))}
+        </div>
+        <BringIn />
       </div>
     );
   if (!plan)
@@ -131,7 +134,7 @@ export function Propose({ scope }: { scope: Scope }) {
                 void send.run(async () => {
                   const r = await api<{ lines: string[] }>("/api/propose", {
                     method: "POST",
-                    body: { scope, files: files.map((f) => f.path) },
+                    body: { scope, files: files.map((f) => f.path), branch: plan.branch },
                   });
                   setDone(r.lines);
                 }, P.proposed)
@@ -150,5 +153,33 @@ export function Propose({ scope }: { scope: Scope }) {
       )}
       <Note note={send.note} />
     </section>
+  );
+}
+
+/** Review round 35: after a proposal or hand-off merges, the person's copy catches up. */
+export function BringIn() {
+  const act = useAction();
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <div className="row" style={{ gap: 6, alignItems: "center" }}>
+        <button
+          type="button"
+          className="btn"
+          disabled={act.busy}
+          onClick={() =>
+            void act.run(
+              () => api<{ lines: string[] }>("/api/propose/bring-in", { method: "POST", body: {} }),
+              (r) => r.lines.join(" "),
+            )
+          }
+        >
+          {act.busy ? P.bringingIn : P.bringIn}
+        </button>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {P.bringInWhy}
+        </span>
+      </div>
+      <Note note={act.note} />
+    </div>
   );
 }

@@ -83,28 +83,12 @@ export function uiModelRunRoutes(
       );
       return { code, out, err };
     });
-  return r
-    .add("POST", "/api/runs", async ({ body }) => {
-      const args = (body as { args?: unknown } | undefined)?.args;
-      if (
-        !Array.isArray(args) ||
-        args.length < 2 ||
-        !args.every((a) => typeof a === "string" && a.trim() !== "")
-      )
-        throw badRequest(
-          'args is the step\'s command words and arguments, for example ["scan", "survey", "forge-ledger"].',
-        );
-      const words = args as string[];
-      if (!isHandoffStep(words[0], words[1]))
-        throw badRequest(
-          `atticus ${words.slice(0, 2).join(" ")} isn't an AI step; the app starts only those.`,
-        );
-      const option = words.find((a) => a.startsWith("-"));
-      if (option)
-        throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
+  return (
+    r
       // UX review: in a browser with no model, the step is prepared for the person's own
       // assistant (`--handoff`): the run's page shows its prompt, and Done checks the answer.
-      if ((body as { mode?: unknown }).mode === "hand-off") {
+      .add("POST", "/api/runs/handoff", async ({ body }) => {
+        const words = stepWords(body);
         const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
         const res = await runStep([...words, "--handoff"]);
         const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
@@ -116,52 +100,77 @@ export function uiModelRunRoutes(
             [...res.err, ...res.out].join("\n") || "The step prepared no run.",
           );
         return { status: 201, body: { runId: made.runId, lines: [...res.out, ...res.err] } };
-      }
-      const configured = await configuredModel(root);
-      const model = configured?.type;
-      if (!model)
-        throw conflict(
-          "This server's runtime.yaml configures no model, so it can't run an AI step. Run it in your assistant (its slash command), or from VS Code with Copilot.",
-        );
-      const job = ctx.jobs.start("step", async (c) => {
-        c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
-        // The run the step made: the newest one that wasn't there before it.
-        const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
-        const res = await runStep([
-          ...words,
-          "--mode",
-          "model",
-          ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
-        ]);
-        const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
-        c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
-        ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+      })
+      .add("POST", "/api/runs", async ({ body }) => {
+        const words = stepWords(body);
+        const configured = await configuredModel(root);
+        const model = configured?.type;
+        if (!model)
+          throw conflict(
+            "This server's runtime.yaml configures no model, so it can't run an AI step. Run it in your assistant (its slash command), or from VS Code with Copilot.",
+          );
+        const job = ctx.jobs.start("step", async (c) => {
+          c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
+          // The run the step made: the newest one that wasn't there before it.
+          const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
+          const res = await runStep([
+            ...words,
+            "--mode",
+            "model",
+            ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
+          ]);
+          const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
+          c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+          ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+          return {
+            result: {
+              code: res.code,
+              lines: [...res.out, ...res.err],
+              ...(made ? { runId: made.runId } : {}),
+            },
+            errors: res.code === 0 ? [] : res.err,
+          };
+        });
+        return { status: 202, body: { jobId: job.id, model } };
+      })
+      .add("GET", "/api/runs", async ({ query }) => {
+        const change = query.get("change") ?? undefined;
+        const limitText = query.get("limit");
+        const limit = limitText === null ? 200 : Number(limitText);
+        if (!Number.isInteger(limit) || limit < 1)
+          throw badRequest("limit is a whole number of 1 or more.");
+        const runs = await listRuns(root, { ...(change ? { change } : {}), limit });
         return {
-          result: {
-            code: res.code,
-            lines: [...res.out, ...res.err],
-            ...(made ? { runId: made.runId } : {}),
-          },
-          errors: res.code === 0 ? [] : res.err,
+          status: 200,
+          body: { runs, serverModel: await serverModel(root) } satisfies Api.RunList,
         };
-      });
-      return { status: 202, body: { jobId: job.id, model } };
-    })
-    .add("GET", "/api/runs", async ({ query }) => {
-      const change = query.get("change") ?? undefined;
-      const limitText = query.get("limit");
-      const limit = limitText === null ? 200 : Number(limitText);
-      if (!Number.isInteger(limit) || limit < 1)
-        throw badRequest("limit is a whole number of 1 or more.");
-      const runs = await listRuns(root, { ...(change ? { change } : {}), limit });
-      return {
-        status: 200,
-        body: { runs, serverModel: await serverModel(root) } satisfies Api.RunList,
-      };
-    })
-    .add("GET", "/api/runs/{runId}/transcript", async ({ params }) => {
-      const t = await runTranscript(root, params.runId!);
-      if (!t) throw notFound(`There is no run ${params.runId}.`);
-      return { status: 200, body: t };
-    });
+      })
+      .add("GET", "/api/runs/{runId}/transcript", async ({ params }) => {
+        const t = await runTranscript(root, params.runId!);
+        if (!t) throw notFound(`There is no run ${params.runId}.`);
+        return { status: 200, body: t };
+      })
+  );
+}
+
+/** The step's command words from a request body, refused unless an AI step with no options. */
+function stepWords(body: unknown): string[] {
+  const args = (body as { args?: unknown } | undefined)?.args;
+  if (
+    !Array.isArray(args) ||
+    args.length < 2 ||
+    !args.every((a) => typeof a === "string" && a.trim() !== "")
+  )
+    throw badRequest(
+      'args is the step\'s command words and arguments, for example ["scan", "survey", "forge-ledger"].',
+    );
+  const words = args as string[];
+  if (!isHandoffStep(words[0], words[1]))
+    throw badRequest(
+      `atticus ${words.slice(0, 2).join(" ")} isn't an AI step; the app starts only those.`,
+    );
+  const option = words.find((a) => a.startsWith("-"));
+  if (option)
+    throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
+  return words;
 }

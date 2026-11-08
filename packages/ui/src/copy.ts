@@ -3712,6 +3712,10 @@ export const COPY = {
     proposing: "Proposing…",
     proposed: "Proposed for review.",
     cancel: "Not now",
+    bringIn: "Bring in what merged",
+    bringingIn: "Bringing it in…",
+    bringInWhy:
+      "When the PR has merged: your copy of the metarepo catches up, and your own edits stay.",
     whoMerges:
       "A person reviews and merges it on the Git host; Atticus never merges. Your click is your approval to push the branch.",
   },

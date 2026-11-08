@@ -346,7 +346,7 @@ export function RunStep({ command }: { command: string }) {
   );
 }
 
-/** Prepares an AI step as a hand-off (POST /api/runs, mode hand-off) and links to its run. */
+/** Prepares an AI step as a hand-off (POST /api/runs/handoff) and links to its run. */
 export function HandoffStep({ args }: { args: string[] }) {
   const [state, set] = useState<
     { s: "idle" } | { s: "working" } | { s: "ready"; runId: string } | { s: "error"; why: string }
@@ -371,9 +371,9 @@ export function HandoffStep({ args }: { args: string[] }) {
           aria-describedby={`${id}-why`}
           onClick={() => {
             set({ s: "working" });
-            api<{ runId: string }>("/api/runs", {
+            api<{ runId: string }>("/api/runs/handoff", {
               method: "POST",
-              body: { args, mode: "hand-off" },
+              body: { args },
             })
               .then((r) => set({ s: "ready", runId: r.runId }))
               .catch((e: unknown) => set({ s: "error", why: why(e) }));

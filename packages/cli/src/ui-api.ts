@@ -358,12 +358,24 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const res = await run((io) =>
           proposeForReview(
             root,
-            { scope: b.scope, by: user, files: b.files, ...(b.title ? { title: b.title } : {}) },
+            {
+              scope: b.scope,
+              by: user,
+              files: b.files,
+              ...(b.title ? { title: b.title } : {}),
+              ...(b.branch ? { branch: b.branch } : {}),
+            },
             io,
           ),
         );
         if (res.code !== 0) throw refused(res);
         return { status: 201, body: { lines: res.out } };
+      })
+      .add("POST", "/api/propose/bring-in", async () => {
+        const { bringInMerged } = await import("./propose.js");
+        const res = await run((io) => bringInMerged(root, io));
+        if (res.code !== 0) throw refused(res);
+        return { status: 200, body: { code: 0, lines: res.out } };
       })
       .add("GET", "/api/change-types", async () => {
         const op = await loadOrgPack(orgPackDirOf(root));
@@ -516,7 +528,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           ),
         );
         if (res.code !== 0) throw refused(res);
-        return { status: 201, body: await changeDetail(root, params.changeId!) };
+        // Review round 35: what the hand-off said (a branch it couldn't push) reaches the page.
+        return {
+          status: 201,
+          body: { ...(await changeDetail(root, params.changeId!)), notes: res.out },
+        };
       })
       .add("POST", "/api/changes/{changeId}/sync", async ({ params, body }) => {
         await readChange(root, params.changeId!);

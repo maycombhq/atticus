@@ -293,13 +293,13 @@ export function message(e: unknown): string {
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
-  const run = async (f: () => Promise<unknown>, ok: string) => {
+  const run = async <R,>(f: () => Promise<R>, ok: string | ((r: R) => string)) => {
     setBusy(true);
     // Say at once that it started: some steps take a while, and a still page reads as a dead click.
     setNote({ ok: true, text: COPY.app.working, working: true });
     try {
-      await f();
-      setNote({ ok: true, text: ok });
+      const r = await f();
+      setNote({ ok: true, text: typeof ok === "function" ? ok(r) : ok });
     } catch (e) {
       setNote({ ok: false, text: message(e) });
     } finally {

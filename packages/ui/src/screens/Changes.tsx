@@ -563,10 +563,14 @@ function Detail({ id }: { id: string }) {
                         onClick={() =>
                           void handoff.run(
                             () =>
-                              api(`/api/changes/${id}/handoff`, { method: "POST", body: {} }).then(
-                                reloadAll,
-                              ),
-                            T.handOffPrOpened,
+                              api<{ notes?: string[] }>(`/api/changes/${id}/handoff`, {
+                                method: "POST",
+                                body: {},
+                              }).then((r) => {
+                                reloadAll();
+                                return r;
+                              }),
+                            (r) => [T.handOffPrOpened, ...(r.notes ?? [])].join(" "),
                           )
                         }
                       >

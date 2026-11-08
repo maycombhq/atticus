@@ -254,10 +254,10 @@ describe("a step prepared for the person's own assistant (UX review)", () => {
     });
     try {
       await setModel("schemaVersion: 1\n");
-      const r = await fetch(s.url + "/api/runs", {
+      const r = await fetch(s.url + "/api/runs/handoff", {
         method: "POST",
         headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
-        body: JSON.stringify({ args: ["plan", "stories", "add-limit"], mode: "hand-off" }),
+        body: JSON.stringify({ args: ["plan", "stories", "add-limit"] }),
       });
       const body = (await r.json()) as { runId?: string; lines?: string[] };
       expect(r.status, JSON.stringify(body)).toBe(201);

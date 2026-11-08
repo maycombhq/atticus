@@ -5022,6 +5022,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or wrong session token",
             "content": {
@@ -5077,6 +5087,10 @@
                   "title": {
                     "type": "string",
                     "maxLength": 200
+                  },
+                  "branch": {
+                    "type": "string",
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -5105,6 +5119,47 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/propose/bring-in": {
+      "post": {
+        "operationId": "bringInMerged",
+        "summary": "2.66.0 (review round 35): after a proposal or hand-off merges, put back each edit the upstream branch already has and fast-forward; the person's own edits stay",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "Brought in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinesView"
                 }
               }
             }
@@ -6197,7 +6252,7 @@
       },
       "post": {
         "operationId": "startStep",
-        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured. 2.66.0: mode hand-off prepares it for the person's own assistant instead (201, with the run)",
+        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
         "tags": [
           "ai"
         ],
@@ -6215,13 +6270,6 @@
                       "type": "string",
                       "minLength": 1
                     }
-                  },
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "model",
-                      "hand-off"
-                    ]
                   }
                 },
                 "required": [
@@ -6268,6 +6316,70 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/handoff": {
+      "post": {
+        "operationId": "prepareStep",
+        "summary": "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+        "tags": [
+          "ai"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "minItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Prepared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedStepView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21225,6 +21337,9 @@
                 },
                 "status": {
                   "type": "string"
+                },
+                "from": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -21249,6 +21364,25 @@
         ],
         "additionalProperties": false
       },
+      "PreparedStepView": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "runId",
+          "lines"
+        ],
+        "additionalProperties": false
+      },
       "ProposeRequest": {
         "type": "object",
         "properties": {
@@ -21270,6 +21404,10 @@
             }
           },
           "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "branch": {
             "type": "string",
             "maxLength": 200
           }
@@ -21383,6 +21521,12 @@
           },
           "fastPath": {
             "type": "boolean"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "artifacts": {
             "type": "array",
