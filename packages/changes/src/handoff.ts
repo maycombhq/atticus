@@ -163,11 +163,24 @@ async function handoffFiles(
  * nothing to the PR's diff, so carrying all of them each time is the simple rule that never
  * leaves one behind. Open and retired ones don't ride.
  */
+/** Whether a command is a step of the change `id` (the change's id as one of its words). */
+export function namesChange(command: string | undefined, id: string): boolean {
+  const w = (command ?? "").trim().split(/\s+/);
+  if (w[0] !== "atticus") return false;
+  const changeStep = w[1] === "change" || w[1] === "plan" || w[1] === "critic";
+  return changeStep && w.slice(2).includes(id);
+}
+
 async function changeQuestionFiles(root: string, id: string): Promise<string[]> {
   const { questions } = await listQuestions(root, { state: "answered" });
   const rel = questionsRelOf(root);
+  // Round 44: a question is this change's when the step that asked it, or the one its answer
+  // runs again, is a step of this change (`atticus change <step> <id>`, `atticus plan <step>
+  // <id>`, `atticus critic <id>`): never by its repo field alone, which a repo's own map
+  // question shares when a change's id is a repo's, and which a stage files under the repo a
+  // question is about.
   return questions
-    .filter((q) => q.repo === id || (q.scope.level === "repo" && q.scope.id === id))
+    .filter((q) => namesChange(q.askedBy.command, id) || namesChange(q.rerun, id))
     .map((q) => `${rel}/${q.id}.yaml`)
     .sort();
 }

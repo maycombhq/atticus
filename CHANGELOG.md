@@ -54,6 +54,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 44 (review):
+  - **A change's hand-off carries the questions its own steps asked**, matched by the step (`atticus change <step> <id>`, `atticus plan <step> <id>`, `atticus critic <id>`), never by the repo field: a stage's question about a repo rides with the change, and a repo's own map question never does, even when a change shares the repo's name.
+  - **Setting the org pack's owner keeps pack.yaml's line endings** (Windows CRLF stays CRLF), in the app and on the command line.
+  - **A regex grep whose call has used its whole time stops as cut** ("the search stopped at its cap of files, bytes or time"), not as a pattern that is too slow.
 - Round 43 (review, release plan):
   - **The deployment plan orders a retired interface**, in release: a `planned-retire` hop in interfaces.md was ignored, so the plan could deploy the callee (removing the operation) before its caller stopped calling it, with no gap. The caller's step now says it stops calling the operation and the callee's that it retires it, and the caller deploys first (the reverse of a new or changed operation). When that order fights another dependency (a new operation the other way, or a story dependency), the plan says so with the "depend on each other … agree one and write it in design.md" gap. Golden `packages/release/test/fixtures/expected/plan-retire.yaml`, tests in `packages/release/test/release.test.ts`.
 - Round 43 (review, grep and paths):

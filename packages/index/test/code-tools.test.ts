@@ -143,6 +143,26 @@ describe("the code tools (ADR 0118)", () => {
     ix.close();
   }, 10_000);
 
+  it("grep stops as cut, not a bad pattern, once the call's time is spent (round 44)", async () => {
+    const root = await vaultRoot();
+    const ix = await openIndex(root);
+    const bounds = CONTEXT_TOOL_BOUNDS as { grepRegexTotalMs: number };
+    const total = bounds.grepRegexTotalMs;
+    bounds.grepRegexTotalMs = 0;
+    try {
+      const r = await call(ix, root, "grep", {
+        pattern: "@ForgeServiceBase",
+        regex: true,
+        repo: "forge-vault",
+      });
+      expect(r).toMatch(/the search stopped at its cap/);
+      expect(r).not.toMatch(/took too long/);
+    } finally {
+      bounds.grepRegexTotalMs = total;
+      ix.close();
+    }
+  });
+
   it("grep keeps to its caps and says what it cut", async () => {
     const root = await vaultRoot();
     const ix = await openIndex(root);

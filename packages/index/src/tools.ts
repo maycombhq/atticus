@@ -995,22 +995,28 @@ const REGEX_LINES = new Script(
  * pattern that backtracks without end is interrupted, not left to hang the MCP server's queue or
  * a scan. Each file gets at most grepRegexMs, the call grepRegexTotalMs in all.
  */
-function regexMatcher(pattern: string, flags: string): (lines: string[]) => number[] {
+function regexMatcher(pattern: string, flags: string): (lines: string[]) => number[] | undefined {
   const B = CONTEXT_TOOL_BOUNDS;
   const context = createContext({ pattern, flags, lines: [] as string[] });
   runInContext("globalThis.re = new RegExp(pattern, flags);", context);
   let spent = 0;
+  // Round 44: a call whose whole budget is spent stops as cut (undefined), as the byte cap does;
+  // only a file that runs out of its own time says the pattern is too slow.
   return (lines) => {
-    const timeout = Math.max(1, Math.min(B.grepRegexMs, B.grepRegexTotalMs - spent));
+    const left = B.grepRegexTotalMs - spent;
+    if (left < 1) return undefined;
+    const timeout = Math.min(B.grepRegexMs, left);
     context.lines = lines;
     const started = performance.now();
     try {
       return Array.from(REGEX_LINES.runInContext(context, { timeout }) as ArrayLike<number>);
     } catch (e) {
-      if ((e as { code?: string }).code === "ERR_SCRIPT_EXECUTION_TIMEOUT")
+      if ((e as { code?: string }).code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
+        if (timeout < B.grepRegexMs) return undefined;
         throw new ContextToolError(
           `The pattern ${pattern} took too long; make it simpler (no quantifier inside a repeated group, such as (a+)+).`,
         );
+      }
       throw e;
     } finally {
       context.lines = [];
@@ -1030,7 +1036,7 @@ async function grepTool(
   if (pattern.length > B.grepPattern)
     throw new ContextToolError(`A grep pattern is at most ${B.grepPattern} characters.`);
   const ignoreCase = input.ignoreCase === true;
-  let matching: (lines: string[]) => Iterable<number>;
+  let matching: (lines: string[]) => Iterable<number> | undefined;
   if (input.regex === true) {
     try {
       new RegExp(pattern, ignoreCase ? "i" : "");
@@ -1073,7 +1079,12 @@ async function grepTool(
         .toString("utf8")
         .split(/\r?\n/)
         .map((l) => l.slice(0, 2000));
-      for (const i of matching(lines)) {
+      const found = matching(lines);
+      if (!found) {
+        cut = true;
+        return false;
+      }
+      for (const i of found) {
         const line = lines[i]!;
         if (hits.length >= limit) {
           more = true;
@@ -1097,7 +1108,7 @@ async function grepTool(
     ...hits,
     ...(more ? [`… more hits past the ${limit} shown; narrow the pattern or the paths.`] : []),
     ...(cut
-      ? [`… the search stopped at its cap of files or bytes; name a repo or narrower paths.`]
+      ? [`… the search stopped at its cap of files, bytes or time; name a repo or narrower paths.`]
       : []),
     "Show the lines around a hit with show_code (repo, path, line). A hit is a pointer, not a fact: a fact cites its file and line, and Atticus checks the value there.",
   ].join("\n");

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseDocument } from "yaml";
-import { orgPackDirOf, writeFileIfUnchanged } from "@maycombhq/core";
+import { eolOf, inEol, orgPackDirOf, writeFileIfUnchanged } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 
@@ -52,7 +52,7 @@ export async function setOrgPackOwner(
       `pack.yaml's owner changed since you opened the form (now ${current || "unassigned"}): look again, then save.`,
     );
   doc.set("owner", h);
-  await writeFileIfUnchanged(file, text, doc.toString({ lineWidth: 0 }));
+  await writeFileIfUnchanged(file, text, inEol(doc.toString({ lineWidth: 0 }), eolOf(text)));
   return { file: rel, owner: h };
 }
 
@@ -90,7 +90,8 @@ export async function orgPackOwnerCli(
     return 2;
   }
   doc.set("owner", h);
-  await writeFile(file, doc.toString({ lineWidth: 0 }), "utf8");
+  // Round 44: a Windows pack.yaml keeps its line endings.
+  await writeFile(file, inEol(doc.toString({ lineWidth: 0 }), eolOf(text)), "utf8");
   io.out(
     `${h} now looks after the org pack. Commit ${rel} through a pull request; its owner approves changes to it.`,
   );
