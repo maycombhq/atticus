@@ -241,3 +241,105 @@ describe("a comment on a finding", () => {
     );
   });
 });
+
+/**
+ * Eighth UX walk (2.76.0): the feature stage's placement on the Feature design page. feature.md
+ * is drawn from feature.yaml; the page shows the one, a person edits the other, and the page
+ * says whether the AI drafted it at the feature stage or a person saved it since.
+ */
+describe("the feature stage's placement", () => {
+  const PLACED = `# The feature placed against the estate (ADR 0087). Drafted by atticus change feature; review it in the feature PR.
+schemaVersion: 1
+change: ${CHANGE}
+entry: brief
+summary: Customers set a daily transfer limit, and the ledger refuses a transfer over it.
+features: []
+flows:
+  - id: ledger.post-transfer
+    why: Posting a transfer checks the limit first.
+    how: changed
+newFlows: []
+gaps:
+  - what: No limit for business accounts
+    why: The brief names personal accounts only.
+conflicts: []
+questions: []
+`;
+
+  it("is empty before the feature stage placed the change", async () => {
+    const r = await call("GET", `/api/changes/${CHANGE}/placement`);
+    expect(r.status).toBe(200);
+    expect(Api.PlacementView.parse(r.body)).toMatchObject({
+      change: CHANGE,
+      present: false,
+      file: `${REL}/feature.md`,
+      content: "",
+      source: `${REL}/feature.yaml`,
+      sourceContent: "",
+    });
+    expect(r.body.drafted).toBeUndefined();
+  });
+
+  it("gives feature.md and feature.yaml, drafted by the AI at the feature stage", async () => {
+    await writeFile(join(root, REL, "feature.yaml"), PLACED);
+    await writeFile(join(root, REL, "feature.md"), "# Feature\n\nCustomers set a daily limit.\n");
+    const v = Api.PlacementView.parse((await call("GET", `/api/changes/${CHANGE}/placement`)).body);
+    expect(v).toMatchObject({
+      present: true,
+      content: "# Feature\n\nCustomers set a daily limit.\n",
+      sourceContent: PLACED,
+      drafted: { by: "ai" },
+    });
+    expect(v.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("saves a person's edit to feature.yaml, draws feature.md from it, and says who saved it", async () => {
+    const v = Api.PlacementView.parse((await call("GET", `/api/changes/${CHANGE}/placement`)).body);
+    const edited = v.sourceContent.replace(
+      "The brief names personal accounts only.",
+      "The brief names personal accounts only; business limits come later.",
+    );
+    const r = await call("PUT", `/api/changes/${CHANGE}/placement`, {
+      content: edited,
+      baseSha256: v.sha256,
+    });
+    expect(r.status).toBe(200);
+    const saved = Api.PlacementView.parse(r.body);
+    expect(saved.drafted).toEqual({ by: "person", who: PERSON, at: NOW.toISOString() });
+    expect(saved.content).toContain("business limits come later");
+    expect(saved.content).toContain("Flow ledger.post-transfer (changed)");
+    const yaml = await readFile(join(root, REL, "feature.yaml"), "utf8");
+    expect(yaml.split("\n")[0]).toBe(
+      `# The feature placed against the estate (ADR 0087). Edited by ${PERSON} on ${NOW.toISOString()}; review it in the feature PR.`,
+    );
+    expect(yaml).toContain("business limits come later");
+    expect(yaml.match(/^# The feature placed/gm)).toHaveLength(1);
+    expect(await readFile(join(root, REL, "feature.md"), "utf8")).toBe(saved.content);
+  });
+
+  it("refuses a save against an old copy, and text that isn't a placement", async () => {
+    const v = Api.PlacementView.parse((await call("GET", `/api/changes/${CHANGE}/placement`)).body);
+    expect(
+      (
+        await call("PUT", `/api/changes/${CHANGE}/placement`, {
+          content: v.sourceContent,
+          baseSha256: "0".repeat(64),
+        })
+      ).status,
+    ).toBe(409);
+    const bad = await call("PUT", `/api/changes/${CHANGE}/placement`, {
+      content: "summary: [not, a, placement",
+      baseSha256: v.sha256,
+    });
+    expect(bad.status).toBe(422);
+    const wrong = await call("PUT", `/api/changes/${CHANGE}/placement`, {
+      content: v.sourceContent.replace("entry: brief", "entry: guesswork"),
+      baseSha256: v.sha256,
+    });
+    expect(wrong.status).toBe(422);
+    expect(JSON.stringify(wrong.body)).toContain("entry");
+    // Nothing was written.
+    expect(await readFile(join(root, REL, "feature.yaml"), "utf8")).toBe(v.sourceContent);
+    expect((await call("GET", "/api/changes/no-such-change/placement")).status).toBe(404);
+  });
+});

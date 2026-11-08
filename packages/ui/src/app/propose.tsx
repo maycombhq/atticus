@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
+import { focusIfLost } from "./ui.js";
 import { Note, useAction } from "../screens/know/common.js";
 
 const P = COPY.propose;
@@ -125,10 +126,15 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
   const look = useAction();
   const send = useAction();
   const id = useId();
+  // Eighth UX walk: Push and open the PR goes once it is done; its lines take the keyboard.
+  const pushed = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (done) focusIfLost(pushed.current);
+  }, [done]);
   if (done)
     return (
       <div className="stack" style={{ gap: 4 }}>
-        <div role="status" className="stack" style={{ gap: 4 }}>
+        <div ref={pushed} tabIndex={-1} role="status" className="stack" style={{ gap: 4 }}>
           {done.map((l) => (
             <p key={l} style={{ margin: 0 }}>
               {l}

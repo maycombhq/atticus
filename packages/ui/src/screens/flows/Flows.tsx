@@ -5,7 +5,7 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
-import { Command } from "../work/RunNext.js";
+import { Command, PrepareFirst } from "../work/RunNext.js";
 import { Citation, EvidenceProvider } from "../../app/evidence.js";
 import { useFullScreen } from "../../app/viewer.js";
 import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
@@ -384,7 +384,14 @@ export function TargetList(p: { list: Api.TargetFlowListT; current: string | und
   return (
     <div className="stack">
       {p.list.flows.length === 0 ? (
-        <div className="state">{C.noTargets(p.list.change)}</div>
+        <div className="state">
+          <p style={{ margin: "0 0 8px" }}>{C.noTargets(p.list.change)}</p>
+          {/* Eighth UX walk: a button, not only words for a terminal. */}
+          <PrepareFirst
+            command={`atticus change architecture ${p.list.change}`}
+            slash={`/atticus-architecture ${p.list.change}`}
+          />
+        </div>
       ) : (
         <ul className="flow-list">
           {p.list.flows.map((f) => (

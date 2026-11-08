@@ -154,7 +154,7 @@ export const COPY = {
     changeIntro:
       "The flows this change adds, changes or removes, each drawn beside today's: added steps say Added, changed ones say Changed with what they did before, removed ones say Removed and are struck through.",
     noTargets: (change: string) =>
-      `${change} has no target flows yet. Run atticus change architecture ${change}, or /atticus-architecture in Copilot Chat or Claude Code.`,
+      `${change} has no target flows yet. The change's architecture stage writes them:`,
     targetsTitle: "Target flows",
     targetCounts: (added: number, changed: number, removed: number) =>
       [
@@ -1628,12 +1628,39 @@ export const COPY = {
     noChangeYet: "No change yet. Start one with New change, or on the command line:",
     noChangeTitle: "No change yet",
     /** UX review: the stage's work is on these pages. */
-    openBreakdown: "Write stories with AI",
-    openBreakdownWhy: "on Breakdown, with the story bar and what no story covers yet.",
+    /** Eighth UX walk: one path to write stories, the stories stage's Prepare; Breakdown reads. */
+    openBreakdown: "Open Breakdown",
+    openBreakdownWhy: "for the story bar and what no story covers yet.",
     /** Seventh UX walk: the stories themselves, on the Stories tab, each with Edit. */
     storiesIndex: "The stories",
     storyFile: (id: string) => `Story ${id}`,
-    noStoryFiles: "No story is written yet: write them with AI on Breakdown.",
+    noStoryFiles: "No story is written yet: Prepare the stories stage above to write them.",
+    /** Eighth UX walk: the feature stage's placement (feature.md) on Feature design. */
+    placementTitle: "Where the feature lands",
+    placementText: "feature.md, where the feature lands",
+    placementNotYet:
+      "The feature stage hasn't placed this change yet. Its run writes feature.md here: the feature in a few sentences, the flows it touches and the gaps.",
+    placementNotDrawn:
+      "feature.md isn't drawn yet. Save in Edit, or the stage's next run, draws it from feature.yaml.",
+    draftedByAi: "Drafted by AI",
+    draftedByAiWhy:
+      "Drafted by AI at the feature stage, and no person has edited it here since. Read it before the hand-off; Edit changes feature.yaml, which the stage's next run reads.",
+    editedBy: (who: string) => `Edited by ${who}`,
+    editedByPerson: "Edited by a person",
+    editedByWhy: (who: string, day: string) =>
+      `${who} saved feature.yaml${day ? ` on ${day}` : ""}; feature.md is drawn from it.`,
+    editedByHand: "feature.yaml was edited outside the app; feature.md is drawn from it.",
+    editPlacement: "Edit",
+    editPlacementLabel: "Edit feature.yaml, where the feature lands",
+    placementEditTitle: "Edit feature.yaml",
+    placementSourceHint:
+      "feature.md is drawn from feature.yaml. Change the summary, the flows and the gaps here: Save checks it still reads as a placement and draws feature.md again, and the stage's next run reads your edit.",
+    placementSourceLabel: "feature.yaml text",
+    placementSave: "Save",
+    placementCancel: "Cancel",
+    placementClose: "Close",
+    placementSaved:
+      "Saved feature.yaml and drew feature.md from it. Both ride the feature hand-off.",
     openTaskBoard: "Run tasks with AI",
     openTaskBoardWhy:
       "on the Task board: each task runs on its repo and ends as a pull request a person approves.",
@@ -2040,6 +2067,12 @@ export const COPY = {
     text: (artifact: string | number) => `${artifact} text`,
     save: "Save",
     close: "Close",
+    /** Eighth UX walk: an editor with unsaved text offers Cancel, which leaves the file as it was. */
+    cancel: "Cancel",
+    /** Eighth UX walk: the template's guidance (its comments), shown beside the text. */
+    templateAsks: "What the template asks for",
+    /** Eighth UX walk: said once the finding has left the list of open ones. */
+    recordedOn: (action: string, id: string) => `Recorded on ${id}: ${action}.`,
     ifSomeoneSavedMeanwhile:
       "If someone saved meanwhile, Atticus refuses the save and asks you to reload.",
     edit: (artifact: string | number) => `Edit ${artifact}`,
@@ -2806,7 +2839,23 @@ export const COPY = {
     barMet: "BAR MET",
     needs: (v: string | number) => `NEEDS ${v}%`,
     noStoryCovers: (what: string | number) => `No story covers: ${what}`,
-    noStoriesYetWrite: "No stories yet. Write them with AI from the approved design.",
+    noStoriesYetWrite: "No stories yet. The stories stage writes them from the approved design.",
+    /** Eighth UX walk: one path to write stories, the stories stage; Breakdown links to it. */
+    storiesAtTheStage:
+      "Stories and tasks are written at the stories stage: Prepare on its tab runs it with your assistant, and the critic checks each draft. You edit them there before the plan gate.",
+    storiesStageDone:
+      "The stories stage is done. Read and edit the stories on its tab; it offers Run again if they need redrafting.",
+    openStoriesStage: "Open the stories stage",
+    /** Eighth UX walk: a task's PR, recorded or waiting on a person to open it. */
+    taskPrToOpen: "PR TO OPEN",
+    taskPrOpenChip: (n: number) => `PR #${n} OPEN`,
+    taskPrWaitsOnYou: "Its PR waits on you to open it on the Git host, a step in",
+    markedDoneBy: (who: string, day: string) =>
+      `Marked done by ${who}${day ? ` on ${day}` : ""}. The tick rides the change's build hand-off.`,
+    markedNotDoneBy: (who: string, day: string) =>
+      `Marked not done by ${who}${day ? ` on ${day}` : ""}.`,
+    noCodeYet: "NO CODE YET",
+    noCodeYetWhy: "No task has run yet, so there is no code to compare with the design and plans.",
     storyBar: "Story bar",
     theStoryWriterDrafts:
       "The story writer drafts stories, acceptance criteria and repo tasks from the approved design. You edit them before the plan gate.",
@@ -2847,7 +2896,7 @@ export const COPY = {
     taskUnverified: (repo: string, branch: string, base: string) =>
       `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: set ${repo}'s build command on Set up › Repos and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
     taskWaiting: "Your assistant has it: Done on its run checks the work.",
-    taskPrOpen: "Its PR is raised:",
+    taskPrOpen: "Its PR is open:",
     /** Review round 43: the Git host says the task's PR is merged or closed. */
     taskPrStateChip: { merged: "PR MERGED", closed: "PR CLOSED" } as Record<string, string>,
     taskPrMerged:
@@ -3608,6 +3657,9 @@ export const COPY = {
       "One line, run in the repo's folder, for example ./gradlew test or npm ci && npm test. A task's PR is raised only after it passes.",
     setBuild: "Set the build command",
     changeBuild: "Change the build command",
+    /** Eighth UX walk: each repo's button names its repo (its visible words first, WCAG 2.5.3). */
+    setBuildFor: (repo: string) => `Set the build command for ${repo}`,
+    changeBuildFor: (repo: string) => `Change the build command for ${repo}`,
     buildOneLine: "One line: join the steps with &&.",
     buildSaved:
       "Saved to the manifest: propose it for review. Run the repo's drafted tasks again to build and test them.",
@@ -3823,6 +3875,12 @@ export const COPY = {
     workItem: "work item",
     choose: "Choose",
     patDana: "pat, dana",
+    /**
+     * Eighth UX walk: on a manual Git host anyone may type who approved; who recorded it is said
+     * beside it, so an author recording someone else's approval shows.
+     */
+    approvalRecordedBy: (approvers: string, by: string) =>
+      `Approved by ${approvers}, as recorded by ${by}. A manual Git host's approvals are what a person records here.`,
     localTool: "LOCAL TOOL",
     aToolOnThe:
       "A tool on the allow-list can do this step for you. You approve the exact inputs; it gets no credentials.",
@@ -4893,6 +4951,10 @@ export const COPY = {
     next: "Then run the stage again",
     nextWhy:
       "It reads your answers, comments and choices, drafts again where they ask, and the critic checks the new draft.",
+    /** Eighth UX walk: a stage that is done offers a fresh run only under a disclosure. */
+    runAgain: "Run the stage again",
+    runAgainWhy:
+      "The stage is done. Run it again only to redraft: it reads your answers and comments, and the critic checks the new draft.",
     pickForArchitecture: "Pick a change to see what the critic found in its architecture.",
   },
 } as const;

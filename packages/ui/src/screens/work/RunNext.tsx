@@ -36,6 +36,30 @@ export function Command({
   );
 }
 
+/**
+ * Eighth UX walk: an AI step offered outside Run next (a stage's critic panel, the breaks panel,
+ * the target flows): the in-app Prepare (or Run) first, then the slash command, and the command
+ * folded under "Or in a terminal", as Run next does.
+ */
+export function PrepareFirst({ command, slash }: { command: string; slash?: string | undefined }) {
+  return (
+    <>
+      <RunStep command={command} />
+      {slash && (
+        <>
+          <p className="work-say">{R.slash}</p>
+          <Command text={slash} label={R.copySlash} noRun />
+        </>
+      )}
+      <details className="work-terminal">
+        <summary>{R.orTerminal}</summary>
+        <p className="work-say">{R.terminal}</p>
+        <Command text={command} label={R.copy} noRun />
+      </details>
+    </>
+  );
+}
+
 function SlashLine({ slash }: { slash: Slash }) {
   return (
     <>

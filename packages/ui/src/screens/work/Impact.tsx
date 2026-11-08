@@ -2,7 +2,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
-import { Command } from "./RunNext.js";
+import { Command, PrepareFirst } from "./RunNext.js";
 
 /**
  * A change's impact, as designed (ADR 0144, V1), on its Architecture tab: what its target flows
@@ -23,7 +23,11 @@ export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
     return (
       <>
         <p>{I.noTargets(i.change)}</p>
-        <Command text={`atticus change architecture ${i.change}`} label={COPY.runNext.copy} />
+        {/* Eighth UX walk: Prepare first, the terminal folded under it. */}
+        <PrepareFirst
+          command={`atticus change architecture ${i.change}`}
+          slash={`/atticus-architecture ${i.change}`}
+        />
       </>
     );
   return (

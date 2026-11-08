@@ -1,11 +1,11 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { Api, Question } from "@maycombhq/core";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
-import { Panel, View } from "../../app/ui.js";
+import { focusIfLost, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message } from "../know/common.js";
 import { QuestionDetail } from "../Questions.js";
-import { Command, Problems } from "./RunNext.js";
+import { Command, PrepareFirst, Problems } from "./RunNext.js";
 import "./work.css";
 
 /**
@@ -19,7 +19,6 @@ import "./work.css";
  */
 
 const S = COPY.stageReview;
-const R = COPY.runNext;
 
 type Review = Api.StageReviewViewT;
 type Item = Api.StageFindingViewT;
@@ -39,6 +38,12 @@ export interface StageReviewHandlers {
 }
 
 function WroteNote({ w }: { w: Wrote | undefined }) {
+  // Eighth UX walk: the finding's buttons are disabled while it writes, and its options go once
+  // it is acted on: the keyboard comes to what was written.
+  const at = useRef<HTMLDivElement & HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (w && w.state !== "working") focusIfLost(at.current);
+  }, [w]);
   if (!w) return null;
   if (w.state === "working")
     return (
@@ -48,18 +53,18 @@ function WroteNote({ w }: { w: Wrote | undefined }) {
     );
   if (w.state === "error")
     return (
-      <p role="alert" className="state error" style={{ margin: "6px 0 0" }}>
+      <p ref={at} tabIndex={-1} role="alert" className="state error" style={{ margin: "6px 0 0" }}>
         {w.text}
       </p>
     );
   if (w.state === "acted")
     return (
-      <p role="status" className="work-say">
+      <p ref={at} tabIndex={-1} role="status" className="work-say">
         {S.acted(S.actions[w.action] ?? w.action)}
       </p>
     );
   return (
-    <div role="status">
+    <div ref={at} tabIndex={-1} role="status">
       <p className="work-say">{S.commented(w.result.files.join(", "))}</p>
       <Command text={w.result.commit} label={S.copyCommit} />
     </div>
@@ -286,10 +291,8 @@ export function StageReviewView(
           p.of.state === "ready" ? (
             <div className="state">
               <p style={{ margin: "0 0 8px" }}>{S.notRun}</p>
-              <p className="work-say">{R.terminal}</p>
-              <Command text={p.of.data.next.command} label={R.copy} />
-              <p className="work-say">{R.slash}</p>
-              <Command text={p.of.data.next.slash} label={R.copySlash} />
+              {/* Eighth UX walk: Prepare first, the terminal folded under it. */}
+              <PrepareFirst command={p.of.data.next.command} slash={p.of.data.next.slash} />
             </div>
           ) : undefined
         }
@@ -323,16 +326,26 @@ export function StageReviewView(
               {S.questions}
             </h3>
             <StageQuestions qs={v.questions} onAnswered={() => p.onAnswered?.()} />
-            <h3 className="h" style={{ fontSize: 15, margin: "8px 0 0" }}>
-              {S.next}
-            </h3>
-            <p className="work-why" style={{ margin: 0 }}>
-              {S.nextWhy}
-            </p>
-            <p className="work-say">{R.terminal}</p>
-            <Command text={v.next.command} label={R.copy} />
-            <p className="work-say">{R.slash}</p>
-            <Command text={v.next.slash} label={R.copySlash} />
+            {/* Eighth UX walk: a stage that is done offers a fresh run only under a disclosure. */}
+            {v.loop.state === "done" ? (
+              <details className="work-after">
+                <summary>{S.runAgain}</summary>
+                <p className="work-why" style={{ margin: 0 }}>
+                  {S.runAgainWhy}
+                </p>
+                <PrepareFirst command={v.next.command} slash={v.next.slash} />
+              </details>
+            ) : (
+              <>
+                <h3 className="h" style={{ fontSize: 15, margin: "8px 0 0" }}>
+                  {S.next}
+                </h3>
+                <p className="work-why" style={{ margin: 0 }}>
+                  {S.nextWhy}
+                </p>
+                <PrepareFirst command={v.next.command} slash={v.next.slash} />
+              </>
+            )}
             {v.problems.length > 0 && <Problems list={v.problems} />}
           </div>
         )}

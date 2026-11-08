@@ -54,6 +54,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Eighth UX walk (stage pages and access):
+  - **Feature design shows where the feature lands**: feature.md (the feature in a few sentences, the flows it touches, the gaps) with a "Drafted by AI" chip until a person saves it, and Edit opens feature.yaml, the source the stage's next run reads; Save checks it still reads as a placement and draws feature.md again (API 2.76.0, `GET`/`PUT /api/changes/{changeId}/placement`). The change's files list feature.md and feature.yaml.
+  - **The in-app Prepare comes first** in a stage's critic panel (before it ran, and under "Then run the stage again"), the breaks panel and the target flows' empty state, with the command folded under "Or in a terminal"; the target flows' empty state has a button now, not only words for a terminal.
+  - **One path to write stories**: the stories stage's Prepare. Breakdown links to the stage instead of its own "Write stories with AI", and a stage that is done offers "Run the stage again" only under a disclosure.
+  - **The keyboard stays with the result** after Apply, Push and open the PR, saving a file, Mark done on a manual step, Not relevant or another action on a finding, Raise hand-off and Mark done or not done on a task: the result's words take focus when the button went or was disabled, a step marked done stays shown with what was recorded, and a finding that leaves the open list says what was recorded in the list's own status line.
+  - **Each repo's build button names its repo** on Set up › Repos.
+  - **The brief editor** shows the template's guidance beside the text, offers Cancel while there is unsaved text, and the gate reads again after a save (no more "still holds only the template" until a reload).
+  - **A task's PR and tick, as they are**: "PR #n OPEN" once a PR is recorded, "PR TO OPEN" (waiting on you) only while a manual Git host's PR isn't opened; a task ticked or unticked by hand says who did (API 2.76.0, `taskRun.marked`), not that Atticus ticked it at the merge; Design vs plans vs code says "No code yet" before any task has run.
+  - **A manual Git host's approval says who recorded it**, on the reviews step once done and on the merge step's "Approved by".
 - Round 44 (review):
   - **Sync reads only a change's own release PR**, by its head branch, never another PR that shares its number on a manual Git host, and corrects a recorded number that named the wrong PR.
   - **A change's hand-off carries the questions its own steps asked**, matched by the step (`atticus change <step> <id>`, `atticus plan <step> <id>`, `atticus critic <id>`), never by the repo field: a stage's question about a repo rides with the change, and a repo's own map question never does, even when a change shares the repo's name.

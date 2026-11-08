@@ -55,6 +55,7 @@ import {
   previewTaskRun,
   raiseTaskPr,
   readTaskRun,
+  saveTaskRun,
   settleTaskPr,
   taskRunOfRun,
 } from "@maycombhq/taskrun";
@@ -358,6 +359,7 @@ async function taskViews(
               ...(tr.commit ? { commit: tr.commit } : {}),
               ...(tr.pr ? { pr: { ...tr.pr, ...(prState ? { state: prState } : {}) } } : {}),
               ...(tr.ticked ? { ticked: tr.ticked } : {}),
+              ...(tr.marked ? { marked: tr.marked } : {}),
               notes: tr.notes,
             },
           }
@@ -710,6 +712,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             type: "file.changed",
             path: `${changesRelOf(root)}/${change}/tasks.md`,
           });
+        // Eighth UX walk (2.76.0): a task that has run keeps who ticked or unticked it by hand,
+        // so one Atticus ticked at its merge and a person ticked again says who did.
+        const tr = await readTaskRun(root, change, task).catch(() => undefined);
+        if (tr) {
+          tr.marked = {
+            done: b.done,
+            by: user,
+            at: (deps.now ? new Date(deps.now) : new Date()).toISOString().replace(/\.000Z$/, "Z"),
+          };
+          await saveTaskRun(root, tr);
+        }
         return {
           status: 200,
           body: (await taskViews(root, change)).find((t) => t.id === task)!,

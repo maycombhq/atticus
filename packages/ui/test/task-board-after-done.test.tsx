@@ -98,7 +98,8 @@ describe("a task that has run, on the Task board", () => {
       notes: [],
     });
     const html = renderToStaticMarkup(<TaskRunState change={CHANGE} task={t} />);
-    expect(html).toContain(T.taskState["pr-open"]!);
+    // Eighth UX walk: waiting on a person to open it, not "raised".
+    expect(html).toContain(T.taskPrToOpen);
     expect(html).toContain('href="#/todo"');
     expect(html).not.toContain("manual://");
     const real = renderToStaticMarkup(
@@ -153,7 +154,7 @@ describe("a task that has run, on the Task board", () => {
     expect(runIsTheStep(pr("merged"))).toBe(true);
     expect(runIsTheStep(pr("closed"))).toBe(true);
     const open = renderToStaticMarkup(<TaskRunState change={CHANGE} task={pr("open")} />);
-    expect(open).toContain(T.taskState["pr-open"]!);
+    expect(open).toContain(T.taskPrOpenChip(3));
     expect(open).toContain(esc(T.taskPrOpen));
     const merged = renderToStaticMarkup(<TaskRunState change={CHANGE} task={pr("merged")} />);
     expect(merged).toContain(T.taskPrStateChip.merged!);
