@@ -123,6 +123,26 @@ describe("the code tools (ADR 0118)", () => {
     ix.close();
   });
 
+  it("grep stops a regular expression that runs away, and the next call still works", async () => {
+    const root = await vaultRoot();
+    const ix = await openIndex(root);
+    // (a+)+$ backtracks exponentially on a run of a's that doesn't end the line.
+    await writeFile(join(root, "workspace/forge-vault/runaway.txt"), `${"a".repeat(60)}!\n`);
+    const started = Date.now();
+    await expect(
+      call(ix, root, "grep", { pattern: "(a+)+$", regex: true, repo: "forge-vault" }),
+    ).rejects.toThrow(/took too long; make it simpler/);
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(CONTEXT_TOOL_BOUNDS.grepRegexMs).toBeLessThanOrEqual(1000);
+    const next = await call(ix, root, "grep", {
+      pattern: "@ForgeServiceBase",
+      regex: true,
+      repo: "forge-vault",
+    });
+    expect(next).toContain(`forge-vault:${APP}:7:`);
+    ix.close();
+  }, 10_000);
+
   it("grep keeps to its caps and says what it cut", async () => {
     const root = await vaultRoot();
     const ix = await openIndex(root);

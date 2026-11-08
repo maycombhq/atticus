@@ -54,6 +54,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 43 (review, grep and paths):
+  - **A grep pattern that runs away no longer hangs the MCP server or a scan.** A regular expression the assistant or the model chose (`(a+)+$` on a run of a's) could backtrack for minutes, and the MCP server answers one call at a time, so every later call waited. grep now runs a regular expression in a `vm` context with a time limit (1 second a file, 5 a call) and answers "the pattern took too long; make it simpler"; the next call works as before. No new dependency.
+  - **A manifest url written the Windows way (`.\forge-ledger`) is in place**, like `./forge-ledger`: sync no longer runs `git clone .\forge-ledger` into workspace/, and scans read the repo where it is, not a stale copy. One rule in @maycombhq/workspace (`isInPlace`, `inPlacePath`, `inPlaceDir`) now serves sync, scans, adopt, doctor and the CLI's map and repo-id checks.
 - Round 42 (review):
   - **One plural rule for endpoint ids and the glossary**, in core: "statuses", "buses" and "aliases" become "status", "bus" and "alias", so `GET /payment-statuses` keeps its id `get-payment-status` and "Payment statuses" is the same glossary term as "Payment status".
   - **A stage's write entries stay inside the change folder**, with a `*` only in the last part; an org pack that writes otherwise is refused at load, not followed.

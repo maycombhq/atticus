@@ -61,6 +61,11 @@ describe("repoIdKey and cloneUrlKey: what makes two entries the same repo", () =
     );
   });
 
+  it("reads a folder of this metarepo, written with / or \\, as no clone", () => {
+    for (const u of [".", "./forge-ledger", ".\\forge-ledger", ".\\\\forge-ledger", "..\\x"])
+      expect(cloneUrlKey(u)).toBeUndefined();
+  });
+
   it("names each listed entry like a new one, and why", () => {
     const listed = [
       { id: "forge-customers", url: "https://git.example.com/forge/forge-customers.git" },

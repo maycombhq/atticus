@@ -70,9 +70,31 @@ export interface WorkspaceManager {
 /**
  * A manifest url of `.` or `./<path>` names a repo already in place under the metarepo root
  * (an adopted repo, or a folder of clones): scans read it there, so there is no base clone.
+ * A url written the Windows way (`.\<path>`, or `.\\<path>` as YAML may keep it) is the same.
+ * This is the one rule: sync, scans, doctor and the CLI all ask it.
  */
 export function isInPlace(url: string): boolean {
-  return url === "." || url.startsWith("./");
+  const u = url.replace(/\\/g, "/");
+  return u === "." || u.startsWith("./");
+}
+
+/**
+ * An in-place url as a `/` path under the root (`.` for the root itself), with `\` read as `/`
+ * and empty and `.` segments dropped. Undefined for a clone url, and for a path that climbs out
+ * of the root with `..`.
+ */
+export function inPlacePath(url: string): string | undefined {
+  if (!isInPlace(url)) return undefined;
+  const segs = url.split(/[\\/]+/).filter((s) => s !== "" && s !== ".");
+  if (segs.includes("..")) return undefined;
+  return segs.length ? segs.join("/") : ".";
+}
+
+/** The folder an in-place repo is read from under `root`; undefined when the url isn't one. */
+export function inPlaceDir(root: string, url: string): string | undefined {
+  const p = inPlacePath(url);
+  if (p === undefined) return undefined;
+  return p === "." ? root : join(root, ...p.split("/"));
 }
 
 /**

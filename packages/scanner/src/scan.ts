@@ -50,7 +50,7 @@ import {
 } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
-import { baseClonePath, checkoutState, type GitRunner } from "@maycombhq/workspace";
+import { baseClonePath, checkoutState, inPlaceDir, type GitRunner } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 import {
@@ -204,13 +204,6 @@ export async function orgPackDirFor(root: string): Promise<{ dir: string; adopte
   if (!(await isDir(join(root, "org-pack"))) && (await isDir(join(root, ".atticus", "org-pack"))))
     return { dir: join(root, ".atticus", "org-pack"), adopted: true };
   return { dir: join(root, "org-pack"), adopted: false };
-}
-
-/** A manifest url that is `.` or `./<path>` names a repo in place under the root. */
-function inPlace(root: string, url: string): string | undefined {
-  if (url === "." || url === "./") return root;
-  if (url.startsWith("./") && !url.split("/").includes("..")) return join(root, url.slice(2));
-  return undefined;
 }
 
 /**
@@ -441,7 +434,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   for (const r of repos) {
     // A scan the app cancelled stops between repos, before anything is written (ADR 0119).
     throwIfCancelled();
-    const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
+    const dir = o.repoDir?.(r.id) ?? inPlaceDir(o.root, r.url) ?? baseClonePath(o.root, r.id);
     let state: { commit: string; dirty: boolean };
     // No folder: say it isn't cloned, not what git said about a folder that isn't there.
     if (!o.repoState && !(await stat(dir).catch(() => undefined))) {

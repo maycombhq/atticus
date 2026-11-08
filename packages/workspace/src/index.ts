@@ -6,6 +6,8 @@ export * from "./editors.js";
 export * from "./state.js";
 export {
   createWorkspace,
+  inPlaceDir,
+  inPlacePath,
   isInPlace,
   remoteDefaultBranch,
   type SyncResult,

@@ -110,17 +110,9 @@ export function pathsFor(root: string, adopted: boolean, layout: Layout): Metare
 }
 
 /**
- * A manifest `url` that is a relative path (`.` or starting with `./`) names a repo that is
- * already in place under the metarepo root, as in an adopted repo or a folder of clones:
- * scans read it there instead of from a base clone under workspace/.
+ * A manifest `url` that is a relative path (`.`, or starting with `./` or `.\`) names a repo
+ * that is already in place under the metarepo root, as in an adopted repo or a folder of clones:
+ * scans read it there instead of from a base clone under workspace/. The one rule lives in
+ * @maycombhq/workspace.
  */
-export function inPlacePath(url: string): string | undefined {
-  if (url === ".") return ".";
-  if (url.startsWith("./")) {
-    const rest = url.slice(2).replace(/\/+$/, "");
-    if (rest === "") return ".";
-    if (rest.split("/").includes("..")) return undefined;
-    return rest;
-  }
-  return undefined;
-}
+export { inPlacePath } from "@maycombhq/workspace";

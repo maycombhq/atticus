@@ -6,6 +6,8 @@
  * two repos may well differ only in a version.
  */
 
+import { isInPlace } from "@maycombhq/workspace";
+
 /** An id with case, `_` and `-`, and a trailing version set aside. */
 export function repoIdKey(id: string): string {
   return id
@@ -18,12 +20,12 @@ export function repoIdKey(id: string): string {
 
 /**
  * A clone URL as compared: no scheme, user, `.git` or trailing slash, an ssh `host:path` read as
- * `host/path`, in lower case. Undefined for a folder of this metarepo (`.`, `./x`), which names
- * no clone.
+ * `host/path`, in lower case. Undefined for a folder of this metarepo (`.`, `./x`, `.\x`,
+ * `../x`), which names no clone.
  */
 export function cloneUrlKey(url: string): string | undefined {
   const u = url.trim();
-  if (!u || u === "." || u.startsWith("./") || u.startsWith("../")) return undefined;
+  if (!u || isInPlace(u) || /^\.\.[\\/]/.test(u)) return undefined;
   return u
     .replace(/[/\\]+$/, "")
     .replace(/\.git$/i, "")

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createContext, runInContext, Script } from "node:vm";
 import { RecordId, specsRelOf, stateDirOf, type ToolDefinition } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
 import { fuse, type GraphNodeRow } from "./select.js";
@@ -51,6 +52,12 @@ export const CONTEXT_TOOL_BOUNDS = {
   /** The longest pattern grep takes, and the most of a hit's line it shows. */
   grepPattern: 200,
   grepLineChars: 200,
+  /**
+   * The most time a regular expression may spend on one file, and on one grep call in all,
+   * so a pattern that backtracks without end (`(a+)+$`) can't hang the MCP server or a scan.
+   */
+  grepRegexMs: 1000,
+  grepRegexTotalMs: 5000,
   /** Files one grep or files call walks at most, and bytes grep reads at most. */
   walkFiles: 20_000,
   grepBytes: 64_000_000,
@@ -978,6 +985,40 @@ async function runCodeTool(
   return outlineTool(root, input, o);
 }
 
+/** Lines of one file the regular expression matches, as their indexes. */
+const REGEX_LINES = new Script(
+  "(() => { const out = []; for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) out.push(i); return out; })()",
+);
+
+/**
+ * A grep pattern the model or the assistant chose runs in a `vm` context with a timeout, so a
+ * pattern that backtracks without end is interrupted, not left to hang the MCP server's queue or
+ * a scan. Each file gets at most grepRegexMs, the call grepRegexTotalMs in all.
+ */
+function regexMatcher(pattern: string, flags: string): (lines: string[]) => number[] {
+  const B = CONTEXT_TOOL_BOUNDS;
+  const context = createContext({ pattern, flags, lines: [] as string[] });
+  runInContext("globalThis.re = new RegExp(pattern, flags);", context);
+  let spent = 0;
+  return (lines) => {
+    const timeout = Math.max(1, Math.min(B.grepRegexMs, B.grepRegexTotalMs - spent));
+    context.lines = lines;
+    const started = performance.now();
+    try {
+      return Array.from(REGEX_LINES.runInContext(context, { timeout }) as ArrayLike<number>);
+    } catch (e) {
+      if ((e as { code?: string }).code === "ERR_SCRIPT_EXECUTION_TIMEOUT")
+        throw new ContextToolError(
+          `The pattern ${pattern} took too long; make it simpler (no quantifier inside a repeated group, such as (a+)+).`,
+        );
+      throw e;
+    } finally {
+      context.lines = [];
+      spent += performance.now() - started;
+    }
+  };
+}
+
 async function grepTool(
   root: string,
   input: Record<string, unknown>,
@@ -989,18 +1030,22 @@ async function grepTool(
   if (pattern.length > B.grepPattern)
     throw new ContextToolError(`A grep pattern is at most ${B.grepPattern} characters.`);
   const ignoreCase = input.ignoreCase === true;
-  let test: (line: string) => boolean;
+  let matching: (lines: string[]) => Iterable<number>;
   if (input.regex === true) {
-    let re: RegExp;
     try {
-      re = new RegExp(pattern, ignoreCase ? "i" : "");
+      new RegExp(pattern, ignoreCase ? "i" : "");
     } catch (e) {
       throw new ContextToolError(`${pattern} isn't a regular expression: ${(e as Error).message}.`);
     }
-    test = (l) => re.test(l);
+    matching = regexMatcher(pattern, ignoreCase ? "i" : "");
   } else {
     const p = ignoreCase ? pattern.toLowerCase() : pattern;
-    test = ignoreCase ? (l) => l.toLowerCase().includes(p) : (l) => l.includes(p);
+    const test = ignoreCase
+      ? (l: string) => l.toLowerCase().includes(p)
+      : (l: string) => l.includes(p);
+    matching = function* (lines) {
+      for (let i = 0; i < lines.length; i++) if (test(lines[i]!)) yield i;
+    };
   }
   const limit = int(input.limit, 1, B.grepLimit, B.grepDefault);
   const paths = str(input.paths);
@@ -1023,11 +1068,13 @@ async function grepTool(
         return false;
       }
       read++;
-      const lines = buf.toString("utf8").split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        // A long line is searched in its first 2,000 characters only, so no pattern runs away.
-        const line = lines[i]!.slice(0, 2000);
-        if (!test(line)) continue;
+      // A long line is searched in its first 2,000 characters only.
+      const lines = buf
+        .toString("utf8")
+        .split(/\r?\n/)
+        .map((l) => l.slice(0, 2000));
+      for (const i of matching(lines)) {
+        const line = lines[i]!;
         if (hits.length >= limit) {
           more = true;
           return false;
