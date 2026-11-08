@@ -203,6 +203,8 @@ const runDone: typeof import("./run-commands.js").runDone = (...a) =>
   loadRunCommands().then((m) => m.runDone(...a));
 const taskRun: typeof import("./run-commands.js").taskRun = (...a) =>
   loadRunCommands().then((m) => m.taskRun(...a));
+const taskRunReady: typeof import("./run-ready-commands.js").taskRunReady = (...a) =>
+  import("./run-ready-commands.js").then((m) => m.taskRunReady(...a));
 const loadFeatureCommands = () => import("./feature-commands.js");
 const featureSuggestNames: typeof import("./feature-commands.js").featureSuggestNames = (...a) =>
   loadFeatureCommands().then((m) => m.featureSuggestNames(...a));
@@ -672,6 +674,7 @@ Usage:
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
+  atticus task run-ready <change>      Run all ready tasks: every task whose dependencies are done, in cross-repo order, one task run each, stopping on the first that needs a person (ADR 0181) [--level draft|pr] [--mode m] [--approve] [--dry-run]
   atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
@@ -3045,6 +3048,20 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         ...(typeof values.prototype === "string" && values.prototype.trim()
           ? { prototype: values.prototype.trim() }
           : {}),
+      },
+      io,
+    );
+  if (group === "task" && command === "run-ready")
+    return taskRunReady(
+      root,
+      arg,
+      {
+        ...(str(values.level) ? { level: str(values.level)! } : {}),
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        by: who(),
+        approve: values.approve === true,
+        dryRun: values["dry-run"] === true,
+        json,
       },
       io,
     );

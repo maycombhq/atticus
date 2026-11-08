@@ -13,6 +13,10 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
     test: (w, a) => w[0] === "change" && w[1] === "release-prs" && flag(a, "--approve"),
     why: "a person raises the release PRs into each repo's default branch (ADR 0184); a session never approves a push or a PR",
   },
+  {
+    test: (w, a) => w[0] === "task" && w[1] === "run-ready" && flag(a, "--approve"),
+    why: "a person approves each ready task's push and PR into the change branch (ADR 0181); a session never approves a push or a PR",
+  },
   { test: (w) => w[0] === "questions" && w[1] === "answer", why: "a person answers questions" },
   {
     test: (w, a) => w[0] === "questions" && w[1] === "sheet" && flag(a, "--apply"),

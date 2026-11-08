@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.75.0",
+    "version": "2.76.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -6560,6 +6560,185 @@
         }
       }
     },
+    "/api/changes/{changeId}/tasks/ready": {
+      "get": {
+        "operationId": "readyTasks",
+        "summary": "2.76.0 (ADR 0181 part 4): the change's tasks not done yet in cross-repo order, each ready to run or why not",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyTasks"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/tasks/run-ready": {
+      "post": {
+        "operationId": "runReadyTasks",
+        "summary": "2.76.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "plan",
+                      "draft"
+                    ]
+                  },
+                  "runtime": {
+                    "type": "string",
+                    "enum": [
+                      "hand-off",
+                      "model",
+                      "headless-claude-code",
+                      "copilot-acp",
+                      "mock",
+                      "replay"
+                    ]
+                  },
+                  "tasks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunReadyAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/changes/{changeId}/tasks/{taskId}/done": {
       "post": {
         "operationId": "setTaskDone",
@@ -11866,6 +12045,30 @@
               ]
             },
             "description": "Only the questions of the teams the person is on (roles.yaml, ADR 0140)",
+            "required": false
+          },
+          {
+            "name": "change",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only a change's questions: filed under it, raised by its stages, or resting on it (ADR 0181)",
+            "required": false
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            },
+            "description": "Only the questions this role owns (ADR 0181 part 4)",
             "required": false
           }
         ],
@@ -22327,6 +22530,144 @@
         ],
         "additionalProperties": false
       },
+      "ReadyTasks": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "waitsFor": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "repo",
+                "ready",
+                "waitsFor"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "repoOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "change",
+          "tasks",
+          "ready"
+        ],
+        "additionalProperties": false
+      },
+      "RunReadyAccepted": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "jobId",
+          "tasks"
+        ],
+        "additionalProperties": false
+      },
+      "RunReadyResult": {
+        "type": "object",
+        "properties": {
+          "ran": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "refused": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task",
+                "repo"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "stopped": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "why"
+            ],
+            "additionalProperties": false
+          },
+          "left": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ran",
+          "left"
+        ],
+        "additionalProperties": false
+      },
       "ChangeSummary": {
         "type": "object",
         "properties": {
@@ -29447,6 +29788,35 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "openQuestionsByRole": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            },
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "yourRoles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            }
+          },
           "repos": {
             "type": "array",
             "items": {
@@ -32187,6 +32557,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -32329,6 +32703,15 @@
               "id"
             ],
             "additionalProperties": false
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "product",
+              "architecture",
+              "analysis",
+              "delivery"
+            ]
           },
           "state": {
             "type": "string",
@@ -32743,6 +33126,50 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "byRole": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "product",
+                    "architecture",
+                    "analysis",
+                    "delivery"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "open": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "answered": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "retired": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "open",
+                    "answered",
+                    "retired",
+                    "total"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -32820,6 +33247,15 @@
                       ],
                       "additionalProperties": false
                     }
+                  ]
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "product",
+                    "architecture",
+                    "analysis",
+                    "delivery"
                   ]
                 },
                 "proposal": {
@@ -32954,6 +33390,18 @@
               "teams"
             ],
             "additionalProperties": false
+          },
+          "yourRoles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            }
           }
         },
         "required": [

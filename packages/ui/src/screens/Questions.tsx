@@ -8,6 +8,7 @@ import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
+import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -28,6 +29,8 @@ export interface QuestionListView {
   me?: Api.QuestionListT["me"];
   /** beta.21: every question on file by state, and per repo. */
   counts?: Api.QuestionListT["counts"];
+  /** ADR 0181 part 4: with change=, the person's roles on it. */
+  yourRoles?: Api.QuestionListT["yourRoles"];
 }
 
 type About = NonNullable<Api.QuestionListT["about"]>[string];
@@ -1169,7 +1172,10 @@ export function QuestionCounts(p: {
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
-  const list = useApi<QuestionListView>(questionsUrl(filter, whose));
+  // ADR 0181 part 4: one change's questions and one role's, from the address (Home links here).
+  const [scope, setScope] = useState(() => roleScopeOf(hash));
+  useEffect(() => setScope(roleScopeOf(hash)), [hash]);
+  const list = useApi<QuestionListView>(withRoleScope(questionsUrl(filter, whose), scope));
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
   useReloadOnFiles(list, owner);
@@ -1250,6 +1256,12 @@ export function Questions({ hash }: { hash: string }) {
                   ))}
                 </select>
               </div>
+              <RoleFilter
+                value={scope.role}
+                onChange={(r) => setScope((x) => scopeWithRole(x, r))}
+                byRole={list.state === "ready" ? list.data.counts?.byRole : undefined}
+                yours={list.state === "ready" ? list.data.yourRoles : undefined}
+              />
               <Choice
                 label={C.whose}
                 value={whose}

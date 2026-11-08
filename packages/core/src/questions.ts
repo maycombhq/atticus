@@ -16,6 +16,7 @@ import {
 } from "./host-questions.js";
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
+import { roleOfStep } from "./question-roles.js";
 import { hostMatches } from "./schema/workspace.js";
 import {
   AnswerMatch,
@@ -78,6 +79,7 @@ export interface AskedBy {
 
 /** An open question from what an AI step raised. */
 export function questionFromDraft(d: QuestionDraft, by: AskedBy): Question {
+  const role = d.role ?? roleOfStep(by.step, by.rerun);
   return Question.parse({
     schemaVersion: QUESTION_SCHEMA_VERSION,
     id: questionId({ step: by.step, repo: by.repo, question: d.question, evidence: d.evidence }),
@@ -95,6 +97,8 @@ export function questionFromDraft(d: QuestionDraft, by: AskedBy): Question {
       d.scope === "repo-type"
         ? { level: "repo-type", id: d.repoType! }
         : { level: "repo", id: by.repo },
+    // ADR 0181 part 4: the role that owns it, the question's own or its stage's.
+    ...(role ? { role } : {}),
     state: "open",
     rerun: by.rerun,
   });
@@ -725,7 +729,7 @@ export async function migrateQuestions(
       continue;
     }
     const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-    if (v !== 1 && v !== 2 && v !== 3) continue;
+    if (v !== 1 && v !== 2 && v !== 3 && v !== 4) continue;
     const q = Question.safeParse(data);
     if (!q.success) continue;
     if (!o.dryRun) await write(root, q.data);

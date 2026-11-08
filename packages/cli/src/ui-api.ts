@@ -55,6 +55,8 @@ import {
   previewTaskRun,
   raiseTaskPr,
   readTaskRun,
+  readyTasksOf,
+  runReadyTasks,
   settleTaskPr,
   taskRunOfRun,
 } from "@maycombhq/taskrun";
@@ -462,6 +464,22 @@ async function artifactPath(
 
 export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Router {
   const { root, user, jobs } = ctx;
+  /** ADR 0181 part 4: the ready list, in the deployment plan's order, each open PR as the host says. */
+  const readyView = async (change: string): Promise<Api.ReadyTasksT> => {
+    const { deployOrderOf } = await import("./run-ready-commands.js");
+    const repoOrder = await deployOrderOf(root, change);
+    const prStates = new Map<string, "open" | "merged" | "closed">();
+    for (const t of await taskViews(root, change, {
+      ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    }))
+      if (t.taskRun?.pr?.state) prStates.set(t.id, t.taskRun.pr.state);
+    const plan = await readyTasksOf(root, change, {
+      ...(repoOrder ? { repoOrder } : {}),
+      prStates,
+    });
+    return Api.ReadyTasks.parse({ change, ...plan, ...(repoOrder ? { repoOrder } : {}) });
+  };
   /** The runs whose Done is being checked now. */
   const doneBusy = new Set<string>();
   const changeDeps = {
@@ -714,6 +732,88 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           status: 200,
           body: (await taskViews(root, change)).find((t) => t.id === task)!,
         };
+      })
+      // ADR 0181 part 4 (2.76.0): the change's tasks not done yet, in cross-repo order, each ready
+      // to run or why not, for the Task board's Run all ready tasks.
+      .add("GET", "/api/changes/{changeId}/tasks/ready", async ({ params }) => {
+        await readChange(root, params.changeId!);
+        return { status: 200, body: await readyView(params.changeId!) };
+      })
+      // ADR 0181 part 4 (2.76.0): Run all ready tasks. One task run per ready task (ADR 0036, with
+      // its lock), in order, as one job, since the server runs one AI step at a time; it stops on
+      // the first that needs a person. The app never asks for the pr level, so the click is the
+      // person's approval for the drafts; each PR is raised on its own Raise click, or with
+      // --approve in an editor or on the command line. Nothing is merged.
+      .add("POST", "/api/changes/{changeId}/tasks/run-ready", async ({ params, body }) => {
+        const change = params.changeId!;
+        await readChange(root, change);
+        const b = parseBody(Api.RunReadyRequest, body);
+        const busy = ctx.jobs.runningOf("step");
+        if (busy)
+          throw conflict(
+            `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
+          );
+        const view = await readyView(change);
+        const tasks = b.tasks ? view.ready.filter((t) => b.tasks!.includes(t)) : view.ready;
+        if (!tasks.length)
+          throw refused({
+            code: 1,
+            out: [],
+            err: [
+              b.tasks
+                ? `None of ${b.tasks.join(", ")} is ready to run now: the Task board says why.`
+                : `No task of ${change} is ready to run: each waits for the tasks before it, its PR, the assistant or a person.`,
+            ],
+          });
+        const repoOf = new Map(view.tasks.map((t) => [t.id, t.repo]));
+        const job = ctx.jobs.start("step", async (c) => {
+          const r = await runReadyTasks(root, change, {
+            by: user,
+            only: tasks,
+            ...(view.repoOrder ? { repoOrder: view.repoOrder } : {}),
+            ...(b.level ? { level: b.level } : {}),
+            ...(b.runtime ? { mode: b.runtime } : {}),
+            // As Run with AI: runtime.yaml's level, lowered to the repo's cap, and at most draft.
+            levelFor: async (task) => {
+              const p = await previewTaskRun(root, change, task, {
+                skipGitHost: true,
+                ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+              });
+              return p.level === "pr" ? "draft" : p.level;
+            },
+            // The task's repo gets its worktree when it has none yet, as Run with AI does.
+            before: async (task) => {
+              const opened = await openTaskWorktree(root, change, task, deps.gitHost);
+              return opened && opened.code !== 0
+                ? opened.err.join(" ") || opened.out.join(" ") || "Its worktree couldn't be opened."
+                : undefined;
+            },
+            progress: (done, total, message) => c.progress(done, total, message),
+            cancelled: () => c.cancelled,
+            ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+            ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
+            ...(deps.taskRun?.commands ? { commands: deps.taskRun.commands } : {}),
+          });
+          for (const x of r.ran)
+            ctx.events.publish({
+              type: "file.changed",
+              path: `${changesRelOf(root)}/${change}/tasks/${x.task}/task-run.yaml`,
+            });
+          const ran = r.ran.map((x) =>
+            "record" in x
+              ? { task: x.task, repo: x.repo, state: x.record.state, branch: x.record.branch }
+              : { task: x.task, repo: x.repo || (repoOf.get(x.task) ?? ""), refused: x.refused },
+          );
+          const left = r.stopped ? r.planned.slice(r.planned.indexOf(r.stopped.task) + 1) : [];
+          return {
+            result: Api.RunReadyResult.parse({
+              ran,
+              ...(r.stopped ? { stopped: r.stopped } : {}),
+              left,
+            }),
+          };
+        });
+        return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
       // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's click is
       // the approval to push its branch and open the PR into the change branch (ADR 0073), as

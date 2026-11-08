@@ -14,7 +14,7 @@ import {
 } from "./schema/kinds.js";
 import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
-import { AnswerMatch, Question, QuestionScopeLevel } from "./schema/question.js";
+import { AnswerMatch, Question, QuestionRole, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
 import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
@@ -254,8 +254,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   manual host's as the person recorded them); POST /api/todo/{stepId}/done syncs the change's
  *   open hand-off after a Git host step and returns what it said in `synced` (read-only: never a
  *   merge). Additive only.
+ * 2.76.0 (ADR 0181 part 4, a change ends at the tech lead or architect): role-owned questions.
+ *   GET /api/questions takes `role` (product, architecture, analysis, delivery) and `change` (a
+ *   change's questions, wherever they are filed), and says each question's `about.role`,
+ *   `counts.byRole` and, with change=, `yourRoles` (the person's roles from change.yaml's owners);
+ *   a question file at version 5 may carry `role`. The cockpit says `openQuestionsByRole` and
+ *   `yourRoles`. Run all ready tasks: GET /api/changes/{changeId}/tasks/ready and POST
+ *   /api/changes/{changeId}/tasks/run-ready, one task run per ready task in cross-repo order as
+ *   one job, stopping on the first that needs a person; the click is the approval for draft,
+ *   never the pr level; nothing is merged. Additive only.
  */
-export const API_VERSION = "2.75.0";
+export const API_VERSION = "2.76.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2321,6 +2330,12 @@ export const ChangeCockpit = z.object({
     }),
   ),
   openQuestions: z.number().int(),
+  /**
+   * 2.76.0 (ADR 0181 part 4): the change's open questions by the role that owns them, and the
+   * signed-in person's roles on it (change.yaml `owners`; empty when it doesn't name them).
+   */
+  openQuestionsByRole: z.partialRecord(QuestionRole, z.number().int()).optional(),
+  yourRoles: z.array(QuestionRole).optional(),
   repos: z.array(
     z.object({ id: z.string(), branch: z.string(), base: z.string(), pr: z.string().optional() }),
   ),
@@ -2698,6 +2713,61 @@ export const ReleasePrsRequest = z.strictObject({});
 /** 2.75.0 (seventh UX walk): tick (done) or untick a task in the change's tasks.md. */
 export const TaskDoneRequest = z.strictObject({ done: z.boolean() });
 
+/**
+ * 2.76.0 (ADR 0181 part 4): Run all ready tasks. Every task not done yet, in the cross-repo order
+ * (the deployment plan's order of the repos, else tasks.md's), ready to run or why not: a task
+ * waits for the tasks of the stories its story depends on, and one already run waits on its PR,
+ * the assistant or a person.
+ */
+export const ReadyTasks = z.object({
+  change: z.string(),
+  tasks: z.array(
+    z.object({
+      id: z.string(),
+      repo: z.string(),
+      ready: z.boolean(),
+      waitsFor: z.array(z.string()),
+      why: z.string().optional(),
+    }),
+  ),
+  /** The ready ones' ids, in the order they run. */
+  ready: z.array(z.string()),
+  /** The repos in the order they deploy, when the deployment plan could be made. */
+  repoOrder: z.array(z.string()).optional(),
+});
+export type ReadyTasksT = z.infer<typeof ReadyTasks>;
+
+/**
+ * 2.76.0 (ADR 0181 part 4): run the ready tasks one after another as one server job. The app never
+ * asks for the pr level (that is the person's --approve, in an editor or on the command line), so
+ * the click is the approval for draft; `tasks` names the ready ones the person saw.
+ */
+export const RunReadyRequest = z.strictObject({
+  level: z.enum(["plan", "draft"]).optional(),
+  runtime: RuntimeKind.optional(),
+  tasks: z.array(z.string()).optional(),
+});
+export const RunReadyAccepted = z.object({
+  jobId: z.string(),
+  /** The tasks the job runs, in order. */
+  tasks: z.array(z.string()),
+});
+/** What the job's result says when it ends: each task run's state, and where it stopped and why. */
+export const RunReadyResult = z.object({
+  ran: z.array(
+    z.object({
+      task: z.string(),
+      repo: z.string(),
+      state: z.string().optional(),
+      branch: z.string().optional(),
+      refused: z.string().optional(),
+    }),
+  ),
+  stopped: z.object({ task: z.string(), why: z.string() }).optional(),
+  left: z.array(z.string()),
+});
+export type RunReadyResultT = z.infer<typeof RunReadyResult>;
+
 /** ADR 0043, Release and Run screens: request bodies the CLI's uiRunRoutes parse. */
 export const StepDoneRequest = z
   .strictObject({
@@ -2838,6 +2908,21 @@ export const QuestionList = z.object({
           }),
         )
         .optional(),
+      /**
+       * 2.76.0 (ADR 0181 part 4): the same, per role that owns the questions (product,
+       * architecture, analysis, delivery); a role no question has is left out. Before `role`.
+       */
+      byRole: z
+        .partialRecord(
+          QuestionRole,
+          z.object({
+            open: z.number().int(),
+            answered: z.number().int(),
+            retired: z.number().int(),
+            total: z.number().int(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
   /**
@@ -2857,6 +2942,11 @@ export const QuestionList = z.object({
           z.object({ change: z.string(), people: z.array(z.string()) }),
           z.object({ none: z.string() }),
         ]),
+        /**
+         * 2.76.0 (ADR 0181 part 4): the role that owns it on its change: the question's own, else
+         * the stage's that asked. Left out for a question no change's phase raised.
+         */
+        role: QuestionRole.optional(),
         /**
          * 2.36.0 (ADR 0144, Q5): the answer the assistant proposed, for an open question, when
          * every line it cites says what it quotes. A person accepts it or answers otherwise.
@@ -2902,6 +2992,12 @@ export const QuestionList = z.object({
       teams: z.array(z.object({ id: z.string(), name: z.string().optional() })),
     })
     .optional(),
+  /**
+   * 2.76.0 (ADR 0181 part 4): with change=, the signed-in person's roles on that change, from its
+   * change.yaml `owners` (roles.yaml's custom roles by the role each is based on); empty when the
+   * change doesn't name them, and the page asks which role is theirs.
+   */
+  yourRoles: z.array(QuestionRole).optional(),
 });
 export type QuestionListT = z.infer<typeof QuestionList>;
 
@@ -4935,6 +5031,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [403, 404, 409, 422],
     },
   },
+  "/api/changes/{changeId}/tasks/ready": {
+    get: {
+      id: "readyTasks",
+      summary:
+        "2.76.0 (ADR 0181 part 4): the change's tasks not done yet in cross-repo order, each ready to run or why not",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ReadyTasks", description: "OK" },
+      errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/tasks/run-ready": {
+    post: {
+      id: "runReadyTasks",
+      summary:
+        "2.76.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level",
+      tag: "changes",
+      params: [p("changeId")],
+      body: RunReadyRequest,
+      ok: { status: 202, schema: "RunReadyAccepted", description: "Job started" },
+      errors: [400, 403, 404, 409, 422],
+    },
+  },
   "/api/changes/{changeId}/tasks/{taskId}/done": {
     post: {
       id: "setTaskDone",
@@ -5751,6 +5870,16 @@ const OPS: Record<string, Record<string, Op>> = {
           { type: "string", enum: ["true"] },
           "Only the questions of the teams the person is on (roles.yaml, ADR 0140)",
         ),
+        q(
+          "change",
+          { type: "string" },
+          "Only a change's questions: filed under it, raised by its stages, or resting on it (ADR 0181)",
+        ),
+        q(
+          "role",
+          { type: "string", enum: ["product", "architecture", "analysis", "delivery"] },
+          "Only the questions this role owns (ADR 0181 part 4)",
+        ),
       ],
       ok: { status: 200, schema: "QuestionList", description: "OK" },
       errors: [400],
@@ -6039,6 +6168,9 @@ export function openApiDocument(): Record<string, unknown> {
     Coverage,
     Job,
     JobAccepted,
+    ReadyTasks,
+    RunReadyAccepted,
+    RunReadyResult,
     ChangeSummary,
     ChangeTypeView,
     ProposePlanView,

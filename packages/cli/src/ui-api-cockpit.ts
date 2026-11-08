@@ -13,7 +13,9 @@ export function uiCockpitRoutes(r: Router, ctx: ServerContext): Router {
       try {
         return {
           status: 200,
-          body: Api.ChangeCockpit.parse(await cockpit(ctx.root, params.changeId!)),
+          body: Api.ChangeCockpit.parse(
+            await cockpit(ctx.root, params.changeId!, { user: ctx.user }),
+          ),
         };
       } catch (e) {
         if (e instanceof Error && e.name === "ChangeFileError")

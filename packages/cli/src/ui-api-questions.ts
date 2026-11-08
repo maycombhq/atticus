@@ -4,10 +4,13 @@ import {
   Api,
   listQuestions,
   QuestionError,
+  QuestionRole,
   QuestionState,
+  RecordId,
   readQuestion,
   TARGETS_STEP_ID,
   TOPICS_STEP_ID,
+  type Question,
 } from "@maycombhq/core";
 import {
   badRequest,
@@ -34,6 +37,13 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           throw badRequest("state is open, answered or retired.");
         const mine = strParam(query, "mine");
         if (mine !== undefined && mine !== "true") throw badRequest("mine is true, or left out.");
+        // ADR 0181 part 4: one change's questions, and one role's.
+        const change = strParam(query, "change");
+        if (change !== undefined && !RecordId.safeParse(change).success)
+          throw badRequest("change is a change's id, or left out.");
+        const role = strParam(query, "role");
+        if (role !== undefined && !QuestionRole.safeParse(role).success)
+          throw badRequest("role is product, architecture, analysis or delivery, or left out.");
         // beta.21: every question read once and routed once (mine, the person's teams' only); the
         // list is the asked state, the counts every state of the same questions.
         const every = await listQuestions(ctx.root);
@@ -44,10 +54,25 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           every.questions,
           mine ? { mine: ctx.user } : {},
         );
-        const base = routedAll.questions;
+        const { stageQuestions, roleWithStage, isChangeQuestion, countByRole, personsRoles } =
+          await import("./change-roles.js");
+        const stages = await stageQuestions(ctx.root);
+        const roleOf = (q: Question) => roleWithStage(q, stages);
+        for (const q of every.questions) {
+          const r = roleOf(q);
+          const a = routedAll.about[q.id];
+          if (r && a) a.role = r;
+        }
+        const base = change
+          ? routedAll.questions.filter((q) =>
+              isChangeQuestion(q, change, { stages, restsOn: routedAll.about[q.id]?.restsOn }),
+            )
+          : routedAll.questions;
         const routed = {
           ...routedAll,
-          questions: state ? base.filter((q) => q.state === state) : base,
+          questions: base.filter(
+            (q) => (!state || q.state === state) && (!role || roleOf(q) === role),
+          ),
         };
         const listed = { problems: every.problems };
         const n = (s: string) => base.filter((q) => q.state === s).length;
@@ -72,11 +97,13 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
                 ];
               }),
             ),
+            byRole: countByRole(base, roleOf),
           },
           questions: routed.questions,
           problems: [...listed.problems, ...routed.problems],
           about: routed.about,
           ...(routed.me ? { me: routed.me } : {}),
+          ...(change ? { yourRoles: await personsRoles(ctx.root, change, ctx.user) } : {}),
         };
         return { status: 200, body };
       })

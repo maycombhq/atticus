@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { changesDirOf, listQuestions } from "@maycombhq/core";
+import { changesDirOf, listQuestions, type QuestionRole } from "@maycombhq/core";
 import { changeReport } from "@maycombhq/changes";
 import { readChangeRepos } from "@maycombhq/workspace";
 import { changeSteps, readNextState, type NextStep } from "./next-commands.js";
@@ -38,6 +38,10 @@ export interface Cockpit {
   work?: string;
   stages: StageProgress[];
   openQuestions: number;
+  /** ADR 0181 part 4: the open questions by the role that owns them. */
+  openQuestionsByRole: Partial<Record<QuestionRole, number>>;
+  /** ADR 0181 part 4: the person's roles on the change (change.yaml owners), when a person is given. */
+  yourRoles?: QuestionRole[];
   repos: { id: string; branch: string; base: string; pr?: string }[];
 }
 
@@ -63,7 +67,11 @@ async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
   };
 }
 
-export async function cockpit(root: string, id: string): Promise<Cockpit> {
+export async function cockpit(
+  root: string,
+  id: string,
+  o: { user?: string } = {},
+): Promise<Cockpit> {
   const report = await changeReport(root, id);
   const dir = join(changesDirOf(root), id);
   const { questions } = await listQuestions(root, { state: "open" }).catch(() => ({
@@ -78,6 +86,15 @@ export async function cockpit(root: string, id: string): Promise<Cockpit> {
     ...questions.filter((q) => q.repo === id).map((q) => q.id),
     ...stages.flatMap((s) => s.asked),
   ]);
+  // ADR 0181 part 4: each open question of the change by the role that owns it.
+  const { stageQuestions, roleWithStage, personsRoles } = await import("./change-roles.js");
+  const raisedBy = await stageQuestions(root, id);
+  const byRole: Partial<Record<QuestionRole, number>> = {};
+  for (const q of questions) {
+    if (!ofChange.has(q.id)) continue;
+    const r = roleWithStage(q, raisedBy);
+    if (r) byRole[r] = (byRole[r] ?? 0) + 1;
+  }
   // This change's own next step, whatever else waits elsewhere in the metarepo.
   const state = (await readNextState(root)).changes.find((c) => c.id === id);
   const next = state ? changeSteps(state)[0] : undefined;
@@ -92,6 +109,8 @@ export async function cockpit(root: string, id: string): Promise<Cockpit> {
     ...(report.progress ? { work: report.progress.summary } : {}),
     stages: stages.map(({ asked: _asked, ...rest }) => rest),
     openQuestions: ofChange.size,
+    openQuestionsByRole: byRole,
+    ...(o.user !== undefined ? { yourRoles: await personsRoles(root, id, o.user) } : {}),
     repos: (repos?.repos ?? []).map((r) => ({
       id: r.id,
       branch: r.branch,
