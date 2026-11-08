@@ -133,4 +133,78 @@ describe("a task's run on the Task board, and its PR from the app", () => {
       await srv.close();
     }
   }, 120_000);
+
+  it("says a raised PR's state from the Git host, and runs the task again from the app once it is closed (review round 43)", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const now = () => new Date("2026-11-08T09:00:00Z");
+    const file = "src/main/java/forge/ledger/TransferLimits.java";
+    await runTask(root, CHANGE, "1.2", {
+      level: "draft",
+      by: "dev",
+      runtime: new MockRuntime(
+        () =>
+          `Done.\n\n=== file: ${file}\npackage forge.ledger;\n\nclass TransferLimits { boolean ok; }\n=== end file\n`,
+        { now },
+      ),
+      git,
+      now,
+      commands: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
+    });
+    const host = new MockGitHost([{ repo: "forge-ledger" }]);
+    const srv = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: host, taskRun: { git } }),
+    });
+    const call = (path: string, method = "GET", body: unknown = {}) =>
+      fetch(`${srv.url}${path}`, {
+        method,
+        headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+      });
+    const task12 = async () =>
+      z
+        .array(Api.Task)
+        .parse(await (await call(`/api/changes/${CHANGE}/tasks`)).json())
+        .find((t) => t.id === "1.2")!;
+    const runIt = () =>
+      call(`/api/changes/${CHANGE}/runs`, "POST", {
+        agent: "task-runner",
+        task: "1.2",
+        runtime: "hand-off",
+      });
+    try {
+      expect((await call(`/api/changes/${CHANGE}/tasks/1.2/pr`, "POST")).status).toBe(201);
+      expect((await task12()).taskRun?.pr).toMatchObject({ number: 1, state: "open" });
+      // The app's Run with AI (no level) is refused while the PR is open, and says so: never
+      // that no Git host is connected.
+      const held = await runIt();
+      expect(held.status).toBe(409);
+      const said = JSON.stringify(await held.json());
+      expect(said).toContain("Task 1.2's PR is open");
+      expect(said).not.toContain("no Git host is connected");
+      // A host that can't say leaves the recorded state: the PR open, its state not said.
+      host.failNext("unavailable", "getPullRequest");
+      const unknown = await task12();
+      expect(unknown.taskRun?.state).toBe("pr-open");
+      expect(unknown.taskRun?.pr).toBeDefined();
+      expect(unknown.taskRun?.pr?.state).toBeUndefined();
+      // Closed on the host: the board hears it, and Run with AI runs the task again.
+      await host.closePullRequest("forge-ledger", 1, {
+        by: "pat",
+        at: "2026-11-08T09:00:00Z",
+        ref: "closed on the host",
+      });
+      expect((await task12()).taskRun?.pr).toMatchObject({ number: 1, state: "closed" });
+      expect((await runIt()).status).toBe(201);
+      const t = await task12();
+      expect(t.taskRun?.state).toBe("waiting");
+      expect(t.taskRun?.notes).toContain(
+        "Its earlier PR https://git.example.com/forge-ledger/pull/1 is closed.",
+      );
+    } finally {
+      await srv.close();
+    }
+  }, 120_000);
 });

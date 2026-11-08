@@ -134,6 +134,45 @@ describe("a task that has run, on the Task board", () => {
     expect(isManualLink("https://git.example.com/x/pull/1")).toBe(false);
   });
 
+  it("review round 43: a PR the host says is merged or closed offers Run with AI again, and says so", () => {
+    const pr = (state?: "open" | "merged" | "closed") =>
+      task("1.1", {
+        state: "pr-open",
+        level: "draft",
+        branch: "b",
+        pr: {
+          number: 3,
+          url: "https://git.example.com/forge/pull/3",
+          ...(state ? { state } : {}),
+        },
+        notes: [],
+      });
+    // Open, or the host couldn't say: the PR is still the task's step.
+    expect(runIsTheStep(pr())).toBe(false);
+    expect(runIsTheStep(pr("open"))).toBe(false);
+    expect(runIsTheStep(pr("merged"))).toBe(true);
+    expect(runIsTheStep(pr("closed"))).toBe(true);
+    const open = renderToStaticMarkup(<TaskRunState change={CHANGE} task={pr("open")} />);
+    expect(open).toContain(T.taskState["pr-open"]!);
+    expect(open).toContain(esc(T.taskPrOpen));
+    const merged = renderToStaticMarkup(<TaskRunState change={CHANGE} task={pr("merged")} />);
+    expect(merged).toContain(T.taskPrStateChip.merged!);
+    expect(merged).toContain(esc(T.taskPrMerged));
+    expect(merged).not.toContain(esc(T.taskPrOpen));
+    expect(merged).toContain('href="https://git.example.com/forge/pull/3"');
+    const closed = renderToStaticMarkup(<TaskRunState change={CHANGE} task={pr("closed")} />);
+    expect(closed).toContain(T.taskPrStateChip.closed!);
+    expect(closed).toContain(esc(T.taskPrClosed));
+    expect(closed).not.toContain(esc(T.taskPrOpen));
+  });
+
+  it("review round 43: a built task with no commit offers no Raise", () => {
+    const t = built("1.1");
+    delete t.taskRun!.commit;
+    const html = renderToStaticMarkup(<TaskRunState change={CHANGE} task={t} />);
+    expect(html).not.toContain(esc(T.raiseTaskPr));
+  });
+
   it("AI task runs counts the task runs only, not the critics' and stages' runs", () => {
     const runs = [
       { agent: "safe-critic" },

@@ -55,6 +55,7 @@ import {
   previewTaskRun,
   raiseTaskPr,
   readTaskRun,
+  taskPrState,
   taskRunOfRun,
 } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
@@ -72,8 +73,12 @@ async function openTaskWorktree(
   root: string,
   change: string,
   task: string,
+  gitHost?: GitHost,
 ): Promise<Ran | undefined> {
-  const p = await previewTaskRun(root, change, task, { skipGitHost: true }).catch(() => undefined);
+  const p = await previewTaskRun(root, change, task, {
+    skipGitHost: true,
+    ...(gitHost ? { gitHost } : {}),
+  }).catch(() => undefined);
   if (!p) return undefined; // the run itself says what is wrong, as before
   const text = await readFile(join(changesDirOf(root), change, "repos.yaml"), "utf8").catch(
     () => "",
@@ -300,14 +305,32 @@ async function answeredMapQuestionRepo(root: string, path: string): Promise<stri
 /**
  * A change's tasks as the Task board shows them (C4 Task): tasks.md's order and ticks, each with
  * where its Run with AI stands (2.69.0, sixth UX walk), read from its task-run.yaml. A record that
- * doesn't read leaves the task as tasks.md says, never the list unread.
+ * doesn't read leaves the task as tasks.md says, never the list unread. Review round 43 (2.70.0):
+ * with `prs`, a raised PR's state is asked of the Git host (read-only, a short timeout, all at
+ * once), so a PR merged or closed there is said and its task can run with AI again; a host that
+ * can't say leaves the record's state.
  */
-async function taskViews(root: string, change: string): Promise<Api.TaskT[]> {
+async function taskViews(
+  root: string,
+  change: string,
+  prs?: { gitHost?: GitHost },
+): Promise<Api.TaskT[]> {
   const files = await readChangeFiles(join(changesDirOf(root), change));
+  const tasks = readChangeTasks(files);
+  const states = prs
+    ? await Promise.all(
+        tasks.map((t) =>
+          taskPrState(root, change, t.id, prs.gitHost ? { gitHost: prs.gitHost } : {}).catch(
+            () => undefined,
+          ),
+        ),
+      )
+    : [];
   const out: Api.TaskT[] = [];
-  for (const t of readChangeTasks(files)) {
+  for (const [i, t] of tasks.entries()) {
     const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
     const run = tr ? (tr.waiting ?? tr.runs[0]) : undefined;
+    const prState = tr?.state === "pr-open" ? states[i] : undefined;
     out.push({
       id: t.id,
       repo: t.repo,
@@ -323,7 +346,7 @@ async function taskViews(root: string, change: string): Promise<Api.TaskT[]> {
               level: tr.level,
               branch: tr.branch,
               ...(tr.commit ? { commit: tr.commit } : {}),
-              ...(tr.pr ? { pr: tr.pr } : {}),
+              ...(tr.pr ? { pr: { ...tr.pr, ...(prState ? { state: prState } : {}) } } : {}),
               notes: tr.notes,
             },
           }
@@ -630,7 +653,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("GET", "/api/changes/{changeId}/tasks", async ({ params }) => {
         await readChange(root, params.changeId!);
-        return { status: 200, body: await taskViews(root, params.changeId!) };
+        return {
+          status: 200,
+          body: await taskViews(root, params.changeId!, {
+            ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+          }),
+        };
       })
       // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's click is
       // the approval to push its branch and open the PR into the change branch (ADR 0073), as
@@ -671,7 +699,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           });
         return {
           status: 201,
-          body: (await taskViews(root, change)).find((t) => t.id === task)!,
+          body: (
+            await taskViews(root, change, { ...(deps.gitHost ? { gitHost: deps.gitHost } : {}) })
+          ).find((t) => t.id === task)!,
         };
       })
       .add("POST", "/api/changes/{changeId}/workspace", async ({ params, body }) => {
@@ -830,8 +860,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             });
           if (!level) {
             try {
-              // Only the level is wanted here: the app never pushes, so no Git host is made.
-              const p = await previewTaskRun(root, params.changeId!, b.task, { skipGitHost: true });
+              // The level is wanted here: the app never pushes, so whether a Git host is there to
+              // push to isn't asked. Review round 43: a task whose PR is open asks the route's Git
+              // host (read-only) whether it still is, so one merged or closed runs again.
+              const p = await previewTaskRun(root, params.changeId!, b.task, {
+                skipGitHost: true,
+                ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+              });
               level = p.level === "pr" ? "draft" : p.level;
             } catch (e) {
               // A task that waits is 409; a task, repo or setting that isn't right is said (422),
@@ -845,10 +880,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           const lv = level;
           // UX review: the task's repo gets its worktree here when it has none yet (a local
           // folder, nothing shared), so Run with AI never sends the person to a terminal first.
-          const opened = await openTaskWorktree(root, params.changeId!, b.task!);
+          const opened = await openTaskWorktree(root, params.changeId!, b.task!, deps.gitHost);
           if (opened && opened.code !== 0) throw refused(opened);
           res = await run((io) =>
-            taskRun(root, params.changeId!, b.task!, { mode: b.runtime, by: user, level: lv }, io),
+            taskRun(root, params.changeId!, b.task!, { mode: b.runtime, by: user, level: lv }, io, {
+              ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+              ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
+            }),
           );
           if (opened) res = { ...res, out: [...opened.out, ...res.out] };
         } else if (b.agent === "story-writer")

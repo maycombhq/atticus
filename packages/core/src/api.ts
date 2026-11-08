@@ -227,8 +227,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   blocked says what the phase allows, not that the file was written); GET /api/propose lists in
  *   `applyFirst` the repos whose answered map questions are newer than their last Apply too, not
  *   only their corrections. Additive only.
+ * 2.71.0 (review round 43): a task's raised PR in GET /api/changes/{changeId}/tasks carries
+ *   `taskRun.pr.state`, open, merged or closed as the Git host says it now (asked read-only, with
+ *   a short timeout; absent when the host can't say). Additive only.
  */
-export const API_VERSION = "2.70.0";
+export const API_VERSION = "2.71.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -618,7 +621,18 @@ export const Task = z.object({
       level: z.string(),
       branch: z.string(),
       commit: z.string().optional(),
-      pr: z.object({ number: z.number().int(), url: z.string() }).optional(),
+      pr: z
+        .object({
+          number: z.number().int(),
+          url: z.string(),
+          /**
+           * 2.70.0 (review round 43): the PR's state as the Git host says it now, asked read-only
+           * when the tasks are listed; absent when the host isn't there or didn't answer in time
+           * (the record's state stands). Merged or closed, the task can run with AI again.
+           */
+          state: z.enum(["open", "merged", "closed"]).optional(),
+        })
+        .optional(),
       notes: z.array(z.string()),
     })
     .optional(),

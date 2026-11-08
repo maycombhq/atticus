@@ -30,9 +30,21 @@ const PAST_THE_RUN = new Set(["built", "unverified", "pr-open", "waiting"]);
 export const isPrNotRaised = (note: string | undefined): boolean =>
   !!note && note.startsWith("The PR wasn't raised:");
 
-/** Whether Run with AI is still the task's step (it never ran, or it stopped). */
+/**
+ * Review round 43: the task's PR as the Git host says it now (API 2.70.0), merged or closed;
+ * undefined while it is open, or when the host couldn't say (the record's PR open stands).
+ */
+export function prSettled(t: Pick<Task, "taskRun">): "merged" | "closed" | undefined {
+  const s = t.taskRun?.state === "pr-open" ? t.taskRun.pr?.state : undefined;
+  return s === "merged" || s === "closed" ? s : undefined;
+}
+
+/**
+ * Whether Run with AI is still the task's step: it never ran, it stopped, or (review round 43)
+ * its PR was merged or closed on the Git host, which no longer holds the task.
+ */
 export function runIsTheStep(t: Pick<Task, "done" | "taskRun">): boolean {
-  return !t.done && !PAST_THE_RUN.has(t.taskRun?.state ?? "");
+  return !t.done && (!PAST_THE_RUN.has(t.taskRun?.state ?? "") || !!prSettled(t));
 }
 
 /** Only the runs of tasks (Run with AI), not the critics' and stages' runs. */
@@ -127,26 +139,37 @@ export function TaskRunState(p: { change: string; task: Task; onDone?: () => voi
   const last = tr.notes.at(-1);
   const notRaised = tr.state === "built" && isPrNotRaised(last);
   const stopped = tr.state === "needs-person" || tr.state === "failed";
+  const settled = prSettled(t);
   const alert = stopped || notRaised;
   return (
     <div className="stack" style={{ gap: 4, fontSize: 12 }}>
       <span className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span
-          className={`chip ${stopped ? "blocking" : tr.state === "waiting" ? "ai" : tr.state === "unverified" ? "warn" : "done"}`}
+          className={`chip ${stopped ? "blocking" : tr.state === "waiting" ? "ai" : tr.state === "unverified" || settled === "closed" ? "warn" : "done"}`}
         >
-          {T.taskState[tr.state] ?? tr.state.toUpperCase()}
+          {(settled && T.taskPrStateChip[settled]) ??
+            T.taskState[tr.state] ??
+            tr.state.toUpperCase()}
         </span>
         {t.run && <a href={`#/runs?run=${encodeURIComponent(t.run)}`}>{T.openItsRun}</a>}
       </span>
       {tr.state === "built" && tr.commit && <span>{T.taskBuilt(tr.branch, tr.commit)}</span>}
       {notRaised && <span>{T.taskPrNotRaised}</span>}
-      {tr.state === "built" && <RaiseTaskPr change={p.change} task={t.id} onDone={p.onDone} />}
+      {/* Review round 43: nothing committed is nothing to raise. */}
+      {tr.state === "built" && tr.commit && (
+        <RaiseTaskPr change={p.change} task={t.id} onDone={p.onDone} />
+      )}
       {tr.state === "unverified" && (
         <span>{T.taskUnverified(t.repo, tr.branch, `change/${p.change}`)}</span>
       )}
       {tr.state === "pr-open" && tr.pr && (
         <span>
-          {T.taskPrOpen} <PrLink pr={tr.pr} />
+          {settled === "merged"
+            ? T.taskPrMerged
+            : settled === "closed"
+              ? T.taskPrClosed
+              : T.taskPrOpen}{" "}
+          <PrLink pr={tr.pr} />
         </span>
       )}
       {tr.state === "waiting" && <span>{T.taskWaiting}</span>}

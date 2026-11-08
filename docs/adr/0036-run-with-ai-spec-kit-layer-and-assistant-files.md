@@ -63,3 +63,8 @@ Round 42 (task PRs) refined that for the PR:
 - **The change branch is the host's once it is there.** Raising a task's PR pushes the change branch only when the host hasn't got it, together with the task branch (`--atomic`), and never over it: merged task PRs move it on the host.
 - **Only what was built is raised.** A task branch with commits after the passing build is refused, with nothing changed.
 - **An open PR holds its task.** A task whose PR is open isn't run again until the Git host says the PR is merged or closed.
+
+Round 43 (tasks) settled two more:
+
+- **Every way in asks the Git host.** The app's Run with AI asks the same Git host the other routes use whether a task's PR is still open, and the Task board asks it (read-only, with a short timeout) for each raised PR's state when it lists the tasks. A PR merged or closed there offers Run with AI again; a host that can't say leaves the PR open as recorded. A merged PR doesn't tick the task: ticking it in `tasks.md` stays the person's.
+- **Nothing to commit is a person's task.** An answer that changes nothing in the task's worktree leaves no commit, so the task needs a person with a note saying so, and no PR is opened. Raise is offered only for a built task with a commit.
