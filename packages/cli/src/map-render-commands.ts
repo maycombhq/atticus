@@ -78,7 +78,7 @@ import {
   trustOf,
   type RenderMapInput,
 } from "@maycombhq/verify";
-import { baseClonePath, loadRepos } from "@maycombhq/workspace";
+import { baseClonePath, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
 import { termsWrite } from "./term-lines.js";
@@ -927,10 +927,7 @@ async function renderRepoMap(
   const open = (await listQuestions(root, { state: "open", repo })).questions;
   const manifest = (await loadRepos(root).catch(() => [])).find((r) => r.id === repo);
   const adopted = isAdopted(root);
-  const url =
-    manifest?.url && manifest.url !== "." && !manifest.url.startsWith("./")
-      ? manifest.url
-      : undefined;
+  const url = manifest?.url && !isInPlace(manifest.url) ? manifest.url : undefined;
   const codeLink = codeLinkerFor(
     url ? { url } : { dir: adopted ? "" : posix(relative(root, baseClonePath(root, repo))) },
   );
