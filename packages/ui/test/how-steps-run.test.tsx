@@ -19,8 +19,8 @@ describe("how AI steps run, on Home (ADR 0121)", () => {
 
   it("shows nothing while it loads, and says so when it can't be read", () => {
     expect(renderToStaticMarkup(<HowStepsRunLine />)).toBe("");
-    expect(renderToStaticMarkup(<HowStepsRunLine failed />)).toContain(
-      T.howStepsRunCantRead.replace(/'/g, "&#x27;"),
+    expect(renderToStaticMarkup(<HowStepsRunLine failed why="runtime.yaml: bad" />)).toContain(
+      T.howStepsRunCantRead("runtime.yaml: bad").replace(/'/g, "&#x27;"),
     );
   });
 });

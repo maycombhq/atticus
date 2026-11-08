@@ -10,6 +10,8 @@ import {
 import {
   changesRelOf,
   handoffBranch,
+  listQuestions,
+  questionsRelOf,
   type ChangeHandoff,
   type ChangeLifecycle,
   type LifecycleState,
@@ -153,6 +155,23 @@ async function handoffFiles(
   return { files: [...files].sort(), artifacts };
 }
 
+/**
+ * Seventh UX walk: the change's own answered questions, metarepo-relative. The decisions a
+ * person makes on a change (filed under the change id: its repo or its scope is the change) live
+ * in the metarepo's questions/ folder, outside the change folder; every hand-off carries all of
+ * them, so they reach the metarepo by the change's PR. One already merged and unchanged adds
+ * nothing to the PR's diff, so carrying all of them each time is the simple rule that never
+ * leaves one behind. Open and retired ones don't ride.
+ */
+async function changeQuestionFiles(root: string, id: string): Promise<string[]> {
+  const { questions } = await listQuestions(root, { state: "answered" });
+  const rel = questionsRelOf(root);
+  return questions
+    .filter((q) => q.repo === id || (q.scope.level === "repo" && q.scope.id === id))
+    .map((q) => `${rel}/${q.id}.yaml`)
+    .sort();
+}
+
 function prBody(
   a: Assessment,
   phase: PhaseId,
@@ -260,7 +279,12 @@ export async function handoff(
   }
   const branch = handoffBranch(id, phase);
   const rel = changesRelOf(root);
-  const metaFiles = [...files.map((f) => `${rel}/${id}/${f}`), `${rel}/${id}/change.yaml`];
+  const questionFiles = await changeQuestionFiles(root, id);
+  const metaFiles = [
+    ...files.map((f) => `${rel}/${id}/${f}`),
+    `${rel}/${id}/change.yaml`,
+    ...questionFiles,
+  ];
   const reviewers = [
     ...new Set(files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`))),
   ]
@@ -330,7 +354,7 @@ export async function handoff(
         a,
         phase,
         change.state === "returned" ? nextAfterResubmit(a, phase) : next,
-        files.map((f) => `${rel}/${id}/${f}`),
+        [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
         reviewers,
         opts.review,
       ),

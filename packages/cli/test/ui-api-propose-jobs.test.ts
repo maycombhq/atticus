@@ -108,3 +108,89 @@ it("lists applyFirst only for corrections newer than the repo's last Apply", asy
     await s.close();
   }
 }, 60_000);
+
+/**
+ * Seventh UX walk: an answer to a map question is read by Apply (verify --write) as a correction
+ * is, so a repo whose answered questions are newer than its last Apply is listed too; a change's
+ * own question (filed under the change id) is not, since Apply never reads it.
+ */
+it("lists applyFirst for answered map questions newer than the repo's last Apply", async () => {
+  const { mkdir, utimes, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { questionsDirOf, specDirOf } = await import("@maycombhq/core");
+  const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+  const s = await startServer({ root, port: 0, user: "pat", extend: (r, ctx) => uiRoutes(r, ctx) });
+  const plan = async () =>
+    (await (
+      await fetch(`${s.url}/api/propose?scope=work`, { headers: { "X-Atticus-Token": s.token } })
+    ).json()) as { files: { path: string }[]; applyFirst?: string[] };
+  const question = (id: string, repo: string, command: string, state: string) =>
+    [
+      "schemaVersion: 4",
+      `id: ${id}`,
+      "askedBy:",
+      "  step: facts-targets",
+      `  command: ${command}`,
+      "  at: 2026-11-08T09:00:00Z",
+      `repo: ${repo}`,
+      "question: Which repo serves the routes under /accounts?",
+      "options:",
+      "  - label: forge-ledger",
+      "    means: forge-ledger serves them",
+      "    changes: The calls join forge-ledger",
+      "evidence:",
+      "  - src/main/java/forge/ledger/Accounts.java:1",
+      "scope:",
+      "  level: repo",
+      `  id: ${repo}`,
+      `state: ${state}`,
+      `rerun: ${command}`,
+      ...(state === "answered"
+        ? [
+            "answer:",
+            "  option: 1",
+            "  by: pat",
+            "  at: 2026-11-08T10:00:00Z",
+            "  scope:",
+            "    level: repo",
+            `    id: ${repo}`,
+          ]
+        : []),
+      "",
+    ].join("\n");
+  const at = (p: string, iso: string) => utimes(p, new Date(iso), new Date(iso));
+  try {
+    await mkdir(questionsDirOf(root), { recursive: true });
+    await mkdir(specDirOf(root, "forge-ledger"), { recursive: true });
+    const header = join(specDirOf(root, "forge-ledger"), "spec.yaml");
+    await writeFile(header, "repo: forge-ledger\n");
+    await at(header, "2026-11-08T09:30:00Z");
+    const answered = join(questionsDirOf(root), "q-aaaaaaaaaaaa.yaml");
+    await writeFile(
+      answered,
+      question("q-aaaaaaaaaaaa", "forge-ledger", "atticus verify forge-ledger --write", "answered"),
+    );
+    await at(answered, "2026-11-08T10:00:00Z");
+    // An open question and a change's own answered question never ask for Apply.
+    const open = join(questionsDirOf(root), "q-bbbbbbbbbbbb.yaml");
+    await writeFile(
+      open,
+      question("q-bbbbbbbbbbbb", "forge-ledger", "atticus verify forge-ledger --write", "open"),
+    );
+    await at(open, "2026-11-08T10:00:00Z");
+    const ofChange = join(questionsDirOf(root), "q-cccccccccccc.yaml");
+    await writeFile(
+      ofChange,
+      question("q-cccccccccccc", "add-a-limit", "atticus change feature add-a-limit", "answered"),
+    );
+    await at(ofChange, "2026-11-08T10:00:00Z");
+    const first = await plan();
+    expect(first.files.some((f) => f.path.endsWith("q-aaaaaaaaaaaa.yaml"))).toBe(true);
+    expect(first.applyFirst).toEqual(["forge-ledger"]);
+    // Apply ran after the answer: nothing to apply first.
+    await at(header, "2026-11-08T10:05:00Z");
+    expect((await plan()).applyFirst).toEqual([]);
+  } finally {
+    await s.close();
+  }
+}, 60_000);

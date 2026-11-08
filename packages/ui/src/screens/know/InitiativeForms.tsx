@@ -8,6 +8,7 @@ import { Note, useAction } from "./common.js";
 const T = COPY.design;
 const JOURNEYS = Object.keys(T.journeys);
 const STATES = Object.keys(T.commitmentStates);
+const focusOnShow = (el: HTMLElement | null) => el?.focus();
 
 /**
  * UX review: an initiative starts in the app (POST /api/initiatives), as `atticus initiative
@@ -24,11 +25,30 @@ export function NewInitiative(p: { onCreated?: (id: string) => void; open?: bool
   const [saved, setSaved] = useState(false);
   const act = useAction();
   const uid = useId();
+  // Seventh UX walk: after Start the form closes; what was started and Propose for review stay.
   if (!open)
     return (
-      <button type="button" className="btn primary" onClick={() => setOpen(true)}>
-        {T.newInitiative}
-      </button>
+      <div className="stack" style={{ gap: 8 }}>
+        <div>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              setOpen(true);
+              setSaved(false);
+            }}
+          >
+            {T.newInitiative}
+          </button>
+        </div>
+        {saved && (
+          // The form's button is gone: focus moves to what was started (WCAG 2.4.3).
+          <div ref={focusOnShow} tabIndex={-1} className="stack" style={{ gap: 8 }}>
+            <Note note={act.note} />
+            <Propose scope="initiatives" />
+          </div>
+        )}
+      </div>
     );
   const theId = id ?? changeIdOf(title);
   const ready = title.trim() !== "" && theId !== "";
@@ -45,6 +65,11 @@ export function NewInitiative(p: { onCreated?: (id: string) => void; open?: bool
         },
       });
       setSaved(true);
+      setOpen(false);
+      setTitle("");
+      setId(undefined);
+      setRelease("");
+      setEpic("");
       p.onCreated?.(r.initiative);
       return r.initiative;
     }, T.startedInitiative);

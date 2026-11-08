@@ -154,14 +154,23 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     const tabs = new Set(SECTIONS.flatMap((s) => of(s)));
     for (const id of UNDER_MORE) expect(tabs.has(id), id).toBe(false);
     const more = morePages();
-    expect(more.map((g) => g.section)).toEqual(["Map", "Change", "Knowledge", "SetUp", "Atticus"]);
+    expect(more.map((g) => g.section)).toEqual([
+      "Home",
+      "Map",
+      "Change",
+      "Knowledge",
+      "SetUp",
+      "Atticus",
+    ]);
     const listed = more.flatMap((g) => g.pages.map((p) => p.id));
     expect([...listed].sort()).toEqual([...UNDER_MORE].sort());
     expect(new Set(listed).size).toBe(listed.length);
     expect(listed).not.toContain("runs");
     const byId = (s: string) => more.find((g) => g.section === s)!.pages.map((p) => p.id);
     expect(byId("Knowledge")).toEqual(["parties", "orgpack-draft"]);
-    expect(byId("SetUp")).toEqual(["scans", "intake", "settings"]);
+    // Seventh UX walk: pages across every change with Home, the org pack's checks in Set up.
+    expect(byId("Home")).toEqual(["initiatives", "todo"]);
+    expect(byId("SetUp")).toEqual(["governance", "scans", "intake", "settings"]);
     expect(byId("Atticus")).toEqual(["history", "evals", "learning"]);
     // Change's by phase, in the order of a change.
     const change = more.find((g) => g.section === "Change")!;
@@ -169,7 +178,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
       ["Define", ["brief", "ux"]],
       ["Design", ["arch-review"]],
       ["Plan", ["breakdown", "estimate"]],
-      ["Build", ["tasks", "conformance", "trace", "todo"]],
+      ["Build", ["tasks", "conformance", "trace"]],
       ["Release", ["release", "service-desk"]],
     ]);
     expect(change.pages.map((p) => p.id)).toEqual(
@@ -220,7 +229,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     ]);
     expect(phase("Design")).toEqual(["architecture", "arch-review", "change-diagram"]);
     expect(phase("Plan")).toEqual(["stories", "breakdown", "estimate"]);
-    expect(phase("Build")).toEqual(["task-list", "tasks", "conformance", "trace", "todo"]);
+    expect(phase("Build")).toEqual(["task-list", "tasks", "conformance", "trace"]);
     expect(phase("Release")).toEqual(["release", "service-desk"]);
   });
 
@@ -238,7 +247,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(screenOf("#/dashboard").id).toBe("home");
     expect(screenOf("#/dashboard?x=1").id).toBe("home");
     expect(of("Home")).toEqual(["home"]);
-    expect(of("Home", true)).toEqual(["home", "words"]);
+    expect(of("Home", true)).toEqual(["home", "words", "initiatives", "todo"]);
     expect(sectionLabel(screenOf("#/home").section)).toBe(screenOf("#/home").label);
   });
 

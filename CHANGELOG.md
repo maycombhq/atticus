@@ -54,6 +54,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Seventh UX walk (answers and access):
+  - **Answers to map questions are offered for Apply after you leave the page.** Propose for review's `applyFirst` (API 2.70.0) lists a repo whose answered map questions (asked by Apply for that repo) are newer than its last Apply, as it did for corrections; Home offers Apply for it, and an answered question on Questions shows Apply while its answer isn't in the map yet.
+  - **A change's own answered questions go with its hand-off PR.** The decisions filed under a change id in `questions/` (the question's repo or scope is the change) ride along with every hand-off of the change; one already merged adds nothing to the diff. Open and retired ones don't ride, so they no longer stay "new" in Propose after release.
+  - **Focus is seen and kept.** The header's Ask field shows a focus ring (WCAG 2.4.7); after Save the answer, focus moves to what was saved, and after Start the initiative to what was started (WCAG 2.4.3).
+  - **Words, not commands.** A question says when it was asked in words ("Asked when Atticus checked forge-ledger-core's map"), and its options say what they change without the command in brackets. A change file's status says "Not written yet" for a missing file or one that holds only the template (API 2.70.0's `written`), not READY. Initiatives say their status in words, the form closes after Start, the plan's changes are listed under Changes to start, and "no plan yet" points at Plan it on the page.
+  - **Pages in their section.** Initiatives and Manual steps sit with Home, Governance with Set up, instead of showing Map's or an empty change's tabs.
+  - **Errors say what the server answered.** A failure with no reason of Atticus's own shows the status and the server's words; Home names runtime.yaml only when the problem does, and no longer tells you to check that atticus ui is running for every error.
+  - **Count tiles on Questions.** Answered and Retired are counts, not disabled buttons; Open and All still pick the list's filter.
 - Round 42 (review):
   - **One plural rule for endpoint ids and the glossary**, in core. Round 43 narrowed it so only wrong ids move. **Ids that change on upgrade:**
     - Endpoints whose last word is a known -us noun in the plural: `/payment-statuses` is `get-payment-status` in every version, and `/status` is `get-status` (it was `get-statu` in beta.20).

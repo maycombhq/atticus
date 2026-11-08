@@ -3,6 +3,7 @@ import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client
 import { NewChange } from "./work/NewChange.js";
 import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
+import { artifactStatusWord } from "../app/artifact-status.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
@@ -38,6 +39,8 @@ export interface ArtifactStatus {
   artifact: string;
   path: string;
   status: "blocked" | "ready" | "done" | "not-required";
+  /** API 2.70.0: whether its file is there (and holds more than the template). */
+  written?: boolean;
   openFindings: number;
 }
 export interface ChangeDetail extends ChangeSummary {
@@ -676,7 +679,7 @@ function Detail({ id }: { id: string }) {
                       <span
                         className={`chip ${a.status === "done" ? "done" : a.status === "blocked" ? "dim" : "warn"}`}
                       >
-                        {a.status.toUpperCase()}
+                        {artifactStatusWord(a)}
                       </span>
                     </td>
                     <td>{a.openFindings || ""}</td>

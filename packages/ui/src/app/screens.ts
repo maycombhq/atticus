@@ -59,6 +59,10 @@ export const SCREENS: ScreenDef[] = [
   },
   // The words, from the link beside Help.
   { id: "words", label: S.words, section: "Home", aside: true },
+  // Seventh UX walk: pages across every change sit with Home, whose Waiting on you counts the
+  // manual steps; under Map or Change they showed tabs they aren't part of.
+  { id: "initiatives", label: S.initiatives, section: "Home", full: true },
+  { id: "todo", label: S.todo, section: "Home", full: true },
 
   // Map: the estate drawn, its flows, contracts, what breaks, and how far to trust it.
   { id: "canvas", label: S.canvas, section: "Map" },
@@ -78,8 +82,6 @@ export const SCREENS: ScreenDef[] = [
   { id: "mappings", label: S.mappings, section: "Map", full: true },
   { id: "diagrams", label: S.diagrams, section: "Map", full: true },
   { id: "reconcile", label: S.reconcile, section: "Map", full: true },
-  { id: "governance", label: S.governance, section: "Map", full: true },
-  { id: "initiatives", label: S.initiatives, section: "Map", full: true },
 
   // Change: every change, one at a glance, then a tab per stage (the product owner, 2026-10-24).
   { id: "changes", label: S.changes, section: "Change" },
@@ -111,7 +113,6 @@ export const SCREENS: ScreenDef[] = [
   // ADR 0114: does the code do what the design says?
   { id: "conformance", label: S.conformance, section: "Change", group: "Build", full: true },
   { id: "trace", label: S.trace, section: "Change", group: "Build", full: true },
-  { id: "todo", label: S.todo, section: "Change", group: "Build", full: true },
   { id: "release", label: S.release, section: "Change", group: "Release", full: true },
   { id: "service-desk", label: S.serviceDesk, section: "Change", group: "Release", full: true },
 
@@ -134,6 +135,8 @@ export const SCREENS: ScreenDef[] = [
   // place a person looking for "what was the AI asked" opens (2026-10-25).
   { id: "runs", label: S.runs, section: "SetUp" },
   { id: "orgpack", label: S.orgpack, section: "SetUp" },
+  // Seventh UX walk: the org pack's checks, beside the org pack.
+  { id: "governance", label: S.governance, section: "SetUp", full: true },
   // The first steps, from Home's next step.
   { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
   { id: "scans", label: S.scans, section: "SetUp", full: true },
