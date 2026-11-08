@@ -113,7 +113,6 @@ export function Propose({ scope }: { scope: Scope }) {
             </p>
           ))}
         </div>
-        <BringIn />
       </div>
     );
   if (!plan)

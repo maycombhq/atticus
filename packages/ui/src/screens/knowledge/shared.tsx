@@ -68,7 +68,7 @@ export function AiStep({
           assistant; the command stays beside it for a terminal. */}
       <RunStep command={command} />
       <p className="work-say">{stepArgs(command) ? K.ai.introOr : K.ai.intro}</p>
-      <Command text={command} label={K.ai.copy} />
+      <Command text={command} label={K.ai.copy} noRun />
       {slash && (
         <>
           <p className="work-say">{K.ai.slash}</p>

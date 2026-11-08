@@ -138,6 +138,10 @@ describe("model runs (ADR 0106)", () => {
     const r = await call("/api/runs");
     expect(r.status).toBe(200);
     const list = Api.RunList.parse(r.body);
+    // Third UX walk: each run says its errors, as the run page reads them (a failed run's page
+    // crashed without).
+    const raw = r.body as unknown as { runs: { errors?: unknown }[] };
+    expect(raw.runs.every((x) => Array.isArray(x.errors))).toBe(true);
     expect(list.runs.map((x) => x.runId)).toEqual([third, second, first]);
     expect(list.runs[1]).toMatchObject({
       change: "knowledge-scan",

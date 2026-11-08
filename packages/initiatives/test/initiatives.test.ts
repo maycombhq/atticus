@@ -313,6 +313,19 @@ describe("the Northwind Pay v3 migration (golden, vendor-api-change)", () => {
       expect(s.items.find((i) => i.key === key)!.why).toBe(why);
   });
 
+  it("shows a commitment a person recorded at risk or slipped, until the dates say worse (third UX walk)", async () => {
+    const root = await forgeRoot();
+    await startGolden(root);
+    const early = await initiativeStatus(root, ID, { now: at("2026-12-15T09:00:00Z") });
+    const one = early.commitments.find((c) => c.status === "open")!;
+    await recordCommitment(root, one.id, { status: "at-risk", by: "ari" });
+    const after = await initiativeStatus(root, ID, { now: at("2026-12-15T09:00:00Z") });
+    expect(after.commitments.find((c) => c.id === one.id)).toMatchObject({
+      status: "at-risk",
+      recorded: "at-risk",
+    });
+  });
+
   it("is on track when everything is on plan, and done when every item is done", async () => {
     const root = await forgeRoot();
     await startGolden(root);

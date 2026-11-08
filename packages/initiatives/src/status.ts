@@ -253,6 +253,14 @@ export async function initiativeStatus(
     else if (workingDays(today, c.neededBy) <= 2)
       [status, why] = ["at-risk", `Needed by ${c.neededBy}: two working days or less left.`];
     else [status, why] = ["open", `Needed by ${c.neededBy}.`];
+    // Third UX walk: a person's "at risk" or "slipped" stands until the dates say worse.
+    const rank: Record<string, number> = { slipped: 3, "at-risk": 2 };
+    const said = c.commitmentStatus;
+    if ((said === "at-risk" || said === "slipped") && rank[said]! > (rank[status] ?? 0))
+      [status, why] = [
+        said as ItemStatus,
+        said === "slipped" ? "Recorded as slipped." : "Recorded as at risk.",
+      ];
     return {
       id: c.id,
       what: c.what,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { RunStep } from "../../app/runstep.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
@@ -230,24 +231,39 @@ function ArtifactPanel({
       }
     >
       {missing ? (
-        <div className="state">{T.notWrittenYetFor}</div>
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="state">{T.notWrittenYetFor}</div>
+          {/* Third UX walk: a new change's proposal and specs are drafted from here. */}
+          {(artifact === "proposal" || artifact === "specs") && (
+            <RunStep command={`atticus change draft ${change}`} />
+          )}
+        </div>
       ) : (
         <View of={a}>
-          {(d) => (
-            <div className="stack" style={{ gap: 6 }}>
-              <span className="mono muted" style={{ fontSize: 11 }}>
-                {d.path}
-              </span>
-              <div
-                tabIndex={0}
-                role="region"
-                aria-label={T.text(artifact)}
-                style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}
-              >
-                <Markdown text={d.content} />
+          {(d) =>
+            d.content === "" ? (
+              <div className="stack" style={{ gap: 6 }}>
+                <div className="state">{T.notWrittenYetEdit}</div>
+                {(artifact === "proposal" || artifact === "specs") && (
+                  <RunStep command={`atticus change draft ${change}`} />
+                )}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="mono muted" style={{ fontSize: 11 }}>
+                  {d.path}
+                </span>
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label={T.text(artifact)}
+                  style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}
+                >
+                  <Markdown text={d.content} />
+                </div>
+              </div>
+            )
+          }
         </View>
       )}
     </Panel>

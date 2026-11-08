@@ -423,6 +423,11 @@ export async function bringInMerged(
     );
     return 1;
   }
+  if (!incoming.size && !done.length) {
+    io.out(`Nothing new has merged on ${up} yet: your copy is up to date with it.`);
+    if (kept.length) io.out(`Your own edits stay as they were: ${kept.join(", ")}.`);
+    return 0;
+  }
   io.out(
     `Brought in what merged on ${up}${done.length ? ` (${done.length} file${done.length === 1 ? "" : "s"} were already the same)` : ""}.`,
   );

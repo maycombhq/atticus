@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 import { baseClonePath } from "@maycombhq/workspace";
@@ -306,7 +306,12 @@ async function findRun(root: string, runId: string) {
 }
 
 /** The file behind a single-file view of an artifact (specs and stories show their first file). */
-async function artifactPath(root: string, id: string, artifact: string): Promise<string> {
+async function artifactPath(
+  root: string,
+  id: string,
+  artifact: string,
+  o: { orNew?: boolean } = {},
+): Promise<string> {
   const a = ChangeArtifact.safeParse(artifact);
   if (!a.success)
     throw badRequest(
@@ -314,6 +319,10 @@ async function artifactPath(root: string, id: string, artifact: string): Promise
     );
   const dir = join(changesDirOf(root), id);
   const files = await artifactFiles(dir, a.data);
+  // Third UX walk: a one-file artifact not written yet opens empty, and Save creates it (a new
+  // change's proposal, written by hand). Specs are one file per capability: drafted, not here.
+  if (files.length === 0 && o.orNew && a.data !== "specs")
+    return a.data === "stories" ? "stories.md" : `${a.data}.md`;
   if (files.length === 0) throw notFound(`Change ${id} has no ${artifact} yet.`);
   return files[0]!;
 }
@@ -474,8 +483,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params }) => {
         await readChange(root, params.changeId!);
-        const rel = await artifactPath(root, params.changeId!, params.artifact!);
-        const content = await readFile(join(changesDirOf(root), params.changeId!, rel), "utf8");
+        const rel = await artifactPath(root, params.changeId!, params.artifact!, { orNew: true });
+        const content = await readFile(
+          join(changesDirOf(root), params.changeId!, rel),
+          "utf8",
+        ).catch(() => "");
         return {
           status: 200,
           body: {
@@ -489,15 +501,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("PUT", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.SaveArtifactRequest, body);
-        const rel = await artifactPath(root, params.changeId!, params.artifact!);
+        const rel = await artifactPath(root, params.changeId!, params.artifact!, { orNew: true });
         const file = join(changesDirOf(root), params.changeId!, rel);
-        const now = await readFile(file, "utf8");
+        const was = await readFile(file, "utf8").catch(() => undefined);
+        const now = was ?? "";
         if (sha(now) !== b.baseSha256)
           throw conflict(
             `${rel} changed since you opened it. Reload it, then make your edit again.`,
           );
         // Atomic, and refused (409) if another save landed between the read and the write.
-        await writeFileIfUnchanged(file, now, b.content);
+        await mkdir(dirname(file), { recursive: true });
+        await writeFileIfUnchanged(file, was, b.content);
         ctx.events.publish({
           type: "file.changed",
           path: `${changesRelOf(root)}/${params.changeId}/${rel}`,

@@ -14,14 +14,23 @@ const R = COPY.runNext;
  * gets a Run button where a model can be reached from here (ADR 0106): Copilot in a VS Code
  * panel, the server's model in a browser.
  */
-export function Command({ text, label }: { text: string; label: string }) {
+export function Command({
+  text,
+  label,
+  noRun,
+}: {
+  text: string;
+  label: string;
+  /** The page shows the step's Run itself, so the command doesn't show it twice. */
+  noRun?: boolean;
+}) {
   return (
     <>
       <div className="work-cmd">
         <code className="mono">{text}</code>
         <CopyButton text={text} label={`${label}: ${text}`} />
       </div>
-      <RunStep command={text} />
+      {!noRun && <RunStep command={text} />}
     </>
   );
 }

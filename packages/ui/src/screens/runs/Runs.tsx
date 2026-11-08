@@ -254,7 +254,7 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
           />
           {/* UX re-walk: a hand-off whose answer failed its checks says why and can be checked
               again or cancelled here, not only with atticus handoff done. */}
-          {t.run.state === "failed" && t.run.errors.length > 0 && (
+          {t.run.state === "failed" && (t.run.errors ?? []).length > 0 && (
             <div role="alert" className="stack" style={{ gap: 4 }}>
               <p className="work-say" style={{ margin: 0 }}>
                 {R.failedSay}

@@ -107,6 +107,8 @@ export async function item(root: string, s: Stored): Promise<Api.RunListItem> {
     startedAt: r.startedAt,
     ...(r.finishedAt ? { finishedAt: r.finishedAt } : {}),
     ...(r.request.outputPath ? { output: r.request.outputPath } : {}),
+    // Third UX walk: a failed run's problems, which its page shows (they were left out).
+    errors: r.errors ?? [],
     ...(r.usage ? { usage: r.usage } : {}),
     contextManifestSha256: sha(manifest),
     promptPath: `${runsRelOf(root)}/${r.request.change}/${r.runId}/prompt.md`,

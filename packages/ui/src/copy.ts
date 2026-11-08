@@ -2651,6 +2651,8 @@ export const COPY = {
     raiseHandOff: "Raise hand-off",
     syncAndMergeWhen: "Sync and merge when approved",
     gate: "Gate",
+    notWrittenYetEdit:
+      "Not written yet. Edit writes it, or your assistant drafts it with the change's other files:",
     notWrittenYetFor:
       "Not written yet for this change. It is drafted when the change reaches this phase, or by its agent.",
     /** An Atticus 1 artifact on an Atticus 2 change (2026-10-25). */
@@ -4448,9 +4450,9 @@ export const COPY = {
   correctionNext: {
     title: "What happens next",
     onlyWrote: (file: string) =>
-      `The app wrote only ${file}. It runs no command: nothing else changes until you run the steps below, and a person reviews the pull request.`,
+      `The app wrote only ${file}. Apply puts it in the map; then Propose for review, here or later from Home (what you haven't proposed waits there). A person reviews the pull request.`,
     fileDiff: (file: string) => `The change to ${file}, as written`,
-    stepsTitle: "Run these, in order",
+    stepsTitle: "Or on the command line, in order",
     step: {
       verify: "Apply it: verify checks the facts again and writes the catalog",
       branch: "Make a branch for the change",
