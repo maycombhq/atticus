@@ -1664,12 +1664,17 @@ async function sourceFiles(dir: string, source: string): Promise<string[]> {
     .map((f) => `${sub}/${f}`);
 }
 
+/** A file's text with LF line endings (as Atticus writes it), for comparing across checkouts. */
+const lf = (b: Buffer): Buffer =>
+  b.includes(13) ? Buffer.from(b.toString("utf8").replace(/\r\n?/g, "\n"), "utf8") : b;
+
 /** The sha-256 of each file as it is now; a missing file is left out. */
 async function hashFiles(dir: string, files: string[]): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const f of [...files].sort()) {
     const b = await readFile(join(dir, ...f.split("/"))).catch(() => undefined);
-    if (b) out[f] = sha(b);
+    // Line endings aside: a Windows checkout (core.autocrlf) is not a person's edit.
+    if (b) out[f] = sha(lf(b));
   }
   return out;
 }

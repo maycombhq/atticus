@@ -120,7 +120,8 @@ export async function writeCatalog(
   for (const [rel, text] of wanted) {
     const full = join(dir, ...rel.split("/"));
     const current = await readFile(full, "utf8").catch(() => undefined);
-    if (current === text) {
+    // Line endings aside: a Windows checkout (core.autocrlf) of an unchanged record isn't rewritten.
+    if (current?.replace(/\r\n?/g, "\n") === text) {
       unchanged++;
       continue;
     }

@@ -213,7 +213,7 @@ describe("a comment on a finding", () => {
     expect(res).toMatchObject({
       comment: { by: PERSON, at: NOW.toISOString(), read: false },
       files: [`questions/${id}.yaml`, `${REL}/stage/stories.yaml`],
-      commit: `git add questions/${id}.yaml ${REL}/stage/stories.yaml && git commit -m "${CHANGE}: a comment on f-0000000a"`,
+      commit: `git add questions/${id}.yaml ${REL}/stage/stories.yaml\ngit commit -m "${CHANGE}: a comment on f-0000000a"`,
       next: { command: `atticus plan stories ${CHANGE}`, slash: `/atticus-stories ${CHANGE}` },
     });
     const q = (await readQuestion(root, id))!;

@@ -434,12 +434,29 @@ async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
       }
     }
     await buildAndFix(c, run.runId);
-    if (c.record.state === "built" || c.record.state === "unverified") await commit(c, run.runId);
+    await afterBuild(c, run.runId, c.record.state === "built" || c.record.state === "unverified");
+  }
+  return done(c);
+}
+
+/**
+ * Commit, check against the design, and at the pr level push and open the PR. A failure here (a
+ * pre-commit hook, commit signing with no agent, a push the proxy refuses, a protected branch)
+ * is recorded for a person with what it said, and the run ends: never a run left waiting on a
+ * hand-off that is already validated, which no Done, Cancel or new run could then move.
+ */
+async function afterBuild(c: Ctx, runId: string, commitIt: boolean): Promise<void> {
+  try {
+    if (commitIt) await commit(c, runId);
     // ADR 0114: a passing build is checked against the design before anything goes further.
     await conformAfterBuild(c);
     if (c.record.level === "pr") await openPr(c);
+  } catch (e) {
+    c.record.state = "needs-person";
+    c.record.notes.push(
+      `${e instanceof Error ? e.message : String(e)} — the work is in ${c.record.worktree} (branch ${c.record.branch}): finish it there by hand, or fix that and run the task again.`,
+    );
   }
-  return done(c);
 }
 
 async function done(c: Ctx): Promise<TaskRunRecord> {
@@ -471,15 +488,28 @@ function levelOf(t: TaskContext, asked: RunLevel | undefined): RunLevel {
 /** Refused while a run of this task waits on the person's assistant (and wasn't cancelled). */
 async function refuseIfWaiting(root: string, t: TaskContext): Promise<void> {
   const before = await readTaskRun(root, t.change.id, t.task.id);
+  // Its hand-off run still open on this machine. One cancelled, validated (an earlier Atticus
+  // left the record waiting), or not here at all (.runs is this machine's: a teammate's pull,
+  // git clean, pruned after 30 days) no longer holds the task.
+  const open = ["prepared", "waiting", "produced", "failed"];
   if (
     before?.state === "waiting" &&
     before.waiting &&
-    (await handoffRunState(root, t.change.id, before.waiting)) !== "cancelled"
+    open.includes((await handoffRunState(root, t.change.id, before.waiting)) ?? "")
   )
     throw new TaskRunError(
       "refused",
       `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with atticus handoff done ${before.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
     );
+}
+
+/** Whether a Git host is there to push to: one that can't be made (no adapter installed) isn't. */
+function gitHostConnected(root: string, t: TaskContext, given?: GitHost): boolean {
+  try {
+    return !!(given ?? gitHostOf(root, t));
+  } catch {
+    return false;
+  }
 }
 
 /** What a task run would do, with every check it would make first, and nothing done. */
@@ -498,7 +528,7 @@ export async function previewTaskRun(
   root: string,
   changeId: string,
   taskId: string,
-  o: { level?: RunLevel; gitHost?: GitHost } = {},
+  o: { level?: RunLevel; gitHost?: GitHost; skipGitHost?: boolean } = {},
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
   const level = levelOf(t, o.level);
@@ -509,7 +539,7 @@ export async function previewTaskRun(
     repo: t.repo.id,
     level,
     branch: taskBranch(t.change.id, t.task.id),
-    gitHost: level === "pr" ? !!(o.gitHost ?? gitHostOf(root, t)) : false,
+    gitHost: level === "pr" && !o.skipGitHost ? gitHostConnected(root, t, o.gitHost) : false,
   };
 }
 
@@ -726,8 +756,15 @@ export async function completeTaskHandoff(
   const lock = await holdTask(root, waiting.change, waiting.task);
   const release = holdSignals();
   try {
+    // Not on this machine (.runs is kept per machine): said so, never "no run".
+    const state = await handoffRunState(root, waiting.change, runId);
+    if (state === undefined)
+      throw new TaskRunError(
+        "refused",
+        `Run ${runId} isn't on this machine (its files are kept where it was started): run the task again here (atticus task run ${waiting.change} ${waiting.task}).`,
+      );
     // Cancelled in the app meanwhile: said so, never a transition error.
-    if ((await handoffRunState(root, waiting.change, runId)) === "cancelled")
+    if (state === "cancelled")
       throw new TaskRunError(
         "refused",
         `Run ${runId} was cancelled; run the task again (atticus task run ${waiting.change} ${waiting.task}).`,
@@ -801,9 +838,7 @@ async function completeHeld(
         const p = l.slice(3).trim();
         if (!record.changed.includes(p)) record.changed.push(p);
       }
-      await commit(c, runId);
-      await conformAfterBuild(c);
-      if (record.level === "pr") await openPr(c);
+      await afterBuild(c, runId, true);
     }
     return done(c);
   }

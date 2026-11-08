@@ -41,7 +41,7 @@ export function parseFacts(text: string): ParseFactsResult {
     if (raw.trim() === "") return;
     let json: unknown;
     try {
-      json = JSON.parse(raw);
+      json = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
     } catch (e) {
       issues.push({ line, code: "not-json", message: (e as Error).message });
       return;
@@ -79,13 +79,16 @@ export function parseFactLine(
   seen: Set<string>,
 ): { fact?: Fact; bad?: BadFactLine } {
   if (raw.trim() === "") return {};
+  // A byte-order mark, which PowerShell 5.1 writes at the head of a UTF-8 file, isn't the fact's.
+  const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(text);
   } catch (e) {
-    return {
-      bad: { line, raw, issues: [{ line, code: "not-json", message: (e as Error).message }] },
-    };
+    const message = text.includes("\u0000")
+      ? "the file is UTF-16 (PowerShell's Out-File writes it): save it as UTF-8, one JSON fact per line"
+      : (e as Error).message;
+    return { bad: { line, raw, issues: [{ line, code: "not-json", message }] } };
   }
   const r = Fact.safeParse(normalizeFactPaths(json));
   if (!r.success)

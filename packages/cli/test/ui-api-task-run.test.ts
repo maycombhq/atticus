@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
-import { taskRun } from "../src/run-commands.js";
+import { runDone, taskRun } from "../src/run-commands.js";
 import { CHANGE, git, speckitRoot } from "./run-helpers.js";
 
 /**
@@ -90,6 +90,86 @@ describe("POST /api/runs/{runId}/done on a task run", () => {
       expect(ok.status).toBe(200);
     } finally {
       await s2.close();
+    }
+  }, 120_000);
+});
+
+describe("a task run whose run isn't on this machine", () => {
+  it("is ended by Cancel (not 404), and its Done and a new run say what to do", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const out: string[] = [];
+    const now = () => new Date("2026-10-21T09:00:00Z");
+    const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) };
+    await taskRun(root, CHANGE, "1.3", { by: "dev", level: "draft", mode: "hand-off" }, io, {
+      git,
+      now,
+    });
+    const runId = /atticus handoff done (run-[0-9a-z-]+)$/.exec(out[0]!)![1]!;
+    // A teammate's pull: the change folder came, .atticus/.runs didn't.
+    const { rm } = await import("node:fs/promises");
+    await rm(join(root, ".runs", CHANGE, runId), { recursive: true, force: true });
+    // Done says it isn't here; a new run here goes ahead.
+    const done: string[] = [];
+    expect(
+      await runDone(
+        root,
+        runId,
+        { by: "pat" },
+        { out: (l) => done.push(l), err: (l) => done.push(l) },
+        { git, now },
+      ),
+    ).toBe(1);
+    expect(done.join("\n")).toContain(`Run ${runId} isn't on this machine`);
+    const s3 = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiRoutes(r, ctx),
+    });
+    try {
+      const r = await fetch(`${s3.url}/api/runs/${runId}/cancel`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s3.token, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ runId, state: "cancelled", change: CHANGE });
+    } finally {
+      await s3.close();
+    }
+    const again: string[] = [];
+    expect(
+      await taskRun(
+        root,
+        CHANGE,
+        "1.3",
+        { by: "dev", level: "draft", mode: "hand-off" },
+        { out: (l) => again.push(l), err: (l) => again.push(l) },
+        { git, now },
+      ),
+    ).toBe(0);
+  }, 120_000);
+});
+
+describe("Run with AI from the app on a task Atticus can't run", () => {
+  it("says why (422), never Something went wrong", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const s4 = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiRoutes(r, ctx),
+    });
+    try {
+      const r = await fetch(`${s4.url}/api/changes/${CHANGE}/runs`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s4.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ agent: "task-runner", task: "9.9", runtime: "hand-off" }),
+      });
+      expect(r.status).toBe(422);
+      expect(JSON.stringify(await r.json())).toMatch(/9\.9/);
+    } finally {
+      await s4.close();
     }
   }, 120_000);
 });

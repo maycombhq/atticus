@@ -296,7 +296,9 @@ export async function planWrite(root: string): Promise<{
   }
   for (const i of used)
     for (const o of outputsOf(i)) {
-      const on = await readFile(join(root, ...o.path.split("/")), "utf8").catch(() => undefined);
+      const raw = await readFile(join(root, ...o.path.split("/")), "utf8").catch(() => undefined);
+      // Line endings aside: a Windows checkout (core.autocrlf) is neither a change nor an edit.
+      const on = raw?.replace(/\r\n?/g, "\n");
       if (on === o.text) {
         current++;
         continue;

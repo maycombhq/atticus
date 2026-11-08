@@ -105,7 +105,7 @@ describe("a sample audit in the app", { timeout: 60_000 }, () => {
       answered: 2,
       open: 4,
       commit:
-        'git add facts/forge-payments.audit.yaml && git commit -m "forge-payments: a person\'s sample audit answers"',
+        'git add facts/forge-payments.audit.yaml\ngit commit -m "forge-payments: a person\'s sample audit answers"',
     });
     expect(res.precision.facts).toMatchObject({ right: 0, wrong: 1 });
     expect(res.precision.links).toMatchObject({ right: 1, wrong: 0 });

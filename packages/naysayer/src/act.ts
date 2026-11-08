@@ -422,7 +422,7 @@ function renderedRefusal(change: string, file: string, from: RenderedFrom): stri
  * (`stage/<stage>.yaml`) keeps the sha-256 of what it wrote (`written`, ADR 0087 addendum), and a
  * file whose hash differs, or is gone, was changed. Facts, read off the files.
  */
-async function editedByPerson(folder: string): Promise<string[]> {
+export async function editedByPerson(folder: string): Promise<string[]> {
   const out = new Set<string>();
   const stages = await readdir(join(folder, "stage")).catch(() => [] as string[]);
   for (const s of stages.filter((x) => x.endsWith(".yaml")).sort()) {
@@ -435,8 +435,12 @@ async function editedByPerson(folder: string): Promise<string[]> {
     }
     if (!written || typeof written !== "object") continue;
     for (const [file, hash] of Object.entries(written as Record<string, unknown>)) {
-      const now = await readFile(join(folder, ...file.split("/"))).catch(() => undefined);
-      const h = now ? createHash("sha256").update(now).digest("hex") : undefined;
+      const now = await readFile(join(folder, ...file.split("/")), "utf8").catch(() => undefined);
+      // Line endings aside: a Windows checkout (core.autocrlf) is not a person's edit.
+      const h =
+        now !== undefined
+          ? createHash("sha256").update(now.replace(/\r\n?/g, "\n"), "utf8").digest("hex")
+          : undefined;
       if (h !== hash) out.add(file);
     }
   }

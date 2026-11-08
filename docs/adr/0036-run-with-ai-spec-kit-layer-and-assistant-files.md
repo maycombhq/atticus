@@ -51,3 +51,8 @@ Round 25 settled four more points:
 - **A missing answer is not a failure.** A hand-off Done with no answer file, or an empty one, builds nothing. The run waits for the file and the same Done, and no attempt is used up.
 - **The cap lowers the default.** A level asked for past the repo's cap is refused. The org's default is lowered to the cap instead, so a plan-only repo plans. The app never asks for the pr level, so from the app a task runs at most at draft, and the PR is opened with the person's `--approve` in an editor or on the command line.
 - **The dry run checks a waiting task.** It refuses in the same words as the run.
+
+Round 26 settled two more points:
+
+- **After the answer is validated, a failure is a person's task.** Committing, checking against the design and opening the PR all run after the answer is validated. A failure in any of them (a pre-commit hook, signing, a refused push, a protected branch) records the task as needs-person with what it said, and the run ends. A task can't be left waiting on a validated run that no Done, Cancel or new run could move. A record left so by an earlier Atticus doesn't hold the task either.
+- **A run's files are this machine's.** `.atticus/.runs` is kept per machine. A task waiting on a run whose files aren't here (a teammate's pull, a cleaned folder, runs pruned after 30 days) doesn't hold the task. Done says the run isn't on this machine, and the app's Cancel ends the wait.

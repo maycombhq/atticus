@@ -67,6 +67,17 @@ export interface UiDeps {
   taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
 }
 
+/** The errors a task run's checks raise, said to the person as the CLI says them. */
+const TASK_ERRORS = new Set([
+  "SpecKitError",
+  "ChangeError",
+  "ChangeFileError",
+  "AdapterError",
+  "RuntimeConfigError",
+  "GitError",
+  "RuntimeError",
+]);
+
 interface Ran {
   code: number;
   out: string[];
@@ -526,10 +537,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             });
           if (!level) {
             try {
-              const p = await previewTaskRun(root, params.changeId!, b.task);
+              // Only the level is wanted here: the app never pushes, so no Git host is made.
+              const p = await previewTaskRun(root, params.changeId!, b.task, { skipGitHost: true });
               level = p.level === "pr" ? "draft" : p.level;
             } catch (e) {
+              // A task that waits is 409; a task, repo or setting that isn't right is said (422),
+              // as the CLI says it, never "Something went wrong".
               if (e instanceof Error && e.name === "TaskRunError") throw conflict(e.message);
+              if (e instanceof Error && TASK_ERRORS.has(e.name))
+                throw refused({ code: 1, out: [], err: [e.message] });
               throw e;
             }
           }
@@ -644,6 +660,32 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         return { status: 200, body: after };
       })
       .add("POST", "/api/runs/{runId}/cancel", async ({ params }) => {
+        // A task run waiting on a run that isn't on this machine (.runs is per machine): the
+        // wait is ended, so the task can run again here.
+        const here = await findRun(root, params.runId!).catch(() => undefined);
+        if (!here) {
+          const ended = await cancelTaskRunWait(root, params.runId!, { by: user }).catch(
+            () => undefined,
+          );
+          if (!ended) throw notFound(`There is no run ${params.runId}.`);
+          // The run's own view, as the task run knows it (its run.json isn't here to read).
+          const at = new Date().toISOString();
+          const body: z.infer<typeof Api.RunView> = {
+            schemaVersion: RUN_SCHEMA_VERSION,
+            runId: params.runId!,
+            change: ended.change,
+            agent: "task-runner",
+            runtime: "hand-off",
+            state: "cancelled",
+            startedAt: ended.startedAt,
+            finishedAt: at,
+            contextManifestSha256: sha(""),
+            errors: [],
+            attempt: 1,
+          };
+          ctx.events.publish({ type: "run.changed", runId: params.runId!, state: "cancelled" });
+          return { status: 200, body };
+        }
         const v = await findRun(root, params.runId!);
         if (["validated", "cancelled"].includes(v.state))
           throw conflict(`Run ${v.runId} is already ${v.state}.`);

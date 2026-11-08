@@ -33,6 +33,16 @@ describe("change ids on Windows", () => {
     ).rejects.toThrow(
       "\"aux\" can't be a change id: Windows can't open a folder named that (con, nul, com1 and the like, or a name ending in a dot). Pick another, such as aux-change.",
     );
+    // A dot inside: the suggestion is one Windows can open too.
+    await expect(
+      newChange(root, {
+        id: "con.v2",
+        title: "Con v2",
+        type: "small-change",
+        by: "pat",
+        now: "2026-10-23T09:00:00Z",
+      }),
+    ).rejects.toThrow(/Pick another, such as con-change\.v2\.$/);
     const c = await newChange(root, {
       title: "Con",
       type: "small-change",

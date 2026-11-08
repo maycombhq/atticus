@@ -85,4 +85,15 @@ describe("the catalog kept in memory (ADR 0119)", () => {
     ]);
     expect(await names(dir)).toEqual(["oracle"]);
   });
+
+  it("leaves an unchanged record alone when Git checked it out with CRLF (Windows)", async () => {
+    const dir = await catalog();
+    const file = join(dir, "datastore", "shop-db.yaml");
+    const kept = await readCatalog(dir);
+    await writeCatalog(dir, kept.records); // as Atticus writes it
+    const { readFile } = await import("node:fs/promises");
+    await writeFile(file, (await readFile(file, "utf8")).replace(/\n/g, "\r\n"));
+    const r = await writeCatalog(dir, kept.records);
+    expect(r).toMatchObject({ written: 0, unchanged: 1 });
+  });
 });

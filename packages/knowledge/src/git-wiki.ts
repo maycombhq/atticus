@@ -44,13 +44,55 @@ const urlOf = (w: WikiSource, orgPackDir: string) =>
 /** Local repositories need file transport, which newer git turns off for submodules. */
 const fileOk = (url: string) => (isUrl(url) ? [] : ["-c", "protocol.file.allow=always"]);
 
+/** A path as git prints it: quoted and C-escaped when it holds a `"`, a `\\` or a control byte. */
+export function unquoteGitPath(p: string): string {
+  if (!(p.startsWith('"') && p.endsWith('"') && p.length >= 2)) return p;
+  const bytes: number[] = [];
+  const body = p.slice(1, -1);
+  const esc: Record<string, number> = {
+    n: 10,
+    t: 9,
+    r: 13,
+    '"': 34,
+    "\\": 92,
+    a: 7,
+    b: 8,
+    f: 12,
+    v: 11,
+  };
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i]!;
+    if (c !== "\\") {
+      bytes.push(...Buffer.from(c, "utf8"));
+      continue;
+    }
+    const n = body[i + 1] ?? "";
+    if (/[0-7]/.test(n)) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else {
+      bytes.push(esc[n] ?? n.charCodeAt(0));
+      i += 1;
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
 async function datesOf(git: GitRun, dir: string, path?: string): Promise<Map<string, string>> {
-  const r = await git(["log", "--format=%x01%cI", "--name-only", "--", path ?? "."], dir);
+  // core.quotePath=false: a page named in Spanish or German (Política-de-Pagos.md) is printed as
+  // it is, so its date is found; what git still quotes is unquoted.
+  const r = await git(
+    ["-c", "core.quotePath=false", "log", "--format=%x01%cI", "--name-only", "--", path ?? "."],
+    dir,
+  );
   const out = new Map<string, string>();
   let date = "";
   for (const line of r.stdout.split(/\r?\n/)) {
     if (line.startsWith("\u0001")) date = line.slice(1, 11);
-    else if (line.trim() && !out.has(line.trim())) out.set(line.trim(), date);
+    else if (line.trim()) {
+      const name = unquoteGitPath(line.trim());
+      if (!out.has(name)) out.set(name, date);
+    }
   }
   return out;
 }

@@ -148,7 +148,7 @@ export function uiAuditRoutes(
         open: p.audit.items.filter((i) => !i.answer).length,
         items: await itemsWithLines(ctx.root, repo, ofDraw(p.audit, p.drawn)),
         precision: { facts: precision.facts, links: precision.links },
-        commit: `git add ${p.fileRel} && git commit -m "${repo}: a person's sample audit answers"`,
+        commit: `git add ${p.fileRel}\ngit commit -m "${repo}: a person's sample audit answers"`,
       };
       return { status: 200, body: result };
     });

@@ -92,6 +92,26 @@ describe("a wiki kept in git", () => {
     expect(pages.find((p) => p.pagePath === "how-to/set-up-sso.md")!.updatedAt).toBe("2026-10-01");
   });
 
+  it("dates a page with a non-ASCII or quoted name (git quotes those paths)", async () => {
+    const { wiki, root } = await wikiRepo();
+    await commit(
+      wiki,
+      {
+        "docs/how-to/Política-de-Pagos.md": "# Política de pagos\n\nUse the payments hub.\n",
+        'docs/how-to/the "fast" path.md': "# The fast path\n\nOne step.\n",
+      },
+      "2026-10-05T10:00:00Z",
+    );
+    const c = await checkoutGitWiki(root, source(wiki), join(root, "org-pack"), git);
+    const pages = await gitWikiAdapter(new Map([["platform-wiki", c]])).pages(source(wiki), {
+      root,
+      orgPackDir: join(root, "org-pack"),
+    });
+    const dated = Object.fromEntries(pages.map((p) => [p.pagePath, p.updatedAt]));
+    expect(dated["how-to/Política-de-Pagos.md"]).toBe("2026-10-05");
+    expect(dated['how-to/the "fast" path.md']).toBe("2026-10-05");
+  });
+
   it("reads a branch when one is named", async () => {
     const { wiki, root } = await wikiRepo();
     await git(["checkout", "-q", "-b", "draft"], wiki);

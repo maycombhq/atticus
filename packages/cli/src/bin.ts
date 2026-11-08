@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { nodeTooOld, nodeTooOldMessage } from "./node-version.js";
 import { VERSION } from "./version.js";
 
 // Output piped into a reader that stops early (`| head`) closes the pipe: stop quietly, not
@@ -8,6 +9,13 @@ for (const stream of [process.stdout, process.stderr])
     if (e.code === "EPIPE") process.exit(process.exitCode ?? 0);
     throw e;
   });
+
+// An older Node (a company image with Node 20) says so plainly, rather than failing on whatever
+// it meets first.
+if (nodeTooOld(process.versions.node)) {
+  process.stderr.write(nodeTooOldMessage(process.versions.node) + "\n");
+  process.exit(1);
+}
 
 const argv = process.argv.slice(2);
 

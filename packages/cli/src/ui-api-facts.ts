@@ -297,7 +297,7 @@ export function uiFactsRoutes(
         const result: Api.FactCorrectionResultT = {
           correction: c.data,
           file: rel,
-          commit: `git add ${rel} && git commit -m "${repo}: a person's correction of ${fact.id}"`,
+          commit: `git add ${rel}\ngit commit -m "${repo}: a person's correction of ${fact.id}"`,
           verify: `atticus verify ${repo}`,
           line: written,
         };

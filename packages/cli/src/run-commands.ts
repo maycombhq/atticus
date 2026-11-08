@@ -49,6 +49,8 @@ export interface RunDeps {
 const KNOWN = new Set([
   "SpecKitError",
   "TaskRunError",
+  "GitError",
+  "RuntimeError",
   "RuntimeConfigError",
   "AssistantFilesError",
   "ChangeError",
@@ -301,9 +303,11 @@ async function runAgentOf(root: string, runId: string): Promise<string | undefin
 
 /** Why a run of a task run can't be done or retried on its own any more. */
 export function taskRunNotWaiting(runId: string, r: TaskRunRecord): string {
+  if (r.notes.at(-1)?.startsWith(`Run ${runId} was cancelled`))
+    return `Run ${runId} was cancelled; run the task again (atticus task run ${r.change} ${r.task}).`;
   return r.state === "needs-person"
     ? `Run ${runId} is part of task ${r.task}'s run, which needs a person now: carry on in ${r.worktree}, or run atticus task run ${r.change} ${r.task} again.`
-    : `Run ${runId} is part of task ${r.task}'s run, which is ${r.state} and waits on no run.`;
+    : `Run ${runId} is part of task ${r.task}'s run, which is ${r.state} and waits on no run: run the task again (atticus task run ${r.change} ${r.task}).`;
 }
 
 /** atticus spec hand-down <change> <task> [--force] [--json] */

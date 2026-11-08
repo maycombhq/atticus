@@ -534,7 +534,7 @@ describe("the knowledge that applies to a change (ADR 0124, Part 5)", () => {
     const set = Api.SetChangeKnowledgeResult.parse(yes.body);
     expect(set.file).toBe("openspec/changes/add-chat-export/knowledge.yaml");
     expect(set.commit).toBe(
-      'git add openspec/changes/add-chat-export/knowledge.yaml && git commit -m "add-chat-export: the knowledge that applies"',
+      'git add openspec/changes/add-chat-export/knowledge.yaml\ngit commit -m "add-chat-export: the knowledge that applies"',
     );
     expect(set.knowledge.items[0]).toMatchObject({ id: "json-logging", status: "confirmed" });
     const no = Api.SetChangeKnowledgeResult.parse(

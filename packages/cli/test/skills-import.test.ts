@@ -262,6 +262,18 @@ describe("atticus skills import, write and list", () => {
     expect((await sourcesOf(root)).length).toBe(3);
   });
 
+  it("doesn't take a Windows checkout (CRLF) of a written file as an edit", async () => {
+    const root = metarepo();
+    const theirs = harborRepo();
+    await skillsImportCommand(root, theirs, { team: "harbor", at: "v2.1" }, io().io);
+    await skillsWriteCommand(root, {}, io().io);
+    const f = ".github/agents/harbor-architect.agent.md";
+    write(root, f, read(root, f).replace(/\n/g, "\r\n"));
+    const c = io();
+    expect(await skillsWriteCommand(root, { check: true }, c.io)).toBe(0);
+    expect(c.out.join("\n")).not.toContain(`kept ${f}`);
+  });
+
   it("keeps a file edited here, on write and on the next import", async () => {
     const root = metarepo();
     const theirs = harborRepo();

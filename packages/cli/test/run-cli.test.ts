@@ -11,6 +11,7 @@ import {
   isTaskRun,
   runDone,
   runtimeForCli,
+  taskRunNotWaiting,
   specHandDown,
   specHandUp,
   taskHandoff,
@@ -216,6 +217,20 @@ describe("Done on a run whose task run needs a person", () => {
     },
     T,
   );
+});
+
+describe("Done on a run the person cancelled", () => {
+  it("says it was cancelled, and what to do", () => {
+    expect(
+      taskRunNotWaiting("run-1", {
+        change: CHANGE,
+        task: "1.2",
+        state: "failed",
+        worktree: "w",
+        notes: ["Run run-1 was cancelled by pat, so nothing more was done; run the task again."],
+      } as never),
+    ).toBe(`Run run-1 was cancelled; run the task again (atticus task run ${CHANGE} 1.2).`);
+  });
 });
 
 describe("Done on a task run's run that no task run names", () => {

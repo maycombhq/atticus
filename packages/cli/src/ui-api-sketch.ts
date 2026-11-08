@@ -41,7 +41,7 @@ export function uiSketchRoutes(r: Router, ctx: ServerContext): Router {
     return v;
   };
   const commitOf = (change: string) =>
-    `git add ${changesRelOf(root)}/${change} && git commit -m "${safeMessage(`${change}: drawn on the canvas`)}"`;
+    `git add ${changesRelOf(root)}/${change}\ngit commit -m "${safeMessage(`${change}: drawn on the canvas`)}"`;
   return r
     .add("GET", "/api/changes/{changeId}/sketch", async ({ params }) => {
       const change = changeOf(params.changeId!);

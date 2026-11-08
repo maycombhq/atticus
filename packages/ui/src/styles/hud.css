@@ -657,6 +657,10 @@ a:hover {
 .mono {
   font-family: var(--mono);
 }
+/* A command shown to copy can be two lines (git add, then git commit): keep its line break. */
+code.mono {
+  white-space: pre-wrap;
+}
 .row {
   display: flex;
   align-items: center;

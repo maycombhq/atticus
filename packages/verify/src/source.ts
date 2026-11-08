@@ -10,7 +10,7 @@ export interface FileSource {
   read(path: string): string | undefined;
 }
 
-/** Folders never walked: version control, dependencies, build output, Atticus's own state. */
+/** Folders never walked, at any depth: version control, dependencies, tool and cache state. */
 const SKIP_DIRS = new Set([
   ".git",
   ".hg",
@@ -21,6 +21,20 @@ const SKIP_DIRS = new Set([
   ".vscode",
   ".gradle",
   ".mvn",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".next",
+  ".nuxt",
+]);
+
+/**
+ * Names that are build output or vendored copies beside a build, but are as often a package of
+ * the product's own (a hexagonal `adapter/out/`, a card `bin/` lookup, an integration `vendor/`,
+ * a Node CLI's `bin/`). Below a `src` folder they are always walked; elsewhere `bin`, `obj` and
+ * `vendor` are skipped only beside the build that makes them, the rest always.
+ */
+export const BUILD_OUTPUT = new Set([
   "target",
   "build",
   "dist",
@@ -28,13 +42,26 @@ const SKIP_DIRS = new Set([
   "bin",
   "obj",
   "vendor",
-  "__pycache__",
-  ".venv",
-  "venv",
-  ".next",
-  ".nuxt",
   "coverage",
 ]);
+const MADE_BESIDE: Record<string, RegExp> = {
+  bin: /\.(csproj|fsproj|vbproj|sln)$/i,
+  obj: /\.(csproj|fsproj|vbproj|sln)$/i,
+  vendor: /^(go\.mod|composer\.json|Gemfile)$/,
+};
+
+/** Whether a folder named `name`, below the folders `above` (repo-relative), beside `siblings`, is skipped. */
+export function skippedFolder(
+  above: readonly string[],
+  name: string,
+  siblings: readonly string[],
+): boolean {
+  if (SKIP_DIRS.has(name)) return true;
+  if (!BUILD_OUTPUT.has(name)) return false;
+  if (above.some((a) => a.toLowerCase() === "src")) return false;
+  const beside = MADE_BESIDE[name];
+  return beside ? siblings.some((x) => beside.test(x)) : true;
+}
 
 /** Whether a repo-relative path stays inside the repo (no `..`, not absolute). */
 export function insideRepo(path: string): boolean {
@@ -46,7 +73,7 @@ export function insideRepo(path: string): boolean {
 /** A checkout on disk (the base clone at the commit being verified). */
 export function dirSource(root: string): FileSource {
   let cache: string[] | undefined;
-  const walk = (dir: string, out: string[]) => {
+  const walk = (dir: string, above: string[], out: string[]) => {
     let names: string[];
     try {
       names = readdirSync(dir).sort();
@@ -62,7 +89,7 @@ export function dirSource(root: string): FileSource {
         continue;
       }
       if (st.isDirectory()) {
-        if (!SKIP_DIRS.has(name)) walk(full, out);
+        if (!skippedFolder(above, name, names)) walk(full, [...above, name], out);
       } else if (st.isFile()) out.push(relative(root, full).split(sep).join("/"));
     }
   };
@@ -70,7 +97,7 @@ export function dirSource(root: string): FileSource {
     list() {
       if (!cache) {
         cache = [];
-        walk(root, cache);
+        walk(root, [], cache);
       }
       return cache;
     },

@@ -246,7 +246,7 @@ export function uiStageRoutes(
           read: false,
         },
         files: written.files,
-        commit: `git add ${written.files.join(" ")} && git commit -m "${change}: a comment on ${f.finding.id}"`,
+        commit: `git add ${written.files.join(" ")}\ngit commit -m "${change}: a comment on ${f.finding.id}"`,
         next: v.next,
       };
       return { status: 200, body: result };

@@ -172,7 +172,7 @@ describe("a person's correction from the Map", () => {
     expect(res).toMatchObject({
       file: "facts/forge-ledger.corrections.jsonl",
       commit:
-        'git add facts/forge-ledger.corrections.jsonl && git commit -m "forge-ledger: a person\'s correction of e-settle-listener"',
+        'git add facts/forge-ledger.corrections.jsonl\ngit commit -m "forge-ledger: a person\'s correction of e-settle-listener"',
       verify: "atticus verify forge-ledger",
       correction: {
         fact: "e-settle-listener",

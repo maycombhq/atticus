@@ -137,7 +137,7 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
           written: !preview,
           files,
           verify: "atticus verify --all --write",
-          commit: `git add ${files.map((f) => f.file).join(" ")} && git commit -m "${safeMessage(`${repo}: ${[owner ? `owner ${owner}` : "", system ? `system ${system}` : ""].filter(Boolean).join(", ")}`)}"`,
+          commit: `git add ${files.map((f) => f.file).join(" ")}\ngit commit -m "${safeMessage(`${repo}: ${[owner ? `owner ${owner}` : "", system ? `system ${system}` : ""].filter(Boolean).join(", ")}`)}"`,
         } satisfies Api.SetRepoOwnerResultT,
       };
     });

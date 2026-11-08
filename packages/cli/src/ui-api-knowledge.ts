@@ -682,7 +682,7 @@ export function uiKnowledgeRoutes(
         const result: Api.SetChangeKnowledgeResultT = {
           knowledge: await appliesView(change),
           file: before.file,
-          commit: `git add ${before.file} && git commit -m "${change}: the knowledge that applies"`,
+          commit: `git add ${before.file}\ngit commit -m "${change}: the knowledge that applies"`,
         };
         return { status: 200, body: result };
       })

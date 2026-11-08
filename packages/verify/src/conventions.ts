@@ -1,3 +1,4 @@
+import { BUILD_OUTPUT } from "./source.js";
 import {
   DEFAULT_CONVENTIONS,
   gatewayBundleTest,
@@ -17,7 +18,7 @@ export interface ReadRules {
   /** A file under a folder coverage doesn't count (tests, mocks, fixtures). */
   notProduct: RegExp;
   /** A file under a folder the skipped-lines note doesn't look in (generated, built, vendored). */
-  notRead: RegExp;
+  notRead: { test(path: string): boolean };
   /** A file of a gateway's proxy bundle: its entries are routes, which forward. */
   gatewayBundle: RegExp;
   /** The house's own framework entries, looked at before the built-in table. */
@@ -27,12 +28,33 @@ export interface ReadRules {
 const SPEC_NAME =
   /(^|\/)[^/]*(openapi|swagger|asyncapi|api-docs)[^/]*\.(ya?ml|json|xml)$|\.oas\.(ya?ml|json)$/i;
 
+/**
+ * Under a not-read folder (generated, built, vendored), except a build-output name below `src/`:
+ * there `out`, `bin` or `vendor` is a package of the product's own (a hexagonal adapter/out/).
+ */
+function notReadTest(folders: readonly string[]): { test(path: string): boolean } {
+  const multi = folders.filter((f) => f.includes("/"));
+  const multiRe = underFolders(multi);
+  const names = new Set(folders.filter((f) => !f.includes("/")).map((f) => f.toLowerCase()));
+  return {
+    test(path) {
+      if (multiRe.test(path)) return true;
+      const parts = path
+        .split("/")
+        .slice(0, -1)
+        .map((x) => x.toLowerCase());
+      const src = parts.indexOf("src");
+      return parts.some((x, j) => names.has(x) && !(src >= 0 && j > src && BUILD_OUTPUT.has(x)));
+    },
+  };
+}
+
 function rulesOf(c: Conventions): ReadRules {
   const folders = underFolders(c.apiSpecFolders, { tail: "(.+/)?[^/]+\\.(ya?ml|json)$" });
   return {
     apiSpec: new RegExp(`${SPEC_NAME.source}|${folders.source}`, "i"),
     notProduct: underFolders(c.notProductFolders),
-    notRead: underFolders(c.notReadFolders),
+    notRead: notReadTest(c.notReadFolders),
     gatewayBundle: gatewayBundleTest(c.gatewayBundleFolders),
     frameworks: c.frameworks,
   };

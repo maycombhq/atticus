@@ -31,6 +31,8 @@
   color: var(--accent-soft);
   font-size: 12.5px;
   overflow-wrap: anywhere;
+  /* A commit is two lines (git add, then git commit), so it pastes into any Windows shell. */
+  white-space: pre-wrap;
 }
 .work-after {
   margin-top: 10px;

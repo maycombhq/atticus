@@ -268,6 +268,19 @@ describe("S6: a person fixes the file the stop named, and the rerun takes it as 
     });
   });
 
+  it("stories: a Windows checkout of the file (CRLF) is not a person's edit: the stage drafts again", async () => {
+    const root = await estateRoot();
+    await architected(root);
+    await stopOf(storiesStage(root, CHANGE, { runtime: assistant([BAD]), now: NOW }));
+    const answer = join(dir(root), "stage/stories-answer.yaml");
+    await writeFile(answer, (await readFile(answer, "utf8")).replace(/\n/g, "\r\n"));
+    const seen: string[] = [];
+    await stopOf(storiesStage(root, CHANGE, { runtime: assistant([BAD], { seen }), now: NOW }));
+    expect(seen.length).toBeGreaterThan(0);
+    const loop = parse(await readFile(join(dir(root), "stage/stories.yaml"), "utf8"));
+    expect(loop.byPerson ?? []).toEqual([]);
+  });
+
   it("stories: a fix that still doesn't read stops with the file and line, never 'nothing in it reads'", async () => {
     const root = await estateRoot();
     await architected(root);

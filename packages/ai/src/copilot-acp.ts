@@ -258,9 +258,10 @@ export type AcpSpawner = (o: {
   env: Record<string, string | undefined>;
 }) => AcpServer;
 
-const needsShell = (command: string) =>
-  process.platform === "win32" && !/\.(exe|com)$/i.test(command);
-const quoteForCmd = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
+/** On Windows a command that isn't an .exe or .com (npm's .cmd shims) runs only through cmd.exe. */
+export const needsShell = (command: string, platform: NodeJS.Platform = process.platform) =>
+  platform === "win32" && !/\.(exe|com)$/i.test(command);
+export const quoteForCmd = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
 
 /**
  * Ends a process and what it started. On Windows the server runs under cmd.exe (a .cmd shim):

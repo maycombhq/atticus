@@ -136,7 +136,7 @@ export function uiDeclaredRoutes(
             written: true,
             files: [{ file: res.profile, changes: res.changes ?? [] }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.profile} && git commit -m "${safeMessage(`profile: ${b.data.id} added from the canvas`)}"`,
+            commit: `git add ${res.profile}\ngit commit -m "${safeMessage(`profile: ${b.data.id} added from the canvas`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
@@ -177,7 +177,7 @@ export function uiDeclaredRoutes(
             written: res.written,
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.rel} && git commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
+            commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
@@ -196,7 +196,7 @@ export function uiDeclaredRoutes(
             written: true,
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.rel} && git commit -m "${safeMessage(`profile: ${b.data.system}: a declaration undone`)}"`,
+            commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${b.data.system}: a declaration undone`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {

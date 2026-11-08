@@ -114,7 +114,7 @@ atticus change knowledge show-held-transfers --confirm p4-vendor-partner-gateway
 
 Each `--confirm` or `--exclude` says only what changed, such as `Confirmed firewall-rule-request (ProcessDefinition, Network firewall rule): every later stage that takes it selects it.`; run the command without them to see the whole list.
 
-The app's Confirm and Exclude buttons write the same file and show the `git add … && git commit …` command to run. Commit `knowledge.yaml` with the change's other files.
+The app's Confirm and Exclude buttons write the same file and show the two commands to run, `git add …` then `git commit …`, on two lines (so they paste into PowerShell 5.1, cmd and bash alike). Commit `knowledge.yaml` with the change's other files.
 
 ## 7. Knowledge per story and per task
 

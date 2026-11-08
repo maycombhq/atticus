@@ -21,7 +21,13 @@ import {
 import { modelsByClass, stepClassOf } from "./step-class.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
-import { CopilotAcpRuntime, type CopilotAcpOptions } from "./copilot-acp.js";
+import {
+  CopilotAcpRuntime,
+  killTree,
+  needsShell,
+  quoteForCmd,
+  type CopilotAcpOptions,
+} from "./copilot-acp.js";
 import {
   OneShotRuntime,
   RuntimeError,
@@ -117,14 +123,30 @@ export type HeadlessRunner = (i: HeadlessInvocation) => Promise<HeadlessResult>;
 export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunner {
   return (i) =>
     collectChild(
-      () =>
-        spawn(o.command ?? "claude", i.args, {
-          cwd: i.cwd,
-          env: { ...process.env, ...i.env },
-          stdio: ["pipe", "pipe", "pipe"],
-          windowsHide: true,
-          ...(i.signal ? { signal: i.signal } : {}),
-        }),
+      () => {
+        const command = o.command ?? "claude";
+        // npm installs claude as claude.cmd on Windows, which runs only through cmd.exe; then a
+        // stop ends the whole tree (cmd.exe and the node under it), not cmd.exe alone.
+        const shell = needsShell(command);
+        const child = spawn(
+          shell ? quoteForCmd(command) : command,
+          shell ? i.args.map(quoteForCmd) : i.args,
+          {
+            cwd: i.cwd,
+            env: { ...process.env, ...i.env },
+            stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true,
+            shell,
+            ...(i.signal && !shell ? { signal: i.signal } : {}),
+          },
+        );
+        if (shell && i.signal) {
+          const stop = () => killTree(child);
+          if (i.signal.aborted) stop();
+          else i.signal.addEventListener("abort", stop, { once: true });
+        }
+        return child;
+      },
       i.prompt,
       i.timeoutMs,
       i.cwd,

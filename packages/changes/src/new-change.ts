@@ -97,7 +97,7 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
   if (windowsUnsafeName(id))
     throw new ChangeError(
       "invalid",
-      `"${id}" can't be a change id: Windows can't open a folder named that (con, nul, com1 and the like, or a name ending in a dot). Pick another, such as ${id.replace(/[. ]+$/, "")}-change.`,
+      `"${id}" can't be a change id: Windows can't open a folder named that (con, nul, com1 and the like, or a name ending in a dot). Pick another, such as ${id.replace(/[. ]+$/, "").replace(/^([^.]+)/, "$1-change")}.`,
     );
   const template = pickTemplate(ctx.templates, type.id, opts.template);
   if (!template)

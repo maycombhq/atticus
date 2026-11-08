@@ -14,7 +14,6 @@ import {
   parseAnswer,
   readTaskRun,
   runTask,
-  TaskRunError,
   type CommandRunner,
 } from "../src/index.js";
 import { CHANGE, git, sh, speckitRoot } from "./helpers.js";
@@ -320,7 +319,8 @@ describe("Run with AI: pr", () => {
       const host = new MockGitHost([
         { repo: "forge-ledger", protectedBranches: ["main", "change/add-transfer-limit"] },
       ]);
-      const err = await runTask(root, CHANGE, "1.2", {
+      // Refused at the push: the drafted, committed work is kept and the task is a person's.
+      const prot = await runTask(root, CHANGE, "1.2", {
         level: "pr",
         by: "dev",
         approval: APPROVAL,
@@ -329,10 +329,10 @@ describe("Run with AI: pr", () => {
         now,
         commands: fakeBuild(),
         gitHost: host,
-      }).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(TaskRunError);
-      expect((err as Error).message).toBe(
-        "change/add-transfer-limit is protected in forge-ledger; Run with AI never pushes to or opens a PR into a protected branch.",
+      });
+      expect(prot.state).toBe("needs-person");
+      expect(prot.notes.at(-1)).toMatch(
+        /^change\/add-transfer-limit is protected in forge-ledger; Run with AI never pushes to or opens a PR into a protected branch\. — the work is in workspace\/.worktrees\//,
       );
       const rt = join(root, "org-pack/runtime.yaml");
       await writeFile(
@@ -502,6 +502,47 @@ describe("Run with AI: hand-off and headless modes", () => {
       await writeFile(file, was);
       const done = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
       expect(done.state).toBe("built");
+    },
+    T,
+  );
+
+  it(
+    "hand-off: a commit that fails after the answer is validated ends the task for a person, never stuck",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      const runId = r.waiting!;
+      await writeFile(join(paths(root).wt, FILE), "class TransferLimits { boolean ok; }\n");
+      await writeFile(paths(root).task("report.md"), "Added TransferLimits.\n");
+      const hooked: typeof git = async (args, cwd) => {
+        if (args[0] === "commit") throw new Error("pre-commit hook failed: checkstyle");
+        return git(args, cwd);
+      };
+      const out = await completeTaskHandoff(root, runId, {
+        git: hooked,
+        now,
+        commands: fakeBuild(),
+      });
+      expect(out.state).toBe("needs-person");
+      expect(out.notes.at(-1)).toMatch(/^pre-commit hook failed: checkstyle — the work is in /);
+      expect(await isTaskRun(root, runId)).toBe(false);
+      // The task can run again.
+      const again = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      expect(again.state).toBe("waiting");
     },
     T,
   );
