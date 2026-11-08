@@ -372,7 +372,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       const h = await run("change", "handoff", CHANGE, "--approve", "--by", "ari");
       expect(h.code).toBe(0);
-      expect(h.out[1]).toBe("Reviewers: @forge/platform");
+      expect(h.out[1]).toBe("Reviewers: @forge/platform.");
       gh.review(METAREPO, 2, "ari", "approved");
       const own = await run("change", "sync", CHANGE, "--approve", "--by", "ari");
       expect(own.code).toBe(1);

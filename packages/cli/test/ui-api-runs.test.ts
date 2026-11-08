@@ -416,6 +416,74 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
     ).toBeUndefined();
   });
 
+  // Sixth UX walk: a step the app prepared said what to type in a terminal next; the app says
+  // what to do in the app instead, and the command line keeps its commands.
+  it("says what to do next in the app, not on the command line", async () => {
+    const { resumeAfterDone, prepareStep, appLines } = await import("../src/handoff-resume.js");
+    const id = await run(6, "2026-10-23T03:40:06Z", "# Task: place the change\n", "validated");
+    await writeFile(
+      join(root, ".runs", "knowledge-scan", id, "resume.json"),
+      JSON.stringify({ args: ["change", "feature", "c1", "--handoff", "--resume", id] }),
+    );
+    const next = await resumeAfterDone(
+      root,
+      async () => {
+        const n = await run(5, "2026-10-23T03:40:05Z", "# Task: the critic's lens\n", "waiting");
+        return {
+          code: 0,
+          out: [
+            JSON.stringify({
+              state: "handoff",
+              runId: n,
+              messages: [
+                `Context: 3 records. Handed the critic's true lens to your assistant to review the feature draft (run ${n}). When it is done, run: atticus handoff done ${n}, then atticus change feature c1 --resume ${n}`,
+              ],
+            }),
+          ],
+          err: [],
+        };
+      },
+      "knowledge-scan",
+      id,
+    );
+    expect(next!.lines).toEqual([
+      "Context: 3 records. Handed the critic's true lens to your assistant to review the feature draft (run run-20261023034005-0001). The next prompt is ready: open it on Runs.",
+    ]);
+    // Prepared from the app: its prompt is the one just prepared.
+    const prep = await prepareStep(
+      root,
+      async () => ({
+        code: 0,
+        out: [
+          "Handed the change's needs to your assistant (run run-x). When it is done: atticus handoff done run-x, then atticus change needs c1 --resume run-x",
+        ],
+        err: [],
+      }),
+      ["change", "needs", "c1"],
+    );
+    expect(prep.prepared.lines).toEqual([
+      "Handed the change's needs to your assistant (run run-x). The prompt is ready: open it on Runs, then press Done once your assistant has written the answer.",
+    ]);
+    // A stage that stopped for a person, or finished.
+    expect(
+      appLines([
+        `Answer each with atticus questions answer <id> --option <n> (or --text "..."), or with /atticus-answer.`,
+        "Then run atticus change feature c1 again.",
+        "Then run atticus change architecture c1 again.",
+        "Answer the questions first, then run atticus plan stories c1 again: the next draft gets your answers and the problems above.",
+        "Open the stage's pull request for a person to approve: atticus change handoff c1 --approve",
+        "Wrote feature.yaml.",
+      ]),
+    ).toEqual([
+      "Answer each on Questions.",
+      "Then prepare the feature stage again on Feature design.",
+      "Then prepare the architecture stage again on Architecture.",
+      "Answer the questions first, then prepare the stories stage again on Stories: the next draft gets your answers and the problems above.",
+      "Raise the stage's hand-off on the change page for a person to approve.",
+      "Wrote feature.yaml.",
+    ]);
+  });
+
   it("says what a step said in its JSON when it hands nothing off (round 39)", async () => {
     const { prepareStep } = await import("../src/handoff-resume.js");
     const r = await prepareStep(

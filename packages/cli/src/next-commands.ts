@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   catalogDirOf,
   changesDirOf,
+  changesRelOf,
   isAdopted,
   factsDirOf,
   factsFileOf,
@@ -197,6 +198,21 @@ export interface NextState {
     /** Fifth UX walk: its proposal or specs aren't written yet (the draft is the next step). */
     undrafted?: boolean;
     /**
+     * Sixth UX walk: its brief, metarepo-relative, when it is missing or still holds only the
+     * template (writing it is the next step).
+     */
+    brief?: string;
+    /**
+     * Sixth UX walk: its open questions, those filed under it and those its stages raised (a
+     * stage files a question under the repo it is about).
+     */
+    questions?: string[];
+    /**
+     * Sixth UX walk: there are knowledge items to check it against. Without them the needs step
+     * refuses (`atticus change needs`), so it isn't offered.
+     */
+    knowledge?: boolean;
+    /**
      * ADR 0006 addendum: the stage whose OpenSpec artifacts come next, from `openspec status`
      * (org-flow v2), in a metarepo set up with OpenSpec. Left out when every artifact is done.
      */
@@ -371,6 +387,7 @@ export async function readNextState(root: string): Promise<NextState> {
       ),
   );
   const changeQuestions: Record<string, string[]> = {};
+  const openIds = new Set(open.questions.map((q) => q.id));
   for (const q of open.questions)
     if (changeIds.has(q.repo)) (changeQuestions[q.repo] ??= []).push(q.id);
   const knowledge = await readKnowledge(root, { cacheRoot: root });
@@ -467,6 +484,16 @@ export async function readNextState(root: string): Promise<NextState> {
           ? await openspecProgress(os, c.id).catch(() => undefined)
           : undefined;
       const busy = await stageInProgress(root, c.id);
+      // Sixth UX walk: the questions its stages raised and nobody has answered, with its own.
+      const asked = await stageQuestions(root, c.id, openIds);
+      const questions = [...new Set([...(changeQuestions[c.id] ?? []), ...asked])];
+      // Round 40: only when the gate itself says its proposal or specs are missing (on the stage
+      // path the define gate needs neither: the stages write what it is due); sixth UX walk: and
+      // its brief, missing or still the template.
+      const missing =
+        c.state === "define" || c.state === "returned"
+          ? await draftMissing(changeContext, c).catch(() => ({ draft: false, brief: false }))
+          : { draft: false, brief: false };
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
         active = { id: c.id, at: busy };
       changes.push({
@@ -476,12 +503,10 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
-        // Round 40: only when the gate itself says its proposal or specs are missing (on the stage
-        // path the define gate needs neither: the stages write what it is due).
-        ...((c.state === "define" || c.state === "returned") &&
-        (await draftMissing(changeContext, c).catch(() => false))
-          ? { undrafted: true }
-          : {}),
+        ...(missing.draft ? { undrafted: true } : {}),
+        ...(missing.brief ? { brief: `${changesRelOf(root)}/${c.id}/brief.md` } : {}),
+        ...(questions.length ? { questions } : {}),
+        ...(knowledge.items.length ? { knowledge: true } : {}),
         ...(stagesDone.length ? { stagesDone } : {}),
         ...(progress?.next ? { openspecStage: progress.next } : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
@@ -555,6 +580,25 @@ async function stageInProgress(root: string, change: string): Promise<string | u
   return newest;
 }
 
+/** The open questions a change's drafting stages raised (stage/<stage>.yaml's questions). */
+async function stageQuestions(root: string, change: string, open: Set<string>): Promise<string[]> {
+  const out: string[] = [];
+  for (const s of DRAFTING) {
+    const t = await readFile(join(changesDirOf(root), change, "stage", `${s}.yaml`), "utf8").catch(
+      () => "",
+    );
+    let y: { questions?: unknown } | null;
+    try {
+      y = parse(t) as { questions?: unknown } | null;
+    } catch {
+      continue;
+    }
+    if (Array.isArray(y?.questions))
+      for (const q of y.questions) if (typeof q === "string" && open.has(q)) out.push(q);
+  }
+  return out;
+}
+
 /** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
 async function isFast(
   root: string,
@@ -567,15 +611,24 @@ async function isFast(
   return fastPathOf(type, brief).fast;
 }
 
-/** Whether the change's gate is blocked by a missing proposal or specs (round 40). */
+/**
+ * Whether the change's gate is blocked by a missing proposal or specs (round 40), and by a brief
+ * missing or still holding only the template (sixth UX walk).
+ */
 async function draftMissing(
   ctx: () => Promise<ChangeContext>,
   c: ChangeLifecycle,
-): Promise<boolean> {
+): Promise<{ draft: boolean; brief: boolean }> {
   const a = await assess(await ctx(), c);
-  return a.blockers.some(
-    (b) => b.code === "missing-artifact" && (b.artifact === "proposal" || b.artifact === "specs"),
-  );
+  return {
+    draft: a.blockers.some(
+      (b) => b.code === "missing-artifact" && (b.artifact === "proposal" || b.artifact === "specs"),
+    ),
+    brief: a.blockers.some(
+      (b) =>
+        (b.code === "missing-artifact" || b.code === "unfilled-artifact") && b.artifact === "brief",
+    ),
+  };
 }
 
 /** The stage a change's state puts it at (plan 4.4), as the app's Work pages read it. */
@@ -609,8 +662,10 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
   // ADR 0101: once the feature is placed, what the change needs from the organisation, early,
   // since a request's lead time runs from when it is raised; then each open need for a person.
   const done = stageOf(c.state) === "done";
+  // Sixth UX walk: only with knowledge items to check it against (the needs step refuses
+  // without), and after the stage's own step, which it never hides.
   const find: NextStep[] =
-    c.feature && !c.needs && !done
+    c.feature && c.knowledge && !c.needs && !done
       ? [
           {
             step: "needs",
@@ -650,19 +705,60 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
           repo,
         };
       });
-  return [...find, ...seeds, ...stage, ...raise];
+  // Sixth UX walk: the questions its stage stopped on come first; the stage runs again after.
+  const asked: NextStep[] = done ? [] : questionStep(c);
+  return [...asked, ...seeds, ...stage, ...find, ...raise];
+}
+
+/** A change's own open questions, for a person to answer before its stage runs again. */
+function questionStep(c: NextState["changes"][number]): NextStep[] {
+  const ids = c.questions ?? [];
+  if (!ids.length) return [];
+  const stage = stageAt(c);
+  const again =
+    draftingAt(stage) >= 0
+      ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
+      : `Its stage goes on once ${ids.length === 1 ? "it is" : "they are"} answered.`;
+  return [
+    {
+      step: "answer",
+      command: "atticus questions list --state open",
+      slash: "/atticus-answer",
+      where: METAREPO,
+      why: `${plural(ids.length, "question")} of ${c.id} ${ids.length === 1 ? "is" : "are"} waiting for a person: ${ids.join(", ")}. ${again}`,
+      person: true,
+      change: c.id,
+    },
+  ];
+}
+
+/** The stage a change is at: its state's, or a later drafting one OpenSpec's status says. */
+function stageAt(c: NextState["changes"][number]): ReturnType<typeof stageOf> {
+  const byState = stageOf(c.state);
+  // ADR 0006 addendum: in a drafting stage, the stage whose artifacts OpenSpec says come next
+  // (a later one only: the hand-off PRs a person merges still move the state).
+  return c.openspecStage &&
+    draftingAt(byState) >= 0 &&
+    draftingAt(c.openspecStage) > draftingAt(byState)
+    ? c.openspecStage
+    : byState;
 }
 
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
-  const byState = stageOf(c.state);
-  // ADR 0006 addendum: in a drafting stage, the stage whose artifacts OpenSpec says come next
-  // (a later one only: the hand-off PRs a person merges still move the state).
-  const at = draftingAt;
-  const stage =
-    c.openspecStage && at(byState) >= 0 && at(c.openspecStage) > at(byState)
-      ? c.openspecStage
-      : byState;
+  const stage = stageAt(c);
+  // Sixth UX walk: a brief that holds only the template is written before any stage reads it.
+  if (c.brief && stage === "feature" && !c.stagesDone?.includes("feature"))
+    return [
+      {
+        step: "brief",
+        command: c.brief,
+        where: METAREPO,
+        why: `Write the brief of ${id} (${c.brief}): it still holds only the template. The feature stage places the change on the estate from it.`,
+        change: id,
+        person: true,
+      },
+    ];
   // ADR 0113: a small change goes from brief to tasks in one step, before it is built.
   if (c.fast && (stage === "feature" || stage === "architecture" || stage === "stories"))
     return c.fastDone
@@ -805,8 +901,13 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   }
 }
 
-/** A person answers a change's own questions; its stage goes on after. */
-function changeAnswer(id: string, ids: string[]): NextStep[] {
+/**
+ * A person answers a change's own questions; its stage goes on after. Those changeSteps asks for
+ * already (the change's `questions`) aren't asked for twice.
+ */
+function changeAnswer(c: NextState["changes"][number], filed: string[]): NextStep[] {
+  const id = c.id;
+  const ids = filed.filter((q) => !c.questions?.includes(q));
   if (!ids.length) return [];
   return [
     {
@@ -849,8 +950,12 @@ export function nextSteps(s: NextState): NextStep[] {
   const byChange = s.changeQuestions ?? {};
   const inHand = s.active ? s.changes.find((c) => c.id === s.active) : undefined;
   if (inHand && stageOf(inHand.state) !== "done")
-    out.push(...changeAnswer(inHand.id, byChange[inHand.id] ?? []), ...changeSteps(inHand));
-  const ofChanges = new Set(Object.values(byChange).flat());
+    out.push(...changeAnswer(inHand, byChange[inHand.id] ?? []), ...changeSteps(inHand));
+  // Sixth UX walk: with the questions a change's stages raised, filed under the repos they are about.
+  const ofChanges = new Set([
+    ...Object.values(byChange).flat(),
+    ...s.changes.filter((c) => stageOf(c.state) !== "done").flatMap((c) => c.questions ?? []),
+  ]);
   const repoQuestions = s.openQuestions.filter((id) => !ofChanges.has(id));
   if (s.repos.length === 0 && !inHand) {
     out.push({
@@ -1068,7 +1173,7 @@ export function nextSteps(s: NextState): NextStep[] {
     });
   const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done");
   for (const c of inFlight)
-    if (c !== inHand) out.push(...changeAnswer(c.id, byChange[c.id] ?? []), ...changeSteps(c));
+    if (c !== inHand) out.push(...changeAnswer(c, byChange[c.id] ?? []), ...changeSteps(c));
   if (!inFlight.length)
     out.push({
       step: "new-change",

@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { canMoveOn, nextSteps, type NextState, type NextStep } from "../src/next-commands.js";
+import {
+  canMoveOn,
+  changeSteps,
+  nextSteps,
+  type NextState,
+  type NextStep,
+} from "../src/next-commands.js";
 
 /** `atticus next` (ADR 0086): the next step from the metarepo's files, in several states. */
 
@@ -525,11 +531,12 @@ describe("nextSteps (pure)", () => {
   it("asks what a placed change needs from the organisation, then has a person raise the open ones (ADR 0101)", () => {
     const find = nextSteps({
       ...base,
-      changes: [{ id: "add-limit", state: "design", tasks: [], feature: true }],
+      changes: [{ id: "add-limit", state: "design", tasks: [], feature: true, knowledge: true }],
     });
+    // Sixth UX walk: the stage's own step first; the optional needs step after it.
     expect(commands(find)).toEqual([
-      ["atticus change needs add-limit", "/atticus-needs add-limit"],
       ["atticus change architecture add-limit", "/atticus-architecture add-limit"],
+      ["atticus change needs add-limit", "/atticus-needs add-limit"],
     ]);
     const raise = nextSteps({
       ...base,
@@ -557,6 +564,84 @@ describe("nextSteps (pure)", () => {
     expect(old.map((x) => x.step)).not.toContain("raise-needs");
     expect(old.map((x) => x.step)).not.toContain("needs");
   });
+  // Sixth UX walk: the needs step was offered from feature-placed on, and its Prepare failed
+  // with no knowledge items (knowledge is an optional setup step), hiding each stage's step.
+  it("offers the needs step only when there are knowledge items, and always after the stage's own step", () => {
+    const steps = (c: Partial<NextState["changes"][number]>) =>
+      changeSteps({ id: "add-limit", tasks: [], state: "define", feature: true, ...c }).map(
+        (x) => x.step,
+      );
+    expect(steps({ state: "define" })).toEqual(["feature"]);
+    expect(steps({ state: "define", knowledge: true })).toEqual(["feature", "needs"]);
+    expect(steps({ state: "design" })).toEqual(["architecture"]);
+    expect(steps({ state: "design", knowledge: true })).toEqual(["architecture", "needs"]);
+    expect(steps({ state: "plan", stagesDone: ["feature", "architecture"] })).toEqual(["stories"]);
+    expect(steps({ state: "plan", knowledge: true })).toEqual(["stories", "needs"]);
+  });
+
+  it("at define with the stage's questions open, says to answer them on Questions, then run the feature stage again", () => {
+    const steps = changeSteps({
+      id: "add-limit",
+      state: "define",
+      tasks: [],
+      feature: true,
+      knowledge: true,
+      questions: ["q-aaaaaaaaaaaa", "q-bbbbbbbbbbbb"],
+    });
+    expect(steps.map((x) => x.step)).toEqual(["answer", "feature", "needs"]);
+    expect(steps[0]).toMatchObject({ person: true, change: "add-limit" });
+    expect(steps[0]!.why).toBe(
+      "2 questions of add-limit are waiting for a person: q-aaaaaaaaaaaa, q-bbbbbbbbbbbb. Answer 2 questions on Questions (or atticus questions answer <id>), then run the feature stage again.",
+    );
+    // At design, the same for the architecture stage.
+    const design = changeSteps({
+      id: "add-limit",
+      state: "design",
+      tasks: [],
+      questions: ["q-aaaaaaaaaaaa"],
+    });
+    expect(design.map((x) => x.step)).toEqual(["answer", "architecture"]);
+    expect(design[0]!.why).toContain(
+      "Answer 1 question on Questions (or atticus questions answer <id>), then run the architecture stage again.",
+    );
+    // nextSteps doesn't ask for the same questions twice.
+    const all = nextSteps({
+      ...base,
+      active: "add-limit",
+      changeQuestions: { "add-limit": ["q-aaaaaaaaaaaa"] },
+      changes: [{ id: "add-limit", state: "define", tasks: [], questions: ["q-aaaaaaaaaaaa"] }],
+    });
+    expect(all.map((x) => x.step)).toEqual(["answer", "feature"]);
+  });
+
+  it("before the brief is written, says to write the brief, not run the feature stage (sixth UX walk)", () => {
+    const steps = changeSteps({
+      id: "add-limit",
+      state: "define",
+      tasks: [],
+      brief: "openspec/changes/add-limit/brief.md",
+    });
+    expect(steps.map((x) => x.step)).toEqual(["brief"]);
+    expect(steps[0]).toMatchObject({
+      command: "openspec/changes/add-limit/brief.md",
+      person: true,
+      change: "add-limit",
+    });
+    expect(steps[0]!.why).toBe(
+      "Write the brief of add-limit (openspec/changes/add-limit/brief.md): it still holds only the template. The feature stage places the change on the estate from it.",
+    );
+    // A small change writes its brief first too.
+    expect(
+      changeSteps({
+        id: "add-limit",
+        state: "define",
+        tasks: [],
+        fast: true,
+        brief: "openspec/changes/add-limit/brief.md",
+      })[0]!.step,
+    ).toBe("brief");
+  });
+
   it("keeps the knowledge current: a stale wiki synced again, the org pack drafted and accepted, needs verified (ADR 0101)", () => {
     const steps = nextSteps({
       ...base,
@@ -670,6 +755,48 @@ describe("atticus next with a change in hand, and the assistant that was probed"
     const j = await json(root);
     expect(j.steps[0]).toMatchObject({ step: "answer", change: "add-fraud-check" });
     expect(j.steps[1]).toMatchObject({ step: "feature", change: "add-fraud-check" });
+  });
+
+  // Sixth UX walk: the stage files its questions under the repos they are about; they are still
+  // the change's, the needs step waits for knowledge items, and a template brief is written first.
+  it("asks the questions a change's stage raised first, offers no needs step without knowledge items, and writes a template brief first", async () => {
+    const root = await metarepo({ clone: true });
+    await component(root, "forge-notes");
+    await component(root, "forge-notes-ui");
+    const dir = join(root, "openspec/changes/add-fraud-check");
+    await cp(join(FIXTURES, "stages/changes/add-fraud-check"), dir, { recursive: true });
+    await writeFile(join(dir, "feature.yaml"), "placed: true\n");
+    await mkdir(join(dir, "stage"), { recursive: true });
+    const at = "2026-10-25T09:00:00Z";
+    const q = (
+      await raiseQuestions(
+        root,
+        [{ question: "Which answers GET /screen?", options: [], evidence: ["x:1"], scope: "repo" }],
+        { step: "change-feature", repo: "forge-notes", command: "c", rerun: "c", at },
+      )
+    ).raised[0]!;
+    await writeFile(
+      join(dir, "stage/feature.yaml"),
+      `schemaVersion: 1\nchange: add-fraud-check\nstage: feature\niteration: 1\nstate: questions\nquestions: [${q.id}]\nupdatedAt: ${at}\n`,
+    );
+    const mine = async () =>
+      (await json(root)).steps.filter((x: NextStep) => x.change === "add-fraud-check");
+    const steps = await mine();
+    expect(steps.map((x) => x.step)).toEqual(["answer", "feature"]);
+    expect(steps[0]!.why).toContain(q.id);
+    expect(steps[0]!.why).toContain("then run the feature stage again");
+    // The repos' own questions don't ask for it a second time.
+    expect(
+      (await json(root)).steps.filter((x: NextStep) => x.step === "answer" && x.why.includes(q.id)),
+    ).toHaveLength(1);
+    // A brief that holds only the template is written first, before the stage runs.
+    await rm(join(dir, "stage/feature.yaml"));
+    await writeFile(join(dir, "brief.md"), "# Brief\n\n## Problem\n\n## Outcome\n\n- \n");
+    const fresh = await mine();
+    expect(fresh[0]).toMatchObject({
+      step: "brief",
+      command: "openspec/changes/add-fraud-check/brief.md",
+    });
   });
 
   // ADR 0006 addendum: `openspec status` is a child process, so it is run only where its answer
