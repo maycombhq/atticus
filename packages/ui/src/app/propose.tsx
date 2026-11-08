@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { api } from "../api/client.js";
+import { api, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "../screens/know/common.js";
 
@@ -38,7 +38,8 @@ type Scope =
   | "owner-answers"
   | "baseline"
   | "initiatives"
-  | "outcomes";
+  | "outcomes"
+  | "work";
 interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string }[];
@@ -219,6 +220,24 @@ export function BringIn() {
         </span>
       </div>
       <Note note={act.note} />
+    </div>
+  );
+}
+
+/**
+ * UX re-walk: what the app's work changed and nobody has proposed yet (an answer, a correction,
+ * an audit after the page that made it is gone), with Propose for review, where a person comes
+ * back. Nothing shows when there is nothing to propose.
+ */
+export function PendingProposals() {
+  const plan = useApi<Plan>("/api/propose?scope=work");
+  if (plan.state !== "ready" || plan.data.files.length === 0) return null;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {P.pending(plan.data.files.length)}
+      </p>
+      <Propose scope="work" />
     </div>
   );
 }

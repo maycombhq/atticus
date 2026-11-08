@@ -2241,6 +2241,8 @@ export const ProposeScope = z.enum([
   /** 2.67.0 (UX review): initiatives, their commitments and notes; outcomes after release. */
   "initiatives",
   "outcomes",
+  /** 2.67.0 (UX re-walk): everything the app's work writes, for the one Propose on Home. */
+  "work",
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
@@ -4564,7 +4566,7 @@ const OPS: Record<string, Record<string, Op>> = {
         q(
           "scope",
           str,
-          "answers, corrections, audit, org-pack, owner-answers, baseline, initiatives or outcomes",
+          "answers, corrections, audit, org-pack, owner-answers, baseline, initiatives, outcomes or work",
         ),
       ],
       ok: { status: 200, schema: "ProposePlanView", description: "OK" },

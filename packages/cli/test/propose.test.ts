@@ -351,4 +351,16 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(await bringInMerged(root, io(said))).toBe(1);
     expect(said.at(-1)).toContain("Your branch has commits");
   });
+
+  it("takes a file deleted here and in what merged as the same edit", async () => {
+    const { root, work } = await setup();
+    g(work, "rm", "-q", "other.md");
+    g(work, "commit", "-q", "-m", "removed");
+    g(work, "push", "-q", "origin", "main");
+    g(root, "rm", "-q", "other.md");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    expect(g(root, "log", "-1", "--format=%s").trim()).toBe("removed");
+    expect(g(root, "status", "--porcelain").trim()).toBe("");
+  });
 });

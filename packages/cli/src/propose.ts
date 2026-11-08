@@ -5,6 +5,8 @@ import {
   catalogDirOf,
   changesRelOf,
   factsDirOf,
+  mapDirOf,
+  specsDirOf,
   loadOrgPack,
   orgPackDirOf,
   questionsDirOf,
@@ -29,6 +31,7 @@ export const PROPOSE_SCOPES = [
   "baseline",
   "initiatives",
   "outcomes",
+  "work",
 ] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
@@ -41,6 +44,7 @@ const TITLES: Record<ProposeScope, string> = {
   baseline: "Accept the catalog as the baseline",
   initiatives: "Initiatives and commitments",
   outcomes: "Outcomes measured after release",
+  work: "Changes made in the Atticus app",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
@@ -49,15 +53,38 @@ const rel = (root: string, dir: string) => relative(root, dir).split("\\").join(
 export function scopeDirs(root: string, scope: ProposeScope): string[] {
   const facts = rel(root, factsDirOf(root));
   const catalog = rel(root, catalogDirOf(root));
+  const map = rel(root, mapDirOf(root));
+  const specs = rel(root, specsDirOf(root));
   switch (scope) {
     // An answer also writes in the org pack (a repo type's skill file, a host in the manifest,
     // an outside system in a profile): its PR carries those too (review round 35).
+    // UX re-walk: Apply (verify --write) also writes the repo's map and specs: they go too.
     case "answers":
-      return [rel(root, questionsDirOf(root)), facts, catalog, rel(root, orgPackDirOf(root))];
+      return [
+        rel(root, questionsDirOf(root)),
+        facts,
+        catalog,
+        rel(root, orgPackDirOf(root)),
+        map,
+        specs,
+      ];
     case "corrections":
-      return [facts, catalog];
+      return [facts, catalog, map, specs];
+    // An audit is its repo's audit file, not every repo's facts.
     case "audit":
-      return [facts];
+      return [`${facts}/*.audit.yaml`];
+    // Everything the app's work writes, for the one Propose on Home (UX re-walk).
+    case "work":
+      return [
+        rel(root, questionsDirOf(root)),
+        facts,
+        catalog,
+        rel(root, orgPackDirOf(root)),
+        map,
+        specs,
+        rel(root, initiativesDirOf(root)),
+        `${changesRelOf(root)}/*/review/outcomes.yaml`,
+      ];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];
     // UX review (2026-11-08): an owner's answer to a knowledge gap is a curated record.
@@ -300,7 +327,10 @@ export async function bringInMerged(
     const mine = existsSync(join(root, path))
       ? (await run(["hash-object", "--", path]).catch(() => "")).trim()
       : "";
-    if (!theirs || theirs !== mine) {
+    // UX re-walk: a file deleted here and in what merged is the same edit (an answer that joins a
+    // call removes its Unresolved record): put back here, so the fast-forward removes it.
+    const bothGone = !theirs && !mine && st.includes("D");
+    if (!bothGone && (!theirs || theirs !== mine)) {
       kept.push(path);
       continue;
     }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BringIn } from "../app/propose.js";
+import { BringIn, PendingProposals } from "../app/propose.js";
 import { COPY } from "../copy.js";
 import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
@@ -714,6 +714,7 @@ export function CommandCenter() {
             blocking={findings.state === "ready" ? blocking.length : undefined}
           />
           {/* Round 36 (Windows review): where a person comes back after their PR merged. */}
+          <PendingProposals />
           <BringIn />
         </Panel>
         <Panel

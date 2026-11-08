@@ -166,7 +166,7 @@ export const COPY = {
     },
     title: "Questions",
     intro:
-      "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then run the command shown, and the step reads it.",
+      "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then Apply puts it in the map, and Propose for review sends it for review.",
     filter: "Show",
     filterOpen: "Open",
     filterAll: "All",
@@ -3791,6 +3791,8 @@ export const COPY = {
     proposing: "Proposing…",
     proposed: "Proposed for review.",
     cancel: "Not now",
+    pending: (n: number) =>
+      `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
     bringIn: "Bring in what merged",
     bringingIn: "Bringing it in…",
     bringInWhy:
