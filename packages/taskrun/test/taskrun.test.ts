@@ -449,7 +449,7 @@ describe("Run with AI: hand-off and headless modes", () => {
       };
       const first = await runTask(root, CHANGE, "1.2", opts);
       await expect(runTask(root, CHANGE, "1.2", opts)).rejects.toThrow(
-        `Task 1.2 already waits on your assistant (run ${first.waiting}, in workspace/.worktrees/add-transfer-limit/.tasks/1.2/forge-ledger): finish it with atticus handoff done ${first.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
+        `Task 1.2 already waits on your assistant (run ${first.waiting}, in workspace/.worktrees/add-transfer-limit/.tasks/1.2/forge-ledger): finish it with Done on its run page (Model runs) or atticus handoff done ${first.waiting}, or Cancel it there and run the task again.`,
       );
       expect(await isTaskRun(root, first.waiting!)).toBe(true);
       // Cancelled (the app's Cancel): the task run ends, said so, and the task can run again.

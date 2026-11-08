@@ -519,7 +519,7 @@ async function refuseIfWaiting(root: string, t: TaskContext): Promise<void> {
   )
     throw new TaskRunError(
       "refused",
-      `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with atticus handoff done ${before.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
+      `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with Done on its run page (Model runs) or atticus handoff done ${before.waiting}, or Cancel it there and run the task again.`,
     );
 }
 

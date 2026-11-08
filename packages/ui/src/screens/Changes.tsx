@@ -121,16 +121,24 @@ function ChangeList({
   list,
   current,
   across,
+  onCreated,
 }: {
   list: Loaded<ChangeSummary[]>;
   current?: string;
   across?: AcrossId;
+  /** UX re-walk: a change started here shows in the list at once, and opens. */
+  onCreated?: () => void;
 }) {
   const [text, setText] = useState("");
   const [state, setState] = useState("");
   return (
     <Panel title={T.changes} span="span 3" rows="span 3">
-      <NewChange />
+      <NewChange
+        onCreated={(id) => {
+          onCreated?.();
+          window.location.hash = `#/changes/${id}`;
+        }}
+      />
       <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
         {(all) => {
           const states = [...new Set(all.map((c) => c.state))];
@@ -870,7 +878,7 @@ export function Changes({ hash }: { hash: string }) {
   const current = id ?? first;
   return (
     <div className="bento">
-      <ChangeList list={list} current={current} across={across} />
+      <ChangeList list={list} current={current} across={across} onCreated={list.reload} />
       {across && !id ? (
         <AcrossPanel key={across} view={across} />
       ) : current ? (

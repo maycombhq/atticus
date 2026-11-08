@@ -93,6 +93,10 @@ export function uiModelRunRoutes(
         const res = await runStep([...words, "--handoff"]);
         const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
         ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+        // UX re-walk: a step with nothing left to hand off (its stage is done) ran and made
+        // no run: what it said is the answer, not a refusal.
+        if (!made && res.code === 0)
+          return { status: 201, body: { lines: [...res.out, ...res.err] } };
         if (!made)
           throw new HttpError(
             422,

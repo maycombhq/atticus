@@ -236,6 +236,7 @@ export const COPY = {
     groupOf: (repo: string, n: number) => `${repo}: ${n} question${n === 1 ? "" : "s"}`,
     evidence: "What it read",
     notShown: "Not shown: the file isn't here, or the line is past its end.",
+    excerptOf: (ref: string) => `The code at ${ref}`,
     options: "Your answer",
     optionChanges: "It would change",
     ownWords: "In my own words",
@@ -1946,10 +1947,10 @@ export const COPY = {
     build: "Build",
     release: "Release",
     handOffPrOpened:
-      "Hand-off PR opened. Reviewers approve it on the Git host; merging it approves the gate.",
+      "Hand-off raised. Reviewers approve its PR on the Git host (on a manual Git host, its step on Home says how to open it); merging it approves the gate.",
     syncedWithTheGit: "Synced with the Git host.",
     criticRoundStartedThe:
-      "Critic round started: the rule checks ran and any AI lens is with your assistant. Mark each run done below.",
+      "Critic round started: the rule checks ran. Any AI lens that waits is in Model runs, where Done checks its answer.",
     theRuleChecksRan: "The rule checks ran. AI is off here, so no lens waits.",
     checkedTheAnswer: "Checked the answer.",
     readyToTryAgain: "Ready to try again.",
@@ -2619,6 +2620,7 @@ export const COPY = {
   },
   phase: {
     runPrepared: (runId: string) => `Run ${runId} prepared: your assistant takes it from here.`,
+    openTheRun: "Open the run: its prompt, Done and Cancel",
     theRuleChecksRan:
       "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
@@ -4343,6 +4345,7 @@ export const COPY = {
       "Atticus writes the prompt; paste it into your assistant (Copilot, Claude Code), then Done checks the answer.",
     handoffReady: "Prepared.",
     handoffOpen: "Open the prompt and Done",
+    handoffOpenWaiting: "Open the run that waits",
     withCopilot: "Run with Copilot",
     withModel: (model: string) => `Run with ${model}`,
     running: "Running…",

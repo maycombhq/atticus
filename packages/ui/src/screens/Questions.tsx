@@ -253,7 +253,14 @@ export function ExcerptView({ e }: { e: Excerpt }) {
         )}
       </figcaption>
       {e.found && (
-        <pre className="mono" style={{ margin: "4px 0 0", fontSize: 12, overflowX: "auto" }}>
+        <pre
+          className="mono"
+          // UX re-walk (axe): a code excerpt that scrolls can be reached and scrolled by keyboard.
+          tabIndex={0}
+          role="region"
+          aria-label={C.excerptOf(e.ref)}
+          style={{ margin: "4px 0 0", fontSize: 12, overflowX: "auto" }}
+        >
           {e.lines.map((l, i) => {
             const n = e.start + i;
             const cited = n === e.line;

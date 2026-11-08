@@ -631,7 +631,11 @@ export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
 export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
 /** 2.66.0 (UX review): the step prepared for the person's own assistant, and its run. */
-export const PreparedStepView = z.object({ runId: z.string(), lines: z.array(z.string()) });
+export const PreparedStepView = z.object({
+  /** Left out when the step had nothing left to hand off: its lines say what it did. */
+  runId: z.string().optional(),
+  lines: z.array(z.string()),
+});
 export type StartStepRequest = z.infer<typeof StartStepRequest>;
 
 export const RunList = z.object({
@@ -5284,7 +5288,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: {
       id: "fillServiceRequestFields",
       summary:
-        "Round 36 (UX review): fill a draft's fields in snow.md, as a person editing it would (the value cells only; its comments and other lines stay); 409 when snow.md changed since it was read. Filing stays the person's File",
+        "Round 36 (UX review): fill a draft's fields in the change's service-desk file, as a person editing it would (the value cells only; its comments and other lines stay); 409 when the file changed since it was read. Filing stays the person's File",
       tag: "release",
       params: [p("changeId")],
       body: FillRequestFieldsRequest,

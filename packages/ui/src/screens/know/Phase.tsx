@@ -776,6 +776,8 @@ function TasksByRepo({
   const tasks = useApi<Task[]>(`/api/changes/${change}/tasks`);
   const aiOn = useAiOn();
   const [ran, setRan] = useState<Record<string, string>>({});
+  // UX re-walk: the run a task's Run with AI prepared, to open (its prompt, Done and Cancel).
+  const [runOf, setRunOf] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<Record<string, boolean>>({});
   // Each task keeps its own outcome: set from the latest state, so two runs don't erase each other.
   const say = (id: string, text: string) => setRan((o) => ({ ...o, [id]: text }));
@@ -788,6 +790,7 @@ function TasksByRepo({
         body: { agent: "task-runner", task: t.id, runtime: "hand-off" },
       });
       say(t.id, T.runPrepared(r.runId));
+      setRunOf((o) => ({ ...o, [t.id]: r.runId }));
     } catch (e) {
       say(t.id, e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
     } finally {
@@ -861,7 +864,12 @@ function TasksByRepo({
                           </span>
                           {ran[x.id] && (
                             <span role="status" style={{ fontSize: 12 }}>
-                              {ran[x.id]}
+                              {ran[x.id]}{" "}
+                              {runOf[x.id] && (
+                                <a href={`#/runs?run=${encodeURIComponent(runOf[x.id]!)}`}>
+                                  {T.openTheRun}
+                                </a>
+                              )}
                             </span>
                           )}
                         </div>
@@ -903,9 +911,13 @@ function RunsPanel({ change }: { change: string }) {
             {r.slice(-8).map((x) => (
               <div key={x.runId} className="list-row">
                 <span className="stack" style={{ gap: 2 }}>
-                  <span className="mono" style={{ fontSize: 11.5 }}>
+                  <a
+                    className="mono"
+                    style={{ fontSize: 11.5 }}
+                    href={`#/runs?run=${encodeURIComponent(x.runId)}`}
+                  >
                     {x.runId}
-                  </span>
+                  </a>
                   <span className="hud" style={{ fontSize: 9.5 }}>
                     {x.agent} · {x.runtime}
                   </span>

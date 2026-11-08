@@ -363,9 +363,19 @@ export function RunStep({ command }: { command: string }) {
 /** Prepares an AI step as a hand-off (POST /api/runs/handoff) and links to its run. */
 export function HandoffStep({ args }: { args: string[] }) {
   const [state, set] = useState<
-    { s: "idle" } | { s: "working" } | { s: "ready"; runId: string } | { s: "error"; why: string }
+    | { s: "idle" }
+    | { s: "working" }
+    | { s: "ready"; runId: string }
+    | { s: "said"; lines: string[] }
+    | { s: "error"; why: string; runId?: string }
   >({ s: "idle" });
   const id = useId();
+  if (state.s === "said")
+    return (
+      <p role="status" className="work-say" style={{ margin: 0 }}>
+        {state.lines.join(" ")}
+      </p>
+    );
   if (state.s === "ready")
     return (
       <p role="status" className="work-say" style={{ margin: 0 }}>
@@ -385,12 +395,19 @@ export function HandoffStep({ args }: { args: string[] }) {
           aria-describedby={`${id}-why`}
           onClick={() => {
             set({ s: "working" });
-            api<{ runId: string }>("/api/runs/handoff", {
+            api<{ runId?: string; lines: string[] }>("/api/runs/handoff", {
               method: "POST",
               body: { args },
             })
-              .then((r) => set({ s: "ready", runId: r.runId }))
-              .catch((e: unknown) => set({ s: "error", why: why(e) }));
+              .then((r) =>
+                set(r.runId ? { s: "ready", runId: r.runId } : { s: "said", lines: r.lines }),
+              )
+              .catch((e: unknown) => {
+                // UX re-walk: a step that still waits on a run names it; offer that run.
+                const w = why(e);
+                const waiting = /\b(run-[0-9a-z-]+)\b/.exec(w)?.[1];
+                set({ s: "error", why: w, ...(waiting ? { runId: waiting } : {}) });
+              });
           }}
         >
           {state.s === "working" ? T.handoffWorking : T.handoffPrepare}
@@ -401,7 +418,10 @@ export function HandoffStep({ args }: { args: string[] }) {
       </div>
       {state.s === "error" && (
         <p role="alert" className="run-note bad">
-          {T.cantStart(state.why)}
+          {T.cantStart(state.why)}{" "}
+          {state.runId && (
+            <a href={`#/runs?run=${encodeURIComponent(state.runId)}`}>{T.handoffOpenWaiting}</a>
+          )}
         </p>
       )}
     </div>

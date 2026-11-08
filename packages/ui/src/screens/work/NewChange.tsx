@@ -47,6 +47,10 @@ export function NewChange(p: { onCreated?: (id: string) => void; open?: boolean 
       });
       if (p.onCreated) p.onCreated(theId);
       else window.location.hash = `#/changes/${theId}`;
+      // The form closes and is empty for the next one.
+      setOpen(false);
+      setTitle("");
+      setId(undefined);
     }, N.created(theId));
   return (
     <form

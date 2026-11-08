@@ -9972,7 +9972,7 @@
     "/api/service-desk/{changeId}/fields": {
       "put": {
         "operationId": "fillServiceRequestFields",
-        "summary": "Round 36 (UX review): fill a draft's fields in snow.md, as a person editing it would (the value cells only; its comments and other lines stay); 409 when snow.md changed since it was read. Filing stays the person's File",
+        "summary": "Round 36 (UX review): fill a draft's fields in the change's service-desk file, as a person editing it would (the value cells only; its comments and other lines stay); 409 when the file changed since it was read. Filing stays the person's File",
         "tags": [
           "release"
         ],
@@ -22133,7 +22133,6 @@
           }
         },
         "required": [
-          "runId",
           "lines"
         ],
         "additionalProperties": false

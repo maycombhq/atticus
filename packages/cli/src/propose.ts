@@ -259,7 +259,12 @@ export async function proposeForReview(
     io.err(`The PR wasn't opened: ${(e as Error).message.split("\n")[0]}`);
     return 1;
   }
-  io.out(`PR #${pr.number} is open for review: ${pr.url}`);
+  // A manual Git host records a step: the person opens the PR and records its link (ADR 0032).
+  io.out(
+    pr.url.startsWith("manual:")
+      ? `The PR is a step for you on Home: open it on the Git host from ${plan.branch} and record its link.`
+      : `PR #${pr.number} is open for review: ${pr.url}`,
+  );
   io.out("When it merges, Bring in what merged updates your copy of the metarepo.");
   return 0;
 }
