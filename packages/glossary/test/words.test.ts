@@ -11,5 +11,10 @@ describe("a term's singular (round 42)", () => {
     expect(singular("entries")).toBe("entry");
     expect(singular("addresses")).toBe("address");
     expect(singular("causes")).toBe("cause");
+    // round 43: other -uses words lose only their s, and people and children stay
+    expect(singular("excuses")).toBe("excuse");
+    expect(singular("abuses")).toBe("abuse");
+    expect(termId("People")).toBe("term.people");
+    expect(termId("Children")).toBe("term.children");
   });
 });

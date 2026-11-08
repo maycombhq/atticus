@@ -169,33 +169,35 @@ function combine(a: Rec, b: Rec, known: ReadonlySet<string> = DOCUMENTED_TYPES):
   return out;
 }
 
-/** Plurals plain English rules get wrong: kept as they are written. */
+/**
+ * Plurals the rules below would get wrong, and only those (round 43: no other id moves).
+ * Words whose plural adds no s (people, children, indices) are left as they are written.
+ */
 const IRREGULAR: Record<string, string> = {
   aliases: "alias",
   analyses: "analysis",
   crises: "crisis",
   diagnoses: "diagnosis",
   theses: "thesis",
-  indices: "index",
-  matrices: "matrix",
-  vertices: "vertex",
-  children: "child",
-  people: "person",
 };
 
+/** Nouns in -us whose plural is -uses ("statuses"); any other -uses word loses only its s. */
+const US_NOUNS =
+  /^(status|bus|bonus|virus|campus|focus|census|corpus|surplus|consensus|nexus|prospectus|syllabus|stimulus|radius|apparatus)es$/;
+
 /**
- * A plural noun's singular, by plain English rules (round 42: one for endpoint ids and the
- * glossary): "transfers" → "transfer", "policies" → "policy", "addresses" → "address",
- * "statuses" and "buses" → "status" and "bus", while "status", "analysis" and "access" stay
- * and "causes", "cases" and "responses" lose only their s.
+ * A plural noun's singular, by plain English rules (one for endpoint ids and the glossary):
+ * "transfers" → "transfer", "policies" → "policy", "addresses" → "address", "statuses" →
+ * "status", "aliases" → "alias"; "status", "analysis" and "access" stay as they are; "causes",
+ * "excuses", "cases" and "responses" lose only their s.
  */
 export function singularNoun(word: string): string {
   const w = word.toLowerCase();
   if (IRREGULAR[w]) return IRREGULAR[w];
   if (w.length <= 3) return word;
+  if (US_NOUNS.test(w)) return word.slice(0, -2);
   if (/ies$/.test(w) && w.length > 4) return word.slice(0, -3) + "y";
   if (/(us|is|ss)$/.test(w)) return word;
-  if (/[^aeiou]uses$/.test(w)) return word.slice(0, -2);
   if (/(sses|xes|zes|ches|shes)$/.test(w)) return word.slice(0, -2);
   if (/s$/.test(w)) return word.slice(0, -1);
   return word;
@@ -211,13 +213,13 @@ export function endpointId(
 ): string {
   const segs = normalizedPath.split("/").filter((s) => s && s !== "{}" && !/^v\d+$/i.test(s));
   const last = segs.at(-1) ?? "root";
-  const name =
-    singular(
-      last
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, ""),
-    ) || "root";
+  // Round 43: the segment's last word is made singular ("user-aliases" → "user-alias").
+  const slug = last
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const words = slug.split("-");
+  const name = [...words.slice(0, -1), singular(words.at(-1) ?? "")].join("-") || "root";
   return `${component}.${(method ?? "any").toLowerCase()}-${name}`;
 }
 

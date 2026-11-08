@@ -123,6 +123,17 @@ describe("endpointId", () => {
     expect(endpointId("ledger-core", "GET", "/causes")).toBe("ledger-core.get-cause");
     expect(endpointId("ledger-core", "GET", "/purchases")).toBe("ledger-core.get-purchase");
     expect(endpointId("ledger-core", "GET", "/uses")).toBe("ledger-core.get-use");
+    // round 43: only the segment's last word, and only known -us nouns lose "es"
+    expect(endpointId("ledger-core", "GET", "/user-aliases")).toBe("ledger-core.get-user-alias");
+    expect(endpointId("ledger-core", "GET", "/risk-analyses")).toBe(
+      "ledger-core.get-risk-analysis",
+    );
+    expect(endpointId("ledger-core", "GET", "/excuses")).toBe("ledger-core.get-excuse");
+    expect(endpointId("ledger-core", "GET", "/fuses")).toBe("ledger-core.get-fuse");
+    expect(endpointId("ledger-core", "GET", "/people")).toBe("ledger-core.get-people");
+    expect(endpointId("ledger-core", "GET", "/search-indices")).toBe(
+      "ledger-core.get-search-indice",
+    );
   });
 });
 

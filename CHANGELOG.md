@@ -55,7 +55,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Fixed before release (review)
 
 - Round 42 (review):
-  - **One plural rule for endpoint ids and the glossary**, in core: "statuses", "buses" and "aliases" become "status", "bus" and "alias", so `GET /payment-statuses` keeps its id `get-payment-status` and "Payment statuses" is the same glossary term as "Payment status".
+  - **One plural rule for endpoint ids and the glossary**, in core. Round 43 narrowed it so only wrong ids move. **Ids that change on upgrade:**
+    - Endpoints whose last word is a known -us noun in the plural: `/payment-statuses` is `get-payment-status` in every version, and `/status` is `get-status` (it was `get-statu` in beta.20).
+    - Endpoints ending in `responses`, `cases` or another -ses word that isn't a known -us noun: they lose only their s (`get-response`, not `get-respons`).
+    - Glossary terms ending in such a noun ("Payment statuses" is `term.payment-status`, not `term.payment-statuse`), and in "aliases", "analyses", "crises", "diagnoses" or "theses".
+    - A person's glossary definition or link aimed at an old id is reported as not in the catalog: aim it at the new id.
   - **A stage's write entries stay inside the change folder**, with a `*` only in the last part; an org pack that writes otherwise is refused at load, not followed.
   - **A stage's step with options (`--resume`) gets the app's words too**, and At a glance sends the brief step to Feature brief, not to a path to copy.
 - Round 42 (review, task PRs):
