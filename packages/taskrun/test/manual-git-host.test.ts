@@ -80,7 +80,7 @@ describe("Run with AI: a manual Git host", () => {
       await expect(
         completeTaskHandoff(root, w.waiting!, { git, now, commands: ok }),
       ).rejects.toThrow(
-        `Task 1.2 runs at the pr level, which pushes task/${CHANGE}/1.2 and opens a PR: run atticus handoff done ${w.waiting} --approve.`,
+        `Task 1.2 runs at the pr level, which pushes task/${CHANGE}/1.2 and opens a PR: ask the person to run atticus handoff done ${w.waiting} --approve (an assistant never approves a push).`,
       );
       const prompt = await readFile(join(root, ".runs", CHANGE, w.waiting!, "prompt.md"), "utf8");
       expect(prompt.trimEnd()).toMatch(

@@ -172,7 +172,7 @@ describe("atticus task run --level pr without --approve", () => {
         }),
       ).toBe(0);
       expect(c.out.at(-1)).toBe(
-        "Nothing was done: run it again with --approve to let it push and open the PR.",
+        "Nothing was done: run it again with --approve to let it push and open the PR (the person's yes; an assistant never approves a push).",
       );
       expect(ran).toBe(0);
       expect(
@@ -213,6 +213,33 @@ describe("Done on a run whose task run needs a person", () => {
         ),
       );
       expect(c.out.join("\n")).not.toMatch(/is valid/);
+    },
+    T,
+  );
+});
+
+describe("Done on a task run's run that no task run names", () => {
+  it(
+    "is refused, never checked as a bare artifact",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      let c = capture();
+      await taskRun(root, CHANGE, "1.3", { by: "dev", level: "draft", mode: "hand-off" }, c.io, {
+        git,
+        now,
+        commands: ok,
+      });
+      const runId = /atticus handoff done (run-[0-9a-z-]+)$/.exec(c.out[0]!)![1]!;
+      await writeFile(join(root, "openspec/changes", CHANGE, "tasks/1.3/report.md"), "Did it.\n");
+      // Its record is gone (written over by hand, or by an older Atticus's second run).
+      await (
+        await import("node:fs/promises")
+      ).rm(join(root, "openspec/changes", CHANGE, "tasks/1.3/task-run.yaml"));
+      c = capture();
+      expect(await runDone(root, runId, { by: "pat" }, c.io, { git, now, commands: ok })).toBe(1);
+      expect(c.err.join("\n")).toBe(
+        `Run ${runId} was a task run's, and no task run waits on it now: run the task again (atticus task run <change> <task>).`,
+      );
     },
     T,
   );
@@ -265,6 +292,16 @@ describe("atticus task run's dry run", () => {
       c = capture();
       expect(
         await taskRun(root, CHANGE, "1.2", { by: "dev", dryRun: true }, c.io, { git, now }),
+      ).toBe(0);
+      expect(c.out.at(-1)).toBe("Nothing was done: this was a dry run.");
+      // --dry-run at the pr level is only a dry run: nothing to approve.
+      await writeFile(rt, (await readFile(rt, "utf8")).replace("forge-ledger: draft, ", ""));
+      c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "pr", dryRun: true }, c.io, {
+          git,
+          now,
+        }),
       ).toBe(0);
       expect(c.out.at(-1)).toBe("Nothing was done: this was a dry run.");
     },

@@ -491,13 +491,56 @@ export async function previewTaskRun(
   };
 }
 
+/**
+ * The person cancelled the hand-off run a task run waits on (the app's Cancel): the task run
+ * ends with nothing more done, so the task can run again. Undefined when no task run waits on it.
+ */
+export async function cancelTaskRunWait(
+  root: string,
+  runId: string,
+  o: { by: string; now?: () => Date },
+): Promise<TaskRunRecord | undefined> {
+  const r = await findWaitingTaskRun(root, runId);
+  if (!r) return undefined;
+  const lock = await holdTask(root, r.change, r.task);
+  try {
+    const cur = await findWaitingTaskRun(root, runId);
+    if (!cur) return undefined;
+    delete cur.waiting;
+    cur.state = "failed";
+    cur.notes.push(
+      `Run ${runId} was cancelled by ${o.by}, so nothing more was done; run the task again.`,
+    );
+    cur.finishedAt = stamp((o.now ?? (() => new Date()))());
+    return await saveTaskRun(root, cur);
+  } finally {
+    await lock.release();
+  }
+}
+
+/** A hand-off run's state as run.json has it (cancelled in the app frees its task for a new run). */
+async function handoffRunState(root: string, change: string, runId: string) {
+  const text = await import("node:fs/promises").then((fs) =>
+    fs.readFile(join(runsDirOf(root), change, runId, "run.json"), "utf8").catch(() => undefined),
+  );
+  if (!text) return undefined;
+  try {
+    return (JSON.parse(text) as { state?: string }).state;
+  } catch {
+    return undefined;
+  }
+}
+
 /** One run of a task at a time, here or in another window (two builds in one worktree collide). */
 async function holdTask(root: string, change: string, task: string) {
   try {
+    // A run longer than half a day is one cut short whose PID Windows handed on.
     return await acquireLock(
       root,
       `task-run-${change}-${task}`,
       `run of task ${task} of ${change}`,
+      undefined,
+      { maxAgeMs: 12 * 60 * 60_000 },
     );
   } catch (e) {
     if (e instanceof LockHeldError) throw new TaskRunError("refused", e.message);
@@ -518,8 +561,9 @@ export async function runTask(
   try {
     return await runTaskHeld(root, changeId, taskId, o);
   } finally {
-    release();
+    // The lock first: letting go of the stop may end Atticus by the signal there and then.
     await lock.release();
+    release();
   }
 }
 
@@ -534,13 +578,25 @@ async function runTaskHeld(
   let t = await loadTask(root, changeId, taskId);
   const rt = t.ctx.orgPack.runtime;
   const level = levelOf(t, o.level);
+  // A run of this task still waits on the person's assistant: a second one would write over
+  // its record, and its Done would then find nothing to build.
+  const before = await readTaskRun(root, t.change.id, t.task.id);
+  if (
+    before?.state === "waiting" &&
+    before.waiting &&
+    (await handoffRunState(root, t.change.id, before.waiting)) !== "cancelled"
+  )
+    throw new TaskRunError(
+      "refused",
+      `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with atticus handoff done ${before.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
+    );
   if (level === "pr") {
     try {
       requireApproval("git-host", o.approval);
     } catch {
       throw new TaskRunError(
         "refused",
-        "The pr level pushes the task branch and opens a PR, which needs your approval: run it again with --approve.",
+        "The pr level pushes the task branch and opens a PR, which needs the person's yes: ask them to run it with --approve (an assistant never approves a push).",
       );
     }
   }
@@ -643,7 +699,7 @@ export async function completeTaskHandoff(
   if (waiting.level === "pr" && !o.approval)
     throw new TaskRunError(
       "refused",
-      `Task ${waiting.task} runs at the pr level, which pushes ${waiting.branch} and opens a PR: run atticus handoff done ${runId} --approve.`,
+      `Task ${waiting.task} runs at the pr level, which pushes ${waiting.branch} and opens a PR: ask the person to run atticus handoff done ${runId} --approve (an assistant never approves a push).`,
     );
   const lock = await holdTask(root, waiting.change, waiting.task);
   const release = holdSignals();
@@ -653,8 +709,9 @@ export async function completeTaskHandoff(
     if (!record) throw new TaskRunError("not-found", `No task run is waiting on ${runId}.`);
     return await completeHeld(root, runId, record, o);
   } finally {
-    release();
+    // The lock first: letting go of the stop may end Atticus by the signal there and then.
     await lock.release();
+    release();
   }
 }
 

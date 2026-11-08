@@ -2031,6 +2031,9 @@ export const COPY = {
     tasks: "Tasks",
     markDone: "Mark done",
     retry: "Retry",
+    /** A hand-off run nobody will finish: cancelled, its task can run again. */
+    cancelRun: "Cancel",
+    runCancelled: "Cancelled. The task can run again.",
     noAiRunsYet: "No AI runs yet.",
     /** A run that is part of a task run: where the task stands (ADR 0036 addendum, review). */
     taskRunLine: (task: string, state: string) =>

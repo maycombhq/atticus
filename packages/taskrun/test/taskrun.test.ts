@@ -7,6 +7,7 @@ import { MockGitHost } from "@maycombhq/adapters";
 import { MockRuntime, type AiRequest, type HeadlessInvocation } from "@maycombhq/ai";
 import { RunSummary } from "@maycombhq/core";
 import {
+  cancelTaskRunWait,
   completeTaskHandoff,
   previewTaskRun,
   isTaskRun,
@@ -313,7 +314,9 @@ describe("Run with AI: pr", () => {
           now,
           commands: fakeBuild(),
         }),
-      ).rejects.toThrow(/needs your approval: run it again with --approve/);
+      ).rejects.toThrow(
+        /needs the person's yes: ask them to run it with --approve \(an assistant never approves a push\)/,
+      );
       const host = new MockGitHost([
         { repo: "forge-ledger", protectedBranches: ["main", "change/add-transfer-limit"] },
       ]);
@@ -425,6 +428,35 @@ describe("Run with AI: hand-off and headless modes", () => {
       const again = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
       expect(again.state).toBe("built");
       expect(again.attempts.map((a) => a.passed)).toEqual([true]);
+    },
+    T,
+  );
+
+  it(
+    "hand-off: a second run of a task that waits is refused, so the first one's Done still builds",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const opts = {
+        level: "draft" as const,
+        mode: "hand-off" as const,
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      };
+      const first = await runTask(root, CHANGE, "1.2", opts);
+      await expect(runTask(root, CHANGE, "1.2", opts)).rejects.toThrow(
+        `Task 1.2 already waits on your assistant (run ${first.waiting}, in workspace/.worktrees/add-transfer-limit/.tasks/1.2/forge-ledger): finish it with atticus handoff done ${first.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
+      );
+      expect(await isTaskRun(root, first.waiting!)).toBe(true);
+      // Cancelled (the app's Cancel): the task run ends, said so, and the task can run again.
+      const cancelled = await cancelTaskRunWait(root, first.waiting!, { by: "pat", now });
+      expect(cancelled).toMatchObject({ state: "failed" });
+      expect(cancelled!.notes.at(-1)).toBe(
+        `Run ${first.waiting} was cancelled by pat, so nothing more was done; run the task again.`,
+      );
+      const again = await runTask(root, CHANGE, "1.2", opts);
+      expect(again.waiting).not.toBe(first.waiting);
     },
     T,
   );

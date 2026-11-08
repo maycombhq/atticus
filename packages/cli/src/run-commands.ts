@@ -9,11 +9,12 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { generateAssistantFiles, smokeCheck } from "@maycombhq/assistant-files";
-import { changesRelOf, loadOrgPack, orgPackDirOf, runsRelOf } from "@maycombhq/core";
+import { changesRelOf, loadOrgPack, orgPackDirOf, runsDirOf, runsRelOf } from "@maycombhq/core";
 import { driftCheck, handDown, handUp } from "@maycombhq/speckit";
 import {
   completeTaskHandoff,
   findTaskRunOfRun,
+  TASK_RUNNER,
   isTaskRun,
   previewTaskRun,
   RunLevel,
@@ -69,7 +70,10 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 export function describeRun(root: string, r: TaskRunRecord, io: Output): number {
   const what: Record<TaskRunRecord["state"], string> = {
     planned: `Wrote the plan for task ${r.task}: ${changesRelOf(root)}/${r.change}/tasks/${r.task}/plan.md.`,
-    waiting: `Handed task ${r.task} to your assistant. The prompt is in ${runsRelOf(root)}/${r.change}/${r.waiting}/prompt.md; it ends with: atticus handoff done ${r.waiting}`,
+    waiting:
+      r.level === "pr"
+        ? `Handed task ${r.task} to your assistant. The prompt is in ${runsRelOf(root)}/${r.change}/${r.waiting}/prompt.md. When it is done, you run: atticus handoff done ${r.waiting} --approve (it pushes the branch and opens the PR; an assistant never approves a push)`
+        : `Handed task ${r.task} to your assistant. The prompt is in ${runsRelOf(root)}/${r.change}/${r.waiting}/prompt.md; it ends with: atticus handoff done ${r.waiting}`,
     built: `Task ${r.task} is drafted on ${r.branch} and the build passes (${plural(r.attempts.length, "attempt")}); committed ${r.commit?.slice(0, 12) ?? ""}.`,
     unverified: `Task ${r.task} is drafted on ${r.branch} but wasn't built: ${r.repo} has no build command.`,
     "pr-open": `Opened PR ${r.pr?.url ?? ""} from ${r.branch} for review.`,
@@ -150,9 +154,12 @@ export async function taskRun(
                   : `; no Git host is connected (runtime.yaml adapters.gitHost), so you push it and open the PR by hand.`
                 : "."
             }`,
-        p.level === "pr" && !o.approve
-          ? "Nothing was done: run it again with --approve to let it push and open the PR."
-          : "Nothing was done: this was a dry run.",
+        // The yes is the person's: an assistant that ran this says so to them, never adds it.
+        o.dryRun || p.level !== "pr" || o.approve
+          ? "Nothing was done: this was a dry run."
+          : p.gitHost
+            ? "Nothing was done: run it again with --approve to let it push and open the PR (the person's yes; an assistant never approves a push)."
+            : "Nothing was done: run it again with --approve to draft and commit it; you push and open the PR (the person's yes; an assistant never approves a push).",
       ];
       if (o.json) io.out(JSON.stringify({ dryRun: true, ...p, lines: what }, null, 2));
       else for (const l of what) io.out(l);
@@ -257,7 +264,36 @@ export async function runDone(
     io.err(taskRunNotWaiting(runId, owner));
     return 1;
   }
+  // A task run's run that no task run names any more (its record was written over): never
+  // checked as a bare artifact, which would say done with nothing built.
+  if ((await runAgentOf(root, runId)) === TASK_RUNNER) {
+    io.err(
+      `Run ${runId} was a task run's, and no task run waits on it now: run the task again (atticus task run <change> <task>).`,
+    );
+    return 1;
+  }
   return handoffDone(root, runId, io, o.model ? { model: o.model } : {});
+}
+
+/** The agent a run was for, from its run.json (undefined when there is no such run). */
+async function runAgentOf(root: string, runId: string): Promise<string | undefined> {
+  if (!/^run-[0-9a-z-]+$/.test(runId)) return undefined;
+  const { readdir } = await import("node:fs/promises");
+  const runs = runsDirOf(root);
+  for (const change of await readdir(runs).catch(() => [] as string[])) {
+    const text = await readFile(join(runs, change, runId, "run.json"), "utf8").catch(
+      () => undefined,
+    );
+    if (!text) continue;
+    try {
+      const a = (JSON.parse(text) as { request?: { agent?: string | { id?: string } } }).request
+        ?.agent;
+      return typeof a === "string" ? a : a?.id;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 /** Why a run of a task run can't be done or retried on its own any more. */

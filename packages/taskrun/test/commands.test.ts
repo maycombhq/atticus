@@ -195,6 +195,36 @@ setTimeout(() => process.kill(process.pid, "SIGTERM"), 300);
     30_000,
   );
 
+  it.runIf(posix)(
+    "a run stopped by a signal leaves no lock behind: the lock goes before the stop lets go",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
+      const script = join(dir, "parent.mjs");
+      const core = JSON.stringify(pathToFileURL(join(HERE, "../../core/dist/index.js")).href);
+      const runner = JSON.stringify(pathToFileURL(join(HERE, "../dist/commands.js")).href);
+      // As runTask does: the lock, then the hold; on the way out the lock first, then the hold.
+      await writeFile(
+        script,
+        `const { acquireLock } = await import(${core});
+const { holdSignals } = await import(${runner});
+const lock = await acquireLock(${JSON.stringify(dir)}, "task-run-c-1.2", "run");
+const release = holdSignals();
+setTimeout(() => process.kill(process.pid, "SIGINT"), 200);
+await new Promise((r) => setTimeout(r, 600));
+await lock.release();
+release();
+`,
+      );
+      const p = spawn(process.execPath, [script], { cwd: join(HERE, ".."), stdio: "ignore" });
+      const code = await new Promise<number | null>((r) =>
+        p.on("exit", (c, sig) => r(sig ? -1 : c)),
+      );
+      expect(code).toBe(-1);
+      expect(existsSync(join(dir, ".atticus/locks/task-run-c-1.2.json"))).toBe(false);
+    },
+    30_000,
+  );
+
   it("stopAllBuilds stops what runs and says so in its result", async () => {
     // Its own module copy would share state with the other tests: run it in a child instead.
     const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));

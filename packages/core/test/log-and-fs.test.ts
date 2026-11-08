@@ -100,4 +100,44 @@ describe("whole files and locks", () => {
     expect(next.interrupted).toMatchObject({ startedAt: "2026-10-19T08:00:00Z" });
     await next.release();
   });
+
+  it("takes over a lock whose PID was handed on (Windows reuses it), and one past its age", async () => {
+    const root = await temp();
+    const { hostname } = await import("node:os");
+    await ensureLocalIgnore(root);
+    const file = join(root, ".atticus/locks/task-run-c-1.2.json");
+    await (
+      await import("node:fs/promises")
+    ).mkdir(join(root, ".atticus/locks"), { recursive: true });
+    // Left by an earlier atticus whose PID this process now has: not one this process took.
+    await writeFile(
+      file,
+      JSON.stringify({
+        pid: process.pid,
+        host: hostname(),
+        startedAt: "2026-11-07T08:00:00Z",
+        what: "run",
+      }),
+    );
+    expect((await readLock(root, "task-run-c-1.2"))!.stale).toBe(true);
+    const mine = await acquireLock(root, "task-run-c-1.2", "run");
+    // One this process holds is not.
+    expect((await readLock(root, "task-run-c-1.2"))!.stale).toBe(false);
+    await expect(acquireLock(root, "task-run-c-1.2", "run")).rejects.toThrow(
+      /Wait for it to finish; if nothing is running, delete .*task-run-c-1\.2\.json\./,
+    );
+    await mine.release();
+    // Held by a live process elsewhere on this machine (PID 1), but older than the age allowed.
+    await writeFile(
+      file,
+      JSON.stringify({ pid: 1, host: hostname(), startedAt: "2026-11-07T08:00:00Z", what: "run" }),
+    );
+    const now = () => new Date("2026-11-07T21:00:00Z");
+    await expect(acquireLock(root, "task-run-c-1.2", "run", now)).rejects.toBeInstanceOf(
+      LockHeldError,
+    );
+    const late = await acquireLock(root, "task-run-c-1.2", "run", now, { maxAgeMs: 12 * 3600_000 });
+    expect(late.interrupted).toMatchObject({ pid: 1 });
+    await late.release();
+  });
 });

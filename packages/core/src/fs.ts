@@ -89,13 +89,21 @@ export interface LockInfo {
 }
 
 export class LockHeldError extends Error {
-  constructor(readonly held: LockInfo) {
+  constructor(
+    readonly held: LockInfo,
+    readonly file?: string,
+  ) {
     super(
-      `Another ${held.what} is running (process ${held.pid} on ${held.host}, since ${held.startedAt}). Wait for it to finish.`,
+      `Another ${held.what} is running (process ${held.pid} on ${held.host}, since ${held.startedAt}). Wait for it to finish${
+        file ? `; if nothing is running, delete ${file}` : ""
+      }.`,
     );
     this.name = "LockHeldError";
   }
 }
+
+/** The locks this process took and still holds: one naming this process but not here is stale (a reused PID). */
+const heldHere = new Set<string>();
 
 /** Where a metarepo's locks live: .atticus/locks/, on this machine only (git-ignored). */
 export const lockFileOf = (root: string, name: string) =>
@@ -115,10 +123,16 @@ function alive(pid: number): boolean {
 export async function readLock(
   root: string,
   name: string,
+  o: { maxAgeMs?: number; now?: () => Date } = {},
 ): Promise<(LockInfo & { stale: boolean }) | undefined> {
   try {
-    const info = JSON.parse(await readFile(lockFileOf(root, name), "utf8")) as LockInfo;
-    const stale = info.host === hostname() ? !alive(info.pid) : false;
+    const file = lockFileOf(root, name);
+    const info = JSON.parse(await readFile(file, "utf8")) as LockInfo;
+    const here = info.host === hostname();
+    const age = (o.now ?? (() => new Date()))().getTime() - Date.parse(info.startedAt);
+    const stale =
+      (here && (!alive(info.pid) || (info.pid === process.pid && !heldHere.has(file)))) ||
+      (o.maxAgeMs !== undefined && Number.isFinite(age) && age > o.maxAgeMs);
     return { ...info, stale };
   } catch {
     return undefined;
@@ -135,6 +149,8 @@ export async function acquireLock(
   name: string,
   what: string,
   now: () => Date = () => new Date(),
+  /** A lock older than this is taken over (Windows reuses a dead process's PID). */
+  o: { maxAgeMs?: number } = {},
 ): Promise<{ release: () => Promise<void>; interrupted?: LockInfo }> {
   const file = lockFileOf(root, name);
   await ensureLocalIgnore(root);
@@ -149,16 +165,18 @@ export async function acquireLock(
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await writeFile(file, JSON.stringify(info), { encoding: "utf8", flag: "wx" });
+      heldHere.add(file);
       const release = async () => {
         const cur = await readLock(root, name);
         if (cur && cur.pid === info.pid && cur.startedAt === info.startedAt)
           await rm(file, { force: true });
+        heldHere.delete(file);
       };
       return interrupted ? { release, interrupted } : { release };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      const held = await readLock(root, name);
-      if (held && !held.stale) throw new LockHeldError(held);
+      const held = await readLock(root, name, { ...o, now });
+      if (held && !held.stale) throw new LockHeldError(held, file);
       if (held) {
         const { stale: _s, ...rest } = held;
         interrupted = rest;

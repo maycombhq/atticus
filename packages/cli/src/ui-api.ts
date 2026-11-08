@@ -43,7 +43,7 @@ import { changeHandoff, changeNew, changeSync } from "./change-commands.js";
 import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
-import { findTaskRunOfRun, taskRunOfRun } from "@maycombhq/taskrun";
+import { cancelTaskRunWait, findTaskRunOfRun, taskRunOfRun } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
@@ -633,12 +633,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const v = await findRun(root, params.runId!);
         if (["validated", "cancelled"].includes(v.state))
           throw conflict(`Run ${v.runId} is already ${v.state}.`);
+        if (doneBusy.has(v.runId))
+          throw conflict(`Done for ${v.runId} is running; wait for it to finish.`);
         const file = join(runsDirOf(root), v.change, v.runId, "run.json");
         const was = await readFile(file, "utf8");
         const rec = JSON.parse(was);
         rec.state = "cancelled";
         rec.finishedAt = new Date().toISOString();
         await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n");
+        // A task run waiting on it ends too, so the task can run again (never left waiting).
+        await cancelTaskRunWait(root, v.runId, { by: user });
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         return { status: 200, body: after };

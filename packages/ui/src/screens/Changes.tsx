@@ -801,6 +801,25 @@ function Detail({ id }: { id: string }) {
                         {T.markDone}
                       </button>
                     )}
+                    {(r.state === "waiting" || r.state === "prepared") && (
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={runAct.busy}
+                        onClick={() =>
+                          void runAct.run(
+                            () =>
+                              api(`/api/runs/${r.runId}/cancel`, {
+                                method: "POST",
+                                body: {},
+                              }).then(reloadAll),
+                            T.runCancelled,
+                          )
+                        }
+                      >
+                        {T.cancelRun}
+                      </button>
+                    )}
                     {r.state === "failed" && (
                       <button
                         type="button"
