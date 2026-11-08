@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHANGE_POLICY, draftedPath, stageFiles, stagePathOf } from "../src/index.js";
+import {
+  DEFAULT_CHANGE_POLICY,
+  draftedPath,
+  StageStep,
+  stageFiles,
+  stagePathOf,
+} from "../src/index.js";
 
 /**
  * Sixth UX walk: the plan hand-off left out what the stories stage itself writes (the OpenSpec
@@ -80,5 +86,25 @@ describe("the files a stage's hand-off carries", () => {
     expect(draftedPath("tasks/1.1.prompt.md", s, [])).toBe(true);
     expect(draftedPath("specs/forge-ledger-core-answer-account-status/spec.md", s, [])).toBe(true);
     expect(draftedPath("tasks/1.1/task-run.yaml", s, [])).toBe(false);
+  });
+});
+
+describe("a stage's write entries (round 42)", () => {
+  const step = (writes: string[]) =>
+    StageStep.safeParse({
+      stage: "notes",
+      phase: "plan",
+      loop: "stage/notes.yaml",
+      command: "x",
+      writes,
+    });
+  it("keeps a write inside the change folder, and a * in its last part", () => {
+    expect(step(["tasks/*.prompt.md", "specs/", "notes.md"]).success).toBe(true);
+    expect(step(["tasks/*/notes.md"]).success).toBe(false);
+    expect(step(["../*.md"]).success).toBe(false);
+    expect(step(["notes/../../x.md"]).success).toBe(false);
+    expect(step(["/etc/x"]).success).toBe(false);
+    expect(step(["C:\\x.md"]).success).toBe(false);
+    expect(step(["..notes.md"]).success).toBe(true);
   });
 });

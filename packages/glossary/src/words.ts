@@ -1,4 +1,4 @@
-import { identifierWords } from "@maycombhq/core";
+import { identifierWords, singularNoun } from "@maycombhq/core";
 
 /**
  * Words in names and terms. Deterministic and deliberately small: the glossary reads
@@ -54,16 +54,8 @@ export const QUALIFIERS = new Set([
 /** Split an identifier into lower-case words: camelCase, snake_case, kebab-case, dots and slashes. */
 export const splitWords = (s: string): string[] => identifierWords(s);
 
-/** A plural noun's singular, by plain English rules (accounts, entries, statuses, addresses). */
-export function singular(w: string): string {
-  if (w.length <= 3) return w;
-  if (/ies$/.test(w)) return `${w.slice(0, -3)}y`;
-  if (/(ss|us|is)$/.test(w)) return w;
-  if (/(sses|shes|ches|xes|zes)$/.test(w)) return w.slice(0, -2);
-  if (/ses$/.test(w)) return w.slice(0, -1);
-  if (/s$/.test(w)) return w.slice(0, -1);
-  return w;
-}
+/** A plural noun's singular, by plain English rules (accounts, entries, statuses, addresses): core's. */
+export const singular = (w: string): string => singularNoun(w);
 
 const isNoise = (w: string) => STOP_TOKENS.has(w) || /^v\d+$/.test(w) || /^\d+$/.test(w);
 

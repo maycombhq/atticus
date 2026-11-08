@@ -21,10 +21,16 @@ export interface Prepared {
 
 /** What a stage's command is called in the app, and the page it is prepared on. */
 const STAGE_PAGES: [RegExp, string][] = [
-  [/^atticus change feature \S+$/, "prepare the feature stage again on Feature design"],
-  [/^atticus change architecture \S+$/, "prepare the architecture stage again on Architecture"],
-  [/^atticus plan stories \S+$/, "prepare the stories stage again on Stories"],
-  [/^atticus change small \S+$/, "prepare its one step again on At a glance"],
+  [
+    /^atticus change feature \S+(?: --\S+(?: \S+)?)*$/,
+    "prepare the feature stage again on Feature design",
+  ],
+  [
+    /^atticus change architecture \S+(?: --\S+(?: \S+)?)*$/,
+    "prepare the architecture stage again on Architecture",
+  ],
+  [/^atticus plan stories \S+(?: --\S+(?: \S+)?)*$/, "prepare the stories stage again on Stories"],
+  [/^atticus change small \S+(?: --\S+(?: \S+)?)*$/, "prepare its one step again on At a glance"],
 ];
 const againWords = (command: string) =>
   STAGE_PAGES.find(([re]) => re.test(command))?.[1] ??

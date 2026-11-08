@@ -54,6 +54,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 42 (review):
+  - **One plural rule for endpoint ids and the glossary**, in core: "statuses", "buses" and "aliases" become "status", "bus" and "alias", so `GET /payment-statuses` keeps its id `get-payment-status` and "Payment statuses" is the same glossary term as "Payment status".
+  - **A stage's write entries stay inside the change folder**, with a `*` only in the last part; an org pack that writes otherwise is refused at load, not followed.
+  - **A stage's step with options (`--resume`) gets the app's words too**, and At a glance sends the brief step to Feature brief, not to a path to copy.
 - Sixth UX walk (what's left):
   - **What's next skips a task that is drafted, with the person's assistant or with its PR open**, and says that its PR is on the Task board.
   - **After a change's question is answered, Questions offers the stage's step from the app**, with the command after it ("Or on the command line"), and calls the answer's scope "This change only".

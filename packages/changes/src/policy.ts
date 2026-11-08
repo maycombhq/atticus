@@ -54,7 +54,27 @@ export const StageStep = z.strictObject({
    * Files it writes, relative to the change folder; a folder ends in "/", and a "*" in the last
    * part matches any name in that folder ("tasks/*.prompt.md"). They ride with the hand-off.
    */
-  writes: z.array(z.string().min(1)).default([]),
+  writes: z
+    .array(
+      z
+        .string()
+        .min(1)
+        // Round 42: inside the change folder, and a "*" only in the last part (the folder
+        // before it is the one walked).
+        .refine(
+          (w) => !/(^|[/\\])\.\.([/\\]|$)/.test(w) && !/^([/\\]|[a-zA-Z]:)/.test(w),
+          "a write stays inside the change folder (no .. and no absolute path)",
+        )
+        .refine(
+          (w) =>
+            !w
+              .split("/")
+              .slice(0, -1)
+              .some((part) => part.includes("*")),
+          'a "*" may only be in the last part of a write (tasks/*.prompt.md, not tasks/*/notes.md)',
+        ),
+    )
+    .default([]),
   /** The change type's artifacts of the phase that this stage writes: on the stage path, only these are due. */
   artifacts: z.array(ChangeArtifact).default([]),
 });

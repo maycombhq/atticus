@@ -3393,6 +3393,7 @@ export const COPY = {
     next: "What's next",
     copySlash: "Copy the slash command",
     copyCommand: "Copy the command",
+    writeBrief: "Write the brief on Feature brief",
     blocks: "What blocks it",
     questions: (n: number) => `${n} question${n === 1 ? "" : "s"} wait for a person`,
     repos: "Repos and branches",

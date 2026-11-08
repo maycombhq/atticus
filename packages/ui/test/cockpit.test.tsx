@@ -55,6 +55,21 @@ const DATA: Api.ChangeCockpitT = {
 };
 
 describe("the change cockpit (WP7.1)", () => {
+  it("sends the brief step to Feature brief, with no command to copy (round 42)", () => {
+    const brief = `openspec/changes/${DATA.id}/brief.md`;
+    const out = renderToStaticMarkup(
+      <CockpitView
+        c={{
+          ...DATA,
+          next: { step: "brief", command: brief, why: `Write the brief of ${DATA.id}.` },
+        }}
+      />,
+    );
+    expect(out).toContain(`#/brief?change=${DATA.id}`);
+    expect(out).toContain(COPY.cockpit.writeBrief);
+    expect(out).not.toContain(COPY.cockpit.copyCommand);
+  });
+
   it("is Change's tab after All changes, and the first of a change's pages with --full", () => {
     expect(screenOf("cockpit")?.section).toBe("Change");
     expect(screenOf("cockpit")?.aside).toBeUndefined();

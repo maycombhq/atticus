@@ -112,6 +112,17 @@ describe("endpointId", () => {
     expect(endpointId("ledger-core", "GET", "/analysis")).toBe("ledger-core.get-analysis");
     expect(endpointId("ledger-core", "GET", "/branches")).toBe("ledger-core.get-branch");
     expect(endpointId("ledger-core", "GET", "/policies")).toBe("ledger-core.get-policy");
+    // round 42: -uses after a consonant loses es, after a vowel only its s
+    expect(endpointId("ledger-core", "GET", "/payment-statuses")).toBe(
+      "ledger-core.get-payment-status",
+    );
+    expect(endpointId("ledger-core", "GET", "/buses")).toBe("ledger-core.get-bus");
+    expect(endpointId("ledger-core", "GET", "/bonuses")).toBe("ledger-core.get-bonus");
+    expect(endpointId("ledger-core", "GET", "/aliases")).toBe("ledger-core.get-alias");
+    expect(endpointId("ledger-core", "GET", "/analyses")).toBe("ledger-core.get-analysis");
+    expect(endpointId("ledger-core", "GET", "/causes")).toBe("ledger-core.get-cause");
+    expect(endpointId("ledger-core", "GET", "/purchases")).toBe("ledger-core.get-purchase");
+    expect(endpointId("ledger-core", "GET", "/uses")).toBe("ledger-core.get-use");
   });
 });
 

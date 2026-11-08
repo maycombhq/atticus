@@ -169,16 +169,39 @@ function combine(a: Rec, b: Rec, known: ReadonlySet<string> = DOCUMENTED_TYPES):
   return out;
 }
 
-/** "transfers" → "transfer", "policies" → "policy"; good enough for endpoint names. */
-// Sixth UX walk: "status" and "analysis" are singular already, and "responses" or "cases" lose
-// only their s ("ses" alone isn't "sses": "addresses" loses es, "responses" s).
-function singular(word: string): string {
-  if (/ies$/.test(word) && word.length > 4) return word.slice(0, -3) + "y";
-  if (/(us|is|ss)$/.test(word)) return word;
-  if (/(sses|xes|zes|ches|shes)$/.test(word)) return word.slice(0, -2);
-  if (/s$/.test(word) && word.length > 3) return word.slice(0, -1);
+/** Plurals plain English rules get wrong: kept as they are written. */
+const IRREGULAR: Record<string, string> = {
+  aliases: "alias",
+  analyses: "analysis",
+  crises: "crisis",
+  diagnoses: "diagnosis",
+  theses: "thesis",
+  indices: "index",
+  matrices: "matrix",
+  vertices: "vertex",
+  children: "child",
+  people: "person",
+};
+
+/**
+ * A plural noun's singular, by plain English rules (round 42: one for endpoint ids and the
+ * glossary): "transfers" → "transfer", "policies" → "policy", "addresses" → "address",
+ * "statuses" and "buses" → "status" and "bus", while "status", "analysis" and "access" stay
+ * and "causes", "cases" and "responses" lose only their s.
+ */
+export function singularNoun(word: string): string {
+  const w = word.toLowerCase();
+  if (IRREGULAR[w]) return IRREGULAR[w];
+  if (w.length <= 3) return word;
+  if (/ies$/.test(w) && w.length > 4) return word.slice(0, -3) + "y";
+  if (/(us|is|ss)$/.test(w)) return word;
+  if (/[^aeiou]uses$/.test(w)) return word.slice(0, -2);
+  if (/(sses|xes|zes|ches|shes)$/.test(w)) return word.slice(0, -2);
+  if (/s$/.test(w)) return word.slice(0, -1);
   return word;
 }
+
+const singular = singularNoun;
 
 /** Canonical REST endpoint id: <component>.<method>-<last fixed path segment, singular>. */
 export function endpointId(

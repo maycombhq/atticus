@@ -158,8 +158,17 @@ export function CockpitView(p: {
               <p className="muted" style={{ margin: 0 }}>
                 {c.next.why}
               </p>
-              {c.next.slash && <Command text={c.next.slash} label={C.copySlash} />}
-              <Command text={c.next.command} label={C.copyCommand} />
+              {/* Round 42: the brief is written on Feature brief, not a command to copy. */}
+              {c.next.step === "brief" ? (
+                <p style={{ margin: 0 }}>
+                  <a href={`#/brief?change=${encodeURIComponent(c.id)}`}>{C.writeBrief}</a>
+                </p>
+              ) : (
+                <>
+                  {c.next.slash && <Command text={c.next.slash} label={C.copySlash} />}
+                  <Command text={c.next.command} label={C.copyCommand} />
+                </>
+              )}
               {/* Sixth UX walk: a hand-off is raised from here too, on the person's click. */}
               {isHandoffCommand(c.next.command) && <CockpitHandoff change={c.id} />}
             </>
