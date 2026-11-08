@@ -6,8 +6,13 @@ import {
   runsDirOf,
   runsRelOf,
   writeFileAtomic,
+  type AgentDefinition,
+  type ContextPackManifest,
+  type RunPart,
   type RuntimeKind,
+  type StepClass,
 } from "@maycombhq/core";
+import { sha256 } from "./context.js";
 import {
   checkAllowed,
   makeRunId,
@@ -27,6 +32,49 @@ export interface HandoffOptions {
   /** How long the output must sit unchanged before the watcher accepts it. Default 30 s. */
   stableMs?: number;
   now?: () => Date;
+  /**
+   * ADR 0185: a step's several hand-offs that wait together (a stage's critic lenses) may be asked
+   * in one prompt, `prepareBatch`. Off unless asked for; the CLI and the app ask for it.
+   */
+  batch?: boolean;
+  /** The most tokens one batched prompt may hold, its parts' together. Default 60 000. */
+  batchMaxTokens?: number;
+}
+
+/** Where a batched hand-off's answer goes, in its run's own folder (ADR 0185). */
+export const BATCH_OUTPUT = "answers.md";
+/** The most tokens a batched prompt holds unless the runtime is told otherwise (ADR 0185). */
+export const DEFAULT_BATCH_MAX_TOKENS = 60_000;
+
+/** The line that starts a part's section in a batched answer: `=== <part>`. */
+const SECTION = /^[ \t]*===[ \t]*([a-z][a-z0-9-]*)[ \t]*$/;
+
+/**
+ * A batched answer's sections, by part name: the lines under each `=== <part>` line, up to the
+ * next. Text before the first section is not an answer and is left out; a name given twice is
+ * kept as `twice`, never one of the two picked.
+ */
+export function batchSections(text: string): Map<string, { text: string; twice?: true }> {
+  const out = new Map<string, { text: string; twice?: true }>();
+  let name: string | undefined;
+  let lines: string[] = [];
+  const end = () => {
+    if (name === undefined) return;
+    while (lines.length && !lines[0]!.trim()) lines.shift();
+    while (lines.length && !lines.at(-1)!.trim()) lines.pop();
+    const body = lines.length ? `${lines.join("\n")}\n` : "";
+    out.set(name, out.has(name) ? { text: body, twice: true } : { text: body });
+  };
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const m = SECTION.exec(line);
+    if (m) {
+      end();
+      name = m[1]!;
+      lines = [];
+    } else lines.push(line);
+  }
+  end();
+  return out;
 }
 
 /**
@@ -76,6 +124,45 @@ export class HandoffRuntime implements AiRuntime {
       : `${changesRel}/${change}/${outputPath}`;
   }
 
+  /**
+   * A batched hand-off's prompt (ADR 0185): one section to write per part, then each part's own
+   * prompt, whole and in order, under its name. It ends with the completion command.
+   */
+  static promptForBatch(
+    run: Run,
+    parts: { name: string; prompt: string }[],
+    changesRel = "openspec/changes",
+    runsRel = ".runs",
+  ): string {
+    const { agent, change } = run.request;
+    const where = HandoffRuntime.outputRel(run, changesRel, runsRel);
+    const n = parts.length;
+    return [
+      `# ${agent.id}: ${n} parts for change ${change}, in one answer`,
+      "",
+      agent.description,
+      "",
+      `Write the result to ${where}. Change no other files.`,
+      "",
+      `The file holds one section per part below. Start each section with a line that holds only "=== " and the part's name, then write that part's answer exactly as the part asks for it, and nothing else. Answer each part from its own instructions and its own data only: the parts are separate. Leave no part out. Atticus checks each section on its own, as if that part were answered alone: a section that is missing or fails its check is asked for again, and the others are kept.`,
+      "",
+      ...parts.flatMap((p) => [`=== ${p.name}`, `<the ${p.name} part's answer>`]),
+      "",
+      ...parts.flatMap((p, i) => [
+        "---",
+        "",
+        `Part ${i + 1} of ${n}: ${p.name}. Its answer is the section "=== ${p.name}".`,
+        "",
+        p.prompt.trimEnd(),
+        "",
+      ]),
+      "---",
+      "",
+      `When the file is complete, run: atticus handoff done ${run.runId}`,
+      "",
+    ].join("\n");
+  }
+
   /** The prompt the person's assistant gets. It ends with the completion command. */
   static promptFor(run: Run, changesRel = "openspec/changes", runsRel = ".runs"): string {
     const { agent, pack, outputPath, change } = run.request;
@@ -96,6 +183,113 @@ export class HandoffRuntime implements AiRuntime {
     ].join("\n");
   }
 
+  /** A run id no run folder of the change has yet. */
+  private async freshId(change: string, now: Date): Promise<string> {
+    // Each process counts from 1, so a run another process made in the same second may
+    // already have this id: skip any id whose run folder is on disk.
+    let runId = makeRunId(now, ++this.seq);
+    while (await stat(this.runDir(change, runId)).catch(() => undefined))
+      runId = makeRunId(now, ++this.seq);
+    return runId;
+  }
+
+  /**
+   * Whether `parts` runs that wait together, `tokens` in all, are asked in one prompt (ADR 0185):
+   * only when this runtime batches, for two parts or more, within the size a batch may hold.
+   */
+  canBatch(parts: number, tokens: number): boolean {
+    return (
+      !!this.o.batch && parts >= 2 && tokens <= (this.o.batchMaxTokens ?? DEFAULT_BATCH_MAX_TOKENS)
+    );
+  }
+
+  /**
+   * Ask several waiting runs of one change in one prompt (ADR 0185). Each part keeps its own run,
+   * prompt, pack and answer file, and can still be answered alone; the batch links them, and each
+   * part names the batch. The batch's pack is its parts' packs together: their sources, each id
+   * under its part's name, and their sizes added up. Run it (`run`) to hand it over.
+   */
+  async prepareBatch(o: {
+    change: string;
+    agent: AgentDefinition;
+    parts: RunPart[];
+    stepClass?: StepClass;
+  }): Promise<Run> {
+    checkAllowed(this.kind, o.agent);
+    if (o.parts.length < 2) throw new RuntimeError("a batched hand-off needs two parts or more");
+    const twice = o.parts.find((p, i) => o.parts.findIndex((x) => x.name === p.name) !== i);
+    if (twice)
+      throw new RuntimeError(`a batched hand-off can't have two parts named ${twice.name}`);
+    const parts: { name: string; run: Run }[] = [];
+    for (const p of o.parts) {
+      const run = await this.load(p.runId);
+      if (run.request.change !== o.change)
+        throw new RuntimeError(`run ${p.runId} isn't a run of ${o.change}`);
+      if (run.state !== "waiting" && run.state !== "prepared")
+        throw new RuntimeError(
+          `run ${p.runId} is ${run.state}: only a run still waiting for its answer can be batched`,
+        );
+      if (run.batch) throw new RuntimeError(`run ${p.runId} is already asked in ${run.batch}`);
+      parts.push({ name: p.name, run });
+    }
+    const now = this.now();
+    const runId = await this.freshId(o.change, now);
+    const manifests = parts.map((p) => ({ name: p.name, m: p.run.request.pack.manifest }));
+    const totalTokens = manifests.reduce((n, x) => n + x.m.totalTokens, 0);
+    const agent = { ...o.agent, tokenBudget: Math.max(o.agent.tokenBudget, totalTokens) };
+    const run: Run = {
+      runId,
+      request: {
+        change: o.change,
+        agent,
+        pack: { prompt: "", manifest: manifests[0]!.m },
+        outputPath: BATCH_OUTPUT,
+        outputIn: "run",
+        ...(o.stepClass ? { stepClass: o.stepClass } : {}),
+      },
+      runtime: this.kind,
+      state: "prepared",
+      attempt: 1,
+      startedAt: now.toISOString(),
+      errors: [],
+      stepClass: o.stepClass ?? stepClassOf({ agent }),
+      parts: parts.map((p) => ({ name: p.name, runId: p.run.runId })),
+    };
+    const prompt = HandoffRuntime.promptForBatch(
+      run,
+      parts.map((p) => ({ name: p.name, prompt: p.run.request.pack.prompt })),
+      changesRelOf(this.o.root),
+      runsRelOf(this.o.root),
+    );
+    const manifest: ContextPackManifest = {
+      schemaVersion: 1,
+      change: o.change,
+      agent: o.agent.id,
+      createdAt: now.toISOString(),
+      budget: manifests.reduce((n, x) => n + x.m.budget, 0),
+      totalTokens,
+      sources: manifests.flatMap((x) =>
+        x.m.sources.map((s) => ({ ...s, id: `${x.name}/${s.id}` })),
+      ),
+      dropped: manifests.flatMap((x) =>
+        x.m.dropped.map((d) => ({ ...d, id: `${x.name}/${d.id}` })),
+      ),
+      promptSha256: sha256(prompt),
+    };
+    run.request.pack = { prompt, manifest };
+    const dir = this.runDir(o.change, runId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "prompt.md"), prompt, "utf8");
+    await writeFile(
+      join(dir, "context-manifest.json"),
+      JSON.stringify(manifest, null, 2) + "\n",
+      "utf8",
+    );
+    await this.save(run);
+    for (const p of parts) await this.save({ ...p.run, batch: runId });
+    return run;
+  }
+
   async prepare(request: AiRequest): Promise<Run> {
     checkAllowed(this.kind, request.agent);
     if (request.pack.manifest.totalTokens > request.agent.tokenBudget) {
@@ -104,11 +298,7 @@ export class HandoffRuntime implements AiRuntime {
       );
     }
     const now = this.now();
-    // Each process counts from 1, so a run another process made in the same second may
-    // already have this id: skip any id whose run folder is on disk.
-    let runId = makeRunId(now, ++this.seq);
-    while (await stat(this.runDir(request.change, runId)).catch(() => undefined))
-      runId = makeRunId(now, ++this.seq);
+    const runId = await this.freshId(request.change, now);
     const run: Run = {
       runId,
       request,
@@ -153,6 +343,7 @@ export class HandoffRuntime implements AiRuntime {
   async done(runId: string, o: { model?: string } = {}): Promise<Run> {
     let run = await this.load(runId);
     const model = o.model?.trim();
+    if (run.parts?.length) return this.doneBatch(run, model);
     if (model) run = { ...run, model };
     // A run whose last check failed (the file was missing or didn't validate) is looked at
     // again: the person fixed the file and says done once more ("run it again when it's fixed").
@@ -181,7 +372,76 @@ export class HandoffRuntime implements AiRuntime {
     const info = await stat(this.outputFile(run)).catch(() => undefined);
     if (!info) return run;
     if (this.now().getTime() - info.mtimeMs < (this.o.stableMs ?? 30_000)) return run;
+    if (run.parts?.length) return this.doneBatch(run);
     return this.validate(transition(run, "produced", this.now()));
+  }
+
+  /**
+   * A batched hand-off's Done (ADR 0185): its answer is split into its parts' sections, each
+   * written to its part's own answer file and checked there as that part's Done would check it.
+   * A part that passes is in; a missing, doubled or failing section fails only its part, which can
+   * be fixed in the batch (Done again checks only the parts still out) or answered alone. The
+   * batch passes once every part is in; until then it fails, naming each part that is out and why.
+   */
+  private async doneBatch(start: Run, model?: string): Promise<Run> {
+    let run = start;
+    if (run.state === "validated" || run.state === "cancelled") return run;
+    if (run.state === "failed")
+      run = transition(
+        transition(run, "prepared", this.now(), { attempt: run.attempt + 1, errors: [] }),
+        "waiting",
+        this.now(),
+      );
+    if (model) run = { ...run, model };
+    const output = await readFile(this.outputFile(run), "utf8").catch(() => undefined);
+    if (output === undefined)
+      return this.save(
+        transition(run, "failed", this.now(), {
+          errors: [`${run.request.outputPath} was not written`],
+        }),
+      );
+    const names = run.parts!.map((p) => p.name);
+    const sections = batchSections(output);
+    if (!names.some((n) => sections.has(n)))
+      return this.save(
+        transition(run, "failed", this.now(), {
+          output,
+          errors: [
+            `${run.request.outputPath} has no section of any part. Start each part's answer with its own line "=== <part>": ${names.map((n) => `=== ${n}`).join(", ")}.`,
+          ],
+        }),
+      );
+    run = transition(run, "produced", this.now(), { output });
+    const errors: string[] = [];
+    const runsRel = runsRelOf(this.o.root);
+    for (const p of run.parts!) {
+      const part = await this.load(p.runId);
+      if (part.state === "validated" || part.state === "cancelled") continue;
+      const s = sections.get(p.name);
+      const alone = `answer that part alone: its prompt is ${HandoffRuntime.promptRel(part, runsRel)}.`;
+      if (!s || s.twice) {
+        errors.push(
+          s
+            ? `${p.name}: the answer has two "=== ${p.name}" sections. Keep one, or ${alone}`
+            : `${p.name}: the answer has no "=== ${p.name}" section. Add it, or ${alone}`,
+        );
+        const why = `The batched answer (run ${run.runId}) has ${s ? 'two "=== ' + p.name + '" sections' : 'no "=== ' + p.name + '" section'}. Answer this part here.`;
+        await this.save(
+          part.state === "failed"
+            ? { ...part, errors: [why] }
+            : transition(part, "failed", this.now(), { errors: [why] }),
+        );
+        continue;
+      }
+      await writeFile(this.outputFile(part), s.text, "utf8");
+      const r = await this.done(p.runId, model ? { model } : {});
+      if (r.state !== "validated") errors.push(...r.errors.map((e) => `${p.name}: ${e}`));
+    }
+    return this.save(
+      errors.length
+        ? transition(run, "failed", this.now(), { errors })
+        : transition(run, "validated", this.now()),
+    );
   }
 
   /** Retry after a failure: a fresh attempt with the same request. */

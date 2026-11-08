@@ -156,11 +156,25 @@ function printStage(
     }
     const w = r.waiting!;
     // The run the stage waits on, as data: a runner offers exactly this run (ADR 0115).
-    io.report?.({ handoff: { runId: w.runId, ...(w.lens ? { lens: w.lens } : {}) } });
+    io.report?.({
+      handoff: {
+        runId: w.runId,
+        ...(w.lens ? { lens: w.lens } : {}),
+        ...(w.lenses ? { lenses: w.lenses } : {}),
+      },
+    });
+    // ADR 0185: the lenses still out, asked together in one prompt.
+    const together = w.lenses
+      ? w.lenses.length === 1
+        ? `the critic's ${w.lenses[0]} lens`
+        : `the critic's ${w.lenses.slice(0, -1).join(", ")} and ${w.lenses.at(-1)} lenses, in one prompt,`
+      : undefined;
     io.out(
-      w.lens
-        ? `Handed the critic's ${w.lens} lens to your assistant to review the ${NAMES[r.stage]} draft (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`
-        : `Handed the ${NAMES[r.stage]} draft to your assistant (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`,
+      together
+        ? `Handed ${together} to your assistant to review the ${NAMES[r.stage]} draft (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`
+        : w.lens
+          ? `Handed the critic's ${w.lens} lens to your assistant to review the ${NAMES[r.stage]} draft (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`
+          : `Handed the ${NAMES[r.stage]} draft to your assistant (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`,
     );
     return 1;
   }

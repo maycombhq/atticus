@@ -252,6 +252,32 @@ export function WaitingActions(p: {
   );
 }
 
+/**
+ * ADR 0185: a batched hand-off is one prompt; its lenses are listed, each a link to its own run
+ * with that run's state, so a lens still out can be opened and answered alone.
+ */
+function BatchParts(p: { parts: Item["parts"] }) {
+  if (!p.parts?.length) return null;
+  return (
+    <section aria-labelledby="run-parts" className="stack" style={{ gap: 4 }}>
+      <h3 id="run-parts" className="hud runs-h">
+        {R.batch.parts}
+      </h3>
+      <p className="muted" style={{ margin: 0 }}>
+        {R.batch.partsSay}
+      </p>
+      <ul style={{ margin: 0, paddingLeft: 18 }}>
+        {p.parts.map((x) => (
+          <li key={x.runId}>
+            <a href={runsHref({ run: x.runId })}>{R.batch.lens(x.name)}</a>
+            {x.state && <span className="muted"> {stateText(x.state)}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => void } }) {
   return (
     <View of={p.of}>
@@ -287,8 +313,18 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
                     ReactNode,
                   ][])
                 : []),
+              // ADR 0185: a lens's own run links to the one prompt it was asked in.
+              ...(t.run.batch
+                ? ([
+                    [
+                      R.batch.askedIn,
+                      <a href={runsHref({ run: t.run.batch })}>{R.batch.askedInLink}</a>,
+                    ],
+                  ] as [string, ReactNode][])
+                : []),
             ]}
           />
+          <BatchParts parts={t.run.parts} />
           {/* UX re-walk: a hand-off whose answer failed its checks says why and can be checked
               again or cancelled here, not only with atticus handoff done. */}
           {t.run.state === "failed" && (t.run.errors ?? []).length > 0 && (

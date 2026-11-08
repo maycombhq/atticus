@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunRetrieval, RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
+import { RunPart, RunRetrieval, RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
 import { Evidence, RecordId } from "./schema/common.js";
 import {
   Commitment,
@@ -254,8 +254,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   manual host's as the person recorded them); POST /api/todo/{stepId}/done syncs the change's
  *   open hand-off after a Git host step and returns what it said in `synced` (read-only: never a
  *   merge). Additive only.
+ * 2.76.0 (eighth UX walk, hand-off clicks; ADR 0185): a run in GET /api/runs, GET /api/runs/{runId}
+ *   and its transcript carries `parts` when it is a batched hand-off (a stage's critic lenses in one
+ *   prompt: each lens's name, its own run and that run's state) and `batch` when it is one of those
+ *   lenses' own runs (run record version 6). POST /api/runs/{runId}/done on a batch checks each
+ *   lens's section on its own and reads in those that pass; a stage's draft Done offers the batch as
+ *   its `next`. Additive only.
  */
-export const API_VERSION = "2.75.0";
+export const API_VERSION = "2.76.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -669,6 +675,14 @@ export const Task = z.object({
 export type TaskT = z.infer<typeof Task>;
 
 export const RunView = RunSummary.extend({
+  /**
+   * 2.76.0 (ADR 0185): a batched hand-off's parts, each a lens with its own run, and that run's
+   * state now (left out when its run is gone).
+   */
+  parts: z
+    .array(RunPart.extend({ state: RunState.optional() }))
+    .min(1)
+    .optional(),
   /** For hand-off runs: the prompt file and the editor workspace to open. */
   promptPath: z.string().optional(),
   workspaceFile: z.string().optional(),

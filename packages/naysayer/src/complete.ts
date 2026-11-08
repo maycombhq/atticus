@@ -260,6 +260,29 @@ export async function completeLensRun(
 }
 
 /**
+ * ADR 0185: the lenses of a batched hand-off read in, once its Done has checked each lens's section
+ * in that lens's own run. A lens whose run passed and that its round still waits on is read in as
+ * `completeLensRun` reads one answered alone; a lens whose section was missing or failed its check
+ * stays waiting, to be fixed in the batch or answered alone. Returns what was read in, in order.
+ */
+export async function completeLensBatch(
+  root: string,
+  batch: Run,
+  result: (runId: string) => Promise<Run>,
+  opts: { now?: string; teamPacks?: string[]; codeSearch?: CodeSearch } = {},
+): Promise<CompletedLens[]> {
+  const out: CompletedLens[] = [];
+  for (const p of batch.parts ?? []) {
+    const run = await result(p.runId).catch(() => undefined);
+    if (run?.state !== "validated" || !lensRunOf(run.request)) continue;
+    const found = await roundOf(root, run.request.change, run.runId);
+    if (found?.entry.state !== "waiting") continue;
+    out.push(await completeLensRun(root, run, opts));
+  }
+  return out;
+}
+
+/**
  * Record a lens of a round as failed without an answer to read: its run is gone (a cleaned
  * runs folder, another machine) or was cancelled. The round then says the lens never reviewed,
  * and the gate stays closed on it rather than waiting for ever or opening.

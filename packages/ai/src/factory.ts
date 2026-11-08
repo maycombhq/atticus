@@ -684,6 +684,8 @@ export async function createRuntime(
         root: o.root,
         validate: o.handoffValidate ?? nonEmpty,
         ...(o.now ? { now: o.now } : {}),
+        // ADR 0185: a stage's critic lenses go to the person's assistant in one prompt.
+        batch: true,
       });
     case "model": {
       const cfg = rt.adapters.model;

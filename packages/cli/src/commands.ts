@@ -26,7 +26,8 @@ export interface Output {
 }
 
 /** One fact a step reports as data (Output.report). */
-export type StepFact = { handoff: { runId: string; lens?: string } } | { pagesLeft: number };
+export type StepFact =
+  { handoff: { runId: string; lens?: string; lenses?: string[] } } | { pagesLeft: number };
 
 /**
  * Write JSON Schema files: one per record kind under `<dir>/catalog/`, and the workspace

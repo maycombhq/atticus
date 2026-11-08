@@ -9,8 +9,10 @@ import {
   CriticError,
   act,
   countedRounds,
+  completeLensBatch,
   completeLensRun,
   gateStatus,
+  lensAnswerProblem,
   lensRunOf,
   readRound,
   runCritic,
@@ -414,3 +416,151 @@ async function recordedAny(l: LensRun): Promise<string> {
   const [file] = await readdir(dir);
   return (JSON.parse(await readFile(join(dir, file!), "utf8")) as { output: string }).output;
 }
+
+/**
+ * ADR 0185: in hand-off mode a round's AI lenses are asked in one prompt as well as one run each.
+ * Each lens keeps its own run, prompt and pack (its prompt hash is the one a lens asked alone
+ * has), the batch's answer is split into the lenses' sections, and each is read into the round
+ * with the same parser; a lens whose section is missing stays out on its own.
+ */
+describe("the critic's lenses batched in one hand-off (ADR 0185)", () => {
+  const batching = (root: string) =>
+    new HandoffRuntime({
+      root,
+      validate: async (file) => {
+        const why = lensAnswerProblem(await readFile(file, "utf8"));
+        return why ? [why] : [];
+      },
+      now: () => new Date(NOW),
+      batch: true,
+    });
+  /** What a stage's critic round asks for. */
+  const BATCHED = { now: NOW, batchLenses: true } as const;
+  const batchOf = async (root: string, runId: string) =>
+    JSON.parse(await readFile(join(root, ".runs", CHANGE, runId, "run.json"), "utf8")) as Run;
+
+  it("asks the waiting lenses in one prompt and links each lens's own run to it", async () => {
+    const root = await forgeChangeRoot();
+    const r = await runCritic(root, CHANGE, { ...BATCHED, runtime: batching(root) });
+    const runs = lensRuns(r);
+    expect(runs.map((l) => l.lens)).toEqual(["complete", "safe", "ship"]);
+    const batch = runs[0]!.batch!;
+    expect(batch).toMatch(/^run-\d+-\d+$/);
+    for (const l of runs) {
+      expect(l).toMatchObject({ state: "waiting", batch });
+      expect(l.runId).not.toBe(batch);
+    }
+    expect(r.batch).toBe(batch);
+    const run = await batchOf(root, batch);
+    expect(run).toMatchObject({ state: "waiting", stepClass: "critic" });
+    expect(run.request.agent.id).toBe("critic-lenses");
+    expect(run.parts).toEqual(runs.map((l) => ({ name: l.lens, runId: l.runId })));
+    const prompt = await readFile(join(root, ".runs", CHANGE, batch, "prompt.md"), "utf8");
+    for (const l of runs) {
+      expect(prompt).toContain(`=== ${l.lens}`);
+      expect(prompt).toContain(l.prompt!.trimEnd());
+    }
+    // The round names the batch beside each lens's own run.
+    const meta = await roundMeta(root);
+    expect(meta.lenses.filter((l) => l.runId).map((l) => (l as { batch?: string }).batch)).toEqual(
+      runs.map(() => batch),
+    );
+
+    // Each lens's own prompt is the one it has when it is asked alone: the same hash, so
+    // recordings and evals keyed by it still match.
+    const other = await forgeChangeRoot();
+    const alone = lensRuns(await runCritic(other, CHANGE, { now: NOW, runtime: handoff(other) }));
+    expect(alone.every((l) => l.batch === undefined)).toBe(true);
+    expect(runs.map((l) => l.promptSha256)).toEqual(alone.map((l) => l.promptSha256));
+  });
+
+  it("reads every lens of one answer into the round, as answering them one at a time would", async () => {
+    const root = await forgeChangeRoot();
+    const rt = batching(root);
+    const r = await runCritic(root, CHANGE, { ...BATCHED, runtime: rt });
+    const runs = lensRuns(r);
+    const sections = await Promise.all(
+      runs.map(async (l) => `=== ${l.lens}\n${(await recorded(l)).trimEnd()}\n`),
+    );
+    await writeFile(join(root, ".runs", CHANGE, r.batch!, "answers.md"), sections.join(""));
+    const done = await rt.done(r.batch!);
+    expect(done.state).toBe("validated");
+    const read = await completeLensBatch(root, done, (id) => rt.result(id), { now: LATER });
+    expect(read.map((c) => c.lens.lens)).toEqual(["complete", "safe", "ship"]);
+    expect(read.map((c) => c.lens.state)).toEqual(["ran", "ran", "ran"]);
+    expect(read.at(-1)!.waiting).toEqual([]);
+
+    // The same findings as a lens-at-a-time round over the same answers.
+    const one = await forgeChangeRoot();
+    const rt1 = handoff(one);
+    for (const l of lensRuns(await runCritic(one, CHANGE, { now: NOW, runtime: rt1 })))
+      await completeLensRun(one, await answer(one, rt1, l), { now: LATER });
+    expect(shape((await readRound(root, CHANGE, "plan", 1)).findings)).toEqual(
+      shape((await readRound(one, CHANGE, "plan", 1)).findings),
+    );
+    // Each lens's record keeps its own run and names the batch it was answered in.
+    const summary = parse(
+      await readFile(join(changeDir(root), "review/plan/1/meta/runs/safe-critic.yaml"), "utf8"),
+    ) as { runId: string; batch?: string; state: string };
+    expect(summary).toMatchObject({ runId: runs[1]!.runId, batch: r.batch, state: "validated" });
+    // Reading the batch in again adds nothing.
+    expect(await completeLensBatch(root, done, (id) => rt.result(id), { now: LATER })).toEqual([]);
+  });
+
+  it("a lens whose section is missing stays out alone; the rest are in, and it can be answered alone", async () => {
+    const root = await forgeChangeRoot();
+    const rt = batching(root);
+    const r = await runCritic(root, CHANGE, { ...BATCHED, runtime: rt });
+    const [complete, safe, ship] = lensRuns(r);
+    await writeFile(
+      join(root, ".runs", CHANGE, r.batch!, "answers.md"),
+      `=== complete\n${await recorded(complete!)}=== ship\nI looked and it seems fine.\n`,
+    );
+    const done = await rt.done(r.batch!);
+    expect(done.state).toBe("failed");
+    expect(done.errors.map((e) => e.split(":")[0])).toEqual(["safe", "ship"]);
+    const read = await completeLensBatch(root, done, (id) => rt.result(id), { now: LATER });
+    expect(read.map((c) => [c.lens.lens, c.lens.state])).toEqual([["complete", "ran"]]);
+    expect(read[0]!.waiting.map((w) => w.lens)).toEqual(["safe", "ship"]);
+    expect((await gateStatus(root, CHANGE, "plan")).mayProceed).toBe(false);
+
+    // The safe lens answered alone; the ship lens fixed in the batch.
+    const alone = await answer(root, rt, safe!);
+    expect(alone.state).toBe("validated");
+    await completeLensRun(root, alone, { now: LATER });
+    await writeFile(
+      join(root, ".runs", CHANGE, r.batch!, "answers.md"),
+      `=== ship\n${await recorded(ship!)}`,
+    );
+    const again = await rt.done(r.batch!);
+    expect(again.state).toBe("validated");
+    const rest = await completeLensBatch(root, again, (id) => rt.result(id), { now: LATER });
+    expect(rest.map((c) => c.lens.lens)).toEqual(["ship"]);
+    expect(await waitingLenses(root, CHANGE, "plan")).toEqual([]);
+    expect((await roundMeta(root)).lenses.filter((l) => l.runId).map((l) => l.state)).toEqual([
+      "ran",
+      "ran",
+      "ran",
+    ]);
+  });
+
+  it("asks a lone waiting lens as it always was, with no batch", async () => {
+    const root = await forgeChangeRoot();
+    const r = await runCritic(root, CHANGE, {
+      ...BATCHED,
+      runtime: batching(root),
+      lenses: ["safe"],
+    });
+    const runs = lensRuns(r);
+    expect(runs.map((l) => l.lens)).toEqual(["safe"]);
+    expect(runs[0]!.batch).toBeUndefined();
+    expect(r.batch).toBeUndefined();
+  });
+
+  it("batches only when the critic is asked to (a stage's round), however the runtime is set", async () => {
+    const root = await forgeChangeRoot();
+    const r = await runCritic(root, CHANGE, { now: NOW, runtime: batching(root) });
+    expect(r.batch).toBeUndefined();
+    expect(lensRuns(r).every((l) => l.state === "waiting" && !l.batch)).toBe(true);
+  });
+});

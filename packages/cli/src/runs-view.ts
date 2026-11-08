@@ -121,7 +121,40 @@ export async function item(root: string, s: Stored): Promise<Api.RunListItem> {
     // was recorded is given its kind from its agent; its model stays unsaid.
     ...(classOf(r) ? { stepClass: classOf(r)! } : {}),
     ...(r.model ? { model: r.model } : {}),
+    // ADR 0185: the batched hand-off a lens was asked in, or a batch's lenses and where each is.
+    ...(r.batch ? { batch: r.batch } : {}),
+    ...(r.parts?.length ? { parts: await partStates(root, r.request.change, r.parts) } : {}),
   } as Api.RunListItem;
+}
+
+type PartView = NonNullable<Api.RunListItem["parts"]>[number];
+
+/** A batched hand-off's parts with their own runs' states now (ADR 0185). */
+export async function partStates(
+  root: string,
+  change: string,
+  parts: { name: string; runId: string }[],
+): Promise<PartView[]> {
+  return Promise.all(
+    parts.map(async (p) => {
+      const text = RUN_ID.test(p.runId)
+        ? await readFile(join(runsDirOf(root), change, p.runId, "run.json"), "utf8").catch(
+            () => undefined,
+          )
+        : undefined;
+      let state: string | undefined;
+      try {
+        state = text ? (JSON.parse(text) as { state?: string }).state : undefined;
+      } catch {
+        state = undefined;
+      }
+      return {
+        name: p.name,
+        runId: p.runId,
+        ...(state ? { state: state as PartView["state"] } : {}),
+      };
+    }),
+  );
 }
 
 /** A stored run's kind of step: as recorded, else from its agent (an older run). */
