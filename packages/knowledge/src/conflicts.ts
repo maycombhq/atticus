@@ -1,4 +1,5 @@
 import {
+  isAiBy,
   knowledgeRelOf,
   listQuestions,
   recordPath,
@@ -267,7 +268,8 @@ export async function readConflicts(
         value: code.value,
         at: code.at,
       };
-    else if (a && q?.answer)
+    // ADR 0181: only a person's answer settles a conflict as theirs; the AI never answers these.
+    else if (a && q?.answer && !isAiBy(q.answer.by))
       view.decided = {
         by: "person",
         who: q.answer.by,

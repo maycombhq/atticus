@@ -190,7 +190,7 @@ export const readWrites = (root: string) => [factsDirOf(root)];
  */
 export async function questionsProposeCommand(
   root: string,
-  o: { id?: string; mode?: string; runner?: AcpStepRunner; signal?: AbortSignal },
+  o: { id?: string; mode?: string; runner?: AcpStepRunner; signal?: AbortSignal; now?: Date },
   io: Output,
   check: () => Promise<number>,
 ): Promise<number> {
@@ -210,6 +210,9 @@ export async function questionsProposeCommand(
   }
   const run = o.runner ?? (await acpStepRunner(root, { op }));
   io.out(`Proposing answers in a new Copilot session: ${line}`);
+  const { decideAnswers, proposalsSnapshot } = await import("./ai-decide.js");
+  const before = await proposalsSnapshot(root);
+  let runId: string | undefined;
   try {
     const r = await run({
       line,
@@ -218,10 +221,31 @@ export async function questionsProposeCommand(
       ...(o.signal ? { signal: o.signal } : {}),
       onProgress: io.out,
     });
+    runId = r.runId;
     io.out(`The session ended (${r.stopped ?? r.stopReason}); checking what it proposed.`);
   } catch (e) {
     io.err((e as Error).message);
     return e instanceof AcpSignInError ? 1 : 2;
+  }
+  // ADR 0181: Atticus (not the session) applies, as the AI's, each answer the session proposed
+  // that checks and meets a bar, when runtime.yaml's decide.questions is auto.
+  if (runId) {
+    const after = await proposalsSnapshot(root);
+    const ids = new Set(
+      [...after].filter(([id, text]) => before.get(id) !== text).map(([id]) => id),
+    );
+    const d = await decideAnswers(root, { run: runId, ids, ...(o.now ? { now: o.now } : {}) });
+    if (d?.paused) io.out(`Deciding is paused: ${d.paused}`);
+    if (d?.applied.length) {
+      io.out(
+        `Detected by AI: ${d.applied.length} answer${d.applied.length === 1 ? "" : "s"} applied in batch ${d.batch} (by AI, run ${runId}):`,
+      );
+      for (const a of d.applied) io.out(`  ${a.id}: option ${a.option} (${a.bar})`);
+      io.out(
+        `Correct one with atticus questions correct <id> --option <n> | --none; undo them all with atticus questions undo ${d.batch}.`,
+      );
+    }
+    for (const k of d?.kept ?? []) io.out(`  kept as a proposal: ${k.id} (${k.why})`);
   }
   return check();
 }

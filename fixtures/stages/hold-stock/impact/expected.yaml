@@ -8,6 +8,7 @@
 change: hold-stock
 breaks: 3
 mayBreak: 1
+byAi: 0
 routes: 1
 upstream: { breaks: 1, mayBreak: 0 }
 rule: constitution.change-links-known

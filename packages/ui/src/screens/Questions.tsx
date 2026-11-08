@@ -705,8 +705,12 @@ export function QuestionDetail(p: {
       </div>
       {q.answer && (
         <p style={{ margin: 0 }}>
-          {C.answered(q.answer.by, day(q.answer.at))}:{" "}
-          {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
+          {C.answered(
+            // ADR 0181: an AI answer names the AI and its run (the UI builder words its chip).
+            typeof q.answer.by === "string" ? q.answer.by : `AI, run ${q.answer.by.run}`,
+            day(q.answer.at),
+          )}
+          : {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
           {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
         </p>
       )}

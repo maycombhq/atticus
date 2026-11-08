@@ -27,6 +27,7 @@ import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiCopilotRunRoutes } from "./ui-api-copilot-runs.js";
 import { uiComponentTypeRoutes } from "./component-type-commands.js";
 import { uiLinkMatchRoutes } from "./ui-api-link-match.js";
+import { uiDecisionRoutes } from "./ui-api-decisions.js";
 import { uiLinkRoutes } from "./ui-api-links.js";
 import { uiSketchRoutes } from "./ui-api-sketch.js";
 import { uiOwnerRoutes } from "./ui-api-owner.js";
@@ -88,7 +89,8 @@ export function extendUiRoutes(
   // ADR 0173: an unattended Copilot run started from the app, shown live.
   // ADR 0174: correcting the map on the canvas.
   // ADR 0179: a change sketched on the canvas.
-  return uiComponentTypeRoutes(
+  // ADR 0181: the AI's decisions, a person's correction that spreads, and Undo of a batch.
+  const all = uiComponentTypeRoutes(
     uiLinkMatchRoutes(
       uiSketchRoutes(
         uiDeclaredRoutes(
@@ -146,6 +148,7 @@ export function extendUiRoutes(
     ),
     ctx,
   );
+  return uiDecisionRoutes(all, ctx);
 }
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */

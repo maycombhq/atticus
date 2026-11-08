@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import {
+  isAiBy,
+  type JoinAi,
   joinConventions,
   helperOn,
   callerRecords,
@@ -105,6 +107,12 @@ export interface FactsCatalogInput {
   /** G1 (ADR 0174): the pairings people made on the canvas, this repo's and the others'. */
   pairs?: Readonly<Record<string, PersonPair>>;
   estatePairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>;
+  /**
+   * ADR 0181: of the targets, those the AI answered (call fact id → its run), this repo's and the
+   * others', so their links are flagged `joined-by-ai`, never as a person's answer.
+   */
+  aiTargets?: Readonly<Record<string, JoinAi>>;
+  estateAiTargets?: Readonly<Record<string, Readonly<Record<string, JoinAi>>>>;
   /**
    * ADR 0151: the consumers' contract files (each repo's `<repo>.contracts.yaml`) and the traffic
    * aggregates people imported (`evidence/traffic/`), read against the estate's join.
@@ -816,7 +824,14 @@ export function targetsFromAnswers(
   repo: string,
   facts: readonly Fact[],
   questions: readonly Question[],
-  o: { repoType?: string } = {},
+  o: {
+    repoType?: string;
+    /**
+     * ADR 0181: filled with the calls whose target an AI answer named (call fact id → its run),
+     * so the join flags them `joined-by-ai`, never as a person's answer.
+     */
+    ai?: Record<string, { runtime: string; run: string }>;
+  } = {},
 ): Record<string, string> {
   const byId = new Map(questions.map((q) => [q.id, q]));
   const groups = new Map<string, Question>();
@@ -847,9 +862,13 @@ export function targetsFromAnswers(
     }
     let label =
       asked && asked.state === "answered" && asked.answer ? answerLabel(asked) : undefined;
-    if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER)
+    let byAi = label && asked?.answer && isAiBy(asked.answer.by) ? asked.answer.by : undefined;
+    if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
       label = ruled.get(f.id)?.label;
+      byAi = undefined;
+    }
     if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) continue;
+    if (byAi && o.ai) o.ai[f.id] = { runtime: byAi.runtime, run: byAi.run };
     // F3: "None of these" binds: the call is kept out of the join, not guessed by path.
     if (label === TARGETS_NONE) {
       out[f.id] = NO_TARGET;
@@ -1397,6 +1416,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
       repos,
       targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
       pairs: { ...input.estatePairs, [repo]: input.pairs ?? {} },
+      aiTargets: { ...input.estateAiTargets, [repo]: input.aiTargets ?? {} },
       outside: outsideSystems(op),
       ...joinConventions(op),
       // G4: the walk through gateways is a stack helper (ATTICUS_HELPERS_OFF=gateway-walk).

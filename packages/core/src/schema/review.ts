@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseTemplate, templateSources, TemplateError } from "../template.js";
-import { EvidenceSource, IsoDateTime, RecordId } from "./common.js";
+import { IsoDateTime, RecordId, RuleEvidenceSource } from "./common.js";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./kinds.js";
 
 /**
@@ -253,7 +253,7 @@ export type ChecklistPack = z.infer<typeof ChecklistPack>;
 
 export const FindingEvidence = z
   .strictObject({
-    source: z.union([EvidenceSource, z.enum(["artifact", "catalog", "rule"])]),
+    source: z.union([RuleEvidenceSource, z.enum(["artifact", "catalog", "rule"])]),
     /** A catalog record the finding is about. */
     record: RecordId.optional(),
     /** A file: change artifact (relative to the change folder) or repo file. */

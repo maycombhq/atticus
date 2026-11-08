@@ -19,10 +19,16 @@ export const AUDIT_ANSWERS = ["right", "wrong", "unsure"] as const;
 export type AuditAnswer = (typeof AUDIT_ANSWERS)[number];
 
 export const AuditItem = z.strictObject({
-  /** `fact:<fact id>`, or `link:<call fact id>` (with `~<entry fact id>` when a call joins several). */
+  /**
+   * `fact:<fact id>`, or `link:<call fact id>` (with `~<entry fact id>` when a call joins several);
+   * ADR 0181: `ai:link:<call fact id>` or `ai:question:<question id>`, a decision the AI applied.
+   */
   id: z.string().min(1),
-  kind: z.enum(["fact", "link"]),
-  /** A fact's kind (entry, call, store...), or how a link was joined (`joined-by-host`...). */
+  kind: z.enum(["fact", "link", "ai"]),
+  /**
+   * A fact's kind (entry, call, store...), or how a link was joined (`joined-by-host`...); for an
+   * AI decision (ADR 0181), `link` or `question`.
+   */
   of: z.string().min(1),
   /** What the item says, in one line. */
   claim: z.string().min(1),
@@ -34,6 +40,12 @@ export const AuditItem = z.strictObject({
   value: z.string().optional(),
   /** A link's callee repo. */
   to: z.string().optional(),
+  /**
+   * ADR 0181, an AI decision: what it decided as the person saw it (the API's id, or the option's
+   * label) and the run, so an answer stops counting once the decision is no longer the one seen.
+   */
+  decided: z.string().optional(),
+  run: z.string().optional(),
   answer: z.enum(AUDIT_ANSWERS).optional(),
   note: z.string().optional(),
   /** Who answered, and when. */
@@ -158,12 +170,15 @@ function shuffled<T extends { id: string }>(list: readonly T[], seed: string): T
 export function drawAudit(o: {
   facts: readonly AuditItemT[];
   links: readonly AuditItemT[];
+  /** ADR 0181: the AI's decisions standing for the repo (its pairings and answers). */
+  ai?: readonly AuditItemT[];
   size: number;
   seed: string;
 }): AuditItemT[] {
   return [
     ...shuffled(o.facts, `${o.seed}:facts`).slice(0, o.size),
     ...shuffled(o.links, `${o.seed}:links`).slice(0, o.size),
+    ...shuffled(o.ai ?? [], `${o.seed}:ai`).slice(0, o.size),
   ];
 }
 
@@ -225,6 +240,10 @@ export interface AuditPrecision {
   links: AuditTally;
   /** Links by how they were joined (ADR 0135's flags). */
   byHow: Record<string, AuditTally>;
+  /** ADR 0181: the AI's decisions (its pairings and answers), apart from the facts and links. */
+  ai: AuditTally;
+  /** ADR 0181: the AI's decisions by what they decided: `link` or `question`. */
+  byAi: Record<string, AuditTally>;
 }
 
 const empty = (): AuditTally => ({
@@ -261,11 +280,17 @@ export function auditPrecision(
 ): AuditPrecision {
   const facts = empty();
   const links = empty();
+  const ai = empty();
   const byKind: Record<string, AuditTally> = {};
   const byHow: Record<string, AuditTally> = {};
+  const byAi: Record<string, AuditTally> = {};
   for (const i of items) {
     const groups =
-      i.kind === "fact" ? [facts, (byKind[i.of] ??= empty())] : [links, (byHow[i.of] ??= empty())];
+      i.kind === "fact"
+        ? [facts, (byKind[i.of] ??= empty())]
+        : i.kind === "ai"
+          ? [ai, (byAi[i.of] ??= empty())]
+          : [links, (byHow[i.of] ??= empty())];
     for (const g of groups) {
       g.drawn++;
       if (!keep(i)) g.gone++;
@@ -279,7 +304,14 @@ export function auditPrecision(
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
         .map(([k, t]) => [k, finish(t)]),
     );
-  return { facts: finish(facts), byKind: all(byKind), links: finish(links), byHow: all(byHow) };
+  return {
+    facts: finish(facts),
+    byKind: all(byKind),
+    links: finish(links),
+    byHow: all(byHow),
+    ai: finish(ai),
+    byAi: all(byAi),
+  };
 }
 
 /** Several repos' precision summed: the estate's. */
@@ -307,6 +339,8 @@ export function sumAuditPrecision(list: readonly AuditPrecision[]): AuditPrecisi
     links: finish(list.reduce((a, p) => add(a, p.links), empty())),
     byKind: merge(list.map((p) => p.byKind)),
     byHow: merge(list.map((p) => p.byHow)),
+    ai: finish(list.reduce((a, p) => add(a, p.ai ?? empty()), empty())),
+    byAi: merge(list.map((p) => p.byAi ?? {})),
   };
 }
 

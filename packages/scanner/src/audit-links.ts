@@ -26,12 +26,15 @@ export function estateJoinOf(
   list: readonly { repo: string; facts: readonly Fact[] }[],
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>,
   pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>,
+  /** ADR 0181: of the targets, those the AI answered, so their links are `joined-by-ai`. */
+  aiTargets?: Readonly<Record<string, Readonly<Record<string, { runtime: string; run: string }>>>>,
 ): FactsJoinResult {
   const repos = list.filter((x) => !isPrototypeRepo(op, x.repo));
   const renames = componentRenames(repos, op);
   return joinFacts({
     repos: joinReposOf(op, repos, renames),
     ...(targets ? { targets } : {}),
+    ...(aiTargets && Object.keys(aiTargets).length ? { aiTargets } : {}),
     ...(pairs && Object.keys(pairs).length ? { pairs } : {}),
     outside: outsideSystems(op),
     // The org pack's facing words and gateway bundle folders (ADR 0147), as the catalog joins.

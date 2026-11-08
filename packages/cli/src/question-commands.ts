@@ -8,6 +8,7 @@ import {
   checkedProposals,
   proposalOf,
   proposalsRelOf,
+  answerByWords,
   answerWords,
   HOSTS_STEP,
   listQuestions,
@@ -149,10 +150,10 @@ export function questionLines(
   ];
   if (q.answer)
     lines.push(
-      `  Answered by ${q.answer.by} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true, o.change)})${q.answer.match ? `, by rule: ${q.answer.match}` : ""}`,
+      `  Answered by ${answerByWords(q.answer.by)} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true, o.change)})${q.answer.match ? `, by rule: ${q.answer.match}` : ""}`,
       ...(q.answer.proposal
         ? [
-            `  It was ${q.answer.proposal.by}'s proposal (${q.answer.proposal.at.slice(0, 10)}), confirmed by ${q.answer.by}; it cited ${q.answer.proposal.cites.map((c) => `${c.repo ?? q.repo} ${c.file}:${c.line}`).join(", ")}.`,
+            `  It was ${q.answer.proposal.by}'s proposal (${q.answer.proposal.at.slice(0, 10)}), confirmed by ${answerByWords(q.answer.by)}; it cited ${q.answer.proposal.cites.map((c) => `${c.repo ?? q.repo} ${c.file}:${c.line}`).join(", ")}.`,
           ]
         : []),
     );
@@ -511,7 +512,7 @@ export async function questionsFiles(
       );
       if (accept)
         io.out(
-          `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${q.answer!.by}, with the proposal it came from.`,
+          `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${answerByWords(q.answer!.by)}, with the proposal it came from.`,
         );
       if (q.answer!.match) io.out(ruleLine(q, await isChange(root, q.repo)));
       // ADR 0163: a term question's answer is meant to become a note on the repo type.

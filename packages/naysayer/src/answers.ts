@@ -1,7 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { answerWords, listQuestions, quotedIn, type Question } from "@maycombhq/core";
+import {
+  answerByWords,
+  answerWords,
+  listQuestions,
+  quotedIn,
+  type Question,
+} from "@maycombhq/core";
 import { changeFolder } from "@maycombhq/changes";
 
 /**
@@ -42,7 +48,8 @@ export async function changeAnswers(root: string, change: string): Promise<Chang
       id: q.id,
       question: q.question.trim(),
       answer: (answerWords(q) ?? "").trim(),
-      by: q.answer!.by,
+      // ADR 0181: an AI answer reads as the AI's, never a person's word.
+      by: answerByWords(q.answer!.by),
       at: q.answer!.at,
     }))
     .filter((a) => a.answer.length > 0);

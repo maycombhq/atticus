@@ -4,6 +4,7 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import {
   answerWords,
+  isAiBy,
   changesRelOf,
   fileJudgments,
   judgmentKey,
@@ -2552,11 +2553,12 @@ export async function settleCoversAnswers(
           });
     });
   }
-  for (const { c, q, v } of verdicts)
+  // ADR 0181: only a person's answer is a person's verdict; an AI answer never counts as one.
+  for (const { c, q, v } of verdicts.filter((x) => !isAiBy(x.q.answer!.by)))
     for (const field of c.fields)
       await personVerdict(j.store, coversInputs(field, c.criterion), {
         verdict: v,
-        name: q.answer!.by,
+        name: q.answer!.by as string,
         at: q.answer!.at,
         why: `${q.id}: ${answerWords(q) ?? ""}`,
       });

@@ -217,7 +217,7 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
       { name: "amount", type: "decimal", required: true },
       { name: "currency", type: "string" },
     ]);
-    expect(s.schemaVersion).toBe(4);
+    expect(s.schemaVersion).toBe(5);
     // false is kept as false, never dropped: it says the field may be left out
     const memo = facts().map((f) =>
       f.id === "f-entry-currency" && f.kind === "field" ? { ...f, required: false } : f,

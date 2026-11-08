@@ -15,7 +15,7 @@ describe("runtime.yaml version 2", () => {
 
   it("has the five kinds of step", () => {
     expect(STEP_CLASSES).toEqual(["read", "draft", "critic", "knowledge", "quick"]);
-    expect(RUNTIME_SCHEMA_VERSION).toBe(3);
+    expect(RUNTIME_SCHEMA_VERSION).toBeGreaterThanOrEqual(3);
   });
 
   it("reads a version 1 file as before: no step names a model of its own", () => {

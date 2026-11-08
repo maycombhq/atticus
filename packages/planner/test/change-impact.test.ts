@@ -137,6 +137,24 @@ describe("a change's impact, as designed (V1)", () => {
     },
   );
 
+  it("a caller whose only link the AI decided breaks, said as the AI's and never a person's word (ADR 0181)", async () => {
+    const r = await root();
+    const e = await loadEstate(r, (await loadChangeContext(r)).records);
+    const records = e.records.map((x) =>
+      x.kind === "Interface" && x.from === "forge-partner"
+        ? { ...x, confidence: "inferred" as const, flags: ["joined-by-ai"] }
+        : x,
+    );
+    const { estateOf } = await import("../src/index.js");
+    const got = changeImpact("hold-stock", draft(), estateOf(records, e.flows), owners);
+    const partner = got.items[0]!.callers.find((c) => c.component === "forge-partner")!;
+    expect(partner.verdict).toBe("breaks");
+    expect(partner.decidedByAi).toBe(true);
+    expect(got.byAi).toBe(1);
+    const orders = got.items[0]!.callers.find((c) => c.component === "forge-orders")!;
+    expect(orders.decidedByAi).toBeUndefined();
+  });
+
   it("a flow removed: every field its entry takes and returns stops crossing", async () => {
     const got = await impactOf([
       FlowDelta.parse({

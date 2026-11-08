@@ -1,6 +1,13 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { Api, changesRelOf, readQuestion, type Finding, type Question } from "@maycombhq/core";
+import {
+  Api,
+  answerByWords,
+  changesRelOf,
+  readQuestion,
+  type Finding,
+  type Question,
+} from "@maycombhq/core";
 import { changeFolder, loadChangeContext } from "@maycombhq/changes";
 import {
   readProposals,
@@ -241,7 +248,7 @@ export function uiStageRoutes(
         comment: {
           question: q.id,
           text: q.answer!.text!,
-          by: q.answer!.by,
+          by: answerByWords(q.answer!.by),
           at: q.answer!.at,
           read: false,
         },

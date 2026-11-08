@@ -3,6 +3,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { gapNameOf } from "./gaps.js";
 import {
+  answerByWords,
   changesDirOf,
   deserializeRecord,
   knowledgeDirOf,
@@ -876,8 +877,8 @@ function questionNodes(path: string, text: string): FileRead {
         name: q.question,
         file: path,
         verified: false,
-        line: `answered question ${q.id}: ${q.question} Answer: ${answer} (${a.by}, ${a.at}) [${path}]`,
-        detail: `Question ${q.id} (${path}), asked by ${q.askedBy.step} about repo ${q.repo}: ${q.question}\nAnswer, by ${a.by} at ${a.at}: ${answer}\nEvidence: ${q.evidence.join(", ")}`,
+        line: `answered question ${q.id}: ${q.question} Answer: ${answer} (${answerByWords(a.by)}, ${a.at}) [${path}]`,
+        detail: `Question ${q.id} (${path}), asked by ${q.askedBy.step} about repo ${q.repo}: ${q.question}\nAnswer, by ${answerByWords(a.by)} at ${a.at}: ${answer}\nEvidence: ${q.evidence.join(", ")}`,
         names: "",
         ids: q.id,
         body: [q.question, answer].join("\n"),

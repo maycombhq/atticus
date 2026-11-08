@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   AgentDefinition,
+  answerByWords,
   answerWords,
   changesRelOf,
   gateRoundLimit,
@@ -1299,7 +1300,7 @@ export async function runStageLoop<A>(
         held.push(...raised.held);
         for (const [i, a] of raised.decidedBy)
           notes.push(
-            `Your assistant asked again what ${a.id} answered ("${mine[i]!.q.question.trim()}"); the stage reads ${a.answer?.by ?? "the person"}'s answer instead of asking again.`,
+            `Your assistant asked again what ${a.id} answered ("${mine[i]!.q.question.trim()}"); the stage reads ${a.answer ? answerByWords(a.answer.by) : "the person"}'s answer instead of asking again.`,
           );
         qs.push(...raised.raised, ...raised.known);
         // Each finding asked is linked to the question it became, by id, never by its words (a

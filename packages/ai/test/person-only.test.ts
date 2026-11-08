@@ -58,8 +58,14 @@ const PERSON = [
   "outcome record c1 m1 --value 3",
   // Seventh UX walk: who looks after the org pack is a person's to say (the app sets it too).
   "orgpack owner priya.nair",
+  // ADR 0181: correcting an AI decision, spreading it and undoing a batch are a person's.
+  "questions correct q-0123456789ab --option 2",
+  "questions correct link:forge-billing:call.post.capture-charge --none --no-similar",
+  "questions undo b-20261108-101500-a1b2c3",
 ];
 const SESSION = [
+  // ADR 0181: reading what the AI decided is anyone's.
+  "questions decisions --json",
   "verify forge-ledger",
   "verify audit forge-ledger --report",
   "verify audit --report",

@@ -75,6 +75,9 @@ Every command under the twelve, with its options.
           [--target <id> [--add-system vendor|internal] [--name "..."]]  (where a call goes: any repo of the manifest, read or not, any system of the profile or a team in roles.yaml; a vendor or a team with no system yet is added to the profile with --add-system, a file change for review; ADR 0162)
   atticus questions propose [<id>]     /atticus-propose as a command (ADR 0171): under --mode copilot-acp (or runtime.yaml's default) Copilot proposes in a new session, unattended, writing only proposals/questions/, then the proposals are checked; otherwise it prints the line to paste. A person still accepts each one [--mode copilot-acp|hand-off]
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
+  atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
+  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--preview] [--json]
+  atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
   atticus change new "<title>"         Start a change from a template: --type <type>

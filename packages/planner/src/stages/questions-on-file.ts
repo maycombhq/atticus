@@ -1,6 +1,7 @@
 import type { AiRuntime, SourceInput } from "@maycombhq/ai";
 import { answerJudge, questionJudge } from "@maycombhq/ai";
 import {
+  answerByWords,
   answerText,
   fileJudgments,
   listQuestions,
@@ -55,7 +56,9 @@ export async function questionsOnFile(root: string, repo: string): Promise<Sourc
             `- ${q.id} (${q.state}): ${q.question.trim()} [${q.evidence.join(", ")}]`,
             ...(q.state === "answered"
               ? // B-run2-fixes 8: the option's meaning, or the person's own words, not the label alone.
-                [`  Answer (${q.answer?.by ?? "a person"}): ${answerText(q) ?? ""}`]
+                [
+                  `  Answer (${q.answer ? answerByWords(q.answer.by) : "a person"}): ${answerText(q) ?? ""}`,
+                ]
               : []),
           ].join("\n"),
         )

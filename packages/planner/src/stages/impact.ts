@@ -1,5 +1,6 @@
 import {
   JOIN_GUESS_FLAGS,
+  JOINED_BY_AI,
   ownerOfQuestion,
   type JoinGuessFlag,
   type QuestionOwner,
@@ -57,6 +58,8 @@ export interface ImpactCaller {
   verdict: "breaks" | "may-break";
   /** How the join guessed it, when every link of this caller is a guess. */
   guessed?: GuessedBy;
+  /** ADR 0181: every link of this caller the AI decided ("Detected by AI"), none a person confirmed. */
+  decidedByAi?: true;
   /** The Interface records of its calls to the entry. */
   interfaces: string[];
   /** The spec flows of the caller whose call-out or publish names the entry. */
@@ -128,6 +131,8 @@ export interface ChangeImpact {
   breaks: number;
   /** Callers whose only link is guessed: they may break. */
   mayBreak: number;
+  /** ADR 0181: of the callers that break, those whose every link the AI decided (not a person's word). */
+  byAi: number;
   /** Gateway routes to update. */
   routes: number;
   /** Up the chain (ADR 0156): hops that surely break and those that rest on a guess. */
@@ -339,11 +344,19 @@ export function changeImpact(
           ? guesses[0]
           : undefined;
       const repo = repoOf(id);
+      // ADR 0181: every link of this caller the AI decided, nothing from code or a person: it is
+      // counted as a break (the safe side) but said as the AI's, never a person's word.
+      const byAi =
+        !guessed &&
+        got.ifaces.length > 0 &&
+        got.flows.size === 0 &&
+        got.ifaces.every((r) => (r.flags ?? []).includes(JOINED_BY_AI));
       return {
         component: id,
         ...(repo ? { repo } : {}),
         verdict: guessed ? ("may-break" as const) : ("breaks" as const),
         ...(guessed ? { guessed } : {}),
+        ...(byAi ? { decidedByAi: true as const } : {}),
         interfaces: sorted(got.ifaces.map((r) => r.id)),
         flows: sorted(got.flows),
         routes: sorted(got.routes),
@@ -486,6 +499,7 @@ export function changeImpact(
     change,
     breaks: callers.filter((c) => c.verdict === "breaks").length,
     mayBreak: callers.filter((c) => c.verdict === "may-break").length,
+    byAi: callers.filter((c) => c.decidedByAi).length,
     routes: new Set(items.flatMap((i) => i.routes.map((r) => r.id))).size,
     upstream: {
       breaks: hops.filter((h) => h.verdict === "breaks").length,

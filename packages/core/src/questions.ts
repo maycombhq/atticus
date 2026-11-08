@@ -16,6 +16,7 @@ import {
 } from "./host-questions.js";
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
+import { questionAiProblem } from "./ai-decisions.js";
 import { hostMatches } from "./schema/workspace.js";
 import {
   AnswerMatch,
@@ -23,6 +24,10 @@ import {
   Question,
   QUESTION_SCHEMA_VERSION,
   QuestionId,
+  answerByWords,
+  isAiBy,
+  type AiBy,
+  type AppliedRule,
   type QuestionDraft,
   type QuestionScopeLevel,
   type QuestionState,
@@ -725,7 +730,8 @@ export async function migrateQuestions(
       continue;
     }
     const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-    if (v !== 1 && v !== 2 && v !== 3) continue;
+    // ADR 0181: version 4 files too, rewritten at 5 (the number only).
+    if (v !== 1 && v !== 2 && v !== 3 && v !== 4) continue;
     const q = Question.safeParse(data);
     if (!q.success) continue;
     if (!o.dryRun) await write(root, q.data);
@@ -836,7 +842,7 @@ export function answerText(q: Question): string | undefined {
 export function withSkillAnswer(body: string, q: Question): string {
   const a = q.answer!;
   const marker = `question ${q.id})`;
-  const line = `- ${q.question.trim()} ${sentence(answerWords(q)!)} (${a.by}, ${a.at.slice(0, 10)}, ${marker}`;
+  const line = `- ${q.question.trim()} ${sentence(answerWords(q)!)} (${answerByWords(a.by)}, ${a.at.slice(0, 10)}, ${marker}`;
   const lines = body.split(/\r?\n/).filter((l) => !l.includes(marker));
   let h = lines.findIndex((l) => /^##\s+Answers\s*$/.test(l));
   if (h < 0) {
@@ -873,8 +879,16 @@ export interface AnswerInput {
    * nothing is answered (a `bad-answer` with its first line).
    */
   beforeWrite?: () => Promise<void>;
-  by: string;
+  /**
+   * The person (their Git user); or, ADR 0181, the AI with its runtime and run, for a decision
+   * Atticus applies from an AI run (only an option on file, of a targets question, at the repo).
+   */
+  by: string | AiBy;
   at: string;
+  /** ADR 0181: the batch applying it (by AI, or by a person's rule). */
+  batch?: string;
+  /** ADR 0181: a person's rule applies it, from their correction. */
+  rule?: AppliedRule;
 }
 
 /**
@@ -960,6 +974,17 @@ export async function answerQuestion(
       "bad-answer",
       `"${pickerLabel}" opens the list of every repo, system and team: name the one you mean with --target <id> (atticus questions answer ${q.id} --target <id>), or in your own words.`,
     );
+  // ADR 0181: the AI decides only an open option question about a target on file, at its repo,
+  // never with a rule, and never over a person's answer.
+  if (isAiBy(a.by)) {
+    const why = questionAiProblem(q, a.option);
+    if (why) throw new QuestionError("bad-answer", `The AI doesn't decide ${id}: ${why}`);
+    if ((a.scope && a.scope !== "repo") || a.repoType || a.match || a.rule)
+      throw new QuestionError(
+        "bad-answer",
+        `The AI doesn't decide ${id} wider than its repo, or by a rule: a person does.`,
+      );
+  }
   const level = a.scope ?? q.scope.level;
   let scopeId: string;
   if (level === "repo") scopeId = q.repo;
@@ -990,6 +1015,8 @@ export async function answerQuestion(
       ...(skill ? { skill } : {}),
       ...(match ? { match } : {}),
       ...(a.proposal ? { proposal: a.proposal } : {}),
+      ...(a.batch ? { batch: a.batch } : {}),
+      ...(a.rule ? { rule: a.rule } : {}),
     },
   });
   if (a.beforeWrite)

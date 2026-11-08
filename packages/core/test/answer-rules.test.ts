@@ -92,8 +92,8 @@ describe("the rule an answer covers (ADR 0153)", () => {
     expect(hostRuleCovers("localhost:9000", "localhost:9966")).toBe(false);
   });
 
-  it("is question schema version 4 (ADR 0162), and older files read as they are", () => {
-    expect(QUESTION_SCHEMA_VERSION).toBe(4);
+  it("is question schema version 5 (ADR 0181), and older files read as they are", () => {
+    expect(QUESTION_SCHEMA_VERSION).toBe(5);
     const old = Question.parse({
       schemaVersion: 2,
       id: "q-0123456789ab",
@@ -111,7 +111,7 @@ describe("the rule an answer covers (ADR 0153)", () => {
         scope: { level: "repo", id: "forge-web" },
       },
     });
-    expect(old.schemaVersion).toBe(4);
+    expect(old.schemaVersion).toBe(5);
     expect(old.answer!.match).toBeUndefined();
   });
 });
@@ -143,7 +143,7 @@ describe("a hosts answer by rule (ADR 0153)", () => {
     expect(retired.retired).toMatchObject({ replacedBy: [q.id] });
     expect((await readQuestion(root, elsewhere.id))!.state).toBe("open");
     const text = await readFile(join(root, "questions", `${q.id}.yaml`), "utf8");
-    expect(text).toContain("schemaVersion: 4");
+    expect(text).toContain("schemaVersion: 5");
     expect(text).toContain('match: "*.payments.forge.internal"');
   });
 
@@ -252,22 +252,22 @@ describe("a target answer by rule (ADR 0153)", () => {
   });
 });
 
-describe("atticus upgrade: questions at version 4 (ADR 0153, ADR 0162)", () => {
-  it("rewrites version 1, 2 and 3 files at version 4, and nothing else changes", async () => {
+describe("atticus upgrade: questions at version 5 (ADR 0153, ADR 0162, ADR 0181)", () => {
+  it("rewrites version 1, 2 and 3 files at version 5, and nothing else changes", async () => {
     const root = await metarepo();
     const q = await ask(root, "limits.payments.forge.internal");
     const file = join(root, "questions", `${q.id}.yaml`);
-    const v2 = (await readFile(file, "utf8")).replace("schemaVersion: 4", "schemaVersion: 2");
+    const v2 = (await readFile(file, "utf8")).replace("schemaVersion: 5", "schemaVersion: 2");
     await writeFile(file, v2);
     await mkdir(join(root, "questions"), { recursive: true });
     expect(await migrateQuestions(root, { dryRun: true })).toEqual([`questions/${q.id}.yaml`]);
     expect(await readFile(file, "utf8")).toBe(v2);
     expect(await migrateQuestions(root)).toEqual([`questions/${q.id}.yaml`]);
-    expect(await readFile(file, "utf8")).toBe(v2.replace("schemaVersion: 2", "schemaVersion: 4"));
+    expect(await readFile(file, "utf8")).toBe(v2.replace("schemaVersion: 2", "schemaVersion: 5"));
     expect(await migrateQuestions(root)).toEqual([]);
     const v3 = v2.replace("schemaVersion: 2", "schemaVersion: 3");
     await writeFile(file, v3);
     expect(await migrateQuestions(root)).toEqual([`questions/${q.id}.yaml`]);
-    expect(await readFile(file, "utf8")).toBe(v2.replace("schemaVersion: 2", "schemaVersion: 4"));
+    expect(await readFile(file, "utf8")).toBe(v2.replace("schemaVersion: 2", "schemaVersion: 5"));
   });
 });

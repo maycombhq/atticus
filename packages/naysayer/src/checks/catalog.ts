@@ -40,7 +40,8 @@ function catalogEvidence(ctx: CriticContext, id: string): Evidence[] {
     ...(file
       ? [
           {
-            source: file.source,
+            // ADR 0181: an AI evidence cites the call's own code line; a finding names it as code.
+            source: file.source === "ai" ? "code" : file.source,
             path: file.path!,
             ...(file.repo ? { repo: file.repo } : {}),
             ...(file.line ? { line: file.line } : {}),

@@ -4,6 +4,7 @@ import {
   hostOfQuestion,
   HOSTS_STEP,
   isLinkQuestion,
+  JOINED_BY_AI,
   listQuestions,
   questionsRelOf,
   repoReadOf,
@@ -159,6 +160,32 @@ export const changeLinksKnown: DeterministicCheckDef = {
           subject: c.caller,
           key: `link-guess|${rec.id}`,
         });
+      // ADR 0181: a link the AI decided (a pairing or a target answer, applied from its run) is
+      // the AI's, never a person's word: the design may rest on it once a person confirms it.
+      if (rec && !flag && rec.flags?.includes(JOINED_BY_AI)) {
+        const run = rec.evidence.find((e) => e.source === "ai")?.run;
+        hits.push({
+          kind: "knowledge-gap",
+          ...place,
+          summary: sentence(
+            `The change rests on a link the AI decided: ${c.caller} to ${c.callee} (${c.operation}), detected by AI${run ? ` (run ${run})` : ""} and not confirmed by a person.`,
+          ),
+          why: `The AI paired this call with ${c.callee}, and Atticus applied it because its lines checked and its shape agreed; nobody has said it is right. If it is wrong, the design is built on a call that goes somewhere else.`,
+          fix: {
+            text: `Confirm or correct it: atticus questions decisions lists it; atticus questions correct (or Correct on the "Detected by AI" chip) makes it a person's word, then atticus verify ${ctx.get("Component", c.caller)?.repo ?? c.caller} --write.`,
+          },
+          evidence: [
+            ...place.evidence.filter((e) => e.source !== "catalog"),
+            recordEvidence(rec.id),
+          ],
+          question: {
+            text: `Does ${c.caller}'s ${c.operation} go to ${c.callee}? The AI decided so; nobody has confirmed it.`,
+            owner: questionOwner(ctx, c.caller),
+          },
+          subject: c.caller,
+          key: `link-ai|${rec.id}`,
+        });
+      }
       // A link question still open about this call.
       const repo = ctx.get("Component", c.caller)?.repo;
       for (const q of ctx.estate?.questions ?? []) {
