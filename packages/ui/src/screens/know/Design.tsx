@@ -957,6 +957,41 @@ const STATUS_CHIP: Record<string, string> = {
   "not-planned": "dim",
 };
 
+/** Seventh UX walk: a status in words (never "NOT-PLANNED"); one the copy doesn't know, spaced. */
+export function initiativeStatusWord(status: string): string {
+  return T.initiativeStates[status] ?? status.replace(/-/g, " ");
+}
+
+/**
+ * Seventh UX walk: the changes an initiative's plan wrote, each linked once it is started, so
+ * "the changes to start" after Plan are on the page.
+ */
+export function InitiativeChanges({ changes }: { changes: InitiativeStatus["changes"] }) {
+  if (changes.length === 0) return <div className="state">{T.noChangesYet}</div>;
+  return (
+    <ul className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
+      {changes.map((c) => (
+        <li key={c.id}>
+          {c.state ? (
+            <a href={`#/changes/${encodeURIComponent(c.id)}`} className="mono">
+              {c.id}
+            </a>
+          ) : (
+            <span className="mono">{c.id}</span>
+          )}{" "}
+          <span className="muted">· {c.state ?? T.notStartedYet}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** An initiative's notes, the "no plan yet" one said for the app (Plan it is on this page). */
+function initiativeNotes(one: InitiativeStatus): string[] {
+  if (one.status !== "not-planned") return one.notes;
+  return [T.noPlanYet, ...one.notes.filter((n) => !/has no plan yet/.test(n))];
+}
+
 export function Initiatives({ hash }: { hash: string }) {
   const all = useApi<InitiativeStatus[]>("/api/initiatives");
   const id = queryParam(hash, "id");
@@ -990,7 +1025,7 @@ export function Initiatives({ hash }: { hash: string }) {
                   <span className="row between">
                     <span style={{ fontWeight: 600 }}>{i.title}</span>
                     <span className={`chip ${STATUS_CHIP[i.status] ?? ""}`}>
-                      {i.status.toUpperCase()}
+                      {initiativeStatusWord(i.status)}
                     </span>
                   </span>
                   <span className="hud" style={{ fontSize: 9.5 }}>
@@ -1063,13 +1098,16 @@ export function Initiatives({ hash }: { hash: string }) {
                     label: T.status,
                     cell: (i) => (
                       <span className={`chip ${STATUS_CHIP[i.status] ?? ""}`} title={i.why}>
-                        {i.status.toUpperCase()}
+                        {initiativeStatusWord(i.status)}
                       </span>
                     ),
                   },
                 ]}
               />
             </div>
+          </Panel>
+          <Panel title={T.changesToStart} span="span 8">
+            <InitiativeChanges changes={one.changes} />
           </Panel>
           <Panel title={T.timeline} span="span 8" kind="dark">
             <Timeline s={one} />
@@ -1100,7 +1138,7 @@ export function Initiatives({ hash }: { hash: string }) {
                     cell: (c) => (
                       <span className="stack" style={{ gap: 2 }}>
                         <span className={`chip ${STATUS_CHIP[c.status] ?? ""}`} title={c.why}>
-                          {c.status.toUpperCase()}
+                          {initiativeStatusWord(c.status)}
                         </span>
                         {c.note && (
                           <span className="muted" style={{ fontSize: 11.5 }}>
@@ -1132,7 +1170,7 @@ export function Initiatives({ hash }: { hash: string }) {
                 <CommitmentState key={editingOne.id} commitment={editingOne} onSaved={reload} />
               </div>
             )}
-            {one.notes.map((n, i) => (
+            {initiativeNotes(one).map((n, i) => (
               <p key={i} className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
                 {n}
               </p>

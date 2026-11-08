@@ -524,6 +524,59 @@ export function QuestionList(p: {
 export const verifyRepoOf = (rerun: string) =>
   /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(rerun.trim())?.[1];
 
+/**
+ * Seventh UX walk: when a question was asked, in words. The app never shows the command that
+ * asked it (`atticus verify <repo> --write`); the command stays in the question's file.
+ */
+export function askedByWords(by: { step: string; command: string }, at: string): string {
+  const cmd = by.command.trim();
+  const verify = /^atticus verify ([a-z0-9][a-z0-9._-]*)/.exec(cmd)?.[1];
+  if (verify) return C.askedWhen.verify(verify, at);
+  const stage = /^atticus change ([a-z-]+) ([a-z0-9][a-z0-9._-]*)/.exec(cmd);
+  if (stage) return C.askedWhen.stage(stage[1]!, stage[2]!, at);
+  const words = cmd.split(/\s+/).filter((w) => !w.startsWith("-"));
+  if (/^atticus (scan|map|onboard)\b/.test(cmd) && words.length > 2)
+    return C.askedWhen.read(words.at(-1)!, at);
+  return C.askedWhen.step(by.step, at);
+}
+
+/**
+ * Seventh UX walk: what an option changes, said for the app. The step wrote it with the command
+ * that applies it, in brackets; on this page Apply does that, so the words say so instead.
+ */
+export function changesInWords(text: string): string {
+  return text
+    .replace(
+      /when the facts are next written \(atticus verify ([a-z0-9][a-z0-9._-]*) --write\)/g,
+      (_m, repo: string) => C.whenApplied(repo),
+    )
+    .replace(
+      /atticus questions answer <id> --target <[^>]*> lists them and takes the one you name \(the app's Questions page lists them too\)/g,
+      C.pickBelow,
+    )
+    .replace(/\s*\((?:atticus [^)]*|\/atticus-[^)]*)\)/g, "");
+}
+
+/**
+ * Seventh UX walk: Apply beside an answered map question while its repo's answers aren't in the
+ * map yet (the server's applyFirst), so leaving the page never loses the step. Nothing otherwise.
+ */
+export function ApplyPending({ repo }: { repo: string }) {
+  const plan = useApi<{ applyFirst?: string[] }>("/api/propose?scope=work");
+  if (plan.state !== "ready" || !plan.data.applyFirst?.includes(repo)) return null;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {C.notApplied}
+      </p>
+      <ApplyAndPropose scope="answers" repo={repo} />
+    </div>
+  );
+}
+
+/** Focus moves to the note when it shows (WCAG 2.4.3): saving by keyboard never loses it. */
+const focusOnShow = (el: HTMLElement | null) => el?.focus();
+
 /** A question a change's stage asked, filed under the change's id (sixth UX walk). */
 export const isChangeQuestion = (q: QuestionView) => {
   const words = (q.askedBy?.command ?? "").trim().split(/\s+/);
@@ -533,7 +586,7 @@ export const isChangeQuestion = (q: QuestionView) => {
 /** What happened after the answer was saved: the file, the skill file, the command to run next. */
 export function AnsweredView({ result }: { result: AnsweredResult }) {
   return (
-    <div role="status" className="stack" style={{ gap: 6 }}>
+    <div role="status" ref={focusOnShow} tabIndex={-1} className="stack" style={{ gap: 6 }}>
       <p style={{ margin: 0 }}>{C.saved(`questions/${result.question.id}.yaml`)}</p>
       {result.system?.added && (
         <p style={{ margin: 0 }}>{C.another.added(result.system.id, result.system.profile)}</p>
@@ -641,7 +694,7 @@ export function QuestionDetail(p: {
         {q.question}
       </h2>
       <p className="hud" style={{ margin: 0, fontSize: 10 }}>
-        {C.askedBy(q.askedBy.command, day(q.askedBy.at))} · {q.repo} ·{" "}
+        {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} ·{" "}
         <code className="mono">{q.id}</code> <CopyButton text={q.id} label={C.copyId} />
       </p>
       <div>
@@ -656,6 +709,9 @@ export function QuestionDetail(p: {
           {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
           {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
         </p>
+      )}
+      {q.state === "answered" && !done && verifyRepoOf(q.rerun) && (
+        <ApplyPending repo={verifyRepoOf(q.rerun)!} />
       )}
       {q.reopened && (
         <p className="state" style={{ margin: 0 }}>
@@ -721,7 +777,7 @@ export function QuestionDetail(p: {
                       {i + 1}. {o.label}
                     </span>
                     <span id={`${id}-d`} className="muted" style={{ fontSize: 12 }}>
-                      {sentence(o.means)} {C.optionChanges}: {sentence(o.changes)}
+                      {sentence(o.means)} {C.optionChanges}: {sentence(changesInWords(o.changes))}
                     </span>
                   </label>
                 </div>
@@ -1033,18 +1089,24 @@ export function QuestionCounts(p: {
 }) {
   const c = p.counts;
   const done = c.total ? Math.round(((c.answered + c.retired) / c.total) * 100) : 0;
-  const tile = (label: string, n: number, tone: string, pick?: "open" | "all") => (
-    <button
-      type="button"
-      className={`q-stat ${tone}`}
-      aria-pressed={pick ? p.filter === pick : undefined}
-      disabled={!pick}
-      onClick={() => pick && p.onFilter(pick)}
-    >
-      <span className="q-stat-n">{n}</span>
-      <span className="q-stat-label">{label}</span>
-    </button>
-  );
+  // Seventh UX walk: only the tiles that pick the list's filter are buttons; the others are counts.
+  const tile = (label: string, n: number, tone: string, pick?: "open" | "all") =>
+    pick ? (
+      <button
+        type="button"
+        className={`q-stat ${tone}`}
+        aria-pressed={p.filter === pick}
+        onClick={() => p.onFilter(pick)}
+      >
+        <span className="q-stat-n">{n}</span>
+        <span className="q-stat-label">{label}</span>
+      </button>
+    ) : (
+      <div className={`q-stat q-stat-count ${tone}`}>
+        <span className="q-stat-n">{n}</span>
+        <span className="q-stat-label">{label}</span>
+      </div>
+    );
   return (
     <div className="q-stats" role="group" aria-label={C.counts.label(p.repo)}>
       {tile(C.counts.open, c.open, "warn", "open")}

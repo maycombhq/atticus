@@ -222,8 +222,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the person's click (the push and PR the pr level makes, the AI step not run again); GET
  *   /api/propose lists `applyFirst`, the repos whose corrections are newer than their last
  *   Apply. Additive only.
+ * 2.70.0 (seventh UX walk, answers and access): a change's artifact in GET
+ *   /api/changes/{changeId} carries `written`, whether its file is there (a status of ready or
+ *   blocked says what the phase allows, not that the file was written); GET /api/propose lists in
+ *   `applyFirst` the repos whose answered map questions are newer than their last Apply too, not
+ *   only their corrections. Additive only.
  */
-export const API_VERSION = "2.69.0";
+export const API_VERSION = "2.70.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -532,6 +537,8 @@ export const ArtifactStatus = z.object({
   artifact: ChangeArtifact,
   path: z.string(),
   status: z.enum(["blocked", "ready", "done", "not-required"]),
+  /** 2.70.0 (seventh UX walk): whether the artifact's file is there at all. */
+  written: z.boolean().optional(),
   owner: z.string().optional(),
   openFindings: z.number().int(),
 });
@@ -2306,7 +2313,8 @@ export const ProposePlanView = z.object({
   title: z.string(),
   /**
    * 2.69.0 (sixth UX walk): the repos whose corrections are newer than their last Apply, so the
-   * map in the PR would miss them; a repo applied since its last correction isn't listed.
+   * map in the PR would miss them; a repo applied since its last correction isn't listed. 2.70.0
+   * (seventh UX walk): and the repos whose answered map questions are newer than their last Apply.
    */
   applyFirst: z.array(z.string()).optional(),
 });

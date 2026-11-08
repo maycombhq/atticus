@@ -1,6 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
+import { artifactStatusWord } from "../../app/artifact-status.js";
 import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam, Table } from "../know/common.js";
 import { Architecture } from "../architecture/Architecture.js";
@@ -34,6 +35,8 @@ export interface ArtifactRow {
   artifact: string;
   path: string;
   status: string;
+  /** API 2.70.0: whether its file is there (and holds more than the template). */
+  written?: boolean;
   openFindings: number;
 }
 export interface ChangeDetailView extends ChangeRow {
@@ -97,7 +100,7 @@ export function FilesTable({
             <span
               className={`chip ${a.status === "done" ? "done" : a.status === "ready" ? "warn" : "dim"}`}
             >
-              {a.status.toUpperCase()}
+              {artifactStatusWord(a)}
             </span>
           ),
         },

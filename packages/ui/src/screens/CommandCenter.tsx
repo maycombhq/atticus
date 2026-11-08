@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BringIn, PendingProposals } from "../app/propose.js";
 import { COPY } from "../copy.js";
-import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
+import { api, ApiError, isOffline, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
@@ -63,6 +63,12 @@ const PHASE_LABEL: Record<string, string> = {
 };
 const ACTIVE = new Set<string>([...PHASES, "returned", "post-release-review"]);
 
+/**
+ * Seventh UX walk: why a part didn't load, as the server answered; the server being down is said
+ * once at the top of the page, so here it is short.
+ */
+const loadWhy = (why: string | undefined) => (!why || isOffline(why) ? COPY.app.offlineShort : why);
+
 interface Setup {
   baselined: boolean;
   steps: {
@@ -79,11 +85,20 @@ interface Setup {
  * What runs a step here (ADR 0121 item 6), in one line from GET /api/settings/ai, with a link to
  * the AI tab. Nothing while it loads; a sentence when it can't be read.
  */
-export function HowStepsRunLine({ runs, failed }: { runs?: string; failed?: boolean }) {
+export function HowStepsRunLine({
+  runs,
+  failed,
+  why,
+}: {
+  runs?: string;
+  failed?: boolean;
+  /** Seventh UX walk: what the server answered; runtime.yaml is named only when it names it. */
+  why?: string;
+}) {
   if (failed)
     return (
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        {T.howStepsRunCantRead}
+        {T.howStepsRunCantRead(loadWhy(why))}
       </p>
     );
   if (!runs) return null;
@@ -103,6 +118,7 @@ function HowStepsRun() {
     <HowStepsRunLine
       {...(ai.state === "ready" && ai.data.runs ? { runs: ai.data.runs } : {})}
       failed={ai.state === "error"}
+      {...(ai.state === "error" ? { why: ai.error } : {})}
     />
   );
 }
@@ -456,6 +472,8 @@ export function WaitingList(p: {
   state: "loading" | "error" | "ready";
   /** Parts of the list that didn't load (a change's needs, the steps, the questions): said, not hidden. */
   partial?: string[];
+  /** Seventh UX walk: what the server answered when the list didn't load. */
+  error?: string;
   /** WP7.10: act on several needs or manual steps at once; without it, no checkboxes. */
   onBulk?: (items: InboxItem[], action: BulkAction, note: string) => Promise<void>;
 }) {
@@ -475,7 +493,7 @@ export function WaitingList(p: {
   if (p.state === "error")
     return (
       <div className="state" role="alert">
-        {T.couldntLoadWhatNeeds}
+        {T.couldntLoadWhatNeeds(loadWhy(p.error))}
       </div>
     );
   const w = waitingByChange(p.items, p.changes, p.text);
@@ -748,6 +766,11 @@ export function CommandCenter() {
               ...(qs.state === "error" ? [T.questionsFailed(qs.error)] : []),
               ...(triage.state === "error" ? [T.triageFailed(triage.error)] : []),
             ]}
+            {...(changes.state === "error"
+              ? { error: changes.error }
+              : findings.state === "error"
+                ? { error: findings.error }
+                : {})}
             state={
               changes.state === "loading" || findings.state === "loading"
                 ? "loading"

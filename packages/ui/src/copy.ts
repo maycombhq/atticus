@@ -21,6 +21,11 @@ export const COPY = {
     noChanges: "No changes yet",
     offline:
       "The Atticus server isn't answering. Check that atticus ui is still running in its terminal (start it again with atticus ui if it stopped), then press Try again or reload the page.",
+    /** Seventh UX walk: an error with no reason of Atticus's own says what the server answered. */
+    serverAnswered: (status: number, words: string) =>
+      words
+        ? `The server answered ${status}: ${words}`
+        : `The server answered ${status}, with no reason given.`,
     notJson: (status: number) =>
       `The server answered with something that isn't Atticus's (status ${status}). Check that the address is the one atticus ui printed.`,
     offlinePanel:
@@ -45,6 +50,18 @@ export const COPY = {
       `Edit them on this page, or to replace them run atticus plan stories ${change} --force in a terminal.`,
     panelNoSave: (file: string, command: string) =>
       `The VS Code panel can't save files, so ${file} wasn't saved. Copy the text below into a file, or run ${command} in a terminal.`,
+  },
+  /**
+   * Seventh UX walk: a change file's status chip. Ready or blocked says what the phase allows; a
+   * file that isn't there, or holds only the template, says so.
+   */
+  artifactStatus: {
+    written: "Written",
+    notWritten: "Not written yet",
+    needsWork: "Written, not passing yet",
+    ready: "Can be written now",
+    blocked: "Waits on an earlier stage",
+    notRequired: "Not needed",
   },
   /** The theme switch in the top bar (the browser app only: a VS Code panel follows the editor). */
   theme: {
@@ -207,6 +224,18 @@ export const COPY = {
       copyCommand: "Copy the command",
     },
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
+    /** Seventh UX walk: when a question was asked, in words, never the command that asked it. */
+    askedWhen: {
+      verify: (repo: string, day: string) => `Asked when Atticus checked ${repo}'s map on ${day}`,
+      read: (repo: string, day: string) => `Asked when Atticus read ${repo} on ${day}`,
+      stage: (stage: string, change: string, day: string) =>
+        `Asked at the ${stage} stage of ${change} on ${day}`,
+      step: (step: string, day: string) => `Asked by Atticus's ${step} step on ${day}`,
+    },
+    /** What an option changes, said for the app: Apply on this page writes the map. */
+    whenApplied: (repo: string) => `when the answers are next applied to ${repo}'s map`,
+    pickBelow:
+      "pick this and the list of every repo, system and team opens below; it takes the one you name",
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
     counts: {
@@ -241,6 +270,8 @@ export const COPY = {
     excerptOf: (ref: string) => `The code at ${ref}`,
     options: "Your answer",
     optionChanges: "It would change",
+    /** Seventh UX walk: an answered map question whose repo hasn't had Apply since. */
+    notApplied: "This answer isn't in the map yet. Apply puts it there:",
     ownWords: "In my own words",
     ownWordsLabel: "Your answer, in your own words",
     scope: "Who the answer is for",
@@ -2139,7 +2170,7 @@ export const COPY = {
     triageFailed: (error: string) => `the triage (${error})`,
     howStepsRun: "How AI steps run:",
     howStepsRunChange: "Change in Set up › AI",
-    howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
+    howStepsRunCantRead: (why: string) => `Atticus couldn't read how AI steps run here: ${why}`,
     define: "Define",
     design: "Design",
     plan: "Plan",
@@ -2185,8 +2216,7 @@ export const COPY = {
     systemMap: "System map",
     explore: "Explore",
     loading: "Loading…",
-    couldntLoadWhatNeeds:
-      "Couldn't load what needs a person. Check that atticus ui is still running, then reload.",
+    couldntLoadWhatNeeds: (why: string) => `Couldn't load what needs a person: ${why}`,
     nothingNeedsAPerson: "Nothing needs a person right now.",
     needsAPerson: "Needs a person",
     // ADR 0105: what waits on you, by kind, each linking to where it is acted on.
@@ -2411,6 +2441,19 @@ export const COPY = {
     startInitiative: "Start the initiative",
     startingInitiative: "Starting…",
     startedInitiative: (id: string) => `Started ${id}. Plan it next: name the system it is about.`,
+    /** Seventh UX walk: an initiative's status in words. */
+    initiativeStates: {
+      "not-planned": "Not planned yet",
+      "on-track": "On track",
+      "at-risk": "At risk",
+      slipped: "Slipped",
+      done: "Done",
+      open: "Open",
+    } as Record<string, string>,
+    noPlanYet: "No plan yet: name the system it is about below and press Plan it.",
+    changesToStart: "Changes to start",
+    noChangesYet: "No changes yet: planning it writes the changes to start.",
+    notStartedYet: "not started yet",
     cancel: "Cancel",
     planTitle: "Plan its changes and commitments",
     planSay:
@@ -2422,7 +2465,7 @@ export const COPY = {
     plan: "Plan it",
     replan: "Plan it again",
     planning: "Planning…",
-    planned: "Planned. The changes to start and the commitments are below.",
+    planned: "Planned. The changes to start, the plan items and who owes what are on this page.",
     setCommitment: (what: string) => `Record where "${what}" stands`,
     commitmentStateLabel: "State",
     commitmentStates: {
@@ -3878,7 +3921,8 @@ export const COPY = {
     appliedFlash: (repo: string) =>
       `Applied the correction to ${repo}'s map. It waits on Home to be proposed for review.`,
     toHome: "Propose it from Home",
-    applyFirst: "Apply the corrections first, so the map in the pull request matches them:",
+    applyFirst:
+      "Apply the answers and corrections first, so the map in the pull request matches them:",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
     inReview: (where: string) => `already proposed (${where})`,

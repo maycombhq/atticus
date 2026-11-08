@@ -68,6 +68,25 @@ export function parseBody(text: string, status: number): unknown {
   }
 }
 
+/**
+ * Seventh UX walk: the problem of an answer that wasn't a success. Atticus's own problems carry
+ * a detail or a title and are kept; anything else (a proxy, a body with only `error`, no body)
+ * says what the server answered: its status and its words, never a blank.
+ */
+export function problemOf(body: unknown, status: number, statusText: string): Problem {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  if (str(b.detail) || str(b.title))
+    return { ...(b as unknown as Problem), type: str(b.type) ?? "about:blank", status };
+  const words = str(b.error) ?? str(b.message) ?? str(statusText) ?? "";
+  return {
+    type: "about:blank",
+    title: str(statusText) ?? "Request failed",
+    status,
+    detail: COPY.app.serverAnswered(status, words),
+  };
+}
+
 /** The title the VS Code extension gives a call the local API didn't answer. */
 const PANEL_DOWN = "The Atticus app isn't answering";
 
@@ -115,15 +134,9 @@ async function call<T>(
       throw new ApiError(unreachable(true));
     }
     serverAnswered(true);
-    if (r.status < 200 || r.status >= 300) {
-      const p = (r.body as Problem | undefined) ?? {
-        type: "about:blank",
-        title: "Request failed",
-        status: r.status,
-      };
+    if (r.status < 200 || r.status >= 300)
       // The answer's own status, whatever the body says (a body may leave it out).
-      throw new ApiError({ ...p, status: r.status });
-    }
+      throw new ApiError(problemOf(r.body, r.status, ""));
     return r.body as T;
   }
   let r: Response;
@@ -147,14 +160,7 @@ async function call<T>(
   }
   serverAnswered(true);
   const body = parseBody(text, r.status);
-  if (!r.ok) {
-    const p = (body as Problem | undefined) ?? {
-      type: "about:blank",
-      title: r.statusText || "Request failed",
-      status: r.status,
-    };
-    throw new ApiError({ ...p, status: r.status });
-  }
+  if (!r.ok) throw new ApiError(problemOf(body, r.status, r.statusText));
   return body as T;
 }
 

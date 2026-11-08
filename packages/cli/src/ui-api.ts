@@ -187,6 +187,10 @@ async function changeDetail(root: string, id: string) {
   const current = report.phase ? phases.indexOf(report.phase) : phases.length;
   const artifacts = [];
   const blockedArtifacts = new Set(report.blockers.map((b) => b.artifact).filter(Boolean));
+  // A file that still holds only the template isn't written yet (seventh UX walk).
+  const templateOnly = new Set(
+    report.blockers.filter((b) => b.code === "unfilled-artifact").map((b) => b.artifact),
+  );
   const cctx = await loadChangeContext(root);
   type Artifact = z.infer<typeof ChangeArtifact>;
   // On the stage path (ADR 0087: a stage's loop has run), the stages' artifacts come first, in
@@ -220,6 +224,8 @@ async function changeDetail(root: string, id: string) {
       artifact: a,
       path: `${changesRelOf(root)}/${id}/${files[0] ?? `${a}.md`}`,
       status: done ? "done" : at <= current ? "ready" : "blocked",
+      // Seventh UX walk (2.70.0): ready or blocked says what the phase allows, not that it is there.
+      written: files.length > 0 && !templateOnly.has(a),
       openFindings: findings.filter((f) => f.state === "open" && f.artifact.startsWith(a)).length,
     });
   }
@@ -261,7 +267,9 @@ async function applyFirstOf(root: string, files: readonly { path: string }[]): P
     );
   const out: string[] = [];
   for (const f of files) {
-    const repo = /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1];
+    const repo =
+      /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1] ??
+      (await answeredMapQuestionRepo(root, f.path));
     if (!repo || out.includes(repo)) continue;
     const saved = await mtime(join(root, ...f.path.split("/")));
     if (saved === undefined) continue;
@@ -271,6 +279,22 @@ async function applyFirstOf(root: string, files: readonly { path: string }[]): P
     if (applied === undefined || saved > applied) out.push(repo);
   }
   return out;
+}
+
+/**
+ * Seventh UX walk: the repo of a proposal's question file when it is an answered question that
+ * Apply reads, one asked by `atticus verify <repo> --write` (its rerun says so) about that repo.
+ * A change's own question, filed under the change id, goes with the change's hand-off instead.
+ */
+async function answeredMapQuestionRepo(root: string, path: string): Promise<string | undefined> {
+  if (!/(?:^|\/)questions\/q-[^/]+\.yaml$/.test(path)) return undefined;
+  const q = await readFile(join(root, ...path.split("/")), "utf8").then(
+    (t) => parseYaml(t) as { state?: unknown; repo?: unknown; rerun?: unknown } | null,
+    () => undefined,
+  );
+  if (!q || q.state !== "answered" || typeof q.repo !== "string") return undefined;
+  const of = /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(String(q.rerun ?? "").trim());
+  return of?.[1] === q.repo ? q.repo : undefined;
 }
 
 /**

@@ -85,6 +85,8 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect(d.artifacts.find((a) => a.artifact === "brief")).toMatchObject({
       path: `openspec/changes/${ID}/brief.md`,
       status: "ready",
+      // Seventh UX walk (2.70.0): a brief that holds only the template isn't written yet.
+      written: false,
     });
 
     const again = await call("/api/changes", {
