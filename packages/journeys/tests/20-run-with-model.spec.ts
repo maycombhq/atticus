@@ -92,7 +92,8 @@ test("Run with anthropic starts the step, says it is running, then shows the end
   const run = next.getByRole("button", { name: "Run with anthropic" });
   await expect(run).toBeVisible();
   await expect(run).toBeEnabled();
-  // The copy buttons stay beside it.
+  // The copy buttons stay beside it, under "Or in a terminal" (seventh UX walk).
+  await next.getByText("Or in a terminal").first().click();
   await expect(
     next.getByRole("button", {
       name: /^Copy the command: atticus plan stories add-transfer-limit$/,

@@ -33,12 +33,14 @@ test("More pages is in the menu on first load, closed, and lists every page the 
   await expect(more).toHaveAttribute("aria-expanded", "true");
   // By section, Change's by phase.
   for (const [group, pages] of [
-    ["Map", ["Ecosystem map", "Features", "API mappings", "Diagrams", "Reconcile", "Governance"]],
+    ["Home", ["Initiatives", "Manual steps"]],
+    ["Map", ["Ecosystem map", "Features", "API mappings", "Diagrams", "Reconcile"]],
     ["Define", ["Feature brief", "Prototypes and UX"]],
     ["Plan", ["Breakdown", "Estimate"]],
-    ["Build", ["Task board", "Code against design", "Test trace", "Manual steps"]],
+    ["Build", ["Task board", "Code against design", "Test trace"]],
     ["Knowledge", ["Teams, vendors and products", "Org pack from the wikis"]],
-    ["Set up", ["Scans", "Intake", "Settings"]],
+    // Seventh UX walk: Governance is set up; Manual steps and Initiatives are Home's.
+    ["Set up", ["Scans", "Intake", "Settings", "Governance"]],
     ["Atticus", ["Prompt history", "AI quality", "Learning"]],
   ] as const) {
     const g = nav.getByRole("group", { name: group, exact: true }).last();
@@ -112,7 +114,8 @@ test("works with the keyboard alone: Tab to it, Enter opens, Tab into it, Escape
   await page.keyboard.press("Enter");
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Ecosystem map" })).toBeFocused();
+  // Seventh UX walk: Home's pages come first (Initiatives, Manual steps).
+  await expect(page.getByRole("link", { name: "Initiatives" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await expect(more).toBeFocused();

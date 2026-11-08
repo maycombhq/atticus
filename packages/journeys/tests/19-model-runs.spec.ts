@@ -278,6 +278,8 @@ test("a step's page links to its runs; without a model a step stays a command to
     page.getByRole("link", { name: "Model runs for add-transfer-limit" }).first(),
   ).toHaveAttribute("href", "#/runs?change=add-transfer-limit");
   const next = page.locator("section[aria-labelledby=run-next]");
+  // Seventh UX walk: the command is under "Or in a terminal", after the in-app action.
+  await next.getByText("Or in a terminal").first().click();
   await expect(
     next.getByRole("button", { name: /^Copy the command: atticus plan stories/ }),
   ).toBeVisible();
