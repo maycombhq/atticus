@@ -22,7 +22,15 @@ import {
   stepModelsOf,
 } from "@maycombhq/core";
 import { stepClassOfNextStep } from "@maycombhq/ai";
-import { artifactFiles, changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
+import {
+  assess,
+  changeStore,
+  loadChangeContext,
+  loadChangePolicy,
+  stageCompletion,
+  type ChangeContext,
+} from "@maycombhq/changes";
+import type { ChangeLifecycle } from "@maycombhq/core";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import {
   metarepoOpenSpec,
@@ -424,6 +432,9 @@ export async function readNextState(root: string): Promise<NextState> {
   const os = metarepoOpenSpec(root);
   // ADR 0156: the flows a change adds that an open seed adds too.
   const clashes = await seedCollisions(root).catch(() => [] as SeedCollision[]);
+  // One change context per call, read only when a change at define needs it (round 40).
+  let ctxP: Promise<ChangeContext> | undefined;
+  const changeContext = () => (ctxP ??= loadChangeContext(root));
   try {
     for (const c of await changeStore(root).list()) {
       const clash = clashes
@@ -465,8 +476,10 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
-        ...(!existsSync(join(changesDirOf(root), c.id, "proposal.md")) ||
-        (await artifactFiles(join(changesDirOf(root), c.id), "specs")).length === 0
+        // Round 40: only when the gate itself says its proposal or specs are missing (on the stage
+        // path the define gate needs neither: the stages write what it is due).
+        ...((c.state === "define" || c.state === "returned") &&
+        (await draftMissing(changeContext, c).catch(() => false))
           ? { undrafted: true }
           : {}),
         ...(stagesDone.length ? { stagesDone } : {}),
@@ -552,6 +565,17 @@ async function isFast(
   if (!type || (type.size !== "small" && !type.smallWhenBriefSays)) return false;
   const brief = await readFile(join(changesDirOf(root), c.id, "brief.md"), "utf8").catch(() => "");
   return fastPathOf(type, brief).fast;
+}
+
+/** Whether the change's gate is blocked by a missing proposal or specs (round 40). */
+async function draftMissing(
+  ctx: () => Promise<ChangeContext>,
+  c: ChangeLifecycle,
+): Promise<boolean> {
+  const a = await assess(await ctx(), c);
+  return a.blockers.some(
+    (b) => b.code === "missing-artifact" && (b.artifact === "proposal" || b.artifact === "specs"),
+  );
 }
 
 /** The stage a change's state puts it at (plan 4.4), as the app's Work pages read it. */

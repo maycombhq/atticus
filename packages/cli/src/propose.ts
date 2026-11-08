@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import {
   catalogDirOf,
@@ -428,8 +429,55 @@ export async function bringInMerged(
         .then(() => run(["reset", "-q", "--", p]))
         .catch(() => undefined);
   };
+  // Round 40: the change's record is merged three ways (what this copy had at HEAD, Sync's
+  // newer state here, and what merged), so a reviewer's edit on the hand-off branch is kept too.
+  // A change both sides made to the same lines is refused, with nothing done.
   const held = new Map<string, string>();
-  for (const k of ownClash) held.set(k, await readFile(join(root, k), "utf8"));
+  const tmp = await mkdtemp(join(tmpdir(), "atticus-bring-in-"));
+  try {
+    for (const k of ownClash) {
+      const at = async (rev: string) =>
+        (await run(["show", `${rev}:${k}`]).catch(() => "")) as string;
+      const base = join(tmp, "base");
+      const ours = join(tmp, "ours");
+      const theirs = join(tmp, "theirs");
+      // The base is what this copy last had of it: HEAD's, or (a change made here and first pushed
+      // by its hand-off) the hand-off branch's, or else what merged (nobody else changed it).
+      const inHead = await run(["cat-file", "-e", `HEAD:${k}`]).then(
+        () => true,
+        () => false,
+      );
+      const id = k.split("/").at(-2)!;
+      const handoff = inHead
+        ? undefined
+        : (
+            await run([
+              "for-each-ref",
+              "--sort=-committerdate",
+              "--count=1",
+              "--format=%(refname)",
+              `refs/heads/handoff/${id}/`,
+            ]).catch(() => "")
+          ).trim() || undefined;
+      const baseText = inHead ? await at("HEAD") : handoff ? await at(handoff) : await at(up);
+      await writeFile(base, baseText, "utf8");
+      await writeFile(ours, await readFile(join(root, k), "utf8"), "utf8");
+      await writeFile(theirs, await at(up), "utf8");
+      const merged = await git(["merge-file", "-p", ours, base, theirs], root).then(
+        (r) => ({ ok: true, text: r.stdout }),
+        () => ({ ok: false, text: "" }),
+      );
+      if (!merged.ok) {
+        io.err(
+          `What merged also changes ${k} where your copy changed it, so nothing was changed. Propose your edits for review, or ask someone who uses git to bring them together.`,
+        );
+        return 1;
+      }
+      held.set(k, merged.text);
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
   const restoreHeld = async () => {
     for (const [k, text] of held) await writeFile(join(root, k), text, "utf8");
   };

@@ -617,6 +617,27 @@ describe("nextSteps (pure)", () => {
 });
 
 describe("atticus next with a change in hand, and the assistant that was probed", () => {
+  it("hands off a placed change on the stage path, never drafting what its gate doesn't need (round 40)", async () => {
+    const root = await metarepo({ clone: true });
+    await component(root, "forge-notes");
+    await component(root, "forge-notes-ui");
+    const dir = join(root, "openspec/changes/add-fraud-check");
+    await cp(join(FIXTURES, "stages/changes/add-fraud-check"), dir, { recursive: true });
+    await mkdir(join(dir, "stage"), { recursive: true });
+    await writeFile(
+      join(dir, "stage/feature.yaml"),
+      "schemaVersion: 1\nchange: add-fraud-check\nstage: feature\niteration: 1\nstate: done\nupdatedAt: 2026-10-25T09:00:00Z\n",
+    );
+    await writeFile(join(dir, "feature.yaml"), "placed: true\n");
+    await writeFile(join(dir, "feature.md"), "# Feature\n");
+    const j = await json(root);
+    const mine = j.steps
+      .filter((x: NextStep) => x.change === "add-fraud-check")
+      .map((x: NextStep) => x.step);
+    expect(mine).not.toContain("draft");
+    expect(mine).toContain("handoff");
+  });
+
   it("reads the change whose stage is in progress as the one in hand", async () => {
     const root = await metarepo({ clone: true });
     await component(root, "forge-notes");

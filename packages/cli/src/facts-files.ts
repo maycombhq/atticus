@@ -326,7 +326,15 @@ export async function writeVerifyFiles(
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${repo}.jsonl`), serializeFacts(report.accepted), "utf8");
+  // Round 40: a fact read at another commit than the clone's isn't wrong, it is of another
+  // commit: it stays in the facts file (and is still refused), so a run on the wrong checkout
+  // never empties the file and lets the next run write a catalog without that repo's records.
+  const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").map((r) => r.fact);
+  await writeFile(
+    join(dir, `${repo}.jsonl`),
+    serializeFacts([...report.accepted, ...otherCommit]),
+    "utf8",
+  );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [
     ...report.rejected.map((r) =>

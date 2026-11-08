@@ -438,4 +438,29 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(g(root, "log", "-1", "--format=%s").trim()).toBe("hand-off merged");
     expect(await readFile(join(root, rel, "change.yaml"), "utf8")).toBe("state: design\n");
   });
+
+  it("keeps a reviewer's edit to the change's record as well as Sync's newer state (round 40)", async () => {
+    const { root, work } = await setup();
+    const rel = "openspec/changes/c1";
+    const before = "id: c1\nstate: define\nowner: pat\nsystems:\n  - forge-ledger\n";
+    await mkdir(join(root, rel), { recursive: true });
+    await writeFile(join(root, rel, "change.yaml"), before);
+    g(root, "add", "-A");
+    g(root, "commit", "-q", "-m", "change");
+    g(root, "push", "-q", "origin", "main");
+    g(work, "pull", "-q", "origin", "main");
+    // The reviewer adds a system on the hand-off; Sync here moved the state.
+    await writeFile(join(work, rel, "change.yaml"), before + "  - forge-gateway\n");
+    g(work, "commit", "-q", "-am", "reviewer");
+    g(work, "push", "-q", "origin", "main");
+    await writeFile(
+      join(root, rel, "change.yaml"),
+      before.replace("state: define", "state: design"),
+    );
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    const now = await readFile(join(root, rel, "change.yaml"), "utf8");
+    expect(now).toContain("state: design");
+    expect(now).toContain("forge-gateway");
+  });
 });
