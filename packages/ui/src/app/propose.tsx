@@ -47,6 +47,8 @@ interface Plan {
   files: { path: string; status: string; from?: string; proposed?: string }[];
   branch: string;
   title: string;
+  /** API 2.69.0: the repos whose corrections are newer than their last Apply. */
+  applyFirst?: string[];
 }
 
 /**
@@ -116,7 +118,7 @@ export function ApplyAndPropose(p: {
   );
 }
 
-export function Propose({ scope }: { scope: Scope }) {
+export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }) {
   const [plan, setPlan] = useState<Plan>();
   const [off, setOff] = useState<Set<string>>(new Set());
   const [done, setDone] = useState<string[]>();
@@ -201,6 +203,7 @@ export function Propose({ scope }: { scope: Scope }) {
                     branch: plan.branch,
                   });
                   setDone(r.lines);
+                  onDone?.();
                 }, P.proposed)
               }
             >
@@ -255,25 +258,31 @@ export function BringIn() {
  */
 export function PendingProposals() {
   const plan = useApi<Plan>("/api/propose?scope=work");
+  // Sixth UX walk: after Push, the lines about what waited go (the push's own lines stay), and
+  // the list is read again for the next time.
+  const [pushed, setPushed] = useState(false);
   const waiting = plan.state === "ready" ? plan.data.files.filter((f) => !f.proposed).length : 0;
-  if (waiting === 0) return null;
+  if (waiting === 0 && !pushed) return null;
   // Fourth UX walk: a correction saved but not applied would go out without its map: each repo
-  // with one gets Apply first.
+  // with one gets Apply first. Sixth: only while its corrections are newer than its last Apply,
+  // as the server says (applyFirst); a server that doesn't say goes by the corrections file.
   const repos =
-    plan.state === "ready"
-      ? [
+    plan.state !== "ready" || pushed
+      ? []
+      : (plan.data.applyFirst ?? [
           ...new Set(
             plan.data.files
               .map((f) => /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1])
               .filter((r): r is string => !!r),
           ),
-        ]
-      : [];
+        ]);
   return (
     <div className="stack" style={{ gap: 4 }}>
-      <p className="work-say" style={{ margin: 0 }}>
-        {P.pending(waiting)}
-      </p>
+      {!pushed && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {P.pending(waiting)}
+        </p>
+      )}
       {repos.length > 0 && (
         <>
           <p className="work-say" style={{ margin: 0 }}>
@@ -284,7 +293,13 @@ export function PendingProposals() {
           ))}
         </>
       )}
-      <Propose scope="work" />
+      <Propose
+        scope="work"
+        onDone={() => {
+          setPushed(true);
+          plan.reload();
+        }}
+      />
     </div>
   );
 }

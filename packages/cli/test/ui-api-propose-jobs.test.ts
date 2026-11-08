@@ -71,3 +71,40 @@ it("refuses a second local step while one runs, naming the one that runs", async
     await s.close();
   }
 }, 60_000);
+
+/**
+ * Sixth UX walk: Home offers Apply before Propose only for a repo whose corrections are newer
+ * than its last Apply (verify --write rewrites the repo's spec header), not for every
+ * corrections file not proposed yet.
+ */
+it("lists applyFirst only for corrections newer than the repo's last Apply", async () => {
+  const { mkdir, utimes, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { factsDirOf, specDirOf } = await import("@maycombhq/core");
+  const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+  const s = await startServer({ root, port: 0, user: "pat", extend: (r, ctx) => uiRoutes(r, ctx) });
+  const plan = async () =>
+    (await (
+      await fetch(`${s.url}/api/propose?scope=work`, { headers: { "X-Atticus-Token": s.token } })
+    ).json()) as { files: { path: string }[]; applyFirst?: string[] };
+  try {
+    await mkdir(factsDirOf(root), { recursive: true });
+    const corrections = join(factsDirOf(root), "forge-ledger.corrections.jsonl");
+    await writeFile(corrections, '{"fact":"f1","field":"path","value":"/x"}\n');
+    await utimes(corrections, new Date("2026-11-08T10:00:00Z"), new Date("2026-11-08T10:00:00Z"));
+    expect((await plan()).applyFirst).toEqual(["forge-ledger"]);
+    // Apply ran after the correction: nothing to apply first.
+    await mkdir(specDirOf(root, "forge-ledger"), { recursive: true });
+    const header = join(specDirOf(root, "forge-ledger"), "spec.yaml");
+    await writeFile(header, "repo: forge-ledger\n");
+    await utimes(header, new Date("2026-11-08T10:05:00Z"), new Date("2026-11-08T10:05:00Z"));
+    const after = await plan();
+    expect(after.files.some((f) => f.path.endsWith("forge-ledger.corrections.jsonl"))).toBe(true);
+    expect(after.applyFirst).toEqual([]);
+    // A correction saved since: Apply again.
+    await utimes(corrections, new Date("2026-11-08T10:09:00Z"), new Date("2026-11-08T10:09:00Z"));
+    expect((await plan()).applyFirst).toEqual(["forge-ledger"]);
+  } finally {
+    await s.close();
+  }
+}, 60_000);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
@@ -10,10 +10,13 @@ import {
   ChangeArtifact,
   changesDirOf,
   changesRelOf,
+  factsDirOf,
   loadOrgPack,
   orgPackDirOf,
   runsDirOf,
   runsRelOf,
+  SPEC_HEADER_FILE,
+  specDirOf,
   RUN_SCHEMA_VERSION,
   writeFileIfUnchanged,
   type ChangeLifecycle,
@@ -50,6 +53,8 @@ import {
   cancelTaskRunWait,
   findTaskRunOfRun,
   previewTaskRun,
+  raiseTaskPr,
+  readTaskRun,
   taskRunOfRun,
 } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
@@ -243,6 +248,67 @@ async function changeDetail(root: string, id: string) {
   };
 }
 
+/**
+ * Sixth UX walk (2.69.0): the repos of a proposal's corrections files whose corrections are newer
+ * than the repo's last Apply. Apply (verify --write) rewrites the repo's spec header every time
+ * it writes the map; a repo with no header yet (a prototype's) goes by its verify.yaml.
+ */
+async function applyFirstOf(root: string, files: readonly { path: string }[]): Promise<string[]> {
+  const mtime = (p: string) =>
+    stat(p).then(
+      (s) => s.mtimeMs,
+      () => undefined,
+    );
+  const out: string[] = [];
+  for (const f of files) {
+    const repo = /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1];
+    if (!repo || out.includes(repo)) continue;
+    const saved = await mtime(join(root, ...f.path.split("/")));
+    if (saved === undefined) continue;
+    const applied =
+      (await mtime(join(specDirOf(root, repo), SPEC_HEADER_FILE))) ??
+      (await mtime(join(factsDirOf(root), `${repo}.verify.yaml`)));
+    if (applied === undefined || saved > applied) out.push(repo);
+  }
+  return out;
+}
+
+/**
+ * A change's tasks as the Task board shows them (C4 Task): tasks.md's order and ticks, each with
+ * where its Run with AI stands (2.69.0, sixth UX walk), read from its task-run.yaml. A record that
+ * doesn't read leaves the task as tasks.md says, never the list unread.
+ */
+async function taskViews(root: string, change: string): Promise<Api.TaskT[]> {
+  const files = await readChangeFiles(join(changesDirOf(root), change));
+  const out: Api.TaskT[] = [];
+  for (const t of readChangeTasks(files)) {
+    const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
+    const run = tr ? (tr.waiting ?? tr.runs[0]) : undefined;
+    out.push({
+      id: t.id,
+      repo: t.repo,
+      description: t.title,
+      done: t.done,
+      ...(t.stories[0] ? { story: t.stories[0] } : {}),
+      branch: `task/${change}/${t.id}`,
+      ...(run ? { run } : {}),
+      ...(tr
+        ? {
+            taskRun: {
+              state: tr.state,
+              level: tr.level,
+              branch: tr.branch,
+              ...(tr.commit ? { commit: tr.commit } : {}),
+              ...(tr.pr ? { pr: tr.pr } : {}),
+              notes: tr.notes,
+            },
+          }
+        : {}),
+    });
+  }
+  return out;
+}
+
 /** A run record as RunView (C4). */
 async function runView(root: string, change: string, runId: string) {
   const dir = join(runsDirOf(root), change, runId);
@@ -397,7 +463,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ],
           });
         });
-        return { status: 200, body: plan };
+        return { status: 200, body: { ...plan, applyFirst: await applyFirstOf(root, plan.files) } };
       })
       .add("POST", "/api/propose", async ({ body }) => {
         const b = parseBody(Api.ProposeRequest, body);
@@ -540,17 +606,39 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("GET", "/api/changes/{changeId}/tasks", async ({ params }) => {
         await readChange(root, params.changeId!);
-        const files = await readChangeFiles(join(changesDirOf(root), params.changeId!));
+        return { status: 200, body: await taskViews(root, params.changeId!) };
+      })
+      // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's click is
+      // the approval to push its branch and open the PR into the change branch (ADR 0073), as
+      // Raise hand-off's is; the AI step isn't run again.
+      .add("POST", "/api/changes/{changeId}/tasks/{taskId}/pr", async ({ params }) => {
+        await readChange(root, params.changeId!);
+        const change = params.changeId!;
+        const task = params.taskId!;
+        if (!(await taskViews(root, change)).some((t) => t.id === task))
+          throw notFound(`Change ${change} has no task ${task}.`);
+        try {
+          await raiseTaskPr(root, change, task, {
+            approval: {
+              by: user,
+              at: (deps.now ? new Date(deps.now) : new Date()).toISOString(),
+              ref: `task ${task} of ${change}: push and PR (the app's Raise the task's PR)`,
+            },
+            ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
+            ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+          });
+        } catch (e) {
+          if (e instanceof Error && (e.name === "TaskRunError" || TASK_ERRORS.has(e.name)))
+            throw refused({ code: 1, out: [], err: [e.message] });
+          throw e;
+        }
+        ctx.events.publish({
+          type: "file.changed",
+          path: `${changesRelOf(root)}/${change}/tasks/${task}/task-run.yaml`,
+        });
         return {
-          status: 200,
-          body: readChangeTasks(files).map((t) => ({
-            id: t.id,
-            repo: t.repo,
-            description: t.title,
-            done: t.done,
-            ...(t.stories[0] ? { story: t.stories[0] } : {}),
-            branch: `task/${params.changeId}/${t.id}`,
-          })),
+          status: 201,
+          body: (await taskViews(root, change)).find((t) => t.id === task)!,
         };
       })
       .add("POST", "/api/changes/{changeId}/workspace", async ({ params, body }) => {

@@ -903,6 +903,95 @@ async function completeHeld(
   return done(c);
 }
 
+/**
+ * Sixth UX walk: the PR of a task drafted at the draft level (built and committed on its task
+ * branch), on the person's yes: the same push and PR the pr level makes after its build, without
+ * running the AI step again. Refused, with nothing changed, for a task with no passing build, one
+ * whose PR is open, and without the approval or a Git host.
+ */
+export async function raiseTaskPr(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: { approval: Approval; git?: GitRunner; gitHost?: GitHost; now?: () => Date },
+): Promise<TaskRunRecord> {
+  try {
+    requireApproval("git-host", o.approval);
+  } catch {
+    throw new TaskRunError(
+      "refused",
+      "A task's PR pushes its branch and opens a PR, which needs the person's yes (an assistant never approves a push).",
+    );
+  }
+  const lock = await holdTask(root, changeId, taskId);
+  try {
+    const record = await readTaskRun(root, changeId, taskId);
+    if (!record || record.level === "plan" || ["planned", "failed"].includes(record.state))
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId} hasn't been drafted yet: run it with AI first; its PR comes after the draft.`,
+      );
+    if (record.state === "pr-open")
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId}'s PR is already open: ${record.pr?.url ?? "see its run"}.`,
+      );
+    if (record.state === "waiting")
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId} still waits on your assistant (run ${record.waiting ?? "on its page"}): finish it with Done first; its PR comes after the build.`,
+      );
+    const change = changeBranch(changeId);
+    if (record.state === "unverified")
+      throw new TaskRunError(
+        "refused",
+        `Atticus opens a task's PR only after a passing build, and ${record.repo} has no build command in repos.manifest.yaml: add one and run task ${taskId} again, or push ${record.branch} and open its PR into ${change} yourself.`,
+      );
+    if (record.state !== "built" || !record.commit)
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId} has no passing build to raise (it is ${record.state}): see its run's notes, then run it again.`,
+      );
+    const t = await loadTask(root, changeId, taskId);
+    const gitHost = o.gitHost ?? gitHostOf(root, t);
+    if (!gitHost)
+      throw new TaskRunError(
+        "refused",
+        `No Git host is connected (runtime.yaml adapters.gitHost): push ${record.branch} and open its PR into ${change} yourself.`,
+      );
+    const now = o.now ?? (() => new Date());
+    const c: Ctx = {
+      root,
+      t,
+      record,
+      worktree: join(root, record.worktree),
+      runtime: undefined as unknown as AiRuntime,
+      commands: shellCommandRunner(),
+      git: o.git ?? createGit(),
+      gitHost,
+      approval: o.approval,
+      now,
+      maxFix: t.ctx.orgPack.runtime.autonomy.maxFixRounds,
+    };
+    try {
+      await openPr(c);
+    } catch (e) {
+      // A protected branch is the rule's refusal, said as it is; a push that fails is a person's.
+      if (e instanceof TaskRunError) throw e;
+      record.state = "needs-person";
+      record.notes.push(
+        `${e instanceof Error ? e.message : String(e)} — the work is in ${record.worktree} (branch ${record.branch}): push it and open the PR by hand, or fix that and raise it again.`,
+      );
+    }
+    // openPr moves the state on (TypeScript still reads it as built here).
+    if ((record.state as string) === "pr-open")
+      record.notes.push(`PR raised by ${o.approval.by} after the draft (${o.approval.ref}).`);
+    return await done(c);
+  } finally {
+    await lock.release();
+  }
+}
+
 /** Whether a run id belongs to a waiting task run (the lead routes `atticus handoff done` with it). */
 export async function isTaskRun(root: string, runId: string): Promise<boolean> {
   return (await findWaitingTaskRun(root, runId)) !== undefined;

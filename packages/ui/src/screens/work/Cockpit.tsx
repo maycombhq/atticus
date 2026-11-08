@@ -4,6 +4,9 @@ import { screenOf, tabHref } from "../../app/screens.js";
 import { ExternalLink, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, queryParam, useAction } from "../know/common.js";
+import { RaiseHandoff } from "../know/Phase.js";
+import { isManualLink, ManualPr, TaskRunState, taskNext } from "../know/task-pr.js";
+import type { Task } from "../Changes.js";
 import type { ChangeRow } from "./next.js";
 import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
@@ -31,7 +34,78 @@ export function stageMark(s: Cockpit["stages"][number]): "done" | "current" | "t
   return "current";
 }
 
-export function CockpitView({ c }: { c: Cockpit }) {
+/** The next step's command is a phase's hand-off (`atticus change handoff <change>`). */
+export const isHandoffCommand = (command: string): boolean =>
+  /^atticus change handoff \S+/.test(command.trim());
+
+/** Raise hand-off at a glance: held while the gate's status says something blocks it. */
+function CockpitHandoff({ change }: { change: string }) {
+  const status = useApi<{ blockers: unknown[] }>(
+    `/api/changes/${encodeURIComponent(change)}/status`,
+  );
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="muted" style={{ margin: 0 }}>
+        {C.raiseHere}
+      </p>
+      <RaiseHandoff
+        change={change}
+        blockers={status.state === "ready" ? status.data.blockers.length : 0}
+        onDone={status.reload}
+      />
+    </div>
+  );
+}
+
+/** The next step names a task that is drafted: its PR is the step, and the next task is offered. */
+function DraftedTaskNext({
+  d,
+  onDone,
+}: {
+  d: NonNullable<ReturnType<typeof taskNext>>;
+  onDone?: (() => void) | undefined;
+}) {
+  const s = d.task.taskRun!.state;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="muted" style={{ margin: 0 }}>
+        {s === "built"
+          ? C.taskDrafted(d.task.id)
+          : s === "unverified"
+            ? C.taskUnverified(d.task.id)
+            : s === "pr-open"
+              ? C.taskPrRaised(d.task.id)
+              : C.taskWaiting(d.task.id)}
+      </p>
+      <TaskRunState change={d.change} task={d.task} {...(onDone ? { onDone } : {})} />
+      {d.then ? (
+        <>
+          <p className="muted" style={{ margin: 0 }}>
+            {C.thenTask(d.then.id)}
+          </p>
+          <Command text={`/atticus-task ${d.change} ${d.then.id}`} label={C.copySlash} />
+          <Command text={`atticus task run ${d.change} ${d.then.id}`} label={C.copyCommand} />
+        </>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          {C.noOtherTask}
+        </p>
+      )}
+      <p style={{ margin: 0 }}>
+        <a href={hrefOf("task-list", d.change)}>{C.openTaskBoard}</a>
+      </p>
+    </div>
+  );
+}
+
+export function CockpitView(p: {
+  c: Cockpit;
+  /** The change's tasks, when the next step names one (sixth UX walk). */
+  tasks?: Task[] | undefined;
+  onTasks?: () => void;
+}) {
+  const c = p.c;
+  const drafted = taskNext(c.next?.command, p.tasks);
   return (
     <div className="stack">
       <section aria-labelledby="cockpit-where" className="stack" style={{ gap: 6 }}>
@@ -76,14 +150,20 @@ export function CockpitView({ c }: { c: Cockpit }) {
           {C.next}
         </h3>
         <p style={{ margin: 0 }}>{c.nextStep}</p>
-        {c.next && (
-          <>
-            <p className="muted" style={{ margin: 0 }}>
-              {c.next.why}
-            </p>
-            {c.next.slash && <Command text={c.next.slash} label={C.copySlash} />}
-            <Command text={c.next.command} label={C.copyCommand} />
-          </>
+        {drafted ? (
+          <DraftedTaskNext d={drafted} onDone={p.onTasks} />
+        ) : (
+          c.next && (
+            <>
+              <p className="muted" style={{ margin: 0 }}>
+                {c.next.why}
+              </p>
+              {c.next.slash && <Command text={c.next.slash} label={C.copySlash} />}
+              <Command text={c.next.command} label={C.copyCommand} />
+              {/* Sixth UX walk: a hand-off is raised from here too, on the person's click. */}
+              {isHandoffCommand(c.next.command) && <CockpitHandoff change={c.id} />}
+            </>
+          )
         )}
       </section>
 
@@ -122,7 +202,11 @@ export function CockpitView({ c }: { c: Cockpit }) {
                 {r.pr && (
                   <>
                     {" · "}
-                    <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
+                    {isManualLink(r.pr) ? (
+                      <ManualPr />
+                    ) : (
+                      <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
+                    )}
                   </>
                 )}
               </li>
@@ -242,11 +326,27 @@ export function CockpitPicked(p: {
   current: string | undefined;
   c: Loaded<Cockpit>;
 }) {
+  // Sixth UX walk: a next step that names a task reads the tasks, to see whether it has run.
+  const command = p.c.state === "ready" ? p.c.data.next?.command : undefined;
+  const tasks = useApi<Task[]>(
+    p.current && command?.startsWith("atticus task run ")
+      ? `/api/changes/${encodeURIComponent(p.current)}/tasks`
+      : undefined,
+  );
+  useReloadOnFiles(tasks);
   if (!p.current || !p.list.some((x) => x.id === p.current)) return <PickAChange bare />;
   return (
     <>
       <ChangePicker list={p.list} current={p.current} screen="cockpit" />
-      <View of={p.c}>{(d) => <CockpitView c={d} />}</View>
+      <View of={p.c}>
+        {(d) => (
+          <CockpitView
+            c={d}
+            tasks={tasks.state === "ready" ? tasks.data : undefined}
+            onTasks={tasks.reload}
+          />
+        )}
+      </View>
       <PastChanges change={p.current} />
     </>
   );

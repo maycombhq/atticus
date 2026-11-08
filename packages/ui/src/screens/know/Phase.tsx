@@ -20,6 +20,13 @@ import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangePrototypes } from "../ChangePrototypes.js";
 import { ChangeWaiting, Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
+import {
+  isManualLink,
+  ManualHandoff,
+  runIsTheStep,
+  TaskRunState,
+  taskRunsOnly,
+} from "./task-pr.js";
 
 const T = COPY.phase;
 
@@ -57,7 +64,11 @@ export function GateHeader(p: {
               <span style={{ fontSize: 18, fontWeight: 600 }}>{d.title}</span>
               <span className="hud" style={{ fontSize: 10 }}>
                 {d.id} · {d.type}
-                {d.handoff ? T.handOff(d.handoff.phase, d.handoff.state) : ""}
+                {d.handoff
+                  ? isManualLink(d.handoff.pr)
+                    ? T.handOffManual(d.handoff.phase)
+                    : T.handOff(d.handoff.phase, d.handoff.state)
+                  : ""}
               </span>
             </div>
             <Pipeline state={d.state} />
@@ -71,7 +82,14 @@ export function GateHeader(p: {
       <View of={status}>
         {(s) => (
           <div className="stack" style={{ gap: 10 }}>
-            <p style={{ margin: 0, lineHeight: 1.5 }}>{s.nextStep}</p>
+            {/* Sixth UX walk: a manual Git host's PR isn't open until a person opens it. */}
+            <p style={{ margin: 0, lineHeight: 1.5 }}>
+              {s.handoff && isManualLink(s.handoff.pr.url) ? (
+                <ManualHandoff phase={s.handoff.phase} />
+              ) : (
+                s.nextStep
+              )}
+            </p>
             {s.blockers.length > 0 && (
               <ul
                 style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "var(--magenta-text)" }}
@@ -81,7 +99,7 @@ export function GateHeader(p: {
                 ))}
               </ul>
             )}
-            {s.handoff ? (
+            {s.handoff && isManualLink(s.handoff.pr.url) ? null : s.handoff ? (
               <span className="muted" style={{ fontSize: 12 }}>
                 {T.approvalMerge}
                 <ExternalLink href={s.handoff.pr.url}>
@@ -111,27 +129,7 @@ export function GateHeader(p: {
                   {aiOn ? T.runTheCritic : T.runTheRuleChecks}
                 </button>
               )}
-              <button
-                type="button"
-                className="btn primary"
-                disabled={act.busy || s.blockers.length > 0}
-                title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
-                onClick={() =>
-                  void act.run(
-                    () =>
-                      api<{ notes?: string[] }>(`/api/changes/${p.id}/handoff`, {
-                        method: "POST",
-                        body: {},
-                      }).then((r) => {
-                        done();
-                        return r;
-                      }),
-                    (r) => [T.handOffPrRaised, ...(r.notes ?? [])].join(" "),
-                  )
-                }
-              >
-                {T.raiseHandOff}
-              </button>
+              <RaiseHandoff change={p.id} blockers={s.blockers.length} onDone={done} act={act} />
               <button
                 type="button"
                 className="btn"
@@ -153,6 +151,51 @@ export function GateHeader(p: {
     </Panel>
   );
   return p.part === "hero" ? hero : gate;
+}
+
+/**
+ * Raise hand-off: the person's click is the approval to open the phase's hand-off PR (ADR
+ * 0073). Held while something blocks the gate, with how many. The gate and At a glance use it;
+ * given `act`, it shares that note, else it says its own.
+ */
+export function RaiseHandoff(p: {
+  change: string;
+  blockers: number;
+  onDone?: () => void;
+  act?: ReturnType<typeof useAction>;
+}) {
+  const own = useAction();
+  const act = p.act ?? own;
+  const button = (
+    <button
+      type="button"
+      className="btn primary"
+      disabled={act.busy || p.blockers > 0}
+      title={p.blockers > 0 ? T.blockedBy(p.blockers) : undefined}
+      onClick={() =>
+        void act.run(
+          () =>
+            api<{ notes?: string[] }>(`/api/changes/${encodeURIComponent(p.change)}/handoff`, {
+              method: "POST",
+              body: {},
+            }).then((r) => {
+              p.onDone?.();
+              return r;
+            }),
+          (r) => [T.handOffPrRaised, ...(r.notes ?? [])].join(" "),
+        )
+      }
+    >
+      {T.raiseHandOff}
+    </button>
+  );
+  if (p.act) return button;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <div>{button}</div>
+      <Note note={act.note} />
+    </div>
+  );
 }
 
 /**
@@ -795,6 +838,14 @@ function TasksByRepo({
   // UX re-walk: the run a task's Run with AI prepared, to open (its prompt, Done and Cancel).
   const [runOf, setRunOf] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<Record<string, boolean>>({});
+  // Sixth UX walk: a run's Done (or a PR raised elsewhere) moves a task on: the board follows,
+  // and each task's own line says where it stands from then on.
+  useLiveEvents((e) => {
+    if (e.type !== "run.changed" && e.type !== "file.changed") return;
+    tasks.reload();
+    setRan({});
+    setRunOf({});
+  });
   // Each task keeps its own outcome: set from the latest state, so two runs don't erase each other.
   const say = (id: string, text: string) => setRan((o) => ({ ...o, [id]: text }));
   const run = async (t: Task) => {
@@ -859,14 +910,15 @@ function TasksByRepo({
                             </span>
                             {x.done ? (
                               <span className="chip done">{T.done2}</span>
-                            ) : aiOn ? (
+                            ) : !runIsTheStep(x) ? null : aiOn ? (
+                              // Sixth UX walk: a drafted task's step is its PR, said below.
                               <button
                                 type="button"
                                 className="btn"
                                 disabled={running[x.id]}
                                 onClick={() => void run(x)}
                               >
-                                {T.runWithAi}
+                                {x.taskRun ? T.runAgainWithAi : T.runWithAi}
                               </button>
                             ) : (
                               <span className="chip dim" title={AI_OFF_TEXT}>
@@ -878,6 +930,9 @@ function TasksByRepo({
                             {x.branch}
                             {x.story ? T.story(x.story) : ""}
                           </span>
+                          {!ran[x.id] && (
+                            <TaskRunState change={change} task={x} onDone={tasks.reload} />
+                          )}
                           {ran[x.id] && (
                             <span role="status" style={{ fontSize: 12 }}>
                               {ran[x.id]}{" "}
@@ -906,25 +961,26 @@ function RunsPanel({ change }: { change: string }) {
   useLiveEvents((e) => {
     if (e.type === "run.changed") runs.reload();
   });
-  const passed =
-    runs.state === "ready" ? runs.data.filter((r) => r.state === "validated").length : 0;
+  // Sixth UX walk: the task runs only; the critics' and stages' runs are on Model runs.
+  const mine = runs.state === "ready" ? taskRunsOnly(runs.data) : [];
+  const passed = mine.filter((r) => r.state === "validated").length;
   return (
     <Panel title={T.aiTaskRuns} span="span 4" kind="dark">
-      <View of={runs} empty={(r) => r.length === 0} emptyText={T.noRunsYet}>
-        {(r) => (
+      <View of={runs} empty={() => mine.length === 0} emptyText={T.noTaskRunsYet}>
+        {() => (
           <div className="stack" style={{ gap: 8 }}>
             <div className="row">
               <Ring
                 value={passed}
-                max={r.length}
+                max={mine.length}
                 size={60}
-                label={T.ofRunsFinished(passed, r.length)}
+                label={T.ofRunsFinished(passed, mine.length)}
               />
               <span className="muted" style={{ fontSize: 12 }}>
                 {T.everyWriteIsApproved}
               </span>
             </div>
-            {r.slice(-8).map((x) => (
+            {mine.slice(-8).map((x) => (
               <div key={x.runId} className="list-row">
                 <span className="stack" style={{ gap: 2 }}>
                   <a
