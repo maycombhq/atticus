@@ -272,6 +272,20 @@ describe("atticus skills import, write and list", () => {
     const c = io();
     expect(await skillsWriteCommand(root, { check: true }, c.io)).toBe(0);
     expect(c.out.join("\n")).not.toContain(`kept ${f}`);
+    // The org pack it is written from, checked out with CRLF too: still current, nothing kept.
+    const { readdirSync, statSync } = await import("node:fs");
+    const crlf = (dir: string) => {
+      for (const n of readdirSync(join(root, dir))) {
+        const rel = `${dir}/${n}`;
+        if (statSync(join(root, rel)).isDirectory()) crlf(rel);
+        else write(root, rel, read(root, rel).replace(/\r?\n/g, "\r\n"));
+      }
+    };
+    crlf("org-pack");
+    const w = io();
+    const code = await skillsWriteCommand(root, { check: true }, w.io);
+    expect(w.out).toEqual(["The skills, agents and instructions written are current."]);
+    expect(code).toBe(0);
   });
 
   it("keeps a file edited here, on write and on the next import", async () => {

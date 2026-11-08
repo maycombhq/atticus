@@ -10,13 +10,6 @@ for (const stream of [process.stdout, process.stderr])
     throw e;
   });
 
-// An older Node (a company image with Node 20) says so plainly, rather than failing on whatever
-// it meets first.
-if (nodeTooOld(process.versions.node)) {
-  process.stderr.write(nodeTooOldMessage(process.versions.node) + "\n");
-  process.exit(1);
-}
-
 const argv = process.argv.slice(2);
 
 // `atticus --version` answers before anything else loads: the editors and the app's server run
@@ -24,7 +17,13 @@ const argv = process.argv.slice(2);
 // one runs). Kept as a dynamic import so a bundler keeps the split.
 if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v"))
   process.stdout.write(VERSION + "\n");
-else {
+else if (nodeTooOld(process.versions.node)) {
+  // An older Node (a company image with Node 20) says so plainly, rather than failing on
+  // whatever it meets first. --version still answers above: the editors run it to find the
+  // install, and would otherwise say Atticus isn't installed.
+  process.stderr.write(nodeTooOldMessage(process.versions.node) + "\n");
+  process.exitCode = 1;
+} else {
   // ATTICUS_MAX_OLD_SPACE (megabytes) is what a person is told to set when a repo's facts need
   // more memory than Node was given (ADR 0124 addendum A-room). A running V8 can't raise the heap
   // it already made, so the value is honoured by starting Node again with the flag, as

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,13 +22,7 @@ import {
 import { modelsByClass, stepClassOf } from "./step-class.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
-import {
-  CopilotAcpRuntime,
-  killTree,
-  needsShell,
-  quoteForCmd,
-  type CopilotAcpOptions,
-} from "./copilot-acp.js";
+import { CopilotAcpRuntime, killTree, type CopilotAcpOptions } from "./copilot-acp.js";
 import {
   OneShotRuntime,
   RuntimeError,
@@ -121,16 +116,26 @@ export type HeadlessRunner = (i: HeadlessInvocation) => Promise<HeadlessResult>;
  * variables the invocation names.
  */
 export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunner {
-  return (i) =>
-    collectChild(
+  return (i) => {
+    // On Windows, `claude` is found on PATH as Windows would (PATHEXT): an .exe (the native
+    // installer) runs directly; npm's claude.cmd only through cmd.exe, every word quoted (so
+    // `&`, `^` or `|` in a metarepo path stays part of it), and a stop or the timeout then ends
+    // the whole tree (cmd.exe and the node under it). Not found: ENOENT, said as not installed.
+    const command = resolveWindowsCommand(o.command ?? "claude");
+    const shell = isShim(command);
+    let started: ReturnType<typeof spawn> | undefined;
+    const end = () => {
+      if (started) killTree(started);
+    };
+    if (shell && i.signal) {
+      if (i.signal.aborted) queueMicrotask(end);
+      else i.signal.addEventListener("abort", end, { once: true });
+    }
+    return collectChild(
       () => {
-        const command = o.command ?? "claude";
-        // npm installs claude as claude.cmd on Windows, which runs only through cmd.exe; then a
-        // stop ends the whole tree (cmd.exe and the node under it), not cmd.exe alone.
-        const shell = needsShell(command);
-        const child = spawn(
-          shell ? quoteForCmd(command) : command,
-          shell ? i.args.map(quoteForCmd) : i.args,
+        started = spawn(
+          shell ? quoteForCmdAlways(command) : command,
+          shell ? i.args.map(quoteForCmdAlways) : i.args,
           {
             cwd: i.cwd,
             env: { ...process.env, ...i.env },
@@ -140,18 +145,44 @@ export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunne
             ...(i.signal && !shell ? { signal: i.signal } : {}),
           },
         );
-        if (shell && i.signal) {
-          const stop = () => killTree(child);
-          if (i.signal.aborted) stop();
-          else i.signal.addEventListener("abort", stop, { once: true });
-        }
-        return child;
+        return started as unknown as ChildLike;
       },
       i.prompt,
       i.timeoutMs,
       i.cwd,
+      process.platform,
+      shell ? (c) => killTree(c as ReturnType<typeof spawn>) : undefined,
     );
+  };
 }
+
+/** A .cmd or .bat (npm's shims), which Windows runs only through cmd.exe. */
+const isShim = (command: string, platform: NodeJS.Platform = process.platform) =>
+  platform === "win32" && /\.(cmd|bat)$/i.test(command);
+
+/**
+ * A bare command name as Windows finds it: the first PATH folder holding it with one of
+ * PATHEXT's extensions. Anywhere else, or a name with a folder or an extension, as it is.
+ */
+export function resolveWindowsCommand(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  exists: (p: string) => boolean = existsSync,
+): string {
+  if (platform !== "win32" || /[\\/]/.test(command) || /\.[a-z0-9]+$/i.test(command))
+    return command;
+  const exts = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
+  for (const dir of (env.Path ?? env.PATH ?? "").split(";").filter(Boolean))
+    for (const ext of exts) {
+      const full = `${dir.replace(/[\\/]+$/, "")}\\${command}${ext.toLowerCase()}`;
+      if (exists(full)) return full;
+    }
+  return command;
+}
+
+/** A word for cmd.exe, always in quotes (a `"` doubled), so `&`, `^`, `|`, `<` and `>` are text. */
+export const quoteForCmdAlways = (a: string) => `"${a.replace(/"/g, '""')}"`;
 
 /** What collectChild needs of a child process: its three streams, kill, and its events. */
 export interface ChildLike {
@@ -173,6 +204,8 @@ export function collectChild(
   timeoutMs: number,
   cwd?: string,
   platform: NodeJS.Platform = process.platform,
+  /** How the timeout ends the child: by default SIGINT to it; a shim's whole tree on Windows. */
+  stop?: (child: ChildLike) => void,
 ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -204,7 +237,7 @@ export function collectChild(
     }
     let stdout = "";
     let stderr = "";
-    timer.id = setTimeout(() => child.kill("SIGINT"), timeoutMs);
+    timer.id = setTimeout(() => (stop ? stop(child) : child.kill("SIGINT")), timeoutMs);
     for (const s of [child.stdin, child.stdout, child.stderr]) s.on("error", fail);
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));

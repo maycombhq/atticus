@@ -29,10 +29,11 @@ const SKIP_DIRS = new Set([
 ]);
 
 /**
- * Names that are build output or vendored copies beside a build, but are as often a package of
- * the product's own (a hexagonal `adapter/out/`, a card `bin/` lookup, an integration `vendor/`,
- * a Node CLI's `bin/`). Below a `src` folder they are always walked; elsewhere `bin`, `obj` and
- * `vendor` are skipped only beside the build that makes them, the rest always.
+ * Names that are build output or vendored copies, but are as often a package of the product's
+ * own (a hexagonal `adapter/out/`, a card `bin/` lookup, an integration `vendor/`, a Node CLI's
+ * `bin/`). Beside the build that makes them they are skipped anywhere (a .NET project's `bin/`
+ * and `obj/` under `src/` included); otherwise, below a `src` folder they are the product's and
+ * walked, and elsewhere `bin`, `obj` and `vendor` are walked and the rest skipped.
  */
 export const BUILD_OUTPUT = new Set([
   "target",
@@ -44,11 +45,20 @@ export const BUILD_OUTPUT = new Set([
   "vendor",
   "coverage",
 ]);
+const DOTNET = /\.(csproj|fsproj|vbproj|sln)$/i;
+const NODE = /^package\.json$/;
 const MADE_BESIDE: Record<string, RegExp> = {
-  bin: /\.(csproj|fsproj|vbproj|sln)$/i,
-  obj: /\.(csproj|fsproj|vbproj|sln)$/i,
+  bin: DOTNET,
+  obj: DOTNET,
   vendor: /^(go\.mod|composer\.json|Gemfile)$/,
+  target: /^(pom\.xml|build\.sbt|Cargo\.toml)$/,
+  build: /^(build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|CMakeLists\.txt)$/,
+  dist: NODE,
+  coverage: NODE,
+  out: /^(tsconfig\.json|package\.json)$|\.iml$/,
 };
+/** Outside src/, only beside their build: the rest are build output wherever they are. */
+const ONLY_BESIDE = new Set(["bin", "obj", "vendor"]);
 
 /** Whether a folder named `name`, below the folders `above` (repo-relative), beside `siblings`, is skipped. */
 export function skippedFolder(
@@ -58,9 +68,9 @@ export function skippedFolder(
 ): boolean {
   if (SKIP_DIRS.has(name)) return true;
   if (!BUILD_OUTPUT.has(name)) return false;
+  if (siblings.some((x) => MADE_BESIDE[name]!.test(x))) return true;
   if (above.some((a) => a.toLowerCase() === "src")) return false;
-  const beside = MADE_BESIDE[name];
-  return beside ? siblings.some((x) => beside.test(x)) : true;
+  return !ONLY_BESIDE.has(name);
 }
 
 /** Whether a repo-relative path stays inside the repo (no `..`, not absolute). */

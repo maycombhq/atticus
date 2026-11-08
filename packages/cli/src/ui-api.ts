@@ -664,9 +664,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // wait is ended, so the task can run again here.
         const here = await findRun(root, params.runId!).catch(() => undefined);
         if (!here) {
-          const ended = await cancelTaskRunWait(root, params.runId!, { by: user }).catch(
-            () => undefined,
-          );
+          let ended;
+          try {
+            ended = await cancelTaskRunWait(root, params.runId!, { by: user });
+          } catch (e) {
+            // A Done running elsewhere holds the task: said as such, never "no run".
+            if (e instanceof Error && e.name === "TaskRunError") throw conflict(e.message);
+            throw e;
+          }
           if (!ended) throw notFound(`There is no run ${params.runId}.`);
           // The run's own view, as the task run knows it (its run.json isn't here to read).
           const at = new Date().toISOString();

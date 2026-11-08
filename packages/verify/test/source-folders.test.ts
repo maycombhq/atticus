@@ -49,6 +49,27 @@ describe("which folders a repo's read walks", () => {
     ]);
   });
 
+  it("skips a .NET project's bin/ and obj/ and a web app's dist/ under src/, beside their build", () => {
+    const root = repo([
+      "Forge.sln",
+      "src/Forge.Api/Forge.Api.csproj",
+      "src/Forge.Api/Program.cs",
+      "src/Forge.Api/bin/Debug/net8.0/appsettings.json",
+      "src/Forge.Api/obj/Debug/net8.0/Forge.Api.AssemblyInfo.cs",
+      "src/web/package.json",
+      "src/web/app/main.ts",
+      "src/web/dist/assets/index-abc.js",
+      "src/web/coverage/lcov.info",
+    ]);
+    expect(dirSource(root).list()).toEqual([
+      "Forge.sln",
+      "src/Forge.Api/Forge.Api.csproj",
+      "src/Forge.Api/Program.cs",
+      "src/web/app/main.ts",
+      "src/web/package.json",
+    ]);
+  });
+
   it("counts a build-output name below src/ as the product's own in the skipped-lines check", () => {
     expect(
       notReadForSkipped("src/main/java/com/forge/adapter/out/Client.java", DEFAULT_READ_RULES),

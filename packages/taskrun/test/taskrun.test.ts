@@ -548,6 +548,31 @@ describe("Run with AI: hand-off and headless modes", () => {
   );
 
   it(
+    "hand-off: a changed file with an accent in its name is recorded as it is",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      await writeFile(join(paths(root).wt, FILE), "class TransferLimits { boolean ok; }\n");
+      await writeFile(
+        join(paths(root).wt, "src/main/java/forge/ledger/Política.java"),
+        "class P {}\n",
+      );
+      await writeFile(paths(root).task("report.md"), "Added TransferLimits.\n");
+      const done = await completeTaskHandoff(root, r.waiting!, { git, now, commands: fakeBuild() });
+      expect(done.changed).toContain("src/main/java/forge/ledger/Política.java");
+      expect(done.changed.some((f) => f.includes("\\"))).toBe(false);
+    },
+    T,
+  );
+
+  it(
     "hand-off: two Dones at once build once; the other is refused while the first runs",
     async () => {
       const { root } = await speckitRoot({ repos: ["forge-ledger"] });

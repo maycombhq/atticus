@@ -238,14 +238,28 @@ async function build(c: Ctx, runId: string, fixRun?: string): Promise<BuildAttem
   return a;
 }
 
+/**
+ * What changed in the worktree, by `git status`: -z and quotePath=false, so a name with an
+ * accent or a space is as it is, and a rename is its new name.
+ */
+async function changedFiles(c: Ctx): Promise<string[]> {
+  const r = await c.git(["-c", "core.quotePath=false", "status", "--porcelain", "-z"], c.worktree);
+  const parts = r.stdout.split("\0").filter(Boolean);
+  const out: string[] = [];
+  for (let k = 0; k < parts.length; k++) {
+    const e = parts[k]!;
+    // A rename or copy is followed by its old name: skipped.
+    if (/^[RC]/.test(e)) k++;
+    if (e.slice(3)) out.push(e.slice(3));
+  }
+  return out;
+}
+
 /** Write a one-shot answer's files into the worktree; returns problems (empty when applied). */
 async function applyAnswer(c: Ctx, run: Run): Promise<string[]> {
   if (c.runtime.kind === "headless-claude-code") {
-    const changed = await c.git(["status", "--porcelain"], c.worktree);
-    for (const l of changed.stdout.split("\n").filter(Boolean)) {
-      const p = l.slice(3).trim();
+    for (const p of await changedFiles(c))
       if (!c.record.changed.includes(p)) c.record.changed.push(p);
-    }
     await writeReport(c, run.output ?? "");
     return [];
   }
@@ -445,8 +459,14 @@ async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
  * is recorded for a person with what it said, and the run ends: never a run left waiting on a
  * hand-off that is already validated, which no Done, Cancel or new run could then move.
  */
-async function afterBuild(c: Ctx, runId: string, commitIt: boolean): Promise<void> {
+async function afterBuild(
+  c: Ctx,
+  runId: string,
+  commitIt: boolean,
+  first?: () => Promise<void>,
+): Promise<void> {
   try {
+    await first?.();
     if (commitIt) await commit(c, runId);
     // ADR 0114: a passing build is checked against the design before anything goes further.
     await conformAfterBuild(c);
@@ -833,12 +853,10 @@ async function completeHeld(
         record.notes.push(
           `${t.repo.id} has no build command in repos.manifest.yaml, so the change wasn't built or tested.`,
         );
-      const changed = await git(["status", "--porcelain"], c.worktree);
-      for (const l of changed.stdout.split("\n").filter(Boolean)) {
-        const p = l.slice(3).trim();
-        if (!record.changed.includes(p)) record.changed.push(p);
-      }
-      await afterBuild(c, runId, true);
+      await afterBuild(c, runId, true, async () => {
+        for (const p of await changedFiles(c))
+          if (!record.changed.includes(p)) record.changed.push(p);
+      });
     }
     return done(c);
   }

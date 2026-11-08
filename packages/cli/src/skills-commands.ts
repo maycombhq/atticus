@@ -26,6 +26,8 @@ import { originOf } from "./file-lock.js";
 
 const run = promisify(execFile);
 const sha = (t: string) => createHash("sha256").update(t).digest("hex").slice(0, 16);
+/** A text with LF line endings, for comparing across Windows and other checkouts. */
+const lf = (t: string) => t.replace(/\r\n?/g, "\n");
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MARK = (src: string, h: string) =>
   `<!-- atticus: written from ${src} (${h}); edit the source, or keep your edit here: atticus skills write leaves an edited file alone -->`;
@@ -85,8 +87,10 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
     for (const e of await readdir(sk, { withFileTypes: true }).catch(() => [])) {
       if (!e.isDirectory() || e.name === "imported") continue;
       const d = join(sk, e.name);
-      const text = await readFile(join(d, "SKILL.md"), "utf8").catch(() => undefined);
-      if (text === undefined) continue;
+      // LF, as Atticus writes: a Windows checkout of the org pack gives the same files.
+      const raw = await readFile(join(d, "SKILL.md"), "utf8").catch(() => undefined);
+      if (raw === undefined) continue;
+      const text = lf(raw);
       const files = (await filesUnder(d)).filter((f) => f !== "SKILL.md");
       out.push({
         kind: "skill",
@@ -95,7 +99,7 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
         ...(team ? { team } : {}),
         text,
         files: await Promise.all(
-          files.map(async (f) => ({ path: f, text: await readFile(join(d, f), "utf8") })),
+          files.map(async (f) => ({ path: f, text: lf(await readFile(join(d, f), "utf8")) })),
         ),
       });
     }
@@ -111,7 +115,7 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
           name: e.name.slice(0, -3),
           source: `${rel}/${folder}/${sub ? `${sub}/` : ""}${e.name}`,
           ...(team ? { team } : {}),
-          text: await readFile(join(d, e.name), "utf8"),
+          text: lf(await readFile(join(d, e.name), "utf8")),
           files: [],
         });
       }
@@ -297,14 +301,18 @@ export async function planWrite(root: string): Promise<{
   for (const i of used)
     for (const o of outputsOf(i)) {
       const raw = await readFile(join(root, ...o.path.split("/")), "utf8").catch(() => undefined);
-      // Line endings aside: a Windows checkout (core.autocrlf) is neither a change nor an edit.
-      const on = raw?.replace(/\r\n?/g, "\n");
-      if (on === o.text) {
+      // Line endings aside, on both sides: a Windows checkout (core.autocrlf) of the written
+      // file, or of the org pack it is written from, is neither a change nor an edit.
+      const on = raw === undefined ? undefined : lf(raw);
+      if (on === lf(o.text)) {
         current++;
         continue;
       }
-      // Edited here since Atticus wrote it: kept, never lost on the next import.
-      if (on !== undefined && written[o.path] && written[o.path] !== sha(on)) kept.push(o.path);
+      // Edited here since Atticus wrote it: kept, never lost on the next import. The hash kept
+      // may be of the CRLF text an earlier version wrote: either form is Atticus's.
+      const was = written[o.path];
+      const ours = raw !== undefined && (was === sha(on!) || was === sha(raw));
+      if (on !== undefined && was && !ours) kept.push(o.path);
       else if (on !== undefined && !written[o.path]) kept.push(o.path);
       else write.push(o);
     }
@@ -349,7 +357,7 @@ export async function skillsWriteCommand(
   for (const f of p.write) {
     await mkdir(dirname(join(root, ...f.path.split("/"))), { recursive: true });
     await writeFileAtomic(join(root, ...f.path.split("/")), f.text);
-    state[f.path] = sha(f.text);
+    state[f.path] = sha(lf(f.text));
     io.out(`wrote ${f.path}`);
   }
   if (p.claude !== undefined) {
