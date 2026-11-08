@@ -7,7 +7,7 @@ test("works the service-desk queue", async ({ page }) => {
   await open(page, app(), "home");
   await open(page, app(), "service-desk");
   await expect(page.getByText("Gateway proxy deployment").first()).toBeVisible();
-  await expect(page.getByText(/Missing: fill it in snow\.md/).first()).toBeVisible();
+  await expect(page.getByText(/Missing: fill it below/).first()).toBeVisible();
   await accessible(page, "service desk queue");
 });
 

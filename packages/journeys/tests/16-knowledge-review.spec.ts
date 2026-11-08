@@ -294,9 +294,10 @@ test("needs across changes: every open need, marked as on a change's page (ADR 0
   await expect(page.getByRole("heading", { name: "Waiting on you", level: 2 })).toBeVisible();
   const needs = page.getByRole("link", { name: /^Needs still open 1$/ });
   await expect(needs).toHaveAttribute("href", "#/changes?across=needs");
+  // Owner questions only waiting: the link opens them (UX review).
   await expect(page.getByRole("link", { name: /^Questions to answer/ })).toHaveAttribute(
     "href",
-    "#/questions",
+    /^#\/questions(\?kind=owner)?$/,
   );
   await expect(
     page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Home" }),

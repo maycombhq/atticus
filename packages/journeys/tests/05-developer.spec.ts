@@ -3,7 +3,7 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
 /** Developer: runs a task with their assistant, and looks up the contracts it touches. */
 const app = forgeJourney();
 
-test("runs a task with AI, and is told to open the change's workspace first", async ({ page }) => {
+test("runs a task with AI, which opens the change's workspace itself", async ({ page }) => {
   await open(page, app(), "home");
   await open(page, app(), "tasks?change=add-transfer-limit");
   // The Task board is under More pages: its address still opens it, Change's entry marked, and
@@ -17,9 +17,11 @@ test("runs a task with AI, and is told to open the change's workspace first", as
       .getByRole("link", { name: "At a glance" }),
   ).toHaveAttribute("href", "#/cockpit?change=add-transfer-limit");
   await page.getByRole("button", { name: "Run with AI" }).first().click();
-  await expect(page.getByRole("status").filter({ hasText: "worktree" })).toContainText(
-    "atticus workspace open add-transfer-limit",
-  );
+  // UX review: Run with AI opens (or clones) the task's worktree itself, so the person is never
+  // sent to a terminal first; what it says next is the run, or why it couldn't start.
+  const said = page.getByRole("status").filter({ hasText: /prepared|couldn't|isn't|no |clone/i });
+  await expect(said.first()).toBeVisible();
+  await expect(said.first()).not.toContainText("atticus workspace open");
   await accessible(page, "task board");
 });
 
