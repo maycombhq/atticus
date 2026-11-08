@@ -216,8 +216,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   while another AI step runs on the server, and POST /api/facts/{repo}/apply, POST
  *   /api/propose and POST /api/propose/bring-in answer 409 while another local step (Apply,
  *   Propose, Bring in) runs; each problem names the job that runs. Additive only.
+ * 2.69.0 (sixth UX walk, screens): a task in GET /api/changes/{changeId}/tasks carries
+ *   `taskRun`, where its Run with AI stands (drafted, unverified, PR open, waiting), and `run`,
+ *   its latest run; POST /api/changes/{changeId}/tasks/{taskId}/pr raises a drafted task's PR on
+ *   the person's click (the push and PR the pr level makes, the AI step not run again); GET
+ *   /api/propose lists `applyFirst`, the repos whose corrections are newer than their last
+ *   Apply. Additive only.
  */
-export const API_VERSION = "2.68.0";
+export const API_VERSION = "2.69.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -592,8 +598,25 @@ export const Task = z.object({
   done: z.boolean(),
   story: z.string().optional(),
   branch: z.string().optional(),
+  /** The task's latest AI run (2.69.0: its task run's main run, or the one it waits on). */
   run: z.string().optional(),
+  /**
+   * 2.69.0 (sixth UX walk): where the task's Run with AI stands, from its
+   * `tasks/<task>/task-run.yaml`: drafted (built or unverified) and waiting for its PR, the PR
+   * open, with the person's assistant, or stopped for a person. Absent before the task first runs.
+   */
+  taskRun: z
+    .object({
+      state: z.string(),
+      level: z.string(),
+      branch: z.string(),
+      commit: z.string().optional(),
+      pr: z.object({ number: z.number().int(), url: z.string() }).optional(),
+      notes: z.array(z.string()),
+    })
+    .optional(),
 });
+export type TaskT = z.infer<typeof Task>;
 
 export const RunView = RunSummary.extend({
   /** For hand-off runs: the prompt file and the editor workspace to open. */
@@ -2281,6 +2304,11 @@ export const ProposePlanView = z.object({
   ),
   branch: z.string(),
   title: z.string(),
+  /**
+   * 2.69.0 (sixth UX walk): the repos whose corrections are newer than their last Apply, so the
+   * map in the PR would miss them; a repo applied since its last correction isn't listed.
+   */
+  applyFirst: z.array(z.string()).optional(),
 });
 export const ProposeRequest = z.strictObject({
   scope: ProposeScope,
@@ -4768,6 +4796,17 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: arrayOf("Task"), description: "OK" },
       errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/tasks/{taskId}/pr": {
+    post: {
+      id: "raiseTaskPr",
+      summary:
+        "2.69.0 (sixth UX walk): on the person's yes, push a drafted task's branch and open its PR into the change branch",
+      tag: "changes",
+      params: [p("changeId"), p("taskId")],
+      ok: { status: 201, schema: "Task", description: "The task, its PR raised" },
+      errors: [403, 404, 409, 422],
     },
   },
   "/api/changes/{changeId}/workspace": {

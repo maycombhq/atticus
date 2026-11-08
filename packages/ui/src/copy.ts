@@ -1994,6 +1994,8 @@ export const COPY = {
     risk: (v: string | number) => `RISK ${v}`,
     handOff: (v: string | number, v2: string | number, v3: string | number) =>
       `${v} HAND-OFF · ${v2}${v3}`,
+    /** Sixth UX walk: on a manual Git host, the PR waits on a person to open it. */
+    handOffManual: (phase: string) => `${phase} HAND-OFF · WAITS ON A MANUAL STEP`,
     whatBlocksTheHand: "What blocks the hand-off",
     /** UX review: Raise hand-off waits until nothing blocks it, and says why. */
     blockedBy: (n: number) =>
@@ -2740,6 +2742,40 @@ export const COPY = {
       "Every write is approved by a person; AI never pushes to protected branches.",
     noRunsYet: "No runs yet.",
     aiTaskRuns: "AI task runs",
+    /** Sixth UX walk: the panel counts task runs only, not the critics' and stages' runs. */
+    noTaskRunsYet: "No task has run with AI yet: Run with AI on a task starts one.",
+    /** Sixth UX walk: where a task's Run with AI stands, after its draft. */
+    taskState: {
+      built: "DRAFTED",
+      unverified: "UNVERIFIED",
+      "pr-open": "PR RAISED",
+      waiting: "WITH YOUR ASSISTANT",
+      "needs-person": "NEEDS A PERSON",
+      failed: "STOPPED",
+      planned: "PLANNED",
+    } as Record<string, string>,
+    taskBuilt: (branch: string, commit: string) =>
+      `Drafted and built: committed on ${branch} (${commit.slice(0, 7)}). Its PR is the next step.`,
+    taskUnverified: (repo: string, branch: string, base: string) =>
+      `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: add a build command to repos.manifest.yaml and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
+    taskWaiting: "Your assistant has it: Done on its run checks the work.",
+    taskPrOpen: "Its PR is raised:",
+    taskPrNumber: (n: number) => `PR #${n}`,
+    raiseTaskPr: "Raise the task's PR",
+    raisingTaskPr: "Raising the PR…",
+    raiseTaskPrWhy: "Your click is your approval to push the task's branch and open its PR.",
+    taskPrRaised: (task: string) =>
+      `Task ${task}'s PR is raised into the change branch. A person reviews and merges it on the Git host.`,
+    taskPrManual: (task: string) =>
+      `Task ${task}'s PR is a step for you now: open it on the Git host, then record its link.`,
+    openItsRun: "Open its run",
+    runAgainWithAi: "Run with AI again",
+    /** Sixth UX walk: a manual Git host's PR isn't open until a person opens it. */
+    manualPrWaits: "Opening this PR is a step waiting on you, in",
+    manualSteps: "Home › Manual steps",
+    handOffWaitsManual: (phase: string) =>
+      `The ${phase} hand-off's PR isn't open yet: your Git host is manual, so opening it is a step waiting on you. Open it on the Git host as its step says, record its link there, then Sync; merging it approves the gate.`,
+    handOffManual: (phase: string) => ` · hand-off ${phase} waits on a manual step`,
     taskBoard: "Task board",
     tasksInCrossRepo:
       "Tasks in cross-repo order. Run a ready task with AI: Atticus hands the Spec Kit feature down to the repo, prepares the prompt for your assistant and reads the result back at the PR.",
@@ -3360,6 +3396,18 @@ export const COPY = {
     noRepos: "No repo has a branch for this change yet: atticus workspace open makes them.",
     branchOn: (branch: string, base: string) => `${branch}, from ${base}`,
     pr: "the pull request",
+    /** Sixth UX walk: a task drafted and waiting for its PR isn't the step to run again. */
+    taskDrafted: (task: string) =>
+      `Task ${task} is drafted: its PR is the step now. Raise it here or on the Task board.`,
+    taskUnverified: (task: string) =>
+      `Task ${task} is drafted but not built: its PR is the step now, and it waits on a build command or on you.`,
+    taskPrRaised: (task: string) => `Task ${task}'s PR is raised; a person reviews and merges it.`,
+    taskWaiting: (task: string) =>
+      `Task ${task} is with your assistant: Done on its run checks it.`,
+    thenTask: (task: string) => `Meanwhile, task ${task} is the first one not run yet:`,
+    noOtherTask: "Every other task has run or is done.",
+    openTaskBoard: "Open the Task board",
+    raiseHere: "Raise it here: your click is your approval to open the hand-off PR.",
     watch: "Watch this change",
     unwatch: "Stop watching",
     watched: "You watch it: your digest says how it is doing.",

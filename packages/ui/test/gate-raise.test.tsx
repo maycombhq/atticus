@@ -20,7 +20,7 @@ vi.mock("../src/api/client.js", async () => ({
   useLiveEvents: () => undefined,
 }));
 const { COPY } = await import("../src/copy.js");
-const { GateHeader } = await import("../src/screens/know/Phase.js");
+const { GateHeader, RaiseHandoff } = await import("../src/screens/know/Phase.js");
 const T = COPY.phase;
 
 const raise = () => {
@@ -39,7 +39,10 @@ const raise = () => {
   const inner = (v.props.children as (d: unknown) => unknown)(
     (v.props.of as { data: unknown }).data,
   );
-  return all(inner).find((e) => e.type === "button" && text(e.props.children) === T.raiseHandOff)!;
+  // Sixth UX walk: the gate's Raise hand-off is the one At a glance uses too.
+  const el = all(inner).find((e) => e.type === RaiseHandoff)!;
+  const b = mount(RaiseHandoff as never, el.props as never);
+  return all(b.tree).find((e) => e.type === "button" && text(e.props.children) === T.raiseHandOff)!;
 };
 
 it("is held while something blocks, with how many, and offered when nothing does", () => {

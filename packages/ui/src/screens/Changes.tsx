@@ -11,6 +11,7 @@ import { ChangeInputs } from "./ChangeInputs.js";
 import { ChangePrototypes } from "./ChangePrototypes.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "./know/common.js";
+import { isManualLink, ManualHandoff } from "./know/task-pr.js";
 
 const T = COPY.changes;
 
@@ -65,6 +66,17 @@ export interface Task {
   done: boolean;
   story?: string;
   branch?: string;
+  /** API 2.69.0: the task's latest AI run. */
+  run?: string;
+  /** API 2.69.0 (sixth UX walk): where its Run with AI stands, from its task-run.yaml. */
+  taskRun?: {
+    state: string;
+    level: string;
+    branch: string;
+    commit?: string;
+    pr?: { number: number; url: string };
+    notes: string[];
+  };
 }
 export interface Run {
   runId: string;
@@ -530,7 +542,12 @@ function Detail({ id }: { id: string }) {
                       <span className="hud" style={{ marginRight: 8 }}>
                         {T.next}
                       </span>
-                      {s.nextStep}
+                      {/* Sixth UX walk: a manual Git host's PR isn't open until a person opens it. */}
+                      {s.handoff && isManualLink(s.handoff.pr.url) ? (
+                        <ManualHandoff phase={s.handoff.phase} />
+                      ) : (
+                        s.nextStep
+                      )}
                     </p>
                     <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
                       <span
@@ -541,11 +558,13 @@ function Detail({ id }: { id: string }) {
 
                       {d.handoff && (
                         <span className="chip">
-                          {T.handOff(
-                            d.handoff.phase.toUpperCase(),
-                            d.handoff.state.toUpperCase(),
-                            d.handoff.pr ? ` · ${d.handoff.pr}` : "",
-                          )}
+                          {isManualLink(d.handoff.pr)
+                            ? T.handOffManual(d.handoff.phase.toUpperCase())
+                            : T.handOff(
+                                d.handoff.phase.toUpperCase(),
+                                d.handoff.state.toUpperCase(),
+                                d.handoff.pr ? ` · ${d.handoff.pr}` : "",
+                              )}
                         </span>
                       )}
                     </div>
