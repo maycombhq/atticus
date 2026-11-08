@@ -59,8 +59,22 @@ export function stepArgs(command: string): string[] | undefined {
   // `atticus critic <change>` is one too: its AI lenses, one at a time (ADR 0106 addendum).
   const critic = args[0] === "critic" && args[1] !== "stats";
   if (!critic && !AI_STEPS.has(`${args[0]} ${args[1]}`)) return undefined;
-  if (args.some((a) => a.startsWith("-") || /[<>]/.test(a) || a.trim() === "")) return undefined;
+  if (withoutSource(args).some((a) => a.startsWith("-") || /[<>]/.test(a) || a.trim() === ""))
+    return undefined;
   return args;
+}
+
+/**
+ * The one option the app passes (round 36): `--source <wiki>` on the steps that read the wikis,
+ * so a wiki's card reads only that wiki. The server and the extension check it again.
+ */
+const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);
+function withoutSource(args: string[]): string[] {
+  if (!SOURCE_STEPS.has(`${args[0]} ${args[1]}`)) return args;
+  const at = args.indexOf("--source");
+  const value = args[at + 1];
+  if (at < 0 || !value || value.startsWith("-")) return args;
+  return [...args.slice(0, at), ...args.slice(at + 2)];
 }
 
 export type RunChoice = { kind: "copilot" } | { kind: "model"; model: string } | { kind: "copy" };

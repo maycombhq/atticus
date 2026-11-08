@@ -28,7 +28,7 @@ describe("the prototype on the change page", () => {
 
   it("says how to attach one when there is none", () => {
     expect(T.noPrototypes("loyalty-at-checkout")).toBe(
-      "No prototype is attached. Compare one with the estate: atticus change attach loyalty-at-checkout --prototype <repo>",
+      "No prototype is attached. Compare one with the estate above, or run: atticus change attach loyalty-at-checkout --prototype <repo>",
     );
   });
 

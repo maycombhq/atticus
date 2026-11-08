@@ -4,7 +4,7 @@ import { COPY } from "../copy.js";
 import { Note, useAction } from "../screens/know/common.js";
 
 const P = COPY.propose;
-type Scope = "answers" | "corrections" | "audit" | "org-pack";
+type Scope = "answers" | "corrections" | "audit" | "org-pack" | "service-desk";
 interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string }[];

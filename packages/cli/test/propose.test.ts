@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MockGitHost } from "@maycombhq/adapters";
+import { changesRelOf } from "@maycombhq/core";
 import { bringInMerged, proposeForReview, proposePlan } from "../src/propose.js";
 
 /**
@@ -109,6 +110,25 @@ describe("Propose for review", () => {
     );
     expect(code).toBe(2);
     expect(said[0]).toContain("Nothing to propose");
+  });
+
+  it("lists only the changes' snow.md for the service desk's fields (round 36)", async () => {
+    const { root } = await metarepo();
+    for (const c of ["add-transfer-limit", "raise-refund-cap"]) {
+      await mkdir(join(root, changesRelOf(root), c), { recursive: true });
+      await writeFile(join(root, changesRelOf(root), c, "snow.md"), "# Service-desk requests\n");
+      await writeFile(join(root, changesRelOf(root), c, "proposal.md"), "# Not the desk's\n");
+    }
+    const plan = await proposePlan(root, "service-desk", {
+      by: "Pat Lee",
+      now: new Date("2026-11-08T10:00:00Z"),
+    });
+    expect(plan.files.map((f) => f.path)).toEqual([
+      `${changesRelOf(root)}/add-transfer-limit/snow.md`,
+      `${changesRelOf(root)}/raise-refund-cap/snow.md`,
+    ]);
+    expect(plan.branch).toBe("propose/service-desk/2026-11-08-100000-pat-lee");
+    expect(plan.title).toBe("Service-desk request fields");
   });
 });
 

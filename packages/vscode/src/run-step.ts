@@ -19,7 +19,8 @@ import type { StepEnd } from "./runner";
  * round's run, for the app's Model runs screen.
  *
  * Only the catalogue's AI steps (`runs: "ai"`) are run, and any argument that starts with "-" is
- * refused, so the page can't add --root, --mode or an approve flag. The extension runs the step as
+ * refused, so the page can't add --root, --mode or an approve flag; the one exception is a wiki's
+ * `--source <wiki>` on knowledge scan and find (round 36). The extension runs the step as
  * the sidebar does: Copilot, the person's consent, and every check of the command line. No
  * `vscode` here, so it is tested outside the editor.
  */
@@ -27,6 +28,17 @@ import type { StepEnd } from "./runner";
 export type RunStepCheck =
   | { ok: true; id: unknown; command: string; args: string[]; spec?: string }
   | { ok: false; id: unknown; reason: string };
+
+const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);
+
+/** The words without one `--source <wiki>` on a step that reads the wikis; as given otherwise. */
+function withoutSource(words: string[]): string[] {
+  if (!SOURCE_STEPS.has(`${words[0]} ${words[1]}`)) return words;
+  const at = words.indexOf("--source");
+  const value = words[at + 1];
+  if (at < 0 || !value || value.startsWith("-")) return words;
+  return [...words.slice(0, at), ...words.slice(at + 2)];
+}
 
 const okId = (id: unknown) =>
   typeof id === "number" || (typeof id === "string" && id.length <= 100) ? id : undefined;
@@ -53,7 +65,10 @@ export function checkRunStep(m: unknown, catalog: Catalog): RunStepCheck | undef
   // eslint-disable-next-line no-control-regex
   if (words.some((a) => /[\u0000-\u001f\u007f]/.test(a)))
     return refuse("An argument holds a control character or a line break.");
-  const dashed = words.find((a) => a.startsWith("-"));
+  // Round 36: a wiki's card passes `--source <wiki>` to the steps that read the wikis; it is
+  // the one option the app passes, and it isn't counted as an argument below.
+  const plain = withoutSource(words);
+  const dashed = plain.find((a) => a.startsWith("-"));
   if (dashed)
     return refuse(
       `The argument ${JSON.stringify(dashed)} starts with "-": the app passes no options to a step.`,
@@ -71,7 +86,7 @@ export function checkRunStep(m: unknown, catalog: Catalog): RunStepCheck | undef
     return refuse(
       `atticus ${words.slice(0, 2).join(" ")} isn't an AI step: the app only runs the AI steps with Copilot.`,
     );
-  const rest = words.slice(cmd.words.length);
+  const rest = plain.slice(cmd.words.length);
   const { missing } = answersFrom(cmd, rest);
   if (missing.length) return refuse(`atticus ${cmd.id} needs ${missing.join(", ")}.`);
   const max = cmd.args.some((a) => a.many) ? Infinity : cmd.args.length;

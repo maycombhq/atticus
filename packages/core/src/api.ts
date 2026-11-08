@@ -2219,7 +2219,7 @@ export const NewChangeRequest = z.strictObject({
 });
 
 /** 2.65.0 (ADR 0183): what Propose for review commits, and the person's yes to it. */
-export const ProposeScope = z.enum(["answers", "corrections", "audit", "org-pack"]);
+export const ProposeScope = z.enum(["answers", "corrections", "audit", "org-pack", "service-desk"]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
   files: z.array(z.object({ path: z.string(), status: z.string(), from: z.string().optional() })),
@@ -2450,7 +2450,16 @@ export const ChangePrototype = z.object({
   comparison: PrototypeComparisonView.optional(),
   problem: z.string().optional(),
 });
-export const ChangePrototypeList = z.object({ prototypes: z.array(ChangePrototype) });
+export const ChangePrototypeList = z.object({
+  prototypes: z.array(ChangePrototype),
+  /** Round 36: the repos the manifest types prototype, for the page's Compare. */
+  candidates: z.array(z.string()).optional(),
+});
+/** Round 36: compare a prototype from the app, as `atticus change attach <change> --prototype <repo>`. */
+export const ComparePrototypeRequest = z.strictObject({ repo: z.string().trim().min(1).max(200) });
+/** The prototypes attached now, and what the command printed (the four groups, the footprint). */
+export const ComparePrototypeView = ChangePrototypeList.extend({ lines: z.array(z.string()) });
+export type ComparePrototypeViewT = z.infer<typeof ComparePrototypeView>;
 export type PrototypeCallViewT = z.infer<typeof PrototypeCallView>;
 export type ChangePrototypeT = z.infer<typeof ChangePrototype>;
 export type ChangePrototypeListT = z.infer<typeof ChangePrototypeList>;
@@ -2507,6 +2516,23 @@ export const StepRunRequest = z.strictObject({
 });
 export const ArchiveRequest = z.strictObject({ rescan: z.boolean().optional() });
 export const DraftRequestsRequest = z.strictObject({ force: z.boolean().optional() });
+/** Round 36 (UX review): fill a draft's fields in snow.md from the app. */
+export const FillRequestFieldsRequest = z.strictObject({
+  /** The request's heading in snow.md, as GET /api/service-desk gives it. */
+  heading: z.string().min(1).max(300),
+  /** The sha256 of snow.md the form was filled from (GET's `sha256`); a mismatch is 409. */
+  baseSha256: z.string().min(1).max(64),
+  /** Field name → value. */
+  values: z.record(z.string().min(1).max(100), z.string().max(2000)),
+});
+export const FilledRequestFieldsView = z.object({
+  path: z.string(),
+  sha256: z.string(),
+  /** The request's required fields still empty. */
+  missing: z.array(z.string()),
+  lines: z.array(z.string()),
+});
+export type FilledRequestFieldsView = z.infer<typeof FilledRequestFieldsView>;
 /** ADR 0045: record a measured outcome of a released change, as the signed-in person. */
 export const RecordOutcomeRequest = z.strictObject({
   /** The measure's id, its number in the brief, or its words. */
@@ -4082,6 +4108,16 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "ChangePrototypeList", description: "OK" },
       errors: [400, 404],
     },
+    post: {
+      id: "compareChangePrototype",
+      summary:
+        "Round 36 (UX review): compare a prototype repo with the estate and attach the comparison to the change, as atticus change attach <change> --prototype <repo>; 422 with its words when it refuses",
+      tag: "changes",
+      params: [p("changeId")],
+      body: ComparePrototypeRequest,
+      ok: { status: 201, schema: "ComparePrototypeView", description: "Compared and attached" },
+      errors: [400, 404, 422],
+    },
   },
   "/api/questions/{id}/targets": {
     get: {
@@ -5066,6 +5102,18 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/service-desk/{changeId}/fields": {
+    put: {
+      id: "fillServiceRequestFields",
+      summary:
+        "Round 36 (UX review): fill a draft's fields in snow.md, as a person editing it would (the value cells only; its comments and other lines stay); 409 when snow.md changed since it was read. Filing stays the person's File",
+      tag: "release",
+      params: [p("changeId")],
+      body: FillRequestFieldsRequest,
+      ok: { status: 200, schema: "FilledRequestFieldsView", description: "Filled" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/governance": {
     get: {
       id: "getGovernance",
@@ -5636,6 +5684,8 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeInputList,
     AttachResult,
     ChangePrototypeList,
+    ComparePrototypeView,
+    FilledRequestFieldsView,
     DocumentList,
     AddDocumentResult,
     RepoBranchesList,

@@ -169,8 +169,22 @@ function stepWords(body: unknown): string[] {
     throw badRequest(
       `atticus ${words.slice(0, 2).join(" ")} isn't an AI step; the app starts only those.`,
     );
-  const option = words.find((a) => a.startsWith("-"));
+  const option = withoutSource(words).find((a) => a.startsWith("-"));
   if (option)
     throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
   return words;
+}
+
+/**
+ * Round 36 (UX review): the steps that read the wikis take one option from the app, `--source
+ * <wiki>`, so a wiki's own card can read just that wiki. The words without it; any other dash
+ * word, a second --source or one without a value is left in, for the check above to refuse.
+ */
+const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);
+function withoutSource(words: string[]): string[] {
+  if (!SOURCE_STEPS.has(`${words[0]} ${words[1]}`)) return words;
+  const at = words.indexOf("--source");
+  const value = words[at + 1];
+  if (at < 0 || !value || value.startsWith("-")) return words;
+  return [...words.slice(0, at), ...words.slice(at + 2)];
 }

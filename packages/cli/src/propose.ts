@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   catalogDirOf,
+  changesRelOf,
   factsDirOf,
   loadOrgPack,
   orgPackDirOf,
@@ -18,7 +19,13 @@ import { createGit, type GitRunner } from "@maycombhq/workspace";
  * branch (without touching the person's working tree, index or checked-out branch), pushed, and
  * opened as a PR, after the person's yes. A human approves and merges on the Git host.
  */
-export const PROPOSE_SCOPES = ["answers", "corrections", "audit", "org-pack"] as const;
+export const PROPOSE_SCOPES = [
+  "answers",
+  "corrections",
+  "audit",
+  "org-pack",
+  "service-desk",
+] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
 const TITLES: Record<ProposeScope, string> = {
@@ -26,15 +33,20 @@ const TITLES: Record<ProposeScope, string> = {
   corrections: "Corrections to the map",
   audit: "A sample audit's answers",
   "org-pack": "Org pack and settings",
+  "service-desk": "Service-desk request fields",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
 
-/** The folders a kind of work owns, relative to the metarepo. */
+/** The folders a kind of work owns, relative to the metarepo (git pathspecs). */
 export function scopeDirs(root: string, scope: ProposeScope): string[] {
   const facts = rel(root, factsDirOf(root));
   const catalog = rel(root, catalogDirOf(root));
   switch (scope) {
+    // Round 36: the fields filled in the app are each open change's snow.md, nothing else of
+    // the change (its other files are its stages' and its hand-off's).
+    case "service-desk":
+      return [`:(glob)${changesRelOf(root)}/*/snow.md`];
     // An answer also writes in the org pack (a repo type's skill file, a host in the manifest,
     // an outside system in a profile): its PR carries those too (review round 35).
     case "answers":

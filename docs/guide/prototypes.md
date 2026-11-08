@@ -67,10 +67,11 @@ This prints the four groups, each call cited on both sides (the prototype's line
 
 ## In the app
 
-A change's page shows **The prototype, compared**: each prototype attached to the change, compared again from today's facts, in the four groups. If a prototype can't be compared any more, the page says why. For example, its facts may no longer be verified.
+A change's page, and its **Prototypes and UX** page, show **The prototype, compared**: each prototype attached to the change, compared again from today's facts, in the four groups. If a prototype can't be compared any more, the page says why. For example, its facts may no longer be verified.
+
+To compare one from the app, pick a repo the manifest types `prototype` and click **Compare with the estate**. It runs the same code as `atticus change attach <change> --prototype <repo>` (`POST /api/changes/<id>/prototypes`) and shows what the command prints. The Prototypes and UX page also attaches a design export to the change's `inputs/` (**Attach a file**). Both write only the change's own files in the metarepo; commit them with the change.
 
 ## What it doesn't do yet
 
 - It doesn't compare a vendor's response headers, or `oneOf` and `anyOf` bodies.
 - A call that is **new** adds nothing to the footprint. Where it goes is the architecture stage's to decide, and that stage is given the list.
-- The app shows prototypes. To attach one, use the command.

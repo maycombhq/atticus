@@ -10,8 +10,9 @@ import { AiStep, tagsOf } from "./shared.js";
 /**
  * Knowledge sources (ADR 0102): the wikis in sources.yaml with their newest snapshot, Sync for
  * each (`atticus sources sync --source`), the form `atticus sources add … --save` takes, and
- * what the last knowledge scan changed. Reading a source with the AI is a step for the
- * assistant: the page gives its command and slash command to copy.
+ * what the last knowledge scan changed. Reading a source with the AI (`atticus knowledge scan
+ * --source <wiki>`) runs from its card with the server's model or Copilot, or is prepared for
+ * the person's own assistant (round 36); its command and slash command stay to copy.
  */
 
 const S = COPY.knowledge.sources;

@@ -62,7 +62,7 @@ Test trace shows coverage, the gaps before sign-off and the test kinds this chan
 **Screens you use most:** Home, Release plan, Service desk queue, Initiatives, Manual steps, Changes, Governance.
 **Watch for:** changes ready for release, and manual steps.
 
-The Service desk queue holds the drafted requests with every field ready to copy; Atticus never files on its own, so filing makes a step a person does. The Release plan computes the deploy order, the forecast, the evidence pack, release notes and the security review draft, and asks for go / no-go by raising the release hand-off PR; merging it is the go (`atticus release plan <change>`).
+The Service desk queue holds the drafted requests with every field ready to copy. A missing field is filled on the page: it is written into the change's `snow.md` (refused if the file changed since the page read it), then **Propose for review** opens a PR for it. Atticus never files on its own, so filing makes a step a person does. The Release plan computes the deploy order, the forecast, the evidence pack, release notes and the security review draft, and asks for go / no-go by raising the release hand-off PR; merging it is the go (`atticus release plan <change>`).
 
 ## Platform lead
 

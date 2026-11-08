@@ -417,6 +417,7 @@ export const COPY = {
     },
     ai: {
       intro: "This step needs a model. Run the command in a terminal at the metarepo:",
+      introOr: "Or run the command in a terminal at the metarepo:",
       slash: "Or type this in Copilot Chat or Claude Code:",
       copy: "Copy the command",
       copySlash: "Copy the slash command",
@@ -2005,7 +2006,16 @@ export const COPY = {
     // ADR 0133: a prototype compared with the estate.
     prototypes: "The prototype, compared",
     noPrototypes: (change: string) =>
-      `No prototype is attached. Compare one with the estate: atticus change attach ${change} --prototype <repo>`,
+      `No prototype is attached. Compare one with the estate above, or run: atticus change attach ${change} --prototype <repo>`,
+    // Round 36 (UX review): Compare from the app.
+    prototypePick: "Prototype repo",
+    prototypeCompare: "Compare with the estate",
+    prototypeComparing: "Comparing…",
+    prototypeCompareHelp:
+      "Reads the prototype's verified facts, compares each call with the estate, attaches the comparison to this change and adds what it touches. The same as atticus change attach --prototype.",
+    prototypeCompared: (repo: string) => `Compared ${repo} and attached it.`,
+    prototypeNoCandidates:
+      "No repo in the manifests is typed prototype. Type one prototype in its repos.manifest.yaml (the Repos page), read it, then compare it here.",
     prototypeMarker: "Prototype",
     prototypeUnconfirmed: "a draft nobody has confirmed",
     prototypeNoAbout: "Nothing says what it is yet.",
@@ -2575,13 +2585,12 @@ export const COPY = {
     open: (mineLength: string | number) => `${mineLength} open`,
     featureBrief: "Feature brief",
     prototypesAndUx: "Prototypes and UX",
-    dropADesignExport:
-      "Drop a design export (frames as images or PDF, or a prototype link file) into ",
+    attachADesignExport:
+      "Attach a design export (frames as images or PDF, or a prototype link file) below: it goes into the change's ",
     inputs: "inputs/",
-    fromThe: " from the ",
     intake: "Intake",
     screenAtticusReadsThe:
-      " screen. Atticus reads the screens and states as data, drafts requirements from them into the UX artifact, and the UX lens checks loading, empty, error and done states and WCAG 2.1 AA contrast.",
+      ". Atticus reads the screens and states as data, drafts requirements from them into the UX artifact, and the UX lens checks loading, empty, error and done states and WCAG 2.1 AA contrast. A prototype repo is compared with the estate below.",
     bringInAPrototype: "Bring in a prototype",
     repoPlansCompared: (v: string | number) => `${v} repo plans compared`,
     noRepoPlansYet: "No repo plans yet: design compared with code",
@@ -3057,18 +3066,29 @@ export const COPY = {
     leadTimeDays: (leadTimeDays: string | number) => `Lead time ${leadTimeDays} days. `,
     noneNamed: "none named",
     approversValuesComeFrom: (v: string | number, v2: string | number) =>
-      `${v}Approvers: ${v2}. Values come from snow.md; edit them there.`,
+      `${v}Approvers: ${v2}. Values come from snow.md; fill a missing one below, or edit the file.`,
     fields: "Fields",
     copyAllFields: "Copy all fields",
     required: " · required",
-    missingFillItIn: "Missing: fill it in snow.md",
+    missingFillItIn: "Missing: fill it below",
     empty: "Empty",
     copy: (name: string | number) => `Copy ${name}`,
     atticusNeverCallsThe:
       "Atticus never calls the desk from here. Filing makes a step in To-do with every field ready to copy; you submit it in the desk and record the number.",
     fileSCompleteDrafts: (change: string | number) => `File ${change}'s complete drafts as steps`,
     fillFirst: (v: string | number) => `Fill ${v} first`,
-    fillInSnowMd: (v: string | number) => `Fill ${v} in snow.md before filing.`,
+    fillInSnowMd: (v: string | number) => `Fill ${v} above before filing.`,
+    // Round 36 (UX review): fill the missing fields here, written into snow.md.
+    fillTitle: "Fill the missing fields",
+    fillHelp: (file: string) =>
+      `Written into ${file}, as you would edit it: only these values change; its comments and other lines stay. If the file changed since this page read it, nothing is written.`,
+    fillField: (name: string) => `${name} (required)`,
+    fillSave: "Save to snow.md",
+    fillSaving: "Saving…",
+    fillDone: "Saved to snow.md.",
+    fillSomething: "Type a value for at least one field first.",
+    fillPropose:
+      "snow.md changed in your copy of the metarepo. Propose it for review so the team sees the values; filing stays the File button's.",
     filedAsStep: "Filed as step ",
     submitItInThe: ". Submit it in the desk, then ",
     recordTheRequestNumber: "record the request number in To-do",

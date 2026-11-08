@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { RunStep, stepArgs } from "../../app/runstep.js";
 import { ExternalLink } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { RunsLink } from "../runs/Runs.js";
@@ -63,7 +64,10 @@ export function AiStep({
   return (
     <div className="stack" style={{ gap: 4 }}>
       {why && <p className="work-why">{why}</p>}
-      <p className="work-say">{K.ai.intro}</p>
+      {/* Round 36 (UX review): the step runs from here, or is prepared for the person's own
+          assistant; the command stays beside it for a terminal. */}
+      <RunStep command={command} />
+      <p className="work-say">{stepArgs(command) ? K.ai.introOr : K.ai.intro}</p>
       <Command text={command} label={K.ai.copy} />
       {slash && (
         <>
@@ -82,7 +86,7 @@ export function AiStep({
 
 /**
  * Nothing read from the wikis yet: what to do, with the Knowledge sources page one click away
- * and the knowledge scan to copy (an AI step the app doesn't run).
+ * and the knowledge scan to run or prepare from here, or to copy.
  */
 export function NoKnowledgeYet({ text }: { text: string }) {
   return (

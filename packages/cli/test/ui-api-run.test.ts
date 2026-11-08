@@ -144,6 +144,63 @@ describe("service desk queue", () => {
     expect((await post("/api/service-desk/nope/submit")).status).toBe(404);
   });
 
+  it("fills a missing field in snow.md from the app, refusing a file changed since (round 36)", async () => {
+    const file = join(root, "openspec/changes", ID, "snow.md");
+    const put = (body: unknown) => call(`/api/service-desk/${ID}/fields`, { method: "PUT", body });
+    // A person's note in the file, written after the page read it.
+    const q = await call("/api/service-desk");
+    const r = q.body.requests[0];
+    expect(r.file).toBe(`openspec/changes/${ID}/snow.md`);
+    expect(r.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const was = await readFile(file, "utf8");
+    await writeFile(file, `<!-- Bao: ask the platform team for the target. -->\n${was}`);
+    const stale = await put({
+      heading: r.heading,
+      baseSha256: r.sha256,
+      values: { Target: "ledger-api:8443" },
+    });
+    expect(stale.status).toBe(409);
+    expect(await readFile(file, "utf8")).toBe(
+      `<!-- Bao: ask the platform team for the target. -->\n${was}`,
+    );
+
+    const fresh = (await call("/api/service-desk")).body.requests[0];
+    const bad = await put({
+      heading: fresh.heading,
+      baseSha256: fresh.sha256,
+      values: { Target: "a | b" },
+    });
+    expect(bad.status).toBe(422);
+    expect(bad.body.detail).toMatch(/can't hold \|/);
+    expect((await put({ heading: fresh.heading, values: {} })).status).toBe(400);
+    expect(
+      (
+        await call(`/api/service-desk/nope/fields`, {
+          method: "PUT",
+          body: { heading: "x", baseSha256: "0", values: { Target: "a" } },
+        })
+      ).status,
+    ).toBe(404);
+
+    const ok = await put({
+      heading: fresh.heading,
+      baseSha256: fresh.sha256,
+      values: { Target: "ledger-api:8443" },
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body).toMatchObject({ path: `openspec/changes/${ID}/snow.md`, missing: [] });
+    // Only the Target row changed; the person's comment and every other line are as written.
+    expect(await readFile(file, "utf8")).toBe(
+      `<!-- Bao: ask the platform team for the target. -->\n${was}`.replace(
+        "| Target |  |",
+        "| Target | ledger-api:8443 |",
+      ),
+    );
+    // Filling isn't filing: the request still waits for the person's File.
+    const after = (await call("/api/service-desk")).body.requests[0];
+    expect(after).toMatchObject({ state: "to-file", missing: [], sha256: ok.body.sha256 });
+  });
+
   it("files a complete draft as a step for a person, and the queue shows it waiting", async () => {
     const file = join(root, "openspec/changes", ID, "snow.md");
     await writeFile(

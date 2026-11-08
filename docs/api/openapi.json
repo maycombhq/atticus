@@ -2902,6 +2902,96 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "compareChangePrototype",
+        "summary": "Round 36 (UX review): compare a prototype repo with the estate and attach the comparison to the change, as atticus change attach <change> --prototype <repo>; 422 with its words when it refuses",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Compared and attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparePrototypeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/questions/{id}/targets": {
@@ -5073,7 +5163,8 @@
                       "answers",
                       "corrections",
                       "audit",
-                      "org-pack"
+                      "org-pack",
+                      "service-desk"
                     ]
                   },
                   "files": {
@@ -9458,6 +9549,127 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/service-desk/{changeId}/fields": {
+      "put": {
+        "operationId": "fillServiceRequestFields",
+        "summary": "Round 36 (UX review): fill a draft's fields in snow.md, as a person editing it would (the value cells only; its comments and other lines stay); 409 when snow.md changed since it was read. Filing stays the person's File",
+        "tags": [
+          "release"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "heading": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "baseSha256": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 2000
+                    }
+                  }
+                },
+                "required": [
+                  "heading",
+                  "baseSha256",
+                  "values"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Filled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilledRequestFieldsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21324,7 +21536,8 @@
               "answers",
               "corrections",
               "audit",
-              "org-pack"
+              "org-pack",
+              "service-desk"
             ]
           },
           "files": {
@@ -21392,7 +21605,8 @@
               "answers",
               "corrections",
               "audit",
-              "org-pack"
+              "org-pack",
+              "service-desk"
             ]
           },
           "files": {
@@ -26640,10 +26854,547 @@
               ],
               "additionalProperties": false
             }
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "prototypes"
+        ],
+        "additionalProperties": false
+      },
+      "ComparePrototypeView": {
+        "type": "object",
+        "properties": {
+          "prototypes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "attached": {
+                  "type": "string"
+                },
+                "about": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "trust": {
+                      "type": "string",
+                      "enum": [
+                        "suggested",
+                        "verified"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "trust"
+                  ],
+                  "additionalProperties": false
+                },
+                "comparison": {
+                  "type": "object",
+                  "properties": {
+                    "prototype": {
+                      "type": "string"
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "exists": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "changes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "vendor": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "exists",
+                        "changes",
+                        "new",
+                        "vendor"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "leg": {
+                            "type": "string",
+                            "enum": [
+                              "ui-bff",
+                              "bff-mock"
+                            ]
+                          },
+                          "group": {
+                            "type": "string",
+                            "enum": [
+                              "exists",
+                              "changes",
+                              "new",
+                              "vendor"
+                            ]
+                          },
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "call": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "lands": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "auth": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "estate": {
+                            "type": "object",
+                            "properties": {
+                              "entry": {
+                                "type": "object",
+                                "properties": {
+                                  "repo": {
+                                    "type": "string"
+                                  },
+                                  "fact": {
+                                    "type": "string"
+                                  },
+                                  "component": {
+                                    "type": "string"
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "repo",
+                                  "fact",
+                                  "component",
+                                  "at"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "endpoint": {
+                                "type": "string"
+                              },
+                              "how": {
+                                "type": "string"
+                              },
+                              "gateway": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "auth": {
+                                "type": "string"
+                              },
+                              "scopes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "entry",
+                              "endpoint",
+                              "how"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "vendor": {
+                            "type": "object",
+                            "properties": {
+                              "system": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "operation": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "through": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "boundary": {
+                                "type": "string",
+                                "enum": [
+                                  "vendor",
+                                  "internal"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "system",
+                              "name",
+                              "operation",
+                              "method",
+                              "path",
+                              "through"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "candidates": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "repo": {
+                                  "type": "string"
+                                },
+                                "fact": {
+                                  "type": "string"
+                                },
+                                "component": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "repo",
+                                "fact",
+                                "component",
+                                "at"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "differences": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "field-missing",
+                                    "field-type",
+                                    "field-required",
+                                    "field-enum",
+                                    "header-missing",
+                                    "header-required",
+                                    "error-missing",
+                                    "error-unhandled",
+                                    "scope-missing",
+                                    "auth"
+                                  ]
+                                },
+                                "side": {
+                                  "type": "string",
+                                  "enum": [
+                                    "request",
+                                    "response"
+                                  ]
+                                },
+                                "field": {
+                                  "type": "string"
+                                },
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "prototype": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "at"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "estate": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "at"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prototype",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "sentence": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "leg",
+                          "group",
+                          "path",
+                          "call",
+                          "lands",
+                          "differences",
+                          "sentence"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "endpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "vendorOperations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "vendors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "left": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "call": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "why": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call",
+                          "why"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "prototype",
+                    "counts",
+                    "calls",
+                    "repos",
+                    "uses",
+                    "endpoints",
+                    "vendorOperations",
+                    "vendors",
+                    "left"
+                  ],
+                  "additionalProperties": false
+                },
+                "problem": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "attached"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "prototypes",
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "FilledRequestFieldsView": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "missing",
+          "lines"
         ],
         "additionalProperties": false
       },
