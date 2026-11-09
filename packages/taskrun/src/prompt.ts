@@ -166,7 +166,9 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
       id: "task-context",
       kind: "artifact",
       origin: `atticus task context ${t.change.id} ${t.task.id}`,
-      text: renderTaskContext(context).replace(/\r\n/g, "\n"),
+      // The pack wraps and screens the whole file as one source, so its parts aren't fenced
+      // again inside it (review round 47).
+      text: renderTaskContext(context, { fence: false }).replace(/\r\n/g, "\n"),
       classification: "internal",
       priority: 35,
     });

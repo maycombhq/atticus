@@ -12,6 +12,7 @@ import {
   noteProblem,
   type NumberedNote,
   NEVER_CHECKED_STEPS,
+  quoteHoldsSecret,
   quoteMatches,
   quoteNotRequired,
   redactSecrets,
@@ -1122,6 +1123,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       return rest;
     }
     const q = redactSecrets(c.quote);
+    // Review round 47: a quote redaction left as it is but that still holds a literal beside a
+    // secret word is dropped, not kept (as an imported map's is); plain code keeps its quote.
+    if (q === c.quote && quoteHoldsSecret(q)) {
+      redacted++;
+      const { quote: _secret, ...rest } = c;
+      return rest;
+    }
     if (q !== c.quote) redacted++;
     return { ...c, quote: q };
   };

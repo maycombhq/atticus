@@ -219,6 +219,93 @@ describe("secret-looking keys: the key's last part ends in a secret word", () =>
   });
 });
 
+// Review round 47: a secret anywhere on the line, not only after a key at its start. The token
+// shapes are put together here so no scanner mistakes this file for one holding real keys.
+describe("secrets anywhere on a line (review round 47)", () => {
+  const gh = "gh" + "p_" + "Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4zAb7dEf";
+  const pat = "github" + "_pat_" + "11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789";
+  const live = "sk" + "_live_" + "4eC39HqLyjWDarjtT1zdp7dc";
+  const akia = "AK" + "IA" + "IOSFODNN7EXAMPLE";
+  const jwt =
+    "ey" +
+    "JhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+  const golden: [string, string][] = [
+    ['const password = "hunter22";', "const password = <redacted>"],
+    [
+      `private static final String API_KEY = "${live}";`,
+      "private static final String API_KEY = <redacted>",
+    ],
+    [`export const githubToken = "${gh}";`, "export const githubToken = <redacted>"],
+    ['{"user":"ana","password":"hunter22"}', '{"user":"ana","password":<redacted>'],
+    ['  "password":"x"', '  "password":<redacted>'],
+    ['val apiKey: String = "abc123def"', "val apiKey: String = <redacted>"],
+    ['os.environ["API_KEY"] = "abc123def"', 'os.environ["API_KEY"] = <redacted>'],
+    [
+      "url: postgres://orders:p4ssw0rd@db.forge.test:5432/orders",
+      "url: postgres://orders:<redacted>@db.forge.test:5432/orders",
+    ],
+    ["Authorization: Bearer " + jwt, "Authorization: Bearer <redacted>"],
+    [
+      'headers.put("Authorization", "Bearer abcdef0123456789abcdef");',
+      'headers.put("Authorization", "Bearer <redacted>");',
+    ],
+    [
+      `git remote add origin https://${gh}@git.forge.test/x.git`,
+      "git remote add origin https://<redacted>@git.forge.test/x.git",
+    ],
+    [`token = os.getenv("T", "${pat}")`, "token = <redacted>"],
+    [`client = Stripe("${live}")`, 'client = Stripe("<redacted>")'],
+    [`aws_access_key_id=${akia}`, "aws_access_key_id=<redacted>"],
+    [
+      `s3 = boto3.client("s3", aws_access_key_id="${akia}")`,
+      's3 = boto3.client("s3", aws_access_key_id="<redacted>")',
+    ],
+    ["export DB_PASSWORD=hunter22", "export DB_PASSWORD=<redacted>"],
+    [
+      "Server=db;User Id=orders;Password=p4ss;Database=orders",
+      "Server=db;User Id=orders;Password=<redacted>;Database=orders",
+    ],
+    ['ds.setPassword("hunter22");', "ds.setPassword(<redacted>"],
+    [`const t = "${jwt}";`, 'const t = "<redacted>";'],
+  ];
+  // Code that only names a secret word stays as it is.
+  const unchanged = [
+    "if (password == null) throw new IllegalArgumentException();",
+    "if (password === confirm) return;",
+    "while (tokenizer.hasNext()) tokenizer.next();",
+    "String hash = passwordEncoder.encode(raw);",
+    "const token = await tokens.issue(user);",
+    'const passwordField = "#password";',
+    'String password = "";',
+    'const apiKey = "${API_KEY}";',
+    'password: "{{ .Values.db.password }}"',
+    '@PostMapping("/token")',
+    'String token = request.getHeader("Authorization");',
+    'headers.set("Authorization", "Bearer " + token);',
+    "Basic authentication is off for the health endpoint.",
+    "url: postgres://db.forge.test:5432/orders",
+    "url: postgres://${DB_USER}:${DB_PASS}@db.forge.test:5432/orders",
+    'fetch("https://id.forge.test/connect/token")',
+    "    AccessTokenLifetime = 7200,",
+    "public String getPassword() { return password; }",
+  ];
+  it("redacts the value, the URL's password, the bearer token and well-known token shapes", () => {
+    for (const [line, want] of golden) expect(redactSecrets(line), line).toBe(want);
+  });
+  it("leaves code that only names a secret word unchanged", () => {
+    for (const line of unchanged) expect(redactSecrets(line), line).toBe(line);
+  });
+  it("a redacted quote still matches its line", () => {
+    for (const [line] of golden) expect(quoteMatches(line, redactSecrets(line)), line).toBe(true);
+  });
+  it("says when a quote still holds a literal next to a secret word redaction couldn't place", async () => {
+    const { quoteHoldsSecret } = await import("../src/index.js");
+    expect(quoteHoldsSecret('creds.put(PASSWORD_KEY, "Xk9fQ2mZ7p");')).toBe(true);
+    for (const line of [...unchanged, "passwordEncoder.encode(x)", 'getToken("Authorization")'])
+      expect(quoteHoldsSecret(line), line).toBe(false);
+  });
+});
+
 describe("a word put together from cite.with parts (ADR 0124 addendum A-derived)", () => {
   it("takes each part as a whole piece, the rest written on the cited lines", async () => {
     const { partsBuildWord } = await import("../src/index.js");

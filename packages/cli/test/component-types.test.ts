@@ -74,12 +74,12 @@ describe("the organisation's component types", () => {
     expect(text).not.toContain("ml-model:");
     const rules = componentTypeRulesText(types, "org-pack");
     expect(rules).toContain(
-      "forge-experience-api (Experience API): notes in org-pack/component-types/forge-experience-api/notes.md",
+      'forge-experience-api ("Experience API"): notes in "org-pack/component-types/forge-experience-api/notes.md"',
     );
     expect(rules).toContain(
       '  must not: "An experience API never writes a system-of-record table."',
     );
-    expect(rules).toContain("gateway (Forge gateway proxy)");
+    expect(rules).toContain('gateway ("Forge gateway proxy")');
   });
 
   it("adds a type with its notes file, refuses a second with the same id, and shows notes", async () => {

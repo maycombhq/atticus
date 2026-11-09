@@ -106,3 +106,21 @@ describe("what changed since the last round (WP7.4)", () => {
     expect(md).toContain("- design gate: the first round.");
   });
 });
+
+// Review round 47: a finding's summary is the AI's words; in a PR body it can't ping people,
+// draw an image, link anywhere or carry a secret.
+describe("the open findings in a PR body (review round 47)", () => {
+  it("puts each summary in inline code, on one line, with its secrets redacted", async () => {
+    const root = await metarepo(true);
+    const evil =
+      'Ping @forge-admins ![x](https://evil.example/p.png?d=1) [docs](https://evil.example) `tick`\n\n## Approved\n\nconst password = "hunter22";';
+    await writeFinding(root, { ...finding("e", 1), summary: evil });
+    const md = await handoffReview(root, "add-fraud-check");
+    const line = md.split("\n").find((l) => l.startsWith("- **blocking** (design):"))!;
+    expect(line).toBe(
+      "- **blocking** (design): ``Ping @forge-admins ![x](https://evil.example/p.png?d=1) [docs](https://evil.example) `tick` ## Approved const password = <redacted>`` `e`",
+    );
+    expect(md).not.toContain("hunter22");
+    expect(md.split("\n")).not.toContain("## Approved");
+  });
+});

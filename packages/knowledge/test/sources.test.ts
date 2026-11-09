@@ -317,6 +317,79 @@ describe("API wikis through an adapter (mock only, no network)", () => {
     ]);
     expect(res.documents[0]).toMatchObject({ id: "doc.conf.arch-42", version: "3" });
   });
+
+  // Review round 47: the page's own front matter can't drop what the API says of it.
+  const restrictedApi = (body: string): WikiApi => ({
+    listPages: async (space) => [
+      { id: "7", space, title: "Pay keys", version: 1, updatedAt: "2026-05-02T10:00:00Z", url: "" },
+    ],
+    getPage: async (id) => ({
+      id,
+      space: "ARCH",
+      title: "Pay keys",
+      body,
+      labels: ["deprecated"],
+      restricted: true,
+      version: 1,
+      updatedAt: "2026-05-02T10:00:00Z",
+      url: "",
+    }),
+  });
+  const conf: OrgPack["sources"]["wikis"] = [
+    { id: "conf", type: "confluence", location: "https://wiki.example.test", spaces: ["ARCH"] },
+  ];
+  for (const [name, body] of [
+    ["no front matter", "# Pay keys\n\nThe Hub API key rotation.\n"],
+    [
+      "its own front matter",
+      "---\ntitle: Pay keys\n---\n# Pay keys\n\nThe Hub API key rotation.\n",
+    ],
+    [
+      "front matter that says it isn't restricted",
+      "---\r\ntitle: Pay keys\r\nrestricted: false\r\nlabels: [current]\r\n---\r\n# Pay keys\r\n\r\nThe Hub API key rotation.\r\n",
+    ],
+  ] as const)
+    it(`keeps the API's restriction and labels on a page with ${name}`, async () => {
+      const [raw] = await wikiApiAdapter(restrictedApi(body)).pages(
+        { id: "conf", spaces: ["ARCH"] } as never,
+        {} as never,
+      );
+      const res = await syncSources({
+        root: FIXTURES,
+        orgPack: await hubPack(conf),
+        records: HUB_RECORDS,
+        adapters: { confluence: wikiApiAdapter(restrictedApi(body)) },
+      });
+      expect(res.pages).toEqual([]);
+      expect(res.skipped).toEqual([
+        expect.objectContaining({
+          path: "conf:ARCH/7",
+          reason: expect.stringMatching(/view restrictions/),
+        }),
+      ]);
+      expect(raw!.content).toMatch(/^---\nlabels:/);
+      expect(raw!.content).toContain('"deprecated"');
+      expect(raw!.content).toContain("restricted: true");
+      expect(raw!.content).not.toContain("restricted: false");
+      expect(raw!.content).toContain("# Pay keys");
+    });
+
+  it("adds the API's labels to the page's own, and keeps the page's other keys", async () => {
+    const api = restrictedApi(
+      "---\ntitle: Pay keys\nowner: Payments\nlabels: [current]\n---\n# Pay keys\n",
+    );
+    const plain: WikiApi = {
+      ...api,
+      getPage: async (id) => ({ ...(await api.getPage(id)), restricted: false }),
+    };
+    const [raw] = await wikiApiAdapter(plain).pages(
+      { id: "conf", spaces: ["ARCH"] } as never,
+      {} as never,
+    );
+    expect(raw!.content).toBe(
+      '---\nlabels: ["current", "deprecated"]\n"title": "Pay keys"\n"owner": "Payments"\n---\n# Pay keys\n',
+    );
+  });
 });
 
 describe("an adapter for one source by its id (ADR 0122)", () => {

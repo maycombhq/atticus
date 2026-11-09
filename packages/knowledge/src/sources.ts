@@ -11,7 +11,7 @@ import {
 } from "@maycombhq/core";
 import type { ProfileSystem } from "@maycombhq/reconcile";
 import { screenDocuments } from "@maycombhq/ai";
-import { readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
+import { frontMatterEnd, readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
 import { mentionIndex, type MentionIndex } from "./mentions.js";
 import { confluenceExportAdapter, sharepointExportAdapter } from "./exports.js";
 import { authorityRank, bodyKey, pageRestricted, pageStandingOf } from "./standing.js";
@@ -109,6 +109,44 @@ export const markdownFolderAdapter: KnowledgeSourceAdapter = {
   },
 };
 
+/**
+ * ADR 0132: what the API says of a page (its labels, its view restrictions) goes in front
+ * matter, as an export's does. Review round 47: merged into the page's own front matter, which
+ * adds to it and never clears a restriction or drops a label (as `exportPage` does). Front
+ * matter that doesn't read is left as it is: the reader skips the page, with why.
+ */
+function withApiMeta(body: string, labels?: string[], restricted?: boolean): string {
+  if (!labels?.length && !restricted) return body;
+  const lines = body.replace(/\r\n?/g, "\n").split("\n");
+  const end = frontMatterEnd(lines);
+  let own: Record<string, unknown> = {};
+  let rest = body;
+  if (end > 0) {
+    const doc = readMarkdown(lines.slice(0, end + 1).join("\n"));
+    if (doc.frontMatterProblem) return body;
+    own = doc.frontMatter;
+    rest = lines.slice(end + 1).join("\n");
+  }
+  const ownLabels =
+    end > 0 && own.labels !== undefined && own.labels !== null
+      ? Array.isArray(own.labels)
+        ? own.labels.map(String)
+        : String(own.labels)
+            .split(/[;,]/)
+            .map((x) => x.trim())
+            .filter(Boolean)
+      : [];
+  const all = [...ownLabels, ...(labels ?? []).filter((l) => !ownLabels.includes(l))];
+  const fm = [
+    ...(all.length ? [`labels: [${all.map((l) => JSON.stringify(l)).join(", ")}]`] : []),
+    ...(restricted ? ["restricted: true"] : []),
+    ...Object.entries(own)
+      .filter(([k]) => k !== "labels" && !(restricted && k === "restricted"))
+      .map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v ?? null)}`),
+  ];
+  return `---\n${fm.join("\n")}\n---\n${rest}`;
+}
+
 /** An API wiki read through the C4 wiki adapter: every page of each listed space. */
 export function wikiApiAdapter(api: WikiApi): KnowledgeSourceAdapter {
   return {
@@ -118,20 +156,10 @@ export function wikiApiAdapter(api: WikiApi): KnowledgeSourceAdapter {
         const heads = await api.listPages(space);
         for (const h of [...heads].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
           const p = await api.getPage(h.id);
-          // ADR 0132: what the API says of the page goes in front matter, as an export's does.
-          const fm = [
-            ...(p.labels?.length
-              ? [`labels: [${p.labels.map((l) => JSON.stringify(l)).join(", ")}]`]
-              : []),
-            ...(p.restricted ? ["restricted: true"] : []),
-          ];
           out.push({
             pagePath: `${space}/${p.id}`,
             path: `${source.id}:${space}/${p.id}`,
-            content:
-              fm.length && !p.body.startsWith("---\n")
-                ? `---\n${fm.join("\n")}\n---\n${p.body}`
-                : p.body,
+            content: withApiMeta(p.body, p.labels, p.restricted),
             updatedAt: p.updatedAt,
             version: String(p.version),
           });

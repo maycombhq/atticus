@@ -131,6 +131,47 @@ describe("verifyFacts: the claim on the cited line (ADR 0124)", () => {
     expect(r.redacted).toBe(1);
   });
 
+  // Review round 47: a secret mid-line is redacted; a quote that still holds a literal beside a
+  // secret word redaction couldn't place is dropped, and ordinary code keeps its quote.
+  it("redacts a secret anywhere on the line, drops a quote it can't redact, keeps plain code", async () => {
+    const src = memorySource({
+      "src/Creds.java": [
+        "class Creds {",
+        '  private static final String password = "hunter22";',
+        '  void fill() { creds.put(PASSWORD_KEY, "Xk9fQ2mZ7p"); }',
+        "  String hash(String raw) { return passwordEncoder.encode(raw); }",
+        "}",
+      ].join("\n"),
+    });
+    const fact = (id: string, line: number, value: string, quote: string) => ({
+      kind: "config" as const,
+      id,
+      repo: "x",
+      commit: "0123abc",
+      settingKind: "config" as const,
+      key: value,
+      source: "src/Creds.java",
+      cite: { file: "src/Creds.java", line, value, quote },
+      verified: "none" as const,
+      by: "assistant" as const,
+      conf: "declared" as const,
+    });
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        fact("k-a", 2, "password", 'private static final String password = "hunter22";'),
+        fact("k-b", 3, "PASSWORD_KEY", 'creds.put(PASSWORD_KEY, "Xk9fQ2mZ7p");'),
+        fact("k-c", 4, "passwordEncoder", "return passwordEncoder.encode(raw);"),
+      ],
+    });
+    expect(r.rejected).toEqual([]);
+    const quote = (id: string) => r.accepted.find((f) => f.id === id)!.cite.quote;
+    expect(quote("k-a")).toBe("private static final String password = <redacted>");
+    expect(quote("k-b")).toBeUndefined();
+    expect(quote("k-c")).toBe("return passwordEncoder.encode(raw);");
+    expect(r.redacted).toBe(2);
+  });
+
   it("keeps a person's verification on a fact a person made, never on one the reader marked itself", async () => {
     const facts = load("forge-ledger.facts.jsonl").map((f) =>
       f.id === "d-prod"
