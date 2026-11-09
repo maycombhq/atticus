@@ -38,8 +38,7 @@ describe("a stage finding's proposal by an assistant (C4 2.27.0)", () => {
     // 2.25.0 and 2.26.0 landed beside this one (B-change, B-task-knowledge), so the proposal
     // field arrived at 2.27.0; a later additive version keeps all of it.
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(27);
+    expect(major! > 2 || (major === 2 && minor! >= 27)).toBe(true);
     expect(Api.StageFindingView.safeParse(view).success).toBe(true);
     const proposed = {
       ...view,

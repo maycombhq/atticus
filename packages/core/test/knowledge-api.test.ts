@@ -11,7 +11,7 @@ const doc = openApiDocument() as {
 describe("the knowledge API (ADR 0102)", () => {
   it("is in the OpenAPI document, from API 2.7.0", () => {
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major === 2 && minor! >= 7).toBe(true);
+    expect(major! > 2 || (major === 2 && minor! >= 7)).toBe(true);
     const ops: [string, string, string][] = [
       ["/api/knowledge/sources", "get", "listKnowledgeSources"],
       ["/api/knowledge/sources", "post", "addKnowledgeSource"],

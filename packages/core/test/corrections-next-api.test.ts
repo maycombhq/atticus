@@ -16,8 +16,7 @@ const doc = openApiDocument() as {
 describe("corrections without git, the audit in the app and the outside systems (C4 2.42.0)", () => {
   it("is 2.42.0 or later and documents the four calls and their answers", () => {
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(39);
+    expect(major! > 2 || (major === 2 && minor! >= 39)).toBe(true);
     expect(doc.paths["/api/facts/{repo}/preview"]!.get!.operationId).toBe("previewVerifyWrite");
     expect(doc.paths["/api/facts/{repo}/audit"]!.get!.operationId).toBe("drawAudit");
     expect(doc.paths["/api/facts/{repo}/audit"]!.post!.operationId).toBe("answerAudit");

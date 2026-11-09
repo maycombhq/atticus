@@ -126,7 +126,7 @@ describe("a change's target flows (ADR 0095)", () => {
       components: { schemas: Record<string, unknown> };
     };
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major === 2 && minor! >= 5).toBe(true);
+    expect(major! > 2 || (major === 2 && minor! >= 5)).toBe(true);
     expect(doc.paths["/api/changes/{changeId}/target-flows"]!.get!.operationId).toBe(
       "listTargetFlows",
     );

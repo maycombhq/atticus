@@ -38,7 +38,7 @@ const record = {
 describe("the prompt history API (ADR 0110)", () => {
   it("is in the OpenAPI document, from API 2.10.0", () => {
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major === 2 && minor! >= 10).toBe(true);
+    expect(major! > 2 || (major === 2 && minor! >= 10)).toBe(true);
     expect(doc.paths["/api/history"]!.get!.operationId).toBe("listPromptHistory");
     expect(doc.paths["/api/history/{historyId}"]!.get!.operationId).toBe("getPromptHistoryRecord");
     for (const s of ["HistoryList", "HistoryEntry"])

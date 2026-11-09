@@ -193,8 +193,7 @@ describe("the local API says what a repo is (C4 2.28.0, ADR 0128)", () => {
     // 2.26.0 and 2.27.0 landed beside this one (B-task-knowledge, the finding proposal), so the
     // description arrived at 2.28.0; a later additive version keeps all of it.
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(28);
+    expect(major! > 2 || (major === 2 && minor! >= 28)).toBe(true);
     const about = {
       text: "The ledger: every posting and the balances read from them.",
       trust: "verified" as const,

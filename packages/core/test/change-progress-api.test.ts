@@ -5,8 +5,7 @@ import { API_VERSION, Api } from "../src/index.js";
 describe("a change read from its stages' files (C4 2.25.0)", () => {
   it("is 2.25.0 or later, and the cockpit may say where the work is; an older cockpit still parses", () => {
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(25);
+    expect(major! > 2 || (major === 2 && minor! >= 25)).toBe(true);
     const cockpit = {
       id: "screen-orders",
       state: "define",

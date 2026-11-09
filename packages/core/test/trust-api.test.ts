@@ -58,8 +58,7 @@ describe("the app's six entries in the local API (C4 2.22.0)", () => {
 describe("a change's knowledge with titles and a plain why (C4 2.24.0)", () => {
   it("is 2.24.0 or later, and an item and a near-miss may carry a title and a reason; older answers still parse", () => {
     const [major, minor] = API_VERSION.split(".").map(Number);
-    expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(24);
+    expect(major! > 2 || (major === 2 && minor! >= 24)).toBe(true);
     expect(doc.info.version).toBe(API_VERSION);
     const item = {
       id: "forge-wiki/fraud.md#Timeouts",
@@ -116,8 +115,8 @@ describe("a change's knowledge per task, and pages that disagree (C4 2.25.0)", (
   };
 
   it("is 2.25.0, and a change's item may name its tasks and the view its conflicts", () => {
-    const [, minor] = API_VERSION.split(".").map(Number);
-    expect(minor).toBeGreaterThanOrEqual(25);
+    const [major2, minor2] = API_VERSION.split(".").map(Number);
+    expect(major2! > 2 || (major2 === 2 && minor2! >= 25)).toBe(true);
     expect(doc.components.schemas).toHaveProperty("KnowledgeConflictView");
     const v = Api.ChangeKnowledgeView.parse({
       change: "add-sso",
