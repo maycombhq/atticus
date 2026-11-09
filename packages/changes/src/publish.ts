@@ -17,7 +17,11 @@ export interface HandoffPublisher {
     files: string[];
     message: string;
     approval: Approval;
-  }): Promise<{ commit: string }>;
+  }): Promise<{
+    commit: string;
+    /** Review round 48: false when the branch on the remote was already at `commit`. */
+    changed?: boolean;
+  }>;
 }
 
 /**
@@ -53,7 +57,7 @@ export function gitHandoffPublisher(
     base,
     files,
     message,
-  }: Parameters<HandoffPublisher["publish"]>[0]): Promise<{ commit: string }> {
+  }: Parameters<HandoffPublisher["publish"]>[0]): ReturnType<HandoffPublisher["publish"]> {
     {
       const git = createGit({ env });
       const out = async (args: string[]) => (await git(args, root)).stdout.trim();
@@ -62,13 +66,14 @@ export function gitHandoffPublisher(
       const gitDir = await out(["rev-parse", "--absolute-git-dir"]);
       await tryOut(["fetch", "--quiet", remote, base]);
       await tryOut(["fetch", "--quiet", remote, branch]);
+      const onRemote = await tryOut([
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `refs/remotes/${remote}/${branch}^{commit}`,
+      ]);
       const start =
-        (await tryOut([
-          "rev-parse",
-          "--verify",
-          "--quiet",
-          `refs/remotes/${remote}/${branch}^{commit}`,
-        ])) ??
+        onRemote ??
         (await tryOut([
           "rev-parse",
           "--verify",
@@ -86,9 +91,10 @@ export function gitHandoffPublisher(
         const startTree = await out(["rev-parse", `${start}^{tree}`]);
         const commit =
           tree === startTree ? start : await out(["commit-tree", tree, "-p", start, "-m", message]);
-        await out(["update-ref", `refs/heads/${branch}`, commit]);
+        // The commit goes up by itself: never forced, so the remote's branch only moves on.
         await out(["push", "--quiet", remote, `${commit}:refs/heads/${branch}`]);
-        return { commit };
+        await keepLocalBranch(out, tryOut, branch, start, commit);
+        return { commit, changed: commit !== onRemote };
       } finally {
         await rm(index, { force: true });
       }
@@ -97,3 +103,30 @@ export function gitHandoffPublisher(
 }
 
 const queue = new Map<string, Promise<unknown>>();
+
+/**
+ * Review round 48: the local hand-off branch follows the published commit only when that can't
+ * lose anything. A branch checked out in any worktree (HEAD would move under the person) or with
+ * commits the publish didn't start from (their unpushed work) is left as it is; otherwise it moves
+ * by compare-and-swap, or is made when it isn't there.
+ */
+async function keepLocalBranch(
+  out: (args: string[]) => Promise<string>,
+  tryOut: (args: string[]) => Promise<string | undefined>,
+  branch: string,
+  start: string,
+  commit: string,
+): Promise<void> {
+  const ref = `refs/heads/${branch}`;
+  const local = await tryOut(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+  if (local === commit) return;
+  const list = (await tryOut(["worktree", "list", "--porcelain"])) ?? "";
+  if (list.split(/\r?\n/).includes(`branch ${ref}`)) return;
+  if (!local) {
+    await tryOut(["update-ref", ref, commit, ""]);
+    return;
+  }
+  const own = await tryOut(["rev-list", "--count", `${start}..${local}`]);
+  if (own === undefined || own !== "0") return;
+  await out(["update-ref", ref, commit, local]).catch(() => undefined);
+}

@@ -26,7 +26,9 @@ export type ReasonCode =
   /** ADR 0184: a repo the change touched has no release PR into its default branch. */
   | "release-pr-missing"
   /** ADR 0184: a repo's release PR isn't merged yet (unless the org pack doesn't require it). */
-  | "release-pr-not-merged";
+  | "release-pr-not-merged"
+  /** Review round 48: the change branch has commits since its release PR merged. */
+  | "release-pr-stale";
 
 export interface Reason {
   code: ReasonCode;

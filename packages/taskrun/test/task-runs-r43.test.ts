@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MockGitHost, type GitHost } from "@maycombhq/adapters";
 import { MockRuntime } from "@maycombhq/ai";
 import { previewTaskRun, raiseTaskPr, readTaskRun, runTask, taskPrState } from "../src/index.js";
-import { CHANGE, FORGE, git, speckitRoot } from "./helpers.js";
+import { CHANGE, FORGE, git, sh, speckitRoot } from "./helpers.js";
 
 const T = 180_000;
 const now = () => new Date("2026-11-08T09:00:00Z");
@@ -135,6 +135,13 @@ describe("task runs (review round 43)", () => {
         /^Task 1\.2's PR is open/,
       );
       await host.closePullRequest("forge-ledger", r1.pr!.number, APPROVAL);
+      // Review round 48: not while the task branch still has the closed PR's commits.
+      await expect(previewTaskRun(root, CHANGE, "1.2", { gitHost: host })).rejects.toThrow(
+        /^Task 1\.2's earlier PR \S+ is closed, and its branch/,
+      );
+      const clone = join(root, "workspace/forge-ledger");
+      sh(clone, "worktree", "remove", "--force", join(root, r1.worktree));
+      sh(clone, "branch", "-D", `task/${CHANGE}/1.2`);
       const p = await previewTaskRun(root, CHANGE, "1.2", { gitHost: host });
       expect(p).toMatchObject({ task: "1.2", repo: "forge-ledger" });
     },

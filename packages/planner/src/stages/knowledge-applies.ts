@@ -374,8 +374,16 @@ export function plainWhy(i: { id: string; why?: string | undefined }): string | 
   return other ? `Linked to ${other}, which the change leads to.` : w;
 }
 
-/** The list for a hand-off PR or the app: what applies, and what nearly did. */
-export function knowledgeAppliesMarkdown(doc: KnowledgeApplies): string {
+/**
+ * The list for a hand-off PR or the app: what applies, and what nearly did. Review round 48:
+ * `text` renders each piece of ingested text (a title, the reason, a path, an id), so a PR body
+ * can put it in inline code on one line, its secrets redacted; as it is by default.
+ */
+export function knowledgeAppliesMarkdown(
+  doc: KnowledgeApplies,
+  o: { text?: (s: string) => string } = {},
+): string {
+  const t = o.text ?? ((x: string) => x);
   const shown = doc.items.filter((i) => i.status !== "excluded");
   const lines = ["### Applies to this change", ""];
   if (!shown.length) lines.push("Nothing in the org's knowledge was picked for this change.");
@@ -389,17 +397,17 @@ export function knowledgeAppliesMarkdown(doc: KnowledgeApplies): string {
       .filter(Boolean)
       .join("; ");
     const name = i.title ? `${i.title} [${i.id}]` : i.id;
-    lines.push(`- ${i.kind} ${name} (${why})${i.file ? `: ${i.file}` : ""}`);
+    lines.push(`- ${i.kind} ${t(name)} (${t(why)})${i.file ? `: ${t(i.file)}` : ""}`);
   }
   const excluded = doc.items.filter((i) => i.status === "excluded");
   if (excluded.length)
-    lines.push("", `Excluded by a person: ${excluded.map((i) => i.id).join(", ")}.`);
+    lines.push("", `Excluded by a person: ${excluded.map((i) => t(i.id)).join(", ")}.`);
   if (doc.nearMisses.length)
     lines.push(
       "",
       `Near-misses (left out for room; confirm one with atticus change knowledge ${doc.change} --confirm <id>): ${doc.nearMisses
         .slice(0, 15)
-        .map((n) => n.id)
+        .map((n) => t(n.id))
         .join(
           ", ",
         )}${doc.nearMisses.length > 15 ? ` and ${doc.nearMisses.length - 15} more` : ""}.`,

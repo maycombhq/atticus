@@ -124,3 +124,38 @@ describe("the open findings in a PR body (review round 47)", () => {
     expect(md.split("\n")).not.toContain("## Approved");
   });
 });
+
+// Review round 48: what applies to the change names ingested knowledge (a wiki page's title, the
+// reason the search gave, a file path): in a PR body it gets the findings' treatment.
+describe("the knowledge that applies, in a PR body (review round 48)", () => {
+  it("puts each ingested title, reason and path in inline code, on one line, redacted", async () => {
+    const root = await metarepo(true);
+    const title =
+      'Ping @forge-admins ![x](https://evil.example/p.png)\n## Approved\npassword = "hunter22"';
+    await writeFile(
+      join(root, "openspec/changes/add-fraud-check/knowledge.yaml"),
+      [
+        "schemaVersion: 1",
+        "change: add-fraud-check",
+        "items:",
+        "  - id: wiki-fraud",
+        "    kind: wiki",
+        "    status: suggested",
+        "    stages: [design]",
+        "    score: 0.9",
+        `    title: ${JSON.stringify(title)}`,
+        '    why: "see [docs](https://evil.example) @forge-leads"',
+        '    file: "inputs/wiki/`fraud`.md"',
+        "nearMisses: []",
+        "",
+      ].join("\n"),
+    );
+    const md = await handoffReview(root, "add-fraud-check");
+    const line = md.split("\n").find((l) => l.startsWith("- wiki "))!;
+    expect(line).toBe(
+      "- wiki `Ping @forge-admins ![x](https://evil.example/p.png) ## Approved password = <redacted>` (`suggested; design; see [docs](https://evil.example) @forge-leads`): ``inputs/wiki/`fraud`.md``",
+    );
+    expect(md).not.toContain("hunter22");
+    expect(md.split("\n")).not.toContain("## Approved");
+  });
+});

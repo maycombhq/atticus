@@ -322,7 +322,7 @@ export async function handoff(
   if (live && live.phase === phase) {
     const pr = await handoffPr(opts.gitHost, repo, id, live);
     if (pr.state === "open" || pr.state === "draft") {
-      await opts.publisher?.publish({
+      const published = await opts.publisher?.publish({
         root,
         branch,
         base: pr.base,
@@ -330,12 +330,18 @@ export async function handoff(
         message: `${handoffName(a.type, phase)}: update`,
         approval: opts.approval,
       });
-      await opts.gitHost.comment(
-        repo,
-        pr.number,
-        `${by} updated the hand-off for another review.`,
-        opts.approval,
-      );
+      // Review round 48: a re-run that moved nothing (the branch as it was, or with no publisher
+      // the same files) asks for no other review.
+      const unchanged = published
+        ? published.changed === false
+        : sameArtifacts(hashed, live.artifacts);
+      if (!unchanged)
+        await opts.gitHost.comment(
+          repo,
+          pr.number,
+          `${by} updated the hand-off for another review.`,
+          opts.approval,
+        );
       const updated: ChangeHandoff = {
         ...live,
         state: "open",
@@ -361,6 +367,18 @@ export async function handoff(
     live.updatedAt = now;
   }
 
+  // Review round 48: a resubmit after Return to PO, whose PR a person closes on a host that
+  // can't (the manual host, a host with no closePullRequest), waits until it is closed there:
+  // publishing first would put the new files on the PR still open.
+  if (change.state === "returned") {
+    const open = (await opts.gitHost.listPullRequests(repo, { head: branch })).find(
+      (p) => p.state === "open" || p.state === "draft",
+    );
+    if (open) {
+      const message = `PR #${open.number} from ${branch} is still open on the Git host (${open.url}): close it there first (the return asked for that), then resubmit the change.`;
+      throw new ChangeError("refused", message, [{ code: "host-refused", message }]);
+    }
+  }
   const base = opts.base ?? (await opts.gitHost.getRepo(repo)).defaultBranch;
   const next = a.next!;
   await opts.publisher?.publish({
@@ -371,23 +389,35 @@ export async function handoff(
     message: `${handoffName(a.type, phase)}: ${change.title}`,
     approval: opts.approval,
   });
-  const pr = await opts.gitHost.createPullRequest(
-    {
-      repo,
-      head: branch,
-      base,
-      title: `${change.title}: ${handoffName(a.type, phase)}`,
-      body: prBody(
-        a,
-        phase,
-        change.state === "returned" ? nextAfterResubmit(a, phase) : next,
-        [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
-        reviewers,
-        opts.review,
-      ),
-    },
-    opts.approval,
-  );
+  let pr: PullRequest;
+  try {
+    pr = await opts.gitHost.createPullRequest(
+      {
+        repo,
+        head: branch,
+        base,
+        title: `${change.title}: ${handoffName(a.type, phase)}`,
+        body: prBody(
+          a,
+          phase,
+          change.state === "returned" ? nextAfterResubmit(a, phase) : next,
+          [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
+          reviewers,
+          opts.review,
+        ),
+      },
+      opts.approval,
+    );
+  } catch (e) {
+    // Review round 48: the PR the host opened when its answer didn't reach Atticus (a timeout)
+    // is the one open from the hand-off branch into the base: recorded, as release PRs are.
+    if (!(e instanceof AdapterError) || e.code !== "conflict") throw e;
+    const open = (await opts.gitHost.listPullRequests(repo, { head: branch }).catch(() => []))
+      .filter((p) => p.base === base && (p.state === "open" || p.state === "draft"))
+      .at(0);
+    if (!open) throw e;
+    pr = open;
+  }
   const h: ChangeHandoff = {
     phase,
     branch,
@@ -413,6 +443,13 @@ export async function handoff(
     handoffs: [...change.handoffs, h],
   });
   return h;
+}
+
+/** Whether a re-run hands off the same files as the hand-off already open. */
+function sameArtifacts(a: ChangeHandoff["artifacts"], b: ChangeHandoff["artifacts"]): boolean {
+  const key = (xs: ChangeHandoff["artifacts"]) =>
+    JSON.stringify([...xs].map((x) => `${x.path} ${x.sha256}`).sort());
+  return key(a) === key(b);
 }
 
 function nextAfterResubmit(a: Assessment, phase: PhaseId): LifecycleState {

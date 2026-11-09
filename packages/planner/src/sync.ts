@@ -145,14 +145,23 @@ export async function desiredItems(
     });
   }
   const storyKeys = new Set(out.map((x) => x.key));
-  for (const t of readTasks(ctx.files)) {
-    const id = /^\s*[-*]\s+\[[ xX]?\]\s+(\S+)/.exec(t.text)?.[1] ?? String(t.line);
+  const taskLines = readTasks(ctx.files).map((t) => ({
+    t,
+    id: /^\s*[-*]\s+\[[ xX]?\]\s+(\S+)/.exec(t.text)?.[1] ?? String(t.line),
+  }));
+  // Review round 48: each repo's tasks may start at 1.1, so an id used in more than one place is
+  // keyed by its repo too (task:<repo>/<id>). One used once keeps task:<id>, so the work items
+  // synced before still match it.
+  const uses = new Map<string, number>();
+  for (const { id } of taskLines) uses.set(id, (uses.get(id) ?? 0) + 1);
+  for (const { t, id: own } of taskLines) {
+    const id = (uses.get(own) ?? 0) > 1 ? `${t.repo}/${own}` : own;
     const story = t.stories.find((s) => storyKeys.has(`story:${s}`));
     out.push({
       key: `task:${id}`,
       type: "task",
       title: `${t.repo}: ${t.text.replace(/^\s*[-*]\s+\[[ xX]?\]\s+\S+\s+/, "").replace(/\s*\(stor(?:y|ies)\b[^)]*\)\s*$/i, "")}`,
-      description: `Build engine: ${ctx.engineOf(t.repo)}. Task ${id} of change ${ctx.change.id}.`,
+      description: `Build engine: ${ctx.engineOf(t.repo)}. Task ${own} of change ${ctx.change.id}.`,
       acceptanceCriteria: "",
       parent: story ? `story:${story}` : "feature",
       tags: ["atticus", tag(`task:${id}`), t.repo],
@@ -204,6 +213,23 @@ export async function syncWorkItems(
     }
   if (resolved && !o.dryRun) await saveSyncFile(ctx, file);
   const desired = await desiredItems(ctx, o.epic ? { epic: o.epic } : {});
+  // Review round 48: a work item synced under task:<id> before that id was used by more than one
+  // repo moves to its repo's key (the task whose title it was synced with, else the last, which
+  // the shared key was written by), and is updated so its tag says the repo too.
+  let moved = false;
+  for (const e of file.workItems) {
+    if (!/^task:[^/]+$/.test(e.key) || desired.some((d) => d.key === e.key)) continue;
+    const own = e.key.slice("task:".length);
+    const mine = desired.filter(
+      (d) => d.type === "task" && d.key.endsWith(`/${own}`) && /^task:[^/]+\/[^/]+$/.test(d.key),
+    );
+    const to = mine.find((d) => d.title === e.title) ?? mine.at(-1);
+    if (!to || file.workItems.some((x) => x.key === to.key)) continue;
+    e.key = to.key;
+    e.hash = "moved";
+    moved = true;
+  }
+  if (moved && !o.dryRun) await saveSyncFile(ctx, file);
   const byKey = new Map(file.workItems.map((e) => [e.key, e]));
   const writes: PlannedWrite[] = desired.map((d) => {
     const e = byKey.get(d.key);

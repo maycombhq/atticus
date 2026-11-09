@@ -31,6 +31,8 @@ export function taskWorktreePath(root: string, change: string, task: string, rep
  * worktree, where it is checked out). One with commits of its own while the host's has moved on
  * is never rewritten: refused, saying what to do. A host that isn't there or can't be reached,
  * or a task branch already cut, leaves the local branch as it is. Returns a note when it moved.
+ * `settled`: the task's earlier PR was merged or closed and its branch has nothing of its own, so
+ * the branch already cut doesn't hold the change branch back (review round 48).
  */
 export async function catchUpChangeBranch(
   root: string,
@@ -39,6 +41,7 @@ export async function catchUpChangeBranch(
   repo: string,
   changeDir: string,
   git: GitRunner = createGit(),
+  o: { settled?: boolean } = {},
 ): Promise<string | undefined> {
   const base = baseClonePath(root, repo);
   if (!existsSync(base)) return undefined;
@@ -48,7 +51,9 @@ export async function catchUpChangeBranch(
       (r) => r.stdout.trim() || undefined,
       () => undefined,
     );
-  if (await rev(`refs/heads/${taskBranch(change, task)}`)) return undefined;
+  // Review round 48: a task branch whose PR was merged or closed with nothing of its own left
+  // (taskBranchOwnCommits) starts again from the change branch, so it catches up too.
+  if (!o.settled && (await rev(`refs/heads/${taskBranch(change, task)}`))) return undefined;
   const local = await rev(`refs/heads/${from}`);
   if (!local) return undefined;
   const onHost = await git(["ls-remote", "--heads", "origin", `refs/heads/${from}`], base).then(
@@ -153,16 +158,60 @@ export async function catchUpChangeBranch(
   return note(handedDown);
 }
 
+/**
+ * Review round 48: the commits of a task's branch that neither the change branch here nor the Git
+ * host's has (fetched first; a host that can't be reached is judged by the branch here). After the
+ * task's PR was closed, they are the work that PR carried; after a squash or rebase merge, the
+ * commits the host merged in another form. Zero when the task branch isn't there. Reads only.
+ */
+export async function taskBranchOwnCommits(
+  root: string,
+  change: string,
+  task: string,
+  repo: string,
+  git: GitRunner = createGit(),
+): Promise<number> {
+  const base = baseClonePath(root, repo);
+  if (!existsSync(base)) return 0;
+  const branch = taskBranch(change, task);
+  const from = changeBranch(change);
+  const has = (ref: string) =>
+    git(["rev-parse", "--verify", "--quiet", ref], base).then(
+      (r) => !!r.stdout.trim(),
+      () => false,
+    );
+  if (!(await has(`refs/heads/${branch}`))) return 0;
+  await git(
+    ["fetch", "-q", "origin", `+refs/heads/${from}:refs/remotes/origin/${from}`],
+    base,
+  ).catch(() => undefined);
+  const not: string[] = [];
+  for (const ref of [`refs/heads/${from}`, `refs/remotes/origin/${from}`])
+    if (await has(ref)) not.push(ref);
+  const r = await git(["rev-list", "--count", `refs/heads/${branch}`, "--not", ...not], base);
+  return Number(r.stdout.trim()) || 0;
+}
+
+/**
+ * The task's worktree on its branch, cut from the change branch when the branch isn't there yet.
+ * `fresh` (review round 48: the task's earlier PR was merged or closed, and its branch has nothing
+ * of its own): a task branch already there moves on to the change branch, by fast-forward only
+ * (in its worktree when it is checked out there, else compare-and-swap when no worktree has it).
+ */
 export async function openTaskWorktree(
   root: string,
   change: string,
   task: string,
   repo: string,
   git: GitRunner = createGit(),
+  o: { fresh?: boolean } = {},
 ): Promise<{ path: string; branch: string; created: boolean }> {
   const path = taskWorktreePath(root, change, task, repo);
   const branch = taskBranch(change, task);
-  if (existsSync(path)) return { path, branch, created: false };
+  if (existsSync(path)) {
+    if (o.fresh) await fastForwardTask(root, change, task, repo, path, git);
+    return { path, branch, created: false };
+  }
   const base = baseClonePath(root, repo);
   if (!existsSync(base))
     throw new SpecKitError(
@@ -175,8 +224,10 @@ export async function openTaskWorktree(
       () => false,
     );
   await mkdir(dirname(path), { recursive: true });
-  if (await ok(`refs/heads/${branch}`)) await git(["worktree", "add", "--", path, branch], base);
-  else {
+  if (await ok(`refs/heads/${branch}`)) {
+    if (o.fresh) await fastForwardTask(root, change, task, repo, undefined, git);
+    await git(["worktree", "add", "--", path, branch], base);
+  } else {
     const from = changeBranch(change);
     if (!(await ok(`refs/heads/${from}`)))
       throw new SpecKitError(
@@ -186,4 +237,52 @@ export async function openTaskWorktree(
     await git(["worktree", "add", "--no-track", "-b", branch, "--", path, from], base);
   }
   return { path, branch, created: true };
+}
+
+/** Moves a task branch with nothing of its own on to the change branch, by fast-forward only. */
+async function fastForwardTask(
+  root: string,
+  change: string,
+  task: string,
+  repo: string,
+  path: string | undefined,
+  git: GitRunner,
+): Promise<void> {
+  const base = baseClonePath(root, repo);
+  const branch = taskBranch(change, task);
+  const from = changeBranch(change);
+  const rev = (ref: string) =>
+    git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], base).then(
+      (r) => r.stdout.trim() || undefined,
+      () => undefined,
+    );
+  const tip = await rev(`refs/heads/${branch}`);
+  const to = await rev(`refs/heads/${from}`);
+  if (!tip || !to || tip === to) return;
+  const behind = await git(["merge-base", "--is-ancestor", tip, to], base).then(
+    () => true,
+    () => false,
+  );
+  if (!behind) return;
+  const there = path
+    ? await git(["symbolic-ref", "-q", "HEAD"], path).then(
+        (r) => r.stdout.trim(),
+        () => "",
+      )
+    : "";
+  try {
+    if (path && there === `refs/heads/${branch}`) {
+      await git(["merge", "-q", "--ff-only", to], path);
+      return;
+    }
+    const list = await git(["worktree", "list", "--porcelain"], base);
+    if (list.stdout.split("\n").includes(`branch refs/heads/${branch}`))
+      throw new Error(`${branch} is checked out in another worktree`);
+    await git(["update-ref", `refs/heads/${branch}`, to, tip], base);
+  } catch (e) {
+    throw new SpecKitError(
+      "refused",
+      `${branch} in ${repo} couldn't move on to ${from} for a fresh start: ${(e instanceof Error ? e.message : String(e)).trim()}. Commit or put aside the edits in its worktree, then run task ${task} again.`,
+    );
+  }
 }

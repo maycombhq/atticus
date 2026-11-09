@@ -94,6 +94,45 @@ describe("a question changed meanwhile is never overwritten", () => {
     expect(await text(file)).toContain("state: answered");
   });
 
+  // Review round 48: another step asking the same question adds itself to alsoAskedBy from the
+  // file as it is when it writes, never from the list it read at the start.
+  const again = {
+    ...draft,
+    question: "Is every entry point served under /notes-api, or only some?",
+  };
+  const other = { ...asked, step: "scan-routes", command: "atticus scan routes forge-notes" };
+  const same: NonNullable<Parameters<typeof raiseQuestions>[3]>["judge"] = async (pairs) =>
+    new Map(pairs.map((p) => [p.key, "same" as const]));
+
+  it("alsoAskedBy: added to the question as answered meanwhile, the answer kept", async () => {
+    const { root, q, file } = await withQuestion();
+    const r = await raiseQuestions(root, [again], other, {
+      judge: async (pairs) => {
+        // A person answers it in the app while the judge weighs the pair.
+        await answerQuestion(root, q.id, { option: 1, by: "sam", at: AT });
+        return same(pairs);
+      },
+    });
+    expect(r.reused.map((x) => x.id)).toEqual([q.id]);
+    const now = await text(file);
+    expect(now).toContain("state: answered");
+    expect(now).toContain("by: sam");
+    expect(now).toContain("step: scan-routes");
+  });
+
+  it("alsoAskedBy: skipped when the file changes between its read and its write", async () => {
+    const { root, q, file } = await withQuestion();
+    const r = await raiseQuestions(root, [again], other, {
+      judge: async (pairs) => {
+        hook.armed = file;
+        return same(pairs);
+      },
+    });
+    expect(r.of[0]?.id).toBe(q.id);
+    expect(await text(file)).toContain(EDIT.trim());
+    expect(await text(file)).not.toContain("step: scan-routes");
+  });
+
   it("a refresh: skipped, the question as it is on file now", async () => {
     const { root, q, file } = await withQuestion();
     const newer = {

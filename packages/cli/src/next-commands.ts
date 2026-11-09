@@ -684,7 +684,9 @@ async function blockingOf(ctx: () => Promise<ChangeContext>, c: ChangeLifecycle)
 /** ADR 0184: what the release PRs still need, for a change on its way to release. */
 async function releasePrsOf(root: string, id: string): Promise<{ releasePrs?: "raise" | "merge" }> {
   const reasons = await releasePrReasons(root, id).catch(() => []);
-  if (reasons.some((r) => r.code === "release-pr-missing")) return { releasePrs: "raise" };
+  // Review round 48: the change branch moved past a merged release PR: it is raised again.
+  if (reasons.some((r) => r.code === "release-pr-missing" || r.code === "release-pr-stale"))
+    return { releasePrs: "raise" };
   if (reasons.some((r) => r.code === "release-pr-not-merged")) return { releasePrs: "merge" };
   return {};
 }
