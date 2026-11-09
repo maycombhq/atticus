@@ -184,6 +184,10 @@ test.describe("a correction on the canvas, applied from the app", () => {
     // Written: Apply first, the commands folded under In a terminal.
     const apply = form.getByRole("button", { name: "Apply to forge-studio's map" });
     await expect(apply).toBeVisible({ timeout: 30_000 });
+    // beta.23: the map itself says a correction waits to be applied, with its Apply.
+    const bar = page.getByRole("region", { name: "Apply to every repo's map" });
+    await expect(bar).toContainText("Your corrections aren't in the map yet: forge-studio.");
+    await expect(bar.getByRole("button", { name: "Apply to forge-studio's map" })).toBeVisible();
     await accessible(page, "a link corrected on the canvas");
     await apply.click();
     // Apply can take the form away (the link it was on moves): what happened stays on the page,
@@ -191,6 +195,7 @@ test.describe("a correction on the canvas, applied from the app", () => {
     await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({
       timeout: 90_000,
     });
+    await expect(bar).toHaveCount(0);
     // The arrow moved: the web app's call goes to the outside system now, not to the api.
     await open(page, a, "canvas");
     await expect(

@@ -52,6 +52,7 @@ import {
 } from "./model.js";
 import { WORDS } from "./words.js";
 import { flash } from "../../app/flash.js";
+import { CorrectionsToApply } from "../../app/propose.js";
 
 const LENSES = ["architecture", "repo", "data", "integration", "infrastructure"] as const;
 type Lens = (typeof LENSES)[number];
@@ -574,6 +575,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
 
   return (
     <div className="bento">
+      {/* Corrections drawn here and not yet applied: Apply for them all, on the map itself. */}
+      <CorrectionsToApply />
       <Panel title={WORDS.title} span="1 / -1">
         <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
           <div role="tablist" aria-label={WORDS.lens} className="row" style={{ gap: 6 }}>

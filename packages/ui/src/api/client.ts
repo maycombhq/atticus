@@ -101,10 +101,30 @@ const busy = (by: 1 | -1) => {
     window.dispatchEvent(new CustomEvent(BUSY_EVENT, { detail: inFlight }));
 };
 
+/**
+ * Heard after every write the app makes through the local API (any method but GET), so a page
+ * that shows what waits to be applied or proposed reads it again without a reload.
+ */
+export const wrote = new EventTarget();
+const WROTE = "atticus:wrote";
+export const onWrote = (f: () => void): (() => void) => {
+  wrote.addEventListener(WROTE, f);
+  return () => wrote.removeEventListener(WROTE, f);
+};
+
 /** A call to the local API; every one counts toward the loading bar while it is in flight. */
 export async function api<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean } = {},
+): Promise<T> {
+  const r = await counted<T>(path, o);
+  if (o.method && o.method !== "GET") wrote.dispatchEvent(new Event(WROTE));
+  return r;
+}
+
+async function counted<T>(
+  path: string,
+  o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean },
 ): Promise<T> {
   // ADR 0173: a check the page makes on its own every few seconds (a run's progress) doesn't
   // flash the loading bar; everything a person waits on does.

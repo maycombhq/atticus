@@ -4253,6 +4253,10 @@ export const COPY = {
     toHome: "Propose it from Home",
     applyFirst:
       "Apply the answers and corrections first, so the map in the pull request matches them:",
+    /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
+    onMap: (repos: string) =>
+      `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
+    onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
     inReview: (where: string) => `already proposed (${where})`,

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, ApiError, useApi } from "../api/client.js";
+import { api, ApiError, onWrote, useApi } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
@@ -314,7 +314,7 @@ export function BringIn() {
 }
 
 /** `atticus verify --all --write`, then Propose for review. */
-export function ApplyAll({ noPropose }: { noPropose?: boolean }) {
+export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: () => void }) {
   const act = useAction();
   const [lines, setLines] = useState<string[]>();
   const [jobId, setJobId] = useState<string | undefined>();
@@ -336,6 +336,7 @@ export function ApplyAll({ noPropose }: { noPropose?: boolean }) {
               } finally {
                 workChanged();
               }
+              onDone?.();
             }, COPY.appStep.appliedAll)
           }
         >
@@ -351,6 +352,47 @@ export function ApplyAll({ noPropose }: { noPropose?: boolean }) {
       )}
       {!noPropose && <Propose scope="work" />}
     </div>
+  );
+}
+
+/**
+ * The map's own bar: the repos whose corrections are newer than their last Apply (the server's
+ * applyFirst), with one Apply for them all (each repo's own when only one), read again after
+ * every write the app makes, so a line drawn or removed on the map shows here at once.
+ */
+export function CorrectionsToApply() {
+  const plan = useApi<Plan>("/api/propose?scope=work");
+  const reload = plan.reload;
+  useEffect(() => {
+    work.addEventListener(WORK_CHANGED, reload);
+    const off = onWrote(reload);
+    return () => {
+      work.removeEventListener(WORK_CHANGED, reload);
+      off();
+    };
+  }, [reload]);
+  const [applied, setApplied] = useState(false);
+  const repos = plan.state === "ready" ? (plan.data.applyFirst ?? []) : [];
+  if (!repos.length && !applied) return null;
+  return (
+    <section
+      className="panel stack"
+      style={{ gap: 6, gridColumn: "1 / -1" }}
+      aria-label={COPY.appStep.applyAll}
+    >
+      {repos.length > 0 && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {P.onMap(repos.join(", "))}
+        </p>
+      )}
+      {repos.length > 1 && <ApplyAll noPropose onDone={() => setApplied(true)} />}
+      {repos.length === 1 && <ApplyAndPropose scope="corrections" repo={repos[0]} noPropose />}
+      {applied && !repos.length && (
+        <p role="status" className="work-say" style={{ margin: 0 }}>
+          {P.onMapApplied} <a href="#/home">{P.toHome}</a>
+        </p>
+      )}
+    </section>
   );
 }
 
