@@ -87,8 +87,20 @@ export interface ChangeStore {
   /** Undefined when the change has no change.yaml. */
   tryRead(id: string): Promise<ChangeLifecycle | undefined>;
   write(value: ChangeLifecycle): Promise<string>;
-  /** Every change with a change.yaml, in id order. Archived folders are not listed. */
+  /**
+   * Every change with a change.yaml that reads, in id order. Archived folders are not listed. A
+   * change.yaml that doesn't read (cut short, a merge's conflict markers) is skipped, so one bad
+   * file never fails every page that lists changes; `listWithProblems` names it.
+   */
   list(): Promise<ChangeLifecycle[]>;
+  /** As `list`, with the change files that don't read and why (round 46). */
+  listWithProblems(): Promise<ChangeList>;
+}
+
+export interface ChangeList {
+  changes: ChangeLifecycle[];
+  /** change.yaml files that aren't a valid change, with why. */
+  problems: { file: string; message: string }[];
 }
 
 export function changeStore(root: string): ChangeStore {
@@ -131,24 +143,35 @@ export function changeStore(root: string): ChangeStore {
       await writeFileAtomic(path, serializeChange(value));
       return path;
     },
+    listWithProblems,
     async list() {
-      let names: string[];
-      try {
-        names = (await readdir(changesDirOf(root), { withFileTypes: true }))
-          .filter(
-            (d) => d.isDirectory() && d.name !== "archive" && RecordId.safeParse(d.name).success,
-          )
-          .map((d) => d.name)
-          .sort();
-      } catch {
-        return [];
-      }
-      const out: ChangeLifecycle[] = [];
-      for (const n of names) {
-        const c = await tryRead(n);
-        if (c) out.push(c);
-      }
-      return out;
+      return (await listWithProblems()).changes;
     },
   };
+
+  async function listWithProblems(): Promise<ChangeList> {
+    let names: string[];
+    try {
+      names = (await readdir(changesDirOf(root), { withFileTypes: true }))
+        .filter(
+          (d) => d.isDirectory() && d.name !== "archive" && RecordId.safeParse(d.name).success,
+        )
+        .map((d) => d.name)
+        .sort();
+    } catch {
+      return { changes: [], problems: [] };
+    }
+    const changes: ChangeLifecycle[] = [];
+    const problems: ChangeList["problems"] = [];
+    for (const n of names) {
+      try {
+        const c = await tryRead(n);
+        if (c) changes.push(c);
+      } catch (e) {
+        if (!(e instanceof ChangeFileError)) throw e;
+        problems.push({ file: e.path, message: e.message });
+      }
+    }
+    return { changes, problems };
+  }
 }

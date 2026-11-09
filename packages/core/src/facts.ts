@@ -29,7 +29,14 @@ export type ParseFactsResult = { ok: true; facts: Fact[] } | { ok: false; issues
 export function parseFacts(text: string): ParseFactsResult {
   const trimmed = text.trim();
   if (trimmed.startsWith("[")) {
-    const r = FactsFile.safeParse(normalizeFactPaths(JSON.parse(trimmed)));
+    // Round 46: a JSON array cut short (a write interrupted) is a refused file, never a throw.
+    let json: unknown;
+    try {
+      json = JSON.parse(trimmed);
+    } catch (e) {
+      return { ok: false, issues: [{ code: "not-json", message: (e as Error).message }] };
+    }
+    const r = FactsFile.safeParse(normalizeFactPaths(json));
     if (r.success) return { ok: true, facts: r.data };
     return { ok: false, issues: r.error.issues.map((i) => issueOf(i)) };
   }

@@ -11,6 +11,7 @@ import {
   type ToolLimits,
 } from "./tools.js";
 import {
+  claimRunDir,
   OneShotRuntime,
   RuntimeError,
   type AiRequest,
@@ -287,5 +288,14 @@ export class ModelRuntime extends OneShotRuntime {
       "utf8",
     );
     await writeFile(join(dir, "run.json"), JSON.stringify(run, null, 2) + "\n", "utf8");
+  }
+
+  /**
+   * Round 46: given a root, the run's folder is claimed with its id, so another command's run in
+   * the same second (its runtime counts from 1 too) never gets this id and overwrites it.
+   */
+  protected override async newRunId(request: AiRequest, now: Date): Promise<string> {
+    if (!this.mo.root) return super.newRunId(request, now);
+    return claimRunDir(join(runsDirOf(this.mo.root), request.change), () => this.nextRunId(now));
   }
 }

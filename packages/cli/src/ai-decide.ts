@@ -10,6 +10,7 @@ import {
   callsOfQuestion,
   catalogDirOf,
   checkedProposals,
+  FileChangedError,
   correctionLine,
   decideOf,
   deriveMatch,
@@ -45,6 +46,7 @@ import {
   ruleKindOf,
   TARGETS_STEP_ID,
   writeBatch,
+  withSharedFileLock,
   writeFileAtomic,
   writeQuestion,
   AI_LINE_BY,
@@ -63,7 +65,7 @@ import {
   type RuleSubject,
 } from "@maycombhq/core";
 import { checkoutOf } from "./facts-files.js";
-import { safeMessage, withFileLock } from "./file-lock.js";
+import { safeMessage } from "./file-lock.js";
 
 /**
  * ADR 0181: AI decides first, as itself; a person corrects one, and the correction spreads.
@@ -124,7 +126,8 @@ async function correctedRepos(root: string): Promise<string[]> {
 
 /**
  * Take lines away and add lines in one write of a repo's corrections file, in its own line
- * endings, one write at a time (the same lock Connect and Undo take).
+ * endings, one write at a time (the same lock Connect and Undo take). Round 46: the lock holds
+ * across processes, so a line the app server appends while this command rewrites isn't lost.
  */
 async function rewriteCorrections(
   root: string,
@@ -140,7 +143,7 @@ async function rewriteCorrections(
   },
 ): Promise<{ removed: number; added: number; picked?: string[] }> {
   const file = correctionsFile(root, repo);
-  return withFileLock(file, async () => {
+  return withSharedFileLock(file, async () => {
     const text = await readFile(file, "utf8").catch(() => "");
     const eol = /\r\n/.test(text) ? "\r\n" : "\n";
     const lines = text.split(/\r?\n/).filter((l, i, all) => l !== "" || i < all.length - 1);
@@ -585,6 +588,11 @@ export async function decideAnswers(
     } catch (e) {
       if (e instanceof QuestionError) {
         kept.push({ id: p.id, why: e.message });
+        continue;
+      }
+      // Round 46: a person answered (or edited) it while the batch worked: theirs stands.
+      if (e instanceof FileChangedError) {
+        kept.push({ id: p.id, why: "a person changed it meanwhile: theirs stands" });
         continue;
       }
       throw e;

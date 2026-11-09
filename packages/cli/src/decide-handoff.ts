@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeRunId } from "@maycombhq/ai";
+import { claimRunDir, makeRunId } from "@maycombhq/ai";
 import { runsDirOf, runsRelOf, writeFileAtomic, type Api } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 
@@ -63,10 +63,9 @@ export async function startDecideRun(
   },
 ): Promise<DecideRun & { promptRel: string }> {
   const now = o.now ?? new Date();
-  let runId = makeRunId(now);
-  while (await stat(runDir(root, o.change, runId)).catch(() => undefined)) runId = makeRunId(now);
+  // Round 46: the folder is claimed with its id (made without `recursive`), never check-then-make.
+  const runId = await claimRunDir(join(runsDirOf(root), o.change), () => makeRunId(now));
   const dir = runDir(root, o.change, runId);
-  await mkdir(dir, { recursive: true });
   await writeFileAtomic(
     join(dir, "prompt.md"),
     o.prompt.endsWith("\n") ? o.prompt : `${o.prompt}\n`,

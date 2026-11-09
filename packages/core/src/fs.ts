@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /**
  * Write a file so a crash never leaves it half-written: write a temporary file beside it,
@@ -185,6 +185,175 @@ export async function acquireLock(
     }
   }
   throw new Error(`Couldn't take the ${name} lock at ${file}.`);
+}
+
+// ------------------------------------------------------- a file shared between processes
+
+/** The lock file beside a file two processes write (`<file>.lock`): no facts-folder reader takes it for a file of its own. */
+export const sharedLockFileOf = (path: string) => `${path}.lock`;
+
+interface SharedLockInfo extends LockInfo {
+  /** Which take of the lock this is, so a holder only ever removes its own. */
+  token: string;
+}
+
+// One holder at a time per file in this process, before the lock file is tried.
+const sharing = new Map<string, Promise<unknown>>();
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Review round 46: run `work` holding a file that another process may append to or rewrite at
+ * the same time (a repo's corrections: the app server appends, a CLI command rewrites it), so a
+ * read, change and write never loses what the other wrote meanwhile. In this process the writers
+ * of one file queue; between processes `<file>.lock` is created with `wx` (which fails when it is
+ * there), retried with a short backoff. A lock whose process is gone, or older than `staleMs`, is
+ * taken over; after `waitMs` it gives up with LockHeldError naming the holder. No `flock`, so it
+ * works the same on Windows, where a lock file being deleted can refuse for a moment (EPERM,
+ * EBUSY): those are retried.
+ */
+export function withSharedFileLock<T>(
+  path: string,
+  work: () => Promise<T>,
+  o: { staleMs?: number; waitMs?: number; what?: string } = {},
+): Promise<T> {
+  const key = resolve(path);
+  const prev = sharing.get(key) ?? Promise.resolve();
+  const run = async () => {
+    const release = await takeSharedLock(key, o);
+    try {
+      return await work();
+    } finally {
+      await release();
+    }
+  };
+  const next = prev.then(run, run);
+  const tail = next.catch(() => undefined);
+  sharing.set(key, tail);
+  void tail.then(() => {
+    if (sharing.get(key) === tail) sharing.delete(key);
+  });
+  return next;
+}
+
+async function takeSharedLock(
+  path: string,
+  o: { staleMs?: number; waitMs?: number; what?: string },
+): Promise<() => Promise<void>> {
+  const file = sharedLockFileOf(path);
+  const staleMs = o.staleMs ?? 10_000;
+  const waitMs = o.waitMs ?? 15_000;
+  const info: SharedLockInfo = {
+    pid: process.pid,
+    host: hostname(),
+    startedAt: new Date().toISOString(),
+    what: o.what ?? `write of ${basename(path)}`,
+    token: randomBytes(8).toString("hex"),
+  };
+  await mkdir(dirname(file), { recursive: true });
+  const start = Date.now();
+  let delay = 5;
+  for (;;) {
+    let code: string;
+    try {
+      await writeFile(file, JSON.stringify(info), { encoding: "utf8", flag: "wx" });
+      return () => releaseShared(file, info.token);
+    } catch (e) {
+      code = (e as NodeJS.ErrnoException).code ?? "";
+      if (code !== "EEXIST" && !BUSY.has(code)) throw e;
+    }
+    let held: LockInfo | undefined;
+    if (code === "EEXIST") {
+      const seen = await readFile(file, "utf8").catch(() => undefined);
+      // Let go meanwhile: try again at once.
+      if (seen === undefined) continue;
+      held = parseLockInfo(seen);
+      if (await isStaleShared(file, held, staleMs)) {
+        await takeOver(file, seen, info.token);
+        continue;
+      }
+    }
+    if (Date.now() - start > waitMs)
+      throw new LockHeldError(
+        held ?? { pid: 0, host: "?", startedAt: "?", what: `write of ${basename(path)}` },
+        file,
+      );
+    await sleep(delay + Math.floor(Math.random() * delay));
+    delay = Math.min(delay * 2, 100);
+  }
+}
+
+function parseLockInfo(text: string): LockInfo | undefined {
+  try {
+    const j = JSON.parse(text) as Partial<LockInfo>;
+    return typeof j.pid === "number" && typeof j.startedAt === "string"
+      ? {
+          pid: j.pid,
+          host: String(j.host ?? ""),
+          startedAt: j.startedAt,
+          what: String(j.what ?? ""),
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function isStaleShared(
+  file: string,
+  held: LockInfo | undefined,
+  staleMs: number,
+): Promise<boolean> {
+  // Its process is gone (a crash, a closed terminal): taken over at once.
+  if (held && held.host === hostname() && held.pid !== process.pid && !alive(held.pid)) return true;
+  // Otherwise by its age (another machine's process, a reused PID); a lock file still being
+  // written (empty, or cut short) by the file's own time.
+  const since = held
+    ? Date.parse(held.startedAt)
+    : await stat(file).then(
+        (s) => s.mtimeMs,
+        () => NaN,
+      );
+  return Number.isFinite(since) && Date.now() - since > staleMs;
+}
+
+/** Move a stale lock aside, and keep it gone only when it is the one judged stale. */
+async function takeOver(file: string, seen: string, token: string): Promise<void> {
+  const aside = `${file}.${token}.stale`;
+  try {
+    await rename(file, aside);
+  } catch {
+    // Another process took it over first, or it was let go.
+    return;
+  }
+  const moved = await readFile(aside, "utf8").catch(() => undefined);
+  // A fresh lock taken meanwhile went aside instead: put it back, unless a lock is there again.
+  if (moved !== undefined && moved !== seen) await link(aside, file).catch(() => undefined);
+  await rmRetrying(aside);
+}
+
+async function releaseShared(file: string, token: string): Promise<void> {
+  const now = await readFile(file, "utf8").catch(() => undefined);
+  if (now === undefined) return;
+  try {
+    if ((JSON.parse(now) as { token?: string }).token !== token) return;
+  } catch {
+    return;
+  }
+  await rmRetrying(file);
+}
+
+async function rmRetrying(file: string, tries = 9): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      await rm(file, { force: true });
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? "";
+      if (!BUSY.has(code) || i >= tries - 1) throw e;
+      await sleep(20 * 2 ** i);
+    }
+  }
 }
 
 /**

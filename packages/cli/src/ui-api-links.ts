@@ -16,6 +16,7 @@ import {
   orgPackDirOf,
   QuestionError,
   TARGETS_STEP_ID,
+  withSharedFileLock,
   writeFileAtomic,
   questionsRelOf,
   type CandidateApi,
@@ -32,7 +33,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { estateJoinOnFile, stampOf } from "./contract-check-files.js";
-import { appendLines, safeMessage, withFileLock } from "./file-lock.js";
+import { appendLines, safeMessage } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
 
 /**
@@ -394,7 +395,7 @@ export function uiLinkRoutes(
         if (!b.success) throw badRequest("Say which line to remove: { line }.");
         const file = join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
         const rel = `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
-        await withFileLock(file, async () => {
+        await withSharedFileLock(file, async () => {
           const text = await readFile(file, "utf8").catch(() => undefined);
           if (text === undefined) throw notFound(`There is no ${rel}.`);
           const lines = text.split(/\r?\n/);

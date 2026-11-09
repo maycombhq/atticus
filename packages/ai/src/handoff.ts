@@ -15,6 +15,7 @@ import {
 import { sha256 } from "./context.js";
 import {
   checkAllowed,
+  claimRunDir,
   makeRunId,
   RuntimeError,
   transition,
@@ -185,14 +186,12 @@ export class HandoffRuntime implements AiRuntime {
     ].join("\n");
   }
 
-  /** A run id no run folder of the change has yet. */
+  /** A run id no run folder of the change has yet, its folder made (claimed) with it. */
   private async freshId(change: string, now: Date): Promise<string> {
     // Each process counts from 1, so a run another process made in the same second may
-    // already have this id: skip any id whose run folder is on disk.
-    let runId = makeRunId(now, ++this.seq);
-    while (await stat(this.runDir(change, runId)).catch(() => undefined))
-      runId = makeRunId(now, ++this.seq);
-    return runId;
+    // already have this id: the folder is made without `recursive`, so one that is there (or
+    // that another runtime makes at the same moment) moves on to the next id (round 46).
+    return claimRunDir(join(runsDirOf(this.o.root), change), () => makeRunId(now, ++this.seq));
   }
 
   /**

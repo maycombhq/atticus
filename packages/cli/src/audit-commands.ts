@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { parse } from "yaml";
 import {
@@ -23,6 +23,7 @@ import {
   type AuditPrecision,
   type AuditTally,
   type Fact,
+  writeFileAtomic,
 } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { checkoutOf } from "./facts-files.js";
@@ -325,7 +326,7 @@ export function answerAudit(
 
 /** The audit file written beside the facts: a person's record, nothing sent anywhere. */
 export async function writeAudit(root: string, repo: string, audit: AuditFileT): Promise<void> {
-  await writeFile(auditPath(root, repo), serializeAuditFile(audit), "utf8");
+  await writeFileAtomic(auditPath(root, repo), serializeAuditFile(audit));
 }
 
 /** Each cited line's text as the checkout has it, by cite; none where the checkout or line isn't there. */

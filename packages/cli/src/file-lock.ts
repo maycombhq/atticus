@@ -1,9 +1,11 @@
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { withSharedFileLock } from "@maycombhq/core";
 
 /**
- * ADR 0174: one write at a time to a file this server appends to and rewrites (a repo's
- * corrections: Connect appends, Undo rewrites), so an append during an Undo is never lost.
+ * ADR 0174: one write at a time, in this process, to a file or folder. It is no lock between
+ * processes: a repo's corrections, which the app server and a CLI command both write, go through
+ * core's `withSharedFileLock` instead (round 46).
  */
 const chains = new Map<string, Promise<unknown>>();
 
@@ -22,10 +24,12 @@ export function withFileLock<T>(path: string, work: () => Promise<T>): Promise<T
 /**
  * Append lines to a file a person may also edit by hand (a repo's corrections), one write at a
  * time: in the file's own line endings, and on a line of their own when its last line has none
- * (an editor that saves without a final newline), so two lines never run into one.
+ * (an editor that saves without a final newline), so two lines never run into one. One write at
+ * a time across processes too (round 46): the app server appends while a CLI command may rewrite
+ * the file, so it takes the file's shared lock (`withSharedFileLock`), as every rewrite does.
  */
 export function appendLines(file: string, lines: readonly string[]): Promise<void> {
-  return withFileLock(file, async () => {
+  return withSharedFileLock(file, async () => {
     const now = await readFile(file, "utf8").catch(() => "");
     const eol = /\r\n/.test(now) ? "\r\n" : "\n";
     const lead = now && !now.endsWith("\n") ? eol : "";

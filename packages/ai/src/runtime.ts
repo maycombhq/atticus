@@ -1,3 +1,6 @@
+import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
   currentSignal,
   RUN_SCHEMA_VERSION,
@@ -124,9 +127,27 @@ export function makeRunId(now: Date, seq?: number): string {
     .toISOString()
     .replace(/[-:TZ.]/g, "")
     .slice(0, 14);
-  const tail =
-    seq !== undefined ? String(seq).padStart(4, "0") : Math.random().toString(36).slice(2, 8);
+  const tail = seq !== undefined ? String(seq).padStart(4, "0") : randomBytes(3).toString("hex");
   return `run-${stamp}-${tail}`;
+}
+
+/**
+ * Round 46: claim a new run's folder under `dir` (the change's runs folder) and return its id.
+ * The folder is made without `recursive`, so it fails when it is there (EEXIST): another process
+ * (each command counts from 1, or two commands in one second) has that id, and the next is
+ * tried. `next` gives the ids in turn.
+ */
+export async function claimRunDir(dir: string, next: () => string): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  for (let i = 0; ; i++) {
+    const runId = next();
+    try {
+      await mkdir(join(dir, runId));
+      return runId;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST" || i >= 9999) throw e;
+    }
+  }
 }
 
 /** The summary that goes into review/; full packs and transcripts stay in .runs/. */
@@ -203,6 +224,19 @@ export abstract class OneShotRuntime implements AiRuntime {
   /** Keep a finished run where Model runs reads it (the model runtime, given a root). */
   protected async keep(_run: Run): Promise<void> {}
 
+  /**
+   * The next run id: counted from 1 on a test's clock (deterministic), with a random tail on the
+   * real one, so two commands' runtimes in one second don't share an id (round 46).
+   */
+  protected nextRunId(now: Date): string {
+    return makeRunId(now, this.opts.now ? ++this.seq : undefined);
+  }
+
+  /** A new run's id; a runtime that keeps its runs in folders claims the folder (`claimRunDir`). */
+  protected async newRunId(_request: AiRequest, now: Date): Promise<string> {
+    return this.nextRunId(now);
+  }
+
   async prepare(request: AiRequest): Promise<Run> {
     checkAllowed(this.allowedAs(request.agent), request.agent);
     if (request.pack.manifest.totalTokens > request.agent.tokenBudget) {
@@ -212,7 +246,7 @@ export abstract class OneShotRuntime implements AiRuntime {
     }
     const now = this.now();
     const run: Run = {
-      runId: makeRunId(now, ++this.seq),
+      runId: await this.newRunId(request, now),
       request,
       runtime: this.kind,
       state: "prepared",
