@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5,6 +6,7 @@ import { z } from "zod";
 import { MockGitHost } from "@maycombhq/adapters";
 import { MockRuntime } from "@maycombhq/ai";
 import { runTask } from "@maycombhq/taskrun";
+import { taskWorktreePath } from "@maycombhq/speckit";
 import { Api } from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
@@ -136,7 +138,7 @@ describe("a task's run on the Task board, and its PR from the app", () => {
   }, 120_000);
 
   it("says a raised PR's state from the Git host, and runs the task again from the app once it is closed (review round 43)", async () => {
-    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
     const now = () => new Date("2026-11-08T09:00:00Z");
     const file = "src/main/java/forge/ledger/TransferLimits.java";
     await runTask(root, CHANGE, "1.2", {
@@ -198,6 +200,24 @@ describe("a task's run on the Task board, and its PR from the app", () => {
         ref: "closed on the host",
       });
       expect((await task12()).taskRun?.pr).toMatchObject({ number: 1, state: "closed" });
+      // Review round 48: its branch still has the closed PR's commits, so the run is refused
+      // until the person removes them (Atticus deletes nothing); then it runs again.
+      const refused = await runIt();
+      expect(refused.status).toBe(409);
+      expect(JSON.stringify(await refused.json())).toContain(
+        "still has the commits that PR carried",
+      );
+      const sh = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8" });
+      const clone = join(root, "workspace/forge-ledger");
+      sh(
+        clone,
+        "worktree",
+        "remove",
+        "--force",
+        taskWorktreePath(root, CHANGE, "1.2", "forge-ledger"),
+      );
+      sh(clone, "branch", "-D", `task/${CHANGE}/1.2`);
+      sh(remotes["forge-ledger"]!, "update-ref", "-d", `refs/heads/task/${CHANGE}/1.2`);
       expect((await runIt()).status).toBe(201);
       const t = await task12();
       expect(t.taskRun?.state).toBe("waiting");
