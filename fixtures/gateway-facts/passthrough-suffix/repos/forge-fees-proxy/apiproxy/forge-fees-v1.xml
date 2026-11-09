@@ -1,0 +1,3 @@
+<APIProxy name="forge-fees-v1">
+  <Description>Forge fees, one proxy per repo</Description>
+</APIProxy>

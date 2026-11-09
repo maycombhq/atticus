@@ -1,7 +1,12 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Api as CoreApi, JOIN_GUESS_FLAGS, type Api } from "@maycombhq/core";
+import {
+  Api as CoreApi,
+  JOIN_GUESS_FLAGS,
+  JOINED_BY_PATH_OVERLAP,
+  type Api,
+} from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { Inspector } from "../src/screens/architecture/Architecture.js";
 import { WhyLinked } from "../src/screens/architecture/WhyLinked.js";
@@ -100,6 +105,13 @@ describe("why is this linked", () => {
       expect(WORDS.gapFix[g], g).toBeTruthy();
       expect(COPY.changeImpact.guessWords[g], g).toBeTruthy();
     }
+  });
+
+  it("names an Apigee proxy's link matched under a guessed base path as a gap, with what closes it", () => {
+    // The path suffix: the Interface's flag, not one of the local API's guesses.
+    expect(JOIN_GUESS_FLAGS).not.toContain(JOINED_BY_PATH_OVERLAP);
+    expect(WORDS.gap[JOINED_BY_PATH_OVERLAP]).toBeTruthy();
+    expect(WORDS.gapFix[JOINED_BY_PATH_OVERLAP]).toContain("basePath");
   });
 
   it("says a call joined to another team's shared map is theirs, with their line and commit, never a citation of ours (O3)", () => {

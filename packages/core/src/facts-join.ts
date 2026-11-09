@@ -49,6 +49,14 @@ import { DEFAULT_FACING_WORDS, gatewayBundleTest } from "./schema/conventions.js
  * gateway-walk): without it a call is joined to the route it lands on, and each route's
  * forwarding call to its service on its own, so the chain is there in two links, not one.
  *
+ * The path suffix (an Apigee proxy to its service): a forwarding call cited in a bundle whose
+ * path no entry serves in the same shape is joined per route of its proxy (the route it is from,
+ * else the proxy's flows, else its `<BasePath>/**`) at the target's path with the route's suffix
+ * after it (none when `target.copy.pathsuffix` is false; everything under it for a pass-through),
+ * matched against the service's entries with its base path taken off: the manifest's, an
+ * exposure's, its context and servlet path settings, else the longest overlap, a guess
+ * (`joined-by-path-overlap`). Each such join cites the route (`forRoute`) and the base (`base`).
+ *
  * Placeholders (J0): a base URL, host or topic written as `${X}`, `${X:default}` or `env:X` is
  * each value the config facts setting `X` give it, read in the caller's repo and in any repo of
  * the estate whose setting is for the caller's component (its folder, its deployment, its
@@ -126,6 +134,22 @@ export interface GatewayHop {
   scopes?: string[];
   /** Which side this gateway faces, when the manifest or the proxy's virtual host says. */
   facing?: GatewayFacing;
+  /** The base path the service behind this hop serves under, as `FactJoin.base`. */
+  base?: JoinBase;
+}
+
+/**
+ * The base path a service's entries sit under that the join took off the path an Apigee proxy
+ * forwards before matching them (the path suffix): the manifest's `basePath`, an exposure's
+ * (`deploy`: an OpenShift Route's or an Ingress's path), the service's own context path and
+ * servlet path settings (`config`), or, with none of those, the longest run of the target's path
+ * that starts the entry's (`overlap`, a guess: `joined-by-path-overlap`). `by` is the facts it
+ * came from (none for the manifest or an overlap).
+ */
+export interface JoinBase {
+  path: string;
+  from: "manifest" | "deploy" | "config" | "overlap";
+  by?: FactEnd[];
 }
 
 /** One end of a join: a fact, its repo and component, and the line it cites. */
@@ -249,6 +273,16 @@ export const JOINED_DESPITE_CONFLICT = "joined-despite-conflict";
 export const JOINED_BY_SERVICE_NAME = "joined-by-service-name";
 /** G1 (ADR 0174): a person paired the call with this entry on the canvas. */
 export const JOINED_BY_PERSON = "joined-by-person";
+/**
+ * An Apigee proxy's forwarding call matched the service's entry only by taking off the front of
+ * the target's path that nothing names as the service's base path (no manifest `basePath`, no
+ * Route or Ingress path, no context path setting): `/forge-limits/v3/limits` and the suffix
+ * `/check` against `/limits/check`. A guess, so the link is inferred; the Interface's flag only,
+ * not one of `JOIN_GUESS_FLAGS` (the local API's guesses), and its how is the host's.
+ */
+export const JOINED_BY_PATH_OVERLAP = "joined-by-path-overlap";
+/** How many entries a `<BasePath>/**` pass-through links to at most, in path order. */
+export const MAX_PASS_THROUGH_LINKS = 50;
 /**
  * ADR 0181: the AI decided the link (a pairing, or a target answer), applied by Atticus from its
  * run without a person. A how, never a person's word: the Interface is inferred, its evidence is
@@ -377,6 +411,20 @@ export interface FactJoin {
    * hop's forwarding call, the line the AI's evidence cites.
    */
   aiHop?: JoinAi & { call: FactEnd };
+  /**
+   * An Apigee proxy's forwarding call (the path suffix): the proxy's route whose requests it
+   * carries, when the path the target receives is the target's path and this route's suffix (or,
+   * for a `<BasePath>/**` pass-through, everything under the target's path). A call that serves
+   * several routes has a join per route.
+   */
+  forRoute?: FactEnd;
+  /** The service's base path the join took off before matching its entry (the path suffix). */
+  base?: JoinBase;
+  /**
+   * The setting that keeps the proxy's path suffix off (`target.copy.pathsuffix` false, in a
+   * JavaScript or AssignMessage policy), so the target receives its own path as it is.
+   */
+  suffixOff?: FactEnd;
 }
 
 /** ADR 0181: the AI run a decision came from. */
@@ -1330,6 +1378,242 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     return v.startsWith("/") ? { ...f, path: v } : f;
   };
 
+  // ---- an Apigee proxy's forwarding call (A-gateway, the path suffix). Apigee sends the target
+  // its own path with the request's path suffix after it (the part after the proxy's
+  // `<BasePath>`), unless the proxy sets `target.copy.pathsuffix` false; a `<BasePath>/**`
+  // pass-through sends everything under it. And a service serves its routes under a base path of
+  // its own, which its entries may leave out. So a forwarding call whose own path no entry serves
+  // as it is joins, per route of the proxy, the entry that serves the target's path and the
+  // route's suffix, once the service's base path is taken off.
+  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
+  /** The bundle a file is in: everything up to and including its `apiproxy/`. */
+  const bundleRootOf = (file: string): string | undefined => {
+    const m = bundle.exec(file);
+    return m ? file.slice(0, m.index + m[0].length) : undefined;
+  };
+  /** A path's segments as written (parameters kept), or none for `/`. */
+  const rawSegs = (p: string) =>
+    (p.trim().split(/[?#]/, 1)[0] ?? "").split("/").filter((s) => s.length > 0);
+  const toPath = (segs: readonly string[]) => `/${segs.join("/")}`;
+  /** A segment as compared: lower case, a parameter `{}`, a catch-all `**`. */
+  const segKey = (s: string) => segments(`/${s}`)?.[0] ?? s;
+  const startsWithSegs = (a: readonly string[], b: readonly string[]) =>
+    b.length <= a.length && b.every((x, i) => sameSegment(segKey(x), segKey(a[i]!)));
+  const endsWithSegs = (a: readonly string[], b: readonly string[]) =>
+    startsWithSegs(a.slice(a.length - b.length), b) && b.length <= a.length;
+  const isPassThrough = (e: Entry) => rawSegs(e.path).at(-1) === "**";
+  /** A route's proxy base path: the `<BasePath>` its citation gives, else a pass-through's. */
+  const proxyBaseOf = (
+    r: Node & { fact: Entry },
+    passes: readonly (Node & { fact: Entry })[],
+  ): string[] | undefined => {
+    const path = rawSegs(r.fact.path);
+    const cited = basePathOf(r.fact);
+    if (cited !== r.fact.path) return rawSegs(cited);
+    for (const p of passes) {
+      const base = rawSegs(p.fact.path).slice(0, -1);
+      if (base.length < path.length && startsWithSegs(path, base)) return base;
+    }
+    return undefined;
+  };
+  /**
+   * Whether the proxy keeps the suffix off (`target.copy.pathsuffix` false): a setting of that
+   * name in its bundle or for it (`target`), or the forwarding call's own path set by a policy
+   * that turns it off (a `cite.with` line naming it).
+   */
+  const copyOff = (
+    c: Node & { fact: Call },
+    root: string,
+    routes: readonly (Node & { fact: Entry })[],
+  ): { by?: Node } | undefined => {
+    if ((c.fact.cite.with ?? []).some((w) => /copy\.pathsuffix$/i.test(w.value.trim()))) return {};
+    const proxies = new Set(
+      routes.flatMap((r) => (r.fact.handler ? [r.fact.handler.split("/")[0]!] : [])),
+    );
+    const by = configNodes.find(
+      (n) =>
+        n.repo === c.repo &&
+        settingNameKey(n.fact.key).endsWith("COPYPATHSUFFIX") &&
+        /^false$/i.test((n.fact.value ?? "").trim()) &&
+        (bundleRootOf(n.fact.cite.file) === root ||
+          (!!n.fact.target && proxies.has(n.fact.target))),
+    );
+    return by ? { by } : undefined;
+  };
+  type BaseCand = { from: JoinBase["from"]; segs: string[]; by: Node[] };
+  const BASE_RANK: Record<JoinBase["from"], number> = {
+    manifest: 1,
+    deploy: 2,
+    config: 3,
+    overlap: 4,
+  };
+  /** A Spring context path's and servlet path's settings, as `settingNameKey` reads them. */
+  const CONTEXT_PATH_KEYS = new Set([
+    "SERVERSERVLETCONTEXTPATH",
+    "SERVERCONTEXTPATH",
+    "SPRINGWEBFLUXBASEPATH",
+  ]);
+  const SERVLET_PATH_KEYS = new Set(["SPRINGMVCSERVLETPATH", "SERVERSERVLETPATH"]);
+  const basesSeen = new Map<string, BaseCand[]>();
+  /**
+   * The base paths an entry's service may serve under, in the order they are taken: the
+   * manifest's `basePath`, an exposure's (a Route's or an Ingress's path), then the service's
+   * context path and servlet path settings, joined.
+   */
+  const basesOf = (e: Node & { fact: Entry }): BaseCand[] => {
+    const k = key(e.repo, e.component);
+    const was = basesSeen.get(k);
+    if (was) return was;
+    const mod = moduleOf.get(e.component) === e.repo ? e.component : undefined;
+    const g = reached.get(`${e.repo}\u0000${mod ?? ""}`);
+    const out: BaseCand[] = [];
+    if (g?.manifestBase) out.push({ from: "manifest", segs: rawSegs(g.manifestBase), by: [] });
+    for (const p of g?.paths ?? [])
+      if (!p.listed && p.path && p.by.length)
+        out.push({ from: "deploy", segs: rawSegs(p.path), by: [...p.by] });
+    const valuesOf = (keys: ReadonlySet<string>) =>
+      configNodes
+        .filter((n) => keys.has(settingNameKey(n.fact.key)) && setsFor(n, e) === "cited")
+        .flatMap((n) =>
+          resolve(n.fact.value ?? n.fact.source, e, new Set([key(n.repo, n.fact.id)]))
+            .filter((r) => r.value.startsWith("/") && !r.guesses.length)
+            .map((r) => ({ segs: rawSegs(r.value), by: [n, ...r.through] as Node[] })),
+        );
+    const none = [{ segs: [] as string[], by: [] as Node[] }];
+    const contexts = valuesOf(CONTEXT_PATH_KEYS);
+    const servlets = valuesOf(SERVLET_PATH_KEYS);
+    for (const c of contexts.length ? contexts : none)
+      for (const s of servlets.length ? servlets : none) {
+        const segs = [...c.segs, ...s.segs];
+        if (segs.length) out.push({ from: "config", segs, by: [...c.by, ...s.by] });
+      }
+    basesSeen.set(k, out);
+    return out;
+  };
+  interface SuffixHit {
+    e: Node & { fact: Entry };
+    route?: Node & { fact: Entry };
+    base?: BaseCand;
+    method?: string;
+    /** The setting that keeps the suffix off (`target.copy.pathsuffix` false), when one does. */
+    off?: Node;
+  }
+  /**
+   * The entries an Apigee forwarding call reaches by the path suffix, one per route of its proxy
+   * it carries (every entry under the target's path, at most `MAX_PASS_THROUGH_LINKS`, for a
+   * pass-through). None when the call isn't in a bundle or no route's path is served.
+   */
+  const suffixHits = (c: Node & { fact: Call }, inScope: (e: Node) => boolean): SuffixHit[] => {
+    const f = c.fact;
+    if (f.callType !== "rest") return [];
+    const root = bundleRootOf(f.cite.file);
+    if (!root) return [];
+    const bundled = entries.filter(
+      (n) => n.repo === c.repo && bundleRootOf(n.fact.cite.file) === root,
+    );
+    const passes = bundled.filter((n) => isPassThrough(n.fact));
+    const flows = bundled.filter((n) => !isPassThrough(n.fact));
+    const from = f.from ? bundled.find((n) => n.fact.id === f.from) : undefined;
+    const target = rawSegs(f.path);
+    const passing = target.at(-1) === "**";
+    const t = passing ? target.slice(0, -1) : target;
+    const off = copyOff(c, root, bundled);
+    // The routes whose requests the call forwards: the one it is from, else the proxy's flows,
+    // else its pass-through.
+    const routes = from ? [from] : flows.length ? flows : passes;
+    const tried: {
+      route?: Node & { fact: Entry };
+      segs: string[];
+      under: boolean;
+      off?: true;
+    }[] = [];
+    if (!routes.length) tried.push({ segs: t, under: passing });
+    for (const r of routes) {
+      if (isPassThrough(r.fact)) {
+        tried.push({ route: r, segs: t, under: true });
+        continue;
+      }
+      if (off) {
+        tried.push({ route: r, segs: t, under: false, off: true });
+        continue;
+      }
+      const base = proxyBaseOf(r, passes);
+      if (!base) continue;
+      const suffix = rawSegs(r.fact.path).slice(base.length);
+      // A forwarding call written with the suffix already on (as the map prompt asks) keeps it.
+      const carries = suffix.length > 0 && endsWithSegs(t, suffix);
+      tried.push({ route: r, segs: carries ? t : [...t, ...suffix], under: false });
+    }
+    const out: SuffixHit[] = [];
+    for (const x of tried) {
+      const method = [f.method, x.route?.fact.method]
+        .find((m) => !!m && m.toUpperCase() !== "ANY")
+        ?.toUpperCase();
+      const score = (segs: readonly string[], e: Entry) => {
+        if (!x.under) {
+          const s = routeScore(toPath(segs), e.path);
+          return s >= 400 ? s : 0;
+        }
+        const es = rawSegs(e.path);
+        return es.includes("**") || !startsWithSegs(es, segs) ? 0 : 1;
+      };
+      const hits: (SuffixHit & { rank: number; score: number })[] = [];
+      for (const e of entries) {
+        if (e.component === c.component || !SERVES.rest!.includes(e.fact.entryType)) continue;
+        if (!inScope(e) || !sameMethod(method, e.fact.method) || isPassThrough(e.fact)) continue;
+        let hit: (SuffixHit & { rank: number; score: number }) | undefined;
+        const as = score(x.segs, e.fact);
+        if (as) hit = { e, rank: 0, score: as };
+        for (const b of hit ? [] : basesOf(e)) {
+          if (!startsWithSegs(x.segs, b.segs)) continue;
+          const s = score(x.segs.slice(b.segs.length), e.fact);
+          if (s) {
+            hit = { e, base: b, rank: BASE_RANK[b.from], score: s };
+            break;
+          }
+        }
+        // Nothing names the base: the longest run of the target's path that starts the entry's.
+        for (let d = 1; !hit && d < t.length; d++) {
+          const s = score(x.segs.slice(d), e.fact);
+          if (s)
+            hit = {
+              e,
+              base: { from: "overlap", segs: t.slice(0, d), by: [] },
+              rank: BASE_RANK.overlap,
+              score: s,
+            };
+        }
+        if (hit) hits.push({ ...hit, ...(x.route ? { route: x.route } : {}) });
+      }
+      const rank = Math.min(...hits.map((h) => h.rank));
+      const ranked = hits.filter((h) => h.rank === rank);
+      const best = Math.max(0, ...ranked.map((h) => h.score));
+      const kept = x.under
+        ? ranked
+            .sort((a, b) => cmp(a.e.fact.path, b.e.fact.path) || cmp(a.e.fact.id, b.e.fact.id))
+            .slice(0, MAX_PASS_THROUGH_LINKS)
+        : ranked.filter((h) => h.score === best);
+      // Two entries that serve one route's path as well as each other: no guess between them.
+      if (!x.under && kept.length !== 1) continue;
+      for (const h of kept)
+        out.push({
+          e: h.e,
+          ...(h.route ? { route: h.route } : {}),
+          ...(h.base ? { base: h.base } : {}),
+          ...(x.off && off?.by ? { off: off.by } : {}),
+          ...(method || h.e.fact.method
+            ? { method: (method ?? h.e.fact.method)!.toUpperCase() }
+            : {}),
+        });
+    }
+    return out;
+  };
+  const joinBaseOf = (b: BaseCand): JoinBase => ({
+    path: toPath(b.segs),
+    from: b.from,
+    ...(b.by.length ? { by: uniqueEnds(b.by) } : {}),
+  });
+
   for (const c of nodes) {
     if (c.fact.kind !== "call") continue;
     const raw = c as Node & { fact: Call };
@@ -1604,7 +1888,53 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         within = "estate";
         hits = serving(call, () => true, true);
       }
-    } else hits = serving(call, scope?.scope ?? (() => true), false);
+    } else {
+      hits = serving(call, scope?.scope ?? (() => true), false);
+      // An Apigee forwarding call no entry serves as it is (the same shape, not only its end):
+      // what the target receives is its path and each route's suffix (the path suffix).
+      const asIs =
+        hits.length > 0 &&
+        (NAMED.has(f.callType) || hits.every((e) => routeScore(f.path, e.fact.path) >= 400));
+      const viaSuffix = !asIs && scope ? suffixHits(call, scope.scope) : [];
+      if (viaSuffix.length) {
+        for (const h of viaSuffix) {
+          const e = h.e;
+          const guesses =
+            how === "host" && !byLabel
+              ? guessList([
+                  ...used.flatMap((x) => x.guesses),
+                  ...(disputed?.(e) ? [JOINED_DESPITE_CONFLICT as JoinHostGuess] : []),
+                  ...(byServiceName?.(e, call) ? [JOINED_BY_SERVICE_NAME as JoinHostGuess] : []),
+                ])
+              : [];
+          // A base a Route or an Ingress gives is an exposure the link rests on, as a host is.
+          const exposed = [
+            ...exposedBy,
+            ...(h.base?.from === "deploy" ? uniqueEnds(h.base.by) : []),
+          ].filter(
+            (x, i, all) => all.findIndex((y) => y.repo === x.repo && y.fact === x.fact) === i,
+          );
+          joins.push({
+            call: end(call),
+            entry: end(e),
+            ...tie,
+            how,
+            ...(how === "answer" && aiAnswer ? { aiAnswer: { ...aiAnswer } } : {}),
+            ...(byLabel ? { byLabel: true as const } : {}),
+            ...(guesses.length ? { guesses } : {}),
+            ...(exposed.length ? { exposedBy: exposed } : {}),
+            ...(h.route ? { forRoute: end(h.route) } : {}),
+            ...(h.base ? { base: joinBaseOf(h.base) } : {}),
+            ...(h.off ? { suffixOff: end(h.off) } : {}),
+            callType: f.callType,
+            ...(h.method ? { method: h.method } : {}),
+            path: e.fact.path,
+            interface: interfaceId(call.component, e.component, h.method, servedPath(e.fact)),
+          });
+        }
+        continue;
+      }
+    }
     if (hits.length === 1) {
       const e = hits[0]!;
       // J0, J1: the guesses the host rests on, when the host is what joined it.
@@ -1683,13 +2013,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       )
       .sort((x, y) => cmp(x.fact.id, y.fact.id))[0]?.fact.value;
   };
-  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
   const isRoute = (n: Node) =>
     n.fact.kind === "entry" && (gateways.has(n.repo) || bundle.test(n.fact.cite.file));
   const joinsOf = new Map<string, FactJoin[]>();
+  const joinsByRoute = new Map<string, FactJoin[]>();
   for (const j of joins) {
     const k = key(j.call.repo, j.call.fact);
     joinsOf.set(k, [...(joinsOf.get(k) ?? []), j]);
+    if (!j.forRoute) continue;
+    const r = key(j.forRoute.repo, j.forRoute.fact);
+    joinsByRoute.set(r, [...(joinsByRoute.get(r) ?? []), j]);
   }
   /**
    * Where the route a join lands on forwards to, when the facts say it exactly: every forwarding
@@ -1703,7 +2036,22 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         n.fact.from === route.fact.id &&
         !EVENTS.has(n.fact.callType),
     );
-    const got = forwards.map((n) => joinsOf.get(key(n.repo, n.fact.id)) ?? []);
+    const mine = (j: FactJoin) =>
+      !j.forRoute || (j.forRoute.repo === route.repo && j.forRoute.fact === route.fact.id);
+    // The path suffix: the proxy's target call joined for this route, though not `from` it.
+    const bySuffix = (joinsByRoute.get(key(route.repo, route.fact.id)) ?? []).filter(
+      (j) =>
+        byKey.get(key(j.call.repo, j.call.fact))?.fact.kind === "call" &&
+        (byKey.get(key(j.call.repo, j.call.fact))!.fact as Call).from !== route.fact.id,
+    );
+    // A forwarding call that names no host, base or target only says the route forwards, when
+    // the proxy's target call says where (joined for this route): it is left out, not a miss.
+    const says = (n: Node & { fact: Call }) => !!(n.fact.host || n.fact.base || n.fact.to);
+    const got = forwards
+      .map((n) => ({ n, js: (joinsOf.get(key(n.repo, n.fact.id)) ?? []).filter(mine) }))
+      .filter((x) => x.js.length || !bySuffix.length || says(x.n))
+      .map((x) => x.js);
+    got.push(...bySuffix.map((j) => [j]));
     if (!got.length || got.some((h) => h.length !== 1)) return undefined;
     const lands = got.map((h) => h[0]!);
     const first = lands[0]!;
@@ -1746,6 +2094,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         ...(catalogAuth(r.fact) ? { auth: catalogAuth(r.fact) } : {}),
         ...(scopes.length ? { scopes } : {}),
         ...(facing ? { facing } : {}),
+        ...(next.base ? { base: next.base } : {}),
       });
       landed = next;
       walked.push(next);
@@ -1769,7 +2118,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const callee = byKey.get(key(landed.entry.repo, landed.entry.fact))! as Node & { fact: Entry };
     if (callee.component === caller.component) continue;
     const forward = byKey.get(key(landed.call.repo, landed.call.fact))!.fact as Call;
-    const method = (forward.method ?? caller.fact.method ?? callee.fact.method)?.toUpperCase();
+    // The path suffix: a forwarding call that carries routes of several methods takes the route's.
+    const forwardMethod = landed.forRoute ? landed.method : forward.method;
+    const method = (forwardMethod ?? caller.fact.method ?? callee.fact.method)?.toUpperCase();
     const scopes = [...new Set(hops.flatMap((h) => h.scopes ?? []))];
     // A hop that guessed (by path, by a host's first label, J0, J1) makes the whole link a guess:
     // the walked link is never more certain than its least certain hop (final review).
@@ -1994,9 +2345,23 @@ export function joinGuessesOf(
   return [...out, ...guessList(j.guesses ?? [])];
 }
 
+/**
+ * Whether an Apigee forwarding call on the way matched its entry only by a guessed base path
+ * (`joined-by-path-overlap`): the join's own, or a gateway hop's.
+ */
+export const isOverlapJoin = (j: {
+  base?: JoinBase | undefined;
+  gateway?: readonly { base?: JoinBase | undefined }[] | undefined;
+}): boolean =>
+  j.base?.from === "overlap" || (j.gateway ?? []).some((h) => h.base?.from === "overlap");
+
 /** Whether a join guessed its callee anywhere on the way (`joinGuessesOf` gives how). */
-export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesses">): boolean =>
-  joinGuessesOf(j).length > 0;
+export const isGuessedJoin = (
+  j: Pick<FactJoin, "inferred" | "byLabel" | "guesses"> & {
+    base?: JoinBase | undefined;
+    gateway?: readonly { base?: JoinBase | undefined }[] | undefined;
+  },
+): boolean => joinGuessesOf(j).length > 0 || isOverlapJoin(j);
 
 /**
  * How a join found its callee, as its Interface's flags (C1, ADR 0135): a guess by its own F2
@@ -2013,21 +2378,25 @@ export function joinFlagsOf(
   j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses" | "paired"> & {
     aiAnswer?: JoinAi | undefined;
     aiHop?: JoinAi | undefined;
+    base?: JoinBase | undefined;
+    gateway?: readonly { base?: JoinBase | undefined }[] | undefined;
   },
 ): string[] {
   // ADR 0181: the AI's pairing or answer is the AI's, never `joined-by-person` or `-answer`; so
   // is a link through a gateway hop the AI joined.
   if (aiOfJoin(j) || j.aiHop) return [JOINED_BY_AI];
   if (j.paired) return [JOINED_BY_PERSON];
+  // The path suffix: a base path guessed by the overlap comes first, then how it was found.
+  const overlap = isOverlapJoin(j) ? [JOINED_BY_PATH_OVERLAP] : [];
   const guessed = joinGuessesOf(j);
-  if (guessed.length) return guessed;
+  if (guessed.length) return [...guessed, ...overlap];
   const HOW: Partial<Record<JoinHow, string>> = {
     answer: JOINED_BY_ANSWER,
     named: JOINED_BY_NAME,
     repo: JOINED_BY_REPO,
     host: JOINED_BY_HOST,
   };
-  return HOW[j.how] ? [HOW[j.how]!] : [];
+  return [...overlap, ...(HOW[j.how] ? [HOW[j.how]!] : [])];
 }
 
 type SharedLink = CatalogRecord & {
@@ -2117,6 +2486,9 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     } as CatalogRecord);
   };
   const flagsOf = joinFlagsOf;
+  /** The path suffix: a service's context path settings, cited at its end (a Route's is exposure). */
+  const baseLines = (b: JoinBase | undefined): EvidenceT[] =>
+    b?.from === "config" ? (b.by ?? []).flatMap((t) => ev(t, "config", "callee")) : [];
   // F2, J0, J1: a guess (by path, a host's first label, a platform setting, a folder name, or
   // despite a conflict) is inferred, however declared its ends are.
   // G1 (ADR 0174): a person's pairing is their word, not code: inferred, with their evidence.
@@ -2200,7 +2572,11 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       const declared = [
         call,
         entry,
-        ...j.gateway.flatMap((h) => [fact(h.entry), fact(h.call)]),
+        ...j.gateway.flatMap((h) => [
+          fact(h.entry),
+          fact(h.call),
+          ...(h.base?.by ?? []).map((b) => fact(b)),
+        ]),
       ].every((f) => f?.conf === "declared");
       const confidence = declared && !guessed(j) ? "verified" : "inferred";
       const auth = catalogAuth(route) ?? catalogAuth(entry);
@@ -2237,6 +2613,8 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
             ...(h.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
           ]),
           ...ev(j.entry, "code", "callee"),
+          // The path suffix: the service's context path setting the hop's path was matched under.
+          ...j.gateway.flatMap((h) => baseLines(h.base)),
           ...byPerson(j),
         ]),
       } as CatalogRecord);
@@ -2278,8 +2656,16 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       });
       continue;
     }
-    const declared = call.conf === "declared" && entry.conf === "declared";
-    const method = (call.method ?? entry.method)?.toUpperCase();
+    // The path suffix: the proxy's route and the settings the service's base path came from are
+    // cited ends of the link too.
+    const declared = [
+      call,
+      entry,
+      ...(j.forRoute ? [fact(j.forRoute)] : []),
+      ...(j.suffixOff ? [fact(j.suffixOff)] : []),
+      ...(j.base?.by ?? []).map((b) => fact(b)),
+    ].every((f) => f?.conf === "declared");
+    const method = (j.forRoute ? j.method : (call.method ?? entry.method))?.toUpperCase();
     putLink({
       kind: "Interface",
       schemaVersion: 2,
@@ -2301,9 +2687,13 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       conflicts: [],
       evidence: once([
         ...ev(j.call, "code", "caller"),
+        // The path suffix: the proxy's route whose suffix the target receives.
+        ...(j.forRoute ? ev(j.forRoute, "gateway", "caller") : []),
+        ...(j.suffixOff ? ev(j.suffixOff, "config", "caller") : []),
         ...(j.tie ? ev(j.tie, "config", "caller") : []),
         ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
         ...ev(j.entry, "code", "callee"),
+        ...baseLines(j.base),
         ...byPerson(j),
         ...(j.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
       ]),

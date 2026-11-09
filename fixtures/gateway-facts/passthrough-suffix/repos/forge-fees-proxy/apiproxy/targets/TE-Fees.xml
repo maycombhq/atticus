@@ -1,0 +1,5 @@
+<TargetEndpoint name="TE-Fees">
+  <HTTPTargetConnection>
+    <URL>@targetFeesUrl@/forge-fees/1.0/fees</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

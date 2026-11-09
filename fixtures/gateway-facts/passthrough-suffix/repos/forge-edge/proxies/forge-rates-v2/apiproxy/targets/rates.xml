@@ -1,0 +1,5 @@
+<TargetEndpoint name="rates">
+  <HTTPTargetConnection>
+    <URL>https://rates.forge.internal/forge-rates/2.0/rates</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

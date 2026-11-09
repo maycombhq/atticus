@@ -1,0 +1,223 @@
+joins:
+  - call:
+      repo: forge-billing-bff
+      fact: call.get.forge-fees-v1-retrieve
+      component: billing-bff
+      at: src/main/java/forge/billing/FeesGatewayClient.java:17
+    entry:
+      repo: forge-fees
+      fact: entry.get.fees-retrieve
+      component: fees-api
+      at: src/main/java/forge/fees/FeesController.java:9
+    tie:
+      repo: forge-billing-bff
+      fact: config.gateway-base-url
+      component: billing-bff
+      at: src/main/resources/application.yml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-fees-proxy
+          fact: entry.get.forge-fees-v1-retrieve
+          component: fees-proxy
+          at: apiproxy/proxies/default.xml:4
+        call:
+          repo: forge-fees-proxy
+          fact: call.fees.target
+          component: fees-proxy
+          at: apiproxy/targets/TE-Fees.xml:3
+        through:
+          - repo: forge-fees-proxy
+            fact: config.target-fees-url
+            component: fees-proxy
+            at: config/prod.properties:2
+        route: gw-fees-proxy-get-forge-fees-v1-retrieve
+        base:
+          path: /forge-fees/1.0
+          from: config
+          by:
+            - repo: forge-fees
+              fact: config.context-path
+              component: fees-api
+              at: src/main/resources/application.properties:2
+    callType: rest
+    method: GET
+    path: /fees/retrieve
+    interface: if-24478882cf2d1781
+  - call:
+      repo: forge-edge
+      fact: call.any.rates
+      component: edge-gateway
+      at: proxies/forge-rates-v2/apiproxy/targets/rates.xml:3
+    entry:
+      repo: forge-rates
+      fact: entry.get.rates-history-date
+      component: rates-api
+      at: src/main/java/forge/rates/RatesController.java:14
+    how: host
+    forRoute:
+      repo: forge-edge
+      fact: entry.any.forge-rates-v2
+      component: edge-gateway
+      at: proxies/forge-rates-v2/apiproxy/proxies/default.xml:3
+    base:
+      path: /forge-rates/2.0
+      from: manifest
+    callType: rest
+    method: GET
+    path: /rates/history/{date}
+    interface: if-6c0208177f2538a7
+  - call:
+      repo: forge-edge
+      fact: call.any.rates
+      component: edge-gateway
+      at: proxies/forge-rates-v2/apiproxy/targets/rates.xml:3
+    entry:
+      repo: forge-rates
+      fact: entry.get.rates-today
+      component: rates-api
+      at: src/main/java/forge/rates/RatesController.java:9
+    how: host
+    forRoute:
+      repo: forge-edge
+      fact: entry.any.forge-rates-v2
+      component: edge-gateway
+      at: proxies/forge-rates-v2/apiproxy/proxies/default.xml:3
+    base:
+      path: /forge-rates/2.0
+      from: manifest
+    callType: rest
+    method: GET
+    path: /rates/today
+    interface: if-910390c12441b84c
+  - call:
+      repo: forge-edge
+      fact: call.get.limits
+      component: edge-gateway
+      at: proxies/forge-limits-v3/apiproxy/targets/limits.xml:3
+    entry:
+      repo: forge-limits
+      fact: entry.get.limits-check
+      component: limits-api
+      at: src/main/java/forge/limits/LimitsController.java:9
+    how: host
+    forRoute:
+      repo: forge-edge
+      fact: entry.get.forge-limits-v3-check
+      component: edge-gateway
+      at: proxies/forge-limits-v3/apiproxy/proxies/default.xml:4
+    base:
+      path: /forge-limits/v3
+      from: overlap
+    callType: rest
+    method: GET
+    path: /limits/check
+    interface: if-e8d58590e8c58444
+  - call:
+      repo: forge-edge
+      fact: call.post.refunds
+      component: edge-gateway
+      at: proxies/forge-refunds-v1/apiproxy/targets/refunds.xml:3
+    entry:
+      repo: forge-refunds
+      fact: entry.post.refunds
+      component: refunds-api
+      at: src/main/java/forge/refunds/RefundsController.java:6
+    how: host
+    exposedBy:
+      - repo: forge-refunds
+        fact: deploy.route.forge-refunds
+        component: refunds-api
+        at: deploy/openshift/route.yaml:4
+    forRoute:
+      repo: forge-edge
+      fact: entry.post.forge-refunds-v1-submit
+      component: edge-gateway
+      at: proxies/forge-refunds-v1/apiproxy/proxies/default.xml:9
+    base:
+      path: /forge-refunds/1.0
+      from: deploy
+      by:
+        - repo: forge-refunds
+          fact: deploy.route.forge-refunds
+          component: refunds-api
+          at: deploy/openshift/route.yaml:4
+    suffixOff:
+      repo: forge-edge
+      fact: config.refunds-copy-pathsuffix
+      component: edge-gateway
+      at: proxies/forge-refunds-v1/apiproxy/resources/jsc/no-suffix.js:2
+    callType: rest
+    method: POST
+    path: /refunds
+    interface: if-85c3fb3b313e485c
+  - call:
+      repo: forge-fees-proxy
+      fact: call.fees.target
+      component: fees-proxy
+      at: apiproxy/targets/TE-Fees.xml:3
+    entry:
+      repo: forge-fees
+      fact: entry.get.fees-retrieve
+      component: fees-api
+      at: src/main/java/forge/fees/FeesController.java:9
+    through:
+      - repo: forge-fees-proxy
+        fact: config.target-fees-url
+        component: fees-proxy
+        at: config/prod.properties:2
+    how: host
+    forRoute:
+      repo: forge-fees-proxy
+      fact: entry.get.forge-fees-v1-retrieve
+      component: fees-proxy
+      at: apiproxy/proxies/default.xml:4
+    base:
+      path: /forge-fees/1.0
+      from: config
+      by:
+        - repo: forge-fees
+          fact: config.context-path
+          component: fees-api
+          at: src/main/resources/application.properties:2
+    callType: rest
+    method: GET
+    path: /fees/retrieve
+    interface: if-0f6b1b0f251655ad
+  - call:
+      repo: forge-fees-proxy
+      fact: call.fees.target
+      component: fees-proxy
+      at: apiproxy/targets/TE-Fees.xml:3
+    entry:
+      repo: forge-fees
+      fact: entry.post.fees-quote
+      component: fees-api
+      at: src/main/java/forge/fees/FeesController.java:14
+    through:
+      - repo: forge-fees-proxy
+        fact: config.target-fees-url
+        component: fees-proxy
+        at: config/prod.properties:2
+    how: host
+    forRoute:
+      repo: forge-fees-proxy
+      fact: entry.post.forge-fees-v1-quote
+      component: fees-proxy
+      at: apiproxy/proxies/default.xml:7
+    base:
+      path: /forge-fees/1.0
+      from: config
+      by:
+        - repo: forge-fees
+          fact: config.context-path
+          component: fees-api
+          at: src/main/resources/application.properties:2
+    callType: rest
+    method: POST
+    path: /fees/quote
+    interface: if-4c7c1e7aa157721b
+asks: []
+misses: []
+lineage: []
+gaps: []

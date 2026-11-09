@@ -103,6 +103,8 @@ export const WORDS = {
     "joined-by-folder-name": "Joined by the folder its host's setting is in: a guess",
     "joined-despite-conflict": "Joined by a host the manifest disagrees with: a guess",
     "joined-by-service-name": "Joined by a Service's short name from another namespace: a guess",
+    // The path suffix: an Apigee proxy's call matched under a base path nothing names.
+    "joined-by-path-overlap": "Joined under a base path nothing names: a guess",
     // ADR 0124 addendum D-app, F3: from the repos' facts.
     unverified: "No fact verified from code",
     question: "A question is open on it",
@@ -137,6 +139,8 @@ export const WORDS = {
       "Settle the host conflict on Map › Trust (list the host in the manifest, or correct the deploy file).",
     "joined-by-service-name":
       "Open Why is this linked?, and say where it goes if the guess is wrong; or have the caller's own Service read so its namespace is known, or call the Service by its full .svc.cluster.local name.",
+    "joined-by-path-overlap":
+      "Set the service's basePath in repos.manifest.yaml (the path its routes sit under), or have its context path setting read; or say where it goes if the guess is wrong.",
     unverified: "Read the repo and verify it; Map › Trust lists what isn't checked yet.",
     question: "Answer the open question on Questions; Map › Trust lists the repo's questions.",
     corrected: "Run atticus verify on the repo with --write to apply the correction.",

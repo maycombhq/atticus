@@ -1,0 +1,8 @@
+<ProxyEndpoint name="default">
+  <HTTPProxyConnection>
+    <BasePath>/forge/rates/v2</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="rates">
+    <TargetEndpoint>rates</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>
