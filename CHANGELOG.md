@@ -6,6 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **Home folds set-up away once, not three times, for a product owner or business analyst**: how steps run, the checklist, an upgrade and the estate sit in one "Setting up Atticus" fold; the upgrade's fold showed empty when no upgrade waited.
 - **After correcting the map, one Apply for every repo you corrected**: Home's list of what waits for review offers Apply to every repo's map when more than one repo has corrections (a line drawn between two boxes corrects both), beside each repo's own Apply. Every Apply links its Console entry while it runs.
 - **Set up's "Choose how AI runs here" is open again on a new metarepo**: `atticus init` now writes the manual git host into runtime.yaml, and the step read that as a choice made. Adapters aren't how AI runs, so the step ignores them.
 - An Apigee proxy links to the backend endpoint it forwards to:

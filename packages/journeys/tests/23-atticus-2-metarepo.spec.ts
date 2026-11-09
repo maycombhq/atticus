@@ -32,6 +32,13 @@ test("Home says the assistant the probe measured, and the read, not a scan", asy
   await expect(runs).toContainText("Claude Code");
   await expect(runs).toContainText("tier 1");
   await expect(runs).not.toContainText("GitHub Copilot");
+  // ADR 0191: this metarepo's viewer owns its change as product owner, so set-up is folded away.
+  const admin = page.locator("main details > summary", {
+    hasText: "Setting up Atticus",
+  });
+  // One fold for all of set-up (there were three, one of them empty).
+  await expect(admin).toHaveCount(1);
+  await admin.click();
   const setup = page.getByRole("region", { name: "Set up Atticus" });
   await expect(setup).toContainText("Every repo is read and verified");
   await expect(page.locator("main")).not.toContainText(STALE_SCAN);

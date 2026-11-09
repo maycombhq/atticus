@@ -873,10 +873,20 @@ export function CommandCenter() {
         </span>
       </div>
       {/* ADR 0191: for a product owner or business analyst, set-up is folded away. */}
-      <AdminFold fold={fold}>
-        <HowStepsRun />
-        <SetupChecklist />
-      </AdminFold>
+      {/* One fold for all of it (it was three, one of them empty with no upgrade waiting). */}
+      {fold ? (
+        <AdminFold fold>
+          <HowStepsRun />
+          <SetupChecklist />
+          <UpgradeOffer />
+          <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
+        </AdminFold>
+      ) : (
+        <>
+          <HowStepsRun />
+          <SetupChecklist />
+        </>
+      )}
       {/* ADR 0191: the changes the person is on, and whom each waits on, first. */}
       {changes.state === "ready" && viewerRoles.length > 0 && (
         <YourChanges
@@ -890,9 +900,7 @@ export function CommandCenter() {
       )}
       <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
       {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
-      <AdminFold fold={fold}>
-        <UpgradeOffer />
-      </AdminFold>
+      {!fold && <UpgradeOffer />}
       <HomeDecidePaused />
       {/* ADR 0181 part 4: each role answers its own questions on a change. */}
       {changes.state === "ready" && (
@@ -979,9 +987,7 @@ export function CommandCenter() {
         {T.approvingIsThePull}
       </p>
 
-      <AdminFold fold={fold}>
-        <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
-      </AdminFold>
+      {!fold && <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />}
 
       <div className="bento" role="list" aria-label={T.keyNumbers}>
         {[
