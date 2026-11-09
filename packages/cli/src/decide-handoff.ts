@@ -217,6 +217,15 @@ async function proposeDone(
   o: { now?: Date },
 ): Promise<number> {
   if (run.decide.kind !== "questions") return 2;
+  // Final review: inside a Copilot session nothing is decided, so the run stays open for the
+  // person's Done (validating it here would use it up with nothing applied).
+  const { inAcpSession } = await import("./ai-decide.js");
+  if (inAcpSession()) {
+    io.err(
+      `Run ${run.runId} decides as the AI only on a person's Done: press Done in the app, or run atticus handoff done ${run.runId} outside the Copilot session.`,
+    );
+    return 1;
+  }
   const ids = await proposedSince(root, run.decide.before);
   if (!ids.size) {
     const why =

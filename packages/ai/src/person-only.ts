@@ -114,4 +114,10 @@ export function personOnlyWhy(argv: readonly string[]): string | undefined {
 
 /** Files under facts/ that hold a person's record: an audit's answers, a person's corrections. */
 export const isPersonsFactsFile = (name: string) =>
-  /\.audit\.yaml$|\.corrections\.jsonl$/i.test(name);
+  /\.audit\.yaml$|\.corrections\.jsonl$/i.test(windowsName(name));
+
+/**
+ * Final review: the name Windows opens for a path's last part. It drops trailing dots and spaces,
+ * and `name:stream` (`::$DATA`) is the file `name`, so `x.corrections.jsonl.` is that file.
+ */
+export const windowsName = (name: string) => name.replace(/:.*$/, "").replace(/[. ]+$/, "");

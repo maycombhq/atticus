@@ -1196,6 +1196,20 @@ async function correctLink(
  * only while it is still as the batch left it), and put back the AI lines and answers it took
  * away. What changed since is left as it is and said. The record says who undid it and when.
  */
+/** Whether any line or answer the batch applied is still as the batch left it. */
+async function batchStands(root: string, b: DecisionBatchT): Promise<boolean> {
+  for (const i of b.applied) {
+    if (i.kind === "question") {
+      const q = await readQuestion(root, i.id).catch(() => undefined);
+      if (q?.answer?.batch === b.id) return true;
+    } else {
+      const text = await readFile(correctionsFile(root, i.repo), "utf8").catch(() => "");
+      if (text.split(/\r?\n/).some((l) => l.trim() === i.line.trim())) return true;
+    }
+  }
+  return false;
+}
+
 export async function undoBatch(
   root: string,
   id: string,
@@ -1222,8 +1236,38 @@ export async function undoBatch(
     byRepo.set(r, x);
     return x;
   };
+  // Final review: what was another batch's comes back only while that batch stands; an undone
+  // batch's answer or line is never put back (it would stand as the AI's with no Undo left).
+  const undoneBatches = new Map<string, boolean>();
+  const isUndone = async (batch: string | undefined) => {
+    if (!batch || batch === b.id) return false;
+    if (!undoneBatches.has(batch))
+      undoneBatches.set(batch, !!(await readBatch(root, batch).catch(() => undefined))?.undone);
+    return undoneBatches.get(batch)!;
+  };
+  const batchOfLine = (line: string) => {
+    try {
+      return (JSON.parse(line) as { batch?: string }).batch;
+    } catch {
+      return undefined;
+    }
+  };
+  // Nothing of the batch stands any more: say so, and leave it to be undone later.
+  const stands = await batchStands(root, b);
+  if (!stands)
+    throw new DecideError(
+      "conflict",
+      `Nothing of ${id} stands now: each of its lines and answers was changed since, so there is nothing to undo.`,
+    );
   for (const i of b.applied) if (i.kind === "link") of(i.repo).remove.push(i.line);
-  for (const i of b.reverted) if (i.kind === "link") of(i.repo).add.push(i.line);
+  for (const i of b.reverted)
+    if (i.kind === "link") {
+      if (await isUndone(batchOfLine(i.line))) {
+        skipped.push(`a line of an undone batch in ${correctionsRel(root, i.repo)}: not put back`);
+        continue;
+      }
+      of(i.repo).add.push(i.line);
+    }
   for (const [repo, x] of byRepo) {
     const r = await rewriteCorrections(root, repo, x);
     removed += r.removed;
@@ -1244,10 +1288,13 @@ export async function undoBatch(
       continue;
     }
     const { answer: _a, ...rest } = q;
+    const before = i.before && !(await isUndone(i.before.batch)) ? i.before : undefined;
+    if (i.before && !before)
+      skipped.push(`${i.id}: its earlier answer was an undone batch's, so it is open`);
     await writeQuestion(
       root,
       Question.parse(
-        i.before ? { ...rest, state: "answered", answer: i.before } : { ...rest, state: "open" },
+        before ? { ...rest, state: "answered", answer: before } : { ...rest, state: "open" },
       ),
     );
     removed++;
@@ -1258,6 +1305,10 @@ export async function undoBatch(
     const q = await readQuestion(root, i.id).catch(() => undefined);
     if (!q || q.state !== "open") {
       skipped.push(`${i.id} was answered since: the AI's answer isn't put back`);
+      continue;
+    }
+    if (await isUndone(i.before.batch)) {
+      skipped.push(`${i.id}: the AI's answer was an undone batch's, so it stays open`);
       continue;
     }
     await writeQuestion(root, Question.parse({ ...q, state: "answered", answer: i.before }));

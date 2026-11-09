@@ -68,6 +68,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Final review (safety):
+  - **A Copilot session can't write a person's facts record under a name Windows opens as it** (a trailing dot or space, or a `:stream`); such names are refused for any file.
+  - **Undoing both of two batches, in either order, never leaves the AI's answers standing**, and Undo never puts back an answer an undone batch wrote; when nothing of a batch stands, Undo says so.
+  - **Done on a decide hand-off is a person's**: inside a Copilot session it is refused and the run stays open for the person's Done.
 - Ninth UX walk (no terminal in the daily path, wording):
   - **Questions opened for a change says that change has no question** when its list is empty, not that a scan adds one.
   - **A saved stage correction says where the file goes**: stage/corrections.yaml goes with the stage's hand-off; outside one, Propose for review; the git command is under "Or in a terminal".

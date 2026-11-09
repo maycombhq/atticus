@@ -207,6 +207,11 @@ class Paths {
     const r = caseOf(real(path));
     if (r.split(sep).includes(".git"))
       return `Atticus never lets a session write in .git (${short(path)})`;
+    // Final review: a name Windows would open as another (a trailing dot or space, a `:stream`)
+    // is never written by a session, so no check can be passed by a name the file system rewrites.
+    const parts = r.split(sep).slice(/^[A-Za-z]:$/.test(r.split(sep)[0] ?? "") ? 1 : 0);
+    if (parts.some((x) => x !== "." && x !== ".." && (/[. ]$/.test(x) || x.includes(":"))))
+      return `Atticus never lets a session write a name that ends in a dot or space or names a stream (${short(path)})`;
     // Review round 32: an audit's answers and a person's corrections are theirs to write.
     if (isPersonsFactsFile(basename(r)))
       return `Atticus never lets a session write a person's record (${short(path)}: an audit's answers or a person's corrections)`;

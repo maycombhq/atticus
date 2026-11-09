@@ -374,7 +374,14 @@ export async function matchDone(
     await finishDecideRun(root, run, { state: "failed", errors: [m.error ?? "unreadable"], ...at });
     return { ...m, run: run.runId };
   }
-  const { decideLinks } = await import("./ai-decide.js");
+  const { decideLinks, inAcpSession } = await import("./ai-decide.js");
+  // Final review: inside a Copilot session nothing is decided; the run stays open for a person.
+  if (inAcpSession())
+    return {
+      ...m,
+      run: run.runId,
+      error: `Run ${run.runId} decides as the AI only on a person's Done: read it in from the app, or outside the Copilot session.`,
+    };
   const decided = await decideLinks(root, {
     view,
     proposals: m.proposals,

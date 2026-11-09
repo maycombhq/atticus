@@ -489,6 +489,35 @@ describe("the AI answers an option question, and a correction spreads (ADR 0181)
     }
   });
 
+  it("undoing both batches, in either order, never leaves the AI's answers standing (final review)", async () => {
+    const d = await decideAnswers(root, { run: "r2", now: AT });
+    const r = await correctDecision(root, { item: QA, option: 2 }, { by: "pat", now: AT });
+    // The AI's batch no longer stands (both answers are the person's now): there is nothing to undo.
+    await expect(undoBatch(root, d!.batch!, { by: "pat", now: AT })).rejects.toThrow(
+      /Nothing of .* stands now/,
+    );
+    // The person's correction is undone: the AI's answers are back, and its batch can be undone.
+    await undoBatch(root, r.batch!, { by: "pat", now: AT });
+    expect(isAiBy((await readQuestion(root, QA))!.answer!.by)).toBe(true);
+    await undoBatch(root, d!.batch!, { by: "pat", now: AT });
+    for (const id of [QA, QB]) expect((await readQuestion(root, id))!.state).toBe("open");
+    expect((await decisionsView(root)).questions.counts).toMatchObject({ byAi: 0 });
+  });
+
+  it("never puts back an undone batch's answer", async () => {
+    const d = await decideAnswers(root, { run: "r2", now: AT });
+    const r = await correctDecision(root, { item: QA, option: 2 }, { by: "pat", now: AT });
+    // Mark the AI's batch undone by hand, as if undone on another clone.
+    const file = join(root, "decisions", `${d!.batch}.yaml`);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")) + "undone:\n  by: dee\n  at: 2026-11-08T11:00:00.000Z\n",
+    );
+    const u = await undoBatch(root, r.batch!, { by: "pat", now: AT });
+    for (const id of [QA, QB]) expect((await readQuestion(root, id))!.state).toBe("open");
+    expect(u.skipped.join(" ")).toMatch(/undone batch/);
+  });
+
   it("refuses to correct a question no AI answered", async () => {
     await expect(correctDecision(root, { item: QA, option: 2 }, { by: "pat" })).rejects.toThrow(
       /isn't an AI decision/,
@@ -778,6 +807,15 @@ describe("AI decides in hand-off mode too (ADR 0181, ninth UX walk)", () => {
     expect(await runDone(root, run!, {}, io)).toBe(1);
     expect(said.join("\n")).toMatch(/No proposal was written/);
     await propose(QA, 1, 40);
+    // Final review: inside a Copilot session the Done is refused and the run stays open.
+    process.env.ATTICUS_ACP_SESSION = "1";
+    try {
+      said.length = 0;
+      expect(await runDone(root, run!, {}, io)).toBe(1);
+      expect(said.join("\n")).toMatch(/only on a person's Done/);
+    } finally {
+      delete process.env.ATTICUS_ACP_SESSION;
+    }
     said.length = 0;
     expect(await runDone(root, run!, {}, io)).toBe(0);
     expect(said.join("\n")).toMatch(/Detected by AI: 1 answer applied/);

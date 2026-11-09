@@ -117,6 +117,27 @@ describe("a person's records under facts/", () => {
       /person's record/,
     );
   });
+
+  it("are never a session's to write under a name Windows opens as theirs (final review)", async () => {
+    const { mkdtemp, mkdir } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { factsOnly, acpPathsOf } = await import("../src/copilot-acp.js");
+    const { isPersonsFactsFile } = await import("../src/person-only.js");
+    for (const n of [
+      "forge-billing.corrections.jsonl.",
+      "forge-billing.corrections.jsonl ",
+      "forge-billing.corrections.jsonl::$DATA",
+      "forge-billing.audit.yaml. .",
+    ])
+      expect(isPersonsFactsFile(n), n).toBe(true);
+    const root = await mkdtemp(join(tmpdir(), "po-"));
+    await mkdir(join(root, "facts"));
+    const paths = acpPathsOf(factsOnly(root, join(root, "facts")));
+    for (const n of ["forge-ledger.jsonl.", "notes ", "forge-ledger.jsonl:alt"])
+      expect(paths.writable(join(root, "facts", n)), n).toBeDefined();
+    expect(paths.writable(join(root, "facts", "forge-ledger.jsonl"))).toBeUndefined();
+  });
 });
 
 it("a session's command comes first, so a flag can't hide it", () => {
