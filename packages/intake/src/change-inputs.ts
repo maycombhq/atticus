@@ -235,7 +235,11 @@ export async function attachToChange(
 ): Promise<AttachResult> {
   const index = await readChangeInputs(dir);
   const out: AttachResult = { added: [], refused: [], notes: [] };
-  const taken = new Set(await readdir(join(dir, INPUTS_DIR)).catch(() => [] as string[]));
+  // Lower-cased: NTFS (and macOS by default) don't tell SPEC.pdf from spec.pdf, so a name that
+  // differs only in case would overwrite the file, the index or the read/ folder (final review).
+  const taken = new Set(
+    (await readdir(join(dir, INPUTS_DIR)).catch(() => [] as string[])).map((n) => n.toLowerCase()),
+  );
   taken.add("index.yaml").add("read");
   const replaced = o.replaces
     ? index.files.find((x) => x.path === o.replaces!.trim().replace(/\\/g, "/"))
@@ -276,8 +280,8 @@ export async function attachToChange(
     const dot = safe.lastIndexOf(".");
     const [stem, ext] = dot > 0 ? [safe.slice(0, dot), safe.slice(dot)] : [safe, ""];
     let target = safe;
-    for (let n = 2; taken.has(target); n++) target = `${stem}-${n}${ext}`;
-    taken.add(target);
+    for (let n = 2; taken.has(target.toLowerCase()); n++) target = `${stem}-${n}${ext}`;
+    taken.add(target.toLowerCase());
     const found = classify(target, f.bytes).classification;
     const { format, citeBy } = formatOf(target, f.bytes, found);
     // An email export or other plain text is a document to read, whatever its extension.

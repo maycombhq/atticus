@@ -364,9 +364,11 @@ export interface FactJoin {
   interface: string;
   /**
    * G1 (ADR 0174): a person paired the call with this entry; who did. ADR 0181: `ai` when the
-   * pairing is the AI's (written by Atticus from that run), never a person's word.
+   * pairing is the AI's (written by Atticus from that run), never a person's word. `call` is set
+   * when the pairing was a gateway hop's forwarding call (the line the person's evidence cites):
+   * a hop a person paired makes the whole walked link that person's pairing.
    */
-  paired?: { by: string; ai?: JoinAi };
+  paired?: { by: string; ai?: JoinAi; call?: FactEnd };
   /** ADR 0181: the target answer that joined it was the AI's, from that run. */
   aiAnswer?: JoinAi;
   /**
@@ -1757,8 +1759,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const forward = byKey.get(key(landed.call.repo, landed.call.fact))!.fact as Call;
     const method = (forward.method ?? caller.fact.method ?? callee.fact.method)?.toUpperCase();
     const scopes = [...new Set(hops.flatMap((h) => h.scopes ?? []))];
-    // A hop that guessed (J0, J1) makes the whole link a guess.
+    // A hop that guessed (by path, by a host's first label, J0, J1) makes the whole link a guess:
+    // the walked link is never more certain than its least certain hop (final review).
     const hopGuesses = guessList([...(j.guesses ?? []), ...walked.flatMap((h) => h.guesses ?? [])]);
+    const inferred = j.inferred ?? walked.find((h) => h.inferred)?.inferred;
+    const byLabel = j.byLabel ?? walked.find((h) => h.byLabel)?.byLabel;
+    // A hop a person paired makes the link that person's pairing, citing the hop's call; the
+    // caller's own pairing or answer, or the AI's, comes first.
+    const hopPaired =
+      j.paired || aiOfJoin(j)
+        ? undefined
+        : walked.flatMap((h) =>
+            h.paired && !h.paired.ai ? [{ by: h.paired.by, call: h.paired.call ?? h.call }] : [],
+          )[0];
+    const paired = j.paired ?? hopPaired;
     // ADR 0181 (ninth UX walk): the caller's own pairing or answer goes on with the walked link,
     // and a hop the AI joined makes the whole link the AI's, never a person's or the code's.
     const hopAi = aiOfJoin(j)
@@ -1773,11 +1787,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       ...(j.tie ? { tie: j.tie } : {}),
       ...(j.through ? { through: j.through } : {}),
       how: j.how,
-      ...(j.paired ? { paired: j.paired } : {}),
+      ...(paired ? { paired } : {}),
       ...(j.aiAnswer ? { aiAnswer: j.aiAnswer } : {}),
       ...(hopAi ? { aiHop: hopAi } : {}),
-      ...(j.inferred ? { inferred: j.inferred } : {}),
-      ...(j.byLabel ? { byLabel: j.byLabel } : {}),
+      ...(inferred ? { inferred } : {}),
+      ...(byLabel ? { byLabel } : {}),
       ...(hopGuesses.length ? { guesses: hopGuesses } : {}),
       gateway: hops,
       ...(scopes.length ? { scopes } : {}),
@@ -2101,7 +2115,8 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     const own = aiOfJoin(j);
     const ai = own ?? j.aiHop;
     // A hop's AI decision cites the hop's forwarding call, where the AI's answer joined it.
-    const at = !own && j.aiHop ? j.aiHop.call : j.call;
+    // So does a hop's pairing: the person paired the hop's forwarding call.
+    const at = !own && j.aiHop ? j.aiHop.call : !ai && j.paired?.call ? j.paired.call : j.call;
     const call = j.paired || ai ? fact(at) : undefined;
     if (!call) return [];
     if (ai)
@@ -2119,7 +2134,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     return [
       {
         source: "manual",
-        repo: j.call.repo,
+        repo: at.repo,
         path: call.cite.file,
         line: call.cite.line,
         side: "caller",

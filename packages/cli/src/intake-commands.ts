@@ -89,9 +89,11 @@ export async function addToInbox(
     const dot = name.lastIndexOf(".");
     const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
     await mkdir(inbox, { recursive: true });
-    const taken = new Set(await readdir(inbox));
+    // Lower-cased: NTFS doesn't tell SPEC.pdf from spec.pdf, so a name that differs only in
+    // case would overwrite the file already there (final review).
+    const taken = new Set((await readdir(inbox)).map((n) => n.toLowerCase()));
     let target = name;
-    for (let n = 2; taken.has(target); n++) target = `${stem}-${n}${ext}`;
+    for (let n = 2; taken.has(target.toLowerCase()); n++) target = `${stem}-${n}${ext}`;
     await writeFile(join(inbox, target), bytes);
     const path = `${INBOX}/${target}`;
     known.set(hash, path);

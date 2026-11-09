@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { intakeAdd, intakeList, triageDecide, triageList } from "../src/intake-commands.js";
+import {
+  addToInbox,
+  intakeAdd,
+  intakeList,
+  triageDecide,
+  triageList,
+} from "../src/intake-commands.js";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 const MIXED = join(dirname(fileURLToPath(import.meta.url)), "../../intake/test/fixtures/mixed");
@@ -89,6 +95,24 @@ describe("atticus intake add", () => {
     ]);
     expect(c.out[0]).toBe("Added inputs/inbox/northwind-pay-openapi.yaml (openapi).");
     expect(await intakeAdd(root, [], capture().io)).toBe(2);
+  });
+
+  it("never gives two inbox files names that differ only in case (final review)", async () => {
+    // NTFS doesn't tell SPEC.pdf from spec.pdf: the second copy overwrote the first on Windows.
+    const root = await forgeRoot();
+    const bytes = (s: string) => new Uint8Array(Buffer.from(s));
+    await addToInbox(root, [{ name: "spec.pdf", bytes: bytes("%PDF-1.4 one\n") }]);
+    const r = await addToInbox(root, [
+      { name: "SPEC.pdf", bytes: bytes("%PDF-1.4 two\n") },
+      { name: "Spec.PDF", bytes: bytes("%PDF-1.4 three\n") },
+    ]);
+    expect(r.refused).toEqual([]);
+    expect(r.added.map((a) => a.path)).toEqual([
+      "inputs/inbox/SPEC-2.pdf",
+      "inputs/inbox/Spec-3.PDF",
+    ]);
+    const names = (await readdir(join(root, "inputs/inbox"))).map((n) => n.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 

@@ -196,6 +196,28 @@ describe("the code tools (ADR 0118)", () => {
     ix.close();
   });
 
+  it("a glob or .gitignore line built to backtrack doesn't hold the call (final review)", async () => {
+    const root = await vaultRoot();
+    const ix = await openIndex(root);
+    const clone = join(root, "workspace/forge-vault");
+    await writeFile(join(clone, `src/${"a".repeat(40)}.java`), "class A {}\n");
+    const evil = `${"*a".repeat(12)}!`;
+    await writeFile(join(clone, "src/.gitignore"), `${evil}\n`);
+    const started = Date.now();
+    const files = await call(ix, root, "files", { glob: evil, repo: "forge-vault" });
+    expect(files).not.toContain("forge-vault:src/");
+    const grep = await call(ix, root, "grep", {
+      pattern: "class",
+      paths: evil,
+      repo: "forge-vault",
+    });
+    expect(grep).toMatch(/^No line matches/);
+    const java = await call(ix, root, "files", { glob: "*.java", repo: "forge-vault" });
+    expect(java).toContain(`forge-vault:src/${"a".repeat(40)}.java`);
+    expect(Date.now() - started).toBeLessThan(1000);
+    ix.close();
+  });
+
   it("outline gives a file's declarations from the reader passed in, else its headings or keys", async () => {
     const root = await vaultRoot();
     const ix = await openIndex(root);

@@ -68,6 +68,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Final review (API, scan and intake):
+  - **A path glob can't stall a scan or a code search.** The globs of grep's paths, files and every .gitignore line of a scanned repo were run as backtracking regular expressions on the main thread with no time limit, so a glob such as `*a*a*a…!` took seconds and grew five-fold with each `*a`. They are now matched in linear time, with the same results.
+  - **A gateway hop that guessed makes the walked link a guess.** A forwarding call joined by path, by a host's first label or by a person's pairing was dropped from the caller's link through the gateway, so that link came out verified and flagged joined-by-host. It is now inferred with the hop's flag (joined-by-path, joined-by-label), or that person's pairing (joined-by-person) citing the hop's forwarding call, as a hop the AI joined already made it the AI's.
+  - **Apply refuses a repo that isn't a repo name.** `POST /api/facts/{repo}/apply` passed the repo straight to verify, and the router decodes %2F and %5C, so an encoded `../` could read a facts file outside the metarepo. It is checked as the other /api/facts/{repo} routes check it (400), and must be a repo the workspace lists (404), before a job starts.
+  - **Attached and inbox files never differ from another only in case.** Attaching (the upload and `atticus change attach`) and adding to the inbox (promote, `atticus intake add`) compared names case-sensitively, so on Windows SPEC.pdf overwrote spec.pdf, and INDEX.yaml a change's inputs index. Names are now compared without case: SPEC.pdf is kept as SPEC-2.pdf, INDEX.yaml as INDEX-2.yaml.
 - Ninth UX walk (no terminal in the daily path, wording):
   - **Questions opened for a change says that change has no question** when its list is empty, not that a scan adds one.
   - **A saved stage correction says where the file goes**: stage/corrections.yaml goes with the stage's hand-off; outside one, Propose for review; the git command is under "Or in a terminal".

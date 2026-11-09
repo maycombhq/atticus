@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createContext, runInContext, Script } from "node:vm";
 import { RecordId, specsRelOf, stateDirOf, type ToolDefinition } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
+import { globMatcher, type GlobMatcher } from "./glob.js";
 import { fuse, type GraphNodeRow } from "./select.js";
 
 /**
@@ -811,57 +812,11 @@ function reposOf(root: string, input: Record<string, unknown>, o: ContextToolOpt
   return out;
 }
 
-/**
- * A glob as a regular expression over a repo-relative path: `**` any folders, `*` and `?` within
- * one name, `[...]` a class, `{a,b}` either. A glob with no / matches a name at any depth.
- */
-function globRe(glob: string, anyDepth = !glob.replace(/\/$/, "").includes("/")): RegExp {
-  let g = glob.trim().replace(/\\/g, "/").replace(/^\.\//, "");
-  if (g.startsWith("/")) {
-    g = g.slice(1);
-    anyDepth = false;
-  }
-  let re = "";
-  for (let i = 0; i < g.length; i++) {
-    const ch = g[i]!;
-    if (ch === "*") {
-      if (g[i + 1] === "*") {
-        const slash = g[i + 2] === "/";
-        re += slash ? "(?:.*/)?" : ".*";
-        i += slash ? 2 : 1;
-      } else re += "[^/]*";
-    } else if (ch === "?") re += "[^/]";
-    else if (ch === "[") {
-      const end = g.indexOf("]", i + 2);
-      if (end < 0) re += "\\[";
-      else {
-        const body = g
-          .slice(i + 1, end)
-          .replace(/^!/, "^")
-          .replace(/\\/g, "\\\\");
-        re += `[${body}]`;
-        i = end;
-      }
-    } else if (ch === "{") {
-      const end = g.indexOf("}", i);
-      if (end < 0) re += "\\{";
-      else {
-        re += `(?:${g
-          .slice(i + 1, end)
-          .split(",")
-          .map((p) => globRe(p, false).source.slice(1, -1))
-          .join("|")})`;
-        i = end;
-      }
-    } else re += ch.replace(/[.+^$()|\\]/g, "\\$&");
-  }
-  return new RegExp(`^${anyDepth ? "(?:.*/)?" : ""}${re}$`);
-}
-
 interface IgnoreRule {
   /** The folder of the .gitignore, repo-relative ("" for the root). */
   base: string;
-  re: RegExp;
+  /** Matched in linear time (glob.ts): a scanned repo's .gitignore can't stall the scan. */
+  re: GlobMatcher;
   negate: boolean;
   dirOnly: boolean;
 }
@@ -882,7 +837,7 @@ function ignoreRules(text: string, base: string): IgnoreRule[] {
     if (!line) continue;
     const anchored = line.includes("/");
     try {
-      out.push({ base, re: globRe(line.replace(/^\//, ""), !anchored), negate, dirOnly });
+      out.push({ base, re: globMatcher(line.replace(/^\//, ""), !anchored), negate, dirOnly });
     } catch {
       // A line git would read some other way is left out rather than guessed at.
     }
@@ -1055,7 +1010,7 @@ async function grepTool(
   }
   const limit = int(input.limit, 1, B.grepLimit, B.grepDefault);
   const paths = str(input.paths);
-  const only = paths ? globRe(paths) : undefined;
+  const only = paths ? globMatcher(paths) : undefined;
   const repos = reposOf(root, input, o);
   const hits: string[] = [];
   let more = false;
@@ -1123,7 +1078,7 @@ async function filesTool(
   const glob = str(input.glob);
   if (!glob) throw new ContextToolError("files needs a glob, for example src/**/*.java.");
   const limit = int(input.limit, 1, B.filesLimit, B.filesDefault);
-  const re = globRe(glob);
+  const re = globMatcher(glob);
   const repos = reposOf(root, input, o);
   const out: string[] = [];
   let more = false;
