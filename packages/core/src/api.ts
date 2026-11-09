@@ -307,8 +307,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.82.0 (ADR 0181, the canvas's Detected by AI layer): a graph join's `how` may be `ai` (a call
  *   the AI paired, its Interface flagged `joined-by-ai`), with the deciding `run`, so the canvas
  *   draws, filters and counts the AI's links apart from the code's and a person's. Additive only.
+ * 2.83.0 (ninth UX walk): PUT /api/changes/{changeId}/owners names a change's owners per role
+ *   (product owner, architect, business analyst, tech lead) in change.yaml; ChangeDetail gains
+ *   `owners`; a Task gains `waits` (the tasks it waits for, `sameRepo` its own repo's) and a
+ *   ReadyTasks task `sameRepo`; an OwnerQuestionView may carry `finding` (a critic knowledge gap a
+ *   person asked of its owner), and /api/questions leaves those out (they are owner questions).
+ *   Additive only.
  */
-export const API_VERSION = "2.82.0";
+export const API_VERSION = "2.83.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -667,6 +673,8 @@ export const ChangeSummary = z.object({
 export const ChangeDetail = ChangeSummary.extend({
   /** 2.66.0 (review round 35): what a hand-off said, such as a branch it couldn't push. */
   notes: z.array(z.string()).optional(),
+  /** 2.83.0 (ninth UX walk): change.yaml's owners, role id to handles. */
+  owners: z.record(z.string(), z.array(z.string())).optional(),
   artifacts: z.array(ArtifactStatus),
   repos: z.array(RecordId),
   workspace: ChangeRepos.optional(),
@@ -732,6 +740,12 @@ export const Task = z.object({
       notes: z.array(z.string()),
     })
     .optional(),
+  /**
+   * 2.83.0 (ninth UX walk): the not-done tasks it waits for before it can run (its stories'
+   * dependencies, and the earlier tasks of its own repo in tasks.md order); `sameRepo` names the
+   * ones of its own repo. Absent when it waits for none, or once it is done.
+   */
+  waits: z.object({ tasks: z.array(z.string()), sameRepo: z.array(z.string()) }).optional(),
 });
 export type TaskT = z.infer<typeof Task>;
 
@@ -2633,6 +2647,11 @@ export const OwnerQuestionView = z.object({
   fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),
   records: z.array(z.string()),
   file: z.string(),
+  /**
+   * 2.83.0 (ninth UX walk): a critic knowledge gap a person asked of its owner (Ask): the change,
+   * gate and finding. Its answer closes the gap at the gate.
+   */
+  finding: z.object({ change: z.string(), gate: z.string(), id: z.string() }).optional(),
 });
 export const OwnerQuestionList = z.object({
   /** The catalog has no records yet. */
@@ -2916,6 +2935,20 @@ export const SyncRequest = z.strictObject({ repo: z.string().optional() });
 export const ReleasePrsRequest = z.strictObject({});
 /** 2.75.0 (seventh UX walk): tick (done) or untick a task in the change's tasks.md. */
 export const TaskDoneRequest = z.strictObject({ done: z.boolean() });
+/**
+ * 2.83.0 (ninth UX walk): name a change's owners per role from the change page (an empty list
+ * clears a role): the product owner, the architect, the business analyst and the tech lead
+ * (team-lead). Other owner keys of change.yaml are kept.
+ */
+export const CHANGE_OWNER_ROLES = [
+  "product-owner",
+  "architect",
+  "business-analyst",
+  "team-lead",
+] as const;
+export const ChangeOwnersRequest = z.strictObject({
+  owners: z.partialRecord(z.enum(CHANGE_OWNER_ROLES), z.array(z.string().trim().min(1)).max(20)),
+});
 
 /**
  * 2.79.0 (ADR 0181 part 4): Run all ready tasks. Every task not done yet, in the cross-repo order
@@ -2931,6 +2964,8 @@ export const ReadyTasks = z.object({
       repo: z.string(),
       ready: z.boolean(),
       waitsFor: z.array(z.string()),
+      /** 2.83.0 (ninth UX walk): of waitsFor, the earlier not-done tasks of its own repo. */
+      sameRepo: z.array(z.string()).optional(),
       why: z.string().optional(),
     }),
   ),
@@ -5365,6 +5400,18 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeDetail", description: "OK" },
       errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/owners": {
+    put: {
+      id: "setChangeOwners",
+      summary:
+        "2.83.0 (ninth UX walk): name the change's owners per role (product owner, architect, business analyst, tech lead) in change.yaml, on the person's click",
+      tag: "changes",
+      params: [p("changeId")],
+      body: ChangeOwnersRequest,
+      ok: { status: 200, schema: "ChangeDetail", description: "The change with its owners" },
+      errors: [400, 403, 404],
     },
   },
   "/api/changes/{changeId}/status": {

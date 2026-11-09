@@ -63,10 +63,17 @@ beforeAll(async () => {
       createdBy: "pat",
     }),
   );
-  // The feature stage files its question under the change; it is the product owner's.
+  // The feature stage files its question under the change. The stage is the architect's (it
+  // places the change on the estate, ninth UX walk); this one asks the product owner what the
+  // brief meant, so it says so.
   const feature = await raiseQuestions(
     root,
-    [draft("Who may place a hold?", `openspec/changes/${CHANGE}/proposal.md:3`)],
+    [
+      {
+        ...draft("Who may place a hold?", `openspec/changes/${CHANGE}/proposal.md:3`),
+        role: "product",
+      },
+    ],
     {
       step: "change-feature",
       repo: CHANGE,

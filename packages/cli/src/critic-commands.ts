@@ -511,6 +511,17 @@ export async function findingAction(
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(r.message);
+    // Ninth UX walk: a stage's question about this finding ("Three drafts in a row had this
+    // problem") asks about nothing once a person settled it: retired now, with why.
+    if (r.finding.state !== "open") {
+      const { retireChangeEscalations } = await import("@maycombhq/planner");
+      const at = deps.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const stages = await retireChangeEscalations(root, changeId, at).catch(() => []);
+      if (stages.length)
+        io.out(
+          `Retired the ${stages.join(" and ")} stage's question about it: the finding is settled.`,
+        );
+    }
     return 0;
   } catch (e) {
     return fail(io, e);

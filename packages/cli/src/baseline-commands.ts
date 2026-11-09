@@ -114,6 +114,21 @@ export async function setupSteps(
       fix: "Name the person who looks after the org pack (normally the platform lead): type their handle under this step on Home in the app, or run atticus orgpack owner <handle>. It is saved as owner in org-pack/pack.yaml; propose it for review.",
     },
     {
+      // Ninth UX walk: the constitution's pattern rule has nothing to check against while the
+      // registry is empty (so it doesn't fire), and nobody can pick a code: register them here.
+      id: "patterns",
+      label: "The integration pattern registry has patterns",
+      done: op.patterns.length > 0,
+      detail: op.patterns.length
+        ? `${op.patterns.length} pattern${op.patterns.length === 1 ? "" : "s"}: ${op.patterns
+            .map((p) => p.code)
+            .sort()
+            .join(", ")}`
+        : "empty: the critic can't check a hop's pattern until it has some",
+      fix: "Add one YAML file per integration pattern your organisation approves under org-pack/patterns/ (its code, status confirmed, its route and controls; the starter pack's patterns show the shape), run atticus orgpack validate, and propose it for review. The app has no editor for patterns yet.",
+      optional: true,
+    },
+    {
       // ADR 0121 item 6: how AI runs here is a choice, not the default left by accident.
       id: "ai",
       label: "Choose how AI runs here",

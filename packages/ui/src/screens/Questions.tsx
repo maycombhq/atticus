@@ -37,6 +37,15 @@ export interface QuestionListView {
 
 type About = NonNullable<Api.QuestionListT["about"]>[string];
 
+/**
+ * Ninth UX walk: the role a question is for, in words ("For the architect"), from the list's
+ * about (derived for an older file) or the question's own; undefined where no role owns it.
+ */
+export function roleWords(role: string | undefined): string | undefined {
+  if (!role) return undefined;
+  return C.forRole(COPY.roles.who[role] ?? role);
+}
+
 /** Who a question goes to, what change rests on it and how many calls it joins (ADR 0140). */
 export function aboutWords(a: About | undefined): string[] {
   if (!a) return [];
@@ -508,6 +517,11 @@ export function QuestionList(p: {
                               {q.state}
                             </span>
                             <span className="mono">{q.id}</span>
+                            {roleWords(d.about?.[q.id]?.role ?? q.role) && (
+                              <span className="chip">
+                                {roleWords(d.about?.[q.id]?.role ?? q.role)}
+                              </span>
+                            )}
                             {q.answer && isAiBy(q.answer.by) && <AiChip inLink />}
                           </span>
                           {aboutWords(d.about?.[q.id]).map((w) => (
@@ -656,8 +670,11 @@ export function QuestionDetail(p: {
   proposal?: Proposal;
   /** ADR 0168: the rule that answers it and the open questions like it at once, pre-filled. */
   rule?: RuleOffer;
+  /** Ninth UX walk: the role it is for, from the list's about (derived for an older file). */
+  role?: string;
 }) {
   const q = p.question;
+  const forRole = roleWords(p.role ?? q.role);
   const offer = q.state === "open" ? p.rule : undefined;
   const [form, setForm] = useState<AnswerForm>({
     pick: q.answer?.option ?? (q.answer?.text ? "words" : undefined),
@@ -724,7 +741,7 @@ export function QuestionDetail(p: {
         {q.question}
       </h2>
       <p className="hud" style={{ margin: 0, fontSize: 10 }}>
-        {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} ·{" "}
+        {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} · {forRole ? `${forRole} · ` : ""}
         <code className="mono">{q.id}</code> <CopyButton text={q.id} label={C.copyId} />
       </p>
       <div>
@@ -938,11 +955,13 @@ function Detail({
   onAnswered,
   proposal,
   rule,
+  role,
 }: {
   id: string;
   onAnswered: () => void;
   proposal?: Proposal;
   rule?: RuleOffer;
+  role?: string;
 }) {
   const q = useApi<QuestionView>(`/api/questions/${id}`);
   useReloadOnFiles(q);
@@ -961,6 +980,7 @@ function Detail({
             onAnswered={onAnswered}
             {...(proposal ? { proposal } : {})}
             {...(rule ? { rule } : {})}
+            {...(role ? { role } : {})}
           />
         )}
       </View>
@@ -1419,6 +1439,9 @@ export function Questions({ hash }: { hash: string }) {
                     : {})}
                   {...(list.state === "ready" && list.data.about?.[current]?.rule
                     ? { rule: list.data.about[current].rule }
+                    : {})}
+                  {...(list.state === "ready" && list.data.about?.[current]?.role
+                    ? { role: list.data.about[current].role }
                     : {})}
                 />
               ) : (

@@ -28,9 +28,11 @@ import {
   changeReport,
   changeSize,
   changeStore,
+  ChangeOwnersError,
   liveHandoff,
   requiredArtifacts,
   loadChangeContext,
+  setChangeOwners,
   type ChangeReport,
 } from "@maycombhq/changes";
 import type { GitHost } from "@maycombhq/adapters";
@@ -250,6 +252,8 @@ async function changeDetail(root: string, id: string) {
     openFindings: open,
     updatedAt: c.history.at(-1)?.at ?? c.createdAt,
     ...(fast ? { fastPath: true } : {}),
+    // Ninth UX walk (2.83.0): who owns each role, so the change page can name them.
+    owners: c.owners,
     artifacts,
     ...(h
       ? {
@@ -340,8 +344,13 @@ async function taskViews(
     tasks = readChangeTasks(await readChangeFiles(dir));
     prs?.onTick?.();
   }
+  // Ninth UX walk: what each task waits for, as the ready list reads it (same repo included).
+  const waits = new Map(
+    (await readyTasksOf(root, change).catch(() => ({ tasks: [] }))).tasks.map((x) => [x.id, x]),
+  );
   const out: Api.TaskT[] = [];
   for (const [i, t] of tasks.entries()) {
+    const w = t.done ? undefined : waits.get(t.id);
     const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
     const run = tr ? (tr.waiting ?? tr.runs[0]) : undefined;
     const prState = tr?.state === "pr-open" ? states[i]?.state : undefined;
@@ -367,6 +376,7 @@ async function taskViews(
             },
           }
         : {}),
+      ...(w?.waitsFor.length ? { waits: { tasks: w.waitsFor, sameRepo: w.sameRepo ?? [] } } : {}),
     });
   }
   return out;
@@ -632,6 +642,23 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         status: 200,
         body: await changeDetail(root, params.changeId!),
       }))
+      // Ninth UX walk (2.83.0): a person names the change's owners per role from its page, so
+      // Home and Questions know whose questions are whose: change.yaml through the change store.
+      .add("PUT", "/api/changes/{changeId}/owners", async ({ params, body }) => {
+        await readChange(root, params.changeId!);
+        const b = parseBody(Api.ChangeOwnersRequest, body);
+        try {
+          await setChangeOwners(root, params.changeId!, b.owners);
+        } catch (e) {
+          if (e instanceof ChangeOwnersError) throw badRequest(e.message);
+          throw e;
+        }
+        ctx.events.publish({
+          type: "file.changed",
+          path: `${changesRelOf(root)}/${params.changeId!}/change.yaml`,
+        });
+        return { status: 200, body: await changeDetail(root, params.changeId!) };
+      })
       .add("GET", "/api/changes/{changeId}/status", async ({ params }) => {
         await readChange(root, params.changeId!);
         const rep = await changeReport(root, params.changeId!);

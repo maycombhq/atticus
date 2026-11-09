@@ -345,13 +345,34 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       const gaps = (await findingFiles(e.root, "design", 1)).filter((f) => f.severity === "gap");
       expect(gaps).toHaveLength(12);
+      // Ninth UX walk: Ask raises an owner question for the team, and the gate waits for it.
+      const asked: string[] = [];
       for (const g of gaps) {
         const a = await run("finding", CHANGE, g.id, "ask", "--by", "ari");
         expect(a.code, a.text).toBe(0);
-        expect(a.out[0]).toMatch(
-          /^Asked team-[a-z]+\. The gap stops blocking while the question is open\.$/,
-        );
+        const m =
+          /^Asked team-[a-z]+: owner question (q-[0-9a-f]{12}) is in Questions, Owner questions\. The design gate waits for its answer\.$/.exec(
+            a.out[0] ?? "",
+          );
+        expect(m, a.out[0]).not.toBeNull();
+        asked.push(m![1]!);
       }
+      // Each team answers its question (Questions, Owner questions, or the same command).
+      for (const id of new Set(asked)) {
+        const o = await run(
+          "questions",
+          "owner",
+          id,
+          "--text",
+          "Recorded by the team",
+          "--by",
+          "tia",
+        );
+        expect(o.code, o.text).toBe(0);
+      }
+      // The answers come before round 2: a second later, so the round (stamped to the second)
+      // doesn't read them as a person acting since it ran.
+      await new Promise((r) => setTimeout(r, 1100));
       await writeArtifacts(e.root, FIX, ["interfaces.md", "data.md", "design.md", "ux.md"]);
       const r = await run("critic", CHANGE, "--gate", "design");
       expect(r.out[0]).toBe(

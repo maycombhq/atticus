@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.82.0",
+    "version": "2.83.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -6017,6 +6017,113 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/owners": {
+      "put": {
+        "operationId": "setChangeOwners",
+        "summary": "2.83.0 (ninth UX walk): name the change's owners per role (product owner, architect, business analyst, tech lead) in change.yaml, on the person's click",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "owners": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "product-owner",
+                        "architect",
+                        "business-analyst",
+                        "team-lead"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "owners"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The change with its owners",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23672,6 +23779,12 @@
                     "type": "string"
                   }
                 },
+                "sameRepo": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "why": {
                   "type": "string"
                 }
@@ -24032,6 +24145,26 @@
           },
           "file": {
             "type": "string"
+          },
+          "finding": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "type": "string"
+              },
+              "gate": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "change",
+              "gate",
+              "id"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -24727,6 +24860,18 @@
               "type": "string"
             }
           },
+          "owners": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
           "artifacts": {
             "type": "array",
             "items": {
@@ -24970,6 +25115,28 @@
               "level",
               "branch",
               "notes"
+            ],
+            "additionalProperties": false
+          },
+          "waits": {
+            "type": "object",
+            "properties": {
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sameRepo": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "tasks",
+              "sameRepo"
             ],
             "additionalProperties": false
           }
@@ -35002,6 +35169,45 @@
               "analysis",
               "delivery"
             ]
+          },
+          "askedOf": {
+            "type": "string",
+            "minLength": 1
+          },
+          "finding": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "gate": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "round": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              }
+            },
+            "required": [
+              "change",
+              "gate",
+              "round",
+              "id"
+            ],
+            "additionalProperties": false
           },
           "state": {
             "type": "string",

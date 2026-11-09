@@ -158,10 +158,12 @@ describe("rounds, gates and actions", () => {
     const blockers = ready.reasons
       .filter((x) => x.code === "blocking-finding" || x.code === "open-gap")
       .map((x) => x.finding);
+    // Ninth UX walk: an asked gap waits for its owner question's answer, so it blocks too.
     const open = r2.findings.filter(
       (f) =>
-        f.finding.state === "open" &&
-        (f.finding.severity === "blocking" || f.finding.severity === "gap"),
+        (f.finding.state === "open" &&
+          (f.finding.severity === "blocking" || f.finding.severity === "gap")) ||
+        (f.finding.state === "asked" && f.finding.severity === "gap"),
     );
     expect(blockers.sort()).toEqual(open.map((f) => f.finding.id).sort());
     expect(r2.status.reasons).toEqual(

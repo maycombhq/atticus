@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MockGitHost } from "@maycombhq/adapters";
@@ -40,7 +40,17 @@ const TASKS = [
 describe("which tasks are ready (pure)", () => {
   it("is every task whose stories' dependencies are done, in tasks.md order by default", () => {
     const p = planReadyTasks({ tasks: TASKS, stories: STORIES });
-    expect(p.ready).toEqual(["1.1", "1.2", "1.3"]);
+    // Ninth UX walk: a task waits for the earlier not-done tasks of its own repo, so 1.2 is
+    // drafted from a base with 1.1's code in it.
+    expect(p.ready).toEqual(["1.1"]);
+    expect(p.tasks.find((t) => t.id === "1.2")).toEqual({
+      id: "1.2",
+      repo: "forge-ledger",
+      ready: false,
+      waitsFor: ["1.1"],
+      sameRepo: ["1.1"],
+      why: "it waits for task 1.1 (same repo) to be done first",
+    });
     expect(p.tasks.find((t) => t.id === "2.1")).toEqual({
       id: "2.1",
       repo: "forge-portal-bff",
@@ -48,6 +58,28 @@ describe("which tasks are ready (pure)", () => {
       waitsFor: ["1.1", "1.2"],
       why: "it waits for tasks 1.1, 1.2 to be done first",
     });
+    expect(p.tasks.find((t) => t.id === "2.2")?.why).toBe(
+      "it waits for tasks 1.1, 1.2, 2.1 (same repo) to be done first",
+    );
+  });
+
+  it("lets tasks.md's [P] tasks of a repo go together, after the tasks before them", () => {
+    const tasks = [
+      { ...TASKS[0]! },
+      { ...TASKS[1]!, parallel: true },
+      { ...TASKS[2]!, parallel: true },
+    ];
+    expect(planReadyTasks({ tasks, stories: STORIES }).ready).toEqual(["1.1"]);
+    const after = planReadyTasks({
+      tasks: [{ ...tasks[0]!, done: true }, ...tasks.slice(1)],
+      stories: STORIES,
+    });
+    expect(after.ready).toEqual(["1.2", "1.3"]);
+    const allP = planReadyTasks({
+      tasks: tasks.map((t) => ({ ...t, parallel: true })),
+      stories: STORIES,
+    });
+    expect(allP.ready).toEqual(["1.1", "1.2", "1.3"]);
   });
 
   it("follows the deployment plan's order of the repos", () => {
@@ -59,8 +91,8 @@ describe("which tasks are ready (pure)", () => {
       stories: STORIES,
       repoOrder: ["forge-portal-bff", "forge-ledger"],
     });
-    expect(p.ready).toEqual(["2.1", "2.2", "1.3"]);
-    // Done tasks are left out of the list.
+    expect(p.ready).toEqual(["2.1", "1.3"]);
+    // Done tasks are left out of the list; 2.2 waits for 2.1, before it in its repo.
     expect(p.tasks.map((t) => t.id)).toEqual(["2.1", "2.2", "1.3"]);
   });
 
@@ -68,17 +100,34 @@ describe("which tasks are ready (pure)", () => {
     const p = planReadyTasks({
       tasks: [
         { ...TASKS[0]!, state: "pr-open" },
-        { ...TASKS[1]!, state: "failed" },
-        { ...TASKS[2]!, state: "pr-open", prSettled: "closed" },
+        { ...TASKS[1]!, state: "failed", parallel: true },
+        { ...TASKS[2]!, state: "pr-open", prSettled: "closed", parallel: true },
         { ...TASKS[3]!, done: false, stories: [], state: "waiting" },
       ],
       stories: STORIES,
     });
-    expect(p.ready).toEqual(["1.2", "1.3"]);
+    expect(p.ready).toEqual([]);
     expect(p.tasks[0]!.why).toBe("its PR is open on the Git host");
+    expect(p.tasks[1]!.why).toBe("it waits for task 1.1 (same repo) to be done first");
     expect(p.tasks[3]!.why).toBe("it is with your assistant: Done on its run carries on");
+    const merged = planReadyTasks({
+      tasks: [
+        { ...TASKS[0]!, done: true },
+        { ...TASKS[1]!, state: "failed", parallel: true },
+        { ...TASKS[2]!, state: "pr-open", prSettled: "closed", parallel: true },
+      ],
+      stories: STORIES,
+    });
+    expect(merged.ready).toEqual(["1.2", "1.3"]);
   });
 });
+
+/** Mark every task of the fixture's forge-ledger [P] (Spec Kit's marker), so they go together. */
+async function parallelLedger(root: string): Promise<void> {
+  const p = join(root, "openspec/changes", CHANGE, "tasks.md");
+  const text = await readFile(p, "utf8");
+  await writeFile(p, text.replace(/^- \[ \] (1\.\d) /gm, "- [ ] $1 [P] "));
+}
 
 const FILE = "src/main/java/forge/ledger/TransferLimits.java";
 const answer = (task: string) =>
@@ -90,6 +139,8 @@ describe("Run all ready tasks (ADR 0181 part 4, ADR 0036)", () => {
     "drafts each ready task on its own task branch, in order, and leaves the rest waiting",
     async () => {
       const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
+      expect((await readyTasksOf(root, CHANGE)).ready).toEqual(["1.1"]);
+      await parallelLedger(root);
       const ready = await readyTasksOf(root, CHANGE);
       expect(ready.ready).toEqual(["1.1", "1.2", "1.3"]);
       const runtime = new MockRuntime(
@@ -154,8 +205,9 @@ describe("Run all ready tasks (ADR 0181 part 4, ADR 0036)", () => {
       expect(r.ran.map((x) => x.task)).toEqual(["1.1"]);
       expect(r.stopped?.task).toBe("1.1");
       expect(await readTaskRun(root, CHANGE, "1.2")).toBeUndefined();
-      // The task that needs a person isn't ready again until a person picks it up.
-      expect((await readyTasksOf(root, CHANGE)).ready).toEqual(["1.2", "1.3"]);
+      // The task that needs a person isn't ready again until a person picks it up, and the
+      // tasks after it in its repo wait for it.
+      expect((await readyTasksOf(root, CHANGE)).ready).toEqual([]);
     },
     T,
   );
@@ -164,6 +216,7 @@ describe("Run all ready tasks (ADR 0181 part 4, ADR 0036)", () => {
     "previews each ready task in a dry run and does nothing",
     async () => {
       const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      await parallelLedger(root);
       const r = await runReadyTasks(root, CHANGE, {
         level: "pr",
         by: "ari",
@@ -189,6 +242,7 @@ describe("Run all ready tasks (ADR 0181 part 4, ADR 0036)", () => {
     "at the pr level, raises each PR into the change branch only with the person's approval",
     async () => {
       const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
+      await parallelLedger(root);
       const host = new MockGitHost([{ repo: "forge-ledger" }]);
       const runtime = new MockRuntime(
         (r) => answer(/task (\d\.\d)/.exec(r.pack.prompt)?.[1] ?? "?"),

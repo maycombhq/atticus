@@ -1,9 +1,17 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { parseArgs } from "node:util";
+import { parse } from "yaml";
 import {
+  answerQuestion,
   catalogDirOf,
+  changesDirOf,
+  Finding,
+  listQuestions,
   loadOrgPack,
+  QuestionError,
+  questionsRelOf,
+  type Question,
   orgPackDirOf,
   orgPackRelOf,
   parseRecord,
@@ -51,6 +59,12 @@ export interface OwnerQuestionItem {
   records: string[];
   /** Where an answer is written, relative to the metarepo. */
   file: string;
+  /**
+   * Ninth UX walk: a critic knowledge gap a person asked of its owner (Ask on the finding): the
+   * change, gate and finding. Its answer is the person's answer to the question on file, and
+   * closes the gap at the gate.
+   */
+  finding?: { change: string; gate: string; id: string };
 }
 
 export interface OwnerQuestionList {
@@ -92,14 +106,56 @@ function itemOf(root: string, g: KnowledgeGap): OwnerQuestionItem {
   };
 }
 
+/** The summary of the gap an asked question is about, read from its finding file. */
+async function gapSummary(root: string, f: NonNullable<Question["finding"]>): Promise<string> {
+  const path = join(
+    changesDirOf(root),
+    f.change,
+    "review",
+    f.gate,
+    String(f.round),
+    `${f.id}.yaml`,
+  );
+  const text = await readFile(path, "utf8").catch(() => undefined);
+  const r = text === undefined ? undefined : Finding.safeParse(parse(text));
+  return r?.success ? r.data.summary : `Knowledge gap ${f.id} at the ${f.gate} gate.`;
+}
+
+/**
+ * Ninth UX walk: the owner questions a person's Ask raised for critic knowledge gaps (questions on
+ * file with `finding`), open first; a retired one is left out.
+ */
+async function askedGapItems(root: string): Promise<OwnerQuestionItem[]> {
+  const { questions } = await listQuestions(root).catch(() => ({ questions: [] as Question[] }));
+  const out: OwnerQuestionItem[] = [];
+  for (const q of questions) {
+    if (!q.finding || q.state === "retired") continue;
+    out.push({
+      id: q.id,
+      system: q.finding.change,
+      owner: q.askedOf ?? "its owner",
+      question: q.question,
+      neededFact: await gapSummary(root, q.finding),
+      channel: "Atticus",
+      state: q.state === "answered" ? "answered" : "sent",
+      ...(q.answer?.text ? { answer: q.answer.text } : {}),
+      records: [],
+      file: `${questionsRelOf(root)}/${q.id}.yaml`,
+      finding: { change: q.finding.change, gate: q.finding.gate, id: q.finding.id },
+    });
+  }
+  return out.sort((a, b) => Number(a.state === "answered") - Number(b.state === "answered"));
+}
+
 /** Every owner question the knowledge gaps raise now, answered or not, in the gaps' order. */
 export async function ownerQuestions(
   root: string,
   o: { now?: Date } = {},
 ): Promise<OwnerQuestionList> {
   const found = await gaps(root, o.now ?? new Date());
-  if (!found) return { empty: true, open: 0, questions: [] };
-  const questions = found.map((g) => itemOf(root, g));
+  const asked = await askedGapItems(root);
+  if (!found && !asked.length) return { empty: true, open: 0, questions: [] };
+  const questions = [...asked, ...(found ?? []).map((g) => itemOf(root, g))];
   return {
     empty: false,
     open: questions.filter((q) => q.state !== "answered").length,
@@ -119,6 +175,19 @@ export async function answerOwnerQuestion(
     throw new OwnerQuestionError("The answer is empty: say what the owner said.", "invalid");
   if (!o.by.trim()) throw new OwnerQuestionError("Say who answered (--by).", "invalid");
   const now = o.now ?? new Date();
+  // Ninth UX walk: a critic gap's owner question is a question on file: the person's answer is
+  // written to it, and closes the gap at the gate.
+  const onFile = (await askedGapItems(root)).find((x) => x.id === id);
+  if (onFile) {
+    try {
+      await answerQuestion(root, id, { text: words, by: o.by.trim(), at: stamp(now) });
+    } catch (e) {
+      if (e instanceof QuestionError) throw new OwnerQuestionError(e.message, "invalid");
+      throw e;
+    }
+    const question = (await askedGapItems(root)).find((x) => x.id === id)!;
+    return { file: question.file, question };
+  }
   const found = (await gaps(root, now)) ?? [];
   const g = found.find((x) => x.question.id === id);
   if (!g)
@@ -182,6 +251,11 @@ export async function ownerQuestionCommand(
       ...(deps.now ? { now: deps.now } : {}),
     });
     if (values.json === true) io.out(JSON.stringify(r, null, 2));
+    else if (r.question.finding)
+      // Ninth UX walk: a critic gap's owner question: the answer closes the gap at its gate.
+      io.out(
+        `Wrote ${r.file}: ${by}'s answer to ${id}. Knowledge gap ${r.question.finding.id} is closed at the ${r.question.finding.gate} gate; the next draft of ${r.question.finding.change} reads the answer.`,
+      );
     else {
       io.out(`Wrote ${r.file}: ${by}'s answer to ${id}. Every scan keeps it.`);
       io.out(

@@ -46,7 +46,10 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           throw badRequest("role is product, architecture, analysis or delivery, or left out.");
         // beta.21: every question read once and routed once (mine, the person's teams' only); the
         // list is the asked state, the counts every state of the same questions.
-        const every = await listQuestions(ctx.root);
+        const onFile = await listQuestions(ctx.root);
+        // Ninth UX walk: a critic gap's owner question is listed with the owner questions
+        // (/api/owner-questions), not here, so Home counts it once.
+        const every = { ...onFile, questions: onFile.questions.filter((q) => !q.finding) };
         // ADR 0140: in the order to ask them, each with its owner.
         const { routeQuestions } = await import("./question-routing.js");
         const routedAll = await routeQuestions(

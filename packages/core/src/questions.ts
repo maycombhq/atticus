@@ -72,6 +72,24 @@ export function questionId(o: {
   return `q-${createHash("sha256").update(key).digest("hex").slice(0, 12)}`;
 }
 
+/** The step a critic knowledge gap's owner question is asked by (ninth UX walk). */
+export const ASKED_GAP_STEP = "critic-ask";
+
+/**
+ * Ninth UX walk: the id of the owner question a person's Ask raises for a critic knowledge gap.
+ * It is a fingerprint of the change and the gap's own fingerprint (its rule, artifact, record and
+ * summary), so the same gap carried to a later round or gate finds the same question.
+ */
+export function askedGapQuestionId(
+  change: string,
+  f: { rule: string; artifact: string; locator: { record?: string | undefined }; summary: string },
+): string {
+  const key = [ASKED_GAP_STEP, change, f.rule, f.artifact, f.locator.record ?? "", f.summary].join(
+    "\n",
+  );
+  return `q-${createHash("sha256").update(key).digest("hex").slice(0, 12)}`;
+}
+
 /** Who asked: the step, the repo, the command as typed, the command that reads the answer. */
 export interface AskedBy {
   step: string;

@@ -22,3 +22,4 @@ export * from "./conflicts.js";
 export * from "./size.js";
 export * from "./openspec-stores.js";
 export * from "./outside.js";
+export * from "./owners.js";

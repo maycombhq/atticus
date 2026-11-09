@@ -8,7 +8,18 @@ import {
   writeFileAtomic,
   type ChangeContext,
 } from "@maycombhq/changes";
-import { Finding, FindingAction, gateRoundLimit } from "@maycombhq/core";
+import {
+  ASKED_GAP_STEP,
+  askedGapQuestionId,
+  changesRelOf,
+  Finding,
+  FindingAction,
+  gateRoundLimit,
+  QUESTION_SCHEMA_VERSION,
+  Question,
+  readQuestion,
+  writeQuestion,
+} from "@maycombhq/core";
 import { z } from "zod";
 import { CriticError } from "./errors.js";
 import {
@@ -62,7 +73,46 @@ export interface ActResult {
   path: string;
   /** The artifact a patch was applied to, if any. */
   patched?: string;
+  /** Ninth UX walk: the owner question an Ask on a knowledge gap raised (questions/<id>.yaml). */
+  question?: string;
   message: string;
+}
+
+/**
+ * Ninth UX walk: the owner question a person's Ask raises for a knowledge gap, for the team it is
+ * asked of, linked to the gap. Its answer (Questions, Owner questions) closes the gap at the gate;
+ * until then the gate waits. One question per gap: carried to a later round or gate, the gap finds
+ * the same one. A question already on file is kept as it is.
+ */
+async function raiseAskedQuestion(
+  root: string,
+  f: Finding,
+  askedOf: string,
+  at: string,
+): Promise<string> {
+  const id = askedGapQuestionId(f.change, f);
+  if (await readQuestion(root, id).catch(() => undefined)) return id;
+  const rel = `${changesRelOf(root)}/${f.change}`;
+  const file = f.artifact === "catalog" ? "change.yaml" : f.artifact;
+  const rerun = `atticus critic ${f.change} --gate ${f.gate}`;
+  await writeQuestion(
+    root,
+    Question.parse({
+      schemaVersion: QUESTION_SCHEMA_VERSION,
+      id,
+      askedBy: { step: ASKED_GAP_STEP, command: `atticus finding ${f.change} ${f.id} ask`, at },
+      repo: f.change,
+      question: f.question?.text ?? f.summary,
+      options: [],
+      evidence: [`${rel}/${file}:${f.artifact === "catalog" ? 1 : (f.locator.line ?? 1)}`],
+      scope: { level: "repo", id: f.change },
+      askedOf,
+      finding: { change: f.change, gate: f.gate, round: f.round, id: f.id },
+      state: "open",
+      rerun,
+    }),
+  );
+  return id;
 }
 
 /**
@@ -298,8 +348,7 @@ export async function act(
       : said
         ? `Recorded what you did: ${said}.`
         : `Recorded your edit to ${f.artifact}.`;
-  } else if (act === "ask")
-    message = `Asked ${askedOf}. The gap stops blocking while the question is open.`;
+  } else if (act === "ask") message = `Asked ${askedOf}.`;
   else if (act === "waive")
     message = `Waived ${f.id}. The waiver, its reason and your name are recorded on the finding; it reaches main with the ${f.gate} hand-off PR, where reviewers see it.`;
   else message = `Dismissed ${f.id} as not relevant.`;
@@ -332,6 +381,12 @@ export async function act(
     };
   }
   await writeFinding(root, next.data);
+  // Ninth UX walk: Ask raises the gap's owner question, which the gate waits on.
+  let question: string | undefined;
+  if (act === "ask" && gap) {
+    question = await raiseAskedQuestion(root, next.data, askedOf!, next.data.resolution!.at);
+    message = `Asked ${askedOf}: owner question ${question} is in Questions, Owner questions. The ${f.gate} gate waits for its answer.`;
+  }
   // A person decided: what an assistant proposed about it is answered.
   if (waiting)
     await writeProposals(
@@ -349,7 +404,13 @@ export async function act(
       patched || act === "edit-and-apply"
         ? `${message.replace(/\.$/, "")}; the next critic round checks it.`
         : `${message} The next critic round checks the fix.`;
-  return { finding: next.data, path: found.path, ...(patched ? { patched } : {}), message };
+  return {
+    finding: next.data,
+    path: found.path,
+    ...(patched ? { patched } : {}),
+    ...(question ? { question } : {}),
+    message,
+  };
 }
 
 /**

@@ -13,6 +13,7 @@ import { ChangePrototypes } from "./ChangePrototypes.js";
 import { COPY } from "../copy.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff } from "./know/task-pr.js";
+import { ChangeOwners } from "./change-owners.js";
 
 const T = COPY.changes;
 
@@ -46,6 +47,8 @@ export interface ArtifactStatus {
 export interface ChangeDetail extends ChangeSummary {
   artifacts: ArtifactStatus[];
   handoff?: { phase: string; pr?: string; state: string };
+  /** API 2.83.0 (ninth UX walk): change.yaml's owners, role id to handles. */
+  owners?: Record<string, string[]>;
 }
 export interface Reason {
   code: string;
@@ -85,6 +88,8 @@ export interface Task {
     marked?: { done: boolean; by: string; at: string };
     notes: string[];
   };
+  /** API 2.83.0 (ninth UX walk): the not-done tasks it waits for; `sameRepo`, its own repo's. */
+  waits?: { tasks: string[]; sameRepo: string[] };
 }
 export interface Run {
   runId: string;
@@ -598,6 +603,8 @@ function Detail({ id }: { id: string }) {
           {(d) => (
             <div className="stack" style={{ gap: 14 }}>
               <Pipeline state={d.state} />
+              {/* Ninth UX walk: name the change's owners per role, so each sees their questions. */}
+              <ChangeOwners change={d.id} owners={d.owners} onSaved={detail.reload} />
               <View of={status}>
                 {(s) => (
                   <div className="stack">

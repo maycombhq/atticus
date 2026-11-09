@@ -236,6 +236,11 @@ export const COPY = {
       saved: (file: string) =>
         `Recorded in ${file}. The gap closes once the fact is in the catalog. Propose it for review below.`,
       needAnswer: "Write what the owner said first.",
+      /** Ninth UX walk: a critic gap a person asked of its owner. */
+      fromFinding: (change: string, gate: string, id: string) =>
+        `Asked from ${change}'s ${gate} gate (knowledge gap ${id}): the gate waits for this answer.`,
+      savedGap: (gate: string) =>
+        `Recorded the answer as yours. The gap is closed at the ${gate} gate; the next draft reads the answer.`,
       command: (id: string) => `atticus questions owner ${id} --text "…"`,
       copyCommand: "Copy the command",
     },
@@ -319,6 +324,8 @@ export const COPY = {
     whoseMine: "My teams'",
     owner: (team: string, name?: string) => `Owner: ${name ? `${name} (${team})` : team}`,
     noOwner: (why: string) => `No owner: ${why}`,
+    /** Ninth UX walk: the role a question is for, on the list and the question. */
+    forRole: (who: string) => `For ${who}`,
     restsOn: (changes: string[] | string) => {
       const list = typeof changes === "string" ? [changes] : changes;
       return `Ask first: ${list.join(", ")} ${list.length === 1 ? "rests" : "rest"} on it`;
@@ -2771,6 +2778,9 @@ export const COPY = {
   phase: {
     runPrepared: (runId: string) => `Run ${runId} prepared: your assistant takes it from here.`,
     openTheRun: "Open the run: its prompt, Done and Cancel",
+    /** Ninth UX walk: what a task waits for; its own repo's tasks say so. */
+    waitsForTasks: (tasks: string) => `Waits for ${tasks}`,
+    sameRepo: (id: string) => `${id} (same repo)`,
     theRuleChecksRan:
       "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
@@ -5053,11 +5063,14 @@ export const COPY = {
       `${name}${open !== undefined ? ` (${open})` : ""}${yours ? " · yours" : ""}`,
     pickYours: "Your role",
     pickYoursHint:
-      "The change doesn't name you among its owners, so pick the role you play: Atticus remembers it on this machine.",
+      "The change doesn't name you among its owners, so pick the role you play: Atticus remembers it on this machine. Or name the change's owners on its page.",
+    /** Ninth UX walk: some changes in flight name the person, so the pick covers the others. */
+    pickYoursHintSome:
+      "For the changes that don't name you among their owners, pick the role you play: Atticus remembers it on this machine. Where a change names you, its owners decide.",
     pickNone: "Pick a role",
     homeTitle: "Your role's questions",
     homeIntro:
-      "Each role answers its own questions on a change: the product owner the brief's, the architect the design's, the business analyst the stories', the tech lead the tasks'.",
+      "Each role answers its own questions on a change: the product owner the brief's, the architect the feature stage's (placing it on the estate) and the design's, the business analyst the stories', the tech lead the tasks'.",
     line: (change: string, role: string, open: number) =>
       open === 0
         ? `${change}: no open question for ${role}.`
@@ -5067,6 +5080,22 @@ export const COPY = {
     open: "Answer them",
     noChanges: "No change in flight asks a role anything yet.",
     cantRead: (change: string) => `The questions of ${change} couldn't be read.`,
+  },
+  /** Ninth UX walk: name a change's owners per role, on its page. */
+  changeOwners: {
+    title: "Owners by role",
+    intro:
+      "Who answers each role's questions on this change. Saving writes change.yaml's owners; it rides the change's next hand-off.",
+    roles: {
+      "product-owner": "Product owner",
+      architect: "Architect",
+      "business-analyst": "Business analyst",
+      "team-lead": "Tech lead",
+    } as Record<string, string>,
+    placeholder: "Git handles, comma-separated",
+    save: "Save owners",
+    saving: "Saving…",
+    saved: "Saved the owners in change.yaml.",
   },
   /** ADR 0181 part 4: Run all ready tasks, on the Task board. */
   runReady: {
