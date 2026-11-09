@@ -129,12 +129,31 @@ export function questionFromDraft(d: QuestionDraft, by: AskedBy): Question {
 
 const fileOf = (root: string, id: string) => join(questionsDirOf(root), `${id}.yaml`);
 
-async function write(root: string, q: Question): Promise<void> {
+/**
+ * Write a question's file. With `before` (the text it was read as), only when the file still
+ * holds that text: a change made meanwhile (a person's answer in the app, another command) is
+ * never overwritten, and FileChangedError says so instead (round 46).
+ */
+async function write(root: string, q: Question, before?: { text: string }): Promise<void> {
   await mkdir(questionsDirOf(root), { recursive: true });
-  await writeFileAtomic(
-    fileOf(root, q.id),
-    `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`,
-  );
+  const text = `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
+  if (before) await writeFileIfUnchanged(fileOf(root, q.id), before.text, text);
+  else await writeFileAtomic(fileOf(root, q.id), text);
+}
+
+/** A question and the text it was read from, for a write back that checks nothing changed. */
+async function readQuestionText(
+  root: string,
+  id: string,
+): Promise<{ q: Question; text: string } | undefined> {
+  if (!QuestionId.safeParse(id).success) return undefined;
+  let text: string;
+  try {
+    text = await readFile(fileOf(root, id), "utf8");
+  } catch {
+    return undefined;
+  }
+  return { q: Question.parse(parse(text)), text };
 }
 
 /**
@@ -148,14 +167,7 @@ export async function writeQuestion(root: string, q: Question): Promise<void> {
 
 /** Read one question, or undefined when there is no such file. Throws on a file that isn't valid. */
 export async function readQuestion(root: string, id: string): Promise<Question | undefined> {
-  if (!QuestionId.safeParse(id).success) return undefined;
-  let text: string;
-  try {
-    text = await readFile(fileOf(root, id), "utf8");
-  } catch {
-    return undefined;
-  }
-  return Question.parse(parse(text));
+  return (await readQuestionText(root, id))?.q;
 }
 
 export interface QuestionList {
@@ -545,12 +557,20 @@ export async function raiseQuestions(
   }[] = [];
   for (const [i, d] of drafts.entries()) {
     const q = questionFromDraft(d, by);
-    const onFile = await readQuestion(root, q.id).catch(() => undefined);
-    if (onFile) {
-      const next = o.refresh ? refreshedFrom(onFile, d, by.step) : undefined;
+    const read = await readQuestionText(root, q.id).catch(() => undefined);
+    if (read) {
+      let onFile = read.q;
+      let next = o.refresh ? refreshedFrom(onFile, d, by.step) : undefined;
       if (next) {
-        await write(root, next);
-        refreshed.push(next);
+        try {
+          await write(root, next, read);
+          refreshed.push(next);
+        } catch (e) {
+          if (!(e instanceof FileChangedError)) throw e;
+          // Round 46: changed meanwhile (a person answered it): it stays as it is on file now.
+          next = undefined;
+          onFile = (await readQuestion(root, q.id).catch(() => undefined)) ?? onFile;
+        }
       }
       const existing = next ?? onFile;
       if (!known.some((k) => k.id === existing.id)) known.push(existing);
@@ -790,8 +810,9 @@ export async function retireQuestion(
   id: string,
   o: { why: string; replacedBy?: string[]; at: string },
 ): Promise<Question> {
-  const q = await readQuestion(root, id);
-  if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const read = await readQuestionText(root, id);
+  if (!read) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const q = read.q;
   if (q.state !== "open")
     throw new QuestionError(
       "retired",
@@ -806,7 +827,7 @@ export async function retireQuestion(
       ...(o.replacedBy?.length ? { replacedBy: o.replacedBy } : {}),
     },
   });
-  await write(root, next);
+  await write(root, next, read);
   return next;
 }
 
@@ -820,8 +841,9 @@ export async function reopenQuestion(
   id: string,
   o: { why: string; at: string },
 ): Promise<Question> {
-  const q = await readQuestion(root, id);
-  if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const read = await readQuestionText(root, id);
+  if (!read) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const q = read.q;
   if (q.state !== "answered" || !q.answer)
     throw new QuestionError(
       "retired",
@@ -833,7 +855,7 @@ export async function reopenQuestion(
     state: "open",
     reopened: { at: o.at, why: o.why, answer },
   });
-  await write(root, next);
+  await write(root, next, read);
   return next;
 }
 
@@ -972,8 +994,9 @@ export async function answerQuestion(
     added: boolean;
   };
 }> {
-  const q = await readQuestion(root, id);
-  if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const read = await readQuestionText(root, id);
+  if (!read) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const q = read.q;
   if (q.state === "retired")
     throw new QuestionError("retired", `Question ${id} is retired; nothing reads its answer.`);
   const text = a.text?.trim() || undefined;
@@ -1084,7 +1107,9 @@ export async function answerQuestion(
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   }
-  await write(root, answered);
+  // Round 46: only over the file as it was read, so the AI's batch never overwrites a person's
+  // answer given meanwhile (FileChangedError, 409 in the app).
+  await write(root, answered, read);
   // ADR 0153 (Q2): the other open hosts questions the pattern covers are answered by it now.
   const covered: string[] = [];
   if (hosts && match && !isPathMatch(match))

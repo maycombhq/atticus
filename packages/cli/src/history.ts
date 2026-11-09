@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Document, isMap, parse, parseDocument } from "yaml";
 import { Api, changesDirOf, ensureLocalIgnore, orgPackDirOf, redactText } from "@maycombhq/core";
+import { appendLines } from "./file-lock.js";
 
 /**
  * The prompt and response history (ADR 0110): what a person types to their assistant in a
@@ -179,7 +180,8 @@ export async function addHistory(
   }
   await mkdir(dir, { recursive: true });
   await ensureLocalIgnore(root);
-  await appendFile(file, JSON.stringify(record) + "\n", "utf8");
+  // Round 46: on a line of its own, when the last line has no newline (a hand edit).
+  await appendLines(file, [JSON.stringify(record)]);
   return { record };
 }
 

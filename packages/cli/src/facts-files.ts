@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -18,6 +18,7 @@ import {
   type Fact,
   type FactCorrection,
   type Question,
+  writeFileAtomic,
 } from "@maycombhq/core";
 import {
   frameworkFacts,
@@ -330,10 +331,10 @@ export async function writeVerifyFiles(
   // commit: it stays in the facts file (and is still refused), so a run on the wrong checkout
   // never empties the file and lets the next run write a catalog without that repo's records.
   const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").map((r) => r.fact);
-  await writeFile(
+  // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
+  await writeFileAtomic(
     join(dir, `${repo}.jsonl`),
     serializeFacts([...report.accepted, ...otherCommit]),
-    "utf8",
   );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [
@@ -348,7 +349,7 @@ export async function writeVerifyFiles(
       JSON.stringify({ code: "bad-reviewed", message: r.message, reviewed: r.raw }),
     ),
   ];
-  if (lines.length) await writeFile(rejectedFile, lines.join("\n") + "\n", "utf8");
+  if (lines.length) await writeFileAtomic(rejectedFile, lines.join("\n") + "\n");
   else await rm(rejectedFile, { force: true });
   const summary: VerifySummary = {
     repo,
@@ -417,7 +418,7 @@ export async function writeVerifyFiles(
       ...(f.component ? { component: f.component } : {}),
     }));
   if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
-  await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
+  await writeFileAtomic(join(dir, `${repo}.verify.yaml`), stringify(summary));
   return summary;
 }
 

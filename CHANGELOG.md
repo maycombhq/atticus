@@ -16,6 +16,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - Questions' counts follow the role filter (`GET /api/questions?role=` counts that role's questions, as it lists them; `counts.byRole` stays every role's).
   - The artifact editor shows the saved text right after Save and saves next against the file as saved, so a quick second edit no longer gets a spurious "changed meanwhile".
   - The Task board keeps each task's message until that task's own state changes, not on any file change.
+- Review round 46 (storage):
+  - **A repo's corrections are written one process at a time.** A line the app appended (Connect, Correct this) while a CLI command rewrote `<repo>.corrections.jsonl` (`atticus decide`, Undo of a batch, the `corrections-v2` upgrade step) could be lost. Every append and rewrite now takes a lock file beside it (`<repo>.corrections.jsonl.lock`, created only when free, retried briefly; one whose process is gone, or older than 10 s, is taken over), as well as the queue within one process. It works the same on Windows.
+  - **`atticus verify --write` writes whole files.** The facts file, `<repo>.rejected.jsonl`, `<repo>.verify.yaml` and the sample audit's `<repo>.audit.yaml` are written beside and renamed into place, so the app or another command never reads one empty or cut short.
+  - **Two commands' model runs in the same second get two run ids.** Each command counted from 0001, so the second run's folder overwrote the first's. A run id now ends in a random tail (still counted on a test's clock), and the run's folder is claimed with its id; a hand-off run claims its folder the same way.
+  - **One `change.yaml` that doesn't read no longer fails the app's Changes, Findings and record pages.** The change list skips it; `atticus change list` names it on standard error.
+  - **A facts file cut short in the middle of a JSON array** is refused as not JSON (the repo shows as read incompletely) instead of failing the read.
+  - **An answer never overwrites one given meanwhile.** Answering, retiring or reopening a question, and refreshing its options, write only over the file as they read it; otherwise nothing is written (409 in the app). The AI's batch leaves such a question to the person ("a person changed it meanwhile") and goes on with the rest.
+  - **A history record after a hand-edited line** goes on a line of its own when the file's last line has no newline.
 
 ## 2.0.0-beta.21 (2026-11-08)
 

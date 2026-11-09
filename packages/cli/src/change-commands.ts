@@ -823,7 +823,9 @@ export async function changeArchive(
  * labelled with the store.
  */
 export async function changeList(root: string, o: { json?: boolean }, io: Output): Promise<number> {
-  const all = await changeStore(root).list();
+  // Round 46: a change.yaml that doesn't read is named, and the rest are listed.
+  const { changes: all, problems } = await changeStore(root).listWithProblems();
+  for (const p of problems) io.err(`Skipped: ${p.message}`);
   const stores = await storeChangeRows(root);
   for (const l of stores.err) io.err(l);
   // ADR 0006 addendum: task progress is OpenSpec's (`openspec list --json` counts tasks.md's

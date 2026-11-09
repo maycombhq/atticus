@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { DecisionBatch, type DecisionBatchT } from "./ai-decisions.js";
-import { writeFileAtomic } from "./fs.js";
+import { withSharedFileLock, writeFileAtomic } from "./fs.js";
 import { decisionsDirOf, decisionsRelOf, factsDirOf, factsRelOf } from "./metarepo.js";
 import { FACT_CORRECTIONS_SCHEMA_VERSION } from "./schema/fact-corrections.js";
 import { BatchId } from "./schema/question.js";
@@ -87,29 +87,37 @@ export async function migrateCorrections(
     .sort();
   for (const n of names) {
     const file = join(factsDirOf(root), n);
-    const text = await readFile(file, "utf8").catch(() => undefined);
-    if (text === undefined) continue;
-    let changed = false;
-    const eol = /\r\n/.test(text) ? "\r\n" : "\n";
-    const lines = text.split(/\r?\n/).map((raw) => {
-      if (!raw.trim()) return raw;
-      let json: Record<string, unknown>;
-      try {
-        json = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        return raw;
-      }
-      const needs = json.action === "unlink" || V2_FIELDS.some((k) => json[k] !== undefined);
-      if (!needs || json.schemaVersion !== 1) return raw;
-      changed = true;
-      return raw.replace(
-        /"schemaVersion"\s*:\s*1\b/,
-        `"schemaVersion":${FACT_CORRECTIONS_SCHEMA_VERSION}`,
-      );
-    });
-    if (!changed) continue;
-    if (!o.dryRun) await writeFileAtomic(file, lines.join(eol));
-    out.push(`${factsRelOf(root)}/${n}`);
+    // Round 46: under the corrections lock, so a line the app appends meanwhile isn't lost.
+    const rewrite = () => migrateOne(file, o.dryRun === true);
+    if (await (o.dryRun ? rewrite() : withSharedFileLock(file, rewrite)))
+      out.push(`${factsRelOf(root)}/${n}`);
   }
   return out;
+}
+
+/** One corrections file through `corrections-v2`: whether it needs (or got) a rewrite. */
+async function migrateOne(file: string, dryRun: boolean): Promise<boolean> {
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) return false;
+  let changed = false;
+  const eol = /\r\n/.test(text) ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/).map((raw) => {
+    if (!raw.trim()) return raw;
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return raw;
+    }
+    const needs = json.action === "unlink" || V2_FIELDS.some((k) => json[k] !== undefined);
+    if (!needs || json.schemaVersion !== 1) return raw;
+    changed = true;
+    return raw.replace(
+      /"schemaVersion"\s*:\s*1\b/,
+      `"schemaVersion":${FACT_CORRECTIONS_SCHEMA_VERSION}`,
+    );
+  });
+  if (!changed) return false;
+  if (!dryRun) await writeFileAtomic(file, lines.join(eol));
+  return true;
 }
