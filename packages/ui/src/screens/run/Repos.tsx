@@ -4,6 +4,7 @@ import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "../know/common.js";
+import { useActivity } from "../../app/activity.js";
 
 /**
  * Set up › Repos (ADR 0123): each repo's branches. The default branch the catalog is read from
@@ -315,6 +316,7 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   const [shown, setShown] = useState({ defaultBranch: r.defaultBranch, branches: r.branches });
   const [compare, setCompare] = useState<Api.BranchCompareT | undefined>();
   const act = useAction();
+  const activity = useActivity();
   const save = useAction();
   const differs = r.remoteDefault && r.remoteDefault !== r.defaultBranch;
   return (
@@ -364,10 +366,14 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
             className="btn"
             disabled={act.busy}
             onClick={() =>
-              void act.run(
-                () => api("/api/scan", { method: "POST", body: { repos: [r.id], ref: b } }),
-                R.scanStarted(b),
-              )
+              void act.run(async () => {
+                const j = await api<{ jobId: string }>("/api/scan", {
+                  method: "POST",
+                  body: { repos: [r.id], ref: b },
+                });
+                // ADR 0187: the scan's lines, in the Console.
+                if (j?.jobId) activity?.show(j.jobId);
+              }, R.scanStarted(b))
             }
           >
             {R.scan(b)}

@@ -1,3 +1,4 @@
+import { printToCurrent } from "@maycombhq/core";
 import { Api } from "@maycombhq/core";
 import { readView } from "@maycombhq/initiatives";
 import {
@@ -29,7 +30,17 @@ interface Ran {
 async function run(f: (io: Output) => Promise<number>): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await f({ out: (l) => out.push(l), err: (l) => err.push(l) });
+  // ADR 0187: inside a job, each line also goes to its Console entry as it is printed.
+  const code = await f({
+    out: (l) => {
+      out.push(l);
+      printToCurrent(l);
+    },
+    err: (l) => {
+      err.push(l);
+      printToCurrent(l);
+    },
+  });
   return { code, out, err };
 }
 

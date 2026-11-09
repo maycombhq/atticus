@@ -2,6 +2,16 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.23 (unreleased)
+
+### Added
+
+- **One Console for everything Atticus runs (ADR 0187, local API 3.1.0).** The Console at the foot of the app is always there (Open the Console): everything Atticus is doing or did lately on this metarepo, newest first, wherever it was started, with its kind, title, where it was started (this app, a terminal, VS Code, IntelliJ, a Copilot session, your assistant), state and time, and what it printed, live, with follow, search and copy. A Copilot run keeps its tab per session inside it. The strip under the top bar shows whenever anything runs (not only a Copilot run), how far, with Show in the Console and Stop (a terminal's run: stop it in its terminal, Ctrl+C).
+  - The app's jobs stream their lines as they print them (a scan, a sync, an AI step, Apply, Propose, Bring in, upgrade, conformance, a Match, Run all ready tasks); the critic, a wiki's sync, a team's tool and a run's Done run as jobs so they show too, with their answers unchanged. Scans, Repos' branch scan and a Match link to their Console entry.
+  - A long command run in a terminal, by an editor or by a Copilot session (`atticus map`, `map --all`, `verify`, `scan`, `workspace sync`, `task run`, `task run-ready`, `knowledge scan`, `upgrade`, `handoff done`, `index rebuild`, `reconcile`) keeps what it prints, redacted as the log is, in `.atticus/logs/runs/<run>.log`, and its command words, ids and flag names (never their values) and how it ended in `.atticus/logs/running/<run>.json`; the last 50 runs, about 2 MB a log. Quick commands keep nothing; `ATTICUS_RUN_LOG=off` turns it off. The app follows them live; one whose process is gone shows as ended without saying. VS Code and IntelliJ tell the commands they run who started them.
+  - A hand-off run waiting for your assistant is an entry saying where its prompt is and how to finish it; once Done runs (in the app or `atticus handoff done`), what it printed is in the same entry.
+  - `GET /api/activity`, `GET /api/activity/{id}/lines?from=n`, the live events `activity.changed` and `activity.lines`, `title` on a job and the job kind `work`. Guide: troubleshooting, "Where to see what Atticus is doing".
+
 ## 2.0.0-beta.22 (2026-11-09)
 
 ### Fixed

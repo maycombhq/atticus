@@ -117,28 +117,34 @@ export function uiModelRunRoutes(
           throw conflict(
             `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
           );
-        const job = ctx.jobs.start("step", async (c) => {
-          c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
-          // The run the step made: the newest one that wasn't there before it.
-          const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
-          const res = await runStep([
-            ...words,
-            "--mode",
-            "model",
-            ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
-          ]);
-          const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
-          c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
-          ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
-          return {
-            result: {
-              code: res.code,
-              lines: [...res.out, ...res.err],
-              ...(made ? { runId: made.runId } : {}),
-            },
-            errors: res.code === 0 ? [] : res.err,
-          };
-        });
+        const job = ctx.jobs.start(
+          "step",
+          async (c) => {
+            c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
+            // The run the step made: the newest one that wasn't there before it.
+            const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
+            const res = await runStep([
+              ...words,
+              "--mode",
+              "model",
+              ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
+            ]);
+            const made = (await listRuns(root, { limit: 100000 })).find(
+              (x) => !before.has(x.runId),
+            );
+            c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+            ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+            return {
+              result: {
+                code: res.code,
+                lines: [...res.out, ...res.err],
+                ...(made ? { runId: made.runId } : {}),
+              },
+              errors: res.code === 0 ? [] : res.err,
+            };
+          },
+          { title: `atticus ${words.join(" ")}` },
+        );
         return { status: 202, body: { jobId: job.id, model } };
       })
       .add("GET", "/api/runs", async ({ query }) => {

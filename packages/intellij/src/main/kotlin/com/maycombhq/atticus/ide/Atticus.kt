@@ -60,6 +60,8 @@ object AtticusCli {
             .withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE)
             // ADR 0121 addendum: the person's model per kind of step, as ATTICUS_MODEL_<KIND>.
             .withEnvironment(StepModels.env(AtticusSettings.get().stepModels()))
+            // ADR 0187: the app's Console says this run was started from IntelliJ.
+            .withEnvironment("ATTICUS_STARTED_BY", "intellij")
     }
 
     /** Run and wait; call it off the UI thread (in a background task or under a progress dialog). */

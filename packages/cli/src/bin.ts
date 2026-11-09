@@ -43,10 +43,15 @@ else if ((await import("./node-version.js")).nodeTooOld(process.versions.node)) 
     }
   }
   const { main } = await import("./main.js");
-  await main(argv, {
-    out: (line) => process.stdout.write(line + "\n"),
-    err: (line) => process.stderr.write(line + "\n"),
-  }).then(
+  await main(
+    argv,
+    {
+      out: (line) => process.stdout.write(line + "\n"),
+      err: (line) => process.stderr.write(line + "\n"),
+    },
+    // ADR 0187: a long command keeps what it prints for the app's Console.
+    { record: true },
+  ).then(
     (code) => {
       process.exitCode = code;
     },

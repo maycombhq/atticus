@@ -6,6 +6,7 @@ import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 import { AiChip } from "../../app/decisions.js";
+import { ShowInConsole } from "../../app/activity.js";
 
 const T = COPY.know;
 
@@ -1330,6 +1331,8 @@ export function Scans() {
                 max={Math.max(job.progress.total, 1)}
                 label={T.jobProgress}
               />
+              {/* ADR 0187: what it printed, in the Console. */}
+              <ShowInConsole id={job.id} />
               {job.state === "running" && (
                 <div className="row" style={{ gap: 8, alignItems: "center" }}>
                   <button

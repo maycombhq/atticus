@@ -1,3 +1,5 @@
+import { printToCurrent } from "@maycombhq/core";
+import { tracked } from "./ui-api-activity.js";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -429,7 +431,21 @@ export function uiKnowledgeRoutes(
         if (id !== INPUTS_SOURCE_ID && !op.sources.wikis.some((w) => w.id === id))
           throw notFound(`There is no source ${id} in org-pack/sources.yaml.`);
         const c = capture();
-        const code = await sourcesSync(root, c.io, { source: id, now: stamp(now()) });
+        // ADR 0187: as a job, each line to the Console as it is printed.
+        const io = {
+          ...c.io,
+          out: (l: string) => {
+            c.io.out(l);
+            printToCurrent(l);
+          },
+          err: (l: string) => {
+            c.io.err(l);
+            printToCurrent(l);
+          },
+        };
+        const code = await tracked(ctx, `Sync the wiki ${id}`, () =>
+          sourcesSync(root, io, { source: id, now: stamp(now()) }),
+        );
         if (code === 2)
           throw new HttpError(422, "Atticus refused", c.problems.join("\n") || "Nothing to sync.");
         changed(`${knowledgeRelOf(root)}/snapshots/${id}`);

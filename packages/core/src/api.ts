@@ -341,8 +341,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the credential store (422). POST /api/workspace/sync and /api/reconcile answer 409 while one of
  *   their kind runs; GET /api/past-changes?change= and /api/changes/{changeId}/cockpit answer 400
  *   for a change id that isn't one, and /api/view/{name} 404 for a name that isn't a view.
+ * 3.1.0 (ADR 0187, the Console): everything Atticus is doing or did lately on this metarepo, live,
+ * wherever it was started. GET /api/activity lists the app's jobs, a Copilot run, the commands run
+ * in a terminal, an editor or a Copilot session (from .atticus/logs/running/), and the hand-off
+ * runs that wait for an assistant, newest first; GET /api/activity/{id}/lines?from=n gives one's
+ * printed lines from a line on. The live events `activity.changed` and `activity.lines` carry the
+ * same. Stop goes through the existing routes (POST /api/jobs/{jobId}/cancel, POST
+ * /api/copilot-runs/{runId}/stop); a terminal's run stops in its terminal. A Job gains `title`
+ *   and the kind `work` (a request the page waits on, run as a job so the Console shows it: the
+ *   critic, a wiki's sync, a step run, a run's Done; their answers are unchanged). Additive only.
  */
-export const API_VERSION = "3.0.0";
+export const API_VERSION = "3.1.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -651,9 +660,11 @@ export const Coverage = z.object({
 export const JobState = z.enum(["queued", "running", "done", "failed", "cancelled"]);
 export const Job = z.object({
   id: z.string(),
-  kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step", "local"]),
+  kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step", "local", "work"]),
   state: JobState,
   progress: z.object({ done: z.number().int(), total: z.number().int(), message: z.string() }),
+  /** 3.1.0 (ADR 0187): what the job is, in words, for the Console. */
+  title: z.string().optional(),
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   errors: z.array(z.string()),
@@ -4403,6 +4414,102 @@ export type CopilotRunTabT = z.infer<typeof CopilotRunTab>;
 export type CopilotRunViewT = z.infer<typeof CopilotRunView>;
 export type CopilotRunCurrentT = z.infer<typeof CopilotRunCurrent>;
 
+/** ADR 0187: one thing Atticus is doing or did on this metarepo, for the Console. */
+export const ActivityKind = z.enum([
+  // The app's own jobs (ADR 0015), by their kind.
+  "scan",
+  "sync",
+  "reconcile",
+  "index",
+  "intake",
+  "step",
+  "local",
+  /** A request the page waits on, run as a job (the critic, a wiki's sync, a step run, Done). */
+  "work",
+  /** An unattended Copilot run the app started (ADR 0173): its lines are its tabs. */
+  "copilot",
+  /** A command run in a terminal, by an editor or by a Copilot session. */
+  "command",
+  /** A hand-off run waiting for the person's assistant, and its Done. */
+  "handoff",
+]);
+export const ActivityState = z.enum([
+  "running",
+  "waiting",
+  "done",
+  "failed",
+  "cancelled",
+  /** Its process is gone and it never said how it ended (a terminal closed, a crash). */
+  "ended",
+]);
+/** Where it was started. */
+export const ActivityWhere = z.enum([
+  "app",
+  "terminal",
+  "vscode",
+  "intellij",
+  "copilot",
+  /** A hand-off run: the person's own assistant does the work. */
+  "assistant",
+]);
+export const ActivityEntry = z.object({
+  /** A job's id (job-N), a Copilot run's (copilot-run-...), term-<runId> for a command, a hand-off run's (run-...). */
+  id: z.string().min(1),
+  kind: ActivityKind,
+  /** What it is, in its own words: the command (`atticus map forge-ledger`), or the app's job. Left out for a job that gave none: the page names it by its kind. */
+  title: z.string().optional(),
+  where: ActivityWhere,
+  state: ActivityState,
+  startedAt: z.string(),
+  finishedAt: z.string().optional(),
+  /** How far it is, when it says (a job's progress). */
+  progress: z
+    .object({ done: z.number().int(), total: z.number().int(), message: z.string() })
+    .optional(),
+  exitCode: z.number().int().optional(),
+  /** How many lines it has printed: the page asks for the ones it hasn't. */
+  lines: z.number().int().min(0),
+  /** The first line still kept (older ones are dropped past the cap). */
+  from: z.number().int().min(0),
+  /** The route that stops it (POST), when the app can; a command stops in its terminal. */
+  stop: z.string().optional(),
+  jobId: z.string().optional(),
+  copilotRunId: z.string().optional(),
+  /** A command's run id (its files in .atticus/logs/). */
+  runId: z.string().optional(),
+  /** A hand-off run: its change, where its prompt is and where the answer goes. */
+  handoff: z
+    .object({
+      runId: z.string(),
+      change: z.string(),
+      agent: z.string().optional(),
+      promptPath: z.string(),
+      output: z.string().optional(),
+    })
+    .optional(),
+});
+export const ActivityList = z.object({
+  /** Newest first. */
+  entries: z.array(ActivityEntry),
+  /** How many are running now. */
+  running: z.number().int().min(0),
+});
+export const ActivityLines = z.object({
+  id: z.string(),
+  /** The number of the first of these lines. */
+  from: z.number().int().min(0),
+  lines: z.array(z.string()),
+  /** How many lines it has printed in all. */
+  total: z.number().int().min(0),
+  state: ActivityState,
+});
+export type ActivityKindT = z.infer<typeof ActivityKind>;
+export type ActivityStateT = z.infer<typeof ActivityState>;
+export type ActivityWhereT = z.infer<typeof ActivityWhere>;
+export type ActivityEntryT = z.infer<typeof ActivityEntry>;
+export type ActivityListT = z.infer<typeof ActivityList>;
+export type ActivityLinesT = z.infer<typeof ActivityLines>;
+
 // ------------------------------------------------------------------ live events
 
 /** Messages on the WebSocket at /api/events. */
@@ -4426,6 +4533,15 @@ export const LiveEvent = z.discriminatedUnion("type", [
     tab: z.string(),
     title: z.string(),
     /** The number of the first of these lines in the tab. */
+    at: z.number().int().min(0),
+    lines: z.array(z.string()),
+  }),
+  // ADR 0187: an activity appeared or changed, and new lines one printed.
+  z.object({ type: z.literal("activity.changed"), entry: ActivityEntry }),
+  z.object({
+    type: z.literal("activity.lines"),
+    id: z.string(),
+    /** The number of the first of these lines. */
     at: z.number().int().min(0),
     lines: z.array(z.string()),
   }),
@@ -6091,6 +6207,26 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404],
     },
   },
+  "/api/activity": {
+    get: {
+      id: "listActivity",
+      summary:
+        "Everything Atticus is doing or did lately on this metarepo, newest first: the app's jobs, a Copilot run, the commands run in a terminal, an editor or a Copilot session, and the hand-off runs that wait for an assistant (ADR 0187)",
+      tag: "ai",
+      ok: { status: 200, schema: "ActivityList", description: "OK" },
+    },
+  },
+  "/api/activity/{id}/lines": {
+    get: {
+      id: "getActivityLines",
+      summary:
+        "One activity's printed lines from a line on (from), or its last ones; a Copilot run's are its tabs (ADR 0187)",
+      tag: "ai",
+      params: [p("id"), q("from", str, "The number of the first line wanted")],
+      ok: { status: 200, schema: "ActivityLines", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/copilot-runs/{runId}/stop": {
     post: {
       id: "stopCopilotRun",
@@ -7004,6 +7140,8 @@ export function openApiDocument(): Record<string, unknown> {
     LiveEvent,
     CopilotRunView,
     CopilotRunCurrent,
+    ActivityList,
+    ActivityLines,
     LinkCandidatesView,
     ConnectLinksResult,
     MatchLinksRequest,

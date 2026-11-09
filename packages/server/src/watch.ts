@@ -39,6 +39,11 @@ export interface WatchOptions {
   delayMs?: number;
   /** More paths than this at once are sent as their top folders. Default 50. */
   maxPaths?: number;
+  /**
+   * ADR 0187: told when a command's run files change (.atticus/logs/running/ and runs/), which
+   * are followed apart: they never go out as file.changed (the pages would read again for nothing).
+   */
+  onRunLog?: () => void;
 }
 
 /** Never followed: they change as the app reads, or they are code, not Atticus's files. */
@@ -123,10 +128,15 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
     return unique.filter((d) => !unique.some((p) => p !== d && d.startsWith(p + sep)));
   };
 
+  const logsDir = join(root, ".atticus", "logs");
+  const runLogDirs = [join(logsDir, "running"), join(logsDir, "runs")];
   const follow = (dir: string, recursive: boolean) => {
     if (closed || watchers.has(dir) || !isDir(dir)) return;
     try {
       const w = watch(dir, { recursive }, (_event, name) => {
+        // A command's run files: only the nudge (a new folder under logs/ may be one of them).
+        if (dir === logsDir) return attach();
+        if (runLogDirs.includes(dir)) return o.onRunLog?.();
         if (!recursive && name) {
           // A new top folder may be one Atticus keeps files in: follow it from now on.
           attach();
@@ -171,6 +181,10 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
     follow(root, false);
     follow(join(root, ".atticus"), false);
     for (const d of folders()) follow(d, true);
+    if (o.onRunLog) {
+      follow(logsDir, false);
+      for (const d of runLogDirs) follow(d, false);
+    }
   };
 
   // The root and .atticus/, not recursively: they say when a followed folder appears, and
@@ -180,7 +194,10 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   return {
     get following() {
       return [...watchers.keys()]
-        .filter((d) => d !== root && d !== join(root, ".atticus"))
+        .filter(
+          (d) =>
+            d !== root && d !== join(root, ".atticus") && d !== logsDir && !runLogDirs.includes(d),
+        )
         .map((d) => posix(relative(root, d)))
         .sort();
     },

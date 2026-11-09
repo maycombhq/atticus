@@ -5,7 +5,7 @@ import { COPY } from "../src/copy.js";
 import {
   ConfirmRun,
   matching,
-  RunConsole,
+  CopilotRunTabs,
   RunsContext,
   RunStrip,
   RunWithCopilot,
@@ -144,7 +144,7 @@ describe("a polled run", () => {
   });
   it("says earlier lines are no longer kept, with no button, once the server has none", () => {
     const r = run({ tabs: [{ ...tab(10, ["x"]), id: "run" }] });
-    const out = html(ctx({ run: r, notKept: new Set([`${r.runId}:run`]) }), <RunConsole />);
+    const out = html(ctx({ run: r, notKept: new Set([`${r.runId}:run`]) }), <CopilotRunTabs />);
     expect(unescape(out)).toContain(T.console.notKept(10));
     expect(out).not.toContain(T.console.loadEarlier);
   });
@@ -230,20 +230,16 @@ describe("the strip and the Console", () => {
   });
 
   it("shows a tab per session, the newest while following, as a labelled tab list and log", () => {
-    const out = html(ctx(), <RunConsole />);
+    const out = html(ctx(), <CopilotRunTabs />);
     expect(out).toContain('role="tablist"');
     expect((out.match(/role="tab"/g) ?? []).length).toBe(3);
     expect(out).toContain("forge-teller, one session");
-    expect(out).toContain('aria-expanded="true"');
     expect(out).toContain('role="log"');
     expect(out).toContain(T.console.follow);
     expect(out).toContain(T.console.copy);
   });
 
-  it("collapses to its button, and says what to do when no run has been started", () => {
-    expect(html(ctx({ consoleOpen: false }), <RunConsole />)).toContain(T.console.open);
-    expect(html(ctx({ consoleOpen: false }), <RunConsole />)).not.toContain('role="log"');
-    expect(html(ctx({ run: null }), <RunConsole />)).toContain(T.console.empty);
-    expect(html(ctx({ run: null, consoleOpen: false }), <RunConsole />)).toBe("");
+  it("draws nothing without a run (the Console says what ran, ADR 0187)", () => {
+    expect(html(ctx({ run: null }), <CopilotRunTabs />)).toBe("");
   });
 });

@@ -43,6 +43,7 @@ import { uiAuditRoutes } from "./ui-api-audit.js";
 import { uiOutsideRoutes } from "./ui-api-outside.js";
 import { uiContractsRoutes } from "./ui-api-contracts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
+import { uiActivityRoutes } from "./ui-api-activity.js";
 
 /**
  * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
@@ -148,7 +149,8 @@ export function extendUiRoutes(
     ),
     ctx,
   );
-  return uiDecisionRoutes(all, ctx);
+  // ADR 0187: the Console's list of everything running or run lately, wherever it started.
+  return uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx);
 }
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */

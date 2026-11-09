@@ -533,8 +533,11 @@ export function matching(lines: string[], q: string): string[] {
   });
 }
 
-/** The collapsible Console at the foot of the app: the run's tab first, then one per session. */
-export function RunConsole() {
+/**
+ * A Copilot run's tabs in the Console (ADR 0173, inside ADR 0187's Console): the run's tab first,
+ * then one per session, following the newest unless the person picks one.
+ */
+export function CopilotRunTabs() {
   const c = useCopilotRuns();
   const [tab, setTab] = useState("run");
   const [follow, setFollow] = useState(true);
@@ -567,8 +570,7 @@ export function RunConsole() {
   useEffect(() => {
     if (follow && log.current) log.current.scrollTop = log.current.scrollHeight;
   }, [lines.length, follow, tab]);
-  if (!c) return null;
-  if (!run && !c.consoleOpen) return null;
+  if (!c || !run) return null;
   const onTabsKey = (e: KeyboardEvent) => {
     const i = tabs.findIndex((t) => t.id === shown?.id);
     const to =
@@ -588,135 +590,95 @@ export function RunConsole() {
     document.getElementById(`console-tab-${to.id}`)?.focus();
   };
   return (
-    <section className={`run-console ${c.consoleOpen ? "open" : ""}`} aria-label={T.console.title}>
-      <div className="run-console-head row" style={{ gap: 8, alignItems: "center" }}>
+    <div className="run-console-copilot">
+      <div
+        role="tablist"
+        aria-label={T.console.tabs}
+        className="run-console-tabs"
+        onKeyDown={onTabsKey}
+      >
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            id={`console-tab-${t.id}`}
+            type="button"
+            role="tab"
+            aria-selected={t.id === shown?.id}
+            aria-controls="run-console-log"
+            tabIndex={t.id === shown?.id ? 0 : -1}
+            className={`run-console-tab ${t.state}`}
+            onClick={() => {
+              setFollow(t.id === last);
+              setTab(t.id);
+            }}
+            title={t.ended ?? T.console.states[t.state]}
+          >
+            {t.title}
+            {t.id !== "run" && <span className="sr"> ({T.console.states[t.state]})</span>}
+          </button>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8, alignItems: "center", margin: "6px 0" }}>
+        <label className="row" style={{ gap: 4 }}>
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+          {T.console.follow}
+        </label>
+        <label htmlFor="run-console-search" className="sr">
+          {T.console.search}
+        </label>
+        <input
+          id="run-console-search"
+          className="field"
+          type="search"
+          placeholder={T.console.search}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          style={{ height: 26, fontSize: 12 }}
+        />
         <button
-          id="run-console-toggle"
           type="button"
           className="btn"
-          aria-expanded={c.consoleOpen}
-          aria-controls="run-console-body"
-          onClick={() => c.setConsoleOpen(!c.consoleOpen)}
+          onClick={() => {
+            if (!navigator.clipboard) return saidCopied("failed");
+            void navigator.clipboard.writeText(lines.join("\n")).then(
+              () => saidCopied("yes"),
+              () => saidCopied("failed"),
+            );
+          }}
         >
-          {c.consoleOpen ? T.console.close : T.console.open}
+          {copied === "yes"
+            ? T.console.copied
+            : copied === "failed"
+              ? T.console.copyFailed
+              : T.console.copy}
         </button>
-        <strong>{T.console.title}</strong>
-        {run && (
-          <span className="work-say">
-            {run.state === "running" ? T.strip.running : T.console.states.ended}
-          </span>
-        )}
+        <span role="status" className="sr">
+          {copied === "yes" ? T.console.copied : copied === "failed" ? T.console.copyFailed : ""}
+        </span>
       </div>
-      {c.consoleOpen && (
-        <div id="run-console-body" className="run-console-body">
-          {!run ? (
-            <p className="work-say">{T.console.empty}</p>
-          ) : (
-            <>
-              <div
-                role="tablist"
-                aria-label={T.console.tabs}
-                className="run-console-tabs"
-                onKeyDown={onTabsKey}
-              >
-                {tabs.map((t) => (
-                  <button
-                    key={t.id}
-                    id={`console-tab-${t.id}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={t.id === shown?.id}
-                    aria-controls="run-console-log"
-                    tabIndex={t.id === shown?.id ? 0 : -1}
-                    className={`run-console-tab ${t.state}`}
-                    onClick={() => {
-                      setFollow(t.id === last);
-                      setTab(t.id);
-                    }}
-                    title={t.ended ?? T.console.states[t.state]}
-                  >
-                    {t.title}
-                    {t.id !== "run" && <span className="sr"> ({T.console.states[t.state]})</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="row" style={{ gap: 8, alignItems: "center", margin: "6px 0" }}>
-                <label className="row" style={{ gap: 4 }}>
-                  <input
-                    type="checkbox"
-                    checked={follow}
-                    onChange={(e) => setFollow(e.target.checked)}
-                  />
-                  {T.console.follow}
-                </label>
-                <label htmlFor="run-console-search" className="sr">
-                  {T.console.search}
-                </label>
-                <input
-                  id="run-console-search"
-                  className="field"
-                  type="search"
-                  placeholder={T.console.search}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  style={{ height: 26, fontSize: 12 }}
-                />
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    if (!navigator.clipboard) return saidCopied("failed");
-                    void navigator.clipboard.writeText(lines.join("\n")).then(
-                      () => saidCopied("yes"),
-                      () => saidCopied("failed"),
-                    );
-                  }}
-                >
-                  {copied === "yes"
-                    ? T.console.copied
-                    : copied === "failed"
-                      ? T.console.copyFailed
-                      : T.console.copy}
+      <div
+        role="tabpanel"
+        id="run-console-log"
+        aria-labelledby={`console-tab-${shown?.id ?? "run"}`}
+      >
+        {shown && shown.from > 0 && (
+          <p className="work-say row" style={{ gap: 8, alignItems: "center" }}>
+            {c.notKept?.has(`${run.runId}:${shown.id}`) ? (
+              T.console.notKept(shown.from)
+            ) : (
+              <>
+                {T.console.earlier(shown.from)}
+                <button type="button" className="btn" onClick={() => c.loadEarlier(shown.id)}>
+                  {T.console.loadEarlier}
                 </button>
-                <span role="status" className="sr">
-                  {copied === "yes"
-                    ? T.console.copied
-                    : copied === "failed"
-                      ? T.console.copyFailed
-                      : ""}
-                </span>
-              </div>
-              <div
-                role="tabpanel"
-                id="run-console-log"
-                aria-labelledby={`console-tab-${shown?.id ?? "run"}`}
-              >
-                {shown && shown.from > 0 && (
-                  <p className="work-say row" style={{ gap: 8, alignItems: "center" }}>
-                    {c.notKept?.has(`${run.runId}:${shown.id}`) ? (
-                      T.console.notKept(shown.from)
-                    ) : (
-                      <>
-                        {T.console.earlier(shown.from)}
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => c.loadEarlier(shown.id)}
-                        >
-                          {T.console.loadEarlier}
-                        </button>
-                      </>
-                    )}
-                  </p>
-                )}
-                <pre ref={log} className="run-console-log" role="log" aria-live="off" tabIndex={0}>
-                  {lines.length ? lines.join("\n") : q ? T.console.noMatch(q) : T.console.noLines}
-                </pre>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </section>
+              </>
+            )}
+          </p>
+        )}
+        <pre ref={log} className="run-console-log" role="log" aria-live="off" tabIndex={0}>
+          {lines.length ? lines.join("\n") : q ? T.console.noMatch(q) : T.console.noLines}
+        </pre>
+      </div>
+    </div>
   );
 }
