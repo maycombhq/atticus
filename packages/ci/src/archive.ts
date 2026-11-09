@@ -7,6 +7,7 @@ import {
   checkFindings,
   loadChangeContext,
   nothingToRelease,
+  staleReleasePrs,
 } from "@maycombhq/changes";
 import {
   catalogDirOf,
@@ -45,6 +46,8 @@ export interface GateBlocker {
     | "build-running"
     | "build-not-run"
     | "pr-open"
+    /** Review round 48: the change branch moved past its merged release PR, so newer work isn't released. */
+    | "release-pr-stale"
     /** ADR 0184: no release PR from the change branch into the default branch. */
     | "pr-missing"
     /** The clone is still where the change started though its release PR merged. */
@@ -153,6 +156,7 @@ export async function archiveGate(
   const mustMerge = config.archive.requireMergedPrs;
   // Final review (git and tasks): an entry is void once the change branch moved past it.
   const nothing = await nothingToRelease(root, change.id, o.git ? { git: o.git } : {});
+  const stale = await staleReleasePrs(root, change.id, o.git ? { git: o.git } : {});
   for (const r of repos) {
     // The raise found nothing to release here (ADR 0184): no PR, no code shipped, nothing to read.
     if (!r.pr && nothing.has(r.id)) continue;
@@ -165,6 +169,11 @@ export async function archiveGate(
       blockers.push({
         code: "pr-open",
         message: `${r.id}: release PR #${r.pr.number} is ${r.pr.state}; a person merges it on the Git host before archiving.`,
+      });
+    else if (mustMerge && r.pr?.state === "merged" && stale.has(r.id))
+      blockers.push({
+        code: "release-pr-stale",
+        message: `${r.id}: the change branch moved past release PR #${r.pr.number} after it merged, so the newer work isn't in ${r.base}: raise the release PRs again (atticus change release-prs ${change.id} --approve) and merge the new one.`,
       });
     if (r.build.status === "failed")
       blockers.push({

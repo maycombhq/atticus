@@ -309,6 +309,40 @@ describe("archive gate", () => {
     ).toEqual(["pr-missing"]);
   });
 
+  it("holds a merged release PR once the change branch moved past it (round 48)", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed", "merged");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    const dir = join(root, `workspace/.worktrees/${CHANGE}/forge-ledger`);
+    await mkdir(dir, { recursive: true });
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Tia",
+      GIT_AUTHOR_EMAIL: "tia@example.com",
+      GIT_COMMITTER_NAME: "Tia",
+      GIT_COMMITTER_EMAIL: "tia@example.com",
+    };
+    const git = (...a: string[]) =>
+      execFileSync("git", a, { cwd: dir, env, encoding: "utf8" }).trim();
+    git("init", "-q", "-b", "main");
+    await writeFile(join(dir, "README.md"), "# forge-ledger\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "start");
+    git("checkout", "-q", "-b", `change/${CHANGE}`);
+    await writeFile(
+      join(root, "openspec/changes", CHANGE, "release-prs.yaml"),
+      `schemaVersion: 1\nnothingToRelease: []\nmerged:\n  - repo: forge-ledger\n    number: 7\n    commit: ${git("rev-parse", "HEAD")}\n    at: 2026-11-08T10:00:00Z\n`,
+    );
+    expect((await archiveGate(root, CHANGE, { commit: COMMIT })).blockers).toEqual([]);
+    await writeFile(join(dir, "Late.java"), "class Late {}\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "late task");
+    const r = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(r.blockers.map((b) => b.code)).toEqual(["release-pr-stale"]);
+    expect(r.blockers[0]!.message).toMatch(/moved past release PR #7/);
+  });
+
   it("blocks a change that isn't released", async () => {
     const root = await metarepo({ change: "build" });
     const r = await archiveGate(root, CHANGE);
