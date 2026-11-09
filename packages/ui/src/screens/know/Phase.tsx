@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
+import { inAppWords } from "../../app/app-words.js";
+import { message } from "../run/shared.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
@@ -217,10 +219,16 @@ export function RaiseHandoff(p: {
               method: "POST",
               // ADR 0186: the click is the person's confirmation.
               body: await confirmed("handoff", p.change),
-            }).then((r) => {
-              p.onDone?.();
-              return r;
-            }),
+            }).then(
+              (r) => {
+                p.onDone?.();
+                return r;
+              },
+              // ADR 0188: a refusal that names a flag (pass --repo) in the app's words.
+              (e: unknown) => {
+                throw new Error(inAppWords(message(e)), { cause: e });
+              },
+            ),
           (r) => [T.handOffPrRaised, ...(r.notes ?? [])].join(" "),
         )
       }

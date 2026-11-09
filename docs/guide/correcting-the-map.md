@@ -20,7 +20,7 @@ When one side has nothing on record, the panel says so and gives the command: `a
 
 ## A repo's owner and system
 
-On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. The map shows the change after `atticus verify --all --write`.
+On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. **Apply to every repo's map** redraws it (`atticus verify --all --write`), then **Propose for review**.
 
 ## Add a box, and declare a link
 
@@ -30,7 +30,7 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 
 ## Corrections, and Undo
 
-Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with the command to redraw the map and the `git` command to commit the file.
+Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with **Apply** (it redraws the map) and **Propose for review**; the `atticus verify` and `git` commands are under **In a terminal** (ADR 0188).
 
 ## Decided by AI: correct one, and it spreads
 

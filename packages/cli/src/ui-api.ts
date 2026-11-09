@@ -1,4 +1,5 @@
 import { tracked } from "./ui-api-activity.js";
+import { uiStepRoutes } from "./ui-api-steps.js";
 import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -364,7 +365,11 @@ async function answeredMapQuestionRepo(root: string, path: string): Promise<stri
     () => undefined,
   );
   if (!q || q.state !== "answered" || typeof q.repo !== "string") return undefined;
-  const of = /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(String(q.rerun ?? "").trim());
+  // ADR 0188: a question the read raised (`atticus map <repo>`) is applied the same way.
+  const rerun = String(q.rerun ?? "").trim();
+  const of =
+    /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(rerun) ??
+    /^atticus map ([a-z0-9][a-z0-9._-]*)$/.exec(rerun);
   return of?.[1] === q.repo ? q.repo : undefined;
 }
 
@@ -618,6 +623,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };
   };
+  // ADR 0188: the local steps the pages named as commands, each a button.
+  uiStepRoutes(r, ctx, asJob);
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
@@ -1518,9 +1525,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             return { code, out, err };
           });
         const resumed = await resumeAfterDone(root, stepRunner, after.change, after.runId).catch(
-          (e: Error) => ({ lines: [e.message] }) as { next?: string; lines: string[] },
+          (e: Error) =>
+            ({ lines: [e.message] }) as { next?: string; lines: string[]; applied?: string },
         );
         if (resumed) ctx.events.publish({ type: "file.changed", path: changesRelOf(root) });
+        // The read's catalog, specs and map changed: every page reads them again.
+        if (resumed?.applied) ctx.events.publish({ type: "file.changed", path: "." });
         return {
           status: 200,
           body: {
@@ -1534,6 +1544,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               ...(resumed?.lines ?? []),
             ],
             ...(resumed?.next ? { next: resumed.next } : {}),
+            // ADR 0188: a read of a repo was put on the map (verify --write) by this Done.
+            ...(resumed?.applied ? { applied: resumed.applied } : {}),
           },
         };
       })

@@ -9,8 +9,9 @@ import { Command, Problems, RunNext } from "./RunNext.js";
 
 /**
  * Onboarding (plan 4.5): the organisation's repos from the manifest, the knowledge sources,
- * and the commands to run in order. A person picks repos by editing the manifest file; the
- * page shows the file and the commands, and never runs them.
+ * and the steps in order. A person picks repos by editing the manifest file. ADR 0188: each
+ * daily step (sync, read, apply, sync the wikis) is its button, the command folded under "In a
+ * terminal" (Command does both).
  */
 
 const W = COPY.work;

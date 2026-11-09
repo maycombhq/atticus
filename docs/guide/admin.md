@@ -353,7 +353,7 @@ Every question then says its owner (`atticus questions list`, the app's Question
 | Bring in documents                     | `atticus intake add <files>`, then decide what needs a person: `atticus triage`, or the Intake screen                                                            |
 | Give one change its documents          | `atticus change attach <change> <files...>`, or Attach a file on the change's page (ADR 0113)                                                                    |
 | Start from an earlier change           | `atticus change similar "<brief>"`, then `change new --like <archived>` or `change attach <change> --like <archived>`; on the app, the change's At a glance page |
-| Start a task with its context          | `/atticus-task <change> <task>` in Copilot or Claude Code, or `atticus task context <change> <task>`                                                             |
+| Start a task with its context          | `/atticus-task <change> <task>` in Copilot or Claude Code, **Copy task context for my assistant** in the app, or `atticus task context <change> <task>`          |
 | Answer owner questions                 | `atticus questions`, or the questions on the Ecosystem map                                                                                                       |
 | Check the pipeline matches the catalog | `atticus ci snippet <github\|azure\|gitlab\|jenkins>` adds the drift check to a repo's pipeline                                                                  |
 | Watch AI quality                       | `atticus eval report`, or the AI quality screen                                                                                                                  |

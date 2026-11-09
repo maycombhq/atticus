@@ -91,16 +91,12 @@ const UNDER_MORE = [
   "estimate",
   "conformance",
   "trace",
-  "todo",
-  "release",
   "service-desk",
   "tasks",
   "parties",
   "orgpack-draft",
-  "scans",
   "intake",
   "settings",
-  "history",
   "evals",
   "learning",
 ];
@@ -128,7 +124,9 @@ describe("the app's map: six entries (the Surfaces design)", () => {
   });
 
   it("gives each entry exactly its tabs", () => {
-    expect(of("Home")).toEqual(["home"]);
+    // ADR 0188: the manual steps are a tab of Home, Release of Change, Scans and Prompt
+    // history of Set up, by default (More pages alone was too far for daily use).
+    expect(of("Home")).toEqual(["home", "todo"]);
     // ADR 0181: Decided by AI, beside Trust, which audits it.
     expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust", "decisions"]);
     // The product owner, 2026-10-24: the list and At a glance are tabs, before the stages.
@@ -141,11 +139,12 @@ describe("the app's map: six entries (the Surfaces design)", () => {
       "architecture",
       "stories",
       "task-list",
+      "release",
     ]);
     expect(of("Questions")).toEqual(["questions"]);
     expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search"]);
     // Model runs beside AI: what the AI was asked, where a person looks for it (2026-10-25).
-    expect(of("SetUp")).toEqual(["repos", "ai", "runs", "orgpack"]);
+    expect(of("SetUp")).toEqual(["repos", "ai", "runs", "orgpack", "scans", "history"]);
     expect(of("Atticus")).toEqual([]);
   });
 
@@ -170,9 +169,9 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     const byId = (s: string) => more.find((g) => g.section === s)!.pages.map((p) => p.id);
     expect(byId("Knowledge")).toEqual(["parties", "orgpack-draft"]);
     // Seventh UX walk: pages across every change with Home, the org pack's checks in Set up.
-    expect(byId("Home")).toEqual(["initiatives", "todo"]);
-    expect(byId("SetUp")).toEqual(["governance", "scans", "intake", "settings"]);
-    expect(byId("Atticus")).toEqual(["history", "evals", "learning"]);
+    expect(byId("Home")).toEqual(["initiatives"]);
+    expect(byId("SetUp")).toEqual(["governance", "intake", "settings"]);
+    expect(byId("Atticus")).toEqual(["evals", "learning"]);
     // Change's by phase, in the order of a change.
     const change = more.find((g) => g.section === "Change")!;
     expect(change.phases!.map((p) => [p.phase, p.pages.map((x) => x.id)])).toEqual([
@@ -180,7 +179,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
       ["Design", ["arch-review"]],
       ["Plan", ["breakdown", "estimate"]],
       ["Build", ["tasks", "conformance", "trace"]],
-      ["Release", ["release", "service-desk"]],
+      ["Release", ["service-desk"]],
     ]);
     expect(change.pages.map((p) => p.id)).toEqual(
       change.phases!.flatMap((p) => p.pages.map((x) => x.id)),
@@ -205,7 +204,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
 
   it("with --full: every page is a tab of its section, a change's by phase", () => {
     expect(sectionLabel("Atticus")).toBe("Atticus");
-    expect(of("Atticus", true)).toEqual(["history", "evals", "learning"]);
+    expect(of("Atticus", true)).toEqual(["evals", "learning"]);
     const all = new Set(FULL_SECTIONS.flatMap((s) => of(s, true)));
     expect(SCREENS.filter((s) => !s.under && !all.has(s.id)).map((s) => s.id)).toEqual([]);
     expect(of("Map", true).slice(0, 5)).toEqual([
@@ -247,7 +246,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(SCREENS.some((s) => s.id === "dashboard")).toBe(false);
     expect(screenOf("#/dashboard").id).toBe("home");
     expect(screenOf("#/dashboard?x=1").id).toBe("home");
-    expect(of("Home")).toEqual(["home"]);
+    expect(of("Home")).toEqual(["home", "todo"]);
     expect(of("Home", true)).toEqual(["home", "words", "initiatives", "todo"]);
     expect(sectionLabel(screenOf("#/home").section)).toBe(screenOf("#/home").label);
   });

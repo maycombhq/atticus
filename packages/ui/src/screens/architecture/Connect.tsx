@@ -3,6 +3,8 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
+import { appStep, WrittenNext } from "../../app/app-step.js";
+import { Command } from "../work/RunNext.js";
 import { COPY } from "../../copy.js";
 import { MatchWithCopilot, type MatchIo } from "./Match.js";
 import { AiMark, readyView, useDecisions } from "../../app/decisions.js";
@@ -458,13 +460,14 @@ export function Pairing(p: {
         />
       )}
       {written && (
-        <div className="stack" role="status">
-          <p className="ev-say" role="status">
-            {C.written(written.lines.length, written.file)}
-          </p>
+        <div className="stack">
           {written.rule && <p className="ev-say">{C.ruleWritten(written.rule.question)}</p>}
-          <Cmd text={written.verify} />
-          <Cmd text={written.commit} />
+          {/* ADR 0188: Apply moves the arrow, then Propose for review. */}
+          <WrittenNext
+            said={C.written(written.lines.length, written.file)}
+            verify={written.verify}
+            commit={written.commit}
+          />
           {written.lines.length > 0 && (
             <button
               type="button"
@@ -530,6 +533,8 @@ function MakeRule({ repo, line }: { repo: string; line: string }) {
 }
 
 function Cmd({ text }: { text: string }) {
+  // ADR 0188: a step the app takes (verify, the read of a repo) is its button first.
+  if (appStep(text)) return <Command text={text} label={C.copy} scope="corrections" />;
   return (
     <div className="row" style={{ gap: 6 }}>
       <code className="mono">{text}</code>

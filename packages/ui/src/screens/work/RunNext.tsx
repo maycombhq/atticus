@@ -1,5 +1,6 @@
 import type { Loaded } from "../../api/client.js";
 import { NewChange } from "./NewChange.js";
+import { AppStep, appStep } from "../../app/app-step.js";
 import { RunStep } from "../../app/runstep.js";
 import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -11,27 +12,40 @@ import "./work.css";
 const R = COPY.runNext;
 
 /**
- * A command on its own line with a copy button; a keyboard reaches the button. An AI step also
- * gets a Run button where a model can be reached from here (ADR 0106): Copilot in a VS Code
- * panel, the server's model in a browser.
+ * A command on its own line with a copy button; a keyboard reaches the button. ADR 0188: when
+ * the app can take the step itself (an AI step, Apply, a sync, the estate join, a task's
+ * context...), its button comes first and the command is folded under "In a terminal", so nobody
+ * has to type a daily step. `noRun`: the page shows the step's own button, and the command is
+ * already under its own "Or in a terminal".
  */
 export function Command({
   text,
   label,
   noRun,
+  scope,
 }: {
   text: string;
   label: string;
   /** The page shows the step's Run itself, so the command doesn't show it twice. */
   noRun?: boolean;
+  /** What Propose for review takes after an Apply this command is (default: the app's work). */
+  scope?: "work" | "corrections" | "answers";
 }) {
+  const line = (
+    <div className="work-cmd">
+      <code className="mono">{text}</code>
+      <CopyButton text={text} label={`${label}: ${text}`} />
+    </div>
+  );
+  const step = noRun ? undefined : appStep(text);
+  if (!step) return line;
   return (
     <>
-      <div className="work-cmd">
-        <code className="mono">{text}</code>
-        <CopyButton text={text} label={`${label}: ${text}`} />
-      </div>
-      {!noRun && <RunStep command={text} />}
+      <AppStep step={step} {...(scope ? { scope } : {})} />
+      <details className="work-terminal">
+        <summary>{COPY.appStep.inTerminal}</summary>
+        {line}
+      </details>
     </>
   );
 }

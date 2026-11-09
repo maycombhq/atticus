@@ -30,7 +30,8 @@ const COUNT = morePages().reduce((n, g) => n + g.pages.length, 0);
 describe("the menu's More pages", () => {
   it("is there on first load, closed, naming how many pages it holds", () => {
     const html = at("#/home");
-    expect(COUNT).toBe(26);
+    // ADR 0188: Manual steps, Release, Scans and Prompt history are tabs now (26 before).
+    expect(COUNT).toBe(22);
     expect(html).toMatch(
       new RegExp(`<button type="button"[^>]*aria-expanded="false"[^>]*>.*More pages.*${COUNT}`),
     );
@@ -44,7 +45,7 @@ describe("the menu's More pages", () => {
       for (const p of g.pages) expect(html).toContain(`href="#/${p.id}"`);
     for (const label of ["Map", "Change", "Knowledge", "Set up", "Atticus", "Plan", "Build"])
       expect(html).toContain(`aria-label="${label}"`);
-    expect(html).toContain(">Prompt history<");
+    expect(html).toContain(">AI quality<");
     expect(html).toContain(">Estimate<");
     // Model runs is a tab of Set up, not under More.
     expect(html).not.toContain('href="#/runs"');
@@ -58,9 +59,9 @@ describe("the menu's More pages", () => {
   });
 
   it("opens by itself on a page it holds, marking that page", () => {
-    const html = at("#/history");
+    const html = at("#/evals");
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toMatch(/href="#\/history" aria-current="page"/);
+    expect(html).toMatch(/href="#\/evals" aria-current="page"/);
     expect(html).not.toMatch(/id="more-pages"[^>]*hidden/);
   });
 

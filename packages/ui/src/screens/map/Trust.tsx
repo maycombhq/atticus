@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { RunWithCopilot } from "../../app/copilot-runs.js";
+import { appStep, ReadRepo } from "../../app/app-step.js";
 import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { Citation, EvidenceProvider } from "../../app/evidence.js";
@@ -207,6 +208,8 @@ export function TrustRow({ r }: { r: Repo }) {
                     ))}
                   </ul>
                   <p className="work-say">{T.rejectedFix(rejectedFile)}</p>
+                  {/* ADR 0188: read it again from here, then Apply checks the facts again. */}
+                  <ReadRepo repo={r.repo} again />
                   <Command text={`/atticus-map ${r.repo}`} label={R.copySlash} />
                   <Command text={`atticus verify ${r.repo}`} label={R.copy} />
                 </>
@@ -239,6 +242,7 @@ export function TrustRow({ r }: { r: Repo }) {
                     </p>
                   )}
                   <p className="work-say">{T.unknownFix(r.repo)}</p>
+                  <ReadRepo repo={r.repo} again />
                   <Command text={`/atticus-map ${r.repo}`} label={R.copySlash} />
                 </>
               )}
@@ -396,14 +400,20 @@ export function TrustRow({ r }: { r: Repo }) {
         ))}
       {r.next && (
         <div style={{ marginTop: 8 }}>
+          {/* ADR 0188: the step's button first (Read, Apply), its command folded. */}
+          {appStep(r.next.command) && <Command text={r.next.command} label={R.copy} />}
           {r.next.slash && (
             <>
               <p className="work-say">{R.slash}</p>
               <Command text={r.next.slash} label={R.copySlash} />
             </>
           )}
-          <p className="work-say">{R.terminal}</p>
-          <Command text={r.next.command} label={R.copy} />
+          {!appStep(r.next.command) && (
+            <>
+              <p className="work-say">{R.terminal}</p>
+              <Command text={r.next.command} label={R.copy} />
+            </>
+          )}
         </div>
       )}
       <p className="work-say mono" style={{ margin: "6px 0 0" }}>
@@ -490,12 +500,15 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
                         <td>{r.reread}</td>
                         <td>{r.carried}</td>
                         <td>
-                          <RunWithCopilot
-                            ask={{ kind: "stale", repos: [r.repo] }}
-                            label={COPY.copilotRuns.start.repos(r.repo)}
-                          />
+                          {/* ADR 0188: Read again: Copilot where allowed, else the read as a step. */}
+                          <ReadRepo repo={r.repo} again ask={{ kind: "stale", repos: [r.repo] }} />
                           {r.slash && <Command text={r.slash} label={R.copySlash} />}
-                          {r.command && <Command text={r.command} label={R.copy} />}
+                          {r.command && (
+                            <details className="work-terminal">
+                              <summary>{COPY.appStep.inTerminal}</summary>
+                              <Command text={r.command} label={R.copy} noRun />
+                            </details>
+                          )}
                         </td>
                       </tr>
                     ))}

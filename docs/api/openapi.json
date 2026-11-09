@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.4.0",
+    "version": "3.5.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -8827,6 +8827,313 @@
         }
       }
     },
+    "/api/facts/apply-all": {
+      "post": {
+        "operationId": "applyAllFacts",
+        "summary": "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines verify printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/estate/join": {
+      "post": {
+        "operationId": "joinEstate",
+        "summary": "3.5.0 (ADR 0188): run atticus estate join as a local job: each flow's calls to other repos followed into the flows they reach",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "202": {
+            "description": "Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/sources/sync": {
+      "post": {
+        "operationId": "syncAllKnowledgeSources",
+        "summary": "3.5.0 (ADR 0188): run atticus sources sync as a local job: every wiki in sources.yaml read into a dated snapshot",
+        "tags": [
+          "knowledge"
+        ],
+        "responses": {
+          "202": {
+            "description": "Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace/prune": {
+      "post": {
+        "operationId": "pruneWorktrees",
+        "summary": "3.5.0 (ADR 0188): run atticus workspace prune as a local job, for one change or every change with worktrees; a worktree with uncommitted work is kept",
+        "tags": [
+          "workspace"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "change": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/tasks/{taskId}/context": {
+      "get": {
+        "operationId": "getTaskContext",
+        "summary": "3.5.0 (ADR 0188): a task's context as atticus task context --markdown prints it, for the person to copy into their assistant",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskContextView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/recording": {
+      "put": {
+        "operationId": "setPromptHistoryRecording",
+        "summary": "3.5.0 (ADR 0188): atticus history on|off, this machine's recording (.atticus/me.yaml); the org pack's history.record: false still holds",
+        "tags": [
+          "ai"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryRecordingView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/upgrade": {
       "get": {
         "operationId": "getUpgrade",
@@ -10657,7 +10964,7 @@
     "/api/runs/{runId}/done": {
       "post": {
         "operationId": "markRunDone",
-        "summary": "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt",
+        "summary": "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`",
         "tags": [
           "ai"
         ],
@@ -25599,6 +25906,9 @@
           },
           "next": {
             "type": "string"
+          },
+          "applied": {
+            "type": "string"
           }
         },
         "required": [
@@ -35755,6 +36065,30 @@
           "atticus",
           "newer",
           "pending"
+        ],
+        "additionalProperties": false
+      },
+      "TaskContextView": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown"
+        ],
+        "additionalProperties": false
+      },
+      "HistoryRecordingView": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
         ],
         "additionalProperties": false
       },

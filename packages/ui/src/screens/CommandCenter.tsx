@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
 import { COPY } from "../copy.js";
+import { CatalogEmpty } from "../app/app-step.js";
 import {
   api,
   ApiError,
@@ -30,6 +31,7 @@ import { waitingQuestions } from "./OwnerQuestions.js";
 import { Propose } from "../app/propose.js";
 import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
+import { Command } from "./work/RunNext.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
 import { UpgradeOffer } from "../app/upgrade.js";
@@ -226,6 +228,13 @@ export function OrgPackOwnerForm({ onSaved }: { onSaved?: () => void }) {
   );
 }
 
+/** ADR 0188: what a setup step says to do, in the app's words where the app does it. */
+const SETUP_FIX: Record<string, string> = {
+  clones: COPY.appStep.setupClones,
+  scan: COPY.appStep.setupRead,
+  baseline: COPY.appStep.setupBaseline,
+};
+
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
 export function SetupChecklist() {
   const setup = useApi<Setup>("/api/setup");
@@ -287,7 +296,18 @@ export function SetupChecklist() {
                 </span>
                 {!x.done && x.fix && (
                   <span className="muted" style={{ fontSize: 12 }}>
-                    {x.fix}
+                    {SETUP_FIX[x.id] ?? x.fix}
+                  </span>
+                )}
+                {/* ADR 0188: the daily steps of setup are buttons here, the commands folded. */}
+                {!x.done && x.id === "clones" && (
+                  <Command text="atticus workspace sync" label={COPY.runNext.copy} />
+                )}
+                {!x.done && x.id === "scan" && (
+                  <span>
+                    <a className="btn primary" href="#/trust">
+                      {COPY.appStep.openTrust}
+                    </a>
                   </span>
                 )}
                 {/* Seventh UX walk: the owner is set here, not by editing pack.yaml. */}
@@ -1050,12 +1070,16 @@ export function CommandCenter() {
           span="1 / -1"
           meta={<a href="#/explore">{T.explore}</a>}
         >
-          <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
+          <View
+            of={graph}
+            empty={(g) => g.nodes.length === 0}
+            emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
+          >
             {() => (
               <View
                 of={map}
                 empty={(m) => m.view.nodes.length === 0}
-                emptyText={T.theCatalogIsEmpty}
+                emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
               >
                 {(m) => <FlowCanvas view={m.view} height={420} />}
               </View>

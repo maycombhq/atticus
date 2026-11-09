@@ -4,6 +4,7 @@ import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { message, Note, useAction } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
 import { flash } from "../../app/flash.js";
+import { workChanged } from "../../app/propose.js";
 import {
   FilterBox,
   FilterCount,
@@ -208,12 +209,25 @@ export function WaitingActions(p: {
   const go = (path: string, ok: string) =>
     void act.run(
       () =>
-        api<{ lines?: string[]; next?: string }>(path, { method: "POST", body: {} })
+        api<{ lines?: string[]; next?: string; applied?: string }>(path, {
+          method: "POST",
+          body: {},
+        })
           .catch((e: unknown) => {
             throw new Error(p.failed ? notListed(message(e), p.failed) : message(e));
           })
           .then((r) => {
             setNext({ lines: r.lines ?? [], ...(r.next ? { next: r.next } : {}) });
+            // ADR 0188: a read whose last batch is in was put on the map by this Done.
+            if (r.applied) {
+              flash({
+                text: COPY.appStep.readOnMap(r.applied),
+                href: "#/canvas",
+                link: COPY.appStep.openMap,
+              });
+              workChanged();
+              return;
+            }
             // Round 39: a validated run's page drops these actions on reload; what the step did
             // and its next prompt stay on the page as a note.
             if (r.next || r.lines?.length)

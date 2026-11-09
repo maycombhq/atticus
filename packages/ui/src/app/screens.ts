@@ -62,7 +62,8 @@ export const SCREENS: ScreenDef[] = [
   // Seventh UX walk: pages across every change sit with Home, whose Waiting on you counts the
   // manual steps; under Map or Change they showed tabs they aren't part of.
   { id: "initiatives", label: S.initiatives, section: "Home", full: true },
-  { id: "todo", label: S.todo, section: "Home", full: true },
+  // ADR 0188: the daily pages are tabs of their sections by default, not only under More pages.
+  { id: "todo", label: S.todo, section: "Home" },
 
   // Map: the estate drawn, its flows, contracts, what breaks, and how far to trust it.
   { id: "canvas", label: S.canvas, section: "Map" },
@@ -120,7 +121,7 @@ export const SCREENS: ScreenDef[] = [
   // ADR 0114: does the code do what the design says?
   { id: "conformance", label: S.conformance, section: "Change", group: "Build", full: true },
   { id: "trace", label: S.trace, section: "Change", group: "Build", full: true },
-  { id: "release", label: S.release, section: "Change", group: "Release", full: true },
+  { id: "release", label: S.release, section: "Change", group: "Release" },
   { id: "service-desk", label: S.serviceDesk, section: "Change", group: "Release", full: true },
 
   // Questions: everything open, across repos and changes, with evidence.
@@ -146,13 +147,14 @@ export const SCREENS: ScreenDef[] = [
   { id: "governance", label: S.governance, section: "SetUp", full: true },
   // The first steps, from Home's next step.
   { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
-  { id: "scans", label: S.scans, section: "SetUp", full: true },
+  { id: "scans", label: S.scans, section: "SetUp" },
   { id: "intake", label: S.intake, section: "SetUp", full: true },
   { id: "settings", label: S.settings, section: "SetUp", full: true },
 
   // Atticus itself, under More pages: what people asked their assistant (ADR 0110), its quality
   // and what it learned.
-  { id: "history", label: S.history, section: "Atticus", full: true },
+  // ADR 0188: beside Model runs, a tab of Set up (it was under More pages only).
+  { id: "history", label: S.history, section: "SetUp" },
   { id: "evals", label: S.evals, section: "Atticus", full: true },
   { id: "learning", label: S.learning, section: "Atticus", full: true },
 ];

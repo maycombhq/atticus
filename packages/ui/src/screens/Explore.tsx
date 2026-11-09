@@ -3,6 +3,7 @@ import { useApi, useReloadOnFiles } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
+import { CatalogEmpty } from "../app/app-step.js";
 
 const T = COPY.explore;
 
@@ -338,7 +339,11 @@ export function Explore({ hash }: { hash: string }) {
       </Panel>
 
       <Panel title={focusId ? T.around(focusId) : T.theWholeEstate} kind="hero" span="1 / -1">
-        <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
+        <View
+          of={graph}
+          empty={(g) => g.nodes.length === 0}
+          emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
+        >
           {(g) => (
             <GraphView
               g={g}

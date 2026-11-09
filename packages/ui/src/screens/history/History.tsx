@@ -11,6 +11,7 @@ import {
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
+import { Command } from "../work/RunNext.js";
 import "../runs/runs.css";
 import "./history.css";
 
@@ -136,10 +137,20 @@ function TurnView({ t }: { t: Turn }) {
 }
 
 function Recording({ r }: { r: Api.HistoryRecording }) {
+  // ADR 0188: this machine's recording is a toggle here; the org pack's "off" isn't (it is the
+  // organisation's, changed in runtime.yaml through review).
+  const toggle = r.on
+    ? "atticus history off"
+    : r.offBy === "org-pack"
+      ? undefined
+      : "atticus history on";
   return (
-    <p className="work-say" style={{ margin: 0 }}>
-      {r.on ? H.recordingOn : r.offBy === "org-pack" ? H.offOrgPack : H.offLocal}
-    </p>
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {r.on ? H.recordingOn : r.offBy === "org-pack" ? H.offOrgPack : H.offLocal}
+      </p>
+      {toggle && <Command text={toggle} label={COPY.runNext.copy} />}
+    </div>
   );
 }
 

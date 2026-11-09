@@ -65,7 +65,7 @@ export const WORDS = {
   groupHint: "This view has more boxes than can be read at once. Open a part of it instead.",
   empty: "Nothing to show here in this lens.",
   emptyEstate:
-    "The catalog is empty. Read a repo first (atticus map <repo>, then atticus verify <repo> --write), then come back.",
+    "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
   properties: "Properties",
   kind: "Kind",
   stateLabel: "State",

@@ -223,9 +223,9 @@ describe("the CLI's --force, in the app's words", () => {
       `add-transfer-limit already has planning files a person wrote: snow.md. ${A.forceSnow}`,
     );
     expect(forceHint("Nothing to replace.", A.forceSnow)).toBe("Nothing to replace.");
-    expect(A.forceStories("add-transfer-limit")).toContain(
-      "atticus plan stories add-transfer-limit --force",
-    );
+    // ADR 0188: the button's name, never the command to type.
+    expect(A.forceStories("add-transfer-limit")).toContain(COPY.appStep.storiesAgain);
+    expect(A.forceStories("add-transfer-limit")).not.toContain("--force");
   });
 });
 

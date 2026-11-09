@@ -1,5 +1,6 @@
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../../copy.js";
+import { inAppWords } from "../../app/app-words.js";
 
 const T = COPY.nextStep;
 
@@ -239,6 +240,19 @@ function gateStep(page: Stage, c: ChangeRow, cockpit: Api.ChangeCockpitT): Step 
   // Ninth UX walk: a knowledge gap or a blocking finding is resolved on the change's page (Run
   // next said "In a terminal… No slash command does this step yet"); the command stays folded.
   const first = others[0];
+  // ADR 0188: a later stage that hasn't run yet is prepared on its own tab (Feature design said
+  // "run atticus change architecture … In a terminal… No slash command does this step yet").
+  const notRun =
+    first?.code === "stage-not-done"
+      ? /^The (\w+) stage hasn't run yet: run (atticus [^\n]+?)\.?$/.exec(first.message)
+      : null;
+  const notRunScreen = notRun ? STAGE_SCREEN[notRun[1] as Stage] : undefined;
+  if (notRun && notRunScreen)
+    return {
+      command: notRun[2]!,
+      why: W.why.stageBlocked(page, `The ${notRun[1]} stage hasn't run yet.`),
+      link: { href: href(notRunScreen.id, c.id), label: W.goStage(notRunScreen.label) },
+    };
   if (first)
     return {
       ...status,
@@ -408,10 +422,17 @@ export function onboarded(
  * follows the change's state and gate), with the in-app action its kind has.
  */
 export function cockpitStep(c: ChangeRow, next: NonNullable<Api.ChangeCockpitT["next"]>): Step {
-  const kind = kindOfStep(next.step);
+  // ADR 0188: a finding that holds the gate is answered on the change's page (Ask its owner,
+  // Fill it in, Apply fix); its reason in the app's words, not the commands to type.
+  const kind =
+    next.step === "finding"
+      ? /\bask$/.test(next.command.trim())
+        ? ("gap" as const)
+        : ("findings" as const)
+      : kindOfStep(next.step);
   return {
     command: next.command,
-    why: next.why,
+    why: inAppWords(next.why),
     ...(next.slash ? { slash: metarepo(next.slash) } : {}),
     ...(kind ? { kind } : {}),
     change: c.id,

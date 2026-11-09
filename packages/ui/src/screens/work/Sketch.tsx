@@ -6,6 +6,7 @@ import { Diff } from "../architecture/Owner.js";
 import { LoadError, View } from "../../app/ui.js";
 import { CopyButton } from "../run/shared.js";
 import { Command } from "./RunNext.js";
+import { Propose } from "../../app/propose.js";
 
 /**
  * ADR 0179: a change drawn on the canvas. A person says each stroke (a call, a topic, a table,
@@ -540,13 +541,22 @@ export function SketchForm(p: {
         </>
       )}
       {wrote && (
-        <div className="stack" role="status">
-          <p className="ev-say">{S.written}</p>
+        <div className="stack">
+          <p className="ev-say" role="status">
+            {S.written}
+          </p>
+          {/* ADR 0188: Propose for review from here; the git commands are folded. */}
+          <Propose scope="work" />
           {commit && (
-            <div className="row" style={{ gap: 6 }}>
-              <code className="mono">{commit}</code>
-              <CopyButton text={commit} label={`${S.copy}: ${commit}`} />
-            </div>
+            <details className="work-terminal">
+              <summary>{COPY.appStep.inTerminal}</summary>
+              <div className="row" style={{ gap: 6 }}>
+                <code className="mono" style={{ whiteSpace: "pre-wrap" }}>
+                  {commit}
+                </code>
+                <CopyButton text={commit} label={`${S.copy}: ${commit}`} />
+              </div>
+            </details>
           )}
         </div>
       )}

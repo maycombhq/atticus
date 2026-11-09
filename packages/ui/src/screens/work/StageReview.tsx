@@ -6,6 +6,7 @@ import { COPY } from "../../copy.js";
 import { message } from "../know/common.js";
 import { QuestionDetail } from "../Questions.js";
 import { Command, PrepareFirst, Problems } from "./RunNext.js";
+import { Propose } from "../../app/propose.js";
 import "./work.css";
 
 /**
@@ -66,7 +67,12 @@ function WroteNote({ w }: { w: Wrote | undefined }) {
   return (
     <div ref={at} tabIndex={-1} role="status">
       <p className="work-say">{S.commented(w.result.files.join(", "))}</p>
-      <Command text={w.result.commit} label={S.copyCommit} />
+      {/* ADR 0188: Propose for review; the git commands are folded under In a terminal. */}
+      <Propose scope="work" />
+      <details className="work-terminal">
+        <summary>{COPY.appStep.inTerminal}</summary>
+        <Command text={w.result.commit} label={S.copyCommit} noRun />
+      </details>
     </div>
   );
 }

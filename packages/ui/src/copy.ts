@@ -47,7 +47,7 @@ export const COPY = {
     noExecutors: "No tool is set up on this machine yet, so there is nothing to check.",
     forceSnow: "To replace it, tick “Replace a snow.md a person edited” and draft again.",
     forceStories: (change: string) =>
-      `Edit them on this page, or to replace them run atticus plan stories ${change} --force in a terminal.`,
+      `Edit ${change}'s stories on Stories, or replace them with Draft the stories again.`,
     panelNoSave: (file: string, command: string) =>
       `The VS Code panel can't save files, so ${file} wasn't saved. Copy the text below into a file, or run ${command} in a terminal.`,
   },
@@ -98,7 +98,7 @@ export const COPY = {
     copyFile: "Copy the file's path",
     calledBy: "Called by",
     notJoined:
-      "The estate pass hasn't run, so calls to other repos aren't linked to their flows. Run atticus estate join.",
+      "The estate pass hasn't run, so calls to other repos aren't linked to their flows. Join them here.",
     start: "Start",
     goesTo: (label: string, lane: string) => `Goes to ${label} on ${lane}.`,
     backTo: (lane: string) => `Goes back to ${lane}.`,
@@ -308,6 +308,8 @@ export const COPY = {
     optionChanges: "It would change",
     /** Seventh UX walk: an answered map question whose repo hasn't had Apply since. */
     notApplied: "This answer isn't in the map yet. Apply puts it there:",
+    /** ADR 0188: applied, its file not proposed yet. */
+    notProposed: "This answer is in the map, not proposed for review yet:",
     ownWords: "In my own words",
     ownWordsLabel: "Your answer, in your own words",
     scope: "Who the answer is for",
@@ -1418,7 +1420,8 @@ export const COPY = {
     drawing: "Drawing…",
     previewSays:
       "Draw it writes exactly these lines (the flow's target file, and design.md where Atticus wrote it):",
-    written: "Drawn. The picture shows it. Commit the change's files when you're ready:",
+    written:
+      "Drawn. The picture shows it. Propose the drawing for review now, or let it ride the stage's hand-off.",
     copy: "Copy",
     drawnTitle: "Strokes drawn here",
     drawnNone: "None yet.",
@@ -2364,7 +2367,7 @@ export const COPY = {
     interfacesInTheCatalog: "Interfaces in the catalog",
     interfaces: "Interfaces",
     theCatalogIsEmpty:
-      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
+      "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
     systemMap: "System map",
     explore: "Explore",
     loading: "Loading…",
@@ -2429,7 +2432,7 @@ export const COPY = {
     nothingMatchesTryFewer: "Nothing matches. Try fewer words.",
     results: "Results",
     theCatalogIsEmpty:
-      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
+      "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
     around: (focusId: string | number) => `Around ${focusId}`,
     theWholeEstate: "The whole estate",
   },
@@ -2538,12 +2541,12 @@ export const COPY = {
       "Drawn from the catalog; rebuilt whenever it changes. Edits happen in draw.io and come back through the metarepo.",
     generatedViews: "Generated views",
     noSystemToDraw:
-      "This view is drawn around one system, and the catalog has none yet: read a repo first (atticus map <repo>), then come back.",
+      "This view is drawn around one system, and the catalog has none yet: read a repo first, then come back.",
     systemsFailed: (error: string) => `The systems couldn't be listed: ${error}`,
     nothingToDrawThe: (v: string | number) =>
       `Nothing to draw: the catalog has nothing for the ${v} view.`,
     theCatalogIsEmpty:
-      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
+      "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
     view2: (label: string | number) => `${label} view`,
     mermaidSource: "Mermaid source",
     nothingToDrawFor: "Nothing to draw for this view yet.",
@@ -2679,7 +2682,7 @@ export const COPY = {
     guide: (system: string | number) => `Guide · ${system}`,
     generatedFromTheCatalog: "Generated from the catalog",
     theCatalogIsEmpty:
-      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
+      "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
     around: (focus: string | number) => `Around ${focus}`,
     ecosystemMap: "Ecosystem map",
     showAll: "Show all",
@@ -2705,7 +2708,7 @@ export const COPY = {
       tables: "Tables",
       calls: "Calls",
       flows: "Flows",
-      none: "No repo has facts yet: read one with atticus map <repo>, then atticus verify <repo> --write.",
+      none: "No repo has facts yet: read one first, and its facts are counted here.",
       cantRead: (repo: string) => `${repo}'s facts couldn't be read.`,
     },
     ask: (owner: string | number) => ` · ask ${owner}`,
@@ -4258,6 +4261,59 @@ export const COPY = {
     whoMerges:
       "A person reviews and merges it on the Git host; Atticus never merges. Your click is your approval to push the branch.",
   },
+  /**
+   * ADR 0188: the app offers a button for every step in the daily path; the command it would
+   * type is folded under "In a terminal".
+   */
+  appStep: {
+    inTerminal: "In a terminal",
+    applyAll: "Apply to every repo's map",
+    applyingAll: "Applying…",
+    appliedAll: "Applied: every repo's facts are checked again and the map is drawn again.",
+    sync: "Sync the repos",
+    syncing: "Syncing…",
+    synced: "Synced the repos' clones.",
+    sourcesSync: "Sync all wikis",
+    sourcesSyncing: "Syncing the wikis…",
+    sourcesSynced: "Synced every wiki into a dated snapshot.",
+    join: "Join the estate's flows",
+    joining: "Joining…",
+    joined: "Joined: each flow's calls to other repos now reach their flows.",
+    prune: "Clean up finished worktrees",
+    pruning: "Cleaning up…",
+    pruned: "Cleaned up. A worktree with uncommitted work is kept.",
+    pruneSay:
+      "Removes the worktrees of changes whose pull requests merged or closed. A worktree with uncommitted work is kept, as the command line keeps it.",
+    taskContext: "Copy task context for my assistant",
+    taskContextWorking: "Making the context…",
+    taskContextCopied: "Copied. Paste it into your assistant in the task's repo.",
+    taskContextFailed:
+      "The browser didn't allow copying. Select the context below and copy it yourself.",
+    taskContextSay: (repo: string) =>
+      `For your assistant in ${repo}: the task, its stories, the design and the knowledge it needs.`,
+    historyOn: "Turn recording on",
+    historyOff: "Turn recording off",
+    historyWorking: "Saving…",
+    historyNowOn: "Recording is on on this machine.",
+    historyNowOff: "Recording is off on this machine.",
+    readRepoFirst: "Read a repo first",
+    readRepoFirstSay:
+      "Your assistant reads a repo's code and writes its facts; Atticus checks each against its line and draws the map.",
+    openTrust: "Read a repo on Map › Trust",
+    storiesAgain: "Draft the stories again",
+    openArchitecture: "Prepare it on Architecture",
+    findingAsk: "Ask its owner",
+    findingFill: "Fill it in",
+    openChangeFor: "Open it on the change's page",
+    proposeSay: "Then propose it for review: a person approves the pull request.",
+    openMap: "Open the map",
+    readOnMap: (repo: string) => `${repo} is read and on the map.`,
+    setupClones: "Sync the repos: it clones what's missing into the workspace.",
+    setupRead:
+      "Read each repo with your assistant on Map › Trust; Done checks every fact against the line it cites and puts it on the map.",
+    setupBaseline:
+      "Walk the ecosystem map with the architect, then accept it with Accept the catalog below and propose it for review.",
+  },
   /** UX review: starting a change in the app. */
   newChange: {
     start: "New change",
@@ -4407,11 +4463,11 @@ export const COPY = {
     intro:
       "What people asked their assistant in this metarepo and what it answered, by session, newest first. It is kept on this machine only, in .atticus/history/, and never committed. Each prompt and response is shown as text, as it was written.",
     what: "Recorded: prompts and replies in Claude Code with the Atticus plugin, and @atticus requests and replies in VS Code. Copilot's other chats can't be recorded: VS Code gives extensions no access to them, and Copilot in IntelliJ gives plugins no chat at all.",
-    recordingOn: "Recording is on. atticus history off stops it on this machine.",
+    recordingOn: "Recording is on on this machine. Turn it off here, for this machine only.",
     offOrgPack:
       "Recording is off for everyone: the org pack's runtime.yaml says history: { record: false }. What was kept before is still here.",
     offLocal:
-      "Recording is off on this machine: atticus history on turns it back on. What was kept before is still here.",
+      "Recording is off on this machine. Turn it back on here; what was kept before is still here.",
     empty:
       "No prompts yet. With the Atticus plugin in Claude Code, or @atticus in VS Code, each prompt and reply in this metarepo is listed here.",
     change: "Change",
@@ -4561,7 +4617,7 @@ export const COPY = {
     previewing: "Working out the change…",
     confirm: "Write it",
     writing: "Writing…",
-    written: "Written. Run this to redraw the map:",
+    written: "Written. Apply it to redraw the map, then propose it for review.",
     empty: "Say the topic or the route first.",
     close: "Close",
     copy: "Copy the command",
@@ -4583,7 +4639,7 @@ export const COPY = {
     } as Record<string, string>,
     undo: "Undo",
     undoing: "Undoing…",
-    undone: "Undone. Run this to redraw the map:",
+    undone: "Undone. Apply it to redraw the map, then propose it for review.",
   },
   addBox: {
     open: "Add to the picture…",
@@ -4604,7 +4660,7 @@ export const COPY = {
     confirm: "Add it",
     writing: "Adding…",
     previewing: "Working out the change…",
-    written: "Added to the profile for review. Run this to redraw the map:",
+    written: "Added to the profile. Apply it to redraw the map, then propose it for review.",
     close: "Close",
     copy: "Copy the command",
   },
@@ -4613,7 +4669,7 @@ export const COPY = {
     open: "Owner and system…",
     title: (repo: string) => `Who owns ${repo}, and its system`,
     intro: (file: string) =>
-      `Written to ${file} after your yes, the file's comments kept; the map shows it on the next atticus verify --all --write.`,
+      `Written to ${file} after your yes, the file's comments kept; the map shows it once you apply it.`,
     loading: "Reading the manifest…",
     failed: (why: string) => `The owner couldn't be read: ${why}`,
     owner: "Owner (a team)",
@@ -4629,7 +4685,7 @@ export const COPY = {
     diffOf: (file: string) => `What changes in ${file}`,
     confirm: "Write it",
     writing: "Writing…",
-    written: "Written. Run this to redraw the map:",
+    written: "Written. Apply it to redraw the map, then propose it for review.",
     close: "Close",
     copy: "Copy the command",
   },
@@ -4902,6 +4958,10 @@ export const COPY = {
   runStep: {
     /** UX review: in a browser with no model, the step is prepared for the person's assistant. */
     handoffPrepare: "Prepare it for your assistant",
+    /** ADR 0188: the read of a repo, prepared for the person's assistant. */
+    handoffRead: "Read with my assistant",
+    handoffReadHint:
+      "Atticus writes the prompt for your assistant (Copilot, Claude Code) to read the repo's code into facts; Done checks each fact against its line and puts the kept ones on the map.",
     handoffWorking: "Preparing…",
     handoffHint:
       "Atticus writes the prompt; paste it into your assistant (Copilot, Claude Code), then Done checks the answer.",

@@ -26,6 +26,8 @@ const AI_STEPS = new Set([
   "knowledge scan",
   "change feature",
   "change architecture",
+  // ADR 0188: the fast path's one step (ADR 0113), as the server takes it.
+  "change small",
   "change draft",
   "plan stories",
   "change needs",
@@ -58,10 +60,28 @@ export function stepArgs(command: string): string[] | undefined {
   const args = w.slice(1);
   // `atticus critic <change>` is one too: its AI lenses, one at a time (ADR 0106 addendum).
   const critic = args[0] === "critic" && args[1] !== "stats";
-  if (!critic && !AI_STEPS.has(`${args[0]} ${args[1]}`)) return undefined;
-  if (withoutSource(args).some((a) => a.startsWith("-") || /[<>]/.test(a) || a.trim() === ""))
+  // ADR 0188: `atticus map <repo>`, the assistant's read of one repo (ADR 0124 §4), as the
+  // server and the extension take it; its estimate, --all and render only read or need options.
+  const map = args[0] === "map" && args.length === 2 && args[1] !== "render";
+  if (!critic && !map && !AI_STEPS.has(`${args[0]} ${args[1]}`)) return undefined;
+  if (
+    withoutForce(withoutSource(args)).some(
+      (a) => a.startsWith("-") || /[<>]/.test(a) || a.trim() === "",
+    )
+  )
     return undefined;
   return args;
+}
+
+/**
+ * ADR 0188: Draft the stories again is `plan stories <change> --force`, the one step the app
+ * starts with --force; the server and the resume check it again.
+ */
+const FORCE_STEPS = new Set(["plan stories"]);
+function withoutForce(args: string[]): string[] {
+  if (!FORCE_STEPS.has(`${args[0]} ${args[1]}`)) return args;
+  const at = args.indexOf("--force");
+  return at < 0 ? args : [...args.slice(0, at), ...args.slice(at + 1)];
 }
 
 /**
@@ -294,8 +314,8 @@ export function RunStepView(p: {
  * The Run button for a command the app shows, when it is an AI step and a model can be reached
  * from here; nothing otherwise, so the page keeps only the command to copy.
  */
-export function RunStep({ command }: { command: string }) {
-  const args = stepArgs(command);
+export function RunStep({ command, args: given }: { command?: string; args?: string[] }) {
+  const args = given ?? (command ? stepArgs(command) : undefined);
   const bridge = hostBridge();
   const serverModel = useServerModel(!!args && !bridge);
   const [state, set] = useState<RunState>({ phase: "idle", lines: [] });
@@ -349,16 +369,50 @@ export function RunStep({ command }: { command: string }) {
   // UX review: no model here and not in an editor: prepare the step for the person's own
   // assistant, then its run page has the prompt to paste and Done to check the answer.
   if (choice.kind === "copy" && serverModel === null) return <HandoffStep args={args} />;
+  // ADR 0188: the stories refused over a person's files: Draft the stories again, from here.
+  const said =
+    state.phase === "ended"
+      ? state.end.lines.join("\n")
+      : state.phase === "error"
+        ? state.error
+        : "";
+  const again = forceAgain(args, said);
   return (
-    <RunStepView
-      choice={choice}
-      state={state}
-      onRun={onRun}
-      {...(onCancel ? { onCancel } : {})}
-      stopping={stopping}
-    />
+    <>
+      <RunStepView
+        choice={choice}
+        state={state}
+        onRun={onRun}
+        {...(onCancel ? { onCancel } : {})}
+        stopping={stopping}
+      />
+      {again && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {COPY.app.forceStories(args[2] ?? "")}
+          </p>
+          <RunStep args={again} />
+        </div>
+      )}
+    </>
   );
 }
+
+/**
+ * ADR 0188: the stories stage refuses to replace stories a person wrote ("Re-run with --force
+ * to replace them"): the step again with --force, the one option the app passes it. Undefined
+ * for any other step or refusal.
+ */
+export function forceAgain(args: string[], said: string): string[] | undefined {
+  if (args[0] !== "plan" || args[1] !== "stories" || args.includes("--force")) return undefined;
+  return /Re-run with --force\b/.test(said) ? [...args, "--force"] : undefined;
+}
+
+/** The refusal in the app's words: Draft the stories again, not --force. */
+const forceWords = (args: string[], said: string) =>
+  forceAgain(args, said)
+    ? said.replace(/Re-run with --force to [^.]*\./, COPY.app.forceStories(args[2] ?? ""))
+    : said;
 
 /** Prepares an AI step as a hand-off (POST /api/runs/handoff) and links to its run. */
 export function HandoffStep({ args }: { args: string[] }) {
@@ -414,19 +468,28 @@ export function HandoffStep({ args }: { args: string[] }) {
               });
           }}
         >
-          {state.s === "working" ? T.handoffWorking : T.handoffPrepare}
+          {state.s === "working"
+            ? T.handoffWorking
+            : args[0] === "map"
+              ? T.handoffRead
+              : args.includes("--force")
+                ? COPY.appStep.storiesAgain
+                : T.handoffPrepare}
         </button>
         <span id={`${id}-why`} className="muted" style={{ fontSize: 12 }}>
-          {T.handoffHint}
+          {args[0] === "map" ? T.handoffReadHint : T.handoffHint}
         </span>
       </div>
       {state.s === "error" && (
         <p role="alert" className="run-note bad">
-          {T.cantStart(state.why)}{" "}
+          {T.cantStart(forceWords(args, state.why))}{" "}
           {state.runId && (
             <a href={`#/runs?run=${encodeURIComponent(state.runId)}`}>{T.handoffOpenWaiting}</a>
           )}
         </p>
+      )}
+      {state.s === "error" && forceAgain(args, state.why) && (
+        <HandoffStep args={forceAgain(args, state.why)!} />
       )}
     </div>
   );

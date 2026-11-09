@@ -31,7 +31,8 @@ describe("the command palette", () => {
     expect(paletteItems("prompt history", [], [])[0]).toMatchObject({
       kind: "screen",
       href: "#/history",
-      detail: "Atticus",
+      // ADR 0188: a tab of Set up, beside Model runs.
+      detail: "Set up",
     });
     expect(paletteItems("trust", [], [])[0]).toMatchObject({ kind: "screen", href: "#/trust" });
     expect(paletteItems("at a glance", [], [])[0]).toMatchObject({ href: "#/cockpit" });
