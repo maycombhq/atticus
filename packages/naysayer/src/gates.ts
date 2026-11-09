@@ -84,7 +84,11 @@ export async function gateStatusOf(
   });
   const open = findings.filter((f) => f.finding.state === "open");
   // The lifecycle's own reading decides: one answer for the critic and for the hand-off.
-  const blocking = (await checkFindings(root, change, [gate])).map((r) => r.message);
+  const checked = await checkFindings(root, change, [gate]);
+  const blocking = checked.map((r) => r.message);
+  // Ninth UX walk: a gap waits on its owner (open, or asked and its owner question unanswered),
+  // never on a person's decision about the draft.
+  const onlyGaps = checked.length > 0 && checked.every((r) => r.code === "open-gap");
   // A lens the person's assistant hasn't answered yet is a review that hasn't happened: the
   // gate doesn't open on layer 1 alone while one is out.
   const waiting = round
@@ -121,7 +125,7 @@ export async function gateStatusOf(
     humanDecides:
       blocking.length > 0 &&
       usedUp &&
-      !(count(open).blocking === 0 && count(open).gaps > 0 && waiting.length === 0),
+      !(count(open).blocking === 0 && onlyGaps && waiting.length === 0),
     checkRound: usedUp && (await checkRoundDue(root, change.id, gate)).length > 0,
     checkRoundsRun,
     waiting,

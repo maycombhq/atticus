@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { COPY } from "../copy.js";
@@ -93,6 +93,22 @@ export function yourRole(
   return picked ? { roles: [picked], from: "picker" } : { roles: [], from: "none" };
 }
 
+/**
+ * Ninth UX walk: whether Home shows the role picker, and what it says. The picker is only for the
+ * changes in flight that don't name the person among their owners (the owners win where they do),
+ * so it is hidden when every change names them, and says it covers the rest when some do. Until
+ * every change has said (`undefined`), it is shown as for none.
+ */
+export function pickerFor(named: readonly (boolean | undefined)[]): {
+  show: boolean;
+  hint: "none-named" | "some-named";
+} {
+  const known = named.filter((n): n is boolean => n !== undefined);
+  if (known.length === named.length && named.length > 0 && known.every(Boolean))
+    return { show: false, hint: "some-named" };
+  return { show: true, hint: known.some(Boolean) ? "some-named" : "none-named" };
+}
+
 /** The role filter on Questions: every role, each with its open count, the person's marked. */
 export function RoleFilter(p: {
   value: Role | undefined;
@@ -126,6 +142,8 @@ export function RoleFilter(p: {
 export function RolePicker(p: {
   value: Role | undefined;
   onChange: (r: Role | undefined) => void;
+  /** Ninth UX walk: some changes name the person, so the pick is for the others only. */
+  hint?: "none-named" | "some-named";
 }) {
   return (
     <div className="stack" style={{ gap: 4 }}>
@@ -147,7 +165,7 @@ export function RolePicker(p: {
         ))}
       </select>
       <span id="viewer-role-hint" className="muted" style={{ fontSize: 11.5 }}>
-        {R.pickYoursHint}
+        {p.hint === "some-named" ? R.pickYoursHintSome : R.pickYoursHint}
       </span>
     </div>
   );
@@ -179,11 +197,21 @@ export function RoleQuestionsLine(p: {
 }
 
 /** One change on Home: asks the server for its open questions by role and the person's roles. */
-function ChangeRoleQuestions(p: { change: string; picked: Role | undefined }) {
+function ChangeRoleQuestions(p: {
+  change: string;
+  picked: Role | undefined;
+  /** Ninth UX walk: tells Home whether this change's owners name the person. */
+  onNamed?: (change: string, named: boolean) => void;
+}) {
   const q = useApi<Api.QuestionListT>(
     `/api/questions?state=open&change=${encodeURIComponent(p.change)}`,
   );
   useReloadOnFiles(q);
+  const named = q.state === "ready" ? (q.data.yourRoles ?? []).some(isRole) : undefined;
+  const { onNamed, change } = p;
+  useEffect(() => {
+    if (named !== undefined) onNamed?.(change, named);
+  }, [named, change, onNamed]);
   if (q.state === "loading") return null;
   if (q.state === "error")
     return (
@@ -212,8 +240,15 @@ const LANDED = new Set(["released", "archived", "post-release-review"]);
  */
 export function YourRoleQuestions(p: { changes: readonly { id: string; state: string }[] }) {
   const [picked, setPicked] = useState<Role | undefined>(() => readViewerRole());
+  // Ninth UX walk: which changes name the person, so the picker shows only where it is used.
+  const [named, setNamed] = useState<Record<string, boolean>>({});
+  const [onNamed] = useState(
+    () => (change: string, n: boolean) =>
+      setNamed((o) => (o[change] === n ? o : { ...o, [change]: n })),
+  );
   const live = p.changes.filter((c) => !LANDED.has(c.state)).slice(0, 5);
   if (!live.length) return null;
+  const picker = pickerFor(live.map((c) => named[c.id]));
   return (
     <section className="panel stack" aria-labelledby="your-role-questions" style={{ gap: 8 }}>
       <p id="your-role-questions" className="hud" style={{ margin: 0 }}>
@@ -223,15 +258,18 @@ export function YourRoleQuestions(p: { changes: readonly { id: string; state: st
         {R.homeIntro}
       </p>
       {live.map((c) => (
-        <ChangeRoleQuestions key={c.id} change={c.id} picked={picked} />
+        <ChangeRoleQuestions key={c.id} change={c.id} picked={picked} onNamed={onNamed} />
       ))}
-      <RolePicker
-        value={picked}
-        onChange={(r) => {
-          setPicked(r);
-          saveViewerRole(r);
-        }}
-      />
+      {picker.show && (
+        <RolePicker
+          value={picked}
+          hint={picker.hint}
+          onChange={(r) => {
+            setPicked(r);
+            saveViewerRole(r);
+          }}
+        />
+      )}
     </section>
   );
 }

@@ -52,6 +52,7 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
       "machine",
       "org-pack",
       "org-pack-owner",
+      "patterns",
       "ai",
       "repos",
       "clones",
@@ -87,6 +88,12 @@ describe("a new metarepo's checklist", () => {
     expect(steps.get("org-pack")).toMatchObject({ done: true, detail: "no problems in its files" });
     expect(steps.get("org-pack-owner")).toMatchObject({ done: false, detail: "unassigned" });
     expect(steps.get("org-pack-owner")!.fix).toMatch(/pack\.yaml/);
+    // Ninth UX walk: an empty pattern registry is setup to do, said with the way to fill it.
+    expect(steps.get("patterns")).toMatchObject({ optional: true });
+    if (!steps.get("patterns")!.done) {
+      expect(steps.get("patterns")!.detail).toMatch(/^empty/);
+      expect(steps.get("patterns")!.fix).toMatch(/org-pack\/patterns\//);
+    }
     // How AI runs is left as atticus init wrote it: a choice still to make, though optional.
     expect(steps.get("ai")).toMatchObject({
       done: false,

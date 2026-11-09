@@ -56,6 +56,10 @@ interface PatternProblemOpts {
 function patternProblems(ctx: CriticContext, o: PatternProblemOpts): Hit[] {
   const doc = docOf(ctx.files, IFACES);
   if (!doc) return [];
+  // Ninth UX walk: while the org pack's pattern registry is empty there is nothing to check a
+  // hop's pattern against, and no code anyone could pick: that is setup still to do (Home's
+  // checklist says so), not a failure of the change. The rule stays unwaivable once it has codes.
+  if (ctx.patterns.size === 0) return [];
   const hits: Hit[] = [];
   const codes = [...ctx.patterns.keys()].sort();
   for (const h of ctx.hops) {

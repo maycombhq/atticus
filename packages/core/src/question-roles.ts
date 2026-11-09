@@ -2,8 +2,9 @@ import { BUILT_IN_ROLES } from "./schema/orgpack.js";
 import { QUESTION_ROLES, type Question, type QuestionRole } from "./schema/question.js";
 
 /**
- * ADR 0181 part 4: each role answers its own questions. A change flows product owner (Define) →
- * architect (Design) → business analyst (Plan's stories) → tech lead (Plan's tasks, Build), and
+ * ADR 0181 part 4: each role answers its own questions. A change flows product owner (Define: the
+ * brief) → architect (the feature stage, which places the change on the estate, and Design) →
+ * business analyst (Plan's stories) → tech lead (Plan's tasks, Build), and
  * every question a phase raises is owned by that phase's role: product, architecture, analysis or
  * delivery. The role is written on a question when it is raised (question schema version 5); an
  * older file's is derived here, from the step that asked, on read. Words, not permissions.
@@ -11,9 +12,11 @@ import { QUESTION_ROLES, type Question, type QuestionRole } from "./schema/quest
 
 /** The role of each of a change's stages and phases, as a step (`change-<stage>`) names it. */
 const STAGE_ROLE: Readonly<Record<string, QuestionRole>> = {
-  feature: "product",
   define: "product",
   brief: "product",
+  // Ninth UX walk: the feature stage places the change on the estate; ADR 0181 gives that to the
+  // architect ("The architect places it on the estate and decides the design").
+  feature: "architecture",
   architecture: "architecture",
   design: "architecture",
   // A small change's one stage places it and designs it: the architect's.

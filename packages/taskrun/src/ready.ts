@@ -12,8 +12,10 @@ import { readTaskRun, type RunLevel, type TaskRunRecord, type TaskRunState } fro
  * task/<change>/<task> branch, or, at the pr level with the person's approval, a PR from that
  * branch into the change branch. Nothing is merged, and nothing is pushed to a protected branch.
  *
- * A task depends on the tasks of the stories its story depends on (stories.md, "Depends on"); it
- * is done when it is ticked in tasks.md (a merged PR ticks it). The cross-repo order is the
+ * A task depends on the tasks of the stories its story depends on (stories.md, "Depends on"), and
+ * (ninth UX walk) on the earlier tasks of its own repo in tasks.md order, since each task's draft
+ * starts from the change branch: a task marked [P] (Spec Kit's marker) doesn't wait for the [P]
+ * tasks just before it in its repo. It is done when it is ticked in tasks.md (a merged PR ticks it). The cross-repo order is the
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
@@ -23,6 +25,8 @@ export interface ReadyInput {
   repo: string;
   done: boolean;
   stories: string[];
+  /** Ninth UX walk: tasks.md marks it [P], so it may go with the [P] tasks next to it in its repo. */
+  parallel?: boolean | undefined;
   /** Where its last task run stands, if it ran. */
   state?: TaskRunState | undefined;
   /** For a task whose PR is open: the Git host says it was merged or closed (review round 43). */
@@ -34,8 +38,13 @@ export interface ReadyTask {
   id: string;
   repo: string;
   ready: boolean;
-  /** The not-done tasks it waits for (its stories' dependencies), when any. */
+  /** The not-done tasks it waits for (its stories' dependencies, and the earlier ones of its repo). */
   waitsFor: string[];
+  /**
+   * Ninth UX walk: of those, the earlier not-done tasks of its own repo in tasks.md order, so each
+   * is drafted from a base with the code before it. Absent when none.
+   */
+  sameRepo?: string[];
   /** Why it isn't ready, in words; absent when it is. */
   why?: string;
 }
@@ -55,6 +64,21 @@ const PAST: Partial<Record<TaskRunState, string>> = {
   "pr-open": "its PR is open on the Git host",
   "needs-person": "it needs a person: carry on in its worktree, or Run with AI on it",
 };
+
+/**
+ * Ninth UX walk: the not-done tasks before `t` in its own repo, in tasks.md order. A [P] task
+ * doesn't wait for the [P] tasks right before it in its repo (they go together), only for what is
+ * before them.
+ */
+function sameRepoBefore(tasks: readonly ReadyInput[], t: ReadyInput): string[] {
+  const mine = tasks.slice(0, tasks.indexOf(t)).filter((x) => x.repo === t.repo);
+  let cut = mine.length;
+  if (t.parallel) while (cut > 0 && mine[cut - 1]!.parallel) cut--;
+  return mine
+    .slice(0, cut)
+    .filter((x) => !x.done)
+    .map((x) => x.id);
+}
 
 /** Which tasks are ready, and the order to run them in (pure: files are read by `readyTasksOf`). */
 export function planReadyTasks(o: {
@@ -85,14 +109,29 @@ export function planReadyTasks(o: {
   for (const t of order) {
     if (t.done) continue;
     const before = new Set(t.stories.flatMap((s) => deps.get(s) ?? []));
-    const waitsFor = o.tasks
+    const byStory = o.tasks
       .filter((x) => x.id !== t.id && !x.done && x.stories.some((s) => before.has(s)))
       .map((x) => x.id);
+    const sameRepo = sameRepoBefore(o.tasks, t).filter((id) => !byStory.includes(id));
+    const waitsFor = o.tasks
+      .map((x) => x.id)
+      .filter((id) => byStory.includes(id) || sameRepo.includes(id));
     const past = t.state && !(t.state === "pr-open" && t.prSettled) ? PAST[t.state] : undefined;
+    const named = [
+      ...byStory,
+      ...(sameRepo.length ? [`${sameRepo.join(", ")} (same repo)`] : []),
+    ].join(", ");
     const why = waitsFor.length
-      ? `it waits for ${waitsFor.length === 1 ? "task" : "tasks"} ${waitsFor.join(", ")} to be done first`
+      ? `it waits for ${waitsFor.length === 1 ? "task" : "tasks"} ${named} to be done first`
       : past;
-    out.push({ id: t.id, repo: t.repo, ready: !why, waitsFor, ...(why ? { why } : {}) });
+    out.push({
+      id: t.id,
+      repo: t.repo,
+      ready: !why,
+      waitsFor,
+      ...(sameRepo.length ? { sameRepo } : {}),
+      ...(why ? { why } : {}),
+    });
   }
   return { tasks: out, ready: out.filter((t) => t.ready).map((t) => t.id) };
 }
@@ -117,6 +156,7 @@ export async function readyTasksOf(
       repo: t.repo,
       done: t.done,
       stories: t.stories,
+      ...(t.parallel ? { parallel: true } : {}),
       ...(r ? { state: r.state } : {}),
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });

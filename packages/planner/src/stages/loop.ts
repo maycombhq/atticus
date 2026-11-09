@@ -10,6 +10,7 @@ import {
   gateRoundLimit,
   raiseQuestions,
   readQuestion,
+  retireQuestion,
   retrievalOf,
   runsDirOf,
   runsRelOf,
@@ -51,6 +52,7 @@ import {
   readProposals,
   readRound,
   readRoundMeta,
+  roundsOf,
   runCritic,
   waitingLenses,
   writeQuarantineItems,
@@ -80,13 +82,7 @@ import {
   stageRuleKind,
   type FindingKind,
 } from "./finding-kind.js";
-import {
-  STAGE_PHASE,
-  STAGE_SCHEMA_VERSION,
-  StageLoop,
-  type LoopFinding,
-  type Stage,
-} from "./schema.js";
+import { STAGE_PHASE, STAGE_SCHEMA_VERSION, Stage, StageLoop, type LoopFinding } from "./schema.js";
 
 /**
  * The loop every stage runs (ADR 0087, plan principle 4): the assistant drafts through the AI
@@ -547,6 +543,10 @@ export async function runStageLoop<A>(
     return result("waiting", { ...extra, waiting: waitingOf(w) });
   };
 
+  // Ninth UX walk: a question the loop raised about a critic finding a person has since
+  // dismissed, waived or fixed, or that the gate's newest round no longer raises, asks about
+  // nothing: it is retired, saying why, so it no longer holds the stage.
+  if (await retireSettledEscalations(root, change.id, loop, at)) await writeLoop(dir, loop);
   // A stage waiting for a person stays stopped until the questions are answered.
   if (!o.resume && loop.state === "questions") {
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
@@ -1278,6 +1278,13 @@ export async function runStageLoop<A>(
     loop.findings = [...byFp.values()].sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
     loop.updatedAt = at;
     loop.state = "drafting";
+    // Ninth UX walk: a stage finding a question was raised about, which this draft (read and
+    // checked) no longer has, settles the question; a critic one by the gate's newest round.
+    if (answer !== undefined)
+      for (const f of loop.findings)
+        if (f.question && f.source === "stage" && f.seenIn.at(-1) !== n)
+          await retireOpen(root, f.question, `Draft ${n} no longer has it: ${f.message}`, at);
+    await retireSettledEscalations(root, change.id, loop, at);
     await writeLoop(dir, loop);
 
     // ADR 0115 addendum (2026-10-25): a blocking finding an assistant proposed is not relevant
@@ -1977,6 +1984,79 @@ function lensRuntimeOf(ctx: ChangeContext, o: StageOptions): AiRuntime | undefin
 }
 
 /** A round's open blocking findings as the stage's issues, fingerprinted by the critic's own fingerprint. */
+/** Retire a question if it is still open; true when it was. */
+async function retireOpen(root: string, id: string, why: string, at: string): Promise<boolean> {
+  const q = await readQuestion(root, id).catch(() => undefined);
+  if (q?.state !== "open") return false;
+  await retireQuestion(root, id, { why, at });
+  return true;
+}
+
+/** What a person did with a critic finding, in words, for why its question was retired. */
+function settledWords(f: StoredFinding["finding"]): string | undefined {
+  const r = f.resolution;
+  if (f.state === "open" || !r) return undefined;
+  const reason = r.reason ? `: ${r.reason.trim().replace(/[.!?]+$/, "")}` : "";
+  if (f.state === "dismissed") return `dismissed as not relevant by ${r.by}${reason}`;
+  if (f.state === "waived") return `waived by ${r.by}${reason}`;
+  if (f.state === "applied") return `fixed by ${r.by}${reason}`;
+  if (f.state === "asked") return `asked of ${r.askedOf ?? "its owner"} by ${r.by}`;
+  return undefined;
+}
+
+/**
+ * Ninth UX walk: the loop's open questions about critic findings that are settled now, retired with
+ * why: a person dismissed, waived, fixed or asked the finding in the gate's newest round, or that
+ * round (every lens in) no longer raises it. An assistant's own resolution settles nothing. The
+ * gate is the one the stage's last critic round ran at. True when one was retired.
+ */
+export async function retireSettledEscalations(
+  root: string,
+  change: string,
+  loop: StageLoop,
+  at: string,
+): Promise<boolean> {
+  const asked = loop.findings.filter((f) => f.question && f.source === "critic");
+  if (!asked.length || !loop.critic.length) return false;
+  const gate = loop.critic.at(-1)!.gate;
+  const round = (await roundsOf(root, change, gate).catch(() => [] as number[])).at(-1);
+  if (round === undefined) return false;
+  const meta = await readRoundMeta(root, change, gate, round).catch(() => undefined);
+  const complete = !(meta?.lenses ?? []).some((l) => l.state === "waiting" || l.state === "failed");
+  const { findings } = await readRound(root, change, gate, round);
+  let any = false;
+  for (const f of asked) {
+    const hit = findings.find((x) => criticFingerprint(x.finding) === f.target);
+    let why: string | undefined;
+    if (hit) {
+      const words = assistantClosed(hit.finding) ? undefined : settledWords(hit.finding);
+      if (words) why = `Its critic finding ${hit.finding.id} was ${words}.`;
+    } else if (complete)
+      why = `Round ${round} at the ${gate} gate no longer raises it: ${f.message}`;
+    if (why && (await retireOpen(root, f.question!, why, at))) any = true;
+  }
+  return any;
+}
+
+/**
+ * Ninth UX walk: after a person acts on a critic finding (the app's Not relevant, `atticus
+ * finding`), each of the change's stage loops retires the questions it raised about findings that
+ * are settled now, so Home and Questions stop showing them before the stage runs again.
+ */
+export async function retireChangeEscalations(
+  root: string,
+  change: string,
+  at: string,
+): Promise<string[]> {
+  const dir = changeFolder(root, change);
+  const touched: string[] = [];
+  for (const stage of Stage.options) {
+    const { loop, present } = await readStageLoop(dir, change, stage);
+    if (present && (await retireSettledEscalations(root, change, loop, at))) touched.push(stage);
+  }
+  return touched;
+}
+
 async function criticIssues(
   root: string,
   change: string,

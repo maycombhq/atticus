@@ -40,6 +40,11 @@ export interface ChangeTask {
   stories: string[];
   line: number;
   done: boolean;
+  /**
+   * Ninth UX walk: marked [P] (Spec Kit's marker): it may go together with the [P] tasks next to
+   * it in its repo. Otherwise a task waits for the earlier tasks of its repo (taskrun's ready list).
+   */
+  parallel?: boolean;
 }
 
 const TASK_LINE = /^(\s*[-*]\s+\[)([ xX]?)(\]\s+)(\S+)\s+(.*)$/;
@@ -69,6 +74,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
       stories,
       line: i + 1,
       done: m[2]!.toLowerCase() === "x",
+      ...(/(^|\s)\[P\](\s|$)/.test(rest) ? { parallel: true } : {}),
     });
   });
   return out;

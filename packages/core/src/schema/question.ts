@@ -33,6 +33,9 @@ import { BasePath, HostPattern } from "./workspace.js";
  * person's); `batch` names the batch that applied an answer (by AI, or by a person's rule), so
  * Undo removes exactly it; `rule` says a person's rule applied it, from which correction. All
  * optional; version-1 to version-4 files read as before and come back as version 5 in memory.
+ * Version 5 also (ninth UX walk, before it was released) carries a critic knowledge gap's owner
+ * question: `askedOf` (the team or person a person's Ask routed it to) and `finding` (the gap it
+ * asks about, by change, gate, round and id). Both optional.
  */
 export const QUESTION_SCHEMA_VERSION = 5 as const;
 
@@ -267,6 +270,20 @@ export const Question = z
      * that raised it unless the question said otherwise. Left out where no stage owns it.
      */
     role: QuestionRole.optional(),
+    /**
+     * Version 5 (ninth UX walk): a critic knowledge gap a person routed with Ask: who it is
+     * asked of (a team or a person, the finding's owner unless they named another).
+     */
+    askedOf: z.string().trim().min(1).optional(),
+    /** Version 5 (ninth UX walk): the knowledge gap it asks about; its answer closes the gap at the gate. */
+    finding: z
+      .strictObject({
+        change: RecordId,
+        gate: RecordId,
+        round: z.number().int().positive(),
+        id: RecordId,
+      })
+      .optional(),
     state: QuestionState,
     /** The command to run once it is answered; it reads the answer. */
     rerun: z.string().min(1),

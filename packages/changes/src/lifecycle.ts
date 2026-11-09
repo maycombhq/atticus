@@ -3,9 +3,11 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  askedGapQuestionId,
   Finding,
   isAssistantResolution,
   listQuestions,
+  readQuestion,
   PHASES,
   type ChangeLifecycle,
   type ChangeType,
@@ -366,6 +368,19 @@ export async function checkFindings(
         continue;
       }
       const x = r.data;
+      // Ninth UX walk: a knowledge gap a person asked of its owner waits for the owner question
+      // Ask raised; a person's answer closes it here. (An ask from before the question existed has
+      // none on file, and stays closed as it was.)
+      if (x.severity === "gap" && x.state === "asked") {
+        const q = await readQuestion(root, askedGapQuestionId(change.id, x)).catch(() => undefined);
+        if (q?.state === "open")
+          reasons.push({
+            code: "open-gap",
+            finding: x.id,
+            message: `Knowledge gap ${x.id} on the ${gate} gate (round ${round}) was asked of ${q.askedOf ?? x.resolution?.askedOf ?? "its owner"} and waits for the answer (owner question ${q.id}, in Questions, Owner questions): ${x.summary}`,
+          });
+        continue;
+      }
       // An assistant's resolution of a blocking finding closes nothing (ADR 0115 addendum,
       // 2026-10-25): only a person's does. A file from before the rule still blocks.
       const byAssistant = x.severity === "blocking" && isAssistantResolution(x.resolution);

@@ -88,7 +88,7 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
       );
       setSaved(r);
       setWords("");
-      setNote({ ok: true, text: O.saved(r.file) });
+      setNote({ ok: true, text: q.finding ? O.savedGap(q.finding.gate) : O.saved(r.file) });
       p.onAnswered();
     } catch (err) {
       setNote({ ok: false, text: message(err) });
@@ -110,6 +110,11 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
         {O.ask(q.owner, q.system, q.channel)} · <code className="mono">{q.id}</code>
       </span>
       {q.routeTo && <span className="muted">{O.routeTo(q.routeTo)}</span>}
+      {q.finding && (
+        <span className="muted" style={{ fontSize: 12.5 }}>
+          {O.fromFinding(q.finding.change, q.finding.gate, q.finding.id)}
+        </span>
+      )}
       <span className="muted" style={{ fontSize: 12.5 }}>
         {O.needs(q.neededFact)}
       </span>
@@ -145,7 +150,7 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
           {note.text}
         </p>
       )}
-      {saved && <Propose scope="owner-answers" />}
+      {saved && !q.finding && <Propose scope="owner-answers" />}
     </article>
   );
 }

@@ -962,6 +962,18 @@ export function Breakdown({ hash }: { hash: string }) {
 /** A task's row on the Task board, for a link's `?task=` (an id is safe in an element id). */
 const taskRowId = (task: string) => `task-row-${task.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 
+/**
+ * Ninth UX walk: what a task waits for, in words ("Waits for 1.1 (same repo)"); undefined when it
+ * waits for nothing or is done.
+ */
+export function taskWaitsWords(t: Pick<Task, "done" | "waits">): string | undefined {
+  if (t.done || !t.waits?.tasks.length) return undefined;
+  const same = new Set(t.waits.sameRepo);
+  return T.waitsForTasks(
+    t.waits.tasks.map((id) => (same.has(id) ? T.sameRepo(id) : id)).join(", "),
+  );
+}
+
 function TasksByRepo({
   change,
   span,
@@ -1086,6 +1098,11 @@ function TasksByRepo({
                           </span>
                           {!ran[x.id] && (
                             <TaskRunState change={change} task={x} onDone={tasks.reload} />
+                          )}
+                          {taskWaitsWords(x) && (
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              {taskWaitsWords(x)}
+                            </span>
                           )}
                           <TaskTick change={change} task={x} onDone={tasks.reload} />
                           {ran[x.id] && (

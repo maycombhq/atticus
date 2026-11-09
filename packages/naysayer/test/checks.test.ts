@@ -79,6 +79,23 @@ describe("deterministic checks", () => {
     ]);
   });
 
+  it("doesn't hold the gate on a pattern rule while the registry is empty (ninth UX walk)", async () => {
+    const root = await forgeChangeRoot();
+    await rm(join(root, "org-pack/patterns"), { recursive: true, force: true });
+    await write(
+      root,
+      `openspec/changes/${CHANGE}/interfaces.md`,
+      `${IFACE_HEADER}| new | reports-job | ledger-db | D.JDBC | read entry | x | planned-new |
+| new | portal-bff | audit-svc | none | POST /audit/events | x | planned-new |
+`,
+    );
+    const r = await runCritic(root, CHANGE, { now: NOW, gate: "design" });
+    // Nothing to check against is not a failure: no "Use a code from the registry: ." findings.
+    expect(summaries(r, "constitution.interface-approved-pattern")).toEqual([]);
+    for (const f of r.findings)
+      expect(f.finding.fix?.text ?? "").not.toMatch(/registry(: \.| \(\))/);
+  });
+
   it("finds a touched catalog interface that takes the wrong route (d01)", async () => {
     const root = await forgeChangeRoot();
     await edit(

@@ -37,9 +37,12 @@ const by = (step: string, rerun = `atticus change feature add-holds`) => ({
 });
 
 describe("the role of a stage", () => {
-  it("is the stage's owner: feature product, architecture architecture, stories analysis, tasks delivery", () => {
+  it("is the stage's owner: define product, feature and architecture architecture, stories analysis, tasks delivery", () => {
     expect(QUESTION_ROLES).toEqual(["product", "architecture", "analysis", "delivery"]);
-    expect(roleOfStep("change-feature")).toBe("product");
+    // Ninth UX walk: the feature stage places the change on the estate, which ADR 0181 gives the
+    // architect ("The architect places it on the estate and decides the design").
+    expect(roleOfStep("change-feature")).toBe("architecture");
+    expect(roleOfStep("change-brief")).toBe("product");
     expect(roleOfStep("change-define")).toBe("product");
     expect(roleOfStep("change-architecture")).toBe("architecture");
     expect(roleOfStep("change-design")).toBe("architecture");
@@ -55,7 +58,7 @@ describe("the role of a stage", () => {
     expect(roleOfStep("context-gap", "atticus change architecture add-holds")).toBe("architecture");
     expect(roleOfStep("knowledge-conflict", "atticus plan stories add-holds")).toBe("analysis");
     expect(roleOfStep("context-gap", "atticus task run add-holds 1.1")).toBe("delivery");
-    expect(roleOfStep("context-gap", "atticus change feature add-holds")).toBe("product");
+    expect(roleOfStep("context-gap", "atticus change feature add-holds")).toBe("architecture");
   });
 
   it("is none for a step outside a change's phases (a repo's survey)", () => {
@@ -136,7 +139,7 @@ describe("the migration", () => {
     expect(y.schemaVersion).toBe(QUESTION_SCHEMA_VERSION);
     expect(y.role).toBeUndefined();
     const { questions } = await listQuestions(root);
-    expect(roleOfQuestion(questions[0]!)).toBe("product");
+    expect(roleOfQuestion(questions[0]!)).toBe("architecture");
     expect(await migrateQuestions(root, { dryRun: true })).toEqual([]);
   });
 });
