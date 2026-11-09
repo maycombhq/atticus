@@ -61,7 +61,10 @@ describe.skipIf(typeof (nodeModule as { registerHooks?: unknown }).registerHooks
       const r = await loaded(["--help"]);
       expect(r.out).toContain(`atticus ${VERSION}`);
       const owners = [...new Set(r.files.map(owner))].sort();
-      expect(owners).toEqual(["packages/cli", "packages/core"]);
+      expect(owners).toEqual(["packages/ai", "packages/cli", "packages/core"]);
+      // Round 47: the option table is ai's cli-options entry (node:util only), never the rest of ai.
+      for (const f of r.files.filter((x) => owner(x) === "packages/ai"))
+        expect(f).toMatch(/\/ai\/dist\/cli-options\.js$/);
       // Only core's light entry (the schema version and the log), never its schemas.
       for (const f of r.files.filter((x) => owner(x) === "packages/core"))
         expect(f).toMatch(/\/core\/dist\/(light|log|fs|schema\/version)\.js$/);
