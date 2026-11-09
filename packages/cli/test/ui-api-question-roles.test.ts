@@ -168,6 +168,9 @@ describe("role-owned questions in the questions API (ADR 0181 part 4)", () => {
     expect(r.questions.map((q) => q.id)).toEqual([ids.architecture]);
     // The counts are the change's, whatever role was listed, so a page can show each role's.
     expect(r.counts?.byRole?.product?.open).toBe(1);
+    // Review round 46: the other counts are the role's, as the list is.
+    expect(r.counts).toMatchObject({ open: 1, answered: 0, retired: 0, total: 1 });
+    expect(Object.keys(r.counts?.byRepo ?? {})).toEqual(["forge-ledger"]);
     const all = Api.QuestionList.parse((await call("/api/questions?role=analysis")).body);
     expect(all.questions.map((q) => q.id)).toEqual([ids.stories]);
     expect((await call("/api/questions?role=developer")).status).toBe(400);

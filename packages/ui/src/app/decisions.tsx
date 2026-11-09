@@ -58,12 +58,34 @@ export const DecisionsContext = createContext<Decisions | undefined>(undefined);
 export function DecisionsProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<Loaded<View> | undefined>();
   const asked = useRef(false);
+  // Review round 46: one load at a time. A burst of file changes while one is out asks once more
+  // when it lands, so an older answer never lands after a newer one.
+  const inFlight = useRef(false);
+  const again = useRef(false);
   const load = useCallback(() => {
     asked.current = true;
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = true;
     setView((v) => (v?.state === "ready" ? v : { state: "loading" }));
+    const landed = () => {
+      inFlight.current = false;
+      if (again.current) {
+        again.current = false;
+        load();
+      }
+    };
     api<View>("/api/decisions").then(
-      (data) => setView({ state: "ready", data }),
-      (e: unknown) => setView({ state: "error", error: errorOf(e) }),
+      (data) => {
+        setView({ state: "ready", data });
+        landed();
+      },
+      (e: unknown) => {
+        setView({ state: "error", error: errorOf(e) });
+        landed();
+      },
     );
   }, []);
   useLiveEvents((e) => {
@@ -772,7 +794,14 @@ export function MakeReadingRule(p: {
 // ------------------------------------------------------------------ Undo a batch
 
 /** What Undo did: removed, put back, and what it left because it changed since. */
-export function UndoResultView({ r }: { r: Api.UndoBatchResultT }) {
+export function UndoResultView({
+  r,
+  onDismiss,
+}: {
+  r: Api.UndoBatchResultT;
+  /** Review round 46: a page that keeps the result past the reload closes it here. */
+  onDismiss?: () => void;
+}) {
   // Ninth UX walk: the result takes the focus, never the page's body.
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -800,6 +829,13 @@ export function UndoResultView({ r }: { r: Api.UndoBatchResultT }) {
         commit={r.commit}
         scope={r.files.some((f) => f.endsWith(".corrections.jsonl")) ? "corrections" : "answers"}
       />
+      {onDismiss && (
+        <div>
+          <button type="button" className="btn" onClick={onDismiss}>
+            {COPY.app.dismiss}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

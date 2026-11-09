@@ -423,6 +423,8 @@ export function QuestionList(p: {
   onSelect?: (ids: string[], on: boolean) => void;
   /** Eighth UX walk: the change the page is opened for; a question's link keeps it. */
   change?: string | undefined;
+  /** Review round 46: the role the list is filtered to; a question's link keeps it too. */
+  role?: string | undefined;
 }) {
   const text = p.text ?? "";
   const pickable = (q: QuestionView) => !!p.onSelect && q.state === "open";
@@ -515,7 +517,10 @@ export function QuestionList(p: {
                           p.onSelect && <span className="q-check-gap" aria-hidden="true" />
                         )}
                         <a
-                          href={`#/questions/${q.id}${p.change ? `?change=${encodeURIComponent(p.change)}` : ""}`}
+                          href={withRoleScope(`#/questions/${q.id}`, {
+                            ...(p.change ? { change: p.change } : {}),
+                            ...(p.role ? { role: p.role } : {}),
+                          })}
                           aria-current={q.id === p.current ? "true" : undefined}
                           className="q-item"
                           title={q.question}
@@ -1017,6 +1022,45 @@ export function bulkBody(f: {
   return { body: f.how === "target" ? { target: v, scope: "repo" } : { text: v, scope: "repo" } };
 }
 
+/** What a bulk answer did: the questions answered, and why each of the others wasn't. */
+export interface BulkResult {
+  ok: string[];
+  failed: { id: string; why: string }[];
+}
+
+/** A bulk answer's result: how many were answered, why the others weren't, and what to run next. */
+export function BulkResultView({ r, onDismiss }: { r: BulkResult; onDismiss: () => void }) {
+  // The form it came from may be gone: the result takes the focus, never the page's body.
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, [r]);
+  return (
+    <div
+      role="status"
+      className="stack"
+      tabIndex={-1}
+      ref={ref}
+      style={{ gap: 4, marginBottom: 10 }}
+    >
+      <p className="state" style={{ margin: 0 }}>
+        {C.bulk.done(r.ok.length)}
+      </p>
+      {r.failed.map((f) => (
+        <p key={f.id} className="state error" style={{ margin: 0 }}>
+          {f.id}: {f.why}
+        </p>
+      ))}
+      {r.ok.length > 0 && <code className="mono">{C.bulk.next}</code>}
+      <div>
+        <button type="button" className="btn" onClick={onDismiss}>
+          {COPY.app.dismiss}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Several open questions answered the same way (beta.14): where their calls go (a repo, system or
  * team, the first question's picks offered), or the same words. Each is answered on its own, as
@@ -1025,7 +1069,8 @@ export function bulkBody(f: {
 export function BulkAnswer(p: {
   ids: string[];
   questions: QuestionView[];
-  onDone: (answered: string[]) => void;
+  /** What it did; the page shows it (BulkResultView), as the form goes with the answered ones. */
+  onDone: (r: BulkResult) => void;
   onClear: () => void;
 }) {
   const targetsOnly = p.questions.every((q) => q.askedBy.step === "facts-targets");
@@ -1033,7 +1078,6 @@ export function BulkAnswer(p: {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [result, setResult] = useState<{ ok: string[]; failed: { id: string; why: string }[] }>();
   const picks = useApi<Api.TargetPickListT>(`/api/questions/${p.ids[0]}/targets`);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1055,8 +1099,7 @@ export function BulkAnswer(p: {
       }
     }
     setBusy(false);
-    setResult({ ok, failed });
-    p.onDone(ok);
+    p.onDone({ ok, failed });
   };
   return (
     <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)} noValidate>
@@ -1109,19 +1152,6 @@ export function BulkAnswer(p: {
         <p role="alert" className="state error" style={{ margin: 0 }}>
           {error}
         </p>
-      )}
-      {result && (
-        <div role="status" className="stack" style={{ gap: 4 }}>
-          <p className="state" style={{ margin: 0 }}>
-            {C.bulk.done(result.ok.length)}
-          </p>
-          {result.failed.map((f) => (
-            <p key={f.id} className="state error" style={{ margin: 0 }}>
-              {f.id}: {f.why}
-            </p>
-          ))}
-          {result.ok.length > 0 && <code className="mono">{C.bulk.next}</code>}
-        </div>
       )}
       <div className="row" style={{ gap: 8 }}>
         <button type="submit" className="btn primary" disabled={busy}>
@@ -1426,7 +1456,10 @@ export function Questions({ hash }: { hash: string }) {
   const [whose, setWhose] = useState<"all" | "mine">("all");
   // ADR 0181 part 4: one change's questions and one role's, from the address (Home links here).
   const [scope, setScope] = useState(() => roleScopeOf(hash));
-  useEffect(() => setScope(roleScopeOf(hash)), [hash]);
+  // Review round 46: the address sets the scope when its change or role changes, not when only
+  // the question opened does, so opening one keeps the role picked.
+  const hashScope = JSON.stringify(roleScopeOf(hash));
+  useEffect(() => setScope(JSON.parse(hashScope) as ReturnType<typeof roleScopeOf>), [hashScope]);
   const fetched = useApi<QuestionListView>(withRoleScope(questionsUrl(filter, whose), scope));
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
@@ -1444,6 +1477,9 @@ export function Questions({ hash }: { hash: string }) {
   const [text, setText] = useState("");
   const [repo, setRepo] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Review round 46: what the last bulk answer did, kept past the reload that takes the answered
+  // ones off an open list (and the form with them), until the person closes it.
+  const [bulkDone, setBulkDone] = useState<BulkResult | undefined>();
   const select = (ids: string[], on: boolean) =>
     setSelected((x) => {
       const n = new Set(x);
@@ -1570,15 +1606,22 @@ export function Questions({ hash }: { hash: string }) {
                 selected={selected}
                 onSelect={select}
                 change={forChange}
+                role={scope.role}
               />
             </Panel>
             <section className="panel" style={{ gridColumn: "span 7" }}>
+              {bulkDone && <BulkResultView r={bulkDone} onDismiss={() => setBulkDone(undefined)} />}
               {picked.length > 0 ? (
                 <BulkAnswer
                   key={picked.map((q) => q.id).join(",")}
                   ids={picked.map((q) => q.id)}
                   questions={picked}
-                  onDone={() => list.reload()}
+                  onDone={(r) => {
+                    setBulkDone(r);
+                    // The answered ones are let go; what failed stays picked, to try again.
+                    select(r.ok, false);
+                    list.reload();
+                  }}
                   onClear={() => setSelected(new Set())}
                 />
               ) : current ? (

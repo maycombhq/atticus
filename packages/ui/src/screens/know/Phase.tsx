@@ -974,6 +974,20 @@ export function taskWaitsWords(t: Pick<Task, "done" | "waits">): string | undefi
   );
 }
 
+/** Review round 46: the tasks whose state differs between two reads of the board (or left it). */
+export function tasksThatChanged(before: readonly Task[], after: readonly Task[]): Set<string> {
+  const now = new Map(after.map((t) => [t.id, JSON.stringify(t)]));
+  const out = new Set<string>();
+  for (const t of before) if (now.get(t.id) !== JSON.stringify(t)) out.add(t.id);
+  return out;
+}
+
+/** The same per-task record without the tasks named; the same object when none is in it. */
+export function withoutTasks<V>(o: Record<string, V>, ids: ReadonlySet<string>): Record<string, V> {
+  if (!Object.keys(o).some((k) => ids.has(k))) return o;
+  return Object.fromEntries(Object.entries(o).filter(([k]) => !ids.has(k)));
+}
+
 function TasksByRepo({
   change,
   span,
@@ -1006,9 +1020,21 @@ function TasksByRepo({
   useLiveEvents((e) => {
     if (e.type !== "run.changed" && e.type !== "file.changed") return;
     tasks.reload();
-    setRan({});
-    setRunOf({});
   });
+  // Review round 46: a task's own message goes only when that task's state changed in the board
+  // read again; any other file's change leaves every message where it is.
+  const board = tasks.state === "ready" ? tasks.data : undefined;
+  const seen = useRef<readonly Task[] | undefined>(undefined);
+  useEffect(() => {
+    if (!board) return;
+    const before = seen.current;
+    seen.current = board;
+    if (!before) return;
+    const moved = tasksThatChanged(before, board);
+    if (moved.size === 0) return;
+    setRan((o) => withoutTasks(o, moved));
+    setRunOf((o) => withoutTasks(o, moved));
+  }, [board]);
   // Each task keeps its own outcome: set from the latest state, so two runs don't erase each other.
   const say = (id: string, text: string) => setRan((o) => ({ ...o, [id]: text }));
   const run = async (t: Task) => {

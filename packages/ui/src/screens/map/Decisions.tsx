@@ -7,6 +7,7 @@ import {
   DecidePaused,
   SplitCounts,
   UndoBatch,
+  UndoResultView,
   useDecisions,
   type Decision,
 } from "../../app/decisions.js";
@@ -98,6 +99,18 @@ export function DecisionsPage(p: {
   const release = (item: string) =>
     setHeld((h) => {
       const { [item]: _gone, ...rest } = h;
+      return rest;
+    });
+  // Review round 46: what each Undo did stays shown past the reload that marks its batch undone
+  // (and the file watcher's), until the person closes it.
+  const [undid, setUndid] = useState<Record<string, Api.UndoBatchResultT>>({});
+  const undone = (id: string, r: Api.UndoBatchResultT) => {
+    setUndid((u) => ({ ...u, [id]: r }));
+    p.of.reload?.();
+  };
+  const dismissUndo = (id: string) =>
+    setUndid((u) => {
+      const { [id]: _gone, ...rest } = u;
       return rest;
     });
   return (
@@ -269,15 +282,18 @@ export function DecisionsPage(p: {
                               <div className="hud">{D.record(b.file)}</div>
                             </td>
                             <td>
+                              {undid[b.id] && (
+                                <UndoResultView
+                                  r={undid[b.id]!}
+                                  onDismiss={() => dismissUndo(b.id)}
+                                />
+                              )}
                               {b.undone ? (
                                 <span className="chip dim">
                                   {D.undone(b.undone.by, day(b.undone.at))}
                                 </span>
                               ) : (
-                                <UndoBatch
-                                  b={b}
-                                  {...(p.of.reload ? { onDone: p.of.reload } : {})}
-                                />
+                                !undid[b.id] && <UndoBatch b={b} onDone={(r) => undone(b.id, r)} />
                               )}
                             </td>
                           </tr>

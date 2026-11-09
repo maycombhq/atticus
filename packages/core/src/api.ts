@@ -3145,7 +3145,8 @@ export const QuestionList = z.object({
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
   /**
    * 2.51.0: every question on file by state, whatever `state` or `mine` the list asked for, so a
-   * page shows its counts from the one request.
+   * page shows its counts from the one request. With `change` they are that change's; with `role`
+   * that role's, as the list is (`byRole` stays every role's).
    */
   counts: z
     .object({

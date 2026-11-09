@@ -7,6 +7,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Fixed
 
 - **The IntelliJ plugin names the brief step** ("Write the brief of <change>") as VS Code does. Its words check failed the beta.21 editor-plugins build, so beta.21 has no IntelliJ or JetBrains files attached; beta.22 carries them.
+- Review round 46 (app):
+  - Map › Decided by AI keeps what Undo did (removed and put back, the lines it left, and the Apply or Propose next steps) after the reload marks the batch undone, until you close it.
+  - Opening a question on Questions keeps the role filter: the question's link carries the role, and only a new change or role in the address resets it.
+  - Answering several questions at once keeps its result ("Answered N" and why each other failed) after the answered ones leave an open list, and lets the answered ones go from the picks.
+  - The canvas drops a focus answer that is older than the last one asked, or from before the lens changed.
+  - The AI's decisions load one at a time: a burst of file changes asks once more when the load out lands, so an older answer never lands last.
+  - Questions' counts follow the role filter (`GET /api/questions?role=` counts that role's questions, as it lists them; `counts.byRole` stays every role's).
+  - The artifact editor shows the saved text right after Save and saves next against the file as saved, so a quick second edit no longer gets a spurious "changed meanwhile".
+  - The Task board keeps each task's message until that task's own state changes, not on any file change.
 
 ## 2.0.0-beta.21 (2026-11-08)
 

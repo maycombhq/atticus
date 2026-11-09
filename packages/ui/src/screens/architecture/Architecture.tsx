@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
+import { latestCall } from "../../api/latest.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -183,6 +184,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
   const [corrected, setCorrected] = useState(false);
+  // Review round 46: a focus answer counts only if it is the newest asked, in this picture.
+  const focusCall = useRef(latestCall()).current;
+  const dropFocus = () => {
+    focusCall.drop();
+    setFocus(undefined);
+  };
 
   const load = useCallback(
     async (id: string, into?: Views) => {
@@ -287,7 +294,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setExpanded(new Set(at.expanded));
       setCurrent(at.current);
       setSelected(at.selected);
-      setFocus(undefined);
+      dropFocus();
       setInPlace(new Set());
     } catch (e) {
       // A box the catalog no longer has leaves the picture where it is; anything else is said.
@@ -314,7 +321,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setCurrent(id);
       setSelected(id);
       setStepError(undefined);
-      setFocus(undefined);
+      dropFocus();
       setInPlace(new Set());
     } catch (e) {
       if (e instanceof StalePicture) return;
@@ -333,7 +340,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setCurrent(parent);
       setInPlace(new Set());
     } else closeHere(id);
-    setFocus(undefined);
+    dropFocus();
   };
 
   /** Open a part inside the picture (a group around its children), or close it again. */
@@ -363,13 +370,20 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     });
 
   const showFocus = async (id: string) => {
+    const at0 = epoch.current;
+    const newest = focusCall.start();
+    // An answer for another lens, or older than the last ask (or a move since), is dropped.
+    const stillAsked = () => newest() && epoch.current === at0;
     try {
-      setFocus(
-        await api<Api.GraphFocusViewT>(`/api/graph/focus/${encodeURIComponent(id)}?lens=${lens}`),
+      const f = await api<Api.GraphFocusViewT>(
+        `/api/graph/focus/${encodeURIComponent(id)}?lens=${lens}`,
       );
+      if (!stillAsked()) return;
+      setFocus(f);
       setSelected(id);
       setStepError(undefined);
     } catch (e) {
+      if (!stillAsked()) return;
       stepFailed(e);
     }
   };
@@ -592,7 +606,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                       onClick={() => {
                         if (c.id !== current) setInPlace(new Set());
                         setCurrent(c.id);
-                        setFocus(undefined);
+                        dropFocus();
                       }}
                     >
                       {c.label}
@@ -740,7 +754,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               ready={arrangement.state === "ready"}
               saving={keeping.state === "saving"}
               moved={arrangement.state === "ready" ? arrangement.moved : 0}
-              {...(focus ? { onFocusOff: () => setFocus(undefined) } : {})}
+              {...(focus ? { onFocusOff: () => dropFocus() } : {})}
               onKeep={() => {
                 if (!Object.keys(pinned).length)
                   setKeeping({ state: "error", text: WORDS.keptNothing });

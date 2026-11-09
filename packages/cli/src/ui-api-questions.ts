@@ -71,23 +71,24 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               isChangeQuestion(q, change, { stages, restsOn: routedAll.about[q.id]?.restsOn }),
             )
           : routedAll.questions;
+        // Review round 46: the counts are of the role's questions with role=, as the list is; the
+        // per-role counts stay the change's, so a page can still say each role's.
+        const ofRole = role ? base.filter((q) => roleOf(q) === role) : base;
         const routed = {
           ...routedAll,
-          questions: base.filter(
-            (q) => (!state || q.state === state) && (!role || roleOf(q) === role),
-          ),
+          questions: ofRole.filter((q) => !state || q.state === state),
         };
         const listed = { problems: every.problems };
-        const n = (s: string) => base.filter((q) => q.state === s).length;
+        const n = (s: string) => ofRole.filter((q) => q.state === s).length;
         const body = {
           counts: {
             open: n("open"),
             answered: n("answered"),
             retired: n("retired"),
-            total: base.length,
+            total: ofRole.length,
             byRepo: Object.fromEntries(
-              [...new Set(base.map((q) => q.repo))].sort().map((r) => {
-                const of = base.filter((q) => q.repo === r);
+              [...new Set(ofRole.map((q) => q.repo))].sort().map((r) => {
+                const of = ofRole.filter((q) => q.repo === r);
                 const k = (s: string) => of.filter((q) => q.state === s).length;
                 return [
                   r,

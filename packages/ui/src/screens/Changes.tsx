@@ -359,6 +359,9 @@ export function ArtifactEditor({
   // Someone saved meanwhile (409): the person's text is kept and the file read again, so the
   // next Save goes against the file as it is now.
   const [changedMeanwhile, setChangedMeanwhile] = useState(false);
+  // Review round 46: the save's own answer (its text and sha), used until the file read again
+  // lands, so the box never shows the text from before the save and the next Save goes against it.
+  const [saved, setSaved] = useState<{ from: string; content: string; sha256: string }>();
   const ready = a.state === "ready";
   useEffect(() => {
     if (ready) box.current?.focus();
@@ -370,98 +373,107 @@ export function ArtifactEditor({
       meta={a.state === "ready" ? a.data.path : undefined}
     >
       <View of={a}>
-        {(d) => (
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              setChangedMeanwhile(false);
-              void act.run(
-                () =>
-                  api(artifactUrl(change, artifact, file), {
-                    method: "PUT",
-                    body: { content: text ?? d.content, baseSha256: d.sha256 },
-                  })
-                    .then(() => {
-                      setText(undefined);
-                      a.reload();
-                      onSaved?.();
+        {(loaded) => {
+          const d =
+            saved && saved.from === loaded.sha256
+              ? { ...loaded, content: saved.content, sha256: saved.sha256 }
+              : loaded;
+          return (
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                setChangedMeanwhile(false);
+                void act.run(
+                  () =>
+                    api<{ content: string; sha256: string }>(artifactUrl(change, artifact, file), {
+                      method: "PUT",
+                      body: { content: text ?? d.content, baseSha256: d.sha256 },
                     })
-                    .catch((e: unknown) => {
-                      if (e instanceof ApiError && e.problem.status === 409)
-                        setChangedMeanwhile(true);
-                      throw e;
-                    }),
-                T.saved(d.path),
-              );
-            }}
-            onKeyDown={escapeCloses(onClose)}
-            className="stack"
-          >
-            <label htmlFor={textId} className="sr">
-              {T.text(file ?? artifact)}
-            </label>
-            {/* Eighth UX walk: the template's guidance, readable beside the text. */}
-            {templateHints(d.content).length > 0 && (
-              <div id={`${textId}-hints`} className="work-why" style={{ margin: 0 }}>
-                <span className="hud" style={{ fontSize: 10 }}>
-                  {T.templateAsks}
-                </span>
-                <ul style={{ margin: "4px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
-                  {templateHints(d.content).map((h) => (
-                    <li key={h}>{h}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <textarea
-              ref={box}
-              id={textId}
-              aria-describedby={templateHints(d.content).length > 0 ? `${textId}-hints` : undefined}
-              value={text ?? d.content}
-              onChange={(e) => setText(e.target.value)}
-              rows={18}
-              spellCheck
-              style={{
-                width: "100%",
-                background: "var(--box)",
-                color: "var(--text)",
-                border: "1px solid var(--line-2)",
-                borderRadius: 8,
-                padding: 12,
-                font: "13px/1.6 var(--mono)",
+                      .then((r) => {
+                        setSaved({ from: loaded.sha256, content: r.content, sha256: r.sha256 });
+                        setText(undefined);
+                        a.reload();
+                        onSaved?.();
+                      })
+                      .catch((e: unknown) => {
+                        if (e instanceof ApiError && e.problem.status === 409)
+                          setChangedMeanwhile(true);
+                        throw e;
+                      }),
+                  T.saved(d.path),
+                );
               }}
-            />
-            <div className="row">
-              <button type="submit" className="btn primary" disabled={act.busy}>
-                {T.save}
-              </button>
-              {/* Eighth UX walk: unsaved text is cancelled (the file stays as it was). */}
-              <button type="button" className="btn" onClick={onClose}>
-                {text !== undefined && text !== d.content ? T.cancel : T.close}
-              </button>
-              <span className="muted" style={{ fontSize: 12 }}>
-                {T.ifSomeoneSavedMeanwhile}
-              </span>
-            </div>
-            <Note note={act.note} />
-            {changedMeanwhile && (
-              <p role="alert" className="state error">
-                {T.changedMeanwhile}{" "}
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    // The text stays; the file is read again, so Save goes against it.
-                    setChangedMeanwhile(false);
-                    a.reload();
-                  }}
-                >
-                  {T.reloadKeepMine}
+              onKeyDown={escapeCloses(onClose)}
+              className="stack"
+            >
+              <label htmlFor={textId} className="sr">
+                {T.text(file ?? artifact)}
+              </label>
+              {/* Eighth UX walk: the template's guidance, readable beside the text. */}
+              {templateHints(d.content).length > 0 && (
+                <div id={`${textId}-hints`} className="work-why" style={{ margin: 0 }}>
+                  <span className="hud" style={{ fontSize: 10 }}>
+                    {T.templateAsks}
+                  </span>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+                    {templateHints(d.content).map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <textarea
+                ref={box}
+                id={textId}
+                aria-describedby={
+                  templateHints(d.content).length > 0 ? `${textId}-hints` : undefined
+                }
+                value={text ?? d.content}
+                onChange={(e) => setText(e.target.value)}
+                rows={18}
+                spellCheck
+                style={{
+                  width: "100%",
+                  background: "var(--box)",
+                  color: "var(--text)",
+                  border: "1px solid var(--line-2)",
+                  borderRadius: 8,
+                  padding: 12,
+                  font: "13px/1.6 var(--mono)",
+                }}
+              />
+              <div className="row">
+                <button type="submit" className="btn primary" disabled={act.busy}>
+                  {T.save}
                 </button>
-              </p>
-            )}
-          </form>
-        )}
+                {/* Eighth UX walk: unsaved text is cancelled (the file stays as it was). */}
+                <button type="button" className="btn" onClick={onClose}>
+                  {text !== undefined && text !== d.content ? T.cancel : T.close}
+                </button>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {T.ifSomeoneSavedMeanwhile}
+                </span>
+              </div>
+              <Note note={act.note} />
+              {changedMeanwhile && (
+                <p role="alert" className="state error">
+                  {T.changedMeanwhile}{" "}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      // The text stays; the file is read again, so Save goes against it.
+                      setChangedMeanwhile(false);
+                      a.reload();
+                    }}
+                  >
+                    {T.reloadKeepMine}
+                  </button>
+                </p>
+              )}
+            </form>
+          );
+        }}
       </View>
     </Panel>
   );
