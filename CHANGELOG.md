@@ -2,6 +2,18 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.23 (unreleased)
+
+### Fixed
+
+- Review round 50 (planner):
+  - **A story or task keeps its number when the stories are drafted again.** They were numbered afresh each run, so a repo the architecture stage added (sorting before the others) moved every story and task after it: a task run under `tasks/<label>/` belonged to another task, a story file was replaced under a new name (a person's edit lost), and tasks.md's ticks and corrections landed on other tasks. The numbers are kept in `stage/stories-numbers.yaml` (it rides with every hand-off): a story is the same one by repo and flow; a step by today's step it changes or removes, or, added, by its kind, the step it goes after, the component it calls or table it stores in, and its ordinal; a task by its first step, else a step it covered. New ones get the next free number, a removed one leaves a gap, never reused. A removed story's file a person edited is kept and said, and a task run whose label now names another task (a change drafted before the numbers were kept) is said, never silently reused. Stage messages name a task by the label a person types, with its id when they differ ("Task 2.2 (id 2.3) has no acceptance criteria").
+  - **proposal.md has one owner per section.** The feature stage writes it and the stories stage only its Capabilities, each keeping the other's; a file another stage wrote as it is now is no person's edit, so the feature stage no longer takes proposal.md for a person's draft and `atticus critic act … edit-and-apply` no longer refuses every edit as one to a rendered file.
+  - **A tick in tasks.md isn't an edit of the draft.** Every edit check (the stage loop, stage/drafted.yaml, the critic's edit-and-apply) hashes tasks.md with its boxes aside, one helper (`editSha`); a hash kept before still matches.
+  - **A step's words on two lines stay on one task line.** A multi-line or CRLF `what` broke tasks.md's checkbox line (the story went to the next line, and its ticks were lost); a task's title and words are collapsed to one line.
+  - **Two repos' migrations of one name are two.** The deploy order keyed migrations by file name, so two repos' `V2__init.sql` were one; they are keyed by repo and file, and a missing one is named with its repo.
+  - **Two flows' requirements in one capability are told apart.** A merged spec delta gave both the story's name and `openspec validate --strict` refused the duplicate; the later one is named with its flow.
+
 ## 2.0.0-beta.22 (2026-11-09)
 
 ### Fixed

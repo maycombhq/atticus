@@ -36,7 +36,8 @@ interface Need {
 }
 
 const codeKey = (repo: string) => `code:${repo}`;
-const migrationKey = (file: string) => `migration:${file}`;
+// Review round 50: a migration is its repo's: two repos' V2__init.sql are two migrations.
+const migrationKey = (repo: string, file: string) => `migration:${repo}:${file}`;
 
 /** The entry that starts a delta's flow, as the catalog keys it, and the flow's component. */
 function flowEntry(d: FlowDelta, e: Estate): { key?: string; component: string } {
@@ -66,8 +67,8 @@ export function deployNeeds(deltas: FlowDelta[], e: Estate): { units: Unit[]; ne
     for (const s of d.steps) {
       if (s.op === "remove" || !s.store?.migration?.trim()) continue;
       const file = fileOf(s.store.migration);
-      const u = units.get(migrationKey(file)) ?? {
-        key: migrationKey(file),
+      const u = units.get(migrationKey(d.repo, file)) ?? {
+        key: migrationKey(d.repo, file),
         kind: "migration" as const,
         repo: d.repo,
         name: file,
@@ -159,6 +160,11 @@ export function deployIssues(
   const { units, needs } = deployNeeds(deltas, e);
   const codes = units.filter((u) => u.kind === "code");
   const migrations = units.filter((u) => u.kind === "migration");
+  // A migration's name, and the repo it is in when another repo's migration has the same name.
+  const twin = (u: Unit) =>
+    u.kind === "migration" && migrations.some((m) => m !== u && m.name === u.name);
+  const named = (u: Unit) => (twin(u) ? `${u.name} (in ${u.repo})` : u.name);
+  const targetOf = (u: Unit) => (twin(u) ? `${u.repo}:${u.name}` : u.name);
   if (!deploy?.length) {
     if (!needs.length && codes.length < 2) return [];
     const order = suggestedOrder(units, needs)
@@ -193,12 +199,19 @@ export function deployIssues(
       return undefined;
     }
     if (!s.migration) return codeKey(s.repo);
-    const key = migrationKey(fileOf(s.migration));
+    // The repo's own migration of that name; else the one migration of that name there is.
+    const file = fileOf(s.migration);
+    const one = migrations.filter((m) => m.name === file);
+    const key = units.some((u) => u.key === migrationKey(s.repo, file))
+      ? migrationKey(s.repo, file)
+      : one.length === 1
+        ? one[0]!.key
+        : migrationKey(s.repo, file);
     if (!units.some((u) => u.key === key)) {
       out.push({
         rule: "delta.deploy-unknown-migration",
         target: `deploy#${n}`,
-        message: `Step ${n} of the deploy order runs migration ${s.migration}, which no target flow names: name the migration a step gives under store.migration${migrations.length ? ` (${migrations.map((m) => m.name).join(", ")})` : ""}.`,
+        message: `Step ${n} of the deploy order runs migration ${s.migration}, which no target flow ${migrations.some((m) => m.name === fileOf(s.migration!)) ? `of ${s.repo} ` : ""}names: name the migration a step gives under store.migration${migrations.length ? ` (${migrations.map(named).join(", ")})` : ""}.`,
         blocking: true,
       });
       return undefined;
@@ -219,8 +232,8 @@ export function deployIssues(
     if (pos(u.key) < 0)
       out.push({
         rule: "delta.deploy-missing",
-        target: `deploy:${u.name}`,
-        message: `The deploy order doesn't run migration ${u.name}, which changes ${u.tables.join(", ")}: add a step with migration: ${u.name}, before the code that needs it.`,
+        target: `deploy:${targetOf(u)}`,
+        message: `The deploy order doesn't run migration ${named(u)}, which changes ${u.tables.join(", ")}: add a step${twin(u) ? ` for ${u.repo}` : ""} with migration: ${u.name}, before the code that needs it.`,
         blocking: true,
         repo: u.repo,
       });
@@ -233,10 +246,10 @@ export function deployIssues(
     const then = byKey.get(n.then)!;
     out.push({
       rule: "delta.deploy-order",
-      target: `deploy:${first.name}>${then.name}`,
+      target: `deploy:${targetOf(first)}>${then.name}`,
       message:
         n.why.kind === "migration"
-          ? `The deploy order puts ${then.name} (step ${t + 1}) before migration ${first.name} (step ${f + 1}), but ${then.name} reads or writes ${n.why.table}, which that migration changes: run the migration first.`
+          ? `The deploy order puts ${then.name} (step ${t + 1}) before migration ${named(first)} (step ${f + 1}), but ${then.name} reads or writes ${n.why.table}, which that migration changes: run the migration first.`
           : `The deploy order puts ${then.name} (step ${t + 1}) before ${first.name} (step ${f + 1}), but ${then.name} calls ${n.why.callee}'s ${n.why.verb} ${n.why.entry}: deploy ${first.name} first.`,
       blocking: true,
       repo: then.repo,

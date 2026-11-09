@@ -24,3 +24,4 @@ export * from "./openspec-stores.js";
 export * from "./outside.js";
 export * from "./merge-record.js";
 export * from "./owners.js";
+export * from "./edit-hash.js";

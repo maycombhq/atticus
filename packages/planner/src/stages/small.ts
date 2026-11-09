@@ -43,6 +43,7 @@ import {
   type StageSpec,
 } from "./loop.js";
 import { FeaturePlacement, FlowDelta, STAGE_SCHEMA_VERSION } from "./schema.js";
+import { readStoryNumbers } from "./numbers.js";
 import {
   checkStories,
   coverageIssues,
@@ -53,7 +54,8 @@ import {
   partsOf,
   RequestIn,
   stepTasks,
-  storiesFromDeltas,
+  numberedStories,
+  taskName,
   unjudgedChecks,
   unwrittenChecks,
   writeStories,
@@ -228,20 +230,26 @@ const andWords = (xs: string[]) =>
 
 /** The story checks' words, with each story and task named as the assistant wrote them. */
 function inOwnWords(issues: StageIssue[], stories: DeltaStory[]): StageIssue[] {
-  const tasks = stories.flatMap((s) => s.tasks);
+  // Review round 50: a message names a task by its label and id (taskName); the longest names
+  // first, in one pass, so "1.2 (id 1.3)" is never read as task 1.2.
+  const named = stories
+    .flatMap((s) => s.tasks.map((t) => ({ t, name: taskName(s, t) })))
+    .sort((a, b) => b.name.length - a.name.length);
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = named.length
+    ? new RegExp(`\\bTask (${named.map((n) => esc(n.name)).join("|")})('s)?(?!\\w|\\.\\d)`, "g")
+    : undefined;
   return issues.map((i) => {
     let message = i.message;
     for (const s of stories)
       message = message.replaceAll(`Story ${s.id}`, `The story for flow ${s.flow}`);
-    for (const t of tasks) {
-      // B-tasks: a task covering several steps is named by all of them.
-      const at = partsOf(t).map((p) => String(p.position));
-      message = message.replace(
-        new RegExp(`\\bTask ${t.id.replace(".", "\\.")}('s)?\\b`, "g"),
-        (_m, s: string | undefined) =>
-          `Step${at.length === 1 ? "" : "s"} ${andWords(at)} of flow ${t.flow}${s ? "'s task's" : "'s task"}`,
-      );
-    }
+    if (pattern)
+      message = message.replace(pattern, (_m, n: string, s: string | undefined) => {
+        const t = named.find((x) => x.name === n)!.t;
+        // B-tasks: a task covering several steps is named by all of them.
+        const at = partsOf(t).map((p) => String(p.position));
+        return `Step${at.length === 1 ? "" : "s"} ${andWords(at)} of flow ${t.flow}${s ? "'s task's" : "'s task"}`;
+      });
     message = message.replace(
       /Story flow:(\S+) isn't one of the stories[^:]*: .*$/,
       (_m, f: string) => `There is a story for flow ${f}, which has no target flow with steps.`,
@@ -430,6 +438,8 @@ export async function smallStage(
     now: o.now ?? new Date(),
   };
 
+  // Review round 50: the stories' and tasks' numbers a run before gave, kept.
+  const kept = await readStoryNumbers(dir);
   /** Everything the three stages' files come from, derived from the one answer. */
   const derive = (a: SmallAnswer) => {
     const placement = FeaturePlacement.parse({
@@ -445,10 +455,10 @@ export async function smallStage(
       questions: [],
     });
     const { deltas, reads } = splitAnswer({ flows: a.targetFlows, reads: a.reads });
-    const stories = storiesFromDeltas(deltas, estate);
+    const { stories, numbers } = numberedStories(deltas, estate, kept);
     const wording = wordingOf(a, stories);
     const requests = mergeRequests(wording, deltas, items);
-    return { placement, deltas, reads, stories, wording, requests };
+    return { placement, deltas, reads, stories, numbers, wording, requests };
   };
 
   const spec: StageSpec<SmallAnswer> = {
@@ -545,6 +555,7 @@ export async function smallStage(
           // ADR 0125: a field's required the story leaves out is the catalog's.
           {
             estate,
+            numbers: d.numbers,
             asker: {
               command: `atticus change small ${change.id}`,
               rerun: `atticus change knowledge ${change.id}`,

@@ -41,6 +41,7 @@ import {
   scoreRisk,
   testPlanFor,
   writeFileAtomic,
+  wroteThis,
   type ChangeContext,
 } from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
@@ -123,6 +124,15 @@ import {
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
 import {
+  lastPart,
+  readStoryNumbers,
+  stepKeys,
+  storyKey,
+  storyNumber,
+  writeStoryNumbers,
+  type StoryNumbers,
+} from "./numbers.js";
+import {
   fieldNames,
   parseAt,
   parseNewFile,
@@ -152,6 +162,11 @@ type Process = RecordOf<"ProcessDefinition">;
 
 export interface DeltaTask {
   id: string;
+  /**
+   * The task's label, when it isn't its place in the story (`taskLabel`): a task that kept its
+   * number while one before it went (review round 50, numbers.ts). Left out otherwise.
+   */
+  label?: string;
   story: string;
   repo: string;
   flow: string;
@@ -231,15 +246,27 @@ export interface DoneStep {
 
 /**
  * A task's number as people see it (ADR 0124 addendum B-short): `<story>.<task>`, numbered per
- * story without gaps (1.1, 1.2, 2.1 …), in the story files, tasks.md, the prompts and the ADO
- * export. The task's id (`DeltaTask.id`, the first step's, with gaps) stays the stable key of the
- * story writer's answer, the judgments and the critic's findings.
+ * story (1.1, 1.2, 2.1 …), in the story files, tasks.md, the prompts and the ADO export. The
+ * task's id (`DeltaTask.id`, the first step's, with gaps) stays the stable key of the story
+ * writer's answer, the judgments and the critic's findings. Review round 50: both are kept from
+ * run to run (numbers.ts), so a task removed since leaves a gap in its story's labels.
  */
 export function taskLabel(s: DeltaStory, t: DeltaTask | string): string {
   const id = typeof t === "string" ? t : t.id;
   const k = s.tasks.findIndex((x) => x.id === id);
   const n = /^s(\d+)-/.exec(s.id)?.[1] ?? "1";
-  return k < 0 ? id : `${n}.${k + 1}`;
+  // Review round 50: a task keeps the label it had (numbers.ts), so a gap stays a gap.
+  return k < 0 ? id : (s.tasks[k]!.label ?? `${n}.${k + 1}`);
+}
+
+/**
+ * A task as a stage's message names it (review round 50): its label, which a person types
+ * (`atticus task <label>`), with the id the story writer's answer keys it by when they differ.
+ */
+export function taskName(s: DeltaStory | undefined, t: DeltaTask | string): string {
+  const id = typeof t === "string" ? t : t.id;
+  const label = s ? taskLabel(s, id) : id;
+  return label === id ? id : `${label} (id ${id})`;
 }
 
 /**
@@ -417,6 +444,9 @@ export interface RequestTask {
   catalogueItem?: string;
 }
 
+/** Text on one line: a step's words with a line break (CRLF too) or runs of spaces, collapsed. */
+export const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+
 const ev = (repo: string, e: { path?: string; line?: number }[]) =>
   e.filter((x) => x.path).map((x) => `${repo}:${x.path}${x.line ? `:${x.line}` : ""}`);
 
@@ -426,19 +456,63 @@ const ev = (repo: string, e: { path?: string; line?: number }[]) =>
  * B-tasks: each step is worked out as a task of its own, then the steps are grouped into the
  * tasks a developer takes (`groupTasks`), and a step existing code already does is a note.
  */
-export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
+export function storiesFromDeltas(all: FlowDelta[], e: Estate, kept?: StoryNumbers): DeltaStory[] {
+  return numberedStories(all, e, kept).stories;
+}
+
+/** Each repo's number: the kept one, else the next free one, in the repos' order. */
+function repoNumbers(repos: string[], kept: StoryNumbers | undefined): Map<string, number> {
+  const out = new Map(Object.entries(kept?.repos ?? {}));
+  let next = Math.max(0, ...out.values());
+  for (const r of repos) if (!out.has(r)) out.set(r, ++next);
+  return out;
+}
+
+/**
+ * The stories and tasks (`storiesFromDeltas`), numbered as the change numbered them before
+ * (review round 50, numbers.ts): a story or task still there keeps its id and label, a new one
+ * gets the next free number, a removed one leaves a gap. With nothing kept, numbered afresh: the
+ * stories by repo, then target flow; the steps per repo; the tasks per story. Also the numbers to
+ * keep: every number the change has used.
+ */
+export function numberedStories(
+  all: FlowDelta[],
+  e: Estate,
+  kept?: StoryNumbers,
+): { stories: DeltaStory[]; numbers: StoryNumbers } {
   const deltas = all.filter((d) => !isEmptyDelta(d));
   const repos = [...new Set(deltas.map((d) => d.repo))].sort();
   const stories: DeltaStory[] = [];
+  const repoNo = repoNumbers(repos, kept);
+  const keptSteps = new Map(Object.entries(kept?.steps ?? {}));
+  // The last step number each repo has used.
   const counter = new Map<string, number>();
-  let k = 0;
+  for (const id of keptSteps.values()) {
+    const r = id.split(".")[0]!;
+    counter.set(r, Math.max(counter.get(r) ?? 0, lastPart(id)));
+  }
+  const keptStories = kept?.stories ?? [];
+  let k = Math.max(0, ...keptStories.map((s) => storyNumber(s.id)));
+  const steps: Record<string, string> = {};
+  const storyRecords: StoryNumbers["stories"] = [];
   for (const repo of repos)
     for (const d of deltas.filter((x) => x.repo === repo)) {
       const spec = e.flowById.get(d.flow);
       const today = spec?.flow;
       const entry = spec ? triggerEntry(spec, e) : d.trigger?.entry;
       const name = d.name ?? today?.name ?? d.flow;
-      const id = `s${++k}-${slug(d.flow.split(".").slice(1).join("-") || d.flow).slice(0, 40)}`;
+      const had = keptStories.find((x) => x.repo === repo && x.flow === d.flow);
+      const id =
+        had?.id ?? `s${++k}-${slug(d.flow.split(".").slice(1).join("-") || d.flow).slice(0, 40)}`;
+      const keys = stepKeys(d);
+      const r = String(repoNo.get(repo)!);
+      const stepId = (i: number) => {
+        const was = keptSteps.get(keys[i]!);
+        if (was && was.split(".")[0] === r) return was;
+        const n = (counter.get(r) ?? 0) + 1;
+        counter.set(r, n);
+        return `${r}.${n}`;
+      };
       const tasks: DeltaTask[] = [];
       const twins = d.steps.map((s) => twinsOf(d, s, e));
       // B-place: an added step whose `uses` line already does it, in an existing flow.
@@ -464,10 +538,9 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
           : fresh
             ? []
             : neighbour;
-        const what = s.what ?? old?.what ?? "";
+        // Review round 50: one line, so a title on a checkbox line of tasks.md stays on it.
+        const what = oneLine(s.what ?? old?.what ?? "");
         const fields = [...new Set([...fieldNames(s.fields), ...(s.store?.columns ?? [])])];
-        const n = (counter.get(repo) ?? 0) + 1;
-        counter.set(repo, n);
         const verb = s.op === "add" ? "Add" : s.op === "change" ? "Change" : "Remove";
         const data = taskData(s, e);
         // B-place: a step with no place is never given a neighbour's file in a new flow (B-tasks
@@ -491,8 +564,10 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
                     ? "neighbour"
                     : "trigger";
         const files = taskFiles(d, s, old, entry, cited, e);
+        const sid = stepId(i);
+        steps[keys[i]!] = sid;
         tasks.push({
-          id: `${repos.indexOf(repo) + 1}.${n}`,
+          id: sid,
           story: id,
           repo,
           flow: d.flow,
@@ -522,6 +597,12 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
         });
       });
       const grouped = groupTasks(tasks, twins, dones);
+      storyRecords.push({
+        repo,
+        flow: d.flow,
+        id,
+        tasks: labelTasks(id, grouped, keys, had?.tasks ?? []),
+      });
       stories.push({
         id,
         repo,
@@ -545,7 +626,59 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
     s.dependsOn = stories
       .filter((o) => o !== s && stepTasks(s).some((t) => adds(o, t)))
       .map((o) => o.id);
-  return stories;
+  // In the order of their numbers: a story added later comes after the ones already there.
+  stories.sort((a, b) => storyNumber(a.id) - storyNumber(b.id));
+  // Every number the change has used stays, so a removed story's, step's or task's isn't reused.
+  const current = new Set(storyRecords.map((x) => storyKey(x.repo, x.flow)));
+  const numbers: StoryNumbers = {
+    schemaVersion: 1,
+    repos: Object.fromEntries(repoNo),
+    steps: { ...(kept?.steps ?? {}), ...steps },
+    stories: [
+      ...storyRecords.map((x) => {
+        const labels = new Set(x.tasks.map((t) => t.label));
+        const gone = (
+          keptStories.find((o) => o.repo === x.repo && o.flow === x.flow)?.tasks ?? []
+        ).filter((t) => !labels.has(t.label));
+        return { ...x, tasks: [...x.tasks, ...gone] };
+      }),
+      ...keptStories.filter((x) => !current.has(storyKey(x.repo, x.flow))),
+    ].sort((a, b) => storyNumber(a.id) - storyNumber(b.id)),
+  };
+  return { stories, numbers };
+}
+
+/**
+ * Each task's label (numbers.ts): the kept label of the task that started with the same step,
+ * else of one that covered a step it covers, else the story's next free number. Sets `label` on a
+ * task whose label isn't its place in the story (`taskLabel`); returns the labels to keep.
+ */
+function labelTasks(
+  story: string,
+  tasks: DeltaTask[],
+  keys: string[],
+  kept: StoryNumbers["stories"][number]["tasks"],
+): StoryNumbers["stories"][number]["tasks"] {
+  const n = /^s(\d+)-/.exec(story)?.[1] ?? "1";
+  const partKeys = tasks.map((t) => partsOf(t).map((p) => keys[p.position - 1]!));
+  const label: (string | undefined)[] = tasks.map(() => undefined);
+  const free = new Set(kept.map((t) => t.label));
+  const claim = (i: number, match: (x: (typeof kept)[number]) => boolean) => {
+    if (label[i]) return;
+    const was = kept.find((x) => free.has(x.label) && match(x));
+    if (!was) return;
+    label[i] = was.label;
+    free.delete(was.label);
+  };
+  tasks.forEach((_, i) => claim(i, (x) => x.steps[0] === partKeys[i]![0]));
+  tasks.forEach((_, i) => claim(i, (x) => x.steps.some((k) => partKeys[i]!.includes(k))));
+  let next = Math.max(0, ...kept.map((t) => lastPart(t.label)));
+  tasks.forEach((t, i) => {
+    label[i] ??= `${n}.${++next}`;
+    if (label[i] !== `${n}.${i + 1}`) t.label = label[i];
+    else delete t.label;
+  });
+  return tasks.map((_, i) => ({ label: label[i]!, steps: partKeys[i]! }));
 }
 
 /** An existing step of another flow of the repo that does what an added step does (B-tasks). */
@@ -1797,8 +1930,8 @@ export function checkStories(
             "stories.unknown-check",
             `${t.id}:${f}`,
             accepted.length > 1
-              ? `Task ${t.id}: a criterion says it checks ${f}, which isn't a field of task ${t.id} or of the tasks it also accepts (${andList(accepted.slice(1).map((y) => y.id))}); their fields: ${fields.join(", ") || "none"}.`
-              : `Task ${t.id}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
+              ? `Task ${taskName(want, t)}: a criterion says it checks ${f}, which isn't a field of task ${t.id} or of the tasks it also accepts (${andList(accepted.slice(1).map((y) => y.id))}); their fields: ${fields.join(", ") || "none"}.`
+              : `Task ${taskName(want, t)}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
             t.repo,
           );
       }
@@ -1806,7 +1939,7 @@ export function checkStories(
         issue(
           "stories.no-criteria",
           t.id,
-          `Task ${t.id} (${t.title}) has no acceptance criteria.`,
+          `Task ${taskName(want, t)} (${t.title}) has no acceptance criteria.`,
           t.repo,
         );
       else {
@@ -1819,7 +1952,7 @@ export function checkStories(
           out.push({
             rule: "stories.no-error-case",
             target: t.id,
-            message: `Task ${t.id} (${t.title}) ${kind === "validate" ? "validates input" : kind === "write" ? "writes data" : "calls another system"} but no criterion says what happens when that fails: add one with outcome: error (${kind === "validate" ? "the input is rejected and with what" : kind === "write" ? "the write fails and what the caller sees" : "the call fails or times out and what the caller sees"}).`,
+            message: `Task ${taskName(want, t)} (${t.title}) ${kind === "validate" ? "validates input" : kind === "write" ? "writes data" : "calls another system"} but no criterion says what happens when that fails: add one with outcome: error (${kind === "validate" ? "the input is rejected and with what" : kind === "write" ? "the write fails and what the caller sees" : "the call fails or times out and what the caller sees"}).`,
             blocking: false,
             repo: t.repo,
           });
@@ -1828,7 +1961,7 @@ export function checkStories(
           issue(
             "stories.field-not-checked",
             t.id,
-            `Task ${t.id}'s criteria check no value of ${unchecked.join(", ")}: write a criterion whose then clause asserts each, and list it under that criterion's checks.`,
+            `Task ${taskName(want, t)}'s criteria check no value of ${unchecked.join(", ")}: write a criterion whose then clause asserts each, and list it under that criterion's checks.`,
             t.repo,
           );
       }
@@ -2081,7 +2214,7 @@ export function checkSections(
             push(
               "stories.field-no-error-case",
               target,
-              `Story ${s.id}: no criterion says what happens when ${f.name}, a ${f.side} field ${i.entry} gains or changes, is wrong: add one with outcome: error that checks ${f.name}, saying the status and message the caller sees${own[0] ? ` (on task ${own[0].t.id})` : ""}.`,
+              `Story ${s.id}: no criterion says what happens when ${f.name}, a ${f.side} field ${i.entry} gains or changes, is wrong: add one with outcome: error that checks ${f.name}, saying the status and message the caller sees${own[0] ? ` (on task ${taskName(s, own[0].t)})` : ""}.`,
               true,
               s.repo,
             );
@@ -2093,7 +2226,7 @@ export function checkSections(
         push(
           "stories.unknown-entry",
           `${t.id}:${c.entry}`,
-          `Task ${t.id}: the criterion "${c.text}" names the entry ${c.entry}, which neither the target flows nor the catalog have.`,
+          `Task ${taskName(s, t)}: the criterion "${c.text}" names the entry ${c.entry}, which neither the target flows nor the catalog have.`,
           true,
           t.repo,
           c.text,
@@ -2126,7 +2259,7 @@ export function checkSections(
           push(
             "stories.data-missing",
             target,
-            `Task ${t.id} adds ${t.data.table}.${col}, but the data changes say none ("${(w.data as { none: string }).none}"): list the column with its type, nullable, default, migration, classification and retention.`,
+            `Task ${taskName(s, t)} adds ${t.data.table}.${col}, but the data changes say none ("${(w.data as { none: string }).none}"): list the column with its type, nullable, default, migration, classification and retention.`,
             true,
             t.repo,
           );
@@ -2144,7 +2277,7 @@ export function checkSections(
           push(
             "stories.data-differs",
             target,
-            `Task ${t.id}: the data changes say ${t.data.table}.${col} has ${differs.map((k) => `${k} ${r![k]}`).join(" and ")}, but the target flow says ${differs.map((k) => `${k} ${flow[k]}`).join(" and ")}. Write what the target flow says, or change the target flow in the architecture stage.`,
+            `Task ${taskName(s, t)}: the data changes say ${t.data.table}.${col} has ${differs.map((k) => `${k} ${r![k]}`).join(" and ")}, but the target flow says ${differs.map((k) => `${k} ${flow[k]}`).join(" and ")}. Write what the target flow says, or change the target flow in the architecture stage.`,
             true,
             t.repo,
           );
@@ -2152,7 +2285,7 @@ export function checkSections(
           push(
             "stories.data-differs",
             `${target}:migration`,
-            `Task ${t.id}: the data changes name the migration ${r.migration} for ${col}, but the target flow names ${t.data.migration}.`,
+            `Task ${taskName(s, t)}: the data changes name the migration ${r.migration} for ${col}, but the target flow names ${t.data.migration}.`,
             true,
             t.repo,
           );
@@ -2166,7 +2299,7 @@ export function checkSections(
           push(
             "stories.data-incomplete",
             target,
-            `Task ${t.id} adds ${t.data.table}.${col}, and nothing says its ${andList(lacks)}: add ${lacks.length === 1 ? "it" : "them"} to the column's data change${written ? "" : " (the story has no data changes yet)"}.`,
+            `Task ${taskName(s, t)} adds ${t.data.table}.${col}, and nothing says its ${andList(lacks)}: add ${lacks.length === 1 ? "it" : "them"} to the column's data change${written ? "" : " (the story has no data changes yet)"}.`,
             written,
             t.repo,
           );
@@ -2181,7 +2314,7 @@ export function checkSections(
         push(
           "stories.write-no-migration",
           t.id,
-          `Task ${t.id} writes ${t.data.new ? `the new table ${t.data.table}` : `${t.data.added.join(", ")} to ${t.data.table}`}, but neither the target flow nor the data changes name the migration that makes ${t.data.new ? "it" : t.data.added.length === 1 ? "the column" : "the columns"}: name it on the column's data change (the file the repo's migrations would call it).`,
+          `Task ${taskName(s, t)} writes ${t.data.new ? `the new table ${t.data.table}` : `${t.data.added.join(", ")} to ${t.data.table}`}, but neither the target flow nor the data changes name the migration that makes ${t.data.new ? "it" : t.data.added.length === 1 ? "the column" : "the columns"}: name it on the column's data change (the file the repo's migrations would call it).`,
           written,
           t.repo,
         );
@@ -2224,7 +2357,7 @@ export function checkSections(
         push(
           "stories.unknown-name",
           k,
-          `Task ${t.id}: the criterion "${c.text}" names ${n}, which reads like a field but neither the target flows nor the catalog know it. Name the field as the code does, or say it in plain words.`,
+          `Task ${taskName(s, t)}: the criterion "${c.text}" names ${n}, which reads like a field but neither the target flows nor the catalog know it. Name the field as the code does, or say it in plain words.`,
           false,
           t.repo,
           c.text,
@@ -3466,7 +3599,7 @@ function renderTasks(
     for (const s of stories.filter((x) => x.repo === repo))
       for (const t of s.tasks) {
         // B-short: numbered per story without gaps; ticked as before (a person's ticks are kept).
-        const line = `${taskLabel(s, t)} ${t.title} (story ${s.id})`;
+        const line = `${taskLabel(s, t)} ${oneLine(t.title)} (story ${s.id})`;
         lines.push(`- [${ticked?.has(line) ? "x" : " "}] ${line}`);
         // B-tasks: a request for any step the task covers or notes as done waits on it.
         const waits = waitsOf(s, t, requests);
@@ -3546,16 +3679,27 @@ export async function writeStories(
   /** Criteria's claims no judgment settled: noted under them for the story lens and the reviewer. */
   unjudged: UnwrittenCheck[] = [],
   /** The definition of done, the repos' commands and the test kinds (B-stories). */
-  extras: Omit<StoryFileExtras, "requests"> = {},
+  extras: WriteStoriesExtras = {},
 ): Promise<string[]> {
   // B-tasks: the answer is kept keyed by task, as the story files show it.
   const a = foldAnswer(answer, stories);
   const dir = changeFolder(root, change);
   const keep = new Set(stories.map((s) => `${s.id}.md`));
+  // Review round 50: a story the target flows no longer have goes, unless a person edited its
+  // file since a stage wrote it: then it stays, and the stage says so.
+  const wrote = await writtenHashes(dir);
   for (const f of await readdir(join(dir, "stories")).catch(() => [] as string[])) {
     if (keep.has(f) || !f.endsWith(".md")) continue;
-    if ((await readFile(join(dir, "stories", f), "utf8")).startsWith(GENERATED_MARK))
-      await rm(join(dir, "stories", f));
+    const text = await readFile(join(dir, "stories", f), "utf8");
+    if (!text.startsWith(GENERATED_MARK)) continue;
+    const h = wrote.get(`stories/${f}`);
+    if (h && ![...h].some((x) => wroteThis(`stories/${f}`, text, x))) {
+      extras.notes?.push(
+        `stories/${f} is a story the target flows no longer have, and a person edited it since Atticus wrote it, so it is kept: delete it once its words are no longer needed.`,
+      );
+      continue;
+    }
+    await rm(join(dir, "stories", f));
   }
   // B-task-knowledge: each task's own knowledge, listed under it, recorded in the change's list,
   // and the pages that disagree about it asked of a person once.
@@ -3606,7 +3750,9 @@ export async function writeStories(
   const ticked = tickedTasks(await readFile(join(dir, "tasks.md"), "utf8").catch(() => ""));
   await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests, ticked));
   files.push(...(await writeSpecFiles(dir, spec.files)));
-  if (spec.proposal && (await writeProposal(dir, spec.proposal))) files.push("proposal.md");
+  // Review round 50: only its Capabilities; the feature stage writes the rest.
+  if (spec.proposal && (await writeProposal(dir, spec.proposal, "stories")))
+    files.push("proposal.md");
   await writeFileAtomic(join(dir, "requests.md"), renderRequests(requests));
   // ADR 0101: the same requests join the change's needs, beside what change needs found.
   await mergeStoryRequests(root, change, requests, now);
@@ -3614,7 +3760,76 @@ export async function writeStories(
     join(dir, ...ANSWER_FILE.split("/")),
     `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
   );
+  // Review round 50: the numbers given, so the next run keeps them.
+  if (extras.numbers) await writeStoryNumbers(dir, extras.numbers);
   return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
+}
+
+/** What writeStories takes beside the story files' extras. */
+export type WriteStoriesExtras = Omit<StoryFileExtras, "requests"> & {
+  /** The stories' and tasks' numbers (numberedStories), kept in stage/stories-numbers.yaml. */
+  numbers?: StoryNumbers;
+  /** Where writeStories says what a person should know (a story file it kept). */
+  notes?: string[];
+};
+
+/** The hashes each stage that writes stories (stories, small) last recorded, by file. */
+async function writtenHashes(dir: string): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  for (const stage of ["stories", "small"]) {
+    const t = await readFile(join(dir, "stage", `${stage}.yaml`), "utf8").catch(() => undefined);
+    if (t === undefined) continue;
+    let w: unknown;
+    try {
+      w = (parse(t) as { written?: unknown } | null)?.written;
+    } catch {
+      continue;
+    }
+    if (!w || typeof w !== "object") continue;
+    for (const [f, h] of Object.entries(w as Record<string, unknown>))
+      if (typeof h === "string") out.set(f, new Set([...(out.get(f) ?? []), h]));
+  }
+  return out;
+}
+
+/**
+ * What a person should know when a rerun's tasks meet the task runs already kept (review round
+ * 50): a task run (tasks/<label>/task-run.yaml) whose label now names a task in another story or
+ * repo than tasks.md had it in, or no task at all. Its record stays; nothing is moved.
+ */
+export async function taskRunNotes(dir: string, stories: DeltaStory[]): Promise<string[]> {
+  const before = new Map<string, string | undefined>();
+  const md = await readFile(join(dir, "tasks.md"), "utf8").catch(() => "");
+  for (const m of md.matchAll(/^\s*[-*]\s+\[[ xX]\]\s+(\S+)\s.*?(?:\(story ([^)\s]+)\))?\s*$/gm))
+    before.set(m[1]!, m[2]);
+  const notes: string[] = [];
+  for (const e of await readdir(join(dir, "tasks"), { withFileTypes: true }).catch(() => [])) {
+    if (!e.isDirectory()) continue;
+    const t = await readFile(join(dir, "tasks", e.name, "task-run.yaml"), "utf8").catch(
+      () => undefined,
+    );
+    if (t === undefined) continue;
+    let repo: string | undefined;
+    try {
+      repo = (parse(t) as { repo?: string } | null)?.repo;
+    } catch {
+      repo = undefined;
+    }
+    const label = e.name;
+    const now = stories.flatMap((s) =>
+      s.tasks.filter((x) => taskLabel(s, x) === label).map((x) => ({ s, x })),
+    )[0];
+    const was = before.get(label);
+    if (!now)
+      notes.push(
+        `tasks/${label}/ has a task run, but the stories have no task ${label} any more: its record is kept; check whether its work is still needed.`,
+      );
+    else if ((was !== undefined && was !== now.s.id) || (repo && repo !== now.x.repo))
+      notes.push(
+        `tasks/${label}/ has a task run for ${was ? `the task of story ${was}` : `a task in ${repo}`}, but task ${label} is now ${now.x.title} (story ${now.s.id}, ${now.x.repo}): the run isn't this task's. Check it before running task ${label}; nothing was moved.`,
+      );
+  }
+  return notes;
 }
 
 /**
@@ -3801,6 +4016,8 @@ export interface DraftedStories {
   extras: Omit<StoryFileExtras, "requests">;
   /** The requests the writer named that cite a real item and step (no judge is asked here). */
   requests: RequestTask[];
+  /** The stories' and tasks' numbers, kept and given (review round 50). */
+  numbers: StoryNumbers;
 }
 
 /**
@@ -3835,11 +4052,12 @@ export async function draftedStories(root: string, changeId: string): Promise<Dr
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
-  const stories = storiesFromDeltas(deltas, estate);
+  const { stories, numbers } = numberedStories(deltas, estate, await readStoryNumbers(dir));
   return {
     change,
     dir,
     stories,
+    numbers,
     // B-tasks: an answer kept per step (before B-tasks) reads per task.
     answer: foldAnswer(answer, stories),
     extras: await storyExtras(ctx, change),
@@ -3869,6 +4087,7 @@ export async function rewriteStories(
   return writeStories(root, d.change.id, d.stories, d.answer, d.requests, now, open, {
     ...d.extras,
     estate,
+    numbers: d.numbers,
   });
 }
 
@@ -3944,7 +4163,10 @@ export async function storiesStage(
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
-  const stories = storiesFromDeltas(deltas, estate);
+  // Review round 50: numbered as before, so a story or task still there keeps its number.
+  const { stories, numbers } = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  const runNotes = await taskRunNotes(dir, stories);
+  const writeNotes: string[] = [];
   // B-stories: what the completeness check knows, and what each story file says beside the words.
   const sectionCheck: SectionCheckOptions = {
     sections: true,
@@ -4295,7 +4517,12 @@ Rules:
         change: change.id,
         now,
       });
-      return writeStories(root, change.id, stories, a, requests, now, open, { ...extras, estate });
+      return writeStories(root, change.id, stories, a, requests, now, open, {
+        ...extras,
+        estate,
+        numbers,
+        notes: writeNotes,
+      });
     },
     current: () => readStoriesAnswer(dir),
     locate: async (i) => (i.locateText ? locateInStories(dir, rel, i.locateText) : undefined),
@@ -4314,7 +4541,7 @@ Rules:
   res.context = context;
   await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
-  res.notes.push(...attached.notes);
+  res.notes.push(...attached.notes, ...runNotes, ...writeNotes);
   // ADR 0156: a flow these stories add as new that a repo's open seed adds too collides at
   // archive; the remedy is to accept the seed, then run this stage again.
   if (res.answer)

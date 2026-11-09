@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { toCanonicalYaml } from "@maycombhq/core";
-import { writeFileAtomic } from "@maycombhq/changes";
+import { editSha, writeFileAtomic, wroteThis } from "@maycombhq/changes";
 import { PlannerError } from "../errors.js";
 import { Stage } from "./schema.js";
 
@@ -106,9 +106,12 @@ export const CorrectionsFile = z.strictObject({
 });
 export type CorrectionsFile = z.infer<typeof CorrectionsFile>;
 
+/**
+ * A file's hash as the loop keeps it: line endings aside (a Windows checkout isn't an edit), and
+ * tasks.md's boxes (a tick is progress, not an edit; review round 50, `editSha`).
+ */
+export const draftSha = (s: string, file = "") => editSha(file, s);
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-/** A file's hash as the loop keeps it: line endings aside (a Windows checkout isn't an edit). */
-export const draftSha = (s: string) => sha(s.replace(/\r\n?/g, "\n"));
 
 async function readYaml<T>(
   file: string,
@@ -168,9 +171,9 @@ export async function recordAiDraft(
   for (const f of o.files) {
     const t = await readFile(join(dir, ...f.split("/")), "utf8").catch(() => undefined);
     if (t === undefined) continue;
-    const h = draftSha(t);
+    const h = draftSha(t, f);
     const was = out.files[f];
-    if (was?.by === "person" && was.sha256 === h) continue;
+    if (was?.by === "person" && wroteThis(f, t, was.sha256)) continue;
     if (was?.by === "ai" && was.sha256 === h && was.stage === o.stage) continue;
     out.files[f] = {
       by: "ai",
@@ -196,7 +199,7 @@ export async function recordPersonSave(
     change,
     files: {},
   };
-  d.files[o.file] = { by: "person", who: o.who, at: o.at, sha256: draftSha(o.content) };
+  d.files[o.file] = { by: "person", who: o.who, at: o.at, sha256: draftSha(o.content, o.file) };
   await writeDrafted(dir, d);
 }
 
@@ -222,17 +225,16 @@ export async function draftProvenance(
   for (const f of files) {
     const t = await readFile(join(dir, ...f.split("/")), "utf8").catch(() => undefined);
     if (t === undefined) continue;
-    const h = draftSha(t);
     const r = d?.files[f];
     if (r) {
-      if (r.sha256 !== h) out[f] = { by: "person" };
+      if (!wroteThis(f, t, r.sha256)) out[f] = { by: "person" };
       else if (r.by === "ai")
         out[f] = { by: "ai", stage: r.stage, ...(r.run ? { run: r.run } : {}), at: r.at };
       else out[f] = { by: "person", who: r.who, at: r.at };
       continue;
     }
     const w = written.find((x) => x.hashes[f] !== undefined);
-    if (w) out[f] = w.hashes[f] === h ? { by: "ai", stage: w.stage } : { by: "person" };
+    if (w) out[f] = wroteThis(f, t, w.hashes[f]) ? { by: "ai", stage: w.stage } : { by: "person" };
   }
   return out;
 }

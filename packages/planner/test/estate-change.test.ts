@@ -123,8 +123,8 @@ describe("a change across the estate the facts make", () => {
     expect(needs.map((n) => `${n.first} before ${n.then}`).sort()).toEqual([
       "code:forge-customers before code:forge-web",
       "code:forge-ledger before code:forge-customers",
-      "migration:V2__account_currency.sql before code:forge-ledger",
-      "migration:V2__customer_phone.sql before code:forge-customers",
+      "migration:forge-customers:V2__customer_phone.sql before code:forge-customers",
+      "migration:forge-ledger:V2__account_currency.sql before code:forge-ledger",
     ]);
     const note = deployIssues(deltas(), undefined, e);
     expect(note.map((i) => i.message)).toEqual([

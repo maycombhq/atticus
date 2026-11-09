@@ -253,14 +253,26 @@ export function specDeltas(
     if (d.added.length + d.modified.length + d.removed.length) out.push(d);
   }
   // Two stories on one capability (a flow named twice): their requirements in one file.
+  // Review round 50: each requirement's name once in the file (OpenSpec refuses a duplicate): an
+  // added one named as an earlier one is named with its flow too, then "(2)", "(3)" if need be.
   const merged: SpecDelta[] = [];
   for (const d of out) {
     const m = merged.find((x) => x.capability === d.capability);
     if (!m) merged.push(d);
     else {
-      m.added.push(...d.added);
+      const used = new Set(
+        [...m.added, ...m.modified, ...d.modified].map((r) => r.name.toLowerCase()),
+      );
+      for (const r of d.added) {
+        let name = r.name;
+        if (used.has(name.toLowerCase())) name = `${r.name} (${d.flow})`;
+        for (let n = 2; used.has(name.toLowerCase()); n++) name = `${r.name} (${d.flow}) (${n})`;
+        used.add(name.toLowerCase());
+        m.added.push(name === r.name ? r : { ...r, name });
+      }
       m.modified.push(...d.modified);
-      m.removed.push(...d.removed);
+      const gone = new Set(m.removed.map((r) => r.name.toLowerCase()));
+      m.removed.push(...d.removed.filter((r) => !gone.has(r.name.toLowerCase())));
     }
   }
   return merged;
@@ -440,12 +452,47 @@ export function renderProposal(
 }
 
 /** Write proposal.md unless a person wrote one (no mark): Atticus 1's proposals are kept. */
-export async function writeProposal(dir: string, text: string): Promise<boolean> {
+export async function writeProposal(
+  dir: string,
+  text: string,
+  /**
+   * Review round 50: who writes it. The feature stage owns every section but Capabilities, which
+   * the stories stage owns: each writes its own sections and keeps the other's as they are, so
+   * neither drops what the other wrote. Default the feature stage.
+   */
+  owner: "feature" | "stories" = "feature",
+): Promise<boolean> {
   const f = join(dir, "proposal.md");
   const had = await readFile(f, "utf8").catch(() => undefined);
   if (had !== undefined && !had.startsWith(PROPOSAL_MARK)) return false;
-  await writeFileAtomic(f, text);
+  await writeFileAtomic(f, had === undefined ? text : ownSections(had, text, owner));
   return true;
+}
+
+const CAPABILITIES = "Capabilities";
+
+/** The lines of a `## <heading>` section, the heading up to the next `## ` heading, if any. */
+function sectionAt(lines: string[], heading: string): [number, number] | undefined {
+  const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
+  if (start < 0) return undefined;
+  const next = lines.findIndex((l, i) => i > start && /^## \S/.test(l));
+  return [start, next < 0 ? lines.length : next];
+}
+
+/**
+ * proposal.md with each stage's own sections from what it renders and the other's from the file
+ * (review round 50): the stories stage replaces Capabilities alone; the feature stage writes the
+ * rest and keeps the Capabilities the stories stage wrote.
+ */
+export function ownSections(had: string, text: string, owner: "feature" | "stories"): string {
+  const old = had.replace(/\r\n?/g, "\n").split("\n");
+  const fresh = text.split("\n");
+  const [into, from] = owner === "stories" ? [old, fresh] : [fresh, old];
+  const at = sectionAt(into, CAPABILITIES);
+  const got = sectionAt(from, CAPABILITIES);
+  // Nothing to keep or no place for it: the stage's own render (as before).
+  if (!at || !got) return text;
+  return [...into.slice(0, at[0]), ...from.slice(got[0], got[1]), ...into.slice(at[1])].join("\n");
 }
 
 // ------------------------------------------------------------------ a change's files

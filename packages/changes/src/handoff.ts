@@ -153,7 +153,8 @@ async function handoffFiles(
       () => true,
       () => false,
     );
-  for (const own of ["stage/corrections.yaml", "stage/drafted.yaml"])
+  // Review round 50: the stories' and tasks' numbers too, so every clone numbers them alike.
+  for (const own of ["stage/corrections.yaml", "stage/drafted.yaml", "stage/stories-numbers.yaml"])
     if (await present(own)) files.add(own);
   if (phase === "build") {
     for (const extra of ["tasks.md", "repos.yaml"]) if (await present(extra)) files.add(extra);

@@ -10,6 +10,7 @@ export * from "./contracts.js";
 export * from "./deploy-order.js";
 export * from "./merge.js";
 export * from "./stories.js";
+export * from "./numbers.js";
 export * from "./openspec-files.js";
 export * from "./openspec-seed.js";
 export * from "./places.js";
