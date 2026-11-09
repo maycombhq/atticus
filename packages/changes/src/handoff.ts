@@ -12,6 +12,7 @@ import {
   changesRelOf,
   handoffBranch,
   listQuestions,
+  PHASES,
   questionsRelOf,
   type ChangeHandoff,
   type ChangeLifecycle,
@@ -136,18 +137,30 @@ async function handoffFiles(
     artifacts.push(art);
     for (const x of f) files.add(x);
   }
-  // On the stage path, the files the phase's stage wrote and its loop state (ADR 0087).
-  const stage = await phaseStage(ctx, a.change, phase);
-  if (stage) for (const f of await stageFiles(dir, stage)) files.add(f);
+  // On the stage path, the files the phase's stage wrote and its loop state (ADR 0087). Ninth UX
+  // walk: an earlier phase's stage's too, so a stage run after its phase's hand-off merged (the
+  // feature stage after Define's) reaches the metarepo with the next one; one already merged and
+  // unchanged adds nothing to the PR's diff.
+  const at = PHASES.indexOf(phase);
+  for (const step of ctx.policy.stages.filter((s) => PHASES.indexOf(s.phase) <= at)) {
+    if (await phaseStage(ctx, a.change, step.phase))
+      for (const f of await stageFiles(dir, step)) files.add(f);
+  }
+  // Ninth UX walk: the change's own records of its drafts (ADR 0181: a person's corrections, who
+  // drafted each file) ride with every hand-off, as they cover every stage.
+  const present = async (f: string) =>
+    readFile(join(dir, ...f.split("/"))).then(
+      () => true,
+      () => false,
+    );
+  for (const own of ["stage/corrections.yaml", "stage/drafted.yaml"])
+    if (await present(own)) files.add(own);
   if (phase === "build") {
-    for (const extra of ["tasks.md", "repos.yaml"]) {
-      try {
-        await readFile(join(dir, extra));
-        files.add(extra);
-      } catch {
-        // not there
-      }
-    }
+    for (const extra of ["tasks.md", "repos.yaml"]) if (await present(extra)) files.add(extra);
+    // Ninth UX walk: each task's report (tasks/<task>/report.md), not its run records.
+    for (const t of await readdir(join(dir, "tasks"), { withFileTypes: true }).catch(() => []))
+      if (t.isDirectory() && (await present(`tasks/${t.name}/report.md`)))
+        files.add(`tasks/${t.name}/report.md`);
   }
   for (const gate of phaseGates(ctx, phase))
     for (const f of await walkReview(dir, gate)) files.add(f);
