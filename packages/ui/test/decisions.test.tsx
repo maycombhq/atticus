@@ -16,7 +16,12 @@ import {
   staticDecisions,
   UndoResultView,
 } from "../src/app/decisions.js";
-import { decisionsShown, DecisionsPage } from "../src/screens/map/Decisions.js";
+import {
+  batchKindOf,
+  decideWhere,
+  decisionsShown,
+  DecisionsPage,
+} from "../src/screens/map/Decisions.js";
 
 /**
  * ADR 0181 parts 1 to 3, the screens: every AI decision carries "Detected by AI" (words, never
@@ -281,6 +286,10 @@ describe("Correct: what it spreads to", () => {
     expect(out).toContain(esc(D.saved(RESULT.answer)));
     expect(out).toContain(esc(D.savedBatch("b-20261108-110000-0f0f0f")));
     expect(out).toContain(esc(D.whatSpread));
+    // Ninth UX walk: Home's Apply and Propose for review in place, the commands under a terminal.
+    expect(out).toContain(esc(D.next));
+    expect(out).toContain(esc(COPY.propose.apply("forge-billing")));
+    expect(out).toContain(esc(D.terminal));
     expect(out).toContain("atticus verify forge-billing --write");
     expect(out).toContain(esc(RESULT.commit));
   });
@@ -354,6 +363,9 @@ describe("Undo a batch", () => {
     expect(out).toContain(esc(D.skipped));
     expect(out).toContain(esc("q-0123456789ab was answered by Priya Nair since"));
     expect(out).toContain("atticus verify forge-billing --write");
+    // Ninth UX walk: Apply in place, and the result takes the focus.
+    expect(out).toContain(esc(COPY.propose.apply("forge-billing")));
+    expect(out).toContain('tabindex="-1"');
   });
 });
 
@@ -471,6 +483,74 @@ describe("Map › Decided by AI", () => {
     expect(page({ state: "ready", data: VIEW }, { repo: "forge-cards" })).toContain(
       esc(D.itemsFiltered),
     );
+  });
+
+  it("says honestly where deciding happens, as runtime.yaml allows the runs (ninth UX walk)", () => {
+    const at = (decideIn: ("copilot-acp" | "hand-off")[] | undefined) =>
+      decideWhere({ ...VIEW.decide, ...(decideIn ? { decideIn } : {}) });
+    expect(at(["copilot-acp", "hand-off"])).toBe(D.decideIn.both);
+    expect(at(["hand-off"])).toBe(D.decideIn.handoff);
+    expect(at(["copilot-acp"])).toBe(D.decideIn.acp);
+    expect(at([])).toBe(D.decideIn.none);
+    expect(at(undefined)).toBeUndefined();
+    expect(
+      decideWhere({
+        ...VIEW.decide,
+        now: { links: "propose", questions: "propose" },
+        decideIn: [],
+      }),
+    ).toBeUndefined();
+    const out = page({
+      state: "ready",
+      data: { ...VIEW, decide: { ...VIEW.decide, decideIn: ["hand-off"] } },
+    });
+    expect(out).toContain(esc(D.decideIn.handoff));
+    expect(out).toContain('href="#/ai"');
+  });
+
+  it("labels the links' counts the map as last applied, and says the standing lines when they differ", () => {
+    const out = page({
+      state: "ready",
+      data: {
+        ...VIEW,
+        links: {
+          ...VIEW.links,
+          counts: { fromCode: 0, byPerson: 1, byAi: 0 },
+          lines: { byAi: 1, byPerson: 0 },
+        },
+      },
+    });
+    expect(out).toContain(esc(D.counts.linksInMap));
+    expect(out).toContain(esc(D.counts.lines(1, 0)));
+    const same = page({
+      state: "ready",
+      data: { ...VIEW, links: { ...VIEW.links, lines: { byAi: 1, byPerson: 3 } } },
+    });
+    expect(same).not.toContain(esc(D.counts.lines(1, 3)));
+  });
+
+  it("counts retired questions as retired, never as from code", () => {
+    const line = D.counts.line({ fromCode: 0, byPerson: 2, byAi: 3, open: 1, retired: 5 });
+    expect(line).toBe("2 by a person · 3 by AI · 1 open · 5 retired");
+    expect(line).not.toContain("from code");
+  });
+
+  it("labels a lone correction's batch a person's correction, and compacts the AI's chip", () => {
+    const lone: Api.DecisionBatchViewT = {
+      ...VIEW.batches[0]!,
+      correction: { item: "q-0123456789ab", answer: "card-vault" },
+    };
+    expect(batchKindOf(lone)).toBe(D.batchKind.correction);
+    expect(batchKindOf(VIEW.batches[0]!)).toBe(D.batchKind.rule);
+    expect(batchKindOf(VIEW.batches[1]!)).toBe(D.batchKind.ai);
+    const out = page({ state: "ready", data: { ...VIEW, batches: [lone, VIEW.batches[1]!] } });
+    expect(out).toContain(esc(D.batchKind.correction!));
+    expect(out).not.toContain(esc(D.batchKind.rule!));
+    // The batch row's chip says "By AI" and its run, not the whole sentence again.
+    const short = html(<AiChip run="run-match-0007" short />);
+    expect(short).toContain(esc(D.chipShort));
+    expect(short).not.toContain(esc(D.chipWhy));
+    expect(short).toContain('href="#/runs?run=run-match-0007"');
   });
 
   it("shows the pause on the page too, and files it couldn't read", () => {

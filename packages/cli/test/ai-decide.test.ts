@@ -660,3 +660,187 @@ describe("a person's word stands over the AI's (round 45)", () => {
     expect(pairs["call.post.capture-charge"]).toMatchObject({ by: "pat", entry: REFUNDS });
   });
 });
+
+describe("AI decides in hand-off mode too (ADR 0181, ninth UX walk)", () => {
+  const MATCH_ANSWER = "proposals/matching/forge-billing--repo-forge-partner-gateway.yaml";
+  const answer = () =>
+    writeFile(
+      join(root, MATCH_ANSWER),
+      stringify({
+        pairs: [
+          {
+            call: "call.post.capture-charge",
+            api: CAPTURE,
+            why: "the constant",
+            lines: [`${FILE}:31`],
+          },
+          { call: "call.post.charges", api: REFUNDS, why: "a guess", lines: [`${FILE}:42`] },
+        ],
+        none: [],
+      }),
+    );
+  const runJson = async (change: string, run: string) =>
+    JSON.parse(await readFile(join(root, ".runs", change, run, "run.json"), "utf8")) as {
+      runtime: string;
+      state: string;
+      request: { agent: string };
+    };
+  const RT = (modes: string) =>
+    [
+      "schemaVersion: 4",
+      "assistants: { allowed: [copilot], default: copilot }",
+      `modes: { allowed: [${modes}], default: ${modes.split(",")[0]!.trim()} }`,
+      "decide: { links: auto, questions: auto }",
+      "",
+    ].join("\n");
+
+  it("a hand-off Match is an Atticus run; its Done applies what passes as the AI's, runtime hand-off", async () => {
+    const { runMatch, readMatch, matchDone } = await import("../src/link-match.js");
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    const h = await runMatch(root, { view, quotes: new Map(), facts, mode: "hand-off", now: AT });
+    expect(h.state).toBe("handoff");
+    expect(h.run).toMatch(/^run-20261108101500-/);
+    expect(await runJson("match-forge-billing", h.run!)).toMatchObject({
+      runtime: "hand-off",
+      state: "waiting",
+      request: { agent: "decide-match" },
+    });
+    // Nothing written yet: said, and the run stays open.
+    const early = await matchDone(root, { view, facts, now: AT });
+    expect(early.state).toBe("handoff");
+    expect(early.error).toMatch(/isn't written yet/);
+    expect((await readMatch(root, view)).run).toBe(h.run);
+    await answer();
+    // Written but not read in: the run still waits, so the app offers Read the answer.
+    expect(await readMatch(root, view)).toMatchObject({ state: "done", run: h.run });
+    const m = await matchDone(root, { view, facts, now: AT });
+    expect(m.state).toBe("done");
+    expect(m.run).toBeUndefined();
+    expect(m.decided?.applied).toEqual([
+      { call: "call.post.capture-charge", api: CAPTURE, bar: "agrees-with-shapes" },
+    ]);
+    expect(m.proposals.map((p) => p.call)).toEqual(["call.post.charges"]);
+    expect((await corrections())[0]).toMatchObject({
+      by: "atticus",
+      ai: { runtime: "hand-off", run: h.run, bar: "agrees-with-shapes" },
+    });
+    expect((await readBatch(root, m.decided!.batch!))?.by).toEqual({
+      kind: "ai",
+      runtime: "hand-off",
+      run: h.run,
+    });
+    expect((await runJson("match-forge-billing", h.run!)).state).toBe("validated");
+    // Read once: the run is done, so reading the answer again decides nothing more.
+    expect((await readMatch(root, view)).run).toBeUndefined();
+    const v = await decisionsView(root);
+    expect(v.decide.decideIn).toEqual(["copilot-acp", "hand-off"]);
+    expect(v.links.items[0]).toMatchObject({ runtime: "hand-off", run: h.run });
+    expect(v.links.lines).toEqual({ byAi: 1, byPerson: 0 });
+  });
+
+  it("atticus handoff done reads a Match's run in; where runtime.yaml doesn't allow hand-off it decides nothing", async () => {
+    const { runMatch } = await import("../src/link-match.js");
+    const { runDone } = await import("../src/run-commands.js");
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    await writeFile(join(root, "org-pack/runtime.yaml"), RT("model"));
+    const h = await runMatch(root, { view, quotes: new Map(), facts, mode: "hand-off", now: AT });
+    await answer();
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(await runDone(root, h.run!, {}, io)).toBe(0);
+    expect(said.join("\n")).toMatch(/runtime\.yaml doesn't allow hand-off here/);
+    expect(await corrections()).toEqual([]);
+    expect((await decisionsView(root)).decide.decideIn).toEqual([]);
+  });
+
+  it("questions propose hands off as a run; its Done applies the new proposals as the AI's", async () => {
+    const { questionsProposeCommand } = await import("../src/copilot-acp-steps.js");
+    const { runDone } = await import("../src/run-commands.js");
+    await writeQuestion(root, targetsQuestion(QA, 40));
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    // A proposal already on file before the hand-off is not the run's.
+    await propose(QB, 1, 41);
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(
+      await questionsProposeCommand(root, { mode: "hand-off", now: AT }, io, async () => 0),
+    ).toBe(0);
+    const run = /as run (run-[0-9a-z-]+)/.exec(said.join("\n"))?.[1];
+    expect(run).toBeDefined();
+    expect(said.join("\n")).toMatch(/atticus handoff done run-/);
+    expect(await runJson("questions-propose", run!)).toMatchObject({
+      runtime: "hand-off",
+      state: "waiting",
+      request: { agent: "decide-propose" },
+    });
+    // Done before anything is written: said, and it can be given again.
+    said.length = 0;
+    expect(await runDone(root, run!, {}, io)).toBe(1);
+    expect(said.join("\n")).toMatch(/No proposal was written/);
+    await propose(QA, 1, 40);
+    said.length = 0;
+    expect(await runDone(root, run!, {}, io)).toBe(0);
+    expect(said.join("\n")).toMatch(/Detected by AI: 1 answer applied/);
+    expect((await readQuestion(root, QA))!.answer?.by).toEqual({
+      kind: "ai",
+      runtime: "hand-off",
+      run,
+      bar: "agrees-with-shapes",
+    });
+    // The older proposal waits for a person.
+    expect((await readQuestion(root, QB))!.state).toBe("open");
+    expect((await runJson("questions-propose", run!)).state).toBe("validated");
+    expect(await runDone(root, run!, {}, io)).toBe(2);
+  });
+
+  it("counts retired questions as retired, not from code", async () => {
+    await writeQuestion(root, Question.parse({ ...targetsQuestion(QA, 40), state: "retired" }));
+    const v = await decisionsView(root);
+    expect(v.questions.counts).toMatchObject({ fromCode: 0, retired: 1, open: 0 });
+  });
+
+  it("the routes: Ask AI to propose as a hand-off run, and Read the answer of a hand-off Match", async () => {
+    const { uiLinkMatchRoutes } = await import("../src/ui-api-link-match.js");
+    await writeQuestion(root, targetsQuestion(QA, 40));
+    await writeFile(join(root, "org-pack/runtime.yaml"), RT("hand-off"));
+    const srv = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiDecisionRoutes(uiLinkMatchRoutes(r, ctx), ctx, { now: () => AT }),
+    });
+    try {
+      const call = async (method: string, path: string, body?: unknown) => {
+        const res = await fetch(srv.url + path, {
+          method,
+          headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: res.status, body: (await res.json()) as unknown };
+      };
+      const none = Api.QuestionsProposeView.parse((await call("GET", "/api/propose-answers")).body);
+      expect(none).toEqual({ state: "none", line: "/atticus-propose" });
+      const started = await call("POST", "/api/propose-answers");
+      expect(started.status).toBe(201);
+      const p = Api.QuestionsProposeView.parse(started.body);
+      expect(p).toMatchObject({ state: "waiting", line: "/atticus-propose" });
+      expect(p.done).toBe(`atticus handoff done ${p.run}`);
+      const again = Api.QuestionsProposeView.parse(
+        (await call("GET", "/api/propose-answers")).body,
+      );
+      expect(again.run).toBe(p.run);
+      // Match: no answer yet is a 409; after the answer, decided as the AI's.
+      const box = { from: "forge-billing", to: { repo: GW } };
+      const h = Api.MatchLinksView.parse((await call("POST", "/api/links/match", box)).body);
+      expect(h.state).toBe("handoff");
+      expect(h.run).toBeDefined();
+      expect((await call("POST", "/api/links/match/done", box)).status).toBe(409);
+      await answer();
+      const d = await call("POST", "/api/links/match/done", box);
+      expect(d.status).toBe(200);
+      expect(Api.MatchLinksView.parse(d.body).decided?.applied).toHaveLength(1);
+    } finally {
+      await srv.close();
+    }
+  });
+});

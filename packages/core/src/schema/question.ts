@@ -59,10 +59,14 @@ export const QuestionRole = z.enum(QUESTION_ROLES);
 export type QuestionRole = z.infer<typeof QuestionRole>;
 
 /**
- * ADR 0181: the runtimes whose runs Atticus drives and records, so a decision can name its run.
- * A hand-off answer a person pasted is no AI decision: it stays a proposal.
+ * ADR 0181: the runtimes whose runs Atticus records, so a decision can name its run: a Copilot
+ * session Atticus started (`copilot-acp`), or a hand-off run Atticus prepared for the person's
+ * assistant and read back when it was marked done (`hand-off`, ninth UX walk; additive, the
+ * question file stays at version 5). An answer pasted with no Atticus run behind it is no AI
+ * decision: it stays a proposal.
  */
-export const AI_RUNTIMES = ["copilot-acp"] as const;
+export const AI_RUNTIMES = ["copilot-acp", "hand-off"] as const;
+export type AiRuntime = (typeof AI_RUNTIMES)[number];
 
 /**
  * ADR 0181: the bar an AI decision met to be applied without a person. `confident`: the shapes

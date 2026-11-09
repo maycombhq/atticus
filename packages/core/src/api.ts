@@ -16,6 +16,7 @@ import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import {
   AnswerMatch,
+  AI_RUNTIMES,
   DECIDE_BARS,
   Question,
   QuestionRole,
@@ -313,8 +314,19 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   ReadyTasks task `sameRepo`; an OwnerQuestionView may carry `finding` (a critic knowledge gap a
  *   person asked of its owner), and /api/questions leaves those out (they are owner questions).
  *   Additive only.
+ * 2.84.0 (ADR 0181, ninth UX walk): AI decides in hand-off mode too. `MatchLinksView.run` is the
+ *   hand-off run a Match's brief waits on, and POST /api/links/match/done reads its answer in and
+ *   decides from it as the AI's (runtime `hand-off`, with the run); GET and POST
+ *   /api/propose-answers hand the open questions to the person's assistant as a hand-off run,
+ *   whose Done (POST /api/runs/{runId}/done) decides from its proposals the same way. An AI
+ *   decision's runtime may be `hand-off`. `DecideStateView.decideIn` says which runs decide here,
+ *   as runtime.yaml allows them; `DecisionCounts.retired` counts retired questions apart;
+ *   `DecisionsView.links.lines` counts the standing pairings in the corrections, beside the map's
+ *   as last applied. GET /api/settings/ai gives `decide` and `schemaVersion`, and PUT takes
+ *   `decide` (lifting a version 3 file to 4). GET /api/upgrade lists the pending upgrade steps and
+ *   POST /api/upgrade runs `atticus upgrade` as a local job on the person's click. Additive only.
  */
-export const API_VERSION = "2.83.0";
+export const API_VERSION = "2.84.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -594,6 +606,12 @@ export const Impact = z.object({
       path: z.array(RecordId),
       reason: z.string(),
       owner: z.string().optional(),
+      /**
+       * 2.84.0 (ADR 0181, ninth UX walk): the record is the AI's (an Interface flagged
+       * `joined-by-ai`, or with evidence of source `ai`), with the deciding run when it says.
+       */
+      byAi: z.boolean().optional(),
+      run: z.string().optional(),
     }),
   ),
   /** Facts that would sharpen the answer but are missing: knowledge gaps. */
@@ -3741,6 +3759,11 @@ export const MatchLinksView = z.object({
   rejected: z.array(z.string()).default([]),
   error: z.string().optional(),
   /**
+   * 2.84.0 (ADR 0181, ninth UX walk): the hand-off run the brief waits on. Done (POST
+   * /api/links/match/done, or Done on Model runs) reads the answer in and decides from it.
+   */
+  run: z.string().optional(),
+  /**
    * 2.81.0 (ADR 0181): what Atticus applied itself, as the AI's, once the session's answer was
    * read (runtime.yaml decide.links: auto, not paused): the batch, each pairing applied with the
    * bar it met, and each kept as a proposal with why. Absent when nothing was decided.
@@ -3769,6 +3792,8 @@ export const DecisionCounts = z.object({
   byAi: z.number().int(),
   /** Questions still open; links still loose (not counted for links). */
   open: z.number().int().optional(),
+  /** 2.84.0: questions retired (the code or a rule settles them, or asks them no more). */
+  retired: z.number().int().optional(),
 });
 /** One decision the AI applied that still stands: what every "Detected by AI" chip shows. */
 export const AiDecisionItem = z.object({
@@ -3849,11 +3874,23 @@ export const DecideStateView = z.object({
     .optional(),
   /** The sample audit's precision for the AI's decisions, every repo summed (Map › Trust). */
   precision: AuditTallyView,
+  /**
+   * 2.84.0: the runs whose answers the AI decides from here, as runtime.yaml allows them: a
+   * Copilot session Atticus starts (`copilot-acp`), a hand-off run marked done (`hand-off`).
+   * Empty: nothing here decides, whatever decide says.
+   */
+  decideIn: z.array(z.enum(AI_RUNTIMES)).optional(),
 });
 /** GET /api/decisions: the AI's decisions, the counts split three ways, the batches, the pause. */
 export const DecisionsView = z.object({
   decide: DecideStateView,
-  links: z.object({ counts: DecisionCounts, items: z.array(AiDecisionItem) }),
+  /** `counts`: the Interfaces of the map as last applied (the catalog), by how each was joined. */
+  links: z.object({
+    counts: DecisionCounts,
+    items: z.array(AiDecisionItem),
+    /** 2.84.0: the pairings that stand in the corrections files now, the AI's and people's. */
+    lines: z.object({ byAi: z.number().int(), byPerson: z.number().int() }).optional(),
+  }),
   questions: z.object({ counts: DecisionCounts, items: z.array(AiDecisionItem) }),
   /** Newest first. */
   batches: z.array(DecisionBatchView),
@@ -3942,6 +3979,31 @@ export const UndoBatchResult = z.object({
   files: z.array(z.string()),
   verify: z.array(z.string()),
   commit: z.string(),
+});
+/**
+ * 2.84.0 (ADR 0181, ninth UX walk): Ask AI to propose answers as a hand-off run. The person's
+ * assistant writes the proposals; Done (POST /api/runs/{runId}/done) reads them in and decides
+ * from them as the AI's when runtime.yaml's decide.questions is auto, else keeps them as proposals.
+ */
+export const QuestionsProposeView = z.object({
+  /** none: no hand-off run is open; waiting: handed to the assistant, its Done not yet given. */
+  state: z.enum(["none", "waiting"]),
+  run: z.string().optional(),
+  /** What to paste in a new Copilot Chat (agent mode) or Claude Code session. */
+  line: z.string(),
+  /** The run's prompt, relative to the metarepo. */
+  prompt: z.string().optional(),
+  /** The same Done, for a terminal. */
+  done: z.string().optional(),
+});
+/** 2.84.0: GET /api/upgrade: the upgrade steps this metarepo waits on (atticus upgrade --check). */
+export const UpgradeView = z.object({
+  atticus: z.string(),
+  /** A newer Atticus upgraded it: this one must not run the upgrade. */
+  newer: z.boolean(),
+  /** The Atticus that last upgraded it. */
+  stamp: z.string().optional(),
+  pending: z.array(z.object({ id: z.string(), summary: z.string(), files: z.array(z.string()) })),
 });
 export const ConnectLinksRequest = z.object({
   from: z.string().min(1),
@@ -4197,6 +4259,8 @@ export type CorrectDecisionRequestT = z.infer<typeof CorrectDecisionRequest>;
 export type SpreadItemViewT = z.infer<typeof SpreadItemView>;
 export type CorrectDecisionResultT = z.infer<typeof CorrectDecisionResult>;
 export type UndoBatchResultT = z.infer<typeof UndoBatchResult>;
+export type QuestionsProposeViewT = z.infer<typeof QuestionsProposeView>;
+export type UpgradeViewT = z.infer<typeof UpgradeView>;
 
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
@@ -5693,6 +5757,51 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/links/match/done": {
+    post: {
+      id: "matchLinksDone",
+      summary:
+        "Read in the answer of a hand-off Match (ADR 0178 part 2; ADR 0181, ninth UX walk): the person's assistant wrote it from the brief; Atticus checks it and, when runtime.yaml's decide.links is auto, applies what passes the citation check and the bar as the AI's (runtime hand-off, with the run), keeping the rest as proposals. 409 when no answer is written yet",
+      tag: "views",
+      body: MatchLinksRequest,
+      ok: { status: 200, schema: "MatchLinksView", description: "OK" },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/propose-answers": {
+    get: {
+      id: "getQuestionsPropose",
+      summary:
+        "Ask AI to propose answers (ADR 0144, 0181): the hand-off run open for the person's assistant, if any, and the line to paste",
+      tag: "questions",
+      ok: { status: 200, schema: "QuestionsProposeView", description: "OK" },
+    },
+    post: {
+      id: "proposeQuestions",
+      summary:
+        "Hand the open questions to the person's assistant as one hand-off run (/atticus-propose); its Done reads the proposals in and, when runtime.yaml's decide.questions is auto, applies each that checks and meets the bar as the AI's (runtime hand-off, with the run). Nothing is answered as a person",
+      tag: "questions",
+      ok: { status: 201, schema: "QuestionsProposeView", description: "Created" },
+      errors: [409],
+    },
+  },
+  "/api/upgrade": {
+    get: {
+      id: "getUpgrade",
+      summary:
+        "The upgrade steps this metarepo waits on (atticus upgrade --check): each step's summary and files, and whether a newer Atticus upgraded it",
+      tag: "run",
+      ok: { status: 200, schema: "UpgradeView", description: "OK" },
+    },
+    post: {
+      id: "runUpgrade",
+      summary:
+        "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review",
+      tag: "run",
+      ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [409],
+    },
+  },
   "/api/decisions": {
     get: {
       id: "getDecisions",
@@ -6220,7 +6329,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: {
       id: "putAiSettings",
       summary:
-        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key",
+        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4",
       tag: "run",
       body: z.record(z.string(), z.unknown()),
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
@@ -6809,6 +6918,8 @@ export function openApiDocument(): Record<string, unknown> {
     DecisionsView,
     CorrectDecisionResult,
     UndoBatchResult,
+    QuestionsProposeView,
+    UpgradeView,
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,

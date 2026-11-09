@@ -23,6 +23,7 @@ import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
+import { UpgradeOffer } from "../app/upgrade.js";
 
 /** ADR 0181: when the sample audit paused AI deciding, Home says why, with Map › Trust's link. */
 export function HomeDecidePaused() {
@@ -799,6 +800,8 @@ export function CommandCenter() {
       <HowStepsRun />
       <SetupChecklist />
       <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
+      {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
+      <UpgradeOffer />
       <HomeDecidePaused />
       {/* ADR 0181 part 4: each role answers its own questions on a change. */}
       {changes.state === "ready" && <YourRoleQuestions changes={changes.data} />}

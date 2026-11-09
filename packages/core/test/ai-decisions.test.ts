@@ -187,8 +187,10 @@ describe("C6 question file version 5: an answer by AI, beside a person's (ADR 01
     expect(bad({ text: "forge-gw" })).toBe(false);
     expect(bad({ option: 1, scope: { level: "repo-type", id: "service" } })).toBe(false);
     expect(bad({ option: 1, match: "/forge/refunds/**" })).toBe(false);
-    // A runtime Atticus doesn't drive is no AI answer.
-    expect(AiBy.safeParse({ ...ai, runtime: "hand-off" }).success).toBe(false);
+    // Ninth UX walk: a hand-off run Atticus recorded is one (its Done reads the answer back);
+    // a runtime Atticus records no run of is no AI answer.
+    expect(AiBy.safeParse({ ...ai, runtime: "hand-off" }).success).toBe(true);
+    expect(AiBy.safeParse({ ...ai, runtime: "model" }).success).toBe(false);
   });
 
   it("records an answer applied by a person's rule: theirs, with the correction it came from", () => {

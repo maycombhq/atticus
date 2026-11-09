@@ -411,7 +411,8 @@ describe("atticus questions propose under copilot-acp (ADR 0171)", () => {
     expect(runs.map((r) => r.ok)).toEqual([true, false]);
     const prompt = String(m.log().find((e) => e.event === "prompt")!.text);
     expect(prompt).toContain("proposals/questions/<question id>.yaml");
-    // Without the mode, the line to paste.
+    // Without the mode, the line to paste, handed off as an Atticus run whose Done reads the
+    // proposals in (ninth UX walk, ADR 0181).
     const plain = io();
     await questionsProposeCommand(
       root,
@@ -419,6 +420,9 @@ describe("atticus questions propose under copilot-acp (ADR 0171)", () => {
       plain.io,
       async () => 0,
     );
-    expect(plain.out[0]).toBe("In a NEW Copilot Chat (agent mode), run: /atticus-propose q-0001");
+    expect(plain.out[0]).toBe(
+      "In a NEW Copilot Chat (agent mode) or Claude Code session, run: /atticus-propose q-0001",
+    );
+    expect(plain.out[1]).toMatch(/^Handed off as run run-[0-9a-z-]+ \(/);
   });
 });

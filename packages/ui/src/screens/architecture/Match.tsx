@@ -26,6 +26,11 @@ const errorOf = (e: unknown) =>
 export type MatchIo = {
   get: () => Promise<Api.MatchLinksViewT>;
   post: () => Promise<Api.MatchLinksViewT>;
+  /**
+   * Ninth UX walk (ADR 0181): Read the answer of a hand-off is its run's Done: the answer is read
+   * in and what passes the bar is applied as the AI's (POST /api/links/match/done).
+   */
+  done?: () => Promise<Api.MatchLinksViewT>;
 };
 
 /**
@@ -102,6 +107,11 @@ export function MatchWithCopilot(p: {
         method: "POST",
         body: { from: p.from, to: p.box },
       }),
+    done: () =>
+      api<Api.MatchLinksViewT>("/api/links/match/done", {
+        method: "POST",
+        body: { from: p.from, to: p.box },
+      }),
   };
   const [m, setM] = useState<Api.MatchLinksViewT | undefined>();
   const [busy, setBusy] = useState(false);
@@ -159,6 +169,22 @@ export function MatchWithCopilot(p: {
       if (alive.current) setBusy(false);
     }
   };
+  // A hand-off's answer is read in through its run's Done, so the AI decides from it.
+  const readIn = async () => {
+    const done = ioRef.current.done;
+    if (!m?.run || !done) return void look();
+    setBusy(true);
+    setError(undefined);
+    try {
+      const v = await done();
+      seq.current++;
+      if (alive.current) setM(v);
+    } catch (e) {
+      if (alive.current) setError(errorOf(e));
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
   const label = (fact: string) => {
     const c = p.calls.find((x) => x.fact === fact);
     return c ? `${c.method ?? ""} ${c.path}`.trim() : fact;
@@ -182,9 +208,16 @@ export function MatchWithCopilot(p: {
         >
           {state === "running" ? M.running : state === "done" ? M.again : M.start}
         </button>
-        {(state === "handoff" || state === "failed") && (
-          <button type="button" className="btn" disabled={busy} onClick={() => void look()}>
-            {M.readAnswer}
+        {/* A hand-off answer written but not read in yet (its run is open) is read in here too. */}
+        {(state === "handoff" || state === "failed" || (state === "done" && !!m?.run)) && (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void readIn()}
+          >
+            {busy && m?.run ? M.readingAnswer : M.readAnswer}
           </button>
         )}
       </div>

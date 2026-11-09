@@ -369,6 +369,12 @@ export interface FactJoin {
   paired?: { by: string; ai?: JoinAi };
   /** ADR 0181: the target answer that joined it was the AI's, from that run. */
   aiAnswer?: JoinAi;
+  /**
+   * ADR 0181 (ninth UX walk): a gateway hop on the way (`gateway`) was joined by the AI (its
+   * forwarding call's pairing or target answer), so the whole link is the AI's: `call` is that
+   * hop's forwarding call, the line the AI's evidence cites.
+   */
+  aiHop?: JoinAi & { call: FactEnd };
 }
 
 /** ADR 0181: the AI run a decision came from. */
@@ -1753,12 +1759,23 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const scopes = [...new Set(hops.flatMap((h) => h.scopes ?? []))];
     // A hop that guessed (J0, J1) makes the whole link a guess.
     const hopGuesses = guessList([...(j.guesses ?? []), ...walked.flatMap((h) => h.guesses ?? [])]);
+    // ADR 0181 (ninth UX walk): the caller's own pairing or answer goes on with the walked link,
+    // and a hop the AI joined makes the whole link the AI's, never a person's or the code's.
+    const hopAi = aiOfJoin(j)
+      ? undefined
+      : walked.flatMap((h) => {
+          const ai = aiOfJoin(h);
+          return ai ? [{ ...ai, call: h.call }] : [];
+        })[0];
     joins[i] = {
       call: j.call,
       entry: landed.entry,
       ...(j.tie ? { tie: j.tie } : {}),
       ...(j.through ? { through: j.through } : {}),
       how: j.how,
+      ...(j.paired ? { paired: j.paired } : {}),
+      ...(j.aiAnswer ? { aiAnswer: j.aiAnswer } : {}),
+      ...(hopAi ? { aiHop: hopAi } : {}),
       ...(j.inferred ? { inferred: j.inferred } : {}),
       ...(j.byLabel ? { byLabel: j.byLabel } : {}),
       ...(hopGuesses.length ? { guesses: hopGuesses } : {}),
@@ -1961,13 +1978,20 @@ export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesse
  * J0; despite a conflict or by a Service's short name, J1), any other by how it was made
  * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
  */
+/** ADR 0181: the AI run behind a join's own pairing or target answer, if the AI made it. */
+export const aiOfJoin = (
+  j: Pick<FactJoin, "how" | "paired"> & { aiAnswer?: JoinAi | undefined },
+): JoinAi | undefined => j.paired?.ai ?? (j.how === "answer" ? j.aiAnswer : undefined);
+
 export function joinFlagsOf(
   j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses" | "paired"> & {
     aiAnswer?: JoinAi | undefined;
+    aiHop?: JoinAi | undefined;
   },
 ): string[] {
-  // ADR 0181: the AI's pairing or answer is the AI's, never `joined-by-person` or `-answer`.
-  if (j.paired?.ai || (j.how === "answer" && j.aiAnswer)) return [JOINED_BY_AI];
+  // ADR 0181: the AI's pairing or answer is the AI's, never `joined-by-person` or `-answer`; so
+  // is a link through a gateway hop the AI joined.
+  if (aiOfJoin(j) || j.aiHop) return [JOINED_BY_AI];
   if (j.paired) return [JOINED_BY_PERSON];
   const guessed = joinGuessesOf(j);
   if (guessed.length) return guessed;
@@ -2072,16 +2096,19 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
   // G1 (ADR 0174): a person's pairing is their word, not code: inferred, with their evidence.
   // ADR 0181: the AI's pairing or answer is no more than the AI's: inferred, with its run.
   const guessed = (j: FactJoin) =>
-    isGuessedJoin(j) || !!j.paired || (j.how === "answer" && !!j.aiAnswer);
+    isGuessedJoin(j) || !!j.paired || (j.how === "answer" && !!j.aiAnswer) || !!j.aiHop;
   const byPerson = (j: FactJoin): EvidenceT[] => {
-    const ai = j.paired?.ai ?? (j.how === "answer" ? j.aiAnswer : undefined);
-    const call = j.paired || ai ? fact(j.call) : undefined;
+    const own = aiOfJoin(j);
+    const ai = own ?? j.aiHop;
+    // A hop's AI decision cites the hop's forwarding call, where the AI's answer joined it.
+    const at = !own && j.aiHop ? j.aiHop.call : j.call;
+    const call = j.paired || ai ? fact(at) : undefined;
     if (!call) return [];
     if (ai)
       return [
         {
           source: "ai",
-          repo: j.call.repo,
+          repo: at.repo,
           path: call.cite.file,
           line: call.cite.line,
           side: "caller",

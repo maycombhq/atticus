@@ -245,6 +245,53 @@ describe("the local server (ADR 0015)", () => {
     expect((await call("/api/graph?depth=9")).status).toBe(400);
   });
 
+  it("marks an affected Interface the AI decided, with its run (ADR 0181, ninth UX walk)", async () => {
+    const own = await forgeMetarepo();
+    const id = "if-75b5e8d8aa780837";
+    const rows = parse(readFileSync(join(FIXTURES, "forge/expected/scan.yaml"), "utf8")) as Record<
+      string,
+      unknown
+    >[];
+    const row = rows.find((r) => r.id === id)!;
+    const p = parseRecord({
+      ...row,
+      schemaVersion: 5,
+      status: "current",
+      confidence: "inferred",
+      flags: ["joined-by-ai"],
+      evidence: [
+        ...(row.evidence as unknown[]),
+        {
+          source: "ai",
+          repo: "forge-portal-bff",
+          path: "src/main/java/forge/portal/LedgerClient.java",
+          line: 8,
+          side: "caller",
+          by: "hand-off",
+          run: "run-20261108101500-0001",
+        },
+      ],
+    });
+    if (!p.ok) throw new Error(JSON.stringify(p.issues));
+    await writeFile(
+      join(own, "catalog/generated", recordPath(p.record)),
+      serializeRecord(p.record),
+    );
+    const s = await startServer({ root: own, port: 0, watch: false });
+    try {
+      const r = await fetch(`${s.url}/api/impact/ledger-api.get-balance?depth=3`, {
+        headers: { "X-Atticus-Token": s.token },
+      });
+      expect(r.status).toBe(200);
+      const imp = Impact.parse(await r.json());
+      const hit = imp.affected.find((a) => a.id === id);
+      expect(hit).toMatchObject({ byAi: true, run: "run-20261108101500-0001" });
+      expect(imp.affected.filter((a) => a.id !== id).every((a) => !a.byAi)).toBe(true);
+    } finally {
+      await s.close();
+    }
+  });
+
   it("repos from the manifests, with base-clone state", async () => {
     const repos = z.array(RepoView).parse((await call("/api/repos")).body);
     expect(repos.length).toBeGreaterThan(0);

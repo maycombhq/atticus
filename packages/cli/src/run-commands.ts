@@ -283,6 +283,13 @@ export async function runDone(
     );
     return 1;
   }
+  // Ninth UX walk (ADR 0181): a hand-off of questions propose or a Match reads its answer back
+  // and decides from it as the AI's, through Atticus.
+  const agent = await runAgentOf(root, runId);
+  if (agent === "decide-propose" || agent === "decide-match") {
+    const { decideRunDone } = await import("./decide-handoff.js");
+    return decideRunDone(root, runId, io);
+  }
   return handoffDone(root, runId, io, o.model ? { model: o.model } : {});
 }
 

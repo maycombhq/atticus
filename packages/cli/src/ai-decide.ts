@@ -49,6 +49,7 @@ import {
   writeQuestion,
   AI_LINE_BY,
   type AiBy,
+  type AiRuntime,
   type Api,
   type AuditItemT,
   type AuditTally,
@@ -92,7 +93,7 @@ export class DecideError extends Error {
 /** A Copilot session Atticus started: it never applies, corrects or undoes a decision. */
 export const inAcpSession = (env: NodeJS.ProcessEnv = process.env) => !!env.ATTICUS_ACP_SESSION;
 
-const AI_RUNTIME = "copilot-acp" as const;
+const AI_RUNTIME: AiRuntime = "copilot-acp";
 
 // ------------------------------------------------------------------ files
 
@@ -211,12 +212,42 @@ export async function decideState(root: string): Promise<{
   configured: DecideSettings;
   now: DecideNow;
   precision: AuditTally;
+  decideIn: AiRuntime[];
 }> {
   const op = await loadOrgPack(orgPackDirOf(root));
   const configured = decideOf(op.runtime);
   const precision = auditPrecision(await aiAuditItems(root)).ai;
-  return { configured, now: aiPause(configured, precision), precision };
+  return {
+    configured,
+    now: aiPause(configured, precision),
+    precision,
+    decideIn: decideIn(op.runtime),
+  };
 }
+
+/**
+ * Ninth UX walk: the runs whose answers the AI decides from here, as runtime.yaml allows them: a
+ * Copilot session Atticus starts (copilot-acp allowed, with Copilot), and a hand-off run marked
+ * done (hand-off allowed). AI off: none.
+ */
+export function decideIn(rt: {
+  ai: string;
+  modes: { allowed: readonly string[] };
+  assistants: { allowed: readonly string[] };
+}): AiRuntime[] {
+  if (rt.ai === "off") return [];
+  const out: AiRuntime[] = [];
+  if (rt.modes.allowed.includes("copilot-acp") && rt.assistants.allowed.includes("copilot"))
+    out.push("copilot-acp");
+  if (rt.modes.allowed.includes("hand-off")) out.push("hand-off");
+  return out;
+}
+
+/** Why a run of this runtime decides nothing here, or undefined when it may. */
+const notHere = (runtime: AiRuntime, state: { decideIn: AiRuntime[] }) =>
+  runtime === "hand-off" && !state.decideIn.includes("hand-off")
+    ? "runtime.yaml doesn't allow hand-off here (modes.allowed): a person confirms it"
+    : undefined;
 
 // ------------------------------------------------------------------ the citation check of a pairing
 
@@ -298,6 +329,8 @@ export async function decideLinks(
     proposals: readonly Api.MatchProposalT[];
     facts: readonly Fact[];
     run: string;
+    /** Ninth UX walk: the run's runtime: a Copilot session (default) or a hand-off run. */
+    runtime?: AiRuntime;
     now?: Date;
     env?: NodeJS.ProcessEnv;
   },
@@ -305,7 +338,13 @@ export async function decideLinks(
   if (inAcpSession(o.env) || !o.proposals.length) return undefined;
   const state = await decideState(root);
   if (state.configured.links === "propose") return undefined;
+  const runtime = o.runtime ?? AI_RUNTIME;
   const kept: DecidedLinks["kept"] = [];
+  const off = notHere(runtime, state);
+  if (off) {
+    for (const p of o.proposals) kept.push({ call: p.call, api: p.api, why: off });
+    return { mode: "propose", applied: [], kept };
+  }
   const paused = state.now.paused?.why;
   if (state.now.links === "propose") {
     for (const p of o.proposals)
@@ -381,7 +420,7 @@ export async function decideLinks(
         },
         by: AI_LINE_BY,
         at,
-        ai: { runtime: AI_RUNTIME, run: o.run, bar },
+        ai: { runtime, run: o.run, bar },
         batch,
       }),
     );
@@ -418,7 +457,7 @@ export async function decideLinks(
     id: batch,
     kind: "ai",
     at,
-    by: { kind: "ai", runtime: AI_RUNTIME, run: o.run },
+    by: { kind: "ai", runtime, run: o.run },
     applied: items,
     reverted: [],
   });
@@ -472,15 +511,28 @@ async function targetRuleVerdict(
  */
 export async function decideAnswers(
   root: string,
-  o: { run: string; ids?: ReadonlySet<string>; now?: Date; env?: NodeJS.ProcessEnv },
+  o: {
+    run: string;
+    /** Ninth UX walk: the run's runtime: a Copilot session (default) or a hand-off run. */
+    runtime?: AiRuntime;
+    ids?: ReadonlySet<string>;
+    now?: Date;
+    env?: NodeJS.ProcessEnv;
+  },
 ): Promise<DecidedAnswers | undefined> {
   if (inAcpSession(o.env)) return undefined;
   const state = await decideState(root);
   if (state.configured.questions === "propose") return undefined;
+  const runtime = o.runtime ?? AI_RUNTIME;
   const proposals = (await checkedProposals(root)).filter(
     (p) => p.ok && p.proposal && (!o.ids || o.ids.has(p.id)),
   );
   const kept: DecidedAnswers["kept"] = [];
+  const off = notHere(runtime, state);
+  if (off) {
+    for (const p of proposals) kept.push({ id: p.id, why: off });
+    return { mode: "propose", applied: [], kept };
+  }
   if (state.now.questions === "propose") {
     for (const p of proposals)
       kept.push({ id: p.id, why: "deciding is paused: a person confirms it" });
@@ -521,7 +573,7 @@ export async function decideAnswers(
       });
       continue;
     }
-    const by: AiBy = { kind: "ai", runtime: AI_RUNTIME, run: o.run, bar };
+    const by: AiBy = { kind: "ai", runtime, run: o.run, bar };
     try {
       await answerQuestion(root, q.id, {
         option: option!,
@@ -548,7 +600,7 @@ export async function decideAnswers(
       id: batch,
       kind: "ai",
       at,
-      by: { kind: "ai", runtime: AI_RUNTIME, run: o.run },
+      by: { kind: "ai", runtime, run: o.run },
       applied: items,
       reverted: [],
     });
@@ -561,8 +613,16 @@ export async function decideAnswers(
 export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
   const state = await decideState(root);
   const linkItems: Api.AiDecisionItemT[] = [];
+  // Ninth UX walk: the pairings that stand in the corrections now (the newest line per call), the
+  // AI's and people's, beside the map's counts as last applied (which Apply brings up to them).
+  const lines = { byAi: 0, byPerson: 0 };
   for (const repo of await correctedRepos(root)) {
     const all = await correctionsOf(root, repo);
+    for (const c of all)
+      if (c.action === "link" && c.link && linksFor(callLikeOf(c), all)[0] === c) {
+        if (c.ai) lines.byAi++;
+        else lines.byPerson++;
+      }
     for (const c of standingAi(all)) {
       linkItems.push({
         kind: "link",
@@ -588,10 +648,11 @@ export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
   }
   const qs = (await listQuestions(root)).questions;
   const questionItems: Api.AiDecisionItemT[] = [];
-  const qCounts = { fromCode: 0, byPerson: 0, byAi: 0, open: 0 };
+  // Ninth UX walk: a retired question is counted as retired, not as settled "from code".
+  const qCounts = { fromCode: 0, byPerson: 0, byAi: 0, open: 0, retired: 0 };
   for (const q of qs) {
     if (q.state === "open") qCounts.open++;
-    else if (q.state === "retired") qCounts.fromCode++;
+    else if (q.state === "retired") qCounts.retired++;
     else if (q.answer && isAiBy(q.answer.by)) {
       qCounts.byAi++;
       const option = q.answer.option ?? 0;
@@ -632,8 +693,9 @@ export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
       now: { links: state.now.links, questions: state.now.questions },
       ...(state.now.paused ? { paused: state.now.paused } : {}),
       precision: state.precision,
+      decideIn: state.decideIn,
     },
-    links: { counts: linkCounts, items: linkItems },
+    links: { counts: linkCounts, items: linkItems, lines },
     questions: { counts: qCounts, items: questionItems },
     batches: batches.map((b) => batchView(root, b)),
     problems,

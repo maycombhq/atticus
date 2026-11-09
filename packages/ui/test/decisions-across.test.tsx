@@ -13,27 +13,52 @@ import type { Api } from "@maycombhq/core";
 vi.mock("../src/api/client.js", async () => ({
   ...(await vi.importActual<object>("../src/api/client.js")),
   useApi: (path?: string) =>
-    path?.startsWith("/api/catalog/Interface")
+    path?.startsWith("/api/impact/")
       ? {
           state: "ready",
           data: {
-            items: [
+            root: "ledger-api",
+            affected: [
               {
                 id: "if-ai",
                 kind: "Interface",
-                from: "forge-billing",
-                to: "forge-payments",
-                confidence: "inferred",
-                flags: ["joined-by-ai"],
-                evidence: [{ source: "ai", repo: "forge-billing", run: "run-match-0007" }],
+                path: ["ledger-api", "if-ai"],
+                reason: "calls it",
+                byAi: true,
+                run: "run-match-0007",
               },
-              { id: "if-code", kind: "Interface", from: "a", to: "b", confidence: "verified" },
+              {
+                id: "if-code",
+                kind: "Interface",
+                path: ["ledger-api", "if-code"],
+                reason: "calls it",
+              },
             ],
-            total: 2,
+            gaps: [],
           },
           reload: () => undefined,
         }
-      : { state: "loading", reload: () => undefined },
+      : path?.startsWith("/api/catalog/Interface")
+        ? {
+            state: "ready",
+            data: {
+              items: [
+                {
+                  id: "if-ai",
+                  kind: "Interface",
+                  from: "forge-billing",
+                  to: "forge-payments",
+                  confidence: "inferred",
+                  flags: ["joined-by-ai"],
+                  evidence: [{ source: "ai", repo: "forge-billing", run: "run-match-0007" }],
+                },
+                { id: "if-code", kind: "Interface", from: "a", to: "b", confidence: "verified" },
+              ],
+              total: 2,
+            },
+            reload: () => undefined,
+          }
+        : { state: "loading", reload: () => undefined },
   useLiveEvents: () => undefined,
   useReloadOnFiles: () => undefined,
 }));
@@ -51,6 +76,9 @@ const { ContractList, ContractsAiCounts } = await import("../src/screens/know/De
 const { TrustRow, TrustPage } = await import("../src/screens/map/Trust.js");
 const { HomeDecidePaused } = await import("../src/screens/CommandCenter.js");
 const { ConflictList } = await import("../src/screens/knowledge/shared.js");
+const { ImpactExplorer } = await import("../src/screens/know/Know.js");
+const { AskAiToProposeView } = await import("../src/screens/Questions.js");
+const { UpgradeOfferView } = await import("../src/app/upgrade.js");
 
 const D = COPY.decisions;
 const esc = (s: string) =>
@@ -167,6 +195,152 @@ describe("Questions: answered by AI", () => {
 
   it("splits the questions three ways: from code, by a person, by AI", () => {
     expect(html(<QuestionsAiCounts />)).toContain(esc(D.counts.line(VIEW.questions.counts)));
+  });
+
+  it("says an AI answer's proposal was applied by Atticus, never confirmed by a person, and offers only Correct (ninth UX walk)", () => {
+    const Q = COPY.questions;
+    const q = QUESTION as unknown as { answer: Record<string, unknown> };
+    const withProposal = {
+      ...q,
+      answer: {
+        ...q.answer,
+        proposal: {
+          by: "copilot",
+          at: "2026-11-08T10:00:00Z",
+          cites: [{ file: "src/notify.ts", line: 12, quote: "NOTIFY_URL" }],
+        },
+      },
+    } as never;
+    const out = html(<QuestionDetail question={withProposal} onAnswered={() => undefined} />);
+    expect(out).toContain(esc(Q.fromAiProposal("copilot", "2026-11-08", "run-propose-0003")));
+    expect(out).not.toContain(esc(Q.fromProposal("copilot", "2026-11-08")));
+    // One way to change it: Correct, which spreads; not the answer form too.
+    expect(out).toContain(esc(Q.changeAiAnswer));
+    expect(out).not.toContain(esc(Q.change));
+    expect(out).toContain(esc(D.correctOf(ANSWER.what)));
+  });
+});
+
+describe("Questions: Ask AI to propose says what happens (ninth UX walk)", () => {
+  const P = COPY.questions.proposal;
+  it("with decide auto: proposals that meet the bar are applied as the AI's; with propose: nothing until you accept", () => {
+    const auto = html(
+      <AskAiToProposeView open={2} decide={{ ...VIEW.decide, decideIn: ["hand-off"] }} />,
+    );
+    expect(auto).toContain(esc(P.askWhyAuto));
+    expect(auto).not.toContain(esc(P.askWhy));
+    const propose = html(
+      <AskAiToProposeView
+        open={2}
+        decide={{ ...VIEW.decide, now: { links: "propose", questions: "propose" } }}
+      />,
+    );
+    expect(propose).toContain(esc(P.askWhy));
+    const paused = html(
+      <AskAiToProposeView
+        open={2}
+        decide={{
+          ...VIEW.decide,
+          paused: {
+            why: "Below the bar.",
+            precision: 0.8,
+            low: 0.5,
+            high: 0.9,
+            answered: 10,
+            minPrecision: 0.95,
+          },
+        }}
+      />,
+    );
+    expect(paused).toContain(esc(P.askWhyPaused("Below the bar.")));
+  });
+
+  it("hands it to the assistant as a run, then offers Done with the same command for a terminal", () => {
+    const idle = html(
+      <AskAiToProposeView
+        open={2}
+        handoff={{ state: "none", line: "/atticus-propose" }}
+        onHandoff={() => undefined}
+      />,
+    );
+    expect(idle).toContain(esc(P.askHandoff));
+    const waiting = html(
+      <AskAiToProposeView
+        open={2}
+        handoff={{
+          state: "waiting",
+          run: "run-20261108101500-0001",
+          line: "/atticus-propose",
+          done: "atticus handoff done run-20261108101500-0001",
+        }}
+        onDone={() => undefined}
+      />,
+    );
+    expect(waiting).toContain(esc(P.askWaiting("run-20261108101500-0001")));
+    expect(waiting).toContain(esc(P.askDone));
+    expect(waiting).toContain("atticus handoff done run-20261108101500-0001");
+    const read = html(
+      <AskAiToProposeView
+        open={0}
+        note={{ ok: true, lines: ["Detected by AI: 1 answer applied"] }}
+      />,
+    );
+    expect(read).toContain('role="status"');
+    expect(read).toContain("Detected by AI: 1 answer applied");
+  });
+});
+
+describe("Home: the upgrade the metarepo waits on (ninth UX walk)", () => {
+  const U = COPY.upgrade;
+  const view = {
+    atticus: "2.0.0-beta.21",
+    newer: false,
+    pending: [
+      { id: "runtime-v4", summary: "runtime.yaml at version 4", files: ["org-pack/runtime.yaml"] },
+    ],
+  };
+  it("lists each step and runs the upgrade on the person's click, the command under Or in a terminal", () => {
+    const out = html(
+      <UpgradeOfferView view={view} run={{ state: "idle" }} onRun={() => undefined} />,
+    );
+    expect(out).toContain(esc(U.intro(1)));
+    expect(out).toContain(esc(U.step("runtime.yaml at version 4", 1)));
+    expect(out).toContain(esc(U.run));
+    expect(out).toContain("atticus upgrade");
+    const done = html(
+      <UpgradeOfferView
+        view={{ ...view, pending: [] }}
+        run={{ state: "done", lines: ["Upgraded."] }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(done).toContain(esc(U.done));
+    expect(
+      html(
+        <UpgradeOfferView
+          view={{ ...view, pending: [] }}
+          run={{ state: "idle" }}
+          onRun={() => undefined}
+        />,
+      ),
+    ).toBe("");
+    const newer = html(
+      <UpgradeOfferView
+        view={{ ...view, newer: true, stamp: "2.0.0-beta.30" }}
+        run={{ state: "idle" }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(newer).toContain('role="alert"');
+  });
+});
+
+describe("Map › Impact explorer (ninth UX walk)", () => {
+  it("marks an Interface the AI joined with the chip and its run, as a change's Impact page does", () => {
+    const out = html(<ImpactExplorer hash="#/impact?q=ledger-api" />);
+    expect(out).toContain(esc(D.chip));
+    expect(out).toContain('href="#/runs?run=run-match-0007"');
+    expect(out.split(esc(D.chip)).length - 1).toBe(1);
   });
 });
 

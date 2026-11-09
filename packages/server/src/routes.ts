@@ -195,7 +195,22 @@ export function apiRoutes(r: Router, ctx: Context): Router {
     })
     .add("GET", "/api/impact/{id}", async ({ params, query }) => {
       const depth = intParam(query, "depth", 1, 10);
-      const res = await withIndex(root, (ix) => impact(ix, params.id!, depth));
+      const res = await withIndex(root, (ix) => {
+        const r = impact(ix, params.id!, depth);
+        if (!r) return undefined;
+        // ADR 0181 (ninth UX walk): a record the AI decided says so, with its run, so the
+        // explorer marks it "Detected by AI" as a change's Impact page does.
+        return {
+          ...r,
+          affected: r.affected.map((a) => {
+            const rec = ix.find(a.id)[0] as
+              { flags?: unknown; evidence?: { source?: string; run?: string }[] } | undefined;
+            const ai = (rec?.evidence ?? []).find((e) => e.source === "ai");
+            const flagged = Array.isArray(rec?.flags) && rec.flags.includes("joined-by-ai");
+            return flagged || ai ? { ...a, byAi: true, ...(ai?.run ? { run: ai.run } : {}) } : a;
+          }),
+        };
+      });
       if (!res) throw notFound(`There is no record ${params.id} in the catalog.`);
       return { status: 200, body: res };
     })

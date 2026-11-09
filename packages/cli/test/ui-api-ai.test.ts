@@ -145,6 +145,45 @@ describe("the AI tab's API (ADR 0121)", () => {
     }
   });
 
+  it("writes decide (ADR 0181, ninth UX walk): lifts a version 3 file to 4, keeps CRLF, and says an older file needs atticus upgrade", async () => {
+    const rt = join(root, "org-pack", "runtime.yaml");
+    const before = await readFile(rt, "utf8");
+    const decide = { links: "auto", questions: "propose", minPrecision: 0.9 };
+    try {
+      await writeFile(
+        rt,
+        before.replace(/^schemaVersion: \d+/m, "schemaVersion: 3").replace(/\r?\n/g, "\r\n"),
+      );
+      const got = (await call("GET", "/api/settings/ai")).body as {
+        decide: unknown;
+        schemaVersion: number;
+      };
+      expect(got.decide).toEqual({ links: "propose", questions: "propose", minPrecision: 0.95 });
+      expect(got.schemaVersion).toBe(3);
+      const r = await call("PUT", "/api/settings/ai", { decide });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const text = await readFile(rt, "utf8");
+      expect(text).toMatch(/\r\n/);
+      expect(text.replace(/\r\n/g, "")).not.toMatch(/\n/);
+      const saved = parse(text) as Record<string, unknown>;
+      expect(saved.schemaVersion).toBe(4);
+      expect(saved.decide).toEqual(decide);
+      expect(((await call("GET", "/api/settings/ai")).body as { decide: unknown }).decide).toEqual(
+        decide,
+      );
+      // A version 1 file needs the upgrade first: said, nothing written.
+      await writeFile(rt, before.replace(/^schemaVersion: \d+/m, "schemaVersion: 1"));
+      const old = await call("PUT", "/api/settings/ai", { decide });
+      expect(old.status).toBe(422);
+      expect(JSON.stringify(old.body)).toMatch(/atticus upgrade/);
+      expect(await readFile(rt, "utf8")).toBe(
+        before.replace(/^schemaVersion: \d+/m, "schemaVersion: 1"),
+      );
+    } finally {
+      await writeFile(rt, before);
+    }
+  });
+
   it("refuses a key typed where a variable's name goes, and a setting that doesn't read", async () => {
     const key = await call("PUT", "/api/settings/ai", {
       model: { type: "anthropic", settings: { model: "m", keyEnv: "sk-abcdefghijklmnopqrstuvwx" } },

@@ -351,3 +351,58 @@ describe("joinRecords through a gateway: a hop that guessed makes the whole link
     });
   });
 });
+
+describe("joinRecords through a gateway: a hop the AI decided makes the whole link the AI's (ADR 0181)", () => {
+  // Ninth UX walk: a caller joined through a gateway route whose forwarding call an AI answer
+  // named was recorded as `joined-by-answer` (a person's), with no AI chip.
+  const unlisted = () =>
+    estate().map((r) => (r.repo === "forge-accounts" ? { ...r, hosts: [] } : r));
+  const ai = { runtime: "copilot-acp", run: "run-20261108-0001" };
+  const targets = {
+    "forge-gateway": {
+      "call.get.accounts-id": "forge-accounts",
+      "call.post.transfers": "forge-accounts",
+    },
+  };
+  type Rec = {
+    kind: string;
+    from?: string;
+    to?: string;
+    confidence: string;
+    flags?: string[];
+    evidence: Record<string, unknown>[];
+  };
+  const portal = (rs: readonly unknown[]) =>
+    (rs as Rec[]).filter(
+      (r) => r.kind === "Interface" && r.from === "portal-api" && r.to === "accounts-api",
+    );
+
+  it("flags the walked link joined-by-ai, with evidence of source ai and the run", () => {
+    const repos = unlisted();
+    const out = joinFacts({
+      repos,
+      targets,
+      aiTargets: { "forge-gateway": { "call.get.accounts-id": ai, "call.post.transfers": ai } },
+    });
+    const get = out.joins.find((j) => j.call.fact === PORTAL_GET)!;
+    expect(get.entry.repo).toBe("forge-accounts");
+    expect(get.gateway).toHaveLength(1);
+    const links = portal(joinRecords(out, repos));
+    expect(links).toHaveLength(2);
+    for (const r of links) {
+      expect(r.flags).toContain("joined-by-ai");
+      expect(r.flags ?? []).not.toContain("joined-by-answer");
+      expect(r.confidence).toBe("inferred");
+      expect(r.evidence).toContainEqual(
+        expect.objectContaining({ source: "ai", by: "copilot-acp", run: ai.run }),
+      );
+    }
+  });
+
+  it("keeps a person's answer on the hop a person's: never joined-by-ai", () => {
+    const repos = unlisted();
+    const links = portal(joinRecords(joinFacts({ repos, targets }), repos));
+    expect(links).toHaveLength(2);
+    for (const r of links) expect(r.flags ?? []).not.toContain("joined-by-ai");
+  });
+});

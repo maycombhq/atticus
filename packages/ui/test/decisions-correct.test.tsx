@@ -22,9 +22,11 @@ const {
   MakeReadingRule,
   SpreadView,
   staticDecisions,
+  NextSteps,
   UndoBatch,
   UndoResultView,
 } = await import("../src/app/decisions.js");
+const { ApplyAndPropose } = await import("../src/app/propose.js");
 const D = COPY.decisions;
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -129,11 +131,19 @@ describe("Correct a Detected by AI answer", () => {
     const t0 = text(m.tree);
     expect(t0).toContain(D.formTitle(ANSWER.what));
     expect(t0).toContain(D.pickOption);
-    // Every option is a labelled radio, with None of these.
+    // Every option is a labelled radio; a question's none is its own option (ninth UX walk: no
+    // second "None of these").
     const radios = els(m.tree).filter((e) => e.type === "input" && e.props.type === "radio");
-    expect(radios.length).toBe(3);
+    expect(radios.length).toBe(2);
     expect(t0).toContain("Northwind Pay");
-    expect(t0).toContain(D.noneOption);
+    expect(t0).not.toContain(D.noneOption);
+    // The form takes the focus when it opens (its title), never the page's body.
+    const title = els(m.tree).find((e) => e.type === "h4")!;
+    expect(title.props.tabIndex).toBe(-1);
+    expect(title.props.ref).toBeDefined();
+    // The rule's field is there before any preview, so a rule can be given where none derives.
+    expect(input(m.tree, (p) => typeof p.id === "string" && p.id.endsWith("-match"))).toBeDefined();
+    expect(text(m.tree)).toContain(D.matchHintNone);
     // Apply to similar: on by default.
     const similar = input(m.tree, (p) => p.type === "checkbox")!;
     expect(similar.props.checked).toBe(true);
@@ -165,6 +175,25 @@ describe("Correct a Detected by AI answer", () => {
     expect(status).toBeDefined();
     // Make this a reading rule, offered.
     expect(els(m.tree).some((e) => e.type === MakeReadingRule)).toBe(true);
+  });
+
+  it("offers Apply and Propose for review in place, with the commands under Or in a terminal", () => {
+    const m = mount(
+      NextSteps as never,
+      {
+        verify: ["atticus verify forge-ledger --write"],
+        commit: "git commit",
+        scope: "answers",
+      } as never,
+    );
+    const ap = els(m.tree).find((e) => e.type === ApplyAndPropose)!;
+    expect(ap.props).toMatchObject({ scope: "answers", repo: "forge-ledger" });
+    const terminal = els(m.tree).find((e) => e.type === "details")!;
+    expect(text(terminal)).toContain(D.terminal);
+    const cmds = els(terminal).flatMap((e) =>
+      typeof e.props.text === "string" ? [e.props.text] : [],
+    );
+    expect(cmds).toEqual(["atticus verify forge-ledger --write", "git commit"]);
   });
 
   it("asks for a fresh preview when the person changes the rule after it", async () => {
@@ -213,7 +242,7 @@ describe("Correct a Detected by AI answer", () => {
       } as never,
     );
     const radios = els(m.tree).filter((e) => e.type === "input" && e.props.type === "radio");
-    (radios[2]!.props.onChange as () => void)();
+    (radios[1]!.props.onChange as () => void)();
     m.render();
     await submit(m);
     const alert = els(m.tree).find((e) => e.props.role === "alert");
@@ -271,6 +300,28 @@ describe("Correct a Detected by AI pairing", () => {
       similar: true,
       preview: true,
     });
+  });
+});
+
+describe("Correct a Detected by AI pairing: the repo is picked from the estate's repos", () => {
+  it("lists the repos in a select, the AI's repo picked", () => {
+    const m = mount(
+      CorrectDecision as never,
+      {
+        d: LINK,
+        repos: { state: "ready", data: [{ id: "forge-payments" }, { id: "forge-ledger" }] },
+        apis: { state: "loading" },
+        post: async () => result(false),
+        onClose: () => undefined,
+      } as never,
+    );
+    const selects = els(m.tree).filter((e) => e.type === "select");
+    const repo = selects.find((e) => String(e.props.id).endsWith("-repo"))!;
+    expect(repo.props.value).toBe("forge-payments");
+    expect(text(repo)).toContain("forge-ledger");
+    expect(text(repo)).toContain(D.repoPick);
+    // A pairing keeps its own none.
+    expect(text(m.tree)).toContain(D.noneLink);
   });
 });
 

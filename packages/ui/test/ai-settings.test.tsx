@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import {
   AiSettingsForm,
+  decideOfForm,
   limitsOf,
   toSave,
   type AiSettings,
@@ -32,6 +33,41 @@ const DATA: AiSettings = {
   budgets: { defaultTokens: 200000, perAgent: {} },
   path: "org-pack/runtime.yaml",
 };
+
+describe("AI decides first, set on the AI tab (ADR 0181, ninth UX walk)", () => {
+  const decide = { links: "propose" as const, questions: "propose" as const, minPrecision: 0.95 };
+  const form = {
+    ai: "on",
+    modes: { allowed: ["hand-off"], default: "hand-off" },
+    assistants: { allowed: ["copilot"], default: "copilot" },
+    provider: "",
+    settings: {},
+  };
+
+  it("offers decide for pairings and answers and the precision bar, with what each means", () => {
+    const out = html(<AiSettingsForm data={{ ...DATA, decide, schemaVersion: 4 }} />);
+    expect(out).toContain(T.decideLabel);
+    expect(out).toContain('id="ai-decide-links"');
+    expect(out).toContain('id="ai-decide-questions"');
+    expect(out).toContain('id="ai-decide-precision"');
+    expect(out).toContain('value="95"');
+    expect(out).not.toContain(T.decideNeedsUpgrade(2));
+    const old = html(<AiSettingsForm data={{ ...DATA, decide, schemaVersion: 2 }} />);
+    expect(old).toContain(T.decideNeedsUpgrade(2));
+  });
+
+  it("sends decide only when it changed, so another save never lifts the file", () => {
+    const same = { links: "propose" as const, questions: "propose" as const, minPrecision: "95" };
+    expect(toSave({ ...form, decide: same }, { decide })).not.toHaveProperty("decide");
+    expect(
+      toSave({ ...form, decide: { ...same, links: "auto", minPrecision: "90" } }, { decide }),
+    ).toMatchObject({ decide: { links: "auto", questions: "propose", minPrecision: 0.9 } });
+    expect(decideOfForm({ ...same, minPrecision: "120" })).toEqual({ error: T.badMinPrecision });
+    expect(() => toSave({ ...form, decide: { ...same, minPrecision: "x" } }, { decide })).toThrow(
+      T.badMinPrecision,
+    );
+  });
+});
 
 describe("the AI tab (ADR 0121)", () => {
   it("is a tab of Set up", () => {

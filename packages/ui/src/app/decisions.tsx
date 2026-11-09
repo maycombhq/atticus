@@ -16,6 +16,7 @@ import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { CopyButton } from "../screens/run/shared.js";
 import { runsHref } from "../screens/runs/Runs.js";
+import { ApplyAndPropose } from "./propose.js";
 
 /**
  * ADR 0181 parts 1 to 3 in the app: AI decides first, as itself; a person corrects one, and the
@@ -122,14 +123,19 @@ export function AiChip(p: {
   run?: string | undefined;
   /** Inside a link or a button: the chip alone (no link in a link). */
   inLink?: boolean;
+  /**
+   * Ninth UX walk: a row in a list the page explains once (the batches): "By AI" and the run,
+   * without the whole sentence on every row.
+   */
+  short?: boolean;
 }) {
   return (
     <span className="row ai-mark" style={{ gap: 6, flexWrap: "wrap", display: "inline-flex" }}>
       <span className="chip ai">
         <span aria-hidden="true">◆ </span>
-        {D.chip}
+        {p.short ? D.chipShort : D.chip}
       </span>
-      <span className="sr">{D.chipWhy}</span>
+      {!p.short && <span className="sr">{D.chipWhy}</span>}
       {p.run && !p.inLink && (
         <a href={runsHref({ run: p.run })} aria-label={D.openRun(p.run)} className="hud">
           {D.run(p.run)}
@@ -257,11 +263,18 @@ export function CorrectDecision(p: {
   post?: (b: Api.CorrectDecisionRequestT) => Promise<Api.CorrectDecisionResultT>;
   /** A pairing: the other repo's APIs, when the caller holds them (tests). */
   apis?: Loaded<Api.LinkCandidatesViewT>;
+  /** A pairing: the estate's repos for the repo select, when the caller holds them (tests). */
+  repos?: Loaded<{ id: string }[]>;
   onDone?: (r: Api.CorrectDecisionResultT) => void;
   onClose: () => void;
 }) {
   const { d } = p;
   const id = useId();
+  // Ninth UX walk: opening Correct moves the focus into the form, never to the page's body.
+  const title = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    title.current?.focus();
+  }, []);
   const [f, setF] = useState<CorrectForm>({
     // A pairing's usual correction is another API: its fields start open, the AI's repo in them.
     ...(d.kind === "link" ? { pick: "api" as const } : {}),
@@ -281,6 +294,17 @@ export function CorrectDecision(p: {
       : candidatesPath(d.repo, f.repo.trim()),
   );
   const apis = p.apis ?? (f.pick === "api" && f.repo.trim() ? loaded : undefined);
+  // Ninth UX walk: the repo is picked from the estate's repos, not typed (typed if they don't load).
+  const repoList = useApi<{ id: string }[]>(
+    p.repos || d.kind !== "link" ? undefined : "/api/repos",
+  );
+  const repos = p.repos ?? (d.kind === "link" ? repoList : undefined);
+  const repoIds =
+    repos?.state === "ready"
+      ? [...new Set([...repos.data.map((r) => r.id), ...(f.repo ? [f.repo] : [])])].sort((a, b) =>
+          a.localeCompare(b),
+        )
+      : undefined;
   // Focus moves to the result once saved, so a screen reader hears it and the keyboard is there.
   useEffect(() => {
     if (saved) done.current?.focus();
@@ -337,7 +361,13 @@ export function CorrectDecision(p: {
   const rule = preview?.r.rule;
   return (
     <form className="stack" onSubmit={onSubmit} aria-labelledby={`${id}-t`} style={{ gap: 8 }}>
-      <h4 id={`${id}-t`} className="h" style={{ fontSize: 13, margin: 0 }}>
+      <h4
+        id={`${id}-t`}
+        className="h"
+        style={{ fontSize: 13, margin: 0 }}
+        tabIndex={-1}
+        ref={title}
+      >
         {D.formTitle(d.what)}
       </h4>
       <fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
@@ -372,12 +402,28 @@ export function CorrectDecision(p: {
             <label htmlFor={`${id}-repo`} className="hud">
               {D.repoLabel}
             </label>
-            <input
-              id={`${id}-repo`}
-              className="field"
-              value={f.repo}
-              onChange={(e) => set({ repo: e.target.value, api: "" })}
-            />
+            {repoIds ? (
+              <select
+                id={`${id}-repo`}
+                className="field"
+                value={f.repo}
+                onChange={(e) => set({ repo: e.target.value, api: "" })}
+              >
+                <option value="">{D.repoPick}</option>
+                {repoIds.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id={`${id}-repo`}
+                className="field"
+                value={f.repo}
+                onChange={(e) => set({ repo: e.target.value, api: "" })}
+              />
+            )}
             {apis?.state === "ready" ? (
               <>
                 <label htmlFor={`${id}-api`} className="hud">
@@ -421,16 +467,19 @@ export function CorrectDecision(p: {
             )}
           </div>
         )}
-        <label className="row" style={{ gap: 6 }}>
-          <input
-            type="radio"
-            name={`${id}-pick`}
-            value="none"
-            checked={f.pick === "none"}
-            onChange={() => set({ pick: "none" })}
-          />
-          {d.kind === "question" ? D.noneOption : D.noneLink}
-        </label>
+        {/* Ninth UX walk: a question's own "None of these" option is its none; no second radio. */}
+        {d.kind === "link" && (
+          <label className="row" style={{ gap: 6 }}>
+            <input
+              type="radio"
+              name={`${id}-pick`}
+              value="none"
+              checked={f.pick === "none"}
+              onChange={() => set({ pick: "none" })}
+            />
+            {D.noneLink}
+          </label>
+        )}
       </fieldset>
       <label className="row" style={{ gap: 6 }}>
         <input
@@ -444,7 +493,9 @@ export function CorrectDecision(p: {
       <p id={`${id}-sim`} className="muted" style={{ margin: 0, fontSize: 12 }}>
         {D.similarHint}
       </p>
-      {f.similar && (rule || f.match !== undefined) && (
+      {/* Ninth UX walk: the rule's field shows whenever Apply to similar is on, so a preview that
+          derives none ("give a rule with match") can be answered here. */}
+      {f.similar && (
         <div className="stack" style={{ gap: 4 }}>
           <label htmlFor={`${id}-match`} className="hud">
             {D.matchLabel}
@@ -457,7 +508,7 @@ export function CorrectDecision(p: {
             aria-describedby={`${id}-match-hint`}
           />
           <span id={`${id}-match-hint`} className="muted" style={{ fontSize: 12 }}>
-            {D.matchHint}
+            {rule ? D.matchHint : D.matchHintNone}
           </span>
         </div>
       )}
@@ -571,24 +622,68 @@ export function SpreadView({ r, saved }: { r: Api.CorrectDecisionResultT; saved?
           </table>
         </>
       )}
-      {saved && r.verify.length > 0 && (
-        <>
-          <p className="ev-say" style={{ margin: 0 }}>
-            {D.verify}
-          </p>
-          {r.verify.map((c) => (
-            <Cmd key={c} text={c} />
-          ))}
-        </>
+      {saved && (
+        <NextSteps
+          verify={r.verify}
+          commit={r.commit}
+          scope={r.item.startsWith("link:") ? "corrections" : "answers"}
+        />
       )}
-      {saved && r.commit && (
-        <>
-          <p className="ev-say" style={{ margin: 0 }}>
-            {D.commit}
-          </p>
-          <Cmd text={r.commit} />
-        </>
-      )}
+    </div>
+  );
+}
+
+/** The repo of `atticus verify <repo> --write`. */
+const verifiedRepo = (cmd: string) => /^atticus verify (\S+)/.exec(cmd)?.[1];
+
+/**
+ * Ninth UX walk: after a correction or an Undo, Home's Apply and Propose for review in place (the
+ * person's click runs them), with the same commands under Or in a terminal.
+ */
+export function NextSteps(p: {
+  verify: readonly string[];
+  commit?: string | undefined;
+  scope: "corrections" | "answers";
+}) {
+  const repos = p.verify.map(verifiedRepo).filter((r): r is string => !!r);
+  if (!repos.length && !p.commit) return null;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="ev-say" style={{ margin: 0 }}>
+        {D.next}
+      </p>
+      {repos.map((r, i) => (
+        <ApplyAndPropose
+          key={r}
+          scope={p.scope}
+          repo={r}
+          {...(i < repos.length - 1 ? { noPropose: true } : {})}
+        />
+      ))}
+      {!repos.length && <ApplyAndPropose scope={p.scope} />}
+      <details>
+        <summary className="hud">{D.terminal}</summary>
+        <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+          {p.verify.length > 0 && (
+            <>
+              <p className="ev-say" style={{ margin: 0 }}>
+                {D.verify}
+              </p>
+              {p.verify.map((c) => (
+                <Cmd key={c} text={c} />
+              ))}
+            </>
+          )}
+          {p.commit && (
+            <>
+              <p className="ev-say" style={{ margin: 0 }}>
+                {D.commit}
+              </p>
+              <Cmd text={p.commit} />
+            </>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -678,8 +773,13 @@ export function MakeReadingRule(p: {
 
 /** What Undo did: removed, put back, and what it left because it changed since. */
 export function UndoResultView({ r }: { r: Api.UndoBatchResultT }) {
+  // Ninth UX walk: the result takes the focus, never the page's body.
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
   return (
-    <div className="stack" role="status" style={{ gap: 4 }}>
+    <div className="stack" role="status" tabIndex={-1} ref={ref} style={{ gap: 4 }}>
       <p className="ev-say" style={{ margin: 0 }}>
         {D.undoneResult(r.batch, r.removed, r.restored)}
       </p>
@@ -695,24 +795,11 @@ export function UndoResultView({ r }: { r: Api.UndoBatchResultT }) {
           </ul>
         </>
       )}
-      {r.verify.length > 0 && (
-        <>
-          <p className="ev-say" style={{ margin: 0 }}>
-            {D.verify}
-          </p>
-          {r.verify.map((c) => (
-            <Cmd key={c} text={c} />
-          ))}
-        </>
-      )}
-      {r.commit && (
-        <>
-          <p className="ev-say" style={{ margin: 0 }}>
-            {D.commit}
-          </p>
-          <Cmd text={r.commit} />
-        </>
-      )}
+      <NextSteps
+        verify={r.verify}
+        commit={r.commit}
+        scope={r.files.some((f) => f.endsWith(".corrections.jsonl")) ? "corrections" : "answers"}
+      />
     </div>
   );
 }

@@ -194,3 +194,54 @@ it("lists applyFirst for answered map questions newer than the repo's last Apply
     await s.close();
   }
 }, 60_000);
+
+/**
+ * Ninth UX walk: Home offers the upgrade in the app. GET /api/upgrade lists the steps doctor
+ * counts; POST runs atticus upgrade as a local job on the person's click.
+ */
+it("lists the pending upgrade steps and runs atticus upgrade as a local job", async () => {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { orgPackDirOf } = await import("@maycombhq/core");
+  const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+  const rt = join(orgPackDirOf(root), "runtime.yaml");
+  await writeFile(
+    rt,
+    [
+      "schemaVersion: 3",
+      "assistants: { allowed: [copilot], default: copilot }",
+      "decide: { links: auto }",
+      "",
+    ].join("\n"),
+  );
+  const s = await startServer({ root, port: 0, user: "pat", extend: (r, ctx) => uiRoutes(r, ctx) });
+  try {
+    const h = { "X-Atticus-Token": s.token, "Content-Type": "application/json" };
+    const get = async () =>
+      (await (await fetch(`${s.url}/api/upgrade`, { headers: h })).json()) as {
+        pending: { id: string; files: string[] }[];
+        newer: boolean;
+      };
+    const before = await get();
+    expect(before.newer).toBe(false);
+    expect(before.pending.map((p) => p.id)).toContain("runtime-v4");
+    const r = await fetch(`${s.url}/api/upgrade`, { method: "POST", headers: h, body: "{}" });
+    expect(r.status).toBe(202);
+    const { jobId } = (await r.json()) as { jobId: string };
+    let job: { state: string; result?: { code: number; lines: string[] } };
+    for (;;) {
+      job = (await (
+        await fetch(`${s.url}/api/jobs/${jobId}`, { headers: h })
+      ).json()) as typeof job;
+      if (job.state !== "running" && job.state !== "queued") break;
+      await new Promise((x) => setTimeout(x, 50));
+    }
+    expect(job.state, job.result?.lines.join("\n")).toBe("done");
+    expect(await readFile(rt, "utf8")).toMatch(/^schemaVersion: 4/m);
+    expect((await get()).pending).toEqual([]);
+    const again = await fetch(`${s.url}/api/upgrade`, { method: "POST", headers: h, body: "{}" });
+    expect(again.status).toBe(409);
+  } finally {
+    await s.close();
+  }
+}, 60_000);

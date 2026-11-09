@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.83.0",
+    "version": "2.84.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -8134,6 +8134,241 @@
         }
       }
     },
+    "/api/links/match/done": {
+      "post": {
+        "operationId": "matchLinksDone",
+        "summary": "Read in the answer of a hand-off Match (ADR 0178 part 2; ADR 0181, ninth UX walk): the person's assistant wrote it from the brief; Atticus checks it and, when runtime.yaml's decide.links is auto, applies what passes the citation check and the bar as the AI's (runtime hand-off, with the run), keeping the rest as proposals. 409 when no answer is written yet",
+        "tags": [
+          "views"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchLinksView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/propose-answers": {
+      "get": {
+        "operationId": "getQuestionsPropose",
+        "summary": "Ask AI to propose answers (ADR 0144, 0181): the hand-off run open for the person's assistant, if any, and the line to paste",
+        "tags": [
+          "questions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionsProposeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeQuestions",
+        "summary": "Hand the open questions to the person's assistant as one hand-off run (/atticus-propose); its Done reads the proposals in and, when runtime.yaml's decide.questions is auto, applies each that checks and meets the bar as the AI's (runtime hand-off, with the run). Nothing is answered as a person",
+        "tags": [
+          "questions"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionsProposeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upgrade": {
+      "get": {
+        "operationId": "getUpgrade",
+        "summary": "The upgrade steps this metarepo waits on (atticus upgrade --check): each step's summary and files, and whether a newer Atticus upgraded it",
+        "tags": [
+          "run"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "runUpgrade",
+        "summary": "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review",
+        "tags": [
+          "run"
+        ],
+        "responses": {
+          "202": {
+            "description": "Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/decisions": {
       "get": {
         "operationId": "getDecisions",
@@ -11646,7 +11881,7 @@
       },
       "put": {
         "operationId": "putAiSettings",
-        "summary": "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key",
+        "summary": "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4",
         "tags": [
           "run"
         ],
@@ -23541,6 +23776,12 @@
                 },
                 "owner": {
                   "type": "string"
+                },
+                "byAi": {
+                  "type": "boolean"
+                },
+                "run": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -33264,6 +33505,9 @@
           "error": {
             "type": "string"
           },
+          "run": {
+            "type": "string"
+          },
           "decided": {
             "type": "object",
             "properties": {
@@ -33512,6 +33756,16 @@
                   "high"
                 ],
                 "additionalProperties": false
+              },
+              "decideIn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "copilot-acp",
+                    "hand-off"
+                  ]
+                }
               }
             },
             "required": [
@@ -33543,6 +33797,11 @@
                     "maximum": 9007199254740991
                   },
                   "open": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "retired": {
                     "type": "integer",
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991
@@ -33693,6 +33952,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "lines": {
+                "type": "object",
+                "properties": {
+                  "byAi": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "byPerson": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "byAi",
+                  "byPerson"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -33723,6 +34002,11 @@
                     "maximum": 9007199254740991
                   },
                   "open": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "retired": {
                     "type": "integer",
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991
@@ -34234,6 +34518,81 @@
           "files",
           "verify",
           "commit"
+        ],
+        "additionalProperties": false
+      },
+      "QuestionsProposeView": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "waiting"
+            ]
+          },
+          "run": {
+            "type": "string"
+          },
+          "line": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "done": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "line"
+        ],
+        "additionalProperties": false
+      },
+      "UpgradeView": {
+        "type": "object",
+        "properties": {
+          "atticus": {
+            "type": "string"
+          },
+          "newer": {
+            "type": "boolean"
+          },
+          "stamp": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "summary",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "atticus",
+          "newer",
+          "pending"
         ],
         "additionalProperties": false
       },
@@ -35249,7 +35608,8 @@
                       "runtime": {
                         "type": "string",
                         "enum": [
-                          "copilot-acp"
+                          "copilot-acp",
+                          "hand-off"
                         ]
                       },
                       "run": {
@@ -35458,7 +35818,8 @@
                           "runtime": {
                             "type": "string",
                             "enum": [
-                              "copilot-acp"
+                              "copilot-acp",
+                              "hand-off"
                             ]
                           },
                           "run": {
@@ -39080,7 +39441,8 @@
                         "runtime": {
                           "type": "string",
                           "enum": [
-                            "copilot-acp"
+                            "copilot-acp",
+                            "hand-off"
                           ]
                         },
                         "run": {
@@ -39378,7 +39740,8 @@
                   "runtime": {
                     "type": "string",
                     "enum": [
-                      "copilot-acp"
+                      "copilot-acp",
+                      "hand-off"
                     ]
                   },
                   "run": {

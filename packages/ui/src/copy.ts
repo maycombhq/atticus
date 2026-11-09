@@ -188,6 +188,19 @@ export const COPY = {
       askTitle: "Ask AI to propose answers",
       askWhy:
         "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites and shows each proposal on its question; nothing is answered until you accept it or answer otherwise.",
+      /** Ninth UX walk: when runtime.yaml's decide.questions is auto, say what happens instead. */
+      askWhyAuto:
+        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites. Each proposal for an option question that meets the bar (the code's shapes rank that option first, or a person's rule says the same) is applied as the AI's answer, marked Detected by AI, never as yours: correct any that is wrong. The rest wait on their questions for you to accept or answer otherwise.",
+      askWhyPaused: (why: string) =>
+        `AI deciding is paused (${why}), so each proposal waits on its question for you to accept or answer otherwise.`,
+      askHandoff: "Hand it to my assistant",
+      askHandingOff: "Handing it off…",
+      askWaiting: (run: string) =>
+        `Handed off as run ${run}. In a NEW Copilot Chat (agent mode) or Claude Code session at the metarepo, run the line below. When it has written its proposals, press Done: Atticus reads them in.`,
+      askDone: "Done: read the proposals in",
+      askReading: "Reading the proposals in…",
+      askRead: "Read in.",
+      askTerminal: "Or in a terminal:",
       askSlash: "In Copilot Chat or Claude Code, at the metarepo:",
       askCommand:
         "Or in a terminal (where runtime.yaml allows copilot-acp, it runs in a new Copilot session):",
@@ -379,6 +392,11 @@ export const COPY = {
     // ADR 0153 (Q5): an answer accepted from the assistant's proposal says so.
     fromProposal: (by: string, day: string) =>
       `It was ${by}'s proposal (${day}), confirmed by the person who answered. It cited:`,
+    /** Ninth UX walk: an AI answer's proposal was applied by Atticus as the AI's, never confirmed by a person. */
+    fromAiProposal: (by: string, day: string, run: string) =>
+      `${by} proposed it (${day}) and Atticus applied it as the AI's from run ${run}, because it met the bar. No person has confirmed it. It cited:`,
+    changeAiAnswer:
+      "To change the AI's answer, Correct it above: your answer is recorded as yours, and Apply to similar spreads it to the questions like it.",
   },
   /** Knowledge managed in the metarepo (ADR 0101), in the app (ADR 0102). */
   knowledge: {
@@ -3780,6 +3798,36 @@ export const COPY = {
       `"${line}" doesn't read as an agent and its tokens: write it as architect: 300000.`,
     answered: (model: string, ms: number) => `${model} answered in ${ms} ms.`,
     notAnswered: (why: string) => `It didn't answer: ${why}`,
+    /** Ninth UX walk (ADR 0181): whether the AI decides first, set here. */
+    decideLabel: "AI decides first",
+    decideHint:
+      "Auto: after a Copilot session Atticus runs, or a hand-off to your assistant you mark done, Atticus applies each AI decision that passes the citation check and the bar, shown as Detected by AI and never as anyone's word; a person corrects what is wrong. Propose: the AI only proposes, and a person accepts each one. The safety rules are not affected.",
+    decideLinks: "Pairings of calls to APIs",
+    decideQuestions: "Answers to option questions",
+    decideMode: { propose: "Propose for a person", auto: "Decide (auto)" } as Record<
+      string,
+      string
+    >,
+    minPrecisionLabel: "Pause below this audited precision (%)",
+    minPrecisionHint:
+      "When the sample audit puts the AI's decisions below it, deciding pauses back to propose and Home says why.",
+    badMinPrecision: "The precision is a whole number of percent from 0 to 100, such as 95.",
+    decideNeedsUpgrade: (v: number) =>
+      `runtime.yaml is at version ${v}; decide needs version 4. Run the upgrade on Home first (atticus upgrade).`,
+  },
+  /** Ninth UX walk: Home offers the upgrade the metarepo waits on, run here on the person's click. */
+  upgrade: {
+    title: "Upgrade this metarepo",
+    intro: (n: number) =>
+      `This metarepo waits on ${n} upgrade step${n === 1 ? "" : "s"} for this Atticus. Upgrading backs up every file it changes under .atticus/backups/, runs each step and stamps the metarepo; then propose the changes for review.`,
+    newer: (stamp: string, mine: string) =>
+      `A newer Atticus (${stamp}) upgraded this metarepo; this is ${mine}. Install ${stamp} or later before working in it.`,
+    step: (summary: string, files: number) => `${summary} (${files} file${files === 1 ? "" : "s"})`,
+    run: "Run the upgrade",
+    running: "Upgrading…",
+    done: "Upgraded. Propose the changed files for review.",
+    failed: "The upgrade stopped.",
+    terminal: "Or in a terminal:",
   },
   settings: {
     connectedChip: "CONNECTED",
@@ -4528,8 +4576,10 @@ export const COPY = {
     runningSay: (from: string, to: string) =>
       `Copilot is reading ${from}'s call sites against ${to}'s APIs. This takes a minute or two; the proposals appear here.`,
     readAnswer: "Read the answer",
+    /** Ninth UX walk: reading the hand-off answer in is its run's Done. */
+    readingAnswer: "Reading the answer in…",
     handoff: (brief: string) =>
-      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer.`,
+      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer. Atticus checks it; where runtime.yaml's decide.links is auto, it applies each pairing that passes the citation check and the bar as the AI's (Detected by AI), and the rest wait here for you.`,
     answerAt: (file: string) => `It writes its answer to ${file}.`,
     copy: "Copy",
     done: (p: number, n: number, r: number) =>
@@ -5208,7 +5258,9 @@ export const COPY = {
     chip: "Detected by AI",
     /** Spoken after the chip: what it means, so the chip is never colour alone. */
     chipWhy:
-      "Decided by AI as itself, from a run Atticus started. No person has confirmed it; correct it if it is wrong.",
+      "Decided by AI as itself, through an Atticus run (a Copilot session Atticus started, or a hand-off to your assistant read back on Done). No person has confirmed it; correct it if it is wrong.",
+    /** The batch rows' chip: its words alone (the page says once what it means). */
+    chipShort: "By AI",
     run: (run: string) => `run ${run}`,
     openRun: (run: string) => `Open run ${run}: what the AI was asked and what it answered`,
     title: "Decided by AI",
@@ -5222,8 +5274,20 @@ export const COPY = {
       label: (what: string) => `How the ${what} were settled`,
       links: "links",
       questions: "questions",
-      line: (c: { fromCode: number; byPerson: number; byAi: number; open?: number | undefined }) =>
-        `${c.fromCode} from code · ${c.byPerson} by a person · ${c.byAi} by AI${c.open !== undefined ? ` · ${c.open} open` : ""}`,
+      line: (c: {
+        fromCode: number;
+        byPerson: number;
+        byAi: number;
+        open?: number | undefined;
+        retired?: number | undefined;
+      }) =>
+        c.retired !== undefined
+          ? `${c.byPerson} by a person · ${c.byAi} by AI${c.open !== undefined ? ` · ${c.open} open` : ""} · ${c.retired} retired`
+          : `${c.fromCode} from code · ${c.byPerson} by a person · ${c.byAi} by AI${c.open !== undefined ? ` · ${c.open} open` : ""}`,
+      /** Ninth UX walk: the catalog's links are the map as last applied, apart from the lines. */
+      linksInMap: "links in the map as last applied",
+      lines: (byAi: number, byPerson: number) =>
+        `The corrections hold ${byAi} standing AI pairing${byAi === 1 ? "" : "s"} and ${byPerson} of people's now; Apply brings the map up to them.`,
     },
     mode: {
       auto: "decided by AI",
@@ -5231,6 +5295,15 @@ export const COPY = {
     } as Record<string, string>,
     modeLine: (links: string, questions: string) =>
       `Now: pairings are ${links}; option answers are ${questions}.`,
+    /** Ninth UX walk: where deciding happens, as runtime.yaml allows the runs. */
+    decideIn: {
+      none: "runtime.yaml allows neither copilot-acp nor hand-off here, so no run decides anything: the AI only proposes.",
+      both: "The AI decides when a Copilot session Atticus runs ends, and when a hand-off to your assistant is marked done (Match with Copilot's Read the answer, Ask AI to propose's Done).",
+      handoff:
+        "The AI decides when a hand-off to your assistant is marked done (Match with Copilot's Read the answer, Ask AI to propose's Done); copilot-acp isn't allowed here.",
+      acp: "The AI decides when a Copilot session Atticus runs ends; hand-off isn't allowed here.",
+    },
+    setUp: "Change it in Set up › AI",
     kind: { link: "Pairing", question: "Answer" } as Record<string, string>,
     filterRepo: "Repo",
     allRepos: "All repos",
@@ -5263,6 +5336,7 @@ export const COPY = {
     noneOption: "None of these",
     noneLink: "The call reaches none of these",
     repoLabel: "Repo the API is in",
+    repoPick: "Pick the repo",
     apiLabel: "API",
     apiPick: "Pick the API",
     apisLoading: "Reading that repo's APIs…",
@@ -5273,6 +5347,8 @@ export const COPY = {
       "Atticus derives a rule from your correction, shows it below before you save, and re-checks every AI decision and open item it covers in this repo.",
     matchLabel: "The rule to spread (a path prefix, host or topic pattern)",
     matchHint: "Atticus derived it; change it to spread wider or narrower.",
+    matchHintNone:
+      "Atticus derives one when you preview; where it can't, give one here (a path prefix such as /forge/limits/**, a host pattern or a topic pattern).",
     preview: "Preview",
     previewing: "Working out what it changes…",
     save: "Save my correction",
@@ -5320,20 +5396,27 @@ export const COPY = {
       `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
     verify: "Bring the map up to it:",
     commit: "Commit it for review:",
+    /** Ninth UX walk: the next steps as the app's own buttons; the commands under Or in a terminal. */
+    next: "Then bring the map up to it, and propose it for review:",
+    terminal: "Or in a terminal",
     copy: (cmd: string) => `Copy: ${cmd}`,
     makeRuleOffer: (n: number, shape: string) =>
       `This shape has been corrected ${n} times (${shape}). Make it a reading rule, so the next read gets it right at the source.`,
     makeRule: "Make this a reading rule",
     makingRule: "Drafting the reading rule…",
     ruleMade: (file: string) => `Drafted the reading rule in ${file}. Turn it on with:`,
-    ruleCommand: "Draft it with:",
+    ruleCommand: "Draft it in a terminal:",
     /** Batches and Undo. */
     batchesTitle: "Batches",
     batchesIntro:
       "Every batch the AI or a person's rule applied, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
     batchesEmpty: "No batch yet: nothing has been applied by AI or by a correction's rule.",
     batchesCaption: "Batches applied, newest first, each with Undo",
-    batchKind: { ai: "By AI", rule: "By a person's rule" } as Record<string, string>,
+    batchKind: {
+      ai: "By AI",
+      rule: "By a person's rule",
+      correction: "A person's correction",
+    } as Record<string, string>,
     batchCol: { batch: "Batch", by: "Who and when", what: "What it did", undo: "Undo" },
     batchBy: (by: string, day: string) => `${by}, ${day}`,
     batchApplied: (applied: number, reverted: number) =>
