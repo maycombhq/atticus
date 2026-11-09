@@ -34,9 +34,7 @@ describe("atticus task run-ready", () => {
         repoOrder: [],
       });
       expect(code).toBe(0);
-      expect(r.out[0]).toBe(
-        "Ready to run, in cross-repo order: 1.1 (forge-ledger), 1.2 (forge-ledger), 1.3 (forge-ledger).",
-      );
+      expect(r.out[0]).toBe("Ready to run, in cross-repo order: 1.1 (forge-ledger).");
       expect(r.out).toContain(
         "  Not ready: task 2.1: it waits for tasks 1.1, 1.2 to be done first.",
       );
@@ -62,7 +60,7 @@ describe("atticus task run-ready", () => {
       expect(code).toBe(1);
       expect(r.out.join("\n")).toMatch(/Handed task 1.1 to your assistant/);
       expect(r.out.at(-1)).toBe(
-        `Stopped at task 1.1, which needs a person; not run yet: 1.2, 1.3. Run atticus task run-ready ${CHANGE} again once it is picked up.`,
+        `Stopped at task 1.1, which needs a person. Run atticus task run-ready ${CHANGE} again once it is picked up.`,
       );
     },
     T,
@@ -79,7 +77,7 @@ describe("atticus task run-ready", () => {
   });
 });
 
-describe("Run all ready tasks on the Task board (API 2.76.0)", () => {
+describe("Run all ready tasks on the Task board (API 2.76.0; same-repo order 2.83.0)", () => {
   it(
     "lists the ready tasks, runs them as one job and says where it stopped; never the pr level",
     async () => {
@@ -102,8 +100,10 @@ describe("Run all ready tasks on the Task board (API 2.76.0)", () => {
       const ready = Api.ReadyTasks.parse(
         (await call("GET", `/api/changes/${CHANGE}/tasks/ready`)).body,
       );
-      expect(ready.ready).toEqual(["1.1", "1.2", "1.3"]);
-      expect(ready.tasks.find((t) => t.id === "2.2")?.waitsFor).toEqual(["1.1", "1.2"]);
+      // Ninth UX walk: a task waits for the earlier not-done tasks of its repo.
+      expect(ready.ready).toEqual(["1.1"]);
+      expect(ready.tasks.find((t) => t.id === "1.2")?.sameRepo).toEqual(["1.1"]);
+      expect(ready.tasks.find((t) => t.id === "2.2")?.waitsFor).toEqual(["1.1", "1.2", "2.1"]);
       // The app never asks for the pr level: that is the person's --approve elsewhere.
       expect(
         (await call("POST", `/api/changes/${CHANGE}/tasks/run-ready`, { level: "pr" })).status,
@@ -113,7 +113,7 @@ describe("Run all ready tasks on the Task board (API 2.76.0)", () => {
       });
       expect(started.status).toBe(202);
       const accepted = Api.RunReadyAccepted.parse(started.body);
-      expect(accepted.tasks).toEqual(["1.1", "1.2", "1.3"]);
+      expect(accepted.tasks).toEqual(["1.1"]);
       let job: { state: string; result?: unknown } | undefined;
       for (let i = 0; i < 600; i++) {
         job = (await call("GET", `/api/jobs/${accepted.jobId}`)).body as {
@@ -129,12 +129,12 @@ describe("Run all ready tasks on the Task board (API 2.76.0)", () => {
         { task: "1.1", repo: "forge-ledger", state: "waiting", branch: `task/${CHANGE}/1.1` },
       ]);
       expect(result.stopped?.task).toBe("1.1");
-      expect(result.left).toEqual(["1.2", "1.3"]);
+      expect(result.left).toEqual([]);
       // The task with the assistant isn't ready again until its Done.
       const after = Api.ReadyTasks.parse(
         (await call("GET", `/api/changes/${CHANGE}/tasks/ready`)).body,
       );
-      expect(after.ready).toEqual(["1.2", "1.3"]);
+      expect(after.ready).toEqual([]);
       expect(after.tasks[0]).toMatchObject({ id: "1.1", ready: false });
       // Asked for tasks that aren't ready: nothing starts.
       expect(
