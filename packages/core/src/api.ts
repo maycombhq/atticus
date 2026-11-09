@@ -6421,7 +6421,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: {
       id: "putAiSettings",
       summary:
-        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4. 3.0.0 (ADR 0186): keyEnv is a variable starting ATTICUS_, a model provider's own (ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY and the like) or a name kept in this machine's credential store (422 otherwise); a change of the provider, keyEnv or an address needs the person's confirmation (`ai-model`, `model`) as `confirmation`, else 403",
+        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4. 3.0.0 (ADR 0186): keyEnv is a variable starting ATTICUS_, one of the model providers' own key names (the list is in the model-providers package) or a name kept in this machine's credential store (422 otherwise); a change of the provider, keyEnv or an address needs the person's confirmation (`ai-model`, `model`) as `confirmation`, else 403",
       tag: "run",
       body: z.record(z.string(), z.unknown()),
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
