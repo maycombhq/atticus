@@ -34,6 +34,7 @@ class WordsTest {
         assertEquals("Plan add-limit, a small change, in one step", s("small", change = "add-limit"))
         assertEquals("Find what add-limit needs from the organisation", s("needs", change = "add-limit"))
         assertEquals("Check the knowledge items your changes use", s("verify-knowledge"))
+        assertEquals("Write the brief of add-limit", s("brief", change = "add-limit"))
     }
 
     @Test

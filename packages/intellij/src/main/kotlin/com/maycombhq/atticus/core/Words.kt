@@ -23,6 +23,8 @@ object Words {
             "spec" to { s -> "Draft ${s.repo ?: "the repo"}'s spec with Copilot" },
             "spec-check" to { s -> "Check ${s.repo ?: "the repo"}'s spec" },
             "answer" to { _ -> "Answer the open questions" },
+            // Sixth UX walk: a change whose brief is still the template starts there.
+            "brief" to { s -> "Write the brief of ${s.change ?: "the change"}" },
             "sync-source" to { s -> "Sync the knowledge source ${s.source ?: ""}".trimEnd() },
             "knowledge" to { _ -> "Read the knowledge sources with Copilot" },
             "new-change" to { _ -> "Start a change" },

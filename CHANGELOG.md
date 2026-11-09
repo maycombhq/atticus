@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.22 (unreleased)
+
+### Fixed
+
+- **The IntelliJ plugin names the brief step** ("Write the brief of <change>") as VS Code does. Its words check failed the beta.21 editor-plugins build, so beta.21 has no IntelliJ or JetBrains files attached; beta.22 carries them.
+
 ## 2.0.0-beta.21 (2026-11-08)
 
 ### AI decides first, people correct, and a correction spreads (ADR 0181)
