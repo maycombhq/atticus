@@ -12,6 +12,7 @@ import {
   registerModelProvider,
   registeredModelProviders,
   registerToolSource,
+  registerModelGuard,
   buildContextPack,
   createRuntime,
   DATA_RULE,
@@ -161,6 +162,47 @@ describe("createRuntime", () => {
         providers: { anthropic: (s) => provider(String(s.model)) },
       }),
     ).rejects.toThrow(/model-b is not allowed/);
+  });
+
+  // Review round 50 (ADR 0186 addendum): the program asks where the key goes before a provider
+  // is made; a refusal makes none, so no key is read and nothing is sent.
+  it("model mode: the registered guard is asked first, and its refusal builds no provider", async () => {
+    const made: string[] = [];
+    const asked: unknown[] = [];
+    const cfg = rt({
+      modes: { allowed: ["model"], default: "model" },
+      adapters: {
+        model: { type: "anthropic", settings: { model: "m", baseUrl: "http://127.0.0.1:9" } },
+      },
+    });
+    const root = await tmp();
+    const providers = {
+      anthropic: (s: Record<string, unknown>): ModelProvider => {
+        made.push(String(s.baseUrl));
+        return {
+          model: "m",
+          complete: async () => ({ text: "", usage: { inputTokens: 0, outputTokens: 0 } }),
+        };
+      },
+    };
+    try {
+      registerModelGuard(async (o) => {
+        asked.push(o);
+        throw new RuntimeConfigError("Confirm the model settings first.");
+      });
+      await expect(createRuntime(cfg, { root, providers })).rejects.toThrow(
+        "Confirm the model settings first.",
+      );
+      expect(made).toEqual([]);
+      expect(asked).toEqual([
+        { root, type: "anthropic", settings: { model: "m", baseUrl: "http://127.0.0.1:9" } },
+      ]);
+      registerModelGuard(async () => undefined);
+      expect(await createRuntime(cfg, { root, providers })).toBeInstanceOf(ModelRuntime);
+      expect(made).toEqual(["http://127.0.0.1:9"]);
+    } finally {
+      registerModelGuard(undefined);
+    }
   });
 
   it("model mode: offers the registered tools to a mock model that calls them (ADR 0107)", async () => {

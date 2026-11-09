@@ -55,7 +55,7 @@ import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { newerAtticusOf, upgradeCheck, type UpgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
-import { keyEnvFromEnvironment } from "@maycombhq/model-providers";
+import { defaultKeyStore, keyEnvFromEnvironment, type KeyStore } from "@maycombhq/model-providers";
 export { versionAtLeast };
 
 /**
@@ -131,6 +131,8 @@ export interface DoctorDeps {
    * new session, no prompt), where runtime.yaml allows copilot-acp. Tests pass a fake.
    */
   copilotAcp?: (o: { command: string; cwd: string }) => Promise<CopilotAcpProbe>;
+  /** This machine's credential store (atticus secret set), asked by name only. Tests pass one. */
+  keys?: KeyStore;
 }
 
 export interface AssistantFilesState {
@@ -625,7 +627,18 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   const modelMode = rt.modes.allowed.includes("model");
   const named = !!model && model.type !== "mock";
   // Review round 48: the environment holds a model's key only under a model key's name.
-  const keyHere = (name: string) => keyEnvFromEnvironment(name) && !!envName(env, name);
+  // Review round 50: or the credential store does (atticus secret set), as the providers and
+  // the AI tab read it. By name only: the value is never read out.
+  const inEnv = (name: string) => keyEnvFromEnvironment(name) && !!envName(env, name);
+  const keyStore = deps.keys ?? defaultKeyStore();
+  const kept = (name: string) => {
+    try {
+      return !!keyStore.get(name);
+    } catch {
+      return false;
+    }
+  };
+  const keyHere = (name: string) => inEnv(name) || kept(name);
   out.push({
     id: "model",
     label: "How AI steps run",
@@ -640,14 +653,14 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
             : "AI steps hand off to your assistant; runtime.yaml doesn't allow Atticus to call a model itself"
           : !named
             ? "model mode is allowed, but runtime.yaml names no model provider"
-            : keyEnv && !keyEnvFromEnvironment(keyEnv)
+            : keyEnv && !keyEnvFromEnvironment(keyEnv) && !kept(keyEnv)
               ? `model mode with ${model.type}, but keyEnv ${keyEnv} isn't read from the environment (review round 48): name a variable starting ATTICUS_ or the provider's own, or keep the key with atticus secret set ${keyEnv}`
               : keyEnv && !keyHere(keyEnv)
                 ? `model mode with ${model.type}, but ${keyEnv} isn't set on this machine`
-                : `model mode with ${model.type}${typeof model.settings.model === "string" ? ` (${model.settings.model})` : ""}${keyEnv ? `; ${keyEnv} is set` : ""}. Not called here: doctor makes no network call`,
+                : `model mode with ${model.type}${typeof model.settings.model === "string" ? ` (${model.settings.model})` : ""}${keyEnv ? (inEnv(keyEnv) ? `; ${keyEnv} is set` : `; ${keyEnv} is kept in this machine's credential store`) : ""}. Not called here: doctor makes no network call`,
     fix: !named
       ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
-      : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal.`,
+      : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal; or keep it in this machine's credential store with atticus secret set ${keyEnv ?? "<keyEnv>"}.`,
   });
   // ---- ADR 0171: Copilot driven through its Agent Client Protocol, where runtime.yaml allows it.
   // The server is started for its version and the handshake only: no prompt, so no run.

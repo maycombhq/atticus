@@ -60,12 +60,15 @@ function pick(
   return wanted.map((w) => byId.get(w)!);
 }
 
+const lockWait = (o: { lockWaitMs?: number }) =>
+  o.lockWaitMs !== undefined ? { lockWaitMs: o.lockWaitMs } : {};
+
 /** atticus workspace sync: clone or update base clones. Exit 1 if any repo failed. */
 export async function workspaceSync(
   root: string,
   repoIds: string[] | undefined,
   io: Output,
-  o: { from?: string } = {},
+  o: { from?: string; lockWaitMs?: number } = {},
 ): Promise<number> {
   const all = await loadRepos(root);
   if (all.length === 0) {
@@ -75,7 +78,11 @@ export async function workspaceSync(
   const repos = pick(all, repoIds, io);
   if (!repos) return 2;
   // --from <folder>: copy each missing base clone from your own clone there, with no network.
-  const results = await createWorkspace(root).sync(repos, o.from ? { from: o.from } : {});
+  // Round 50: the app waits for another sync of a base clone only briefly (lockWaitMs).
+  const results = await createWorkspace(root, undefined, lockWait(o)).sync(
+    repos,
+    o.from ? { from: o.from } : {},
+  );
   for (const r of results) {
     const sha = r.sha ? ` ${r.sha.slice(0, 12)}` : "";
     const why = r.from ? `copied from your clone at ${r.from}` : r.reason;
@@ -98,6 +105,7 @@ export async function workspaceOpen(
   change: string,
   repoIds: string[] | undefined,
   io: Output,
+  o: { lockWaitMs?: number } = {},
 ): Promise<number> {
   if (!repoIds || repoIds.length === 0) {
     io.err("Say which repos the change touches: --repos <id>,<id>");
@@ -107,7 +115,7 @@ export async function workspaceOpen(
   if (!repos) return 2;
   let c;
   try {
-    c = await createWorkspace(root).openChange(change, repos);
+    c = await createWorkspace(root, undefined, lockWait(o)).openChange(change, repos);
   } catch (e) {
     if (!(e instanceof GitError)) throw e;
     // Git's own words, with what to do: most often a base clone with no origin/main yet.

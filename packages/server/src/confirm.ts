@@ -84,9 +84,11 @@ const WITHOUT_THE_APP: Record<ConfirmedWrite, { what: string; cli: string }> = {
     what: "Changing where runtime.yaml sends the model's key (its provider, keyEnv or address)",
     cli: "edit runtime.yaml yourself and propose it for review",
   },
+  // Review round 50: committing them doesn't stand for the person's yes (the assistant can
+  // commit); the address the person last confirmed does (kept outside the metarepo).
   "ai-test": {
-    what: "Testing model settings that aren't committed sends the key to them",
-    cli: "commit runtime.yaml first, or run the step from the command line",
+    what: "Testing the model settings sends the key to an address you haven't confirmed",
+    cli: "a step in model mode yourself",
   },
 };
 

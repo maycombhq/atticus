@@ -2329,6 +2329,8 @@ export const COPY = {
     ofDone: (done: string | number, v: string | number) => `${done} of ${v} done`,
     showMyDigest: "Show my digest",
     sendItToMe: "Send it to me",
+    // Review round 50: the button names where it posts; the person's yes is for that channel.
+    sendItTo: (channel: string | number) => `Send it to ${channel}`,
     sentTo: (channel: string | number) => `Sent to ${channel}.`,
     thingsNeedAttention: (v: string | number) => `${v} things need attention.`,
     nothingIsBlockedRight: "Nothing is blocked right now.",

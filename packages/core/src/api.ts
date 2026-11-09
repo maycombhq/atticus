@@ -341,8 +341,20 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the credential store (422). POST /api/workspace/sync and /api/reconcile answer 409 while one of
  *   their kind runs; GET /api/past-changes?change= and /api/changes/{changeId}/cockpit answer 400
  *   for a change id that isn't one, and /api/view/{name} 404 for a name that isn't a view.
+ * 3.1.0 (review round 50, ADR 0186 addendum: nothing the assistant writes stands for the person).
+ *   POST /api/runs, and in model mode POST /api/changes/{changeId}/runs and .../tasks/run-ready,
+ *   answer 403 unless runtime.yaml sends the model's key where the person last confirmed it (a
+ *   confirmed save or Test in the AI settings, or a step they ran in their own terminal; kept
+ *   outside the metarepo), or, with none confirmed yet, to a built-in provider's own address.
+ *   POST /api/settings/ai/test needs `ai-test` whenever the address isn't the confirmed one, even
+ *   when committed. POST /api/me/digest's `digest-send` target is the channel it posts to, read
+ *   at the send (GET /api/me gives it as notify.to); `me` is refused. POST /api/runs/{runId}/done
+ *   runs only the resume Atticus kept for a step the app prepared (never a file in .runs/), and
+ *   only that step's own. POST /api/changes/{changeId}/workspace and .../runs answer 409 while a
+ *   sync of a repo's base clone runs elsewhere. Not additive for the digest's target only: the
+ *   app's page is updated with it.
  */
-export const API_VERSION = "3.0.0";
+export const API_VERSION = "3.1.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2674,7 +2686,10 @@ export const ConfirmedWrite = z.enum(CONFIRMED_WRITES);
 export const Confirmation = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/, "a confirmation");
 export const ConfirmationRequest = z.strictObject({
   write: ConfirmedWrite,
-  /** What the write is for: the change, `<change>/<task>`, the step, the scope, `me` or `model`. */
+  /**
+   * What the write is for: the change, `<change>/<task>`, the step, the scope, the digest's
+   * channel (3.1.0; `me` before) or `model`.
+   */
   target: z.string().min(1).max(400),
   /** The page's own key, from its <meta name="atticus-page-key">; never printed. */
   pageKey: z.string().max(200).optional(),
@@ -3162,7 +3177,10 @@ export const SaveNotifyRequest = z.strictObject({
 });
 
 /** ADR 0048: show the digest, or send it through the notify adapter (the click is the approval). */
-/** 3.0.0 (ADR 0186): send needs the person's confirmation from the app (`digest-send`, `me`). */
+/**
+ * 3.0.0 (ADR 0186): send needs the person's confirmation from the app (`digest-send`). 3.1.0
+ * (review round 50): of the channel it posts to, GET /api/me's notify.to.
+ */
 export const SendDigestRequest = z.strictObject({
   send: z.boolean().default(false),
   confirmation: Confirmation.optional(),
@@ -4497,7 +4515,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getMe",
       summary:
-        "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073)",
+        "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073); 3.1.0: notify.to, where Send it to me posts",
       tag: "system",
       ok: {
         status: 200,
@@ -4531,7 +4549,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "sendDigest",
       summary:
-        "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation (`digest-send`, `me`), else 403",
+        "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation, else 403. 3.1.0 (review round 50): its target is the channel it posts to (GET /api/me's notify.to, read again at the send), not `me`",
       tag: "system",
       body: SendDigestRequest,
       ok: {
@@ -5680,7 +5698,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "runReadyTasks",
       summary:
-        "2.79.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level",
+        "2.79.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level. 3.1.0: in model mode 403 unless runtime.yaml sends the key where the person last confirmed",
       tag: "changes",
       params: [p("changeId")],
       body: RunReadyRequest,
@@ -5703,12 +5721,13 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/changes/{changeId}/workspace": {
     post: {
       id: "openWorkspace",
-      summary: "Create the change's worktrees and editor workspaces",
+      summary:
+        "Create the change's worktrees and editor workspaces; 3.1.0: 409 while a sync of one of its repos' base clones runs elsewhere",
       tag: "changes",
       params: [p("changeId")],
       body: OpenWorkspaceRequest,
       ok: { status: 200, schema: "ChangeRepos", description: "OK" },
-      errors: [400, 404],
+      errors: [400, 404, 409],
     },
   },
   "/api/changes/{changeId}/handoff": {
@@ -5734,12 +5753,13 @@ const OPS: Record<string, Record<string, Op>> = {
     },
     post: {
       id: "startRun",
-      summary: "Prepare an AI run (hand-off by default)",
+      summary:
+        "Prepare an AI run (hand-off by default); 3.1.0: in model mode 403 unless runtime.yaml sends the key where the person last confirmed (ADR 0186 addendum), and 409 while a sync of the task's repo runs elsewhere",
       tag: "ai",
       params: [p("changeId")],
       body: StartRunRequest,
       ok: { status: 201, schema: "RunView", description: "Prepared" },
-      errors: [400, 403, 404, 422],
+      errors: [400, 403, 404, 409, 422],
     },
   },
   "/api/changes/{changeId}/critic": {
@@ -5780,7 +5800,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "startStep",
       summary:
-        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs",
+        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs; 3.1.0: 403 unless runtime.yaml sends the key where the person last confirmed (ADR 0186 addendum)",
       tag: "ai",
       body: StartStepRequest,
       ok: {
@@ -5788,7 +5808,7 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: { type: "object", required: ["jobId", "model"] },
         description: "Started",
       },
-      errors: [400, 409],
+      errors: [400, 403, 409],
     },
   },
   "/api/runs/handoff": {
@@ -6452,7 +6472,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "testAiProvider",
       summary:
-        "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403",
+        "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403. 3.1.0: also whenever they send the key to an address the person hasn't confirmed, committed or not; a confirmed Test makes it the confirmed address",
       tag: "run",
       body: ConfirmedRequest,
       ok: { status: 200, schema: { type: "object" }, description: "OK" },

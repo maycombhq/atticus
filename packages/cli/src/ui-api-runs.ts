@@ -12,6 +12,7 @@ import {
 import { parse } from "yaml";
 import { orgPackDirOf } from "@maycombhq/core";
 import { isHandoffStep } from "./handoff-flag.js";
+import { requireConfirmedModel } from "./model-address.js";
 import { listRuns, runTranscript } from "./runs-view.js";
 
 /**
@@ -110,6 +111,8 @@ export function uiModelRunRoutes(
           throw conflict(
             "This server's runtime.yaml configures no model, so it can't run an AI step. Run it in your assistant (its slash command), or from VS Code with Copilot.",
           );
+        // Review round 50 (ADR 0186 addendum): the key goes only where the person confirmed.
+        await requireConfirmedModel(root, "model");
         // Round 41: one AI step at a time (as a Copilot run checks): two at once would each take
         // the other's run as the one it made. Checked and started in one tick.
         const busy = ctx.jobs.runningOf("step");

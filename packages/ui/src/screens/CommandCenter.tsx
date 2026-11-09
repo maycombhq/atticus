@@ -303,7 +303,7 @@ interface DigestResult {
 }
 
 /** See what waits on you as one message, or send it to yourself through the notify adapter. */
-function DigestButtons() {
+export function DigestButtons({ to }: { to?: string }) {
   const [busy, setBusy] = useState(false);
   const [d, setD] = useState<DigestResult | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -312,7 +312,8 @@ function DigestButtons() {
     setError(undefined);
     try {
       // ADR 0186: sending posts a message as the person, so the click is their confirmation.
-      const yes = send ? await confirmed("digest-send", "me") : {};
+      // Review round 50: of the channel the button shows (an older server knows only "me").
+      const yes = send ? await confirmed("digest-send", to ?? "me") : {};
       setD(await api<DigestResult>("/api/me/digest", { method: "POST", body: { send, ...yes } }));
     } catch (e) {
       setError(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
@@ -327,7 +328,7 @@ function DigestButtons() {
           {T.showMyDigest}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={() => void go(true)}>
-          {T.sendItToMe}
+          {to ? T.sendItTo(to) : T.sendItToMe}
         </button>
       </div>
       {error && (
@@ -877,7 +878,7 @@ export function CommandCenter() {
               {bulkNote}
             </p>
           )}
-          {me && <DigestButtons />}
+          {me && <DigestButtons {...(me.notify?.to ? { to: me.notify.to } : {})} />}
         </Panel>
       </div>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>

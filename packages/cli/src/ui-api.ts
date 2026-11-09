@@ -68,6 +68,7 @@ import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { partStates } from "./runs-view.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
+import { requireConfirmedModel } from "./model-address.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -101,14 +102,39 @@ async function openTaskWorktree(
     // A repos.yaml that doesn't read: opening the workspace writes it again.
   }
   if (has) return undefined;
-  // No base clone yet either (a repo the person never cloned): clone it first.
-  if (!existsSync(baseClonePath(root, p.repo))) {
-    const synced = await run((io) => workspaceSync(root, [p.repo], io));
-    if (synced.code !== 0) return synced;
-    const opened = await run((io) => workspaceOpen(root, change, [p.repo], io));
-    return { ...opened, out: [...synced.out, ...opened.out] };
+  const wait = { lockWaitMs: INLINE_LOCK_WAIT_MS };
+  return inlineGit(async () => {
+    // No base clone yet either (a repo the person never cloned): clone it first.
+    if (!existsSync(baseClonePath(root, p.repo))) {
+      const synced = await run((io) => workspaceSync(root, [p.repo], io, wait));
+      if (synced.code !== 0) return synced;
+      const opened = await run((io) => workspaceOpen(root, change, [p.repo], io, wait));
+      return { ...opened, out: [...synced.out, ...opened.out] };
+    }
+    return run((io) => workspaceOpen(root, change, [p.repo], io, wait));
+  });
+}
+
+/**
+ * Review round 50: a route the app waits on (Run with AI, Open the workspace) waits for a base
+ * clone another sync holds only this long (a terminal waits up to 30 minutes), then answers 409.
+ */
+const INLINE_LOCK_WAIT_MS = 2_000;
+
+/** Git work on a base clone for a route that answers at once: a sync running elsewhere is 409. */
+async function inlineGit<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (e) {
+    if (!(e instanceof Error) || e.name !== "LockHeldError") throw e;
+    const what = (e as Error & { held?: { what?: string } }).held?.what ?? e.message;
+    const repo = /base clone of (\S+)/.exec(what)?.[1];
+    throw conflict(
+      repo
+        ? `A sync of ${repo} is running; try again when it finishes.`
+        : `${e.message} Try again when it finishes.`,
+    );
   }
-  return run((io) => workspaceOpen(root, change, [p.repo], io));
 }
 
 export interface UiDeps {
@@ -858,6 +884,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const change = params.changeId!;
         await readChange(root, change);
         const b = parseBody(Api.RunReadyRequest, body);
+        // Review round 50: as a single task run, its model only where the person confirmed it.
+        await requireConfirmedModel(root, b.runtime);
         const view = await readyView(change);
         const tasks = b.tasks ? view.ready.filter((t) => b.tasks!.includes(t)) : view.ready;
         if (!tasks.length)
@@ -895,7 +923,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             },
             // The task's repo gets its worktree when it has none yet, as Run with AI does.
             before: async (task) => {
-              const opened = await openTaskWorktree(root, change, task, deps.gitHost);
+              // Round 50: a sync of its repo running elsewhere is said, and the task waits.
+              const opened = await openTaskWorktree(root, change, task, deps.gitHost).catch(
+                (e: unknown) => {
+                  if (e instanceof HttpError) return { code: 1, out: [], err: [e.detail ?? ""] };
+                  throw e;
+                },
+              );
               return opened && opened.code !== 0
                 ? opened.err.join(" ") || opened.out.join(" ") || "Its worktree couldn't be opened."
                 : undefined;
@@ -976,7 +1010,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/changes/{changeId}/workspace", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.OpenWorkspaceRequest, body);
-        const res = await run((io) => workspaceOpen(root, params.changeId!, b.repos, io));
+        const res = await inlineGit(() =>
+          run((io) =>
+            workspaceOpen(root, params.changeId!, b.repos, io, {
+              lockWaitMs: INLINE_LOCK_WAIT_MS,
+            }),
+          ),
+        );
         if (res.code !== 0) throw refused(res);
         const repos = await readFile(
           join(changesDirOf(root), params.changeId!, "repos.yaml"),
@@ -1126,6 +1166,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/changes/{changeId}/runs", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.StartRunRequest, body);
+        // Review round 50 (ADR 0186 addendum): in model mode the key goes only where the person
+        // confirmed it.
+        await requireConfirmedModel(root, b.runtime);
         const before = new Set(
           await readdir(join(runsDirOf(root), params.changeId!)).catch(() => [] as string[]),
         );

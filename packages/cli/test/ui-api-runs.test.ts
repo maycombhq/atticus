@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer, type ServerContext } from "@maycombhq/server";
 import { uiModelRunRoutes } from "../src/ui-api-runs.js";
+import { recordConfirmedAddress } from "../src/model-address.js";
+import { readUserState } from "../src/user-state.js";
 
 /**
  * ADR 0106: what Atticus asked a model and what it answered, for every run under .runs/: the
@@ -251,6 +253,12 @@ describe("model runs (ADR 0106)", () => {
       await setModel(
         "schemaVersion: 1\nadapters:\n  model: { type: openai-compatible, settings: { model: forge-small, maxInput: 12078 } }\n",
       );
+      // Round 50: a provider with no address of its own is sent the key once the person
+      // confirmed where it goes (Test or a save in the app's AI settings).
+      await recordConfirmedAddress(root, {
+        type: "openai-compatible",
+        settings: { model: "forge-small", maxInput: 12078 },
+      });
       const before = started.length;
       const r = await post("/api/runs", { args: ["spec", "draft", "forge-ledger"] });
       expect(r.status).toBe(202);
@@ -308,18 +316,13 @@ describe("a step prepared for the person's own assistant (UX review)", () => {
       expect(asked).toEqual([["plan", "stories", "add-limit", "--handoff", "--json"]]);
       expect(body.runId).toBe("run-20261023034009-0001");
       expect(body.lines).toEqual(["Paste prompt.md into your assistant."]);
-      // Fourth UX walk: its resume is kept beside the run, so Done finishes the step.
-      const kept = JSON.parse(
-        await readFile(join(root, ".runs", "knowledge-scan", body.runId!, "resume.json"), "utf8"),
-      ) as { args: string[] };
-      expect(kept.args).toEqual([
-        "plan",
-        "stories",
-        "add-limit",
-        "--handoff",
-        "--resume",
-        "run-20261023034009-0001",
-      ]);
+      // Fourth UX walk: its resume is kept, so Done finishes the step. Round 50: in the
+      // person's own state, made from the words the step was started with, never beside the run.
+      const kept = await readUserState<{ args: string[] }>(root, `resume/${body.runId!}.json`);
+      expect(kept?.args).toEqual(["plan", "stories", "add-limit", "--resume", body.runId]);
+      await expect(
+        readFile(join(root, ".runs", "knowledge-scan", body.runId!, "resume.json"), "utf8"),
+      ).rejects.toThrow();
     } finally {
       await s.close();
     }
@@ -374,12 +377,18 @@ describe("a wiki's own scan from the app (UX review, round 36)", () => {
 
 describe("Done finishes a step the app prepared (fourth UX walk)", () => {
   it("runs its kept resume, and names the next run when the step offers another prompt", async () => {
-    const { resumeAfterDone } = await import("../src/handoff-resume.js");
+    const { resumeAfterDone, keepResume } = await import("../src/handoff-resume.js");
     const id = await run(8, "2026-10-23T03:40:08Z", "# Task: draft the change\n", "validated");
-    await writeFile(
-      join(root, ".runs", "knowledge-scan", id, "resume.json"),
-      JSON.stringify({ args: ["change", "draft", "c1", "--handoff", "--resume", id] }),
-    );
+    const keep = () =>
+      keepResume(root, "knowledge-scan", id, [
+        "change",
+        "draft",
+        "c1",
+        "--handoff",
+        "--resume",
+        id,
+      ]);
+    await keep();
     const asked: string[][] = [];
     const wrote = await resumeAfterDone(
       root,
@@ -392,6 +401,16 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
     );
     expect(asked).toEqual([["change", "draft", "c1", "--resume", id, "--handoff", "--json"]]);
     expect(wrote).toEqual({ lines: ["Wrote proposal.md and specs/limits/spec.md."] });
+    // Round 50: a kept resume runs once.
+    expect(
+      await resumeAfterDone(
+        root,
+        async () => ({ code: 0, out: [], err: [] }),
+        "knowledge-scan",
+        id,
+      ),
+    ).toBeUndefined();
+    await keep();
     const next = await resumeAfterDone(
       root,
       async () => {
@@ -419,12 +438,17 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
   // Sixth UX walk: a step the app prepared said what to type in a terminal next; the app says
   // what to do in the app instead, and the command line keeps its commands.
   it("says what to do next in the app, not on the command line", async () => {
-    const { resumeAfterDone, prepareStep, appLines } = await import("../src/handoff-resume.js");
+    const { resumeAfterDone, prepareStep, appLines, keepResume } =
+      await import("../src/handoff-resume.js");
     const id = await run(6, "2026-10-23T03:40:06Z", "# Task: place the change\n", "validated");
-    await writeFile(
-      join(root, ".runs", "knowledge-scan", id, "resume.json"),
-      JSON.stringify({ args: ["change", "feature", "c1", "--handoff", "--resume", id] }),
-    );
+    await keepResume(root, "knowledge-scan", id, [
+      "change",
+      "feature",
+      "c1",
+      "--handoff",
+      "--resume",
+      id,
+    ]);
     const next = await resumeAfterDone(
       root,
       async () => {

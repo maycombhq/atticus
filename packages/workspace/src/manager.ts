@@ -15,12 +15,21 @@ import { readChangeRepos, writeChangeRepos } from "./files.js";
  * Review round 48: git work on a base clone (a clone, a fetch and checkout, a worktree added
  * from it) holds `<base clone>.lock`, so two syncs (the app's and a terminal's, or two clicks)
  * never run git in one folder together. Cross-process (withSharedFileLock); a lock whose process
- * is gone is taken over at once, and a clone may take minutes, so the lock lasts that long.
+ * is gone is taken over at once. Review round 50: one whose process on this machine is alive is
+ * never taken over (a clone may take longer than any stale time); another machine's goes by its
+ * age. A terminal waits up to 30 minutes for it; the app's routes pass a short `waitMs`
+ * (createWorkspace's lockWaitMs) and answer that a sync is running (LockHeldError).
  */
-function withBaseClone<T>(dest: string, id: string, work: () => Promise<T>): Promise<T> {
+const BASE_CLONE_WAIT_MS = 30 * 60_000;
+function withBaseCloneLock<T>(
+  dest: string,
+  id: string,
+  work: () => Promise<T>,
+  waitMs = BASE_CLONE_WAIT_MS,
+): Promise<T> {
   return withSharedFileLock(dest, work, {
-    staleMs: 30 * 60_000,
-    waitMs: 30 * 60_000,
+    staleMs: BASE_CLONE_WAIT_MS,
+    waitMs,
     what: `git work on the base clone of ${id}`,
   });
 }
@@ -131,8 +140,22 @@ export async function remoteDefaultBranch(
   }
 }
 
-export function createWorkspace(root: string, git: GitRunner = createGit()): WorkspaceManager {
+export interface WorkspaceOptions {
+  /**
+   * How long to wait for a base clone another sync holds before LockHeldError (default 30
+   * minutes, as a terminal waits). The app's routes that answer at once pass a short one.
+   */
+  lockWaitMs?: number;
+}
+
+export function createWorkspace(
+  root: string,
+  git: GitRunner = createGit(),
+  opts: WorkspaceOptions = {},
+): WorkspaceManager {
   const g = (args: string[], cwd = root) => git(args, cwd);
+  const withBaseClone = <T>(dest: string, id: string, work: () => Promise<T>) =>
+    withBaseCloneLock(dest, id, work, opts.lockWaitMs);
   const head = async (cwd: string) => (await g(["rev-parse", "HEAD"], cwd)).stdout.trim();
   const dirty = async (cwd: string) =>
     (await g(["status", "--porcelain", "--untracked-files=normal"], cwd)).stdout.trim() !== "";

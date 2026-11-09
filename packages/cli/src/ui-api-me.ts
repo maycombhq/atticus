@@ -17,6 +17,9 @@ export { ME_FILE } from "./me-file.js";
  * PR merges on the Git host.
  */
 
+/** Where the digest posts: the channel the person chose, else them (as atticus digest does). */
+export const digestChannel = (user: string, channel: string | undefined) => channel ?? `@${user}`;
+
 export async function meView(ctx: Pick<ServerContext, "root" | "user" | "person">) {
   const op = await loadOrgPack(orgPackDirOf(ctx.root));
   const me = await readMe(ctx.root);
@@ -31,6 +34,9 @@ export async function meView(ctx: Pick<ServerContext, "root" | "user" | "person"
     notify: {
       digest: me.notify?.digest ?? "off",
       ...(me.notify?.channel ? { channel: me.notify.channel } : {}),
+      // Review round 50: where Send it to me posts, which its button shows and its confirmation
+      // names.
+      to: digestChannel(ctx.user, me.notify?.channel),
     },
     // WP7.5: the changes the person follows.
     watching: me.watch,
@@ -41,6 +47,10 @@ export function uiMeRoutes(r: Router, ctx: ServerContext, deps: DigestDeps = {})
   return (
     r
       .add("GET", "/api/me", async () => ({ status: 200, body: await meView(ctx) }))
+      // Review round 50: saving where the digest goes sends nothing, so it takes no
+      // confirmation. Each send does: it names the channel read at that moment, and a person's
+      // yes for another one is refused. (A confirmation here would guard nothing more: the same
+      // setting is a line in .atticus/me.yaml, which the assistant can edit directly.)
       .add("PUT", "/api/me/notify", async ({ body }) => {
         const b = Api.SaveNotifyRequest.safeParse(body ?? {});
         if (!b.success)
@@ -67,16 +77,20 @@ export function uiMeRoutes(r: Router, ctx: ServerContext, deps: DigestDeps = {})
         const b = Api.SendDigestRequest.safeParse(body ?? {});
         if (!b.success) throw badRequest("Send { send: true } to post it, or {} to see it.");
         // Posting it is a message as the person: their confirmation from the app (ADR 0186).
-        if (b.data.send)
-          requireConfirmation(ctx.confirmations, "digest-send", "me", b.data.confirmation);
+        // Review round 50: of this channel, the one read now. .atticus/me.yaml (where the channel
+        // is kept) is in the metarepo, which the assistant can write, so the person's yes names
+        // the channel the button showed them; one changed since is refused, and nothing posts.
         const me = await readMe(ctx.root);
+        const channel = digestChannel(ctx.user, me.notify?.channel);
+        if (b.data.send)
+          requireConfirmation(ctx.confirmations, "digest-send", channel, b.data.confirmation);
         const out: string[] = [];
         const err: string[] = [];
         const code = await digestCommand(
           ctx.root,
           {
             as: ctx.user,
-            ...(me.notify?.channel ? { channel: me.notify.channel } : {}),
+            channel,
             send: b.data.send,
             json: true,
           },

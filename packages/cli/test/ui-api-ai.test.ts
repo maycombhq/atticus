@@ -327,8 +327,11 @@ describe("the AI tab's Test never sends another secret to a model's address (rev
       return { status: r.status, body: (await r.json()) as Record<string, unknown> };
     };
     try {
-      // Committed: Test runs without a confirmation, and the provider refuses GITHUB_TOKEN.
-      const r = await post({});
+      // Committed, but at an address the person never confirmed: round 50, HEAD isn't their yes.
+      expect((await post({})).status).toBe(403);
+      expect(seen).toEqual([]);
+      // With their confirmation, the provider still refuses GITHUB_TOKEN.
+      const r = await post({ confirmation: await confirmFor(s, "ai-test", "model") });
       expect(r.status).toBe(200);
       expect(r.body.ok).toBe(false);
       expect(String(r.body.error)).toMatch(/isn't read from the environment/);

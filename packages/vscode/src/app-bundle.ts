@@ -66,9 +66,18 @@ export async function answerApp(
     path: string,
     body?: unknown,
   ) => Promise<{ status: number; body: unknown }>,
+  o: {
+    /**
+     * Review round 50 (ADR 0186): the page key of the app running now. `atticus ui` started
+     * again (it stopped, or atticus.path changed) has a new key, which a panel's page built
+     * before doesn't hold; the confirmation is asked for with this one instead.
+     */
+    pageKey?: () => Promise<string | undefined>;
+  } = {},
 ): Promise<Msg | undefined> {
   if (typeof m !== "object" || m === null || (m as Msg).type !== "api") return undefined;
-  const { id, method, path, body } = m as Msg;
+  const { id, method, path } = m as Msg;
+  let body = (m as Msg).body;
   const refuse = (detail: string) => ({
     type: "api-reply",
     id,
@@ -80,6 +89,16 @@ export async function answerApp(
   if (typeof path !== "string" || !/^\/api\/[^\s]*$/.test(path) || path.includes(".."))
     return refuse("Only the local API's own paths, /api/…");
   try {
+    if (
+      o.pageKey &&
+      method === "POST" &&
+      path === "/api/confirmations" &&
+      body &&
+      typeof body === "object"
+    ) {
+      const key = await o.pageKey();
+      if (key) body = { ...(body as Msg), pageKey: key };
+    }
     const r = await call(method, path, body);
     return { type: "api-reply", id, status: r.status, body: r.body };
   } catch (e) {

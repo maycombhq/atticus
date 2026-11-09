@@ -9,5 +9,8 @@ import { join } from "node:path";
 export default function setup() {
   const dir = mkdtempSync(join(tmpdir(), "at-"));
   for (const k of ["TMPDIR", "TEMP", "TMP"]) process.env[k] = dir;
+  // Review round 50: what Atticus keeps for the person outside the metarepo (the user's state
+  // folder) goes to the run's own temporary folder, never the real one.
+  process.env.XDG_STATE_HOME = join(dir, "state");
   return () => rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 }

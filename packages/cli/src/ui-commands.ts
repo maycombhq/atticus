@@ -43,6 +43,7 @@ import { uiAuditRoutes } from "./ui-api-audit.js";
 import { uiOutsideRoutes } from "./ui-api-outside.js";
 import { uiContractsRoutes } from "./ui-api-contracts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
+import { asTheApp, servingTheApp } from "./model-address.js";
 
 /**
  * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
@@ -69,6 +70,11 @@ export function extendUiRoutes(
   deps: UiDeps = {},
   o: { warm?: boolean } = {},
 ): Router {
+  // Review round 50 (ADR 0186 addendum): everything a route starts, its jobs included, is the
+  // app's, so a model call it makes is held to the address the person confirmed.
+  const add = r.add.bind(r);
+  r.add = ((method, pattern, handler, opts) =>
+    add(method, pattern, (req) => asTheApp(() => handler(req)), opts)) as Router["add"];
   const known = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
     warm: o.warm === true,
   });
@@ -111,6 +117,7 @@ export function extendUiRoutes(
                                       uiModelRunRoutes(
                                         uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
                                         ctx,
+                                        deps.runStep ? { runStep: deps.runStep } : {},
                                       ),
                                       ctx,
                                     ),
@@ -199,6 +206,8 @@ export async function startUi(
   // ADR 0119: the catalog is read once and kept while the server runs; any file change it
   // hears (its watcher, its own writes, a scan) means the next read reads the files again.
   keepCatalogsInMemory(true);
+  // Review round 50: every model call this process makes while it serves is the app's.
+  servingTheApp(true);
   // Read it now, while nobody waits, so the first page doesn't pay for it.
   void readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
     () => undefined,
@@ -214,6 +223,7 @@ export async function startUi(
     close: async () => {
       stop();
       keepCatalogsInMemory(false);
+      servingTheApp(false);
       await close();
     },
   });

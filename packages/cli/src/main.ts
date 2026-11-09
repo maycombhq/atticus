@@ -39,9 +39,13 @@ const loadAiSetUp = () =>
     import("@maycombhq/naysayer"),
     import("./code-tools.js"),
     import("./draft-check-tool.js"),
+    import("./model-address.js"),
   ]);
 export async function setUpAi(): Promise<void> {
-  const [ai, providers, plugins, naysayer, codeTools, draftCheck] = await loadAiSetUp();
+  const [ai, providers, plugins, naysayer, codeTools, draftCheck, address] = await loadAiSetUp();
+  // Review round 50 (ADR 0186 addendum): a model run the app or a Copilot session starts sends
+  // the key only where the person last confirmed it; a person's own run at a terminal confirms.
+  ai.registerModelGuard((o) => address.guardModelAddress(o));
   // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   providers.registerBuiltInModelProviders();

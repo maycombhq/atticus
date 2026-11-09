@@ -37,6 +37,8 @@ const healthy = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   freeBytes: async () => 50 * 1024 ** 3,
   onPath: (p) => p === "code",
   assistantFiles: async () => ({ missing: [], stale: [], edited: [] }),
+  // Round 50: this machine's credential store, empty here (never the real one in a test).
+  keys: { get: () => undefined, set: () => undefined, forget: () => undefined },
   ...o,
 });
 
@@ -267,6 +269,26 @@ describe("atticus doctor", () => {
     expect(set.status).toBe("ok");
     expect(set.detail).toContain("anthropic");
     expect(JSON.stringify(set)).not.toContain("sk-secret-value");
+    // Review round 50: a key kept with atticus secret set (the credential store) is there too,
+    // as the providers and the AI tab read it; its value is never read out.
+    const stored = new Map([["ATTICUS_MODEL_KEY", "sk-stored-value"]]);
+    const keys = {
+      get: (n: string) => stored.get(n),
+      set: () => undefined,
+      forget: () => undefined,
+    };
+    const kept = byId(await doctorChecks(own, healthy({ keys })), "model");
+    expect(kept.status).toBe("ok");
+    expect(kept.detail).toContain("kept in this machine's credential store");
+    expect(JSON.stringify(kept)).not.toContain("sk-stored-value");
+    // A name that isn't a model key's is read only from the store: kept there, it is fine.
+    await rt(
+      "  model: { type: anthropic, settings: { model: claude-opus-5-5, keyEnv: NORTHWIND_GATEWAY } }",
+    );
+    stored.set("NORTHWIND_GATEWAY", "sk-other");
+    expect(byId(await doctorChecks(own, healthy({ keys })), "model").status).toBe("ok");
+    stored.delete("NORTHWIND_GATEWAY");
+    expect(byId(await doctorChecks(own, healthy({ keys })), "model").status).toBe("warn");
   });
 
   it("lists the model for each kind of step and where each came from (ADR 0121 addendum)", async () => {
