@@ -22,6 +22,7 @@ import {
   linkCandidates,
   matchCovers,
   migrateRuntimeV4Text,
+  NO_TARGET,
   newBatchId,
   pairingBar,
   pairsFromCorrections,
@@ -522,5 +523,107 @@ describe("batches, the audit's AI kind and the pause (ADR 0181, parts 2 and 3)",
     expect(fine).toEqual({ links: "auto", questions: "auto" });
     // Nothing audited yet: as configured.
     expect(aiPause(settings, auditPrecision([]).ai)).toEqual({ links: "auto", questions: "auto" });
+  });
+});
+
+describe("review round 48: a person's word stands over the AI's in the join, and a rule stays narrow", () => {
+  const aiPair = {
+    repo: "forge-gw",
+    entry: "e-payments-status",
+    path: "/v2/payments/{paymentId}/status",
+    by: "atticus",
+    ai: { runtime: "copilot-acp", run: ai.run },
+  };
+  it("a person's answer to the targets question outranks an AI pairing, None of these too", () => {
+    const none = joinFacts({
+      repos,
+      pairs: { "forge-refunds": { "c-status": aiPair } },
+      targets: { "forge-refunds": { "c-status": NO_TARGET } },
+      explain: true,
+    });
+    expect(none.joins.find((x) => x.call.fact === "c-status")).toBeUndefined();
+    expect(none.left?.find((x) => x.call.fact === "c-status")?.reason).toBe("answered-none");
+    const named = joinFacts({
+      repos,
+      pairs: { "forge-refunds": { "c-status": aiPair } },
+      targets: { "forge-refunds": { "c-status": "forge-gw" } },
+    });
+    const j = named.joins.find((x) => x.call.fact === "c-status")!;
+    expect(j.paired).toBeUndefined();
+    expect(joinFlagsOf(j)).not.toContain(JOINED_BY_AI);
+    // An AI answer doesn't outrank the AI's own pairing (as before).
+    const both = joinFacts({
+      repos,
+      pairs: { "forge-refunds": { "c-status": aiPair } },
+      targets: { "forge-refunds": { "c-status": NO_TARGET } },
+      aiTargets: { "forge-refunds": { "c-status": { runtime: "copilot-acp", run: ai.run } } },
+    });
+    expect(both.joins.find((x) => x.call.fact === "c-status")?.paired?.ai).toBeDefined();
+  });
+
+  it("a person's unlink outranks an AI targets answer; a person's answer still stands", () => {
+    const status = {
+      kind: "call" as const,
+      file: "src/main/java/forge/refunds/GwClient.java",
+      line: 40,
+      value: "/payments/{id}/status",
+    };
+    const unlink = FactCorrection.parse({
+      schemaVersion: 2,
+      fact: "c-status",
+      target: status,
+      action: "unlink",
+      by: "pat",
+      at: "2026-11-08T11:00:00.000Z",
+    });
+    // As before, a plain read of the pairings has none; the join's read says the person declined it.
+    expect(pairsFromCorrections(refunds.facts, [unlink])).toEqual({});
+    const declined = pairsFromCorrections(refunds.facts, [unlink], { declined: true });
+    expect(declined).toEqual({
+      "c-status": { path: "/payments/{id}/status", by: "pat", none: true },
+    });
+    const aiAnswered = joinFacts({
+      repos,
+      pairs: { "forge-refunds": declined },
+      targets: { "forge-refunds": { "c-status": "forge-gw" } },
+      aiTargets: { "forge-refunds": { "c-status": { runtime: "copilot-acp", run: ai.run } } },
+      explain: true,
+    });
+    expect(aiAnswered.joins.find((x) => x.call.fact === "c-status")).toBeUndefined();
+    expect(aiAnswered.left?.find((x) => x.call.fact === "c-status")?.reason).toBe("answered-none");
+    const personAnswered = joinFacts({
+      repos,
+      pairs: { "forge-refunds": declined },
+      targets: { "forge-refunds": { "c-status": "forge-gw" } },
+    });
+    expect(personAnswered.joins.find((x) => x.call.fact === "c-status")?.how).toBe("answer");
+    // The Connect panel never lists a declined call as paired.
+    const cands = linkCandidates({
+      from: "forge-refunds",
+      facts: refunds.facts,
+      join: joinFacts({ repos }),
+      apis,
+      pairs: declined,
+      to: { repo: "forge-gw" },
+    });
+    expect(cands.calls.find((c) => c.fact === "c-status")?.status).not.toBe("paired");
+  });
+
+  it("derives the longest prefix a sibling shares, never one widened by a distant sibling", () => {
+    expect(
+      deriveMatch({ path: "/api/v1/limits/{id}" }, [
+        { path: "/api/v1/limits/daily" },
+        { path: "/api/v1/fees/{id}" },
+      ]),
+    ).toEqual({ kind: "path", match: "/api/v1/limits/**" });
+    // Only a distant sibling: the corrected item's own folder, not /api/v1/**.
+    expect(deriveMatch({ path: "/api/v1/limits/{id}" }, [{ path: "/api/v1/fees/{id}" }])).toEqual({
+      kind: "path",
+      match: "/api/v1/limits/**",
+    });
+    // A sibling sharing more than the folder's two segments still widens it to what they share.
+    expect(
+      deriveMatch({ path: "/api/v1/limits/daily/{id}" }, [{ path: "/api/v1/limits/weekly" }]),
+    ).toEqual({ kind: "path", match: "/api/v1/limits/**" });
   });
 });

@@ -750,14 +750,22 @@ const segmentsOf = (p: string) =>
  * Whether a call is one an answer's rule covers (ADR 0153, Q2): a path prefix covers a call whose
  * path starts with its segments (`/forge/limits/**` and `/forge/limits` alike); a host pattern, a
  * call on a host it matches as the manifest matches hosts (the call's own host, or its base's URL).
+ * With `strict` (review round 48: the AI's decisions and a correction's spread, as core's
+ * `matchCovers` reads a rule), only the rule's placeholders match any one segment: a call whose
+ * path starts with a placeholder (`/{base}/accounts`) isn't under `/charges/**`.
  */
-export function ruleCoversCall(match: string, f: FactOf<"call">, facts: readonly Fact[]): boolean {
+export function ruleCoversCall(
+  match: string,
+  f: FactOf<"call">,
+  facts: readonly Fact[],
+  o: { strict?: boolean } = {},
+): boolean {
   if (isPathMatch(match)) {
     const want = segmentsOf(match.replace(/\/\*\*$/, ""));
     const got = segmentsOf(f.path);
     return (
       want.length <= got.length &&
-      want.every((x, i) => x === "{}" || got[i] === "{}" || x === got[i])
+      want.every((x, i) => x === "{}" || (!o.strict && got[i] === "{}") || x === got[i])
     );
   }
   const url = urlOf(f, facts);
@@ -782,7 +790,7 @@ export function ruledTargets(
   repo: string,
   facts: readonly Fact[],
   questions: readonly Question[],
-  o: { repoType?: string } = {},
+  o: { repoType?: string; strict?: boolean } = {},
 ): Map<string, RuledCall> {
   const rules = questions
     .filter(
@@ -805,7 +813,9 @@ export function ruledTargets(
   if (!rules.length) return out;
   for (const f of facts) {
     if (!ruleMayName(f, facts)) continue;
-    const q = rules.find((r) => ruleCoversCall(r.answer!.match!, f, facts));
+    const q = rules.find((r) =>
+      ruleCoversCall(r.answer!.match!, f, facts, o.strict ? { strict: true } : {}),
+    );
     const label = q ? answerLabel(q) : undefined;
     if (q && label && label !== TARGETS_SPLIT)
       out.set(f.id, { id: q.id, match: q.answer!.match!, label });

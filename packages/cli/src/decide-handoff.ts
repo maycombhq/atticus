@@ -121,6 +121,11 @@ export async function findDecideRun(root: string, runId: string): Promise<Decide
   return undefined;
 }
 
+/**
+ * Waiting for its Done: waiting, prepared, or failed (nothing was written yet: Done can be given
+ * again). Review round 48: a run a newer one superseded is `cancelled` (RunState's own state),
+ * never open, so its Done can't take the newer run's answer.
+ */
 const open = (r: DecideRun) =>
   r.state === "waiting" || r.state === "prepared" || r.state === "failed";
 
@@ -141,23 +146,66 @@ export async function openDecideRun(
   return undefined;
 }
 
+const matchOf = (from: string, to: Api.LinkBoxT) => (r: DecideRun) =>
+  r.decide.kind === "links" &&
+  r.decide.from === from &&
+  (r.decide.to.repo ?? "") === (to.repo ?? "") &&
+  (r.decide.to.system ?? "") === (to.system ?? "");
+
 /** A hand-off Match's open run for these two boxes. */
 export const openMatchRun = (root: string, from: string, to: Api.LinkBoxT) =>
-  openDecideRun(
-    root,
-    matchChangeOf(from),
-    (r) =>
-      r.decide.kind === "links" &&
-      r.decide.from === from &&
-      (r.decide.to.repo ?? "") === (to.repo ?? "") &&
-      (r.decide.to.system ?? "") === (to.system ?? ""),
-  );
+  openDecideRun(root, matchChangeOf(from), matchOf(from, to));
 
-/** Ends a decide run: validated (read in) or failed (with why: Done can be given again). */
+/**
+ * Review round 48: ends every open decide run of a change folder that `pick` keeps as cancelled,
+ * with why: a newer brief (a new hand-off, or a Copilot session Atticus runs) supersedes it, and
+ * its Done would read the newer run's answer. The runs ended.
+ */
+export async function cancelOpenDecideRuns(
+  root: string,
+  change: string,
+  why: string,
+  o: { pick?: (r: DecideRun) => boolean; now?: Date } = {},
+): Promise<DecideRun[]> {
+  const out: DecideRun[] = [];
+  const ids = (await readdir(join(runsDirOf(root), change)).catch(() => [] as string[])).filter(
+    (n) => n.startsWith("run-"),
+  );
+  for (const id of ids.sort()) {
+    const r = await readRun(join(runsDirOf(root), change, id, "run.json"));
+    if (!r || !open(r) || (o.pick && !o.pick(r))) continue;
+    out.push(
+      await finishDecideRun(root, r, {
+        state: "cancelled",
+        errors: [why],
+        ...(o.now ? { now: o.now } : {}),
+      }),
+    );
+  }
+  return out;
+}
+
+/** Ends a hand-off Match's open runs for these two boxes (round 48: cancelled, superseded). */
+export const cancelMatchRuns = (
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  why: string,
+  now?: Date,
+) =>
+  cancelOpenDecideRuns(root, matchChangeOf(from), why, {
+    pick: matchOf(from, to),
+    ...(now ? { now } : {}),
+  });
+
+/**
+ * Ends a decide run: validated (read in), failed (with why: Done can be given again), or (round
+ * 48) cancelled, superseded by a newer run.
+ */
 export async function finishDecideRun(
   root: string,
   run: DecideRun,
-  o: { state: "validated" | "failed"; errors?: string[]; now?: Date },
+  o: { state: "validated" | "failed" | "cancelled"; errors?: string[]; now?: Date },
 ): Promise<DecideRun> {
   const done: DecideRun = {
     ...run,

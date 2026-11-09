@@ -882,3 +882,249 @@ describe("AI decides in hand-off mode too (ADR 0181, ninth UX walk)", () => {
     }
   });
 });
+
+describe("review round 48: a person's word stands over the AI's, and a rule stays where it is", () => {
+  const QC = "q-ccccccccccc3";
+  const ACCOUNTS = "call.post.accounts";
+  const LINES = "facts/forge-billing.corrections.jsonl";
+  const accounts = () =>
+    appendFile(
+      join(root, "facts/forge-billing.jsonl"),
+      call(ACCOUNTS, "/{base}/accounts/{id}", 43) + "\n",
+    );
+  const aiToLedger = () =>
+    JSON.stringify({
+      schemaVersion: 2,
+      fact: ACCOUNTS,
+      target: { kind: "call", file: FILE, line: 43, value: "/{base}/accounts/{id}" },
+      action: "link",
+      link: {
+        repo: "forge-ledger",
+        entry: "entry.post.accounts",
+        method: "POST",
+        path: "/accounts/{id}",
+      },
+      by: "atticus",
+      at: "2026-11-08T09:00:00.000Z",
+      ai: { runtime: "copilot-acp", run: "r0" },
+      batch: "b-20261108-090000-aaaaaa",
+    });
+  /** A person answers the question "None of these". */
+  async function personNone(id: string) {
+    const { answerQuestion } = await import("@maycombhq/core");
+    await answerQuestion(root, id, { option: 4, by: "pat", at: "2026-11-08T09:30:00.000Z" });
+  }
+  const acpRunner = (runId: string, write?: () => Promise<void>) =>
+    (async () => {
+      await write?.();
+      return { stopReason: "end_turn", runId };
+    }) as never;
+
+  it("never pairs a call whose targets question a person answered, None of these too (x7)", async () => {
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    await personNone(QB);
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    const d = await decideLinks(root, {
+      view,
+      facts,
+      run: "r9",
+      now: AT,
+      proposals: [
+        { call: "call.post.charges-refunds", api: REFUNDS, why: "x", lines: [`${FILE}:41`] },
+      ],
+    });
+    expect(d?.applied).toEqual([]);
+    expect(d?.kept[0]?.why).toMatch(/a person answered where this call goes/);
+    expect((await corrections()).filter((c) => c.ai)).toEqual([]);
+  });
+
+  it("a correction's spread skips a call whose targets question a person answered (x8)", async () => {
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    await personNone(QB);
+    await writeFile(
+      join(root, LINES),
+      (await aiLine("call.post.charges-capture", 40, "/charges/{id}/capture", "r0")) + "\n",
+    );
+    const r = await correctDecision(
+      root,
+      {
+        item: "link:forge-billing:call.post.charges-capture",
+        api: CAPTURE,
+        repo: GW,
+        preview: true,
+      },
+      { by: "sam", now: AT },
+    );
+    expect(r.rule?.match).toBe("/charges/**");
+    expect(r.spread.map((s) => s.item)).toEqual(["link:forge-billing:call.post.charges"]);
+  });
+
+  it("an AI answer never re-links a call a person declined on the canvas (x5)", async () => {
+    await writeFile(
+      join(root, LINES),
+      [
+        await aiLine("call.post.charges-capture", 40, "/charges/{id}/capture", "r0"),
+        await aiLine("call.post.charges-refunds", 41, "/charges/{id}/refunds", "r0"),
+        "",
+      ].join("\n"),
+    );
+    const r = await correctDecision(
+      root,
+      { item: "link:forge-billing:call.post.charges-capture", none: true },
+      { by: "pat", now: AT },
+    );
+    expect(r.spread.map((s) => s.item)).toContain("link:forge-billing:call.post.charges-refunds");
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    await propose(QB, 1, 41);
+    const d = await decideAnswers(root, { run: "r3", now: new Date("2026-11-08T11:00:00Z") });
+    expect(d?.applied).toEqual([]);
+    expect(d?.kept[0]?.why).toMatch(/a person said where its call goes/);
+    expect((await readQuestion(root, QB))!.state).toBe("open");
+    // The join reads the person's "none" too, so an AI answer never joins the call there.
+    const pairs = pairsFromCorrections(await billingFacts(), await corrections(), {
+      declined: true,
+    });
+    expect(pairs["call.post.charges-refunds"]).toMatchObject({ by: "pat", none: true });
+  });
+
+  it("an AI answer is kept where a person's link rule says its calls go elsewhere", async () => {
+    await writeFile(
+      join(root, LINES),
+      (await aiLine("call.post.charges-capture", 40, "/charges/{id}/capture", "r0")) + "\n",
+    );
+    const r = await correctDecision(
+      root,
+      { item: "link:forge-billing:call.post.charges-capture", api: CAPTURE, repo: GW },
+      { by: "pat", now: AT },
+    );
+    expect(r.rule?.match).toBe("/charges/**");
+    // Only the rule speaks for the refunds call: take the rule's own line for it away.
+    const text = await readFile(join(root, LINES), "utf8");
+    await writeFile(
+      join(root, LINES),
+      text
+        .split("\n")
+        .filter((l) => !l.includes('"call.post.charges-refunds"'))
+        .join("\n"),
+    );
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    await propose(QB, 1, 41);
+    const d = await decideAnswers(root, { run: "r3", now: new Date("2026-11-08T11:00:00Z") });
+    expect(d?.applied).toEqual([]);
+    expect(d?.kept[0]?.why).toMatch(
+      /a person's rule \(\/charges\/\*\*\) says these calls go to forge-partner-gateway/,
+    );
+  });
+
+  it("a pairing's spread never covers a call whose path starts with a placeholder (x1)", async () => {
+    await accounts();
+    await writeFile(
+      join(root, LINES),
+      [
+        await aiLine("call.post.charges-capture", 40, "/charges/{id}/capture", "r0"),
+        await aiLine("call.post.charges-refunds", 41, "/charges/{id}/refunds", "r0"),
+        aiToLedger(),
+        "",
+      ].join("\n"),
+    );
+    for (const req of [{ api: CAPTURE, repo: GW }, { none: true }]) {
+      const r = await correctDecision(
+        root,
+        { item: "link:forge-billing:call.post.charges-capture", ...req, preview: true },
+        { by: "pat", now: AT },
+      );
+      expect(r.rule?.match).toBe("/charges/**");
+      expect(r.spread.map((s) => s.item)).not.toContain(`link:forge-billing:${ACCOUNTS}`);
+    }
+  });
+
+  it("a question's spread never covers a call whose path starts with a placeholder (x4)", async () => {
+    await accounts();
+    for (const [id, l] of [
+      [QA, 40],
+      [QB, 41],
+      [QC, 43],
+    ] as const) {
+      await writeQuestion(root, targetsQuestion(id, l));
+      await propose(id, 1, l);
+    }
+    const d = await decideAnswers(root, { run: "r2", now: AT });
+    expect(d?.applied.map((a) => a.id)).toEqual([QA, QB, QC]);
+    const r = await correctDecision(
+      root,
+      { item: QA, option: 2, preview: true },
+      { by: "pat", now: AT },
+    );
+    expect(r.rule?.match).toBe("/charges/**");
+    expect(r.spread.map((s) => s.item)).toEqual([QB]);
+  });
+
+  it("Undo of an AI questions batch puts its proposals back (x2)", async () => {
+    await writeQuestion(root, targetsQuestion(QA, 40));
+    await writeQuestion(root, targetsQuestion(QB, 41));
+    await propose(QA, 1, 40);
+    await propose(QB, 1, 41);
+    const before = await readFile(join(root, `proposals/questions/${QA}.yaml`), "utf8");
+    const d = await decideAnswers(root, { run: "r2", now: AT });
+    expect(await readdir(join(root, "proposals/questions"))).toEqual([]);
+    const u = await undoBatch(root, d!.batch!, { by: "pat", now: AT });
+    expect((await readdir(join(root, "proposals/questions"))).sort()).toEqual([
+      `${QA}.yaml`,
+      `${QB}.yaml`,
+    ]);
+    expect(await readFile(join(root, `proposals/questions/${QA}.yaml`), "utf8")).toBe(before);
+    expect(u.files).toContain("proposals/questions/");
+    expect((await readQuestion(root, QA))!.state).toBe("open");
+    // The proposals check again, for a person (or a new run) to take up.
+    const { checkedProposals } = await import("@maycombhq/core");
+    const ok = (await checkedProposals(root)).filter((p) => p.ok).map((p) => p.id);
+    expect(ok.sort()).toEqual([QA, QB]);
+  });
+
+  it("a superseded propose hand-off is cancelled: its Done reads nothing, and it isn't open (x3, x6)", async () => {
+    const steps = await import("../src/copilot-acp-steps.js");
+    const H = await import("../src/decide-handoff.js");
+    await writeQuestion(root, targetsQuestion(QA, 40));
+    const h1 = await steps.startProposeHandoff(root, { now: new Date("2026-11-08T10:00:00Z") });
+    const h2 = await steps.startProposeHandoff(root, { now: new Date("2026-11-08T10:05:00Z") });
+    expect((await H.findDecideRun(root, h1.runId))?.state).toBe("cancelled");
+    await propose(QA, 1, 40);
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(await H.decideRunDone(root, h1.runId, io)).toBe(2);
+    expect((await readQuestion(root, QA))!.state).toBe("open");
+    expect(await H.decideRunDone(root, h2.runId, io)).toBe(0);
+    expect((await readQuestion(root, QA))!.answer?.by).toMatchObject({ run: h2.runId });
+    expect(await H.openDecideRun(root, H.PROPOSE_CHANGE)).toBeUndefined();
+  });
+
+  it("a Copilot session's propose or Match ends the open hand-off run", async () => {
+    const steps = await import("../src/copilot-acp-steps.js");
+    const H = await import("../src/decide-handoff.js");
+    const h = await steps.startProposeHandoff(root, { now: new Date("2026-11-08T10:00:00Z") });
+    const io = { out: () => {}, err: () => {} };
+    await steps.questionsProposeCommand(
+      root,
+      { mode: "copilot-acp", runner: acpRunner("run-acp-1"), now: AT },
+      io,
+      async () => 0,
+    );
+    expect((await H.findDecideRun(root, h.runId))?.state).toBe("cancelled");
+
+    const { runMatch } = await import("../src/link-match.js");
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    await runMatch(root, { view, quotes: new Map(), facts, mode: "hand-off", now: AT });
+    const m = await H.openMatchRun(root, "forge-billing", { repo: GW });
+    expect(m?.state).toBe("waiting");
+    await runMatch(root, {
+      view,
+      quotes: new Map(),
+      facts,
+      mode: "copilot-acp",
+      runner: acpRunner("run-acp-2"),
+      now: AT,
+    });
+    expect((await H.findDecideRun(root, m!.runId))?.state).toBe("cancelled");
+    expect(await H.openMatchRun(root, "forge-billing", { repo: GW })).toBeUndefined();
+  });
+});

@@ -176,7 +176,8 @@ export async function factsForScan(
 
 /**
  * G1 (ADR 0174): a repo's pairings from its corrections file (`<repo>.corrections.jsonl`), met
- * to its calls as any correction is; none when the file isn't there or has none.
+ * to its calls as any correction is; none when the file isn't there or has none. Round 48: a
+ * call a person said reaches none is kept as `none`, for the join (`pairsFromCorrections`).
  */
 export async function pairsOfRepo(
   root: string,
@@ -186,8 +187,9 @@ export async function pairsOfRepo(
   const text = await readFile(join(factsDirOf(root), `${repo}.corrections.jsonl`), "utf8").catch(
     () => undefined,
   );
-  if (!text || !text.includes('"link"')) return {};
-  return pairsFromCorrections(facts, parseCorrections(text).corrections);
+  // Round 48: a person's "none" (an unlink) is read too, so an AI answer doesn't join the call.
+  if (!text || !/"(?:un)?link"/.test(text)) return {};
+  return pairsFromCorrections(facts, parseCorrections(text).corrections, { declined: true });
 }
 
 /**

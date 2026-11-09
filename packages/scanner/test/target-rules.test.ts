@@ -113,6 +113,30 @@ describe("ruleCoversCall", () => {
     expect(ruleCoversCall("/forge/limits/**", call(fs, "c-notify"), fs)).toBe(false);
   });
 
+  it("strict (round 48, the AI's spread): only the rule's placeholders are any one segment", () => {
+    const fs = [
+      ...facts(),
+      { ...call(facts(), "c-limits"), id: "c-based", path: "/{base}/accounts/{id}" } as Fact,
+    ];
+    // The join's reading, as ADR 0153 has it: a placeholder on either side is any one.
+    expect(ruleCoversCall("/forge/limits/**", call(fs, "c-based"), fs)).toBe(false);
+    expect(ruleCoversCall("/charges/**", call(fs, "c-based"), fs)).toBe(true);
+    // Strict: a call whose path starts with a placeholder isn't under /charges.
+    expect(ruleCoversCall("/charges/**", call(fs, "c-based"), fs, { strict: true })).toBe(false);
+    expect(ruleCoversCall("/{x}/accounts/**", call(fs, "c-based"), fs, { strict: true })).toBe(
+      true,
+    );
+    expect(ruleCoversCall("/forge/limits/**", call(fs, "c-limits"), fs, { strict: true })).toBe(
+      true,
+    );
+    expect(ruleCoversCall("/forge/limits/x/**", call(fs, "c-limits"), fs, { strict: true })).toBe(
+      false,
+    );
+    const q = ruleQ({ match: "/charges/**" });
+    expect(ruledTargets(REPO, fs, [q]).get("c-based")?.label).toBe("limits-api");
+    expect(ruledTargets(REPO, fs, [q], { strict: true }).has("c-based")).toBe(false);
+  });
+
   it("a host pattern covers a call on a host it matches, as the manifest matches hosts", () => {
     const fs = facts();
     expect(ruleCoversCall("*.payments.forge.internal", call(fs, "c-grpc-fees"), fs)).toBe(true);

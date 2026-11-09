@@ -17,6 +17,7 @@ import type { Output } from "./commands.js";
 import { copilotAcpAllowed, copilotAcpByDefault, type AcpStepRunner } from "./copilot-acp-steps.js";
 import { dataBlock } from "./rules-commands.js";
 import {
+  cancelMatchRuns,
   finishDecideRun,
   matchChangeOf,
   openMatchRun,
@@ -221,13 +222,14 @@ export async function runMatch(
     // Ninth UX walk: the hand-off is an Atticus run, so the AI's pairings read back on its Done
     // can be decided as the AI's with the run (ADR 0181); an earlier open run of the same pair
     // is of an earlier brief and is ended.
-    const was = await openMatchRun(root, view.from, view.to);
-    if (was)
-      await finishDecideRun(root, was, {
-        state: "failed",
-        errors: ["A new brief was written for the same two boxes: this run's answer isn't read."],
-        ...(o.now ? { now: o.now } : {}),
-      });
+    // Round 48: cancelled (never open again), so its Done can't read the new brief's answer.
+    await cancelMatchRuns(
+      root,
+      view.from,
+      view.to,
+      "A new brief was written for the same two boxes: this run's answer isn't read.",
+      o.now,
+    );
     const run = await startDecideRun(root, {
       kind: "links",
       change: matchChangeOf(view.from),
@@ -244,6 +246,14 @@ export async function runMatch(
   }
   const runner =
     o.runner ?? (await (await import("./copilot-acp-steps.js")).acpStepRunner(root, { op }));
+  // Round 48: a Copilot session answers this brief: an open hand-off run would read its answer.
+  await cancelMatchRuns(
+    root,
+    view.from,
+    view.to,
+    "A Copilot session was started for the same two boxes: Atticus reads its answer itself.",
+    o.now,
+  );
   let runId: string | undefined;
   try {
     runId = (

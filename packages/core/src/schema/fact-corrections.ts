@@ -276,24 +276,33 @@ export function linksFor(f: CallLike, corrections: readonly FactCorrection[]): F
     .map(([c]) => c);
 }
 
-/** A pairing as the join reads it: what the call reaches, who said so, and (ADR 0181) the AI run. */
-export type PairOnFile = CorrectionLink & { by: string; ai?: CorrectionAi };
+/**
+ * A pairing as the join reads it: what the call reaches, who said so, and (ADR 0181) the AI run.
+ * Review round 48: `none` when a person's `unlink` is the newest (asked for with `declined`): the
+ * call reaches nothing a person knows of, so an AI answer never joins it (the path is the call's).
+ */
+export type PairOnFile = CorrectionLink & { by: string; ai?: CorrectionAi; none?: true };
 
 /**
  * G1 (ADR 0174): a repo's pairings, call fact id → what the person paired it with, from its
  * corrections file: the newest link per call (a repo's or an outside system's), met as linksFor
  * meets it. A link that meets no call is left out (the verifier says so). ADR 0181: an AI
- * pairing keeps its run (`ai`); a newer `unlink` withdraws any pairing.
+ * pairing keeps its run (`ai`); a newer `unlink` withdraws any pairing. With `declined` (the
+ * join's read, round 48), a person's newest `unlink` is kept as `none`, so the join knows a
+ * person said "none" and an AI answer doesn't join the call.
  */
 export function pairsFromCorrections(
   facts: readonly CallLike[],
   corrections: readonly FactCorrection[],
+  o: { declined?: boolean } = {},
 ): Record<string, PairOnFile> {
   const out: Record<string, PairOnFile> = {};
   for (const f of facts) {
     const c = linksFor(f, corrections)[0];
     if (c?.action === "link" && c.link)
       out[f.id] = { ...c.link, by: c.by, ...(c.ai ? { ai: { ...c.ai } } : {}) };
+    else if (o.declined && c?.action === "unlink" && !c.ai)
+      out[f.id] = { path: c.target.value, by: c.by, none: true };
   }
   return out;
 }
