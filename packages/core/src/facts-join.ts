@@ -148,7 +148,13 @@ export interface GatewayHop {
  */
 export interface JoinBase {
   path: string;
-  from: "manifest" | "deploy" | "config" | "overlap";
+  /**
+   * `url`: nothing names the base, and one route's whole URL (the target's path and the flow's
+   * suffix) ends in exactly one entry's whole path, at least one of the target's own segments
+   * included: code at both ends, not a guess. `overlap` is that for a pass-through (every entry
+   * under a guessed base), a guess.
+   */
+  from: "manifest" | "deploy" | "config" | "url" | "overlap";
   by?: FactEnd[];
 }
 
@@ -1445,6 +1451,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     manifest: 1,
     deploy: 2,
     config: 3,
+    url: 4,
     overlap: 4,
   };
   /** A Spring context path's and servlet path's settings, as `settingNameKey` reads them. */
@@ -1599,7 +1606,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         out.push({
           e: h.e,
           ...(h.route ? { route: h.route } : {}),
-          ...(h.base ? { base: h.base } : {}),
+          // One route's whole URL that ends in exactly one entry's path is matched, not guessed.
+          ...(h.base
+            ? { base: h.base.from === "overlap" && !x.under ? { ...h.base, from: "url" } : h.base }
+            : {}),
           ...(x.off && off?.by ? { off: off.by } : {}),
           ...(method || h.e.fact.method
             ? { method: (method ?? h.e.fact.method)!.toUpperCase() }

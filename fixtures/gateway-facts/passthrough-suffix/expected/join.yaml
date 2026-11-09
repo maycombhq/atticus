@@ -108,7 +108,7 @@ joins:
       at: proxies/forge-limits-v3/apiproxy/proxies/default.xml:4
     base:
       path: /forge-limits/v3
-      from: overlap
+      from: url
     callType: rest
     method: GET
     path: /limits/check

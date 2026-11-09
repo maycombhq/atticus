@@ -320,9 +320,8 @@
   schemaVersion: 2
   id: if-e8d58590e8c58444
   status: current
-  confidence: inferred
+  confidence: verified
   flags:
-    - joined-by-path-overlap
     - joined-by-host
   from: edge-gateway
   to: limits-api

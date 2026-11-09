@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   JOINED_BY_PATH_OVERLAP,
   MAX_PASS_THROUGH_LINKS,
@@ -51,7 +51,12 @@ const estate = (): JoinRepo[] =>
   }));
 const swap = (repos: JoinRepo[], repo: string, facts: (fs: Fact[]) => Fact[]): JoinRepo[] =>
   repos.map((r) => (r.repo === repo ? { ...r, facts: facts([...r.facts]) } : r));
-const golden = (name: string) => parse(readFileSync(join(DIR, "expected", name), "utf8"));
+const golden = (name: string, got?: unknown) => {
+  // UPDATE_GOLDEN=1 writes what the join gives now, to be checked by hand before it's committed.
+  if (process.env.UPDATE_GOLDEN && got !== undefined)
+    writeFileSync(join(DIR, "expected", name), stringify(got));
+  return parse(readFileSync(join(DIR, "expected", name), "utf8"));
+};
 const plain = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const joinsOf = (out: ReturnType<typeof joinFacts>, repo: string, call: string) =>
   out.joins.filter((j) => j.call.repo === repo && j.call.fact === call);
@@ -75,13 +80,14 @@ const lines = (r: Iface) => r.evidence.map((e) => `${e.source}/${e.side} ${e.pat
 
 describe("an Apigee proxy joins the backend endpoint it forwards to (golden)", () => {
   it("gives the golden join", () => {
-    expect(plain(joinFacts({ repos: estate() }))).toEqual(golden("join.yaml"));
+    const got = plain(joinFacts({ repos: estate() }));
+    expect(got).toEqual(golden("join.yaml", got));
   });
 
   it("gives the golden records, each valid C1", () => {
     const repos = estate();
     const rs = plain(joinRecords(joinFacts({ repos }), repos));
-    expect(rs).toEqual(golden("records.yaml"));
+    expect(rs).toEqual(golden("records.yaml", rs));
     for (const r of rs) expect(parseRecord(r).ok, r.id).toBe(true);
   });
 
@@ -254,29 +260,48 @@ describe("the service's base path: from code or the manifest verified, else a gu
     expect(got.map((j) => j.entry.fact)).toEqual(["entry.post.refunds-submit"]);
   });
 
-  it("guesses by the overlap when nothing gives the base: inferred, flagged", () => {
+  it("matches a flow by its whole URL when nothing gives the base: verified, not a guess", () => {
+    // The owner: ".../retrieve in Apigee should be matched to /retrieve in Fuse or Spring". The
+    // target URL's path plus the flow's suffix ends in exactly one entry's whole path, at the
+    // backend its host names: that is code at both ends, not a guess.
     const got = joinsOf(joinFacts({ repos: estate() }), "forge-edge", "call.get.limits");
     expect(got.map((j) => [j.entry.fact, j.base?.from, j.base?.path])).toEqual([
-      ["entry.get.limits-check", "overlap", "/forge-limits/v3"],
+      ["entry.get.limits-check", "url", "/forge-limits/v3"],
     ]);
     const [link] = links(estate(), "edge-gateway", "limits-api");
-    expect(link).toMatchObject({ confidence: "inferred" });
-    expect(link!.flags).toContain(JOINED_BY_PATH_OVERLAP);
+    expect(link).toMatchObject({ confidence: "verified" });
+    expect(link!.flags).not.toContain(JOINED_BY_PATH_OVERLAP);
   });
 
-  it("makes the fees link a guess too once the context path's setting is gone", () => {
+  it("matches each fees flow by its URL once the context path's setting is gone", () => {
     const repos = swap(estate(), "forge-fees", (fs) =>
       fs.filter((f) => f.id !== "config.context-path"),
     );
     const got = joinsOf(joinFacts({ repos }), "forge-fees-proxy", "call.fees.target");
     expect(got.map((j) => [j.entry.fact, j.base?.from])).toEqual([
-      ["entry.get.fees-retrieve", "overlap"],
-      ["entry.post.fees-quote", "overlap"],
+      ["entry.get.fees-retrieve", "url"],
+      ["entry.post.fees-quote", "url"],
     ]);
-    // The walked link from the BFF is a guess as well.
     const [bff] = links(repos, "billing-bff", "fees-api");
-    expect(bff).toMatchObject({ confidence: "inferred" });
-    expect(bff!.flags).toContain(JOINED_BY_PATH_OVERLAP);
+    expect(bff).toMatchObject({ confidence: "verified" });
+    expect(bff!.flags).not.toContain(JOINED_BY_PATH_OVERLAP);
+  });
+
+  it("never links a flow by its suffix alone: /ping isn't /fees/ping", () => {
+    // The backend serves /ping at its root; the proxy's GET /ping reaches .../fees/ping.
+    const got = joinsOf(joinFacts({ repos: estate() }), "forge-fees-proxy", "call.fees.target");
+    expect(got.map((j) => j.entry.fact)).not.toContain("entry.get.ping");
+  });
+
+  it("still guesses a pass-through's base by the overlap: inferred, flagged", () => {
+    const repos = estate().map((r) => {
+      if (r.repo !== "forge-rates") return r;
+      const { basePath: _gone, ...rest } = r;
+      return rest;
+    });
+    const got = joinsOf(joinFacts({ repos }), "forge-edge", "call.any.rates");
+    expect(got.length).toBeGreaterThan(0);
+    for (const j of got) expect(j.base?.from).toBe("overlap");
   });
 
   it("takes the context path and the servlet path together", () => {
