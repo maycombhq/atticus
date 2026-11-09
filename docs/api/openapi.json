@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.84.0",
+    "version": "3.0.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -75,6 +75,97 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/confirmations": {
+      "post": {
+        "operationId": "confirmWrite",
+        "summary": "3.0.0 (ADR 0186): the app's page asks, on the person's click, for a confirmation of one write to a shared system (a hand-off, the release PRs, a merge, a task's PR, sending the digest, Propose for review, a step run with a team's tool, where the model's key goes, a Test of uncommitted model settings). It needs the page key the server puts in the page and never prints, so the session token alone gets 403; the confirmation is for that write and target, used once, and expires after two minutes",
+        "tags": [
+          "system"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "write": {
+                    "type": "string",
+                    "enum": [
+                      "handoff",
+                      "release-prs",
+                      "merge",
+                      "task-pr",
+                      "digest-send",
+                      "propose",
+                      "step-run",
+                      "ai-model",
+                      "ai-test"
+                    ]
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400
+                  },
+                  "pageKey": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "write",
+                  "target"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmationView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -261,7 +352,7 @@
     "/api/me/digest": {
       "post": {
         "operationId": "sendDigest",
-        "summary": "What waits on the person; with send, posted through the notify adapter as their approval",
+        "summary": "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation (`digest-send`, `me`), else 403",
         "tags": [
           "system"
         ],
@@ -275,6 +366,10 @@
                   "send": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
                   }
                 },
                 "additionalProperties": false
@@ -310,6 +405,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5111,7 +5216,7 @@
     "/api/workspace/sync": {
       "post": {
         "operationId": "syncWorkspace",
-        "summary": "Clone or update base clones",
+        "summary": "Clone or update base clones. 3.0.0 (review round 48): 409 while a sync runs on this server",
         "tags": [
           "workspace"
         ],
@@ -5150,6 +5255,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5236,7 +5351,7 @@
     "/api/reconcile": {
       "post": {
         "operationId": "startReconcile",
-        "summary": "Check a diagram against the catalog",
+        "summary": "Check a diagram against the catalog. 3.0.0 (review round 48): 409 while a reconcile runs on this server",
         "tags": [
           "scans"
         ],
@@ -5283,6 +5398,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5704,7 +5829,7 @@
       },
       "post": {
         "operationId": "proposeForReview",
-        "summary": "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges",
+        "summary": "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges. 3.0.0 (ADR 0186): needs the person's confirmation (`propose`, the scope), else 403",
         "tags": [
           "workspace"
         ],
@@ -5745,6 +5870,10 @@
                   "branch": {
                     "type": "string",
                     "maxLength": 200
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
                   }
                 },
                 "required": [
@@ -5779,6 +5908,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6203,7 +6342,7 @@
     "/api/changes/{changeId}/release-prs": {
       "post": {
         "operationId": "raiseReleasePrs",
-        "summary": "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184)",
+        "summary": "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184). 3.0.0 (ADR 0186): needs the person's confirmation (`release-prs`, the change), else 403",
         "tags": [
           "changes"
         ],
@@ -6223,7 +6362,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  }
+                },
                 "additionalProperties": false
               }
             }
@@ -6260,6 +6404,16 @@
               }
             }
           },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not found",
             "content": {
@@ -6286,7 +6440,7 @@
     "/api/changes/{changeId}/sync": {
       "post": {
         "operationId": "syncChange",
-        "summary": "Refresh the change from its hand-off PR and advance it when merged (ADR 0043)",
+        "summary": "Refresh the change from its hand-off PR and advance it when merged (ADR 0043). 3.0.0 (ADR 0186): merges a ready PR only with the person's confirmation (`merge`, the change); without one it only reads, and a confirmation that isn't valid is 403",
         "tags": [
           "changes"
         ],
@@ -6309,6 +6463,10 @@
                 "properties": {
                   "repo": {
                     "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
                   }
                 },
                 "additionalProperties": false
@@ -6339,6 +6497,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6650,7 +6818,7 @@
     "/api/changes/{changeId}/tasks/{taskId}/pr": {
       "post": {
         "operationId": "raiseTaskPr",
-        "summary": "2.69.0 (sixth UX walk): on the person's yes, push a drafted task's branch and open its PR into the change branch",
+        "summary": "2.69.0 (sixth UX walk): on the person's yes, push a drafted task's branch and open its PR into the change branch. 3.0.0 (ADR 0186): needs the person's confirmation (`task-pr`, `<change>/<task>`), else 403",
         "tags": [
           "changes"
         ],
@@ -6672,6 +6840,23 @@
             "required": true
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "The task, its PR raised",
@@ -7103,7 +7288,7 @@
     "/api/changes/{changeId}/handoff": {
       "post": {
         "operationId": "handOff",
-        "summary": "Open the phase's hand-off PR after its gate passes",
+        "summary": "Open the phase's hand-off PR after its gate passes. 3.0.0 (ADR 0186): needs the person's confirmation (`handoff`, the change), else 403",
         "tags": [
           "changes"
         ],
@@ -7137,6 +7322,10 @@
                   },
                   "repo": {
                     "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
                   }
                 },
                 "additionalProperties": false
@@ -10813,7 +11002,7 @@
       },
       "post": {
         "operationId": "runStep",
-        "summary": "Run a step with a team's own tool; the shown inputs' sha-256 is the approval",
+        "summary": "Run a step with a team's own tool on the shown inputs (their sha-256). 3.0.0 (ADR 0186): needs the person's confirmation (`step-run`, the step), else 403",
         "tags": [
           "release"
         ],
@@ -10847,6 +11036,10 @@
                   },
                   "change": {
                     "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
                   }
                 },
                 "required": [
@@ -10881,6 +11074,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11881,7 +12084,7 @@
       },
       "put": {
         "operationId": "putAiSettings",
-        "summary": "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4",
+        "summary": "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4. 3.0.0 (ADR 0186): keyEnv is a variable starting ATTICUS_, a model provider's own (ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY and the like) or a name kept in this machine's credential store (422 otherwise); a change of the provider, keyEnv or an address needs the person's confirmation (`ai-model`, `model`) as `confirmation`, else 403",
         "tags": [
           "run"
         ],
@@ -11912,6 +12115,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12040,10 +12253,27 @@
     "/api/settings/ai/test": {
       "post": {
         "operationId": "testAiProvider",
-        "summary": "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered",
+        "summary": "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403",
         "tags": [
           "run"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -12057,6 +12287,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24964,11 +25204,51 @@
           "branch": {
             "type": "string",
             "maxLength": 200
+          },
+          "confirmation": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
           }
         },
         "required": [
           "scope",
           "files"
+        ],
+        "additionalProperties": false
+      },
+      "ConfirmationView": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "write": {
+            "type": "string",
+            "enum": [
+              "handoff",
+              "release-prs",
+              "merge",
+              "task-pr",
+              "digest-send",
+              "propose",
+              "step-run",
+              "ai-model",
+              "ai-test"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation",
+          "write",
+          "target",
+          "expiresAt"
         ],
         "additionalProperties": false
       },

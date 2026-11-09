@@ -124,6 +124,8 @@ adapters:
 
 **The key is never in runtime.yaml.** `keyEnv` names where the key is: an environment variable of that name in the environment Atticus runs in (a user environment variable, or your secrets tooling), or this machine's credential store under that name. Use `atticus secret set ATTICUS_MODEL_KEY` and pipe the key in, or the AI tab's "Set the key on this machine". The environment is read first. Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
 
+**`keyEnv` names a model's key, nothing else** (ADR 0186). From the environment Atticus reads only a variable starting `ATTICUS_` or a model provider's own (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY` and the like). Any other name, such as `GITHUB_TOKEN`, `AZURE_DEVOPS_EXT_PAT`, `SYSTEM_ACCESSTOKEN` or `AWS_SECRET_ACCESS_KEY`, is read only from this machine's credential store, where the person put it for the model. So a runtime.yaml can never send another secret to a model's address. In the app, a save that changes the provider, `keyEnv`, an address or `caFile` is the person's click, and **Test** of settings not yet committed is too.
+
 Settings every provider reads:
 
 | Setting      | What it does                                                                                                                                                    |

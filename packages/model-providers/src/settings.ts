@@ -60,6 +60,36 @@ export function looksLikeKey(v: string): boolean {
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
+/**
+ * Review round 48: the model providers' own key variables, which keyEnv may name besides
+ * Atticus's (ATTICUS_*). Any other variable (GITHUB_TOKEN, AZURE_DEVOPS_EXT_PAT,
+ * SYSTEM_ACCESSTOKEN, AWS_*, HOME) is never read from the environment for a model: a runtime.yaml
+ * naming one would send that secret to the model's address. A name kept in this machine's
+ * credential store (atticus secret set) is the person's own, for the model, and is read there.
+ */
+export const PROVIDER_KEY_ENVS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "AZURE_OPENAI_KEY",
+  "GEMINI_API_KEY",
+  "MISTRAL_API_KEY",
+  "COHERE_API_KEY",
+  "GROQ_API_KEY",
+  "OPENROUTER_API_KEY",
+  "TOGETHER_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "XAI_API_KEY",
+  "FIREWORKS_API_KEY",
+] as const;
+
+/** Whether keyEnv's variable may be read from the environment: ATTICUS_* or a provider's own. */
+export function keyEnvFromEnvironment(name: string): boolean {
+  return (
+    /^ATTICUS_[A-Z0-9_]+$/.test(name) || (PROVIDER_KEY_ENVS as readonly string[]).includes(name)
+  );
+}
+
 /** Reads one provider's settings, refusing unknown names, wrong types and literal keys. */
 export class SettingsReader {
   constructor(
@@ -160,7 +190,12 @@ export function readKey(
   env: Env,
   store: Pick<KeyStore, "get"> = defaultKeyStore(),
 ): string {
-  const v = env[keyEnv]?.trim() || store.get(keyEnv)?.trim();
-  if (!v) throw new ModelProviderConfigError(copy.keyEnvUnset(provider, keyEnv));
+  // Review round 48: only a variable named for a model's key comes from the environment.
+  const fromEnv = keyEnvFromEnvironment(keyEnv);
+  const v = (fromEnv ? env[keyEnv]?.trim() : undefined) || store.get(keyEnv)?.trim();
+  if (!v)
+    throw new ModelProviderConfigError(
+      fromEnv ? copy.keyEnvUnset(provider, keyEnv) : copy.keyEnvNotRead(provider, keyEnv),
+    );
   return v;
 }

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
+import { confirmed } from "../../api/confirm.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
@@ -163,7 +164,12 @@ export function GateHeader(p: {
                 disabled={act.busy}
                 onClick={() =>
                   void act.run(
-                    () => api(`/api/changes/${p.id}/sync`, { method: "POST", body: {} }).then(done),
+                    // ADR 0186: merging a ready PR is the person's confirmation.
+                    async () =>
+                      api(`/api/changes/${p.id}/sync`, {
+                        method: "POST",
+                        body: await confirmed("merge", p.id),
+                      }).then(done),
                     T.syncedWithTheHand,
                   )
                 }
@@ -206,10 +212,11 @@ export function RaiseHandoff(p: {
       aria-describedby={blocked ? why : undefined}
       onClick={() =>
         void act.run(
-          () =>
+          async () =>
             api<{ notes?: string[] }>(`/api/changes/${encodeURIComponent(p.change)}/handoff`, {
               method: "POST",
-              body: {},
+              // ADR 0186: the click is the person's confirmation.
+              body: await confirmed("handoff", p.change),
             }).then((r) => {
               p.onDone?.();
               return r;

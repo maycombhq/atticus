@@ -91,7 +91,9 @@ describe("provider settings", () => {
       "The anthropic model provider reads its key from ATTICUS_MISSING_KEY, which is set neither in the environment nor in this machine's credential store. Keep it there with atticus secret set ATTICUS_MISSING_KEY (or the AI tab's \"Set the key on this machine\"), or set the environment variable; the key never goes in runtime.yaml.",
     );
     const none = { get: () => undefined };
-    expect(() => readKey("x", "EMPTY", { EMPTY: "  " }, none)).toThrow(/set neither/);
+    expect(() => readKey("x", "ATTICUS_EMPTY", { ATTICUS_EMPTY: "  " }, none)).toThrow(
+      /set neither/,
+    );
   });
 
   it("refuses unknown settings, naming the ones it reads", () => {

@@ -17,6 +17,9 @@ describe("atticus ui", () => {
     expect(said({})).not.toContain("tok-1");
     expect(said({})).toContain("--show-token");
     expect(said({ showToken: true })).toContain("the session token is tok-1");
+    // ADR 0186: and that it approves no write to a shared system.
+    expect(said({ showToken: true })).toMatch(/doesn't approve a write to a shared system/);
+    expect(said({ showToken: true })).toMatch(/the session token is tok-1\n/);
     // An editor that starts it gives it the token (VS Code) or reads the page (IntelliJ): it is
     // never printed there, so it can't reach the editor's output log, even when asked.
     for (const o of [

@@ -14,6 +14,7 @@ import { runTask } from "@maycombhq/taskrun";
 import { uiRoutes } from "../src/ui-api.js";
 import { uiRunRoutes } from "../src/ui-api-run.js";
 import { CHANGE, git, speckitRoot } from "./run-helpers.js";
+import { confirmFor } from "./confirm-helpers.js";
 
 /**
  * Seventh UX walk (tasks and manual steps, API 2.72.0): a task ticks in tasks.md once its PR
@@ -198,7 +199,7 @@ describe("a manual Git host's step marked done syncs the change", () => {
         });
         const h = await call(`/api/changes/${CHANGE}/handoff`, {
           method: "POST",
-          body: { repo: REPO },
+          body: { repo: REPO, confirmation: await confirmFor(srv, "handoff", CHANGE) },
         });
         expect(h.status).toBe(201);
         const open = "open-pr-handoff-add-transfer-limit-define";

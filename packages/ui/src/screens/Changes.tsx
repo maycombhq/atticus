@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
 import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
@@ -673,10 +674,11 @@ function Detail({ id }: { id: string }) {
                         title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
                         onClick={() =>
                           void handoff.run(
-                            () =>
+                            async () =>
                               api<{ notes?: string[] }>(`/api/changes/${id}/handoff`, {
                                 method: "POST",
-                                body: {},
+                                // ADR 0186: the click is the person's confirmation.
+                                body: await confirmed("handoff", id),
                               }).then((r) => {
                                 reloadAll();
                                 return r;
@@ -693,10 +695,12 @@ function Detail({ id }: { id: string }) {
                         disabled={handoff.busy}
                         onClick={() =>
                           void handoff.run(
-                            () =>
-                              api(`/api/changes/${id}/sync`, { method: "POST", body: {} }).then(
-                                reloadAll,
-                              ),
+                            async () =>
+                              api(`/api/changes/${id}/sync`, {
+                                method: "POST",
+                                // ADR 0186: merging a ready PR is the person's confirmation.
+                                body: await confirmed("merge", id),
+                              }).then(reloadAll),
                             T.syncedWithTheGit,
                           )
                         }

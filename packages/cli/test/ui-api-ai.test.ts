@@ -1,11 +1,16 @@
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { startServer, type RunningServer } from "@maycombhq/server";
+import { builtInModelProviders } from "@maycombhq/model-providers";
 import { uiAiRoutes } from "../src/ui-api-ai.js";
+import { confirmFor } from "./confirm-helpers.js";
+import { sh } from "./run-helpers.js";
 
 /**
  * The AI tab (ADR 0121): how AI runs here, read and written through the local API. A write is
@@ -103,13 +108,24 @@ describe("the AI tab's API (ADR 0121)", () => {
   });
 
   it("writes the choices to runtime.yaml, keeps what it doesn't change, and says to commit it", async () => {
-    const r = await call("PUT", "/api/settings/ai", {
+    const choices = {
       modes: { allowed: ["hand-off", "model"], default: "hand-off" },
       assistants: { allowed: ["copilot", "cursor"], default: "copilot" },
       model: {
         type: "anthropic",
         settings: { model: "claude-opus-5-5", keyEnv: "ATTICUS_MODEL_KEY" },
       },
+    };
+    // Review round 48 (ADR 0186): choosing the provider decides where its key goes, so it is the
+    // person's confirmation from the app, never the session token alone.
+    const bare = await call("PUT", "/api/settings/ai", choices);
+    expect(bare.status).toBe(403);
+    expect((parse(await runtimeFile()) as { adapters: object }).adapters).not.toHaveProperty(
+      "model",
+    );
+    const r = await call("PUT", "/api/settings/ai", {
+      ...choices,
+      confirmation: await confirmFor(srv, "ai-model", "model"),
     });
     expect(r.status).toBe(200);
     expect(r.body.note).toMatch(/Propose it for review/);
@@ -210,10 +226,128 @@ describe("the AI tab's API (ADR 0121)", () => {
   });
 
   it("asks the provider once, with nothing from the estate, and says whether it answered", async () => {
-    const r = await call("POST", "/api/settings/ai/test", {});
+    // Not committed (this metarepo has no Git history): Test is the person's confirmation.
+    const bare = await call("POST", "/api/settings/ai/test", {});
+    expect(bare.status).toBe(403);
+    expect(asked).toHaveLength(0);
+    const r = await call("POST", "/api/settings/ai/test", {
+      confirmation: await confirmFor(srv, "ai-test", "model"),
+    });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ ok: true, model: "claude-opus-5-5" });
     expect(asked).toHaveLength(1);
     expect(asked[0]!.length).toBeLessThan(200);
+  });
+
+  it("keyEnv names a model's key: ATTICUS_*, a provider's own, or one kept in the credential store (review round 48)", async () => {
+    for (const name of [
+      "GITHUB_TOKEN",
+      "HOME",
+      "AZURE_DEVOPS_EXT_PAT",
+      "SYSTEM_ACCESSTOKEN",
+      "AWS_SECRET_ACCESS_KEY",
+    ]) {
+      const r = await call("PUT", "/api/settings/ai", {
+        model: { type: "anthropic", settings: { model: "m", keyEnv: name } },
+        confirmation: await confirmFor(srv, "ai-model", "model"),
+      });
+      expect(r.status, name).toBe(422);
+      expect(JSON.stringify(r.body)).toMatch(/ATTICUS_/);
+      expect(await runtimeFile()).not.toContain(name);
+    }
+    kept.set("TEAM_GATEWAY_KEY", "kept-here");
+    for (const name of ["ANTHROPIC_API_KEY", "ATTICUS_OTHER_KEY", "TEAM_GATEWAY_KEY"]) {
+      const r = await call("PUT", "/api/settings/ai", {
+        model: { type: "anthropic", settings: { model: "m", keyEnv: name } },
+        confirmation: await confirmFor(srv, "ai-model", "model"),
+      });
+      expect(r.status, name).toBe(200);
+    }
+    // Only the model's own settings, not where its key goes: no confirmation needed.
+    const same = await call("PUT", "/api/settings/ai", {
+      model: { type: "anthropic", settings: { model: "m2", keyEnv: "TEAM_GATEWAY_KEY" } },
+    });
+    expect(same.status).toBe(200);
+    // Its address: the person's confirmation.
+    const moved = await call("PUT", "/api/settings/ai", {
+      model: {
+        type: "anthropic",
+        settings: { model: "m2", keyEnv: "TEAM_GATEWAY_KEY", baseUrl: "https://elsewhere.example" },
+      },
+    });
+    expect(moved.status).toBe(403);
+    expect(await runtimeFile()).not.toContain("elsewhere.example");
+  });
+});
+
+describe("the AI tab's Test never sends another secret to a model's address (review round 48)", () => {
+  it("a hand-edited, committed runtime.yaml naming GITHUB_TOKEN sends nothing; uncommitted settings need the person", async () => {
+    const seen: { url: string; auth: string }[] = [];
+    const sink = createServer((req, res) => {
+      seen.push({ url: req.url ?? "", auth: String(req.headers.authorization ?? "") });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "OK" } }], usage: {} }));
+    });
+    await new Promise<void>((r) => sink.listen(0, "127.0.0.1", () => r()));
+    const at = `http://127.0.0.1:${(sink.address() as AddressInfo).port}/v1`;
+    const dir = await mkdtemp(join(tmpdir(), "atticus-ui-ai-sink-"));
+    await cp(FORGE, dir, { recursive: true });
+    const rt = join(dir, "org-pack", "runtime.yaml");
+    const model = (keyEnv: string, baseUrl = at) =>
+      `  model:\n    type: openai-compatible\n    settings: { model: m, keyEnv: ${keyEnv}, baseUrl: "${baseUrl}" }\n`;
+    await writeFile(
+      rt,
+      (await readFile(rt, "utf8")).replace(/^adapters:\n/m, `adapters:\n${model("GITHUB_TOKEN")}`),
+    );
+    sh(dir, "init", "-q");
+    sh(dir, "add", "-A");
+    sh(dir, "commit", "-q", "-m", "runtime");
+    const env = { GITHUB_TOKEN: "ghp-not-for-a-model", ATTICUS_MODEL_KEY: "model-key" };
+    const s = await startServer({
+      root: dir,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (r, ctx) =>
+        uiAiRoutes(r, ctx, {
+          env,
+          keys: { get: () => undefined, set() {}, forget() {} },
+          provider: (type, settings) =>
+            builtInModelProviders({ env })[type]?.(
+              settings as Parameters<ReturnType<typeof builtInModelProviders>[string]>[0],
+            ),
+        }),
+    });
+    const post = async (body: unknown) => {
+      const r = await fetch(`${s.url}/api/settings/ai/test`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+    };
+    try {
+      // Committed: Test runs without a confirmation, and the provider refuses GITHUB_TOKEN.
+      const r = await post({});
+      expect(r.status).toBe(200);
+      expect(r.body.ok).toBe(false);
+      expect(String(r.body.error)).toMatch(/isn't read from the environment/);
+      expect(seen).toEqual([]);
+      // Changed since HEAD (to a model key, at the same sink): the person's confirmation first.
+      await writeFile(
+        rt,
+        (await readFile(rt, "utf8")).replace("keyEnv: GITHUB_TOKEN", "keyEnv: ATTICUS_MODEL_KEY"),
+      );
+      expect((await post({})).status).toBe(403);
+      expect(seen).toEqual([]);
+      const ok = await post({ confirmation: await confirmFor(s, "ai-test", "model") });
+      expect(ok.body.ok, JSON.stringify(ok.body)).toBe(true);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.auth).toBe("Bearer model-key");
+      expect(JSON.stringify(seen)).not.toContain("ghp-not-for-a-model");
+    } finally {
+      await s.close();
+      sink.close();
+    }
   });
 });

@@ -37,6 +37,8 @@ vi.mock("../src/api/client.js", async () => ({
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
     if (path.endsWith("/apply")) return { jobId: "job-1" };
     if (path === "/api/propose") return { jobId: "job-2" };
+    // ADR 0186: the Yes asks for the person's confirmation first.
+    if (path === "/api/confirmations") return { confirmation: "c".repeat(43) };
     if (path === "/api/propose/bring-in") return { jobId: "job-3" };
     if (path === "/api/jobs/job-3")
       return {
@@ -89,13 +91,16 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
     "/api/facts/forge-ledger/apply",
     "/api/jobs/job-1",
     "/api/propose?scope=answers",
+    "/api/confirmations",
     "/api/propose",
     "/api/jobs/job-2",
   ]);
-  expect(calls[3]!.body).toEqual({
+  expect(calls[3]!.body).toEqual({ write: "propose", target: "answers", pageKey: "" });
+  expect(calls[4]!.body).toEqual({
     scope: "answers",
     files: ["questions/q1.yaml"],
     branch: "propose/answers/2026-11-08-pat",
+    confirmation: "c".repeat(43),
   });
   expect(text(n.tree)).toContain("PR #7 is open for review");
 });

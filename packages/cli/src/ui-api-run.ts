@@ -55,6 +55,7 @@ import {
   conflict,
   HttpError,
   notFound,
+  requireConfirmation,
   strParam,
   type Router,
   type ServerContext,
@@ -536,6 +537,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
       })
       .add("POST", "/api/todo/{stepId}/run", async ({ params, body }) => {
         const b = parseBody(Api.StepRunRequest, body);
+        // A team's tool acts on their systems: the person's confirmation from the app (ADR 0186).
+        requireConfirmation(ctx.confirmations, "step-run", params.stepId!, b.confirmation);
         const res = await run((io) =>
           todoRun(
             root,

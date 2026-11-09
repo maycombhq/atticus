@@ -3,12 +3,27 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   changeBranch,
+  withSharedFileLock,
   WORKSPACE_SCHEMA_VERSION,
   type ChangeRepo,
   type ChangeRepos,
   type ManifestRepo,
 } from "@maycombhq/core";
 import { readChangeRepos, writeChangeRepos } from "./files.js";
+
+/**
+ * Review round 48: git work on a base clone (a clone, a fetch and checkout, a worktree added
+ * from it) holds `<base clone>.lock`, so two syncs (the app's and a terminal's, or two clicks)
+ * never run git in one folder together. Cross-process (withSharedFileLock); a lock whose process
+ * is gone is taken over at once, and a clone may take minutes, so the lock lasts that long.
+ */
+function withBaseClone<T>(dest: string, id: string, work: () => Promise<T>): Promise<T> {
+  return withSharedFileLock(dest, work, {
+    staleMs: 30 * 60_000,
+    waitMs: 30 * 60_000,
+    what: `git work on the base clone of ${id}`,
+  });
+}
 import { createGit, GitError, type GitRunner } from "./git.js";
 import {
   baseClonePath,
@@ -308,6 +323,40 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     };
   }
 
+  async function checkoutOne(
+    repo: ManifestRepo,
+    branch: string,
+  ): Promise<{ dir: string; commit: string }> {
+    const base = baseClonePath(root, repo.id);
+    if (!existsSync(base))
+      throw new Error(`no base clone for ${repo.id}; run atticus workspace sync first`);
+    const ref = `refs/remotes/origin/${branch}`;
+    try {
+      await g(["fetch", "--no-tags", "origin", `+refs/heads/${branch}:${ref}`], base);
+    } catch {
+      throw new Error(`${repo.id} has no branch ${branch} on its remote`);
+    }
+    const dir = branchCheckoutPath(root, repo.id, branch);
+    // Review round 46: a branch with capitals had a folder named with them; its checkout moves
+    // to the new name (git's own move, so the base clone's worktree list follows) and is then
+    // checked out as any other, so a folder shared on NTFS ends on the right commit.
+    const old = legacyBranchCheckoutPath(root, repo.id, branch);
+    if (old !== dir && !existsSync(dir) && existsSync(old))
+      await g(["worktree", "move", "--", old, dir], base).catch(() => undefined);
+    if (!existsSync(dir)) {
+      await mkdir(dirname(dir), { recursive: true });
+      await g(["worktree", "add", "--detach", "--", dir, ref], base);
+    } else {
+      // A person's edits in the checkout are never thrown away by a forced checkout.
+      if (await dirty(dir))
+        throw new Error(
+          `${repo.id}'s checkout of ${branch} has local changes: commit or stash them in ${dir}, then try again`,
+        );
+      await g(["checkout", "--quiet", "--force", "--detach", ref], dir);
+    }
+    return { dir, commit: await head(dir) };
+  }
+
   return {
     root,
 
@@ -317,39 +366,21 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       if (repos.some((r) => !r.archived && !isInPlace(r.url))) await ensureGitignore(root);
       const out: SyncResult[] = [];
       const local = opts.from ? await localClones(opts.from, git) : undefined;
-      for (const repo of repos) out.push(await syncOne(repo, local));
+      for (const repo of repos)
+        out.push(
+          // Nothing to lock (nor a folder to make) for an archived or in-place repo.
+          repo.archived || isInPlace(repo.url)
+            ? await syncOne(repo, local)
+            : await withBaseClone(baseClonePath(root, repo.id), repo.id, () =>
+                syncOne(repo, local),
+              ),
+        );
       return out;
     },
 
-    async checkoutBranch(repo, branch) {
-      const base = baseClonePath(root, repo.id);
-      if (!existsSync(base))
-        throw new Error(`no base clone for ${repo.id}; run atticus workspace sync first`);
-      const ref = `refs/remotes/origin/${branch}`;
-      try {
-        await g(["fetch", "--no-tags", "origin", `+refs/heads/${branch}:${ref}`], base);
-      } catch {
-        throw new Error(`${repo.id} has no branch ${branch} on its remote`);
-      }
-      const dir = branchCheckoutPath(root, repo.id, branch);
-      // Review round 46: a branch with capitals had a folder named with them; its checkout moves
-      // to the new name (git's own move, so the base clone's worktree list follows) and is then
-      // checked out as any other, so a folder shared on NTFS ends on the right commit.
-      const old = legacyBranchCheckoutPath(root, repo.id, branch);
-      if (old !== dir && !existsSync(dir) && existsSync(old))
-        await g(["worktree", "move", "--", old, dir], base).catch(() => undefined);
-      if (!existsSync(dir)) {
-        await mkdir(dirname(dir), { recursive: true });
-        await g(["worktree", "add", "--detach", "--", dir, ref], base);
-      } else {
-        // A person's edits in the checkout are never thrown away by a forced checkout.
-        if (await dirty(dir))
-          throw new Error(
-            `${repo.id}'s checkout of ${branch} has local changes: commit or stash them in ${dir}, then try again`,
-          );
-        await g(["checkout", "--quiet", "--force", "--detach", ref], dir);
-      }
-      return { dir, commit: await head(dir) };
+    checkoutBranch(repo, branch) {
+      // Fetched into the base clone and added as its worktree: under the base clone's lock.
+      return withBaseClone(baseClonePath(root, repo.id), repo.id, () => checkoutOne(repo, branch));
     },
 
     async openChange(change, repos) {
@@ -357,7 +388,10 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       const existing = await readChangeRepos(root, change);
       const byId = new Map((existing?.repos ?? []).map((r) => [r.id, r]));
       for (const repo of repos) {
-        const fresh = await worktreeFor(change, repo);
+        // Its base clone fetches and adds a worktree: under the base clone's lock, as sync is.
+        const fresh = await withBaseClone(baseClonePath(root, repo.id), repo.id, () =>
+          worktreeFor(change, repo),
+        );
         const prior = byId.get(repo.id);
         // Keep what is already known (PR, build, original base) for repos opened before.
         byId.set(repo.id, prior ? { ...fresh, ...prior, worktree: fresh.worktree } : fresh);

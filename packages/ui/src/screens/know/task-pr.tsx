@@ -1,4 +1,5 @@
 import { api } from "../../api/client.js";
+import { confirmed } from "../../api/confirm.js";
 import { ExternalLink } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import type { Task } from "../Changes.js";
@@ -125,10 +126,11 @@ export function RaiseTaskPr(p: { change: string; task: string; onDone?: () => vo
             void act.run(
               // A PR that wasn't raised (422) still changed the task's note: the board reloads
               // either way, and offers Raise again with why.
-              () =>
+              // ADR 0186: the click is the person's confirmation to push and open the PR.
+              async () =>
                 api<Task>(
                   `/api/changes/${encodeURIComponent(p.change)}/tasks/${encodeURIComponent(p.task)}/pr`,
-                  { method: "POST", body: {} },
+                  { method: "POST", body: await confirmed("task-pr", `${p.change}/${p.task}`) },
                 ).finally(() => p.onDone?.()),
               (r) =>
                 isManualLink(r.taskRun?.pr?.url) ? T.taskPrManual(p.task) : T.taskPrRaised(p.task),

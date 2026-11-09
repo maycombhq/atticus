@@ -53,6 +53,8 @@ vi.mock("../src/api/client.js", async () => ({
   useLiveEvents: () => undefined,
   api: async (path: string, o: { body: unknown }) => {
     posted.push({ path, body: o.body });
+    // ADR 0186: the click asks for the person's confirmation first.
+    if (path === "/api/confirmations") return { confirmation: "c".repeat(43) };
     return { lines: [] };
   },
 }));
@@ -73,7 +75,10 @@ it("raises the release PRs on the person's click and lists each repo's PR", asyn
   expect(raise.props.title).toBe(T.raisesReleasePrs);
   (raise.props.onClick as () => void)();
   await new Promise((r) => setTimeout(r, 0));
-  expect(posted).toEqual([{ path: `/api/changes/${ID}/release-prs`, body: {} }]);
+  expect(posted).toEqual([
+    { path: "/api/confirmations", body: { write: "release-prs", target: ID, pageKey: "" } },
+    { path: `/api/changes/${ID}/release-prs`, body: { confirmation: "c".repeat(43) } },
+  ]);
 
   const prs = views.find((v) => v.props.emptyText === T.noCodeRepos)!;
   expect((prs.props.empty as (d: unknown) => boolean)({ ...DETAIL, repos: [] })).toBe(true);

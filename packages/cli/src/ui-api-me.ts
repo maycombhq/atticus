@@ -1,5 +1,11 @@
 import { Api, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
-import { badRequest, HttpError, type Router, type ServerContext } from "@maycombhq/server";
+import {
+  badRequest,
+  HttpError,
+  requireConfirmation,
+  type Router,
+  type ServerContext,
+} from "@maycombhq/server";
 import { digestCommand, type DigestDeps } from "./digest-commands.js";
 import { readMe, writeMe } from "./me-file.js";
 
@@ -60,6 +66,9 @@ export function uiMeRoutes(r: Router, ctx: ServerContext, deps: DigestDeps = {})
       .add("POST", "/api/me/digest", async ({ body }) => {
         const b = Api.SendDigestRequest.safeParse(body ?? {});
         if (!b.success) throw badRequest("Send { send: true } to post it, or {} to see it.");
+        // Posting it is a message as the person: their confirmation from the app (ADR 0186).
+        if (b.data.send)
+          requireConfirmation(ctx.confirmations, "digest-send", "me", b.data.confirmation);
         const me = await readMe(ctx.root);
         const out: string[] = [];
         const err: string[] = [];

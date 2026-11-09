@@ -75,7 +75,8 @@ export function uiKnowRoutes(
   // The Set up page's first load waited about 3 s for these (found on Windows): start them now.
   if (o.warm) void machine().catch(() => undefined);
   const view = async (name: string, arg?: string) => {
-    const build = VIEWS[name];
+    // Review round 48: a view of this table's own, never the prototype's (toString, __proto__).
+    const build = Object.hasOwn(VIEWS, name) ? VIEWS[name] : undefined;
     if (!build) throw notFound(`There is no view ${name}.`);
     if (arg !== undefined && !ID.test(arg)) throw badRequest(`${arg} isn't an id.`);
     const args = build(arg);

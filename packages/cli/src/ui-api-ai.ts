@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { parse, parseDocument, stringify } from "yaml";
 import { providerFactoryFor, type ModelProvider, type ModelProviderFactory } from "@maycombhq/ai";
 import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
@@ -19,11 +20,12 @@ import {
 import {
   COMMON_SETTINGS,
   defaultKeyStore,
+  keyEnvFromEnvironment,
   looksLikeKey,
   PROVIDER_SETTINGS,
   type KeyStore,
 } from "@maycombhq/model-providers";
-import { conflict, HttpError, type Router } from "@maycombhq/server";
+import { conflict, HttpError, requireConfirmation, type Router } from "@maycombhq/server";
 import type { ServerContext } from "@maycombhq/server";
 
 /**
@@ -45,6 +47,49 @@ export interface AiDeps {
 
 const unprocessable = (detail: string) => new HttpError(422, "The settings aren't valid", detail);
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+type ModelSetting = { type?: unknown; settings?: Record<string, unknown> } | undefined;
+
+/**
+ * Review round 48 (ADR 0186): where a model's key goes: its provider, the variable it is read
+ * from, and every address (and the CA that vouches for one). A change of any of them is the
+ * person's to confirm in the app: with the session token alone it could send a key elsewhere.
+ */
+function whereKeyGoes(m: ModelSetting): string {
+  const s = m?.settings ?? {};
+  const picked = Object.keys(s)
+    .filter((k) => k === "keyEnv" || k === "caFile" || /url|endpoint|host|address/i.test(k))
+    .sort()
+    .map((k) => [k, s[k]]);
+  return JSON.stringify([m?.type ?? null, picked]);
+}
+
+/** A model setting as JSON with sorted keys, to compare one file's with another's. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object")
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(",")}}`;
+  return JSON.stringify(v ?? null);
+}
+
+/** runtime.yaml's model as committed (HEAD), or undefined when it isn't (no Git, no commit). */
+function committedModel(file: string): { model: ModelSetting } | undefined {
+  try {
+    const text = execFileSync("git", ["show", `HEAD:./${basename(file)}`], {
+      cwd: dirname(file),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    const raw = (parse(text) ?? {}) as { adapters?: { model?: ModelSetting } };
+    return { model: raw.adapters?.model };
+  } catch {
+    return undefined;
+  }
+}
 
 /** What the tab may change; everything else in runtime.yaml is kept as it is. */
 const FIELDS = ["ai", "modes", "assistants", "models", "budgets", "decide"] as const;
@@ -106,7 +151,10 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
             ],
             model: model ? { type: model.type, settings: model.settings } : null,
             // Whether the key's variable is set here, by name: its value is never read out.
-            keySet: keyEnv ? !!env[keyEnv]?.trim() || !!keys().get(keyEnv) : false,
+            // Review round 48: as the provider reads it, the environment only for a model's key.
+            keySet: keyEnv
+              ? (keyEnvFromEnvironment(keyEnv) && !!env[keyEnv]?.trim()) || !!keys().get(keyEnv)
+              : false,
             models: rt.models,
             budgets: rt.budgets,
             // Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it.
@@ -141,8 +189,22 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
               throw unprocessable(
                 `keyEnv is the name of an environment variable, such as ATTICUS_MODEL_KEY.`,
               );
+            // Review round 48: a model's key only, never another secret of this machine's.
+            const keyEnv = settings.keyEnv === undefined ? undefined : String(settings.keyEnv);
+            if (keyEnv && !keyEnvFromEnvironment(keyEnv) && !keys().get(keyEnv))
+              throw unprocessable(
+                `keyEnv ${keyEnv} isn't a model's key: name a variable starting ATTICUS_ (such as ATTICUS_MODEL_KEY) or the provider's own (such as ANTHROPIC_API_KEY or OPENAI_API_KEY), or keep the key in this machine's credential store under that name first ("Set the key on this machine", or atticus secret set ${keyEnv}). Another variable (a Git or pipeline token, cloud credentials) is never sent to a model.`,
+              );
             adapters.model = { type: m.type, settings };
           }
+          // ADR 0186: where the key goes (provider, keyEnv, an address) is the person's to change.
+          // Taking the model away sends no key anywhere.
+          const was = (raw.adapters as { model?: ModelSetting } | undefined)?.model;
+          if (
+            adapters.model !== undefined &&
+            whereKeyGoes(was) !== whereKeyGoes(adapters.model as ModelSetting)
+          )
+            requireConfirmation(ctx.confirmations, "ai-model", "model", b.confirmation);
           raw.adapters = adapters;
         }
         // UX review: choosing copilot-acp on a version 2 file lifts it to 3, which only adds the
@@ -200,11 +262,21 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         keys().set(name, value);
         return { status: 200, body: { ok: true, name } };
       })
-      .add("POST", "/api/settings/ai/test", async () => {
+      .add("POST", "/api/settings/ai/test", async ({ body }) => {
         const op = await loadOrgPack(orgPackDirOf(root));
         const model = op.runtime.adapters.model;
         if (!model || model.type === "mock")
           throw conflict("No model provider is set in runtime.yaml: choose one first.");
+        // Review round 48 (ADR 0186): Test sends the key at once. Settings as committed were
+        // reviewed like code; any others (a hand edit, a write meanwhile) are the person's yes.
+        const committed = committedModel(file());
+        if (!committed || canonical(committed.model) !== canonical(model))
+          requireConfirmation(
+            ctx.confirmations,
+            "ai-test",
+            "model",
+            (body as { confirmation?: unknown } | undefined)?.confirmation,
+          );
         const started = Date.now();
         try {
           const p = await build(op, model.type, model.settings);

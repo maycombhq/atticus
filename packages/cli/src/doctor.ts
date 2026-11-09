@@ -55,6 +55,7 @@ import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { upgradeCheck, type UpgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
+import { keyEnvFromEnvironment } from "@maycombhq/model-providers";
 export { versionAtLeast };
 
 /**
@@ -617,11 +618,13 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     model && typeof model.settings.keyEnv === "string" ? model.settings.keyEnv : undefined;
   const modelMode = rt.modes.allowed.includes("model");
   const named = !!model && model.type !== "mock";
+  // Review round 48: the environment holds a model's key only under a model key's name.
+  const keyHere = (name: string) => keyEnvFromEnvironment(name) && !!envName(env, name);
   out.push({
     id: "model",
     label: "How AI steps run",
     status:
-      rt.ai === "off" || !modelMode || (named && (!keyEnv || envName(env, keyEnv))) ? "ok" : "warn",
+      rt.ai === "off" || !modelMode || (named && (!keyEnv || keyHere(keyEnv))) ? "ok" : "warn",
     detail:
       rt.ai === "off"
         ? "AI is off here (runtime.yaml)"
@@ -631,9 +634,11 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
             : "AI steps hand off to your assistant; runtime.yaml doesn't allow Atticus to call a model itself"
           : !named
             ? "model mode is allowed, but runtime.yaml names no model provider"
-            : keyEnv && !envName(env, keyEnv)
-              ? `model mode with ${model.type}, but ${keyEnv} isn't set on this machine`
-              : `model mode with ${model.type}${typeof model.settings.model === "string" ? ` (${model.settings.model})` : ""}${keyEnv ? `; ${keyEnv} is set` : ""}. Not called here: doctor makes no network call`,
+            : keyEnv && !keyEnvFromEnvironment(keyEnv)
+              ? `model mode with ${model.type}, but keyEnv ${keyEnv} isn't read from the environment (review round 48): name a variable starting ATTICUS_ or the provider's own, or keep the key with atticus secret set ${keyEnv}`
+              : keyEnv && !keyHere(keyEnv)
+                ? `model mode with ${model.type}, but ${keyEnv} isn't set on this machine`
+                : `model mode with ${model.type}${typeof model.settings.model === "string" ? ` (${model.settings.model})` : ""}${keyEnv ? `; ${keyEnv} is set` : ""}. Not called here: doctor makes no network call`,
     fix: !named
       ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
       : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal.`,

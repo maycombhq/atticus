@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { confirmed } from "../../api/confirm.js";
 import { changeOf } from "../../app/screens.js";
 import { Panel, View } from "../../app/ui.js";
 import {
@@ -205,6 +206,13 @@ export function Detail({ id }: { id: string }) {
   });
   const post = (path: string, body: unknown, ok: string) =>
     void act.run(() => api(path, { method: "POST", body }).then(() => d.reload()), ok);
+  /** ADR 0186: a write to a shared system, with the person's confirmation from this click. */
+  const confirmedPost = (path: string, write: "release-prs" | "merge", ok: string) =>
+    void act.run(
+      async () =>
+        api(path, { method: "POST", body: await confirmed(write, id) }).then(() => d.reload()),
+      ok,
+    );
 
   return (
     <>
@@ -287,7 +295,13 @@ export function Detail({ id }: { id: string }) {
                         ? T.raisesReleasePrs
                         : T.releasePrsNotYet
                     }
-                    onClick={() => post(`/api/changes/${id}/release-prs`, {}, T.releasePrsRaised)}
+                    onClick={() =>
+                      confirmedPost(
+                        `/api/changes/${id}/release-prs`,
+                        "release-prs",
+                        T.releasePrsRaised,
+                      )
+                    }
                   >
                     {T.raiseReleasePrs}
                   </button>
@@ -302,10 +316,10 @@ export function Detail({ id }: { id: string }) {
                     title={r.change.state !== "release-ready" ? T.theChangeReachesGo : undefined}
                     onClick={() =>
                       void act.run(
-                        () =>
+                        async () =>
                           api<{ handoff?: { pr?: string } }>(`/api/changes/${id}/handoff`, {
                             method: "POST",
-                            body: {},
+                            body: await confirmed("handoff", id),
                           }).then((x) => {
                             d.reload();
                             return x;
@@ -325,7 +339,9 @@ export function Detail({ id }: { id: string }) {
                     className="btn"
                     disabled={act.busy || (!r.handoff && !r.repos.some((x) => x.pr))}
                     title={T.readsThePrMerges}
-                    onClick={() => post(`/api/changes/${id}/sync`, {}, T.syncedWithTheGit)}
+                    onClick={() =>
+                      confirmedPost(`/api/changes/${id}/sync`, "merge", T.syncedWithTheGit)
+                    }
                   >
                     {T.syncAndMergeWhen}
                   </button>

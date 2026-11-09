@@ -5,6 +5,8 @@ import { extname, join, normalize, resolve, sep } from "node:path";
  * The app's files. index.html gets the session token in its <meta name="atticus-token">: only a
  * page from this server can read it (other sites can't read a cross-origin response, and the
  * Host check stops DNS rebinding), so the app can call the API without the person pasting it.
+ * Review round 48 (ADR 0186): and the page key in <meta name="atticus-page-key">, with which the
+ * page asks for the person's confirmation of a write to a shared system; it is never printed.
  */
 
 const TYPES: Record<string, string> = {
@@ -54,6 +56,8 @@ export async function staticFile(
   givenDir: string,
   path: string,
   token: string,
+  /** ADR 0186: the page key, for the person's confirmations; in the page only, never printed. */
+  pageKey?: string,
 ): Promise<StaticFile> {
   // Absolute and normalised, whatever the caller passed, so the containment check below holds.
   const dir = resolve(givenDir);
@@ -74,10 +78,19 @@ export async function staticFile(
   const ext = extname(target).toLowerCase();
   const type = TYPES[ext] ?? "application/octet-stream";
   if (ext === ".html") {
-    const html = (await readFile(target, "utf8")).replace(
+    const tokenMeta = `<meta name="atticus-token" content="${escapeAttr(token)}" />`;
+    const keyMeta =
+      pageKey === undefined
+        ? ""
+        : `<meta name="atticus-page-key" content="${escapeAttr(pageKey)}" />`;
+    let html = (await readFile(target, "utf8")).replace(
       /<meta name="atticus-token" content="[^"]*"\s*\/?>/,
-      `<meta name="atticus-token" content="${escapeAttr(token)}" />`,
+      () => tokenMeta,
     );
+    if (keyMeta)
+      html = /<meta name="atticus-page-key" content="[^"]*"\s*\/?>/.test(html)
+        ? html.replace(/<meta name="atticus-page-key" content="[^"]*"\s*\/?>/, () => keyMeta)
+        : html.replace(tokenMeta, () => `${tokenMeta}\n    ${keyMeta}`);
     return { status: 200, type, body: html, cache: "no-store" };
   }
   return {

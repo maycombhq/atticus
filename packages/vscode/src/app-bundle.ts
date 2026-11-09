@@ -12,9 +12,24 @@ const SCREEN_HASH = /^#\/[a-z][a-z0-9-]*(\/[^?\s"<>]*)?(\?[^\s"<>]*)?$/;
 
 export function bundledHtml(
   index: string,
-  o: { base: string; cspSource: string; nonce: string; hash?: string },
+  o: {
+    base: string;
+    cspSource: string;
+    nonce: string;
+    hash?: string;
+    /**
+     * ADR 0186: the page key this extension gave `atticus ui` (ATTICUS_UI_PAGE_KEY), with which
+     * the page asks for the person's confirmation of a write to a shared system. The page holds
+     * it and no session token; the calls still come to the extension.
+     */
+    pageKey?: string;
+  },
 ): string {
   const hash = o.hash && SCREEN_HASH.test(o.hash) ? o.hash : APP_HOME;
+  const key =
+    o.pageKey && /^[A-Za-z0-9_-]{32,}$/.test(o.pageKey)
+      ? `\n    <meta name="atticus-page-key" content="${o.pageKey}">`
+      : "";
   const csp = [
     "default-src 'none'",
     `script-src 'nonce-${o.nonce}' ${o.cspSource}`,
@@ -29,10 +44,12 @@ export function bundledHtml(
   // The scripts load from there, so what they import or start resolves next to them.
   return index
     .replace(/\s*<meta name="atticus-token"[^>]*>/, "")
+    .replace(/\s*<meta name="atticus-page-key"[^>]*>/, "")
     .replace(/\b(src|href)="\.\//g, `$1="${o.base}`)
     .replace(
       /<head>/,
-      `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}">\n    <script nonce="${o.nonce}">location.hash = ${JSON.stringify(hash)};</script>`,
+      () =>
+        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}">${key}\n    <script nonce="${o.nonce}">location.hash = ${JSON.stringify(hash)};</script>`,
     )
     .replace(/<script (?!nonce)/g, `<script nonce="${o.nonce}" `);
 }

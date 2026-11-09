@@ -122,7 +122,7 @@ Every command under the twelve, with its options.
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
-          [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
+          [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it); it never approves a PR, push, merge or message (ADR 0186)
           [--full]                     Every page a tab of its section, and the menu's More pages open
 ```
 

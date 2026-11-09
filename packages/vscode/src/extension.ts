@@ -1576,6 +1576,8 @@ ${view.next.why}`
         cspSource: web.cspSource,
         nonce: randomBytes(16).toString("base64url"),
         hash: hash || APP_HOME,
+        // ADR 0186: the page asks for the person's confirmations with the key we gave atticus ui.
+        pageKey: a.pageKey,
       });
     } else {
       const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);

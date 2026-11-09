@@ -11,6 +11,7 @@ import { REFERENCE_EXECUTOR } from "@maycombhq/executors";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
 import { uiRunRoutes } from "../src/ui-api-run.js";
+import { confirmFor } from "./confirm-helpers.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORGE = join(HERE, "../../../fixtures/forge");
@@ -308,15 +309,23 @@ describe("to-do and manual steps", () => {
     expect(preview.status).toBe(200);
     expect(preview.body.inputs).toMatchObject({ proxyName: "gw-northwind-v2" });
     expect(preview.body.inputsSha256).toMatch(/^[0-9a-f]{64}$/);
+    // ADR 0186: the session token alone runs nothing; each click is the page's confirmation.
+    const bare = await post(`/api/todo/${step.id}/run`, {
+      with: "ref",
+      inputsSha256: preview.body.inputsSha256,
+    });
+    expect(bare.status).toBe(403);
     const wrong = await post(`/api/todo/${step.id}/run`, {
       with: "ref",
       inputsSha256: "0".repeat(64),
+      confirmation: await confirmFor(srv, "step-run", step.id),
     });
     expect(wrong.status).toBe(422);
     expect(wrong.body.detail).toContain("The approval doesn't cover these inputs");
     const ran = await post(`/api/todo/${step.id}/run`, {
       with: "ref",
       inputsSha256: preview.body.inputsSha256,
+      confirmation: await confirmFor(srv, "step-run", step.id),
     });
     expect(ran.status).toBe(200);
     expect(ran.body.step).toMatchObject({

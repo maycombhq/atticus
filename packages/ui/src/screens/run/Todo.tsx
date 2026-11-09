@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { confirmed } from "../../api/confirm.js";
 import { changeOf } from "../../app/screens.js";
 import { Donut, Panel, Ring, View } from "../../app/ui.js";
 import {
@@ -189,13 +190,15 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
             disabled={act.busy}
             onClick={() =>
               void act.run(
-                () =>
+                async () =>
                   api<{ lines: string[] }>(`/api/todo/${step.id}/run`, {
                     method: "POST",
                     body: {
                       with: executor,
                       inputsSha256: preview.inputsSha256,
                       ...(step.change ? { change: step.change } : {}),
+                      // ADR 0186: the click on the shown inputs is the person's confirmation.
+                      ...(await confirmed("step-run", step.id)),
                     },
                   }).then((r) => {
                     done();
