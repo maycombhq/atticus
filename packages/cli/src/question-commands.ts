@@ -265,9 +265,18 @@ export async function questionsFiles(
       );
       return 2;
     }
-    const q = (await listQuestions(root)).questions.find((x) => x.id === id);
+    const all = await listQuestions(root);
+    const q = all.questions.find((x) => x.id === id);
     if (!q) {
-      io.err(`No question ${id}: atticus questions list shows them.`);
+      // Round 49: a file there that can't be read (a newer Atticus wrote it) is said as it is.
+      const bad = all.problems.find((p) => p.file.endsWith(`/${id}.yaml`));
+      if (bad)
+        io.err(
+          bad.message.startsWith("written by a newer Atticus")
+            ? `${bad.file} was ${bad.message}.`
+            : `${bad.file} isn't a valid question: ${bad.message}`,
+        );
+      else io.err(`No question ${id}: atticus questions list shows them.`);
       return 1;
     }
     // ADR 0144 (Q5): its proposed answer, shown only once every line it cites holds.

@@ -65,6 +65,13 @@ export interface Migration {
   /** Files (relative to the root, "/"-separated) it would change; none means nothing to do. */
   pending(root: string): Promise<string[]>;
   apply(root: string): Promise<string[]>;
+  /**
+   * Round 49: the step can list a file that isn't there yet (it makes it), so a backup finds
+   * nothing to keep. For any other step, a listed file that isn't there stops the upgrade.
+   */
+  creates?: boolean;
+  /** Round 49: files the step leaves as they are, with why, said by --check and the upgrade. */
+  problems?(root: string): Promise<string[]>;
 }
 
 const rel = (prefix: string, files: string[]) => files.map((f) => `${prefix}/${f}`);
@@ -76,6 +83,7 @@ export const MIGRATIONS: Migration[] = [
   {
     id: "local-files-ignored",
     summary: "This machine's files kept out of Git (.atticus/.gitignore, ADR 0050)",
+    creates: true,
     async pending(root) {
       const text = await readFile(join(root, ".atticus", ".gitignore"), "utf8").catch(() => "");
       const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));
@@ -89,6 +97,7 @@ export const MIGRATIONS: Migration[] = [
   {
     id: "state-folders-ignored",
     summary: "Base clones, the index and run folders kept out of Git (metarepo .gitignore)",
+    creates: true,
     async pending(root) {
       // An adopted repo's own .gitignore is the team's: Atticus never edits it.
       if (isAdopted(root)) return [];
@@ -159,11 +168,17 @@ export const MIGRATIONS: Migration[] = [
       "Questions at schema version 5: a question can name the earlier one it may be the same as (ADR 0117), an answer can carry its rule and the proposal it accepted (ADR 0153), a question the code later disagreed with keeps why it reopened and the answer it had (ADR 0162), and a change's question carries the role that owns it, derived from the stage that asked when the file doesn't say (ADR 0181)",
     pending: (root) => migrateQuestions(root, { dryRun: true }),
     apply: (root) => migrateQuestions(root),
+    async problems(root) {
+      const out: { file: string; message: string }[] = [];
+      await migrateQuestions(root, { dryRun: true, problems: out });
+      return out.map((p) => `${p.file}: ${p.message}`);
+    },
   },
   {
     id: "starter-review",
     summary:
       "The starter review: AI rules for the critic's lenses in checklists/review.yaml, for an org pack with no AI review of its own (ADR 0120)",
+    creates: true,
     async pending(root) {
       return (await starterReviewPlan(root)).map((f) => f.rel);
     },
@@ -446,7 +461,9 @@ function catalogStep(id: string, summary: string, versions: readonly number[]): 
         versions,
         pendingOnly: dryRun,
       });
-      out.push(...rel(`catalog/${sub}`, r.migrated));
+      // Round 49: where the layout keeps the catalog (kb/catalog, .atticus/catalog), so the
+      // backup, --dry-run and --json name the files this step rewrites.
+      out.push(...rel(`${layoutOf(root).catalog.replace(/\/+$/, "")}/${sub}`, r.migrated));
     }
     return out;
   };
@@ -496,12 +513,38 @@ function gatesRel(root: string): string {
 }
 
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {
+  return (await readStampFile(root)).stamp;
+}
+
+/**
+ * Round 49: the stamp, and when the file is there but isn't a stamp this Atticus reads (a newer
+ * one added a field, or a schema version), the Atticus it names, read on its own, and why.
+ */
+async function readStampFile(
+  root: string,
+): Promise<{ stamp?: MetarepoStamp; unread?: { atticus?: string; why: string } }> {
+  let text: string;
   try {
-    const r = MetarepoStamp.safeParse(parse(await readFile(join(root, STAMP_FILE), "utf8")));
-    return r.success ? r.data : undefined;
+    text = await readFile(join(root, STAMP_FILE), "utf8");
   } catch {
-    return undefined;
+    return {};
   }
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch (e) {
+    return { unread: { why: `not YAML: ${(e as Error).message.split("\n")[0]!}` } };
+  }
+  const r = MetarepoStamp.safeParse(data);
+  if (r.success) return { stamp: r.data };
+  const atticus = (data as { atticus?: unknown } | null)?.atticus;
+  const why = r.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ");
+  return {
+    unread: {
+      ...(typeof atticus === "string" && atticus.trim() ? { atticus: atticus.trim() } : {}),
+      why,
+    },
+  };
 }
 
 export interface UpgradeCheck {
@@ -509,7 +552,33 @@ export interface UpgradeCheck {
   stamp?: MetarepoStamp;
   /** A newer Atticus upgraded this metarepo: this one must not write to it. */
   newer: boolean;
+  /**
+   * Round 49: the stamp is there but isn't one this Atticus reads, so it was written by a newer
+   * or an unknown Atticus (`newer` is true): the version it names, if any, and why it isn't read.
+   */
+  unreadStamp?: { atticus?: string; why: string };
   pending: { id: string; summary: string; files: string[] }[];
+  /** Round 49: files a step leaves as they are, with why. */
+  problems?: string[];
+}
+
+/**
+ * Round 49: the Atticus to install when this one refuses the metarepo (c.newer), if known: the
+ * stamp's, or the one a stamp it can't read names when that one is newer.
+ */
+export function newerAtticusOf(c: UpgradeCheck): string | undefined {
+  const u = c.unreadStamp?.atticus;
+  return c.stamp?.atticus ?? (u && newerThan(u, c.atticus) ? u : undefined);
+}
+
+/** Round 49: why this Atticus refuses the metarepo (c.newer), with what to do. */
+export function newerWords(c: UpgradeCheck): string {
+  const u = c.unreadStamp;
+  // A stamp a newer Atticus wrote with a field this one doesn't know still names that Atticus.
+  const v = newerAtticusOf(c);
+  if (v)
+    return `This metarepo was upgraded by Atticus ${v}; this is ${c.atticus}. Install ${v} or later before working in it, so nothing it wrote is lost.`;
+  return `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}). Install it${u?.atticus ? ` (Atticus ${u.atticus} or later)` : ""} before working in this metarepo, so nothing it wrote is lost; or, if the file was edited by hand, put it back as it was committed. Nothing was changed.`;
 }
 
 /**
@@ -549,18 +618,30 @@ export function newerThan(a: string, b: string): boolean {
 
 export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
   // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
-  const [stamp, found] = await Promise.all([
-    readStamp(root),
-    Promise.all(MIGRATIONS.map(async (m) => ({ m, files: await m.pending(root) }))),
+  const [read, found] = await Promise.all([
+    readStampFile(root),
+    Promise.all(
+      MIGRATIONS.map(async (m) => ({
+        m,
+        files: await m.pending(root),
+        problems: m.problems ? await m.problems(root) : [],
+      })),
+    ),
   ]);
+  const { stamp, unread } = read;
   const pending = found
     .filter((x) => x.files.length)
     .map(({ m, files }) => ({ id: m.id, summary: m.summary, files }));
+  const problems = found.flatMap((x) => x.problems);
   return {
     atticus: version,
     ...(stamp ? { stamp } : {}),
-    newer: !!stamp && newerThan(stamp.atticus, version),
+    // Round 49: a stamp that is there but isn't read is a newer or unknown Atticus's: never
+    // taken as no stamp, so this one never writes over it.
+    newer: stamp ? newerThan(stamp.atticus, version) : !!unread,
+    ...(unread ? { unreadStamp: unread } : {}),
     pending,
+    ...(problems.length ? { problems } : {}),
   };
 }
 
@@ -629,12 +710,12 @@ export async function upgradeCommand(
 ): Promise<number> {
   const c = await upgradeCheck(root, version);
   if (c.newer) {
-    io.err(
-      `This metarepo was upgraded by Atticus ${c.stamp!.atticus}; this is ${version}. Install ${c.stamp!.atticus} or later before working in it, so nothing it wrote is lost.`,
-    );
+    io.err(newerWords(c));
     if (o.json) io.out(JSON.stringify(c, null, 2));
     return 1;
   }
+  // Round 49: what a step leaves as it is (a copy of a question, say) is said, each time.
+  for (const p of c.problems ?? []) io.err(`Left as it is: ${p}`);
   const store = o.openspecStore ? await openspecStorePlan(root) : undefined;
   if (store?.action === "refused") {
     io.err(store.why!);
@@ -673,16 +754,22 @@ export async function upgradeCommand(
     // Every file or folder a step changes, copied whole before any step runs. One that isn't
     // there yet (a step that makes it) has nothing to keep; any other failure stops the upgrade
     // before anything is changed, so "the files as they were are in" is always true.
-    for (const p of c.pending)
+    // Round 49: only a step that makes its file may list one that isn't there; for any other,
+    // a file it would rewrite that the backup can't find is a wrong path, never skipped.
+    for (const p of c.pending) {
+      const creates = MIGRATIONS.find((x) => x.id === p.id)?.creates === true;
       for (const f of p.files)
         await cp(join(root, ...f.split("/")), join(backup, ...f.split("/")), {
           recursive: true,
         }).catch((e: NodeJS.ErrnoException) => {
-          if (e.code === "ENOENT") return;
+          if (e.code === "ENOENT" && creates) return;
           throw new Error(
-            `Couldn't back up ${f} before upgrading (${e.message}); nothing was changed.`,
+            e.code === "ENOENT"
+              ? `Couldn't back up ${f} before upgrading: the step ${p.id} would change it, but it isn't there; nothing was changed.`
+              : `Couldn't back up ${f} before upgrading (${e.message}); nothing was changed.`,
           );
         });
+    }
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       try {

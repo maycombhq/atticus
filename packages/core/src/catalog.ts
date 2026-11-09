@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { interfaceId } from "./identity.js";
 import { NEVER_CHECKED_STEPS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
+import { SCHEMA_VERSION } from "./schema/version.js";
 
 const schemas = Object.values(RECORD_SCHEMAS) as unknown as [
   (typeof RECORD_SCHEMAS)[RecordKind],
@@ -116,6 +117,18 @@ function flowIssues(f: RecordOf<"Flow">): RecordIssue[] {
 
 /** Validate unknown input as a catalog record. Never throws. */
 export function parseRecord(input: unknown): ParseResult {
+  // Round 49: a record a newer Atticus wrote is said as one, not as every field's issue.
+  const v = (input as { schemaVersion?: unknown } | null)?.schemaVersion;
+  if (typeof v === "number" && Number.isInteger(v) && v > SCHEMA_VERSION)
+    return {
+      ok: false,
+      issues: [
+        {
+          path: "schemaVersion",
+          message: `written by a newer Atticus (record version ${v}); install it to read this record`,
+        },
+      ],
+    };
   const result = CatalogRecord.safeParse(input);
   if (!result.success) {
     return {

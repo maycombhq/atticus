@@ -126,6 +126,20 @@ describe("a wiki kept in git", () => {
     expect(existsSync(join(c.dir, "docs", "how-to", "draft-only.md"))).toBe(true);
   });
 
+  it("reads a branch whose name git takes but round 13 refused (v2.1+hotfix, round 49)", async () => {
+    const { wiki, root } = await wikiRepo();
+    await git(["checkout", "-q", "-b", "v2.1+hotfix"], wiki);
+    await commit(wiki, { "docs/how-to/hotfix-only.md": "# Hotfix\n" }, "2026-10-02T10:00:00Z");
+    await git(["checkout", "-q", "main"], wiki);
+    const c = await checkoutGitWiki(
+      root,
+      source(wiki, { ref: "v2.1+hotfix" }),
+      join(root, "org-pack"),
+      git,
+    );
+    expect(existsSync(join(c.dir, "docs", "how-to", "hotfix-only.md"))).toBe(true);
+  });
+
   it("refuses a ref git would read as an option, before git sees it", async () => {
     const { wiki, root } = await wikiRepo();
     await expect(

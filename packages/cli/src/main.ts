@@ -711,7 +711,7 @@ Usage:
   atticus todo done <step>             Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
-  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--openspec-store: also an OpenSpec store, beta]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--by you] [--openspec-store: also an OpenSpec store, beta]
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
@@ -2624,6 +2624,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
         ...(str(values.from) ? { packFrom: resolve(str(values.from)!) } : {}),
         ...(owner ? { owner } : {}),
+        // Round 49: the person the stamp records as having upgraded it (default the owner, then the Git user).
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
         ...(values["openspec-store"] === true ? { openspecStore: true } : {}),
         json,
       },

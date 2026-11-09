@@ -41,8 +41,11 @@ describe("catalog schema version 5", () => {
       expect(r.ok, String(v)).toBe(false);
       if (!r.ok) {
         expect(r.issues[0]?.path).toBe("schemaVersion");
+        // Round 49: a version above this one's is a newer Atticus's, and said as one.
         expect(r.issues[0]?.message).toBe(
-          "schemaVersion must be 1, 2, 3, 4 or 5 (older files are read as version 5)",
+          v === 6
+            ? "written by a newer Atticus (record version 6); install it to read this record"
+            : "schemaVersion must be 1, 2, 3, 4 or 5 (older files are read as version 5)",
         );
       }
     }

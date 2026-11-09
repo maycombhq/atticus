@@ -17,5 +17,5 @@ export function migrateGatesText(text: string): { text: string; changed: boolean
     for (const g of gates.items)
       if (isMap(g) && !g.has("maxAuthorRounds"))
         (g as YAMLMap<string, unknown>).set("maxAuthorRounds", 2);
-  return { text: keepLineEndings(text, doc.toString()), changed: true };
+  return { text: keepLineEndings(text, doc.toString({ lineWidth: 0 })), changed: true };
 }

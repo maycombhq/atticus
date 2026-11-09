@@ -116,7 +116,7 @@ Every command under the twelve, with its options.
   atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
   atticus stories <change>             The stories stage, the same as plan stories [--force] [--mode m] [--draft] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
-  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--openspec-store: also an OpenSpec store, beta]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--by you] [--openspec-store: also an OpenSpec store, beta]
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it

@@ -54,7 +54,7 @@ function fail(io: Output, e: unknown): number {
   return 1;
 }
 
-/** atticus init <name> --platform <pack> [--from <org pack>] [--owner who] [--openspec-store] */
+/** atticus init <name> --platform <pack> [--from <org pack>] [--owner who] [--by you] [--openspec-store] */
 export async function initCommand(
   dir: string,
   o: {
@@ -62,6 +62,8 @@ export async function initCommand(
     platform?: string;
     packFrom?: string;
     owner?: string;
+    /** Round 49: who the stamp says upgraded it; default the owner, then the Git user. */
+    by?: string;
     json?: boolean;
     /** Also make it an OpenSpec store (beta, ADR 0126). */
     openspecStore?: boolean;
@@ -83,7 +85,7 @@ export async function initCommand(
     // A new metarepo starts up to date: every file at the current version of its schema, and
     // the Atticus that made it recorded (ADR 0051), so its first doctor has nothing to upgrade.
     if (!r.problems.length)
-      await upgradeCommand(dir, o.owner ? { by: o.owner } : {}, {
+      await upgradeCommand(dir, o.by || o.owner ? { by: (o.by || o.owner)! } : {}, {
         out: () => undefined,
         err: (l) => io.err(l),
       });

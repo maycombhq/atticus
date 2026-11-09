@@ -53,7 +53,7 @@ import {
 } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
-import { upgradeCheck, type UpgradeCheck } from "./upgrade.js";
+import { newerAtticusOf, upgradeCheck, type UpgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
 import { keyEnvFromEnvironment } from "@maycombhq/model-providers";
 export { versionAtLeast };
@@ -546,15 +546,20 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     id: "upgrade",
     label: "Metarepo version",
     status: up.newer ? "fail" : up.pending.length ? "warn" : "ok",
+    // Round 49: a stamp this Atticus can't read is a newer or unknown one's, and fails too.
     detail: up.newer
-      ? `upgraded by Atticus ${up.stamp!.atticus}; this is ${up.atticus}`
+      ? newerAtticusOf(up)
+        ? `upgraded by Atticus ${newerAtticusOf(up)}; this is ${up.atticus}`
+        : `upgraded by a newer or unknown Atticus: .atticus/metarepo.yaml isn't a stamp ${up.atticus} reads (${up.unreadStamp?.why ?? "unreadable"})`
       : up.pending.length
         ? `${up.pending.length} upgrade step${up.pending.length === 1 ? "" : "s"} to run`
         : up.stamp
           ? `up to date (last upgraded by Atticus ${up.stamp.atticus})`
           : "up to date",
     fix: up.newer
-      ? `Install Atticus ${up.stamp!.atticus} or later before working in this metarepo (npm install -g @maycombhq/atticus@${up.stamp!.atticus} from your npm mirror, or that version's offline bundle).`
+      ? newerAtticusOf(up)
+        ? `Install Atticus ${newerAtticusOf(up)} or later before working in this metarepo (npm install -g @maycombhq/atticus@${newerAtticusOf(up)} from your npm mirror, or that version's offline bundle).`
+        : "Install the Atticus that upgraded this metarepo before working in it; or, if .atticus/metarepo.yaml was edited by hand, put it back as it was in Git. Don't run atticus upgrade until then."
       : "Run atticus upgrade, then commit what it changed in a pull request.",
   });
 

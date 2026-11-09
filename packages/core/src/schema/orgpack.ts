@@ -445,6 +445,28 @@ export type IntegrationPattern = z.infer<typeof IntegrationPattern>;
 
 // ------------------------------------------------------------------ sources.yaml
 
+/**
+ * Review round 49: why git wouldn't take a wiki's `ref` as a branch or tag name, or undefined
+ * when it would. Git's own rules (git check-ref-format), and never a leading `-`, so the name
+ * can't be read as an option. Beta.18 took any name; round 13 narrowed it to letters, digits and
+ * `._/-`, which refused names git takes (`v2.1+hotfix`, `feature@x`); this takes them again.
+ */
+export function gitRefProblem(ref: string): string | undefined {
+  if (!ref) return "it is empty";
+  if (ref.startsWith("-")) return "it starts with -";
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x20\x7f]/.test(ref)) return "it has a space or a control character";
+  if (/[~^:?*[\\]/.test(ref)) return "it has one of ~ ^ : ? * [ \\";
+  if (ref.includes("..")) return "it has ..";
+  if (ref.includes("@{") || ref === "@") return "it is @ or has @{";
+  if (ref.startsWith("/") || ref.endsWith("/") || ref.includes("//"))
+    return "it starts or ends with /, or has //";
+  if (ref.endsWith(".")) return "it ends with .";
+  if (ref.split("/").some((c) => c.startsWith(".") || c.endsWith(".lock")))
+    return "a part of it starts with . or ends with .lock";
+  return undefined;
+}
+
 const RelPath = z
   .string()
   .min(1)
@@ -600,9 +622,11 @@ export const Sources = z
             /** A git wiki's branch or tag; default its default branch. A name git takes as a ref, never as an option. */
             ref: z
               .string()
-              .min(1)
               .max(200)
-              .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a branch or tag name")
+              .superRefine((r, ctx) => {
+                const why = gitRefProblem(r);
+                if (why) ctx.addIssue({ code: "custom", message: `a branch or tag name: ${why}` });
+              })
               .optional(),
             /** The folder of a git wiki its pages are in; default the whole repository. */
             path: RelPath.optional(),

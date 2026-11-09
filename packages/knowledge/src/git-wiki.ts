@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { isAdopted, knowledgeRelOf, type OrgPack } from "@maycombhq/core";
+import { gitRefProblem, isAdopted, knowledgeRelOf, type OrgPack } from "@maycombhq/core";
 import { markdownFolderAdapter, type KnowledgeSourceAdapter, type RawPage } from "./sources.js";
 
 /**
@@ -97,10 +97,14 @@ async function datesOf(git: GitRun, dir: string, path?: string): Promise<Map<str
   return out;
 }
 
-/** A ref as the org pack may name one: never a word git would read as an option. */
+/**
+ * A ref as the org pack may name one: a name git takes (round 49: `v2.1+hotfix` too), never a
+ * word git would read as an option (it never starts with -).
+ */
 const safeRef = (ref: string) => {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref))
-    throw new Error(`${ref} isn't a branch or tag name git takes (sources.yaml ref)`);
+  const why = gitRefProblem(ref);
+  if (why)
+    throw new Error(`${ref} isn't a branch or tag name git takes (sources.yaml ref: ${why})`);
   return ref;
 };
 

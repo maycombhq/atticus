@@ -213,6 +213,9 @@ export function knowledgeDirOf(root: string): string {
   return join(root, ...knowledgeRelOf(root).split("/"));
 }
 
+/** A layout folder as sources.yaml's schema takes it (a relative path inside the metarepo). */
+const LAYOUT_PATH = Sources.shape.layout.unwrap().shape.catalog.unwrap().optional();
+
 // Change folders resolve through the layout on every call, so the parsed file is kept until
 // sources.yaml changes (size or time).
 const layouts = new Map<string, { key: string; layout: { catalog: string; openspec: string } }>();
@@ -229,10 +232,17 @@ export function layoutOf(root: string): { catalog: string; openspec: string } {
   }
   const hit = layouts.get(file);
   if (hit && hit.key === key) return { ...hit.layout };
-  let layout = { catalog: "catalog", openspec: "openspec" };
+  const layout = { catalog: "catalog", openspec: "openspec" };
   try {
-    const r = Sources.safeParse(parse(readFileSync(file, "utf8")));
-    if (r.success) layout = { catalog: r.data.layout.catalog, openspec: r.data.layout.openspec };
+    // Round 49: the layout is read on its own, each folder by itself: a wrong wiki (or any other
+    // field) never moves the catalog back to catalog/; atticus orgpack validate says what's wrong.
+    const data = parse(readFileSync(file, "utf8")) as { layout?: Record<string, unknown> } | null;
+    const l = data && typeof data === "object" ? data.layout : undefined;
+    if (l && typeof l === "object")
+      for (const k of ["catalog", "openspec"] as const) {
+        const r = LAYOUT_PATH.safeParse(l[k]);
+        if (r.success && r.data !== undefined) layout[k] = r.data;
+      }
   } catch {
     // no sources.yaml, or not YAML: defaults
   }

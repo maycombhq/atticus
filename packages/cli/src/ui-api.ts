@@ -561,24 +561,26 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // say), and atticus upgrade run here as a local job on the person's click. It backs up what
       // it changes; the changes are files to propose for review like any other.
       .add("GET", "/api/upgrade", async () => {
-        const { upgradeCheck } = await import("./upgrade.js");
+        const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
         const c = await upgradeCheck(root);
+        // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
+        const stamp = c.stamp?.atticus ?? newerAtticusOf(c);
         const body: Api.UpgradeViewT = {
           atticus: c.atticus,
           newer: c.newer,
-          ...(c.stamp ? { stamp: c.stamp.atticus } : {}),
+          ...(stamp ? { stamp } : {}),
           pending: c.pending,
         };
         return { status: 200, body };
       })
       .add("POST", "/api/upgrade", async () => {
-        const { upgradeCheck, upgradeCommand } = await import("./upgrade.js");
+        const { newerThan, newerWords, upgradeCheck, upgradeCommand } =
+          await import("./upgrade.js");
         const c = await upgradeCheck(root);
-        if (c.newer)
-          throw conflict(
-            `This metarepo was upgraded by Atticus ${c.stamp!.atticus}; this is ${c.atticus}. Install ${c.stamp!.atticus} or later first.`,
-          );
-        if (!c.pending.length)
+        if (c.newer) throw conflict(newerWords(c));
+        // Round 49: as atticus upgrade does, it runs to record this Atticus when no step waits
+        // but the stamp is older than this build, or missing.
+        if (!c.pending.length && c.stamp && !newerThan(c.atticus, c.stamp.atticus))
           throw conflict(`Nothing to upgrade: up to date for Atticus ${c.atticus}.`);
         return asJob("Upgrading the metarepo", () =>
           run((io) => upgradeCommand(root, { by: user }, io)),

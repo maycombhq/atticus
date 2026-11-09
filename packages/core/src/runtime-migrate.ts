@@ -19,7 +19,7 @@ export function migrateRuntimeText(text: string): { text: string; changed: boole
       changed: true,
     };
   doc.set("schemaVersion", 2);
-  return { text: doc.toString(), changed: true };
+  return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }
 
 /** Whether a runtime.yaml names copilot-acp, as a mode or with its section (ADR 0171). */
@@ -53,7 +53,7 @@ export function migrateRuntimeV3Text(text: string): { text: string; changed: boo
       changed: true,
     };
   doc.set("schemaVersion", 3);
-  return { text: doc.toString(), changed: true };
+  return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }
 
 /**
@@ -73,5 +73,5 @@ export function migrateRuntimeV4Text(text: string): { text: string; changed: boo
       changed: true,
     };
   doc.set("schemaVersion", 4);
-  return { text: doc.toString(), changed: true };
+  return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }

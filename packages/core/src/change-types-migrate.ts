@@ -12,5 +12,5 @@ export function migrateChangeTypesText(text: string): { text: string; changed: b
   const doc = parseDocument(text);
   if (!isMap(doc.contents) || doc.get("schemaVersion") !== 1) return { text, changed: false };
   doc.set("schemaVersion", CHANGE_TYPES_SCHEMA_VERSION);
-  return { text: keepLineEndings(text, doc.toString()), changed: true };
+  return { text: keepLineEndings(text, doc.toString({ lineWidth: 0 })), changed: true };
 }

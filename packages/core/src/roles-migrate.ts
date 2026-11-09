@@ -19,5 +19,5 @@ export function migrateRolesText(text: string): { text: string; changed: boolean
       changed: true,
     };
   doc.set("schemaVersion", ROLES_SCHEMA_VERSION);
-  return { text: doc.toString(), changed: true };
+  return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }

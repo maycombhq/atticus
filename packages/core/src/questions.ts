@@ -154,7 +154,21 @@ async function readQuestionText(
   } catch {
     return undefined;
   }
-  return { q: Question.parse(parse(text)), text };
+  const data: unknown = parse(text);
+  const newer = newerQuestion(data);
+  if (newer) throw new Error(`${questionsRelOf(root)}/${id}.yaml was ${newer}`);
+  return { q: Question.parse(data), text };
+}
+
+/**
+ * Round 49: what to say of a question file at a version above this Atticus's, rather than the
+ * schema's raw issues; undefined for any other file.
+ */
+function newerQuestion(data: unknown): string | undefined {
+  const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
+  return typeof v === "number" && Number.isInteger(v) && v > QUESTION_SCHEMA_VERSION
+    ? `written by a newer Atticus (question version ${v}); install it to read this question`
+    : undefined;
 }
 
 /**
@@ -193,8 +207,11 @@ export async function listQuestions(
   const problems: QuestionList["problems"] = [];
   for (const n of names) {
     try {
-      const r = Question.safeParse(parse(await readFile(join(questionsDirOf(root), n), "utf8")));
-      if (!r.success)
+      const data: unknown = parse(await readFile(join(questionsDirOf(root), n), "utf8"));
+      const newer = newerQuestion(data);
+      const r = Question.safeParse(data);
+      if (newer) problems.push({ file: `${rel}/${n}`, message: newer });
+      else if (!r.success)
         problems.push({
           file: `${rel}/${n}`,
           message: r.error.issues
@@ -765,7 +782,11 @@ export async function raiseQuestions(
  */
 export async function migrateQuestions(
   root: string,
-  o: { dryRun?: boolean } = {},
+  o: {
+    dryRun?: boolean;
+    /** Round 49: the files left as they are, with why (a file not named by its question's id). */
+    problems?: { file: string; message: string }[];
+  } = {},
 ): Promise<string[]> {
   const rel = questionsRelOf(root);
   const out: string[] = [];
@@ -776,19 +797,43 @@ export async function migrateQuestions(
     return out;
   }
   for (const n of names) {
-    let data: unknown;
-    try {
-      data = parse(await readFile(join(questionsDirOf(root), n), "utf8"));
-    } catch {
-      continue;
+    const file = join(questionsDirOf(root), n);
+    // Round 49: written back to the file it was read from, only while it still holds what was
+    // read (an answer landing meanwhile is read again, never lost); a few tries, then left.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let text: string;
+      let data: unknown;
+      try {
+        text = await readFile(file, "utf8");
+        data = parse(text);
+      } catch {
+        break;
+      }
+      const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
+      // ADR 0181: version 4 files too, rewritten at 5 (the number only).
+      if (v !== 1 && v !== 2 && v !== 3 && v !== 4) break;
+      const q = Question.safeParse(data);
+      if (!q.success) break;
+      // Round 49: a copy (`q-… copy.yaml`) or a renamed file isn't the question's own file:
+      // writing it under its id would overwrite the live question, or leave a duplicate.
+      if (n !== `${q.data.id}.yaml`) {
+        o.problems?.push({
+          file: `${rel}/${n}`,
+          message: `it holds ${q.data.id}, whose file is ${rel}/${q.data.id}.yaml: left at question version ${String(v)}. Remove the copy, or rename it to ${q.data.id}.yaml if it is the only one.`,
+        });
+        break;
+      }
+      if (!o.dryRun) {
+        try {
+          await write(root, q.data, { text });
+        } catch (e) {
+          if (e instanceof FileChangedError) continue;
+          throw e;
+        }
+      }
+      out.push(`${rel}/${n}`);
+      break;
     }
-    const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-    // ADR 0181: version 4 files too, rewritten at 5 (the number only).
-    if (v !== 1 && v !== 2 && v !== 3 && v !== 4) continue;
-    const q = Question.safeParse(data);
-    if (!q.success) continue;
-    if (!o.dryRun) await write(root, q.data);
-    out.push(`${rel}/${n}`);
   }
   return out;
 }
