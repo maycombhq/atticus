@@ -69,6 +69,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Fixed before release (review)
 
 - Ninth UX walk (no terminal in the daily path, wording):
+  - **Questions opened for a change says that change has no question** when its list is empty, not that a scan adds one.
   - **A saved stage correction says where the file goes**: stage/corrections.yaml goes with the stage's hand-off; outside one, Propose for review; the git command is under "Or in a terminal".
   - **A knowledge gap or a blocking finding on a stage's gate has an in-app step** on Run next: answer it on the change's page (Apply fix, Ask, Not relevant), not "In a terminal… No slash command does this step yet".
   - **The app's lines say the app's actions**: a failed answer says "fix the answer, then press Done again", and a merge not pulled yet says "Bring in what merged on Home" (the command line keeps its commands).

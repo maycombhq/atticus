@@ -221,6 +221,8 @@ export const COPY = {
     listTitle: "Questions",
     empty: "No questions are waiting. A scan step adds one here when the code is unclear.",
     emptyAll: "No questions yet. A scan step adds one here when the code is unclear.",
+    emptyChange: (change: string) => `No question for ${change} waits for an answer.`,
+    emptyChangeAll: (change: string) => `No question for ${change} yet.`,
     unreadable: (file: string) => `${file} isn't a valid question file.`,
     pickFromList: "Pick a question from the list to answer it.",
     /** UX review (2026-11-08): the questions a step raised, or the knowledge gaps' owner questions. */

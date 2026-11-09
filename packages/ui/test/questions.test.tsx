@@ -144,6 +144,19 @@ describe("the Questions page (ADR 0078)", () => {
   });
 });
 
+describe("a change's empty list (ninth UX walk)", () => {
+  it("says the change has no question, not that a scan adds one", () => {
+    const of = {
+      state: "ready" as const,
+      data: { questions: [], problems: [] } as never,
+      reload: () => {},
+    };
+    const out = html(<QuestionList of={of as never} change="lock-card" />);
+    expect(out).toContain(C.emptyChange("lock-card"));
+    expect(out).not.toContain("A scan step adds one");
+  });
+});
+
 describe("after a change's question is answered (sixth UX walk)", () => {
   const change = "show-account-status";
   const asked: QuestionView = {

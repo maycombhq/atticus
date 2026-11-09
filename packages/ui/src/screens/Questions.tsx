@@ -431,7 +431,18 @@ export function QuestionList(p: {
     <View
       of={p.of}
       empty={(d) => d.questions.length === 0 && d.problems.length === 0 && !d.me}
-      emptyText={p.mine ? C.emptyMine : p.all ? C.emptyAll : C.empty}
+      emptyText={
+        // Ninth UX walk: a change's empty list is the change's, not a scan's.
+        p.change
+          ? p.all
+            ? C.emptyChangeAll(p.change)
+            : C.emptyChange(p.change)
+          : p.mine
+            ? C.emptyMine
+            : p.all
+              ? C.emptyAll
+              : C.empty
+      }
     >
       {(d) => {
         const shown = shownQuestions(d.questions, { text, repo });
