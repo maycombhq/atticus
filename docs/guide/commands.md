@@ -76,16 +76,16 @@ Every command under the twelve, with its options.
   atticus questions propose [<id>]     /atticus-propose as a command (ADR 0171): under --mode copilot-acp (or runtime.yaml's default) Copilot proposes in a new session, unattended, writing only proposals/questions/, then the proposals are checked; otherwise it prints the line to paste. A person still accepts each one [--mode copilot-acp|hand-off]
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
-  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--preview] [--json]
+  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
   atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
-  atticus change new "<title>"         Start a change from a template: --type <type>
+  atticus change new "<title>" --type <type>  Start a change from a template
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
   atticus change sketch <change> --from <file.drawio|.mmd> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
-  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
+  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--change <id>] [--limit n] [--json]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
@@ -165,7 +165,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus types notes <id>             A component type's notes (the architect's write-up), or where to write them
   atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
-  atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
+  atticus rules add --key <k> --rule "..." --org-wide | --type <t> | --repo <r> [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
   atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
   atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
@@ -178,7 +178,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
           [--limit n] [--json]         (see docs/query-language.md)
   atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
   atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
-  atticus cites --repo <repo> --path <path>  What cites each line of one file: the flow steps, with the changes in flight on them, and the records (or --file <path on disk>) [--json]
+  atticus cites --repo <repo> --path <path>  What cites each line of one file: the flow steps, with the changes in flight on them, and the records (or --file <path on disk>) [--file <path on disk>] [--json]
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
   atticus context similar <id> [--kind k,k] [--limit n]  What reads like one id, by the local embedding model: a hint where to look, never a link
@@ -227,7 +227,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
   atticus diagram library <file>       Write the draw.io shape library
-  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog (--from-catalog)
+  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog [--from-catalog]
           [--port 4010] [--host 127.0.0.1]
   atticus stub check <spec>            Which operations have examples to answer with
   atticus dialect new <name> --from <repo>[,<repo>...]   Scaffold a dialect from sample repos

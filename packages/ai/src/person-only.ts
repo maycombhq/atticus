@@ -5,8 +5,19 @@
  * CLI itself refuse them, so ingested content can never get the assistant to act as the person.
  * One list, held here.
  */
+import { commandWords } from "./cli-options.js";
+
 const flag = (a: readonly string[], ...names: string[]) =>
   a.some((x) => names.some((n) => x === n || x.startsWith(`${n}=`)));
+
+/**
+ * A switch given as itself, `--name=` or `--name=true` (review round 47: `--draft=false` is no
+ * draft, and the command line reads it as none).
+ */
+const switchOn = (a: readonly string[], name: string) =>
+  a.some(
+    (x) => x === name || (x.startsWith(`${name}=`) && /^(true)?$/i.test(x.slice(name.length + 1))),
+  );
 
 const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; why: string }[] = [
   {
@@ -64,7 +75,7 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   {
     test: (w, a) =>
       w[0] === "rules" &&
-      (w[1] === "activate" || w[1] === "off" || (w[1] === "add" && !flag(a, "--draft"))),
+      (w[1] === "activate" || w[1] === "off" || (w[1] === "add" && !switchOn(a, "--draft"))),
     why: "a person sets a reading rule active or off (a session drafts)",
   },
   {
@@ -113,14 +124,14 @@ export function withoutLegacy(argv: readonly string[]): readonly string[] {
     : argv;
 }
 
-/** Why the command is a person's to run, or undefined when a session may run it. */
+/**
+ * Why the command is a person's to run, or undefined when a session may run it. Its words are
+ * the command line's own positionals (review round 47): every option that takes a value takes
+ * it, so `questions --option 1 answer q1` is `questions answer`, as the command line runs it.
+ */
 export function personOnlyWhy(argv: readonly string[]): string | undefined {
-  const words: string[] = [];
   argv = withoutLegacy(argv);
-  for (const x of argv) {
-    if (x.startsWith("-")) break;
-    words.push(x);
-  }
+  const words = commandWords(argv);
   return RULES.find((r) => r.test(words, argv))?.why;
 }
 

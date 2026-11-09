@@ -262,6 +262,20 @@ describe("atticus skills import, write and list", () => {
     expect((await sourcesOf(root)).length).toBe(3);
   });
 
+  it("takes the folders' README.md for what it is, not an agent: --check passes right after init (review round 47)", async () => {
+    const root = temp("init");
+    const { initCommand } = await import("../src/setup-commands.js");
+    expect(await initCommand(root, { name: "forge", platform: "forge" }, io().io)).toBe(0);
+    expect(existsSync(join(root, "org-pack/agents/README.md"))).toBe(true);
+    write(root, "org-pack/instructions/README.md", "# Instructions\n");
+    expect((await sourcesOf(root)).map((s) => s.name)).not.toContain("README");
+    const c = io();
+    expect(await skillsWriteCommand(root, { check: true }, c.io)).toBe(0);
+    // A file named readme in another case is skipped the same way.
+    write(root, "org-pack/agents/readme.md", "# Agents\n");
+    expect((await sourcesOf(root)).map((s) => s.name.toLowerCase())).not.toContain("readme");
+  });
+
   it("doesn't take a Windows checkout (CRLF) of a written file as an edit", async () => {
     const root = metarepo();
     const theirs = harborRepo();

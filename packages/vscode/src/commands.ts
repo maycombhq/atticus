@@ -78,11 +78,16 @@ function normaliseCommand(cmd: CatalogCommand): CatalogCommand {
     const next = words[i + 1];
     return next === undefined || next === "|" || /^\[?--/.test(next);
   };
+  // Review round 47: a flag the usage doesn't show isn't required (an older command line read
+  // flags from a summary's words: `map <repo>` required the --all and --force it mentions).
+  const shown = (name: string) =>
+    words.some((w) => w.replace(/^\[/, "").replace(/\]$/, "").split("=")[0] === name);
   return {
     ...cmd,
     flags: cmd.flags.map((f) => {
-      if (f.value === undefined || !bare(f.name)) return f;
-      const { value: _value, ...rest } = f;
+      const g = f.required && !shown(f.name) ? { ...f, required: false } : f;
+      if (g.value === undefined || !bare(g.name)) return g;
+      const { value: _value, ...rest } = g;
       return rest;
     }),
   };

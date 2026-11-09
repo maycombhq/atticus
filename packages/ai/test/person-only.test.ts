@@ -129,6 +129,46 @@ describe("what only a person does", () => {
   });
 });
 
+// Review round 47: an option's value is never a command word, and a command word after an option
+// is still one: the words are read as the CLI reads them (cli-options.ts), every flag that takes
+// a value skipping its value.
+const ROUND_47_PERSON = [
+  "questions --option 1 answer q1",
+  "questions --text hi answer q1",
+  "questions --state open sheet --apply f.csv",
+  "verify --write audit forge-api --answers a.yaml",
+  "questions --option 1 correct q1",
+  "questions --text x owner q1",
+  "questions --match x undo b1",
+  "questions --scope repo --type service answer q1",
+  // `--draft=false` is no draft: a session may only draft a rule.
+  "rules add --org-wide --key k1 --rule x --draft=false",
+  "rules add --org-wide --key k1 --rule x --draft=FALSE",
+  "rules add --org-wide --key k1 --rule x --draft=no",
+];
+const ROUND_47_SESSION = [
+  "questions list --state open",
+  "questions --state open list",
+  "questions --state open",
+  "questions show q1 --json",
+  "rules add k1 --type service --draft=true",
+  "rules add k1 --type service --draft=TRUE",
+  "rules add k1 --type service --draft=",
+  "critic c1 --resume --gate design",
+  "verify --write forge-api",
+];
+
+describe("what only a person does, behind an option and its value (review round 47)", () => {
+  it.each(ROUND_47_PERSON)("refuses %s", (line) => {
+    expect(personOnlyWhy(line.split(" "))).toBeTruthy();
+    expect(atticusArgvOf(`atticus ${line}`).refused).toMatch(/^Refused: /);
+  });
+  it.each(ROUND_47_SESSION)("lets a session run %s", (line) => {
+    expect(personOnlyWhy(line.split(" "))).toBeUndefined();
+    expect(atticusArgvOf(`atticus ${line}`).refused).toBeUndefined();
+  });
+});
+
 describe("a person's records under facts/", () => {
   it("are never a session's to write", async () => {
     const { mkdtemp, mkdir } = await import("node:fs/promises");

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { AREAS, commandCatalog, parseHelp, type CommandInfo } from "../src/command-catalog.js";
 import { main } from "../src/main.js";
+import { OPTIONS } from "@maycombhq/ai/cli-options";
 
 const run = async (argv: string[]) => {
   const out: string[] = [];
@@ -30,7 +31,11 @@ describe("the command catalogue (ADR 0096)", () => {
       .map((l) => l.trim());
     // The help's own lines and the --handoff note aren't commands to run.
     const commands = lines.filter((l) => !/^atticus (--help|--version|<step>)/.test(l));
-    expect(all.length).toBe(commands.length);
+    // `secret set|check|forget` is a command for each of its words (review round 47).
+    const ways = (l: string) =>
+      /^atticus (?:[a-z][a-z-]* )*?([a-z-]+(?:\|[a-z-]+)+)(?: |$)/.exec(l);
+    const count = commands.reduce((n, l) => n + (ways(l)?.[1]!.split("|").length ?? 1), 0);
+    expect(all.length).toBe(count);
     const missing = all.filter((c) => !AREAS.some((a) => a.id === c.area)).map((c) => c.id);
     expect(missing).toEqual([]);
     expect(new Set(all.map((c) => c.id)).size).toBe(all.length);
@@ -150,8 +155,10 @@ describe("the command catalogue (ADR 0096)", () => {
       required: false,
       value: "org",
     });
+    // Review round 47: `--option <n> | --text "..." | --accept-proposal` is one of three, so
+    // none of them is required alone (an editor offers all three).
     expect(byId.get("questions answer")!.flags.find((f) => f.name === "--option")!.required).toBe(
-      true,
+      false,
     );
   });
 
@@ -202,6 +209,94 @@ describe("the command catalogue (ADR 0096)", () => {
       summary: "Check a catalog, org pack, dialect, plugin or executor against the spec",
     });
     expect(c!.flags.map((f) => f.name)).toEqual(["--kind", "--json"]);
+  });
+
+  it("requires only what the usage requires, never a flag the summary's words name (review round 47)", () => {
+    const required = (id: string) =>
+      byId
+        .get(id)!
+        .flags.filter((f) => f.required)
+        .map((f) => (f.value ? `${f.name} ${f.value}` : f.name));
+    expect({
+      map: required("map"),
+      "map --all": required("map --all"),
+      "questions answer": required("questions answer"),
+      "questions correct": required("questions correct"),
+      join: required("join"),
+      "rules add": required("rules add"),
+      "rules activate": required("rules activate"),
+      "rules off": required("rules off"),
+      "stub serve": required("stub serve"),
+      "change similar": required("change similar"),
+      "repo add": required("repo add"),
+      "connect match": required("connect match"),
+      "change new": required("change new"),
+      "verify audit --report": required("verify audit --report"),
+    }).toEqual({
+      map: [],
+      "map --all": ["--all"],
+      // One of --option, --text or --accept-proposal: none of them alone.
+      "questions answer": [],
+      "questions correct": [],
+      join: [],
+      // A scope (--org-wide, --type or --repo), and the key and the rule whatever the scope.
+      "rules add": ["--key k", '--rule "..."'],
+      "rules activate": [],
+      "rules off": ['--reason "..."'],
+      "stub serve": [],
+      "change similar": [],
+      "repo add": [],
+      "connect match": [],
+      "change new": ["--type type"],
+      "verify audit --report": ["--report"],
+    });
+  });
+
+  it("keeps the value an option takes, as the help names it (review round 47)", () => {
+    const value = (id: string, flag: string) =>
+      byId.get(id)!.flags.find((f) => f.name === flag)?.value;
+    expect(value("map", "--resume")).toBe("run");
+    expect(value("map", "--idle")).toBe("minutes");
+    expect(value("map", "--dir")).toBe("path");
+    expect(value("map", "--commit")).toBe("sha");
+    expect(value("verify audit", "--right")).toBe("ids");
+    expect(value("verify audit", "--answers")).toBe("file");
+    expect(value("questions list", "--state")).toBe("open");
+    // A switch has none, wherever it is written; critic's --resume is one.
+    expect(value("map", "--json")).toBeUndefined();
+    expect(value("critic --resume", "--resume")).toBeUndefined();
+    expect(value("ci snippet", "--write")).toBe("dir");
+    // Every option the command line reads with a value has one in the catalogue.
+    const bare = all.flatMap((c) =>
+      c.flags
+        .filter(
+          (f) =>
+            !f.value &&
+            (OPTIONS as Record<string, { type: string }>)[f.name.slice(2)]?.type === "string" &&
+            !(c.id.startsWith("critic") && f.name === "--resume"),
+        )
+        .map((f) => `${c.id} ${f.name}`),
+    );
+    expect(bare).toEqual([]);
+  });
+
+  it("gives each of a|b's commands an id of its own (review round 47)", () => {
+    for (const id of [
+      "glossary list",
+      "glossary scan",
+      "plugin test",
+      "plugin pin",
+      "secret set",
+      "secret check",
+      "secret forget",
+    ])
+      expect(byId.get(id), id).toMatchObject({ words: id.split(" ") });
+    expect(byId.get("secret set")!.args).toEqual([
+      { name: "name", kind: "text", optional: false, many: false },
+    ]);
+    expect(byId.get("glossary")).toBeUndefined();
+    expect(byId.get("plugin")).toBeUndefined();
+    expect(byId.get("secret")).toBeUndefined();
   });
 
   it("keeps a usage to the command: the architecture stage's words are its summary", () => {

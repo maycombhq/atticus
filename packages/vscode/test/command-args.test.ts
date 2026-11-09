@@ -165,3 +165,35 @@ describe("asking for a command's arguments", () => {
     expect(listFor(refresh, { name: "--refresh" })).toBe("absorbed");
   });
 });
+
+/**
+ * Review round 47: an older command line's catalogue marks a flag its summary's words name as
+ * required (`map <repo>`: "map --all's waiting loop", "--force reading it whole again"), so
+ * picking `map <repo>` added --all --force. A flag the usage doesn't show is never required.
+ */
+describe("a required flag the usage doesn't show", () => {
+  const map: CatalogCommand = {
+    id: "map",
+    words: ["map"],
+    usage: "atticus map <repo>",
+    summary: "Read a repo into facts; under Copilot it runs map --all's waiting loop",
+    args: [{ name: "repo", kind: "repo", optional: false, many: false }],
+    flags: [
+      { name: "--all", required: true },
+      { name: "--force", required: true },
+      { name: "--resume", value: "run", required: false },
+    ],
+    area: "repos",
+    runs: "ai",
+  };
+  it("is optional, so nothing sets it", () => {
+    const [m] = normaliseCatalog({ areas: [], commands: [map] }).commands;
+    expect(requiredSwitches(m!)).toEqual({});
+    expect(m!.flags.filter((f) => f.required)).toEqual([]);
+    expect(m!.flags.find((f) => f.name === "--resume")).toEqual({
+      name: "--resume",
+      value: "run",
+      required: false,
+    });
+  });
+});
