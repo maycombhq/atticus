@@ -25,25 +25,47 @@ type Status = "confirmed" | "excluded";
 type Item = { id: string; kind: string; status?: string; title?: string; stages?: string[] };
 
 /** What a person knows it by (B2): its title, else its id. */
-const nameOf = (i: { id: string; title?: string }) => i.title ?? i.id;
+const nameOf = (i: { id: string; title?: string; passage?: Passage }) =>
+  i.title ?? passageName(i.passage) ?? i.id;
 const kindWord = (k: string) => K.kinds[k] ?? k;
 
-/** The title a person reads, with the id it is set by (the command takes the id) beside it. */
+type Passage = NonNullable<Api.ChangeKnowledgeViewT["items"][number]["passage"]>;
+
+/** A readable name for an item with no title: its section's heading, else its page's name. */
+export function passageName(p: Passage | undefined): string | undefined {
+  if (!p) return undefined;
+  const last = p.heading.split(" › ").at(-1)?.trim();
+  return (
+    last ||
+    p.page
+      .split("/")
+      .at(-1)
+      ?.replace(/\.(md|markdown)$/i, "")
+      .replace(/[-_]+/g, " ")
+  );
+}
+
+/**
+ * The title a person reads (ADR 0189: never a file path as the main label), what it says opened
+ * in place (the section's text with its page, or the item's quote), and the id behind Details.
+ */
 function Name({
   item,
 }: {
-  item: { id: string; kind: string; title?: string; source?: string; authority?: string };
+  item: {
+    id: string;
+    kind: string;
+    title?: string;
+    source?: string;
+    authority?: string;
+    passage?: Passage;
+  };
 }) {
+  const P = COPY.roleWork.passage;
+  const title = item.title ?? passageName(item.passage) ?? item.id;
   return (
     <>
-      {item.title ? <span>{item.title}</span> : <code className="mono">{item.id}</code>}{" "}
-      <span className="muted">{kindWord(item.kind)}</span>
-      {item.title && (
-        <>
-          <br />
-          <code className="mono muted">{item.id}</code>
-        </>
-      )}
+      <span>{title}</span> <span className="muted">{kindWord(item.kind)}</span>
       {/* ADR 0132: the source of its page, and how much that source's word counts. */}
       {item.source && (
         <>
@@ -51,6 +73,44 @@ function Name({
           <span className="muted">{K.fromSource(item.source, item.authority)}</span>
         </>
       )}
+      {item.passage ? (
+        <details>
+          <summary>{P.open}</summary>
+          <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {P.from(item.passage.heading || item.passage.page, item.passage.source)}
+            </span>
+            {item.passage.quote ? (
+              <blockquote
+                style={{ margin: 0, paddingLeft: 10, borderLeft: "2px solid var(--line-2)" }}
+              >
+                <span className="hud" style={{ fontSize: 10 }}>
+                  {P.quote}
+                </span>
+                <p style={{ margin: "2px 0 0", whiteSpace: "pre-wrap" }}>{item.passage.quote}</p>
+              </blockquote>
+            ) : (
+              <p style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12.5 }}>
+                {item.passage.text}
+              </p>
+            )}
+          </div>
+        </details>
+      ) : null}
+      <details>
+        <summary className="muted" style={{ fontSize: 11.5 }}>
+          {P.details}
+        </summary>
+        <code className="mono muted">{item.id}</code>
+        {item.passage && (
+          <>
+            <br />
+            <code className="mono muted">
+              {item.passage.path}:{item.passage.line}
+            </code>
+          </>
+        )}
+      </details>
     </>
   );
 }

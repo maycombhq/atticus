@@ -1,8 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { changesDirOf, listQuestions, type QuestionRole } from "@maycombhq/core";
-import { changeReport } from "@maycombhq/changes";
+import {
+  changesDirOf,
+  listQuestions,
+  nextOwnersOf,
+  type ChangeLifecycle,
+  type QuestionRole,
+} from "@maycombhq/core";
+import { changeReport, changeStore } from "@maycombhq/changes";
 import { readChangeRepos } from "@maycombhq/workspace";
 import { changeSteps, readNextState, type NextStep } from "./next-commands.js";
 
@@ -43,6 +49,57 @@ export interface Cockpit {
   /** ADR 0181 part 4: the person's roles on the change (change.yaml owners), when a person is given. */
   yourRoles?: QuestionRole[];
   repos: { id: string; branch: string; base: string; pr?: string }[];
+  /** ADR 0189: who the change waits on now, by role and name. */
+  waitsOn?: WaitsOn;
+}
+
+export interface WaitsOn {
+  role: string;
+  people: string[];
+  because: "handoff" | "phase";
+  phase: string;
+}
+
+const handle = (p: string) => p.trim().replace(/^@/, "");
+
+/**
+ * ADR 0189: who a change waits on. An open hand-off waits on its reviewers of the next role (the
+ * architect for Define's); otherwise the phase's own role: the product owner in Define, the
+ * architect in Design, the business analyst in Plan until the stories are done, then the tech
+ * lead, who also has Build. People are the change's owners of that role (none named: empty).
+ */
+export function waitsOnOf(
+  c: Pick<ChangeLifecycle, "state" | "owners" | "handoffs">,
+  storiesDone: boolean,
+): WaitsOn | undefined {
+  const live = c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
+  if (live) {
+    const n = nextOwnersOf(live.phase, c.owners);
+    if (n) {
+      const named = live.reviewers.map(handle).filter((p) => n.people.includes(p));
+      return {
+        role: n.role,
+        people: named.length ? named : n.people,
+        because: "handoff",
+        phase: live.phase,
+      };
+    }
+  }
+  const role =
+    c.state === "define" || c.state === "draft" || c.state === "returned"
+      ? "product-owner"
+      : c.state === "design"
+        ? "architect"
+        : c.state === "plan"
+          ? storiesDone
+            ? "team-lead"
+            : "business-analyst"
+          : c.state === "build" || c.state === "qa" || c.state === "release-ready"
+            ? "team-lead"
+            : undefined;
+  if (!role) return undefined;
+  const people = [...new Set((c.owners[role] ?? []).map(handle))].filter((p) => !p.includes("/"));
+  return { role, people, because: "phase", phase: c.state };
 }
 
 async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
@@ -99,6 +156,12 @@ export async function cockpit(
   const state = (await readNextState(root)).changes.find((c) => c.id === id);
   const next = state ? changeSteps(state)[0] : undefined;
   const repos = await readChangeRepos(root, id).catch(() => undefined);
+  const lifecycle = await changeStore(root)
+    .read(id)
+    .catch(() => undefined);
+  const waitsOn = lifecycle
+    ? waitsOnOf(lifecycle, stages.find((s) => s.stage === "stories")?.state === "done")
+    : undefined;
   return {
     id,
     state: report.state,
@@ -111,6 +174,7 @@ export async function cockpit(
     openQuestions: ofChange.size,
     openQuestionsByRole: byRole,
     ...(o.user !== undefined ? { yourRoles: await personsRoles(root, id, o.user) } : {}),
+    ...(waitsOn ? { waitsOn } : {}),
     repos: (repos?.repos ?? []).map((r) => ({
       id: r.id,
       branch: r.branch,

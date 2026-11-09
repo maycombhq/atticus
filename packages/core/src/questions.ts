@@ -16,7 +16,7 @@ import {
 } from "./host-questions.js";
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
-import { roleOfStep } from "./question-roles.js";
+import { roleOfAsks, roleOfQuestion, roleOfStep } from "./question-roles.js";
 import { keptParse } from "./kept-files.js";
 import { mapAtOnce } from "./record-cache.js";
 import { questionAiProblem } from "./ai-decisions.js";
@@ -32,6 +32,7 @@ import {
   type AiBy,
   type AppliedRule,
   type QuestionDraft,
+  type QuestionRole,
   type QuestionScopeLevel,
   type QuestionState,
 } from "./schema/question.js";
@@ -105,7 +106,9 @@ export interface AskedBy {
 
 /** An open question from what an AI step raised. */
 export function questionFromDraft(d: QuestionDraft, by: AskedBy): Question {
-  const role = d.role ?? roleOfStep(by.step, by.rerun);
+  // ADR 0189: by what it asks, when the draft tags it; else the raising stage's role.
+  const stage = roleOfStep(by.step, by.rerun);
+  const role = d.role ?? (d.asks ? roleOfAsks(d.asks, stage) : stage);
   return Question.parse({
     schemaVersion: QUESTION_SCHEMA_VERSION,
     id: questionId({ step: by.step, repo: by.repo, question: d.question, evidence: d.evidence }),
@@ -125,9 +128,37 @@ export function questionFromDraft(d: QuestionDraft, by: AskedBy): Question {
         : { level: "repo", id: by.repo },
     // ADR 0181 part 4: the role that owns it, the question's own or its stage's.
     ...(role ? { role } : {}),
+    ...(d.asks ? { asks: d.asks } : {}),
     state: "open",
     rerun: by.rerun,
   });
+}
+
+/**
+ * ADR 0189: a person re-routes a question to another role (a business question the architect was
+ * given goes to the product owner). `role` becomes the new one and `routed` says from which, by
+ * whom and when; what it asks follows the role unless the AI tagged it. Open or answered alike:
+ * the answer, if any, stays. Written only if the file is as it was read.
+ */
+export async function routeQuestion(
+  root: string,
+  id: string,
+  o: { role: QuestionRole; by: string; at: string },
+): Promise<Question> {
+  const read = await readQuestionText(root, id);
+  if (!read) throw new QuestionError("not-found", `There is no question ${id}.`);
+  const q = read.q;
+  if (q.state === "retired")
+    throw new QuestionError("retired", `Question ${id} is retired; there is no one to ask.`);
+  const from = roleOfQuestion(q);
+  if (from === o.role) return q;
+  const next = Question.parse({
+    ...q,
+    role: o.role,
+    routed: { ...(from ? { from } : {}), by: o.by.replace(/^@/, ""), at: o.at },
+  });
+  await write(root, next, read);
+  return next;
 }
 
 const fileOf = (root: string, id: string) => join(questionsDirOf(root), `${id}.yaml`);

@@ -36,7 +36,7 @@ async function withQuestions(files: Record<string, string>): Promise<string> {
 describe("migrateQuestions writes back the file it read (round 49)", () => {
   it("leaves a stale copy alone and never writes it over the live question", async () => {
     const v1 = await V1();
-    const live = v1.replace("schemaVersion: 1", "schemaVersion: 5").replace("pat", "sam");
+    const live = v1.replace("schemaVersion: 1", "schemaVersion: 6").replace("pat", "sam");
     const root = await withQuestions({
       "q-0f1e2d3c4b5a.yaml": live,
       "q-0f1e2d3c4b5a copy.yaml": v1,
@@ -63,7 +63,7 @@ describe("migrateQuestions writes back the file it read (round 49)", () => {
     const root = await withQuestions({ "q-0f1e2d3c4b5a.yaml": v1 });
     expect(await migrateQuestions(root)).toEqual(["questions/q-0f1e2d3c4b5a.yaml"]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
-      /schemaVersion: 5/,
+      /schemaVersion: 6/,
     );
   });
 });

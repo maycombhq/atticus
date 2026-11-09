@@ -101,7 +101,8 @@ const BEFORE = {
   // (corrections/answers/feature.yaml) was re-written for it: its gap names the two items.
   // B-place (2026-10-25): every stage's self-check line no longer names a check_draft tool a
   // hand-off doesn't have (diffed: that one line in each of the three prompts).
-  feature: "3f0e4fc2fbb02ba0aa525e11e15b8cc48630a24fbd7659471dfcfc86fabc1b6c",
+  // ADR 0189: re-pinned when the format asked what each question asks (its asks line, one rule).
+  feature: "5814ca67b56b439e185ab1a99c0fa468ed5757fa56e2f7e747540a13b45c88a5",
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns

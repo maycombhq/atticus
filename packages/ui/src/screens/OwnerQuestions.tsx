@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
+import { confirmed } from "../api/confirm.js";
 import type { Api } from "@maycombhq/core";
 import { api, type Loaded } from "../api/client.js";
 import { Propose } from "../app/propose.js";
@@ -65,6 +66,58 @@ export function OwnerQuestionList(p: {
   );
 }
 
+/**
+ * ADR 0189 (app-only audit): "Asking happens outside Atticus" stays for an owner Atticus can't
+ * reach; where notifications are set up, Send posts the question to its owner, on the person's
+ * confirmation (it is a message, ADR 0186). Manual notifications make it a step for the person.
+ */
+export function SendOwnerQuestion({ id, owner }: { id: string; owner: string }) {
+  const S = COPY.roleWork.send;
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string }>();
+  const send = async () => {
+    setBusy(true);
+    setNote(undefined);
+    try {
+      const c = await confirmed("owner-ask", id).catch(() => ({}));
+      const r = await api<Api.SentOwnerAskT>(
+        `/api/owner-questions/${encodeURIComponent(id)}/send`,
+        {
+          method: "POST",
+          body: c,
+        },
+      );
+      setNote(
+        r.state === "sent"
+          ? { ok: true, text: S.sent(r.to) }
+          : r.state === "step"
+            ? { ok: true, text: S.step }
+            : { ok: false, text: S.notSent(r.why ?? "") },
+      );
+    } catch (err) {
+      setNote({ ok: false, text: message(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
+        {busy ? S.sending : S.button(owner)}
+      </button>
+      {note && (
+        <span
+          role={note.ok ? "status" : "alert"}
+          className={note.ok ? "muted" : "state error"}
+          style={{ fontSize: 12.5 }}
+        >
+          {note.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: () => void }) {
   const q = p.q;
   const id = useId();
@@ -124,6 +177,8 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
         </span>
       ))}
       {shown.answer && <p style={{ margin: 0 }}>{O.answeredWas(shown.answer)}</p>}
+      {/* ADR 0189: sent to its owner through the notifications Atticus is set up with. */}
+      {shown.state !== "answered" && <SendOwnerQuestion id={q.id} owner={q.owner} />}
       <form className="stack" style={{ gap: 6 }} onSubmit={(e) => void submit(e)}>
         <label htmlFor={`${id}-a`} className="hud" style={{ fontSize: 10 }}>
           {shown.answer ? O.answerAgain : O.answerLabel}

@@ -94,7 +94,14 @@ export const Approver = z
  * Words, not permissions: nothing is allowed or refused by team. The rest of the file stays
  * deprecated (ADR 0073). A version-1 file is read as it is; `teams` needs version 2.
  */
-export const ROLES_SCHEMA_VERSION = 2 as const;
+/**
+ * Version 3 (ADR 0189) adds who takes each role on a change, so a new change's owners are
+ * suggested: a team's `roles` (each built-in or custom role id with the team's people who take
+ * it, for the changes on that team's repos) and the file's `defaults` (the organisation's person
+ * for a role when no team owning the change's repos names one). Both optional; a person accepts a
+ * suggestion, nothing is written by itself. A version-1 or version-2 file reads as it is.
+ */
+export const ROLES_SCHEMA_VERSION = 3 as const;
 
 /** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
 const TeamPerson = z
@@ -110,14 +117,18 @@ export const Team = z.strictObject({
   name: z.string().min(1).optional(),
   /** The Git handles of the people on it. */
   people: z.array(TeamPerson).default([]),
+  /** Version 3 (ADR 0189): who on the team takes each role on its repos' changes. */
+  roles: z.record(RecordId, z.array(TeamPerson).min(1)).optional(),
 });
 export type Team = z.infer<typeof Team>;
 
 export const Roles = z
   .strictObject({
-    schemaVersion: z.union([V, z.literal(ROLES_SCHEMA_VERSION)]),
+    schemaVersion: z.union([V, z.literal(2), z.literal(ROLES_SCHEMA_VERSION)]),
     /** Version 2 (ADR 0140): the teams repos are owned by, and who is on each. */
     teams: z.array(Team).default([]),
+    /** Version 3 (ADR 0189): the organisation's person for each role, when no team names one. */
+    defaults: z.record(RecordId, z.array(TeamPerson).min(1)).optional(),
     /** Extra roles; each is based on a built-in role's view. */
     custom: z
       .array(
@@ -143,12 +154,33 @@ export const Roles = z
     const known = new Set<string>([...BUILT_IN_ROLES, ...r.custom.map((c) => c.id)]);
     unique(r.custom, (c) => c.id, ctx, "custom");
     unique(r.teams, (t) => t.id, ctx, "teams");
-    if (r.teams.length && r.schemaVersion < ROLES_SCHEMA_VERSION)
+    if (r.teams.length && r.schemaVersion < 2)
       ctx.addIssue({
         code: "custom",
         path: ["teams"],
         message: "teams needs schemaVersion 2: run atticus upgrade",
       });
+    const named = [
+      ...(r.defaults ? [{ path: ["defaults"] as (string | number)[], roles: r.defaults }] : []),
+      ...r.teams.flatMap((t, i) =>
+        t.roles ? [{ path: ["teams", i, "roles"] as (string | number)[], roles: t.roles }] : [],
+      ),
+    ];
+    for (const n of named) {
+      if (r.schemaVersion < ROLES_SCHEMA_VERSION)
+        ctx.addIssue({
+          code: "custom",
+          path: n.path,
+          message: "who takes each role needs schemaVersion 3: run atticus upgrade",
+        });
+      for (const role of Object.keys(n.roles))
+        if (!known.has(role))
+          ctx.addIssue({
+            code: "custom",
+            path: [...n.path, role],
+            message: `unknown role ${role}`,
+          });
+    }
     r.custom.forEach((c, i) => {
       if ((BUILT_IN_ROLES as readonly string[]).includes(c.id)) {
         ctx.addIssue({

@@ -190,6 +190,7 @@ requests:            # every process or request from the knowledge below that a 
     quote: "<the words of its applies when that the step meets, copied exactly>"
 questions:           # what only a person can answer; never answer them yourself
   - question: <plain words>
+    asks: business | design | delivery   # business: the product owner's; design: the architect's; delivery: the tech lead's
     options: [{ label: <a few words>, means: <what picking it means>, changes: <what it changes> }]
     evidence: [<metarepo path:line you read it at>]
 

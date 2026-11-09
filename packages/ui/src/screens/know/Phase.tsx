@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { BriefForm } from "../BriefForm.js";
 import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
 import { inAppWords } from "../../app/app-words.js";
@@ -363,9 +364,6 @@ export function ArtifactPanel({
               </div>
             ) : (
               <div className="stack" style={{ gap: 6 }}>
-                <span className="mono muted" style={{ fontSize: 11 }}>
-                  {d.path}
-                </span>
                 <div
                   tabIndex={0}
                   role="region"
@@ -374,6 +372,15 @@ export function ArtifactPanel({
                 >
                   <Markdown text={d.content} />
                 </div>
+                {/* ADR 0189: the file's path behind Details, never the main label. */}
+                <details>
+                  <summary className="muted" style={{ fontSize: 11.5 }}>
+                    {COPY.roleWork.passage.details}
+                  </summary>
+                  <span className="mono muted" style={{ fontSize: 11 }}>
+                    {d.path}
+                  </span>
+                </details>
               </div>
             )
           }
@@ -381,6 +388,11 @@ export function ArtifactPanel({
       )}
     </Panel>
   );
+}
+
+/** ADR 0189: a review question's name in plain words ("Is it complete?"), not its id. */
+export function lensWords(lens: string): string {
+  return COPY.roleWork.lens[lens] ?? lens.replace(/-/g, " ");
 }
 
 /** The open findings on the given artifacts, each with its actions. */
@@ -441,10 +453,8 @@ function FindingsPanel({
                     <span className={`chip ${SEV_CHIP[x.severity] ?? ""}`}>
                       {x.severity.toUpperCase()}
                     </span>
-                    {x.lens && <span className="chip ai">{x.lens}</span>}
-                    <span className="mono muted" style={{ fontSize: 10.5 }}>
-                      {x.artifact}
-                    </span>
+                    {/* ADR 0189: the review question in words, not the lens's id; the file under Details. */}
+                    {x.lens && <span className="chip ai">{lensWords(x.lens)}</span>}
                   </span>
                   <span style={{ fontSize: 13 }}>{x.summary}</span>
                 </button>
@@ -453,6 +463,14 @@ function FindingsPanel({
                     <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                       {x.why}
                     </p>
+                    <details>
+                      <summary className="muted" style={{ fontSize: 11.5 }}>
+                        {COPY.roleWork.passage.details}
+                      </summary>
+                      <span className="mono muted" style={{ fontSize: 10.5 }}>
+                        {x.artifact}
+                      </span>
+                    </details>
                     {x.question && (
                       <p style={{ margin: 0, fontSize: 12.5 }}>
                         {T.question(
@@ -520,18 +538,30 @@ function PhaseScreen(p: {
       <div className="column" style={{ gridColumn: "span 8" }}>
         <GateHeader part="hero" {...header} />
         {p.main?.(c.id)}
-        {p.artifacts.map((a) => (
-          <ArtifactPanel
-            key={a}
-            change={c.id!}
-            artifact={a}
-            listed={listsArtifact(known, a)}
-            onSaved={() => {
-              setSaved((n) => n + 1);
-              detail.reload();
-            }}
-          />
-        ))}
+        {p.artifacts.map((a) =>
+          // ADR 0189: the product owner writes the brief in a form, one box per section.
+          a === "brief" && listsArtifact(known, a) !== false ? (
+            <BriefForm
+              key={a}
+              change={c.id!}
+              onSaved={() => {
+                setSaved((n) => n + 1);
+                detail.reload();
+              }}
+            />
+          ) : (
+            <ArtifactPanel
+              key={a}
+              change={c.id!}
+              artifact={a}
+              listed={listsArtifact(known, a)}
+              onSaved={() => {
+                setSaved((n) => n + 1);
+                detail.reload();
+              }}
+            />
+          ),
+        )}
       </div>
       <div className="column" style={{ gridColumn: "span 4" }}>
         <GateHeader part="gate" {...header} />

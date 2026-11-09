@@ -90,6 +90,15 @@ const WITHOUT_THE_APP: Record<ConfirmedWrite, { what: string; cli: string }> = {
     what: "Testing the model settings sends the key to an address you haven't confirmed",
     cli: "a step in model mode yourself",
   },
+  // ADR 0189: the plan's work items written to a live tracker, and an owner question sent.
+  "work-items": {
+    what: "Putting the plan's stories and tasks in the work tracker writes work items",
+    cli: "atticus ado sync <change> --approve <you>",
+  },
+  "owner-ask": {
+    what: "Sending an owner question posts a message",
+    cli: "copy the question and ask the owner yourself",
+  },
 };
 
 /** The 403 for a write that came without the person's confirmation. */

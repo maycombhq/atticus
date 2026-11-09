@@ -225,7 +225,8 @@ describe("atticus upgrade", () => {
     // roles.yaml at version 2 (ADR 0140): the number only, so it names no team yet.
     const roles = await readFile(join(root, "org-pack/roles.yaml"), "utf8");
     const had = await readFile(join(FIXTURES, "forge/metarepo/org-pack/roles.yaml"), "utf8");
-    expect(roles).toBe(had.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
+    // ADR 0189: roles.yaml goes to version 3, the number only.
+    expect(roles).toBe(had.replace(/^schemaVersion: 1$/m, "schemaVersion: 3"));
     // sources.yaml at version 3 (ADR 0132), its wiki as it was: every page still read, ranked as
     // a team's and applying everywhere; only the number changed.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");
@@ -243,7 +244,8 @@ describe("atticus upgrade", () => {
       },
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 5$/m,
+      // ADR 0189: question files at version 6.
+      /^schemaVersion: 6$/m,
     );
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),

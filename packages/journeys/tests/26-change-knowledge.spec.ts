@@ -46,7 +46,8 @@ test("a change with no knowledge yet says so and what to run", async ({ page }) 
     "page",
   );
   await expect(page.getByText(/No knowledge is attached to this change yet/)).toBeVisible();
-  await expect(page.getByText("atticus change feature add-transfer-limit")).toBeVisible();
+  // ADR 0188: the command is folded under "In a terminal".
+  await expect(page.getByText("atticus change feature add-transfer-limit").first()).toBeAttached();
   await accessible(page, "a change's knowledge, empty");
 });
 

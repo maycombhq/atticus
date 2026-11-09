@@ -53,6 +53,7 @@ import { uiContractsRoutes } from "./ui-api-contracts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
 import { asTheApp, servingTheApp } from "./model-address.js";
 import { uiActivityRoutes } from "./ui-api-activity.js";
+import { uiRolesRoutes } from "./ui-api-roles.js";
 
 /**
  * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
@@ -166,7 +167,13 @@ export function extendUiRoutes(
     ctx,
   );
   // ADR 0187: the Console's list of everything running or run lately, wherever it started.
-  return uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx);
+  // ADR 0189: roles and the business analyst (owners suggested, work items, the stories' shaping,
+  // an owner question sent, a knowledge section in place, Ask from knowledge).
+  return uiRolesRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx, {
+    ...(deps.notify ? { notify: deps.notify } : {}),
+    ...(deps.workTracker ? { workTracker: deps.workTracker } : {}),
+    ...(deps.now ? { now: () => new Date(deps.now!) } : {}),
+  });
 }
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */

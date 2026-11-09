@@ -36,7 +36,8 @@ describe("the command palette", () => {
     });
     expect(paletteItems("trust", [], [])[0]).toMatchObject({ kind: "screen", href: "#/trust" });
     expect(paletteItems("at a glance", [], [])[0]).toMatchObject({ href: "#/cockpit" });
-    expect(screens("feature brief")).toEqual(["#/brief"]);
+    // ADR 0189: the Brief tab (it was "Feature brief").
+    expect(screens("brief")).toContain("#/brief");
     expect(screens("governance")).toEqual(["#/governance"]);
     expect(paletteItems("estimate", [], [])[0]).toMatchObject({ detail: "Change · Plan" });
     // 2026-10-27: a change's Knowledge page, found by its name and by the panel's own title.

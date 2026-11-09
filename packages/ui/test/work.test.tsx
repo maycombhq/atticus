@@ -395,7 +395,8 @@ describe("an entry's tabs", () => {
     ].map((t) => out.indexOf(t));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    expect(out).not.toContain('href="#/brief');
+    // ADR 0189: the brief is a tab of a change.
+    expect(out).toContain('href="#/brief?change=add-fraud-check">Brief</a>');
     expect(out).not.toContain('aria-label="Define"');
     // At a glance and the list are tabs now: marked when shown.
     const glance = html(

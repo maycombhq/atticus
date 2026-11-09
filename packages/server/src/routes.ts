@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   API_VERSION,
+  asksOfFinding,
   fastPathOf,
   Lens,
   questionOfLens,
@@ -38,6 +39,11 @@ export interface Context {
   version: string;
   /** `atticus ui --full`: the app offers every page, not only the six entries. */
   full?: boolean;
+  /**
+   * ADR 0189: what the organisation's knowledge says to an Ask (its items, the wikis' snapshots
+   * and inputs/ files), given by the command line, which reads them. Left out, Ask is the catalog's.
+   */
+  askKnowledge?: (question: string) => Promise<unknown>;
 }
 
 /** Index work runs one call at a time per root: a first build or a rebuild must not race. */
@@ -238,33 +244,35 @@ export function apiRoutes(r: Router, ctx: Context): Router {
     .add("GET", "/api/ask", async ({ query }) => {
       const q = strParam(query, "q");
       if (!q) throw badRequest("Ask a question: ?q=<plain words>.");
-      return {
-        status: 200,
-        body: await withIndex(root, (ix) => {
-          const asked = translate(q, askLookup(ix));
-          if (asked.action === "impact")
-            return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
-          if (asked.action === "owner") {
-            const r = ix.find(asked.id)[0] as unknown as Record<string, unknown> | undefined;
-            const owner =
-              (r?.owner as string | undefined) ??
-              (r?.ownerComponent as string | undefined) ??
-              (r
-                ? (
-                    ix.find(String(r.system ?? ""))[0] as unknown as
-                      Record<string, unknown> | undefined
-                  )?.owner
-                : undefined);
-            return { question: q, ...asked, owner: owner ?? null };
-          }
-          try {
-            return { question: q, ...asked, result: ix.query(asked.query, { limit: 60 }) };
-          } catch (e) {
-            if (e instanceof QueryError) return { question: q, ...asked, error: e.message };
-            throw e;
-          }
-        }),
-      };
+      // ADR 0189: the knowledge's answer beside the catalog's ("How do I request a firewall rule?").
+      const knowledge = ctx.askKnowledge
+        ? await ctx.askKnowledge(q).catch(() => undefined)
+        : undefined;
+      const answer = await withIndex(root, (ix): Record<string, unknown> => {
+        const asked = translate(q, askLookup(ix));
+        if (asked.action === "impact")
+          return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
+        if (asked.action === "owner") {
+          const r = ix.find(asked.id)[0] as unknown as Record<string, unknown> | undefined;
+          const owner =
+            (r?.owner as string | undefined) ??
+            (r?.ownerComponent as string | undefined) ??
+            (r
+              ? (
+                  ix.find(String(r.system ?? ""))[0] as unknown as
+                    Record<string, unknown> | undefined
+                )?.owner
+              : undefined);
+          return { question: q, ...asked, owner: owner ?? null };
+        }
+        try {
+          return { question: q, ...asked, result: ix.query(asked.query, { limit: 60 }) };
+        } catch (e) {
+          if (e instanceof QueryError) return { question: q, ...asked, error: e.message };
+          throw e;
+        }
+      });
+      return { status: 200, body: knowledge ? { ...answer, knowledge } : answer };
     })
     .add("GET", "/api/graph", async ({ query }) => {
       const depth = intParam(query, "depth", 1, 6);
@@ -417,18 +425,23 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const state = strParam(query, "state");
       const lens = enumParam(query, "lens", Lens.options);
       const severity = enumParam(query, "severity", Severity.options);
+      // ADR 0189: each finding says what it asks (business, design, delivery); `asks=` keeps one.
+      const asks = enumParam(query, "asks", ["business", "design", "delivery"] as const);
       const ids = change ? [change] : (await changeStore(root).list()).map((c) => c.id).sort();
-      const body: Finding[] = [];
+      const body: (Finding & { asks: string })[] = [];
       for (const id of ids)
-        for (const f of await latestFindings(root, id))
+        for (const f of await latestFindings(root, id)) {
+          const level = asksOfFinding(f);
           if (
             (!gate || f.gate === gate) &&
             (!state || f.state === state) &&
             // A lens filter asks its question: an old lens name finds what its question raised.
             (!lens || questionOfLens(f.lens) === questionOfLens(lens)) &&
-            (!severity || f.severity === severity)
+            (!severity || f.severity === severity) &&
+            (!asks || level === asks)
           )
-            body.push(f);
+            body.push({ ...f, asks: level });
+        }
       return { status: 200, body };
     })
     .add("GET", "/api/findings/{changeId}/{findingId}", async ({ params }) => {

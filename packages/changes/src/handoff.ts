@@ -12,6 +12,7 @@ import {
   changesRelOf,
   handoffBranch,
   listQuestions,
+  nextOwnersOf,
   PHASES,
   questionsRelOf,
   type ChangeHandoff,
@@ -200,6 +201,16 @@ async function changeQuestionFiles(root: string, id: string): Promise<string[]> 
     .sort();
 }
 
+/** ADR 0189: " (architect)" after a reviewer the change names as the next role's owner. */
+function nextRoleOf(c: ChangeLifecycle, phase: PhaseId, person: string): string {
+  const n = nextOwnersOf(phase, c.owners);
+  return n?.people.includes(person) ? ` (${n.role.replace(/-/g, " ")})` : "";
+}
+
+/** The next role in words, for a hand-off that names none. */
+const nextRoleName = (phase: PhaseId): string =>
+  (nextOwnersOf(phase, {})?.role ?? "reviewer").replace(/-/g, " ");
+
 function prBody(
   a: Assessment,
   phase: PhaseId,
@@ -223,7 +234,9 @@ function prBody(
     "",
     "### Reviewers",
     "",
-    ...(reviewers.length ? reviewers.map((r) => `- @${r}`) : ["- None"]),
+    ...(reviewers.length
+      ? reviewers.map((r) => `- @${r}${nextRoleOf(c, phase, r)}`)
+      : [`- None: name the ${nextRoleName(phase)} under the change's owners`]),
     "",
     "### Risk",
     "",
@@ -313,8 +326,13 @@ export async function handoff(
     `${rel}/${id}/change.yaml`,
     ...questionFiles,
   ];
+  // ADR 0189: the next role's owners on the change review it (define → the architect, design →
+  // the business analyst, plan → the tech lead), beside CODEOWNERS of the phase's files.
   const reviewers = [
-    ...new Set(files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`))),
+    ...new Set([
+      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`)),
+      ...(nextOwnersOf(phase, change.owners)?.people ?? []),
+    ]),
   ]
     .filter((p) => p !== by)
     .sort();

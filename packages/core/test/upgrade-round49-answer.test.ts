@@ -45,6 +45,6 @@ describe("migrateQuestions and an answer landing meanwhile (round 49)", () => {
     hook.after = undefined;
     const now = await readFile(file, "utf8");
     expect(now).toContain("The risk team runs it now");
-    expect(now).toMatch(/schemaVersion: 5/);
+    expect(now).toMatch(/schemaVersion: 6/);
   });
 });

@@ -49,6 +49,8 @@ handoffs:
       number: 1
       url: https://git.example.com/forge/forge-metarepo/pull/1
     reviewers:
+      - ari
+      - avery
       - forge/platform
     updatedAt: 2026-10-19T11:00:00Z
   - phase: design
@@ -79,6 +81,7 @@ handoffs:
       url: https://git.example.com/forge/forge-metarepo/pull/2
     reviewers:
       - avery
+      - bao
       - forge/platform
     updatedAt: 2026-10-19T14:00:00Z
   - phase: plan
@@ -103,6 +106,7 @@ handoffs:
       url: https://git.example.com/forge/forge-metarepo/pull/3
     reviewers:
       - forge/platform
+      - tia
     updatedAt: 2026-10-19T16:00:00Z
   - phase: build
     state: merged

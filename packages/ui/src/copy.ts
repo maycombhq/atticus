@@ -209,7 +209,7 @@ export const COPY = {
     },
     title: "Questions",
     intro:
-      "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then Apply puts it in the map, and Propose for review sends it for review.",
+      "When something isn't settled, Atticus asks here, and each question goes to the person whose role answers it. Your answer is saved with the question; then Apply uses it, and Propose for review sends it for review.",
     /** Eighth UX walk: Questions opened for one change (?change=) shows the questions its steps asked. */
     changeIntro: (id: string) =>
       `The questions ${id}'s steps asked. Your answer is written to the question's file in questions/; then the step that asked it runs again and reads it.`,
@@ -219,8 +219,10 @@ export const COPY = {
     filterOpen: "Open",
     filterAll: "All",
     listTitle: "Questions",
-    empty: "No questions are waiting. A scan step adds one here when the code is unclear.",
-    emptyAll: "No questions yet. A scan step adds one here when the code is unclear.",
+    // ADR 0189 (app-only audit): no word of scans: a change's steps ask here too.
+    empty:
+      "No question waits for an answer. When a step needs a person to settle something, it asks here.",
+    emptyAll: "No questions yet. When a step needs a person to settle something, it asks here.",
     emptyChange: (change: string) => `No question for ${change} waits for an answer.`,
     emptyChangeAll: (change: string) => `No question for ${change} yet.`,
     unreadable: (file: string) => `${file} isn't a valid question file.`,
@@ -232,7 +234,7 @@ export const COPY = {
     ownerQuestions: {
       title: "Owner questions",
       intro:
-        "A knowledge gap asks a system's owner for a fact the code can't give. Ask the owner, then record what they said here: it is written to catalog/curated/ownerquestion/<id>.yaml, which every scan keeps. The gap itself closes once the fact is in the catalog.",
+        "An owner question asks a system's owner for a fact the code can't give. Ask the owner, then record what they said here: it is written to catalog/curated/ownerquestion/<id>.yaml, which every scan keeps. The gap itself closes once the fact is in the catalog.",
       empty: "No owner questions: the catalog has every fact its checks need.",
       emptyCatalog:
         "The catalog is empty, so nothing is asked yet. Read the repos first (Set up), and the owner questions appear here.",
@@ -253,7 +255,7 @@ export const COPY = {
       needAnswer: "Write what the owner said first.",
       /** Ninth UX walk: a critic gap a person asked of its owner. */
       fromFinding: (change: string, gate: string, id: string) =>
-        `Asked from ${change}'s ${gate} gate (knowledge gap ${id}): the gate waits for this answer.`,
+        `Asked from ${change}'s ${gate} review (${id}): the hand-off waits for this answer.`,
       savedGap: (gate: string) =>
         `Recorded the answer as yours. The gap is closed at the ${gate} gate; the next draft reads the answer.`,
       command: (id: string) => `atticus questions owner ${id} --text "…"`,
@@ -822,7 +824,7 @@ export const COPY = {
       orgpack: "Org pack",
       intake: "Intake",
       scans: "Scans",
-      brief: "Feature brief",
+      brief: "Brief",
       ux: "Prototypes and UX",
       archReview: "Architecture review",
       diagrams: "Diagrams",
@@ -1442,7 +1444,7 @@ export const COPY = {
     openTaskBoard: "Open the Task board",
     taskOnBoard:
       "Run the task with AI on the Task board: Atticus prepares its prompt, checks the result and raises its PR on your click.",
-    writeBrief: "Write the brief on Feature brief",
+    writeBrief: "Write the brief on the Brief tab",
     answerOnQuestions: "Answer them on Questions",
     openPr: "Open the hand-off PR",
     openRelease: "Open Release",
@@ -1451,7 +1453,7 @@ export const COPY = {
     /** Ninth UX walk: a knowledge gap holds the gate; it is answered on the change's page. */
     answerGap: "Answer it on the change's page",
     answerGapSay:
-      "A knowledge gap is closed on the change's page: Apply fix, ask its owner (Ask), or say it isn't relevant, with a reason.",
+      "A missing fact is settled on the change's page: Apply fix, ask its owner (Ask), or say it isn't relevant, with a reason.",
     resolveFindingsSay:
       "Each blocking finding is resolved on the change's page: Apply fix, Not relevant or Waive, with a reason.",
     /** Eighth UX walk: a step the app has no control for opens the change's At a glance. */
@@ -1702,7 +1704,7 @@ export const COPY = {
     /** UX review: the stage's work is on these pages. */
     /** Eighth UX walk: one path to write stories, the stories stage's Prepare; Breakdown reads. */
     openBreakdown: "Open Breakdown",
-    openBreakdownWhy: "for the story bar and what no story covers yet.",
+    openBreakdownWhy: "for how ready each story is and what no story covers yet.",
     /** Seventh UX walk: the stories themselves, on the Stories tab, each with Edit. */
     storiesIndex: "The stories",
     storyFile: (id: string) => `Story ${id}`,
@@ -2117,8 +2119,8 @@ export const COPY = {
       "Hand-off raised. Reviewers approve its PR on the Git host (on a manual Git host, its step on Home says how to open it); merging it approves the gate.",
     syncedWithTheGit: "Synced with the Git host.",
     criticRoundStartedThe:
-      "Critic round started: the rule checks ran. Any AI lens that waits is in Model runs, where Done checks its answer.",
-    theRuleChecksRan: "The rule checks ran. AI is off here, so no lens waits.",
+      "The review started: the rule checks ran. Any AI review that waits is in Model runs, where Done checks its answer.",
+    theRuleChecksRan: "The rule checks ran. AI is off here, so no AI review waits.",
     checkedTheAnswer: "Checked the answer.",
     readyToTryAgain: "Ready to try again.",
     findAChange: "Find a change",
@@ -2838,8 +2840,8 @@ export const COPY = {
     waitsForTasks: (tasks: string) => `Waits for ${tasks}`,
     sameRepo: (id: string) => `${id} (same repo)`,
     theRuleChecksRan:
-      "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
-    theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
+      "The rule checks ran; any AI review is with your assistant. Each waits in Model runs, where Done checks its answer.",
+    theRuleChecksRan2: "The rule checks ran. AI is off here, so no AI review waits.",
     handOffPrRaised:
       "Hand-off raised. A person approves and merges its PR on the Git host (on a manual Git host, its step on Home says how to open it).",
     blockedBy: (n: number) =>
@@ -2882,7 +2884,7 @@ export const COPY = {
     noOpenFindingsOn: "No open findings on this. Run the critic to check it.",
     criticFindings: "Critic findings",
     open: (mineLength: string | number) => `${mineLength} open`,
-    featureBrief: "Feature brief",
+    featureBrief: "Brief",
     prototypesAndUx: "Prototypes and UX",
     attachADesignExport:
       "Attach a design export (frames as images or PDF, or a prototype link file) below: it goes into the change's ",
@@ -3274,7 +3276,7 @@ export const COPY = {
     atGoNoGo: "AT GO / NO-GO",
     postReleaseReview: "POST-RELEASE REVIEW",
     noneNeeded: "NONE NEEDED",
-    knowledgeGap: "knowledge gap",
+    knowledgeGap: "a fact to ask for",
     approvedNotMerged: "APPROVED, NOT MERGED",
     notRaised: "NOT RAISED",
     goNoGoPr2: "Go / no-go PR opened. Reviewers decide on the Git host; merging it is the go.",
@@ -3691,7 +3693,9 @@ export const COPY = {
     next: "What's next",
     copySlash: "Copy the slash command",
     copyCommand: "Copy the command",
-    writeBrief: "Write the brief on Feature brief",
+    // ADR 0189: the brief is a tab of the change now.
+    writeBrief: "Write the brief on the Brief tab",
+    openArchitecture: "Open the Architecture tab",
     blocks: "What blocks it",
     questions: (n: number) => `${n} question${n === 1 ? " waits" : "s wait"} for a person`,
     repos: "Repos and branches",
@@ -3700,8 +3704,9 @@ export const COPY = {
     openWorkspace: (repos: number) =>
       `Make the change's branch in ${repos === 1 ? "its repo" : `its ${repos} repos`}`,
     workspaceOpened: "The change's branches are made in your clones.",
+    // ADR 0189 (app-only audit): the brief has no repos; the architecture stage names them.
     noReposToOpen:
-      "The change names no repo yet, so there is no branch to make. Name its repos on its brief:",
+      "No repo is named for this change yet, so there is no branch to make. The architecture stage names the repos in its target flows:",
     /** Eighth UX walk: Raise hand-off held while the gate's status loads or something blocks it. */
     raiseHeld: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off, so Raise hand-off waits:`,
@@ -4137,7 +4142,7 @@ export const COPY = {
     copyQuestionText: "Copy question text",
     openChange: "Open change",
     eachQuestionIsAsked:
-      "Each question is asked once and the answer is reused at every gate. Asking happens outside Atticus: copy the text, ask the owner, then record what they said on the Questions page.",
+      "Each question is asked once and the answer is reused at every gate. Where notifications are set up, Send to the owner posts it; otherwise copy the text, ask the owner, then record what they said on the Questions page.",
     answerOnQuestions: "Record the answer",
     noOwnerQuestionsWaiting: "No owner questions waiting.",
     ownerQuestionsWaiting: "Owner questions waiting",
@@ -5070,7 +5075,7 @@ export const COPY = {
   correctionNext: {
     title: "What happens next",
     onlyWrote: (file: string) =>
-      `The app wrote only ${file}. Apply puts it in the map; then Propose for review, here or later from Home (what you haven't proposed waits there). A person reviews the pull request.`,
+      `The app wrote only ${file}. Apply uses it; then Propose for review, here or later from Home (what you haven't proposed waits there). A person reviews the pull request.`,
     fileDiff: (file: string) => `The change to ${file}, as written`,
     stepsTitle: "Or on the command line, in order",
     step: {
@@ -5283,7 +5288,8 @@ export const COPY = {
       apply: "the fix is made",
       "not-relevant": "not relevant",
       waive: "waived",
-      ask: "asked of its owner",
+      // ADR 0189: where notifications are set up, it is sent from Questions › Owner questions.
+      ask: "asked of its owner: send it to them from Questions › Owner questions",
     } as Record<string, string>,
     resolved: (state: string, by: string) => `${state} by ${by}`,
     // ADR 0115 addendum (2026-10-25): an assistant only proposes; a person closes the finding.
@@ -5680,5 +5686,190 @@ export const COPY = {
     /** Why is this linked?: a link the AI decided. */
     whyLinked:
       "The AI paired this call with this entry, from a run Atticus started. No person has confirmed it, so it is inferred until someone does.",
+  },
+  /**
+   * ADR 0189: roles and the business analyst. A change goes product owner → architect → business
+   * analyst → tech lead; each sees their own questions and what waits on them, in plain words.
+   */
+  roleWork: {
+    asks: { business: "business", design: "design", delivery: "delivery" } as Record<
+      string,
+      string
+    >,
+    asksChip: (level: string) => `Asks about ${level}`,
+    routeLabel: "Send it to",
+    routePick: "Pick who answers it",
+    route: "Send",
+    routing: "Sending…",
+    routed: (who: string) => `Sent to ${who}: it is on their Questions and Home now.`,
+    routedFrom: (from: string, by: string, day: string) => `Moved from ${from} by ${by} on ${day}.`,
+    noRole: "no role",
+    // Owners: suggested from roles.yaml, accepted with one click.
+    ownersTitle: "Who is on this change",
+    ownersIntro:
+      "Who answers each role's questions and reviews its hand-off. Saved in the change's file, it goes with the change's next hand-off.",
+    nobody: "Nobody yet",
+    editOwners: "Change who is on it",
+    cancelOwners: "Cancel",
+    saveOwners: "Save who is on it",
+    suggestedTitle: "Suggested",
+    suggestedFromTeam: (team: string, repos: string) => `from ${team}, which owns ${repos}`,
+    suggestedDefault: "the organisation's usual person for this role",
+    accept: "Accept",
+    acceptFor: (who: string, role: string) => `Accept ${who} as ${role}`,
+    accepted: (who: string, role: string) => `${who} is the ${role} on this change now.`,
+    noSuggestion: "Nobody to suggest:",
+    // At a glance: who the change waits on.
+    waitsOn: (who: string, role: string) => `Waits on: ${who} (${role})`,
+    waitsOnReview: "to review and approve its hand-off",
+    waitsOnWork: "for this phase's work",
+    waitsOnNobody: (role: string) =>
+      `Waits on the ${role}, but nobody is named for it yet. Name them under Who is on this change.`,
+    roleNames: {
+      "product-owner": "product owner",
+      architect: "architect",
+      "business-analyst": "business analyst",
+      "team-lead": "tech lead",
+    } as Record<string, string>,
+    // The work tracker: features, stories and tasks as work items.
+    workItems: {
+      title: "Work items in the tracker",
+      intro:
+        "Each story and its tasks go into your work tracker (Azure DevOps or another) as work items. Atticus keeps the id each one gets, so a later update changes it instead of making a second one.",
+      none: "No work tracker is set up yet. Set one up on Set up › Adapters (manual works with no connection: each work item is a step for you).",
+      manual:
+        "Your work tracker is manual here: each work item is a step on Home › Manual steps with every field to copy (title, description, acceptance criteria, parent). Create it in the tracker, then record the id it got on the step.",
+      live: "Atticus writes them to your work tracker on your click, and keeps each id.",
+      push: "Put them in the work tracker",
+      pushLive: "Put them in the work tracker (asks you to confirm)",
+      update: "Update them in the work tracker",
+      pushing: "Putting them in…",
+      story: (title: string) => `Story: ${title}`,
+      feature: (title: string) => `Feature: ${title}`,
+      task: (title: string) => `Task: ${title}`,
+      created: "in the tracker",
+      waiting: "step waiting on you",
+      toCreate: "not in the tracker yet",
+      changed: "changed since: update it",
+      gone: "no longer planned (left as it is)",
+      openStep: "Open the step",
+      empty:
+        "The stories aren't written yet: they appear here once the stories stage has drafted them.",
+      cantRead: (why: string) => `The work items couldn't be listed: ${why}`,
+    },
+    // The business analyst shapes the stories.
+    shape: {
+      title: "Shape the stories",
+      intro:
+        "Rename, split, merge or add a story in your own words. The AI then puts each task under the story it belongs to when the stories are drafted again, and the check makes sure no story is left without a task and no task without a story.",
+      op: "What to do",
+      ops: {
+        rename: "Rename a story",
+        split: "Split a story",
+        merge: "Merge stories",
+        add: "Add a story",
+      } as Record<string, string>,
+      story: "Story",
+      stories: "Stories to merge (the first keeps its number)",
+      name: "Its name",
+      firstName: "The first part's name",
+      words: "What it is for (optional)",
+      part: "The other part's name",
+      partWords: "What the other part is for (optional)",
+      record: "Save",
+      recording: "Saving…",
+      recorded:
+        "Saved. Draft the stories again on this tab and the AI maps the tasks to them; until then the stories are as they were.",
+      waiting: "waits for the next draft",
+      applied: "in the stories",
+      remove: "Take back",
+      removeFor: (what: string) => `Take back: ${what}`,
+      entry: {
+        rename: (story: string, name: string) => `Rename ${story} to "${name}"`,
+        split: (story: string, names: string) => `Split ${story} into ${names}`,
+        merge: (stories: string, name: string) => `Merge ${stories} into "${name}"`,
+        add: (id: string, name: string) => `Add ${id}: "${name}"`,
+      },
+      uncovered: "Not covered yet",
+      allCovered: "Every story has a task, and every task a story.",
+      none: "Nothing shaped yet: the stories are one per flow the change changes.",
+      notDrafted:
+        "The stories aren't drafted yet: shape them once the stories stage has drafted them.",
+      needStory: "Pick the story first.",
+      needTwo: "Pick two or more stories to merge.",
+      needPart: "Name the other part.",
+    },
+    /** ADR 0189: the critic's questions and old lenses, in plain words. */
+    lens: {
+      true: "Is it true?",
+      complete: "Is it complete?",
+      safe: "Is it safe?",
+      ship: "Can it ship?",
+      business: "Business",
+      architecture: "Design",
+      story: "Stories",
+      ux: "Screens",
+      delivery: "Delivery",
+      "code-and-test": "Code and tests",
+      release: "Release",
+    } as Record<string, string>,
+    // A suggested knowledge item, opened in place.
+    passage: {
+      open: "Read it here",
+      from: (page: string, source: string) => `From ${page} (${source})`,
+      quote: "The words it rests on",
+      details: "Details",
+      path: "Where the file is",
+      none: "Its page couldn't be read just now; it is listed by name only.",
+    },
+    // Ask Atticus, answered from the organisation's knowledge too.
+    ask: {
+      knowledge: "From your organisation's knowledge",
+      knowledgeIntro:
+        "What your wikis and documents say, found by the question's words. Each is quoted with where it is from; Atticus doesn't word an answer of its own here.",
+      items: "Knowledge items",
+      passages: "Pages",
+      none: "Nothing in your wikis or documents (inputs/) shares this question's words.",
+      askAi: "To have your assistant word an answer from these, citing them:",
+      catalogNone: "Nothing in the catalog answers it.",
+    },
+    // An owner question, sent through the notify adapter.
+    send: {
+      button: (owner: string) => `Send to ${owner}`,
+      sending: "Sending…",
+      sent: (owner: string) => `Sent to ${owner}. Record their answer here when it comes.`,
+      step: "Notifications are manual here: sending it is a step for you on Home › Manual steps.",
+      notSent: (why: string) => `Not sent: ${why}`,
+    },
+    // The brief as a form.
+    brief: {
+      title: "The brief",
+      intro:
+        "What the change is for, in your words. Each box is one part of the brief; the hint under it says what goes there.",
+      edit: "Edit the brief",
+      save: "Save the brief",
+      saving: "Saving…",
+      saved: "Saved the brief.",
+      cancel: "Cancel",
+      details: "Details",
+      file: (path: string) => `Saved as ${path}`,
+      changed: "Someone changed the brief since you opened it: open it again to see their words.",
+      empty: "Not written yet.",
+      write: "Write the brief",
+    },
+    // Home, by role.
+    home: {
+      yourChanges: "Your changes",
+      yourChangesIntro: (role: string) =>
+        `The changes you are on as ${role}, and what waits on you.`,
+      waitsOnYou: "waits on you",
+      waitsOnOther: (who: string) => `waits on ${who}`,
+      noneYours: "No change in flight names you yet.",
+      admin: "Setting up Atticus",
+      adminIntro:
+        "Setting up, upgrading and the catalog's checks. The people who look after Atticus here deal with these.",
+      designWaits: (n: number) =>
+        `${n} design finding${n === 1 ? " waits" : "s wait"} for the architect; ${n === 1 ? "it doesn't" : "they don't"} hold the brief.`,
+    },
   },
 } as const;

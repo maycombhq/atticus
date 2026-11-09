@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AdminFold, nonAdminRoles, YourChanges } from "./HomeRoles.js";
 import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
 import { COPY } from "../copy.js";
 import { CatalogEmpty } from "../app/app-step.js";
@@ -18,7 +19,9 @@ import { useMe } from "../app/me.js";
 import type { Api } from "@maycombhq/core";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat } from "../app/filter.js";
 import {
+  holdsPhase,
   inboxOf,
+  levelsOfRoles,
   waitingByChange,
   type InboxData,
   type InboxItem,
@@ -65,6 +68,8 @@ interface Finding {
   summary: string;
   state: string;
   question?: { text: string; owner?: string };
+  /** 3.6.0 (ADR 0189): what it asks, business, design or delivery. */
+  asks?: string;
 }
 interface KindCount {
   kind: string;
@@ -750,6 +755,11 @@ export function CommandCenter() {
   const [text, setText] = useState("");
   const [bulkNote, setBulkNote] = useState<string | undefined>();
   const { me } = useMe();
+  // ADR 0189: the person's roles on each change in flight (its owners, else their pick).
+  const [rolesBy, setRolesBy] = useState<Readonly<Record<string, string[]>>>({});
+  const viewerRoles = [...new Set(Object.values(rolesBy).flat())];
+  const levels = levelsOfRoles(viewerRoles);
+  const fold = nonAdminRoles(viewerRoles);
   const needs = useNeedsAcross(changes);
   const allNeeds =
     needs.state === "ready"
@@ -760,6 +770,7 @@ export function CommandCenter() {
     needs: allNeeds,
     changes: changes.state === "ready" ? changes.data : [],
     findings: findings.state === "ready" ? findings.data : [],
+    ...(levels ? { levels } : {}),
     questions: qs.state === "ready" ? qs.data.questions.filter((q) => q.state !== "answered") : [],
     triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
     steps: todo.state === "ready" ? todo.data.steps : [],
@@ -822,8 +833,16 @@ export function CommandCenter() {
 
   const inFlight = changes.state === "ready" ? changes.data.filter((c) => ACTIVE.has(c.state)) : [];
   const open = findings.state === "ready" ? findings.data : [];
-  const blocking = open.filter((f) => f.severity === "blocking");
-  const gaps = open.filter((f) => f.severity === "gap");
+  // ADR 0189: a design finding doesn't hold a change in Define, and isn't the product owner's.
+  const stateOf = new Map(
+    (changes.state === "ready" ? changes.data : []).map((c) => [c.id, c.state]),
+  );
+  const atLevel = open.filter((f) => !levels || !f.asks || levels.includes(f.asks));
+  const blocking = atLevel.filter(
+    (f) => f.severity === "blocking" && holdsPhase(f.asks, stateOf.get(f.change)),
+  );
+  const notMine = open.filter((f) => levels && f.asks && !levels.includes(f.asks)).length;
+  const gaps = atLevel.filter((f) => f.severity === "gap");
   const questions = qs.state === "ready" ? qs.data.open : 0;
   const waitingQs = waitingQuestions(
     asked.state === "ready" ? asked.data.questions.length : undefined,
@@ -853,14 +872,37 @@ export function CommandCenter() {
           {me ? T.liveFromYourMetarepo(me.user) : T.liveFromYourMetarepo2}
         </span>
       </div>
-      <HowStepsRun />
-      <SetupChecklist />
+      {/* ADR 0189: for a product owner or business analyst, set-up is folded away. */}
+      <AdminFold fold={fold}>
+        <HowStepsRun />
+        <SetupChecklist />
+      </AdminFold>
+      {/* ADR 0189: the changes the person is on, and whom each waits on, first. */}
+      {changes.state === "ready" && viewerRoles.length > 0 && (
+        <YourChanges
+          changes={changes.data.filter((c) => ACTIVE.has(c.state))}
+          yours={Object.entries(rolesBy)
+            .filter(([, r]) => r.length)
+            .map(([c]) => c)}
+          role={viewerRoles.map((r) => COPY.roles.who[r] ?? r).join(", ")}
+          me={me?.user}
+        />
+      )}
       <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
       {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
-      <UpgradeOffer />
+      <AdminFold fold={fold}>
+        <UpgradeOffer />
+      </AdminFold>
       <HomeDecidePaused />
       {/* ADR 0181 part 4: each role answers its own questions on a change. */}
-      {changes.state === "ready" && <YourRoleQuestions changes={changes.data} />}
+      {changes.state === "ready" && (
+        <YourRoleQuestions changes={changes.data} onRoles={setRolesBy} />
+      )}
+      {notMine > 0 && levels && !levels.includes("design") && (
+        <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+          {COPY.roleWork.home.designWaits(notMine)}
+        </p>
+      )}
       <div className="bento">
         <Panel title={T.waitingOnYou} span="1 / -1">
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
@@ -937,7 +979,9 @@ export function CommandCenter() {
         {T.approvingIsThePull}
       </p>
 
-      <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
+      <AdminFold fold={fold}>
+        <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
+      </AdminFold>
 
       <div className="bento" role="list" aria-label={T.keyNumbers}>
         {[

@@ -109,6 +109,17 @@ import {
 // A cycle (task-context reads the stories), safe: only functions are used, and only when called.
 import { migrationPath } from "../task-context.js";
 import {
+  applyShape,
+  assignFromAnswer,
+  readShape,
+  SHAPE_FILE,
+  SHAPE_RULE,
+  shapeAfterDraft,
+  shapeIssues,
+  shapePrompt,
+  writeShape,
+} from "./story-shape.js";
+import {
   issueFingerprint,
   runStageLoop,
   SELF_CHECK_RULE,
@@ -4052,7 +4063,10 @@ export async function draftedStories(root: string, changeId: string): Promise<Dr
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
-  const { stories, numbers } = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  const base = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  // ADR 0189: the business analyst's shaping, with the tasks where the last draft mapped them.
+  const stories = applyShape(base.stories, await readShape(dir)).stories;
+  const numbers = base.numbers;
   return {
     change,
     dir,
@@ -4164,7 +4178,14 @@ export async function storiesStage(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   // Review round 50: numbered as before, so a story or task still there keeps its number.
-  const { stories, numbers } = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  const base = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  const { numbers } = base;
+  // ADR 0189: the business analyst's renames, splits, merges and added stories, with the tasks
+  // where the last draft mapped them; a draft maps them again (`parse`).
+  const shape = await readShape(dir);
+  let shaped = applyShape(base.stories, shape);
+  let stories = shaped.stories;
+  const shapeText = shapePrompt(shaped, shape);
   const runNotes = await taskRunNotes(dir, stories);
   const writeNotes: string[] = [];
   // B-stories: what the completeness check knows, and what each story file says beside the words.
@@ -4230,6 +4251,19 @@ export async function storiesStage(
       classification: "internal",
       priority: 90,
     },
+    // ADR 0189: the business analyst's shaping, only when there is one (else the prompt is as it was).
+    ...(shapeText
+      ? [
+          {
+            id: "story-shape",
+            kind: "document" as const,
+            origin: `${rel}/${SHAPE_FILE}`,
+            text: shapeText,
+            classification: "internal",
+            priority: 95,
+          },
+        ]
+      : []),
     // S2: the values the code allows in the columns of the tables the steps store into.
     ...allowedValuesSource(
       estate,
@@ -4316,7 +4350,7 @@ requests:      # every request or process from the list below that a step meets;
     quote: "<the words of its applies when that the step meets, copied exactly>"
 
 Rules:
-- One entry per story and per task listed; don't add or drop any.
+- One entry per story and per task listed; don't add or drop any.${shapeText ? SHAPE_RULE : ""}
 - Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that accepts the task; checks name only fields of the tasks the criterion accepts.
 - Write each behaviour once: on the task whose code it exercises first, or the one a tester would drive, with the other tasks it accepts under also. Don't repeat it on each task.
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
@@ -4483,7 +4517,19 @@ Rules:
     parse: (text) => {
       const r = parseYamlAs(text, Answer, (d) => d, "stories");
       // B-tasks: an answer keyed by step is kept keyed by task.
-      const value = r.value && noted ? notesCitedInFolder(r.value, rel) : r.value;
+      let value = r.value && noted ? notesCitedInFolder(r.value, rel) : r.value;
+      // ADR 0189: the draft maps the tasks to the business analyst's stories, and their names
+      // are the stories' titles (the person's word).
+      if (value && shape.entries.length) {
+        shaped = applyShape(base.stories, shape, assignFromAnswer(value, stories, shape));
+        stories = shaped.stories;
+        value = {
+          ...value,
+          stories: value.stories.map((s) =>
+            shaped.names.has(s.id) ? { ...s, title: shaped.names.get(s.id)! } : s,
+          ),
+        };
+      }
       return { ...(value ? { answer: foldAnswer(value, stories) } : {}), issues: r.issues };
     },
     check: async (a) => [
@@ -4502,6 +4548,13 @@ Rules:
       ...(await openspecGate(a)),
       // ADR 0113 addendum: a criterion from a note quotes its line; a note never overrides code.
       ...(noted ? noteCiteIssues(a, attached, storyCodeCites(stories, ctx.records)) : []),
+      // ADR 0189: nothing the business analyst shaped is left without a task.
+      ...shapeIssues(shaped, shape).map((message) => ({
+        rule: "stories.shape-uncovered",
+        target: SHAPE_FILE,
+        message,
+        blocking: true,
+      })),
     ],
     ...(noted
       ? {
@@ -4517,12 +4570,18 @@ Rules:
         change: change.id,
         now,
       });
-      return writeStories(root, change.id, stories, a, requests, now, open, {
+      const written = await writeStories(root, change.id, stories, a, requests, now, open, {
         ...extras,
         estate,
         numbers,
         notes: writeNotes,
       });
+      // ADR 0189: the mapping the draft made is kept, so every later read has the same stories.
+      if (shape.entries.length) {
+        await writeShape(dir, shapeAfterDraft(shape, shaped, now.toISOString()));
+        written.push(`${rel}/${SHAPE_FILE}`);
+      }
+      return written;
     },
     current: () => readStoriesAnswer(dir),
     locate: async (i) => (i.locateText ? locateInStories(dir, rel, i.locateText) : undefined),

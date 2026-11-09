@@ -178,7 +178,10 @@ describe("atticus change", () => {
     expect(c.out).toEqual([
       "Hand-off PR #1 (handoff/add-transfer-limit/define) is open: https://git.example.com/forge/forge-metarepo/pull/1",
       // Sixth UX walk: a sentence, so the app's run-on line ("none named Merging") reads.
-      "Reviewers: @forge/platform.",
+      // ADR 0189: the next role's owners (the change's architects) review it too, and are told.
+      "Reviewers: @ari, @avery, @forge/platform.",
+      "Told @ari (architect) that it waits on their review (msg-1).",
+      "Told @avery (architect) that it waits on their review (msg-2).",
       "Merging it approves the gate; the Git host's own rules decide who may approve it.",
     ]);
     expect(gh.journal.find((j) => j.method === "createPullRequest")!.approval).toEqual({

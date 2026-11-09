@@ -133,8 +133,8 @@ const question = (over: Record<string, unknown> = {}) => ({
 });
 
 describe("C6 question file version 5: an answer by AI, beside a person's (ADR 0181)", () => {
-  it("is version 5, and reads a version 4 file unchanged, as version 5 in memory", () => {
-    expect(QUESTION_SCHEMA_VERSION).toBe(5);
+  it("is version 6 (ADR 0189), and reads a version 4 file unchanged, as version 6 in memory", () => {
+    expect(QUESTION_SCHEMA_VERSION).toBe(6);
     const q = Question.parse(
       question({
         state: "answered",
@@ -146,7 +146,7 @@ describe("C6 question file version 5: an answer by AI, beside a person's (ADR 01
         },
       }),
     );
-    expect(q.schemaVersion).toBe(5);
+    expect(q.schemaVersion).toBe(6);
     expect(q.answer!.by).toBe("pat");
     expect(isAiBy(q.answer!.by)).toBe(false);
   });

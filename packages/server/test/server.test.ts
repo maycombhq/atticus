@@ -306,11 +306,13 @@ describe("the local server (ADR 0015)", () => {
       [],
     );
 
+    // ADR 0189: each finding says what it asks.
     const all = z
-      .array(Finding)
+      .array(Api.FindingView)
       .parse((await call("/api/findings?change=add-transfer-limit")).body);
     expect(all.map((f) => f.id)).toEqual(["b04-no-timeout"]);
-    expect(z.array(Finding).parse((await call("/api/findings?lens=ux")).body)).toEqual([]);
+    expect(all[0]!.asks).toBe("design");
+    expect(z.array(Api.FindingView).parse((await call("/api/findings?lens=ux")).body)).toEqual([]);
     const one = await call("/api/findings/add-transfer-limit/b04-no-timeout");
     expect(Finding.parse(one.body).summary).toBe("The call to Northwind Pay has no timeout.");
     expect((await call("/api/findings/add-transfer-limit/nope")).status).toBe(404);

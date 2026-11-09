@@ -1,7 +1,11 @@
+import { readdir } from "node:fs/promises";
 import {
   acceptProposal as acceptProposalOf,
   answerQuestion,
   Api,
+  asksOfQuestion,
+  changesDirOf,
+  routeQuestion,
   listQuestions,
   QuestionError,
   QuestionRole,
@@ -64,7 +68,13 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
       const r = roleOf(q);
       const a = routedAll.about[q.id];
       if (r && a) a.role = r;
+      // ADR 0189: what it asks, its own tag or its role's level.
+      const asks = asksOfQuestion({ ...q, ...(r ? { role: r } : {}) });
+      if (asks && a) a.asks = asks;
     }
+    // ADR 0189 (app-only audit): a change's own questions are filed under the change's id, which
+    // is no repo: the repo filter lists only repos.
+    const changeIds = new Set(await readdir(changesDirOf(ctx.root)).catch(() => [] as string[]));
     const base = change
       ? routedAll.questions.filter((q) =>
           isChangeQuestion(q, change, { stages, restsOn: routedAll.about[q.id]?.restsOn }),
@@ -86,19 +96,22 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
         retired: n("retired"),
         total: ofRole.length,
         byRepo: Object.fromEntries(
-          [...new Set(ofRole.map((q) => q.repo))].sort().map((r) => {
-            const of = ofRole.filter((q) => q.repo === r);
-            const k = (s: string) => of.filter((q) => q.state === s).length;
-            return [
-              r,
-              {
-                open: k("open"),
-                answered: k("answered"),
-                retired: k("retired"),
-                total: of.length,
-              },
-            ];
-          }),
+          [...new Set(ofRole.map((q) => q.repo))]
+            .filter((r) => !changeIds.has(r))
+            .sort()
+            .map((r) => {
+              const of = ofRole.filter((q) => q.repo === r);
+              const k = (s: string) => of.filter((q) => q.state === s).length;
+              return [
+                r,
+                {
+                  open: k("open"),
+                  answered: k("answered"),
+                  retired: k("retired"),
+                  total: of.length,
+                },
+              ];
+            }),
         ),
         byRole: countByRole(base, roleOf),
       },
@@ -179,6 +192,27 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
             excerpts: await evidenceExcerpts(ctx.root, { repo: q.repo, evidence: q.evidence }),
           },
         };
+      })
+      // ADR 0189: a person moves a question to another role (it asks business, not design).
+      .add("POST", "/api/questions/{id}/route", async ({ params, body }) => {
+        const b = Api.RouteQuestionRequest.safeParse(body ?? {});
+        if (!b.success)
+          throw badRequest(
+            "Say which role: { role: product | architecture | analysis | delivery }.",
+          );
+        try {
+          const q = await routeQuestion(ctx.root, params.id!, {
+            role: b.data.role,
+            by: ctx.user,
+            at: now().toISOString(),
+          });
+          ctx.events.publish({ type: "file.changed", path: `questions/${q.id}.yaml` });
+          return { status: 200, body: q };
+        } catch (e) {
+          if (!(e instanceof QuestionError)) throw e;
+          if (e.code === "not-found") throw notFound(e.message);
+          throw new HttpError(422, "Atticus can't do that", e.message);
+        }
       })
       .add("POST", "/api/questions/{id}/answer", async ({ params, body }) => {
         const b = Api.AnswerQuestionRequest.safeParse(body ?? {});

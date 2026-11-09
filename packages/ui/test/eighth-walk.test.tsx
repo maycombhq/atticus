@@ -262,8 +262,9 @@ describe("Questions opened for a change", () => {
     expect(out).toContain(esc(COPY.questions.changeIntro("lock-card")));
     expect(out).toContain(esc(COPY.questions.onlyChange("lock-card")));
     expect(out).toContain(`<a href="#/questions">${COPY.questions.showAll}</a>`);
-    expect(out).not.toContain("Apply puts it in the map");
-    expect(html(<Q.QuestionsIntro />)).toContain("Apply puts it in the map");
+    // ADR 0189: plain words ("Apply puts it in the map" was jargon).
+    expect(out).not.toContain("Apply uses it");
+    expect(html(<Q.QuestionsIntro />)).toContain("Apply uses it");
   });
 });
 
