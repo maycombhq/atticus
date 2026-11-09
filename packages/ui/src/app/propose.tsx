@@ -5,6 +5,7 @@ import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { focusIfLost } from "./ui.js";
 import { Note, useAction } from "../screens/know/common.js";
+import { ShowInConsole } from "./activity.js";
 
 const P = COPY.propose;
 
@@ -21,8 +22,11 @@ export async function followJob(
   path: string,
   body: unknown,
   wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  /** App-only audit: hears the job's id at once, so the page can link its Console entry. */
+  onJob?: (jobId: string) => void,
 ): Promise<{ code: number; lines: string[] }> {
   const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
+  onJob?.(jobId);
   for (;;) {
     const j = await api<{
       state: string;
@@ -238,8 +242,19 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
 }
 
 /** Review round 35: after a proposal or hand-off merges, the person's copy catches up. */
+/**
+ * App-only audit: the remote branch Bring in found this branch could follow (its words say
+ * "follows no remote branch, and <remote>/<branch> is there"), or undefined.
+ */
+export const upstreamOffered = (text: string | undefined): string | undefined =>
+  text ? /follows no remote branch, and (\S+) is there/.exec(text)?.[1] : undefined;
+
 export function BringIn() {
   const act = useAction();
+  const up = useAction();
+  // App-only audit: the job runs for a while (a fetch); its Console entry shows it as it goes.
+  const [jobId, setJobId] = useState<string | undefined>();
+  const offer = act.note && !act.note.ok ? upstreamOffered(act.note.text) : undefined;
   return (
     <div className="stack" style={{ gap: 4 }}>
       <div className="row" style={{ gap: 6, alignItems: "center" }}>
@@ -249,7 +264,7 @@ export function BringIn() {
           disabled={act.busy}
           onClick={() =>
             void act.run(
-              () => followJob("/api/propose/bring-in", {}),
+              () => followJob("/api/propose/bring-in", {}, undefined, setJobId),
               (r) => r.lines.join(" "),
             )
           }
@@ -260,7 +275,35 @@ export function BringIn() {
           {P.bringInWhy}
         </span>
       </div>
+      {act.busy && (
+        <span role="status" className="row" style={{ gap: 6, alignItems: "center", fontSize: 12 }}>
+          {P.bringingInSay} <ShowInConsole id={jobId} />
+        </span>
+      )}
       <Note note={act.note} />
+      {offer && (
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="row" style={{ gap: 6, alignItems: "center" }}>
+            <button
+              type="button"
+              className="btn"
+              disabled={up.busy}
+              onClick={() =>
+                void up.run(
+                  () => followJob("/api/propose/upstream", { upstream: offer }),
+                  (r) => r.lines.join(" "),
+                )
+              }
+            >
+              {P.setUpstream(offer)}
+            </button>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {P.setUpstreamWhy}
+            </span>
+          </span>
+          <Note note={up.note} />
+        </div>
+      )}
     </div>
   );
 }

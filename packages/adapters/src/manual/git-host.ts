@@ -229,6 +229,16 @@ export class ManualGitHost extends ManualBase implements GitHost {
           skip: true,
           note: `${prName(open)} is ${pr.state} on the Git host: nothing left to record.`,
         });
+      // App-only audit: a comment never posted is moot once the PR is merged or closed.
+      for (const s of (await this.related(open, "comment-pull-request")).filter(
+        (x) => x.state === "open",
+      ))
+        await recordStep(this.opts.store, s.id, {
+          by: "atticus",
+          at: this.now(),
+          skip: true,
+          note: `${prName(open)} is ${pr.state} on the Git host: nothing left to post.`,
+        });
       return;
     }
     if (pr.state !== "open" || waiting.length > 0) return;

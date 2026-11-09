@@ -64,6 +64,24 @@ const interfaces = async (root: string) =>
     )
     .sort();
 
+// App-only audit: the app's scan is a cross-check; it asks about the calls of repos the assistant
+// has read, and of the others only when the person asks.
+describe("a scan that asks only for the repos the assistant has read", () => {
+  it("asks nothing for calls from a repo outside askFrom, and asks for one inside it", async () => {
+    const root = await metarepo();
+    const none = io();
+    expect(
+      await scanCommand(root, { noDrift: true, askFrom: new Set(["forge-customers"]) }, none.io),
+    ).toBe(0);
+    expect((await listQuestions(root, { step: HOSTS_STEP })).questions).toEqual([]);
+    const some = io();
+    expect(
+      await scanCommand(root, { noDrift: true, askFrom: new Set(["forge-web"]) }, some.io),
+    ).toBe(0);
+    expect((await listQuestions(root, { step: HOSTS_STEP })).questions).toHaveLength(1);
+  }, 120_000);
+});
+
 describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
   it("asks once, writes the answer into the manifest, and the rescan joins the calls", async () => {
     const root = await metarepo();

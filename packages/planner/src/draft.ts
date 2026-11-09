@@ -1,8 +1,10 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 import {
   AgentDefinition,
   changesRelOf,
+  openspecDirOf,
   type CatalogRecord,
   type RunSummary,
 } from "@maycombhq/core";
@@ -255,8 +257,28 @@ const SECTION = (doc: string, h: string) => {
   return m ? m[1]!.trim() : undefined;
 };
 
-/** What is wrong with a draft, in plain words for the assistant's next attempt. */
-export function checkDraft(files: Map<string, string>, records: CatalogRecord[]): string[] {
+/**
+ * App-only audit (archive): the capabilities openspec/specs has (a folder with a spec.md), which
+ * a draft may MODIFY, REMOVE or RENAME; any other takes ADDED only, or OpenSpec's archive refuses.
+ */
+export async function existingSpecs(root: string): Promise<string[]> {
+  const dir = join(openspecDirOf(root), "specs");
+  return (await readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((d) => d.isDirectory() && existsSync(join(dir, d.name, "spec.md")))
+    .map((d) => d.name)
+    .sort();
+}
+
+/**
+ * What is wrong with a draft, in plain words for the assistant's next attempt. With
+ * `existingSpecs`, a delta that MODIFIES, REMOVES or RENAMES a capability openspec/specs doesn't
+ * have is one (the archive would refuse it).
+ */
+export function checkDraft(
+  files: Map<string, string>,
+  records: CatalogRecord[],
+  o: { existingSpecs?: readonly string[] } = {},
+): string[] {
   const problems: string[] = [];
   const all = records as Rec[];
   const kinds = new Map(all.map((r) => [r.id, r.kind]));
@@ -295,6 +317,16 @@ export function checkDraft(files: Map<string, string>, records: CatalogRecord[])
     const doc = files.get(s)!;
     if (!/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/m.test(doc))
       problems.push(`${s} has no "## ADDED Requirements" (or MODIFIED, REMOVED, RENAMED) heading.`);
+    const capability = /^specs\/([^/]+)\//.exec(s)?.[1];
+    if (
+      o.existingSpecs &&
+      capability &&
+      !o.existingSpecs.includes(capability) &&
+      /^##\s+(MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/m.test(doc)
+    )
+      problems.push(
+        `${s}: openspec/specs has no ${capability} yet, so its requirements are "## ADDED Requirements" only (MODIFIED, REMOVED and RENAMED are for a spec it has: ${o.existingSpecs.join(", ") || "none yet"}).`,
+      );
     const reqs = [...doc.matchAll(/^###\s+Requirement:\s*(.+)$/gm)];
     if (reqs.length === 0) problems.push(`${s} has no "### Requirement:".`);
     for (let i = 0; i < reqs.length; i++) {
@@ -381,7 +413,7 @@ const FORMAT = `Reply with the files only, each starting with a line "=== <path>
 ## Open questions (the brief's, and any you find; never answer them yourself)
 
 === specs/<capability>/spec.md
-## ADDED Requirements   (or MODIFIED, REMOVED, RENAMED)
+## ADDED Requirements   (see the rule on specs below)
 ### Requirement: <name>
 The system SHALL <behaviour>.
 #### Scenario: <name>
@@ -400,13 +432,15 @@ Rules:
 - Every requirement has at least one scenario, written so a test can check it.
 - Plain, short English. No placeholders such as TBD.`;
 
-function instructions(title: string, problems: string[]): string {
+function instructions(title: string, problems: string[], specs: readonly string[]): string {
   return [
     "# Change drafter",
     "",
     `Draft the OpenSpec proposal, spec delta and interfaces for the change "${title}", from its brief and the catalog map below. People review and own the result; draft what the brief and the map support, and leave the rest as open questions.`,
     "",
     FORMAT,
+    // App-only audit: OpenSpec's archive refuses MODIFIED for a spec that doesn't exist yet.
+    `- A capability openspec/specs doesn't have yet takes ## ADDED Requirements only; MODIFIED, REMOVED and RENAMED are only for one it has: ${specs.length ? specs.join(", ") : "none yet"}.`,
     ...(problems.length
       ? ["", "Your last draft had these problems. Fix every one:", ...problems.map((p) => `- ${p}`)]
       : []),
@@ -472,6 +506,7 @@ export async function draftChange(
   ];
   const now = o.now ?? new Date();
   const attempts = Math.max(1, o.attempts ?? 3);
+  const specs = await existingSpecs(root);
 
   const pack = (problems: string[]) => {
     const sources: SourceInput[] = [
@@ -479,7 +514,7 @@ export async function draftChange(
         id: "instructions",
         kind: "instruction",
         origin: "atticus",
-        text: instructions(change.title, problems),
+        text: instructions(change.title, problems, specs),
         classification: "public",
         trusted: true,
       },
@@ -572,7 +607,7 @@ export async function draftChange(
       (k) => !ALLOWED.test(k) || posix.normalize(k) !== k || k.includes(".."),
     );
     for (const k of discarded) answer.delete(k);
-    problems = checkDraft(answer, ctx.records);
+    problems = checkDraft(answer, ctx.records, { existingSpecs: specs });
     if (problems.length) continue;
     const stamp = `${DRAFT_MARK} on ${now.toISOString().slice(0, 10)} from brief.md and the catalog; review and edit it, then it is yours. -->\n\n`;
     const files: string[] = [];

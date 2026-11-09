@@ -365,8 +365,20 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 3.3.0 (beta.23, Home loads fast): GET /api/setup no longer waits for the machine's checks:
  *   until they finish, its `machine` step has `checking: true` (and `done: false`), and GET
  *   /api/doctor answers when they do; `?machine=wait` waits for them as before. Additive only.
+ * 3.4.0 (app-only audit: tasks, release, archive). A Task gains `unmerged` (its branch's commits
+ *   the change branch here hasn't), `decision` (a person let its work go, with why) and
+ *   `repoBuilds`; POST .../tasks/{taskId}/done answers 409 for a task whose branch has commits the
+ *   change branch hasn't, here or on the Git host, unless the body gives a `reason`; POST
+ *   .../tasks/{taskId}/build is Build and raise PR (`raise` needs `task-pr`). Build ready, go/no-go
+ *   and POST .../release-prs hold while a task branch's work isn't in the change branch.
+ *   ChangeDetail's handoff gains `unpushed` and `branch` (its push failed; the branch is kept
+ *   here), and POST /api/changes/{changeId}/handoff/push is Push again (`handoff`).
+ *   POST /api/propose/upstream sets the upstream Bring in what merged offers, as a local job.
+ *   POST /api/scan asks host questions only for repos with facts on file unless `askAll`, and
+ *   its job's result says what the readers added, changed and removed (`added`, `changed`,
+ *   `removed`) and how many questions it asked (`questions`).
  */
-export const API_VERSION = "3.3.0";
+export const API_VERSION = "3.4.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -743,6 +755,12 @@ export const ChangeDetail = ChangeSummary.extend({
       phase: Phase,
       pr: z.string().optional(),
       state: z.enum(["none", "open", "merged", "closed"]),
+      /**
+       * 3.3.0 (app-only audit): the open hand-off's branch is here but not on the remote as it is
+       * here (its push failed); POST .../handoff/push is Push again. Absent once it is there.
+       */
+      unpushed: z.boolean().optional(),
+      branch: z.string().optional(),
     })
     .optional(),
 });
@@ -806,6 +824,15 @@ export const Task = z.object({
    * ones of its own repo. Absent when it waits for none, or once it is done.
    */
   waits: z.object({ tasks: z.array(z.string()), sameRepo: z.array(z.string()) }).optional(),
+  /**
+   * 3.3.0 (app-only audit): the task branch has commits the change branch here hasn't, so its
+   * code isn't in the change yet (its PR raised and merged takes it in). Absent when it has none.
+   */
+  unmerged: z.object({ commits: z.number().int().positive(), branch: z.string() }).optional(),
+  /** 3.3.0: a person decided the task's work isn't needed in the change, and why. */
+  decision: z.object({ by: z.string(), at: z.string(), reason: z.string() }).optional(),
+  /** 3.3.0: whether the task's repo has a build command now (repos.manifest.yaml). */
+  repoBuilds: z.boolean().optional(),
 });
 export type TaskT = z.infer<typeof Task>;
 
@@ -2506,6 +2533,12 @@ export const ScanRequest = z.strictObject({
   full: z.boolean().default(false),
   /** Another branch, scanned beside the baseline into catalog/branches/<branch>/ (ADR 0123). */
   ref: GitRef.optional(),
+  /**
+   * 3.3.0 (app-only audit): the app's scan is a cross-check with the built-in readers, and asks
+   * which repo answers on an unknown host only for the repos the assistant has read (facts on
+   * file); `askAll` asks for every repo, as the command line's `atticus scan` does.
+   */
+  askAll: z.boolean().optional(),
 });
 
 /** ADR 0123: each repo's branches, as the Repos screen shows them. */
@@ -3048,7 +3081,28 @@ export const SyncRequest = z.strictObject({
 /** ADR 0184: raise the release PRs, change/<id> into each code repo's default branch. */
 export const ReleasePrsRequest = z.strictObject({ confirmation: Confirmation.optional() });
 /** 2.75.0 (seventh UX walk): tick (done) or untick a task in the change's tasks.md. */
-export const TaskDoneRequest = z.strictObject({ done: z.boolean() });
+export const TaskDoneRequest = z.strictObject({
+  done: z.boolean(),
+  /**
+   * 3.3.0 (app-only audit): why the task's work isn't needed, when its branch has commits the
+   * change branch hasn't (else marking it done is 409); recorded with the person's name.
+   */
+  reason: z.string().max(2000).optional(),
+});
+/**
+ * 3.3.0 (app-only audit): Set the upstream of the branch checked out to the same branch on a
+ * remote (`<remote>/<branch>`), when Bring in what merged found it follows none.
+ */
+export const UpstreamRequest = z.strictObject({
+  upstream: z
+    .string()
+    .regex(/^[A-Za-z0-9][\w.-]*\/[\w./-]+$/, "a remote branch, such as origin/main"),
+});
+/** 3.3.0 (app-only audit): Build and raise PR; `raise` pushes and opens the PR (`task-pr`). */
+export const TaskBuildRequest = z.strictObject({
+  raise: z.boolean().optional(),
+  confirmation: Confirmation.optional(),
+});
 /**
  * 2.83.0 (ninth UX walk): name a change's owners per role from the change page (an empty list
  * clears a role): the product owner, the architect, the business analyst and the tech lead
@@ -5842,7 +5896,42 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId"), p("taskId")],
       body: TaskDoneRequest,
       ok: { status: 200, schema: "Task", description: "The task as tasks.md now says it" },
-      errors: [400, 403, 404],
+      errors: [400, 403, 404, 409],
+    },
+  },
+  "/api/propose/upstream": {
+    post: {
+      id: "setUpstream",
+      summary:
+        "3.3.0 (app-only audit): set the upstream of the branch checked out to the same branch on a remote, a local setting (nothing is sent), as a local job; refused (the job's result says why) for any other branch",
+      tag: "workspace",
+      body: UpstreamRequest,
+      ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [400, 409],
+    },
+  },
+  "/api/changes/{changeId}/handoff/push": {
+    post: {
+      id: "pushHandoff",
+      summary:
+        "3.3.0 (app-only audit): Push again: push the open hand-off's branch, kept here when its push failed, by name and never forced; needs the person's confirmation (`handoff`, the change), else 403; 422 with git's words when the push fails",
+      tag: "changes",
+      params: [p("changeId")],
+      body: ConfirmedRequest,
+      ok: { status: 200, schema: "ChangeDetail", description: "The change, its branch pushed" },
+      errors: [403, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/tasks/{taskId}/build": {
+    post: {
+      id: "buildTask",
+      summary:
+        "3.3.0 (app-only audit): Build and raise PR on a task drafted but not built (UNVERIFIED) or taken over by a person: build it with its repo's build command as it is now, and with `raise` push its branch and open its PR (needs the person's confirmation, `task-pr`, `<change>/<task>`, else 403)",
+      tag: "changes",
+      params: [p("changeId"), p("taskId")],
+      body: TaskBuildRequest,
+      ok: { status: 200, schema: "Task", description: "The task, built (201 with its PR raised)" },
+      errors: [400, 403, 404, 409, 422],
     },
   },
   "/api/changes/{changeId}/workspace": {

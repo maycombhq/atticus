@@ -357,6 +357,68 @@ export async function proposeForReview(
  * the upstream branch has is put back (or, new, set aside), and the branch fast-forwards. If the
  * fast-forward still fails, every file put back gets the upstream's content again.
  */
+/** The remote branch this branch could follow: the same name on origin (or the only remote). */
+async function upstreamOffer(
+  run: (args: string[]) => Promise<string>,
+): Promise<{ branch: string; upstream: string } | undefined> {
+  const branch = (await run(["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD") return undefined;
+  const remotes = (await run(["remote"]).catch(() => ""))
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const remote = remotes.includes("origin")
+    ? "origin"
+    : remotes.length === 1
+      ? remotes[0]
+      : undefined;
+  if (!remote) return undefined;
+  const there = (
+    await run(["ls-remote", "--heads", remote, `refs/heads/${branch}`]).catch(() => "")
+  ).trim();
+  return there ? { branch, upstream: `${remote}/${branch}` } : undefined;
+}
+
+/**
+ * App-only audit: Set the upstream. The branch checked out follows `<remote>/<branch>`, the same
+ * name on a remote this copy has (fetched first): a local setting of this copy, nothing is sent.
+ * Refused for any other branch or remote.
+ */
+export async function setUpstream(
+  root: string,
+  upstream: string,
+  io: Output,
+  o: { git?: GitRunner } = {},
+): Promise<number> {
+  const git = o.git ?? createGit();
+  const run = async (args: string[]) => (await git(args, root)).stdout;
+  const offer = await upstreamOffer(run);
+  if (!offer || offer.upstream !== upstream) {
+    const branch = (await run(["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+    io.err(
+      offer
+        ? `Only ${offer.upstream} can be ${offer.branch}'s upstream here (the same branch on the remote); ${upstream} isn't.`
+        : `Only ${branch || "this branch"}'s own branch on a remote can be its upstream, and no remote here has it.`,
+    );
+    return 1;
+  }
+  const [remote] = upstream.split("/");
+  try {
+    await run([
+      "fetch",
+      "--quiet",
+      remote!,
+      `+refs/heads/${offer.branch}:refs/remotes/${upstream}`,
+    ]);
+    await run(["branch", "--quiet", `--set-upstream-to=${upstream}`, offer.branch]);
+  } catch (e) {
+    io.err(`The upstream wasn't set: ${(e as Error).message.split("\n")[0]}`);
+    return 1;
+  }
+  io.out(`${offer.branch} follows ${upstream} now. Bring in what merged brings in its changes.`);
+  return 0;
+}
+
 export async function bringInMerged(
   root: string,
   io: Output,
@@ -369,7 +431,13 @@ export async function bringInMerged(
     await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")
   ).trim();
   if (!up) {
-    io.err("This branch follows no remote branch, so there is nothing to bring in.");
+    // App-only audit: when the remote has this branch, say so and how to follow it.
+    const fix = await upstreamOffer(run);
+    io.err(
+      fix
+        ? `This branch ${fix.branch} follows no remote branch, and ${fix.upstream} is there: Set the upstream to ${fix.upstream}, then Bring in what merged again.`
+        : "This branch follows no remote branch, so there is nothing to bring in.",
+    );
     return 2;
   }
   try {

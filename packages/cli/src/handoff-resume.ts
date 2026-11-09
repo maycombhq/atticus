@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { runsDirOf, writeFileIfUnchanged } from "@maycombhq/core";
 import { isHandoffStep } from "./handoff-steps.js";
 import { listRuns } from "./runs-view.js";
 import { forgetUserState, readUserState, writeUserState } from "./user-state.js";
@@ -153,6 +156,28 @@ export async function keepResume(
   await writeUserState(root, resumeFile(runId), { change, runId, args });
 }
 
+/** Ends an open run as cancelled, superseded by `by`; false when it moved on meanwhile. */
+async function supersede(root: string, change: string, runId: string, by: string) {
+  const file = join(runsDirOf(root), change, runId, "run.json");
+  const was = await readFile(file, "utf8").catch(() => undefined);
+  if (was === undefined) return false;
+  let rec: { state?: string; finishedAt?: string; errors?: string[] };
+  try {
+    rec = JSON.parse(was) as typeof rec;
+  } catch {
+    return false;
+  }
+  if (rec.state !== "waiting" && rec.state !== "prepared") return false;
+  rec.state = "cancelled";
+  rec.finishedAt = new Date().toISOString();
+  rec.errors = [
+    `Superseded by run ${by}: the step was prepared again, so this run's answer is no longer read.`,
+  ];
+  await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n").catch(() => undefined);
+  await forgetUserState(root, resumeFile(runId)).catch(() => undefined);
+  return true;
+}
+
 /** Runs the step as a hand-off (`--json`), and keeps its resume (outside the metarepo). */
 export async function prepareStep(
   root: string,
@@ -194,13 +219,31 @@ export async function prepareStep(
     o,
   );
   if (h.state !== "handoff" || !h.runId) return { code: res.code, prepared: { lines: said } };
-  const run = (await listRuns(root, { limit: 100000 })).find((x) => x.runId === h.runId);
+  const runs = await listRuns(root, { limit: 100000 });
+  const run = runs.find((x) => x.runId === h.runId);
   // Round 50: from the words this step was started with (the app checked them), not from
   // anything in the run's folder; a step that offers no resume keeps none.
   if (run && h.resumeArgs) {
     const resume = [...ownWords(args), "--resume", run.runId];
     if (!resumeRefusal(resume, run.runId))
       await keepResume(root, run.change, run.runId, resume).catch(() => undefined);
+  }
+  // App-only audit: the step prepared again made a new run while an older one of the same step
+  // still waited, for ever. The older open runs Atticus kept this step's resume for are
+  // cancelled (RunState's own state, as superseded decide runs are), saying by which run.
+  if (run && !h.stillWaiting) {
+    const mine = JSON.stringify(ownWords(args));
+    for (const x of runs) {
+      if (x.runId === run.runId || x.change !== run.change) continue;
+      if (x.state !== "waiting" && x.state !== "prepared") continue;
+      const kept = await readUserState<{ args?: unknown }>(root, resumeFile(x.runId)).catch(
+        () => undefined,
+      );
+      if (!Array.isArray(kept?.args) || JSON.stringify(ownWords(kept.args as string[])) !== mine)
+        continue;
+      if (await supersede(root, x.change, x.runId, run.runId))
+        said.push(`Run ${x.runId} was waiting for the same step: it is cancelled.`);
+    }
   }
   return {
     code: res.code,

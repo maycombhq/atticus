@@ -28,7 +28,9 @@ export type ReasonCode =
   /** ADR 0184: a repo's release PR isn't merged yet (unless the org pack doesn't require it). */
   | "release-pr-not-merged"
   /** Review round 48: the change branch has commits since its release PR merged. */
-  | "release-pr-stale";
+  | "release-pr-stale"
+  /** App-only audit: a task branch has commits the change branch hasn't, here or on the Git host. */
+  | "task-not-merged";
 
 export interface Reason {
   code: ReasonCode;
