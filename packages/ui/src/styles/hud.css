@@ -1703,6 +1703,14 @@ a.q-item[aria-current="true"] {
 .shell:has(.run-console.open) .main {
   padding-bottom: 42vh;
 }
+/* What is scrolled to (a Tab to a button, a link to a heading) stops clear of the Console bar
+   fixed at the foot, not behind it (CI's click on Open the stories stage landed on the bar). */
+html:has(.run-console) {
+  scroll-padding-bottom: 64px;
+}
+html:has(.run-console.open) {
+  scroll-padding-bottom: 42vh;
+}
 
 /* ADR 0174: a person's word on the picture (declared, or paired on the canvas): dashed. */
 .react-flow__edge-path.arch-link.word,

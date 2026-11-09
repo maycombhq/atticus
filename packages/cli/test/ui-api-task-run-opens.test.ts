@@ -1,12 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { startServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
 import { CHANGE, speckitRoot } from "./run-helpers.js";
 
+// Opening the worktree commits in it, as the person's git would: a CI runner has no git
+// identity of its own, so this test gives one (in-process, as the server runs here).
+afterEach(() => vi.unstubAllEnvs());
+
 /** UX review: Run with AI on a task whose repo has no worktree yet opens it, no terminal first. */
 it("opens the task's worktree, then runs the task", async () => {
+  for (const [k, v] of Object.entries({
+    GIT_AUTHOR_NAME: "Pat",
+    GIT_AUTHOR_EMAIL: "pat@example.com",
+    GIT_COMMITTER_NAME: "Pat",
+    GIT_COMMITTER_EMAIL: "pat@example.com",
+  }))
+    vi.stubEnv(k, v);
   const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
   const s = await startServer({ root, port: 0, user: "pat", extend: (r, ctx) => uiRoutes(r, ctx) });
   try {

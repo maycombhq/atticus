@@ -20,7 +20,8 @@ async function metarepo() {
   const base = await mkdtemp(join(tmpdir(), "bring-in-up-"));
   const root = join(base, "meta");
   const remote = join(base, "remote.git");
-  g(base, "init", "-q", "--bare", remote);
+  // -b main on the bare remote too: a clone of it checks out main whatever git's default branch is.
+  g(base, "init", "-q", "--bare", "-b", "main", remote);
   g(base, "init", "-q", "-b", "main", root);
   await writeFile(join(root, "a.txt"), "1\n");
   g(root, "add", "-A");

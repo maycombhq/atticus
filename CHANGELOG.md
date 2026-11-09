@@ -6,6 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **Nothing scrolled to hides behind the Console bar**: a Tab to a button or a link to a heading stops clear of the bar fixed at the foot of the app (or of the open Console), not under it.
 - **The app builds on Windows again**: two files of the canvas differed only in the case of their names (`tools.ts` and `Tools.tsx`), which Windows can't tell apart; one is renamed, and the portable-paths check now refuses such a pair.
 - **Home folds set-up away once, not three times, for a product owner or business analyst**: how steps run, the checklist, an upgrade and the estate sit in one "Setting up Atticus" fold; the upgrade's fold showed empty when no upgrade waited.
 - **The map says when corrections wait to be applied, with Apply right there**: a bar above the estate canvas (and a change's Architecture tab) names the repos whose corrections aren't in the map yet, with Apply to every repo's map when there are several, and goes once they're applied. It reads again after every change the app writes.
