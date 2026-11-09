@@ -1,9 +1,17 @@
-import { readdir, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { parse, stringify } from "yaml";
-import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
+import { isSeq, parse, parseDocument, stringify } from "yaml";
+import {
+  eolOf,
+  inEol,
+  RepoManifest,
+  WORKSPACE_SCHEMA_VERSION,
+  type ManifestRepo,
+} from "@maycombhq/core";
 import { DEFAULT_IGNORES, fsRepo, memoryRepo, type RepoHandle } from "@maycombhq/sdk";
+import { cloneUrlKey, createGit, type GitRunner } from "@maycombhq/workspace";
 import { detectRepoType, type Detection } from "./detect.js";
+import { AdoptError } from "./errors.js";
 import { exists, isDir, readText, slug, toPosix, writeNew } from "./files.js";
 import { resolveMetarepo, type MetarepoPaths } from "./layout.js";
 
@@ -75,6 +83,11 @@ export interface DiscoverResult {
   /** Folders looked at that aren't repos. */
   skipped: { path: string; reason: string }[];
   questions: OwnerQuestion[];
+  /**
+   * Round 50: found repos given another id because the manifest lists theirs already for another
+   * repo (another clone URL), with why. The same repo (same clone URL) is left out instead.
+   */
+  renamed: { from: string; to: string; why: string }[];
   /** What was written: the manifest (none existed), a proposal (one exists), or nothing (dry run). */
   wrote: "manifest" | "proposal" | "nothing";
   /** The file written, relative to the root. */
@@ -83,7 +96,10 @@ export interface DiscoverResult {
 }
 
 export interface DiscoverOptions {
-  /** Profile (platform) the manifest belongs to; default the only profile, else "default". */
+  /**
+   * Profile (platform) the manifest belongs to; default the only profile, or "default" when there
+   * is none. With two or more, it must be named (round 50).
+   */
   platform?: string;
   /** Write nothing. */
   dryRun?: boolean;
@@ -92,14 +108,37 @@ export interface DiscoverOptions {
    * Adopt uses this; a metarepo of base clones does not.
    */
   inPlace?: boolean;
+  /** The git runner origin is asked of (local, no network); default the git on PATH. */
+  git?: GitRunner;
 }
 
-/** origin's URL from .git/config, read as a file (no git call), without credentials. */
-async function originUrl(dir: string): Promise<string | undefined> {
-  const cfg = await readText(join(dir, ".git", "config"));
-  if (!cfg) return undefined;
-  const m = /\[remote "origin"\][^[]*?url\s*=\s*(\S+)/.exec(cfg);
-  return m?.[1]?.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]+@/i, "$1");
+/**
+ * An http(s) URL without its credentials (`user:password@`, or a token as the user): Git's
+ * credential manager supplies them, and a manifest never holds one. An ssh URL's user
+ * (`ssh://git@host/...`, `git@host:path`) is how it signs in, never a secret: kept.
+ */
+export function withoutCredentials(url: string): string {
+  return url.replace(/^(https?:\/\/)[^/@]*@/i, "$1");
+}
+
+/**
+ * origin's URL, asked of Git (`git config`, local, no network), the way repo add and workspace
+ * sync --from read it: Git undoes the config file's quoting and escapes (a Windows path's `\\`, a
+ * URL with spaces) and reads `url`, never `pushurl`. Without http credentials.
+ */
+async function originUrl(dir: string, git: GitRunner): Promise<string | undefined> {
+  // A clone's own config is read as a file Git parses (a folder that is only a .git/config and
+  // HEAD still answers); a worktree or submodule (.git is a file) is asked through its folder.
+  // A folder with no .git of its own has no origin: never the one of a repository it sits in.
+  if (!(await exists(join(dir, ".git")))) return undefined;
+  const asked = (await isDir(join(dir, ".git")))
+    ? ["config", "--file", join(dir, ".git", "config"), "--get", "remote.origin.url"]
+    : ["config", "--get", "remote.origin.url"];
+  const url = await git(asked, dir).then(
+    (r) => r.stdout.replace(/\r?\n$/, ""),
+    () => "",
+  );
+  return url ? withoutCredentials(url) : undefined;
 }
 
 async function headBranch(dir: string): Promise<string | undefined> {
@@ -296,16 +335,50 @@ function questionsFor(entry: ManifestRepo, det: Detection): OwnerQuestion[] {
   return q;
 }
 
-/** The manifest's repos; undefined when there is none; null when it can't be read (kept as is). */
-async function existingManifest(path: string): Promise<ManifestRepo[] | undefined | null> {
-  const text = await readText(path);
+/**
+ * The manifest as it is on disk and its repos; undefined when there is none; `repos` null when it
+ * can't be read (kept as is).
+ */
+async function existingManifest(
+  path: string,
+): Promise<{ text: string; repos: ManifestRepo[] | null } | undefined> {
+  const text = await readFile(path, "utf8").catch(() => undefined);
   if (text === undefined) return undefined;
   try {
     const r = RepoManifest.safeParse(parse(text));
-    return r.success ? r.data.repos : null;
+    return { text, repos: r.success ? r.data.repos : null };
   } catch {
-    return null;
+    return { text, repos: null };
   }
+}
+
+/** A value left at its default: unset, an empty list, or archived false. */
+const unset = (k: string, v: unknown) =>
+  v === undefined || (Array.isArray(v) && v.length === 0) || (k === "archived" && v === false);
+
+/**
+ * A manifest entry as written: every field that is set, in the order discovery made it, and none
+ * left at its default, so the file says what discovery found and no more.
+ */
+function entryOut(r: ManifestRepo): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (unset(k, v)) continue;
+    out[k] =
+      k === "modules"
+        ? (v as ManifestRepo["modules"]).map((m) =>
+            Object.fromEntries(Object.entries(m).filter(([mk, mv]) => !unset(mk, mv))),
+          )
+        : v;
+  }
+  return out;
+}
+
+/** Repos the same once their clone URLs are compared as keys (an in-place path: as written). */
+function sameRepo(a: ManifestRepo, b: ManifestRepo): boolean {
+  const ka = cloneUrlKey(a.url);
+  const kb = cloneUrlKey(b.url);
+  return ka !== undefined && kb !== undefined ? ka === kb : a.url.trim() === b.url.trim();
 }
 
 const HEADER =
@@ -318,16 +391,22 @@ export async function reposDiscover(
   paths?: MetarepoPaths,
 ): Promise<DiscoverResult> {
   const p = paths ?? (await resolveMetarepo(root));
+  const git = o.git ?? createGit({ timeoutMs: 15_000 });
   let platform = o.platform;
   if (!platform) {
-    try {
-      const profiles = (await readdir(join(p.orgPackDir, "profiles"), { withFileTypes: true }))
-        .filter((d) => d.isDirectory())
-        .map((d) => d.name);
-      platform = profiles.length === 1 ? profiles[0]! : "default";
-    } catch {
-      platform = "default";
-    }
+    const profiles = (
+      await readdir(join(p.orgPackDir, "profiles"), { withFileTypes: true }).catch(() => [])
+    )
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+    // Round 50: with two or more, the repos are one platform's, and only a person knows which.
+    if (profiles.length > 1)
+      throw new AdoptError(
+        "usage",
+        `There are ${profiles.length} platform profiles (${profiles.join(", ")}): say which the repos belong to with --platform.`,
+      );
+    platform = profiles[0] ?? "default";
   }
 
   const found: DiscoveredRepo[] = [];
@@ -352,7 +431,7 @@ export async function reposDiscover(
           ? rel === ""
             ? "."
             : `./${rel}`
-          : ((await originUrl(dir)) ?? toPosix(resolve(dir)));
+          : ((await originUrl(dir, git)) ?? toPosix(resolve(dir)));
       const entry: ManifestRepo = {
         id: uniqueId(dir === source.dir ? basename(resolve(dir)) : basename(dir)),
         url,
@@ -395,53 +474,98 @@ export async function reposDiscover(
     }
   }
 
-  const questions = found.flatMap((f) => questionsFor(f.entry, f.detection));
   const manifestPath = join(p.orgPackDir, "profiles", platform, "repos.manifest.yaml");
   const current = await existingManifest(manifestPath);
-  const result: DiscoverResult = { platform, repos: found, skipped, questions, wrote: "nothing" };
+  // Round 50: a found repo the manifest lists already (the same clone URL) is left out; one whose
+  // id it lists for another repo gets an id of its own, and the result says so.
+  const kept = current?.repos ?? [];
+  const renamed: DiscoverResult["renamed"] = [];
+  const taken = new Set([...kept.map((r) => r.id), ...found.map((f) => f.entry.id)]);
+  const added: DiscoveredRepo[] = [];
+  for (const f of found) {
+    if (kept.some((k) => sameRepo(k, f.entry))) continue;
+    if (kept.some((k) => k.id === f.entry.id)) {
+      let id = f.entry.id;
+      for (let n = 2; taken.has(id); n++) id = `${f.entry.id}-${n}`;
+      taken.add(id);
+      renamed.push({
+        from: f.entry.id,
+        to: id,
+        why: `the manifest lists ${f.entry.id} already, with another clone URL`,
+      });
+      f.entry = { ...f.entry, id };
+    }
+    added.push(f);
+  }
+  const questions = found.flatMap((f) => questionsFor(f.entry, f.detection));
+  const result: DiscoverResult = {
+    platform,
+    repos: found,
+    skipped,
+    questions,
+    renamed,
+    wrote: "nothing",
+  };
   if (o.dryRun) return result;
 
-  const doc = (repos: ManifestRepo[]) =>
+  /** A new manifest, at the current schema version. */
+  const fresh = (repos: ManifestRepo[]) =>
     stringify(
-      {
-        schemaVersion: 1,
-        platform,
-        repos: repos.map((r) => ({
-          id: r.id,
-          url: r.url,
-          defaultBranch: r.defaultBranch,
-          ...(r.branches.length ? { branches: r.branches } : {}),
-          type: r.type,
-          owner: r.owner,
-          ...(r.system ? { system: r.system } : {}),
-          ...(r.component ? { component: r.component } : {}),
-          ...(r.archived ? { archived: true } : {}),
-          ...(r.modules.length
-            ? {
-                modules: r.modules.map((m) => ({
-                  path: m.path,
-                  component: m.component,
-                  ...(m.hosts.length ? { hosts: m.hosts } : {}),
-                })),
-              }
-            : {}),
-        })),
-      },
+      { schemaVersion: WORKSPACE_SCHEMA_VERSION, platform, repos: repos.map(entryOut) },
       { lineWidth: 0 },
     );
+  /**
+   * The manifest on disk with the new entries appended (as core's addManifestRepo does): every
+   * entry a person wrote, its comments, its order and the file's schema version kept as they are.
+   */
+  const appended = (text: string, repos: ManifestRepo[]) => {
+    const doc = parseDocument(text.replace(/\r\n/g, "\n"));
+    let list = doc.get("repos");
+    if (!isSeq(list)) {
+      doc.set("repos", doc.createNode([]));
+      list = doc.get("repos");
+    }
+    if (!isSeq(list)) return fresh(repos);
+    if (!list.items.length) list.flow = false;
+    for (const r of repos) list.add(doc.createNode(entryOut(r)));
+    return inEol(
+      doc.toString({ lineWidth: 0, flowCollectionPadding: /\[ \S/.test(text) }),
+      eolOf(text),
+    );
+  };
   const proposalDir = join(p.proposalsDir, "repos", platform);
-  if (current === undefined || (current !== null && current.length === 0)) {
-    // No manifest, or the empty one init wrote: nothing a person wrote is replaced.
-    await writeNew(manifestPath, HEADER + doc(found.map((f) => f.entry)), false);
+  if (current === undefined || (current.repos !== null && current.repos.length === 0)) {
+    // No manifest, or the empty one init wrote: nothing a person wrote is replaced. The empty
+    // one keeps its version and anything else it says; a new one is at the current version.
+    const entries = found.map((f) => f.entry);
+    await writeNew(
+      manifestPath,
+      current
+        ? inEol(
+            (current.text.includes(HEADER) ? "" : HEADER) + appended(current.text, entries),
+            eolOf(current.text),
+          )
+        : HEADER + fresh(entries),
+      false,
+    );
     result.wrote = "manifest";
     result.file = toPosix(relative(root, manifestPath));
+    // A profile folder discovery made is a profile: its profile.yaml too (kept when there).
+    await writeNew(
+      join(p.orgPackDir, "profiles", platform, "profile.yaml"),
+      stringify({ schemaVersion: 1, platform, name: platform, systems: [] }, { lineWidth: 0 }),
+    );
   } else {
     // Keep every existing entry as it is; add only repos the manifest doesn't list.
-    const kept = current ?? [];
-    const have = new Set(kept.flatMap((r) => [r.id, r.url]));
-    const added = found.filter((f) => !have.has(f.entry.id) && !have.has(f.entry.url));
     const file = join(proposalDir, "repos.manifest.yaml");
-    await writeNew(file, HEADER + doc([...kept, ...added.map((a) => a.entry)]), false);
+    const entries = added.map((a) => a.entry);
+    await writeNew(
+      file,
+      current.repos === null
+        ? HEADER + fresh(entries)
+        : inEol(HEADER + appended(current.text, entries), eolOf(current.text)),
+      false,
+    );
     result.wrote = "proposal";
     result.file = toPosix(relative(root, file));
   }

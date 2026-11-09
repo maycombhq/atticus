@@ -56,7 +56,14 @@ async function settingsOf(
   const text = await readFile(join(orgPackDirOf(root), "runtime.yaml"), "utf8").catch(
     () => undefined,
   );
-  const raw = text ? (parse(text) as unknown) : undefined;
+  // Round 50: a file that isn't YAML reads as unconfigured; the org pack check (atticus doctor,
+  // atticus orgpack validate) is what says it is broken, with the parse error.
+  let raw: unknown;
+  try {
+    raw = text ? (parse(text) as unknown) : undefined;
+  } catch {
+    raw = undefined;
+  }
   const r = raw === undefined ? undefined : Runtime.safeParse(raw);
   const e = retrievalOf(r?.success ? r.data : undefined).embeddings;
   const said = (raw as { retrieval?: { embeddings?: { model?: unknown } } } | null | undefined)

@@ -1,7 +1,12 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { stringify } from "yaml";
-import { loadOrgPack, SOURCES_SCHEMA_VERSION, type OrgPackProblem } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  LOCAL_ONLY,
+  SOURCES_SCHEMA_VERSION,
+  type OrgPackProblem,
+} from "@maycombhq/core";
 import { ORG_FLOW, setDefaultSchema, writeOrgFlowSchema } from "@maycombhq/openspec-adapter";
 import { reposDiscover, type DiscoveredRepo, type OwnerQuestion } from "./discover.js";
 import { AdoptError } from "./errors.js";
@@ -144,10 +149,13 @@ export async function takeSnapshot(root: string): Promise<Snapshot> {
   return { schemaVersion: 1, files, dirs };
 }
 
+// Round 50: with this machine's own files (LOCAL_ONLY) too, as atticus upgrade would add them.
 const GITIGNORE = `# Atticus local state in an adopted repo: never committed.
 ${STATE_FOLDERS.map((f) => `/${f}/`).join("\n")}
 /executors.yaml
 /inputs/inbox/
+# This machine's own files: never committed.
+${LOCAL_ONLY.join("\n")}
 `;
 
 const README = `# .atticus

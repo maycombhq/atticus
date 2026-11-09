@@ -2,6 +2,23 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.23 (unreleased)
+
+### Fixed
+
+- Review round 50 (getting started):
+  - **`atticus repos discover` keeps a manifest's entries as they are.** Its proposal wrote each existing entry again with some of its fields (hosts, basePath, description, dialects, extractors and sparse were dropped) and at schema version 1; it now appends to the file as `atticus repo add` does, keeping every entry, comment and the file's version, and writes every field a new entry has. A new manifest is written at the current version.
+  - **`atticus repos discover` reads a clone's origin as Git does** (`git config`, local, no network): an Azure DevOps URL with spaces (`https://dev.azure.com/forgeorg/Forge Payments/_git/forge ledger`) is no longer cut at the first space, `pushurl` is never taken for `url`, an ssh URL keeps its user (`ssh://git@host:22/...`) and a Windows path's backslashes aren't doubled. Only an http(s) URL's credentials are dropped. `workspace sync --from` then points each base clone at the whole URL.
+  - **A new metarepo or adopted repo has nothing to upgrade.** init and adopt wrote repos.manifest.yaml at version 1, so doctor said "2 upgrade steps to run" right after the documented setup; adopt also left `.atticus/metarepo.yaml` unstamped and `.atticus/.gitignore` without this machine's files. Both write the current versions, adopt writes the whole local-only ignore list and records the Atticus that adopted the repo (only when no step would touch the repo's own files).
+  - **`atticus doctor` runs on a runtime.yaml that isn't YAML.** The embedding check threw on the parse error and doctor stopped; the file now reads as unconfigured there, and the Org pack check fails naming the first problem (`runtime.yaml: can't read YAML: ...`).
+  - **`atticus repo add` to the `repos: []` init writes adds one entry per block**, not the whole list rewritten on one line (a team added to `teams: []` from the app's owner screen too).
+  - **`atticus repos discover` with two or more platform profiles asks for `--platform`**, as `repo add` does, instead of making `org-pack/profiles/default/`; a profile folder it makes gets its `profile.yaml`, and `atticus orgpack validate` notes a profile folder that has none.
+  - **A found repo whose id the manifest lists for another repo is added under its own id** (`orders-api-2`) and said, instead of left out without a word; the same repo (the same clone URL, written another way) is still left out. The repo-id helpers moved from the CLI to `@maycombhq/workspace` so discovery and `repo add` share them.
+  - **Files keep their line endings.** `atticus skills write` leaves CLAUDE.md alone when there is no team-instructions block to write or remove (it rewrote the trailing newline and said "wrote CLAUDE.md"), and writes the block in the file's own endings; init and `workspace sync` add their `.gitignore` lines to a CRLF file in CRLF.
+  - **`atticus adopt` names `atticus assistant-files` before the line about `/atticus-map`**, since adopt writes no slash commands.
+  - **runtime.yaml's `modes.default` defaults to the first mode `modes.allowed` lists** (the admin guide's `modes: { allowed: [hand-off, copilot-acp] }` failed validation). A loosening: every file that validated reads as before (C6 spec page regenerated).
+  - `atticus plan snow` without a change id gives an `atticus plan snow ...` example (it named `plan stories`), and a repo link pasted from the browser (`.../_git/forge-ledger?path=/src`) gets the id `forge-ledger` in `repo add`, not `src`.
+
 ## 2.0.0-beta.22 (2026-11-09)
 
 ### Fixed

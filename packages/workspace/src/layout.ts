@@ -100,10 +100,12 @@ export async function ensureGitignore(root: string): Promise<string[]> {
   const have = new Set(text.split(/\r?\n/).map(norm));
   const missing = IGNORED.filter((p) => !have.has(norm(p)));
   if (missing.length > 0) {
-    const prefix = text === "" || text.endsWith("\n") ? text : text + "\n";
+    // Round 50: in the file's own line endings, so a Windows checkout's CRLF file stays CRLF.
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const prefix = text === "" || text.endsWith("\n") ? text : text + eol;
     await writeFile(
       path,
-      `${prefix}${prefix ? "\n" : ""}# Atticus local state\n${missing.join("\n")}\n`,
+      `${prefix}${prefix ? eol : ""}# Atticus local state${eol}${missing.join(eol)}${eol}`,
       "utf8",
     );
   }

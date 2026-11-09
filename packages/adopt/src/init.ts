@@ -224,10 +224,12 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
   // stamp, .atticus/metarepo.yaml, is (ADR 0051), so the folder's files are ignored but that one.
   const gi = join(dir, ".gitignore");
   const text = await readFile(gi, "utf8");
-  if (!/^\/?\.atticus(\/\*?)?$/m.test(text))
+  // Round 50: in the file's own line endings (a Windows checkout's CRLF).
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  if (!/^\/?\.atticus(\/\*?)?\r?$/m.test(text))
     await writeFile(
       gi,
-      `${text.endsWith("\n") ? text : `${text}\n`}${ATTICUS_FOLDER_IGNORE.join("\n")}\n`,
+      `${text.endsWith("\n") ? text : `${text}${eol}`}${ATTICUS_FOLDER_IGNORE.join(eol)}${eol}`,
       "utf8",
     );
 

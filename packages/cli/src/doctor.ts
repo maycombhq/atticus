@@ -569,8 +569,9 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     id: "org-pack",
     label: "Org pack",
     status: op.problems.length ? "fail" : "ok",
+    // Round 50: the first problem is said, so a file that isn't YAML is named with its error.
     detail: op.problems.length
-      ? `${op.problems.length} problem${op.problems.length === 1 ? "" : "s"}`
+      ? `${op.problems.length} problem${op.problems.length === 1 ? "" : "s"}; first: ${op.problems[0]!.file}${op.problems[0]!.path ? ` (${op.problems[0]!.path})` : ""}: ${op.problems[0]!.message}`
       : "valid",
     fix: "Run atticus orgpack validate and fix each problem it names.",
   });

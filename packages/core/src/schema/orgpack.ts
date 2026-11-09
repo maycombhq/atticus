@@ -1161,9 +1161,14 @@ const RuntimeFields = z.strictObject({
   modes: z
     .strictObject({
       allowed: z.array(ConfiguredMode).min(1),
-      default: ConfiguredMode,
+      /** Left out: the first mode `allowed` lists (review round 50). */
+      default: ConfiguredMode.optional(),
     })
-    .refine((m) => m.allowed.includes(m.default), "the default mode must be allowed")
+    .refine(
+      (m) => m.default === undefined || m.allowed.includes(m.default),
+      "the default mode must be allowed",
+    )
+    .transform((m) => ({ allowed: m.allowed, default: m.default ?? m.allowed[0]! }))
     .default({ allowed: ["hand-off"], default: "hand-off" }),
   models: z
     .strictObject({
