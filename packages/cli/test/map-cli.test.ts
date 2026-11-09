@@ -753,10 +753,12 @@ describe("the reader's slips of form, fixed in the batch loop as verify fixes th
     const reader = honestReader();
     const runtime = new MockRuntime((r) => slipped(reader(r.pack.prompt)), { now: NOW });
     const o = io();
-    // 8800: the flow must share a batch with its entry for its cite to come from the entry's line
+    // 9100: the flow must share a batch with its entry for its cite to come from the entry's line
     // (8500 until a call's TLS rule named the lines it rests on, the beta.11 review, ADR 0163;
-    // 8650 until a call's path was told never to be the name that holds it, ADR 0172).
-    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 8800 }, o.io, {
+    // 8650 until a call's path was told never to be the name that holds it, ADR 0172; 8800 until
+    // review round 49 counted each file's data wrapper and each character outside ASCII as a
+    // token, so the batches split elsewhere).
+    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 9100 }, o.io, {
       runtime,
       now: NOW,
     });

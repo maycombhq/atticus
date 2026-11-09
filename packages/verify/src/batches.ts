@@ -1,6 +1,6 @@
-import { MOCK_FILE } from "@maycombhq/core";
+import { MOCK_FILE, tokenUnits } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
-import type { FileSource } from "./source.js";
+import { tooBigToRead, type FileSource } from "./source.js";
 import type { Conventions } from "@maycombhq/core";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { isSourceFile } from "./verify.js";
@@ -255,11 +255,28 @@ const linesOf = (text: string) => {
   return (t.endsWith("\n") ? t.slice(0, -1) : t).split("\n");
 };
 
-/** Lines `from` to `to` of a file's text, each as `<n>| <text>`. */
+/**
+ * Characters of one line a prompt shows (review round 49). A longer line (a minified bundle, an
+ * inlined data blob) is cut there with a marker, so one line can't make a slice without end. A
+ * quote of what is shown is the start of the real line, so it still matches it, and a line this
+ * long needs no quote (`quoteNotRequired`).
+ */
+export const LONG_LINE = 1000;
+
+/** A line as a prompt shows it: whole, or cut at LONG_LINE with how long it is. */
+export function shownLine(line: string): string {
+  if (line.length <= LONG_LINE) return line;
+  // never between the halves of a surrogate pair
+  const code = line.charCodeAt(LONG_LINE - 1);
+  const at = code >= 0xd800 && code <= 0xdbff ? LONG_LINE - 1 : LONG_LINE;
+  return `${line.slice(0, at)} … [line cut: ${line.length} characters]`;
+}
+
+/** Lines `from` to `to` of a file's text, each as `<n>| <text>` (a long line cut, `shownLine`). */
 export function numberedSlice(text: string, s: Pick<FileSlice, "from" | "to">): string {
   return linesOf(text)
     .slice(s.from - 1, s.to)
-    .map((l, i) => `${s.from + i}| ${l}`)
+    .map((l, i) => `${s.from + i}| ${shownLine(l)}`)
     .join("\n");
 }
 
@@ -271,8 +288,20 @@ export function sliceText(source: FileSource, s: Pick<FileSlice, "path" | "from"
   return `${header(s)}\n${numberedSlice(source.read(s.path) ?? "", s)}`;
 }
 
-/** Tokens as context packs count them (characters / 4, ADR 0112). */
-const tokensOf = (chars: number) => Math.ceil(chars / 4);
+/**
+ * Tokens as context packs count them (ADR 0112, `estimateTokens` in @maycombhq/core), from
+ * quarter tokens (`tokenUnits`): four ASCII characters a token, any other character one.
+ */
+const tokensOf = (units: number) => Math.ceil(units / 4);
+
+/**
+ * The data wrapper each slice is sent in (review round 49: one source a slice, so the defences
+ * leave out only the file that needs it), counted with the slice so a batch still fits its room.
+ */
+const wrapUnits = (path: string) =>
+  tokenUnits(
+    `<atticus-data id="1-file-0000" kind="code" origin="${path}#L0000000-0000000">\n\n</atticus-data>\n\n`,
+  );
 
 export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   const room = Math.max(1, o.room);
@@ -284,6 +313,9 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   const paths: string[] = [];
   const texts = new Map<string, string>();
   for (const p of source.list()) {
+    // Review round 49: by its path and size first, so a binary, a lock file or a file too big
+    // to be source is never read just to be passed over.
+    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(source, p)) continue;
     const text = source.read(p);
     if (text === undefined) continue;
     const ls = linesOf(text);
@@ -321,10 +353,12 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
     const all = linesOf(texts.get(path)!);
     const of = all.length;
     lines += of;
-    // The characters of each numbered line, with its line break: a range's size is a sum.
-    const sizes = all.map((l, i) => `${i + 1}| ${l}`.length + 1);
-    const cost = (from: number, chars: number) =>
-      tokensOf(header({ path, from, to: of, of }).length + chars);
+    // The quarter tokens of each numbered line as shown, with its line break: a range's size is
+    // a sum. A long line is shown cut (`shownLine`), so no one line is bigger than a prompt.
+    const sizes = all.map((l, i) => tokenUnits(`${i + 1}| ${shownLine(l)}`) + 1);
+    const wrap = wrapUnits(path);
+    const cost = (from: number, units: number) =>
+      tokensOf(tokenUnits(header({ path, from, to: of, of })) + wrap + units);
     const total = sizes.reduce((n, c) => n + c, 0);
     if (cost(1, total) <= fileRoom) {
       slices.push({ path, from: 1, to: of, of, tokens: cost(1, total), kinds });

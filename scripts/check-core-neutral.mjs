@@ -160,6 +160,12 @@ const WORK_REFS = "C1 ExternalRef.system adapter-type values (ado, jira) and the
 
 export const ALLOW = [
   {
+    file: "packages/core/src/repo-files.ts",
+    names: ["github"],
+    reason:
+      "review round 49: the first line of a Git LFS pointer file is the LFS spec's URL (git-lfs.github.com), the same whatever host the repo is on; it tells an un-smudged pointer from source, never a branch on a vendor",
+  },
+  {
     file: "packages/core/src/schema/orgpack.ts",
     names: ["gcp", "aws", "elastic"],
     reason:

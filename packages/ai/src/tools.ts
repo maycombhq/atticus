@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   runsDirOf,
+  tokenUnits,
   type RunTools,
   type ToolCallRecord,
   type ToolDefinition,
@@ -153,8 +154,19 @@ export function guardToolText(name: string, raw: string, room: number): string {
     wrapData({ id: `tool-${name}`, kind: "tool", origin: toolOrigin(name) }, t);
   if (estimateTokens(wrap(text)) > room) {
     const note = `\n… cut at ${room} tokens; ask for less (a smaller limit, fewer hops, one id).`;
-    const chars = Math.max(0, room * 4 - wrap("").length - note.length);
-    text = text.slice(0, chars) + note;
+    // in quarter tokens, as estimateTokens counts (review round 49: a character outside ASCII
+    // is a whole token)
+    const units = Math.max(0, room * 4 - tokenUnits(wrap("")) - tokenUnits(note));
+    let end = 0;
+    for (let used = 0; end < text.length; end++) {
+      const c = text.charCodeAt(end);
+      used += c < 0x80 ? 1 : c >= 0xdc00 && c <= 0xdfff ? 0 : 4;
+      if (used > units) break;
+    }
+    // never between the halves of a surrogate pair
+    const last = text.charCodeAt(end - 1);
+    if (end > 0 && last >= 0xd800 && last <= 0xdbff) end--;
+    text = text.slice(0, end) + note;
   }
   return wrap(text);
 }

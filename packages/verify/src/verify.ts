@@ -9,6 +9,8 @@ import {
   partsBuildWord,
   partsNamePath,
   isSecretPath,
+  isBinaryText,
+  isLfsPointer,
   noteProblem,
   type NumberedNote,
   NEVER_CHECKED_STEPS,
@@ -37,7 +39,7 @@ import { pageRouteMatches } from "./pages.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
-import { insideRepo, type FileSource } from "./source.js";
+import { insideRepo, tooBigToRead, type FileSource } from "./source.js";
 import {
   candidatesIn,
   factsCover,
@@ -457,7 +459,21 @@ export function isSourceFile(
   if (isLocaleBundle(path)) return false;
   if (lines && isDataFile(path, lines, rules)) return false;
   if (quoteNotRequired(path, firstLine)) return false;
+  // Review round 49: an un-smudged Git LFS pointer stands for a file the checkout doesn't have,
+  // and a NUL in the first 8,000 characters (not UTF-16, which is decoded) is a binary file.
+  if (isLfsPointer(firstLine)) return false;
+  if (isBinaryText(firstLine) || (lines && binaryLines(lines))) return false;
   return SOURCE_EXT.test(path) || SOURCE_NAME.test(path);
+}
+
+/** Whether the first 8,000 characters of a file's lines hold a NUL. */
+function binaryLines(lines: readonly string[]): boolean {
+  let n = 0;
+  for (const l of lines) {
+    if (isBinaryText(l)) return true;
+    if ((n += l.length + 1) > 8000) return false;
+  }
+  return false;
 }
 
 const lastPart = (s: string) => s.split(".").pop() ?? s;
@@ -1222,6 +1238,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const excluded: string[] = [];
   for (const p of o.source.list()) {
     o.room?.();
+    // Review round 49: by its path and size first, so a binary, a lock file or a file too big
+    // to be source is never read just to be passed over.
+    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) continue;
     // A-room: every file of the repo passes through here, and only to ask whether it counts as
     // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
     const ls = readLines(p) ?? [""];

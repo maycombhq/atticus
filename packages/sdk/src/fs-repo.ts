@@ -1,5 +1,7 @@
-import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
+import { decodeText, walkRepo } from "@maycombhq/core";
+import { setListing } from "./listing.js";
 import { globToRegExp, type RepoHandle } from "./plugin.js";
 
 /** Folders never scanned: VCS data, dependencies and build output. */
@@ -54,7 +56,8 @@ export class RepoReadError extends Error {
 /**
  * A read-only RepoHandle over a folder on disk (a base clone). Paths are repo-relative with
  * forward slashes on every platform and listed in sorted order, so scans are deterministic.
- * Symbolic links are never followed, and no path may leave the repo folder.
+ * Symbolic links are never followed, what the repo's .gitignore files ignore isn't listed, and
+ * no path may leave the repo folder.
  */
 export function fsRepo(
   name: string,
@@ -70,23 +73,14 @@ export function fsRepo(
   const sizes = new Map<string, number>();
   const skipped = new Map<string, number>();
 
-  async function walk(abs: string, out: string[]): Promise<void> {
-    const entries = await readdir(abs, { withFileTypes: true });
-    for (const e of entries) {
-      if (e.isSymbolicLink()) continue;
-      const full = join(abs, e.name);
-      if (e.isDirectory()) {
-        if (!ignore.has(e.name)) await walk(full, out);
-      } else if (e.isFile()) {
-        out.push(relative(root, full).split(sep).join("/"));
-      }
-    }
-  }
-
   async function allFiles(): Promise<string[]> {
     if (!cache) {
+      // Review round 49: the walker every reader of a checkout shares (@maycombhq/core): no
+      // link, no .git, nothing a .gitignore ignores (generated output isn't the commit's).
       const out: string[] = [];
-      await walk(root, out);
+      await walkRepo(root, async (p) => void out.push(p), {
+        skipFolder: (_above, name) => ignore.has(name),
+      });
       cache = out.sort();
     }
     return cache;
@@ -117,7 +111,7 @@ export function fsRepo(
     return abs;
   }
 
-  return {
+  const handle: FsRepoHandle = {
     name,
     commit,
     async *listFiles(globs) {
@@ -141,9 +135,15 @@ export function fsRepo(
         .map(([path, bytes]) => ({ path, bytes }));
     },
     async readText(path) {
-      const text = await readFile(await safePath(path), "utf8");
-      // Strip a UTF-8 byte-order mark so line numbers and parsers agree across editors.
-      return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+      // One decoder for every reader (review round 49): UTF-16 with its mark, UTF-8 without
+      // one, Latin-1 when the bytes aren't UTF-8, so line numbers and parsers agree.
+      return decodeText(await readFile(await safePath(path)));
     },
   };
+  // The scan's stored results are keyed by how the files were listed (review round 49).
+  setListing(
+    handle,
+    JSON.stringify({ ignore: [...ignore].sort(), maxFileBytes: maxBytes, gitignore: true }),
+  );
+  return handle;
 }

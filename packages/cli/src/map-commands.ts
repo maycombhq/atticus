@@ -46,10 +46,13 @@ import {
   buildContextPack,
   currentPromptLimit,
   DATA_RULE,
+  defendSource,
   estimateTokens,
   HandoffRuntime,
   promptBudget,
   PromptTooLong,
+  quarantineReason,
+  RequiredSourceLeftOut,
   wrapData,
   type AiRuntime,
   type Run,
@@ -715,6 +718,26 @@ async function packFor(
   );
   const rules = await rulesCovering(root, s.repo, op);
   const slices = fix ? [] : s.batches[batch]!;
+  // Review round 49: one source a slice, so the ingested-content defences leave out only the file
+  // that needs it, and the person is told which. Before, the batch's files went as one source,
+  // and one test file's injection text left the whole batch's code out without a word. Every
+  // slice the defences pass is required: one left out for any other reason fails the batch.
+  const leftOut: string[] = [];
+  const fileSources: SourceInput[] = [];
+  slices.forEach((x, i) => {
+    const file: SourceInput = {
+      id: `1-file-${String(i + 1).padStart(4, "0")}`,
+      kind: "code",
+      origin: `${x.path}#L${x.from}-${x.to}`,
+      text: sliceText(source, x),
+      classification: "internal",
+      priority: 10,
+    };
+    const d = defendSource(file);
+    if (d.decision.action === "quarantined" || d.text === undefined)
+      leftOut.push(`left out ${file.origin}: ${quarantineReason(d.decision)}`);
+    else fileSources.push(file);
+  });
   // ADR 0169: the reached model classes among this batch's files, with where each is reached from.
   const inBatch = new Set(slices.map((x) => x.path));
   const reachedHere = (s.reached ?? []).filter((r) => inBatch.has(r.path));
@@ -797,18 +820,7 @@ async function packFor(
           },
         ]
       : []),
-    ...(slices.length
-      ? [
-          {
-            id: "1-files",
-            kind: "code" as const,
-            origin: slices.map((x) => `${x.path}#L${x.from}-${x.to}`).join(", "),
-            text: slices.map((x) => sliceText(source, x)).join("\n\n"),
-            classification: "internal",
-            priority: 10,
-          },
-        ]
-      : []),
+    ...fileSources,
     ...s.rejected.map((r, i) => ({
       id: `2-rejected-${String(i + 1).padStart(3, "0")}`,
       kind: "document" as const,
@@ -859,6 +871,9 @@ async function packFor(
   const levels = op.pack?.classification ?? LEVELS;
   return {
     agent,
+    leftOut,
+    /** Every file of a batch was left out: nothing to hand. */
+    empty: slices.length > 0 && fileSources.length === 0,
     pack: buildContextPack({
       change: changeOf(s.repo),
       agent: agent.id,
@@ -868,7 +883,7 @@ async function packFor(
       maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
       now,
       ...(s.maxTokens ? { maxTokens: s.maxTokens } : {}),
-      required: slices.length ? ["1-files"] : [],
+      required: fileSources.map((f) => f.id),
       step: `map ${s.repo}`,
     }),
   };
@@ -1306,7 +1321,27 @@ export async function mapCommand(
     const fixRound = s.next >= s.batches.length;
     if (fixRound && (s.fixRound || !s.rejected.length)) break;
     if (fixRound) s.fixRound = true;
-    const { agent, pack } = await packFor(root, s, s.next, source, op, now(), notesPrompt);
+    let made: Awaited<ReturnType<typeof packFor>>;
+    try {
+      made = await packFor(root, s, s.next, source, op, now(), notesPrompt);
+    } catch (e) {
+      // Review round 49: a file the batch can't go without was left out (its classification,
+      // the budget): the batch stops and says why, rather than go without it.
+      if (!(e instanceof RequiredSourceLeftOut)) throw e;
+      io.err(`Batch ${s.next + 1} of ${s.batches.length}: ${e.message}`);
+      return 2;
+    }
+    const { agent, pack, leftOut, empty } = made;
+    for (const l of leftOut)
+      io.out(
+        `Batch ${s.next + 1} of ${s.batches.length}: ${l}. Its lines aren't read; a person reviews the file, or the repo's exclusions leave it out.`,
+      );
+    if (empty) {
+      // every file of the batch was left out: nothing to hand, so on to the next one
+      s.next++;
+      await saveState(root, s);
+      continue;
+    }
     const prepared = await runtime.prepare({
       change: changeOf(repo),
       agent,

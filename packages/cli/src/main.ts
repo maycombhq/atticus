@@ -781,7 +781,7 @@ Usage:
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
   atticus <step> --handoff [--json]    On map, scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
-  atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
+  atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4 and characters outside ASCII one each, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
           [--from <folder>]            Copy a missing base clone from your own clone of it in that folder: no network, your clone only read

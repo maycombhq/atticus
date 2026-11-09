@@ -5,7 +5,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * (`atticus <step> --max-tokens n`: the whole prompt must fit n tokens) and builds its pack to
  * fit: its budget becomes the smaller of its own and the room the limit leaves.
  *
- * Tokens are counted as the pack counts them (`estimateTokens`: characters / 4). Code and YAML
+ * Tokens are counted as the pack counts them (`estimateTokens`: ASCII characters / 4, and each
+ * character outside ASCII one, review round 49). Code and YAML
  * tokenize nearer 3 characters a token, so a quarter of the limit is kept back for the
  * counter's error, and a fixed frame for what goes around the pack (the hand-off's heading,
  * result file and finishing command, and the VS Code runner's preface).
