@@ -13,6 +13,11 @@ const P = COPY.propose;
 const WORK_CHANGED = "atticus:work-changed";
 const work = new EventTarget();
 export const workChanged = () => void work.dispatchEvent(new Event(WORK_CHANGED));
+/** Heard when what waits to be applied or proposed may have changed (an Apply ended, say). */
+export const onWorkChanged = (f: () => void): (() => void) => {
+  work.addEventListener(WORK_CHANGED, f);
+  return () => work.removeEventListener(WORK_CHANGED, f);
+};
 
 /**
  * Windows review: Apply, Propose and Bring in run as server jobs (an editor panel waits 30 s for
@@ -113,6 +118,10 @@ export function ApplyAndPropose(p: {
                     if (p.scope === "corrections")
                       flash({ text: `${P.applyFailed} ${(e as Error).message}`.slice(0, 400) });
                     throw new Error(P.applyFailed, { cause: e });
+                  } finally {
+                    // What waits to be applied or proposed (Home's list, the map's bar) is read
+                    // again once the Apply has ended, not only when it started.
+                    workChanged();
                   }
                 }, P.applied(p.repo!))
               }

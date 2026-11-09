@@ -62,7 +62,7 @@ vi.mock("../src/api/client.js", async () => ({
   },
 }));
 const { COPY } = await import("../src/copy.js");
-const { ApplyAndPropose, Propose } = await import("../src/app/propose.js");
+const { ApplyAndPropose, onWorkChanged, Propose } = await import("../src/app/propose.js");
 const P = COPY.propose;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -103,6 +103,22 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
     confirmation: "c".repeat(43),
   });
   expect(text(n.tree)).toContain("PR #7 is open for review");
+});
+
+it("an Apply that ended says so, so the map's bar and Home's list read again", async () => {
+  const m = mount(
+    ApplyAndPropose as never,
+    { scope: "corrections", repo: "forge-ledger" } as never,
+  );
+  let heard = 0;
+  const off = onWorkChanged(() => void heard++);
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-ledger"),
+  )!;
+  (btn.props.onClick as () => void)();
+  await tick();
+  off();
+  expect(heard).toBe(1);
 });
 
 it("an Apply the server won't start says why, not that verify found problems", async () => {
