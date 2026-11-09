@@ -7,6 +7,7 @@ import {
 import type { ScanCache, ScanCacheKey } from "./cache.js";
 import { createParseCache, withParseCache } from "./parse-cache.js";
 import { tooLargeMessage, type FsRepoHandle } from "./fs-repo.js";
+import { listingOf } from "./listing.js";
 import { globToRegExp, type Extractor, type RepoHandle, type ScanContext } from "./plugin.js";
 
 export interface ScanRepoOptions {
@@ -177,6 +178,9 @@ async function scanWith(options: ScanRepoOptions): Promise<RepoScan> {
         JSON.stringify(options.repoInfo ?? {}),
         // A changed framework model means a different reading of the same code.
         options.frameworks?.length ? JSON.stringify(options.frameworks) : "",
+        // Review round 49: the same commit listed another way (scan-settings exclusions, the
+        // folders left out, the size limit) gives the extractor other files.
+        listingOf(repo),
       ].join("|"),
     };
 

@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
+import { decodeText, listRepoFilesSync } from "@maycombhq/core";
 
 /**
  * Where the verifier reads a repo's files from. Paths are repo-relative with forward slashes.
@@ -8,6 +9,11 @@ import { isAbsolute, join, normalize, relative, sep } from "node:path";
 export interface FileSource {
   list(): string[];
   read(path: string): string | undefined;
+  /**
+   * A file's size in bytes without reading it (review round 49), when the source can say it:
+   * a file too big to be source is passed over before its bytes are read.
+   */
+  size?(path: string): number | undefined;
 }
 
 /** Folders never walked, at any depth: version control, dependencies, tool and cache state. */
@@ -87,41 +93,50 @@ export function insideRepo(path: string): boolean {
   return n !== ".." && !n.startsWith("../");
 }
 
-/** A checkout on disk (the base clone at the commit being verified). */
+/**
+ * A checkout on disk (the base clone at the commit being verified). Review round 49: listed with
+ * the walker the scan and the assistant's code tools share (@maycombhq/core `listRepoFilesSync`):
+ * no symbolic link is followed (a loop hung the map, a link to /etc/passwd or to ../.env put that
+ * file in a prompt under another name), and nothing a .gitignore ignores is listed. A read
+ * refuses a link and any path whose real path leaves the repo's, and decodes as every reader
+ * does (`decodeText`).
+ */
 export function dirSource(root: string): FileSource {
   let cache: string[] | undefined;
-  const walk = (dir: string, above: string[], out: string[]) => {
-    let names: string[];
+  let realRoot: string | undefined;
+  /** The file a path names, when it is a plain file whose real path is in the repo. */
+  const fileAt = (path: string): string | undefined => {
+    if (!insideRepo(path)) return undefined;
+    const full = join(root, ...path.split("/"));
     try {
-      names = readdirSync(dir).sort();
+      if (!lstatSync(full).isFile()) return undefined;
+      realRoot ??= realpathSync(root);
+      const r = relative(realRoot, realpathSync(full));
+      if (!r || r.startsWith("..") || isAbsolute(r)) return undefined;
+      return full;
     } catch {
-      return;
-    }
-    for (const name of names) {
-      const full = join(dir, name);
-      let st;
-      try {
-        st = statSync(full);
-      } catch {
-        continue;
-      }
-      if (st.isDirectory()) {
-        if (!skippedFolder(above, name, names)) walk(full, [...above, name], out);
-      } else if (st.isFile()) out.push(relative(root, full).split(sep).join("/"));
+      return undefined;
     }
   };
   return {
     list() {
-      if (!cache) {
-        cache = [];
-        walk(root, [], cache);
-      }
+      cache ??= listRepoFilesSync(root, { skipFolder: skippedFolder });
       return cache;
     },
     read(path) {
-      if (!insideRepo(path)) return undefined;
+      const full = fileAt(path);
+      if (!full) return undefined;
       try {
-        return readFileSync(join(root, ...path.split("/")), "utf8");
+        return decodeText(readFileSync(full));
+      } catch {
+        return undefined;
+      }
+    },
+    size(path) {
+      const full = fileAt(path);
+      if (!full) return undefined;
+      try {
+        return statSync(full).size;
       } catch {
         return undefined;
       }
@@ -135,5 +150,21 @@ export function memorySource(files: Record<string, string>): FileSource {
   return {
     list: () => keys,
     read: (path) => (insideRepo(path) ? files[path] : undefined),
+    size: (path) =>
+      insideRepo(path) && files[path] !== undefined
+        ? Buffer.byteLength(files[path], "utf8")
+        : undefined,
   };
+}
+
+/**
+ * Bytes a file may be and still be read as source (review round 49): over it a file is generated
+ * or data, and is passed over by its size before its bytes are read. The scan's limit (`fsRepo`).
+ */
+export const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
+
+/** Whether a source says a file is over MAX_SOURCE_BYTES (without reading it). */
+export function tooBigToRead(source: FileSource, path: string): boolean {
+  const n = source.size?.(path);
+  return n !== undefined && n > MAX_SOURCE_BYTES;
 }

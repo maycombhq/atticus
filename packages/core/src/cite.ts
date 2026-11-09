@@ -148,6 +148,11 @@ const BINARY =
 const NOTEBOOK = /\.ipynb$/i;
 const MINIFIED = /(\.min\.(js|css)|[-.]bundle\.js|\.map)$/i;
 
+/** Whether a path names a binary file by its extension (an image, an archive, a font, a build). */
+export function isBinaryPath(path: string): boolean {
+  return BINARY.test(path);
+}
+
 /** A quote is not required from a binary, a notebook, a minified file, or a very long line. */
 export function quoteNotRequired(path: string, line: string): boolean {
   return BINARY.test(path) || NOTEBOOK.test(path) || MINIFIED.test(path) || line.length > 1000;

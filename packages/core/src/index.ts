@@ -55,6 +55,8 @@ export * from "./roles-migrate.js";
 export * from "./profile-migrate.js";
 export * from "./metarepo.js";
 export * from "./fs.js";
+export * from "./glob.js";
+export * from "./repo-files.js";
 export * from "./record-cache.js";
 export * from "./log.js";
 export * from "./zip.js";

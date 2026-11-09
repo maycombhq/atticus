@@ -1,10 +1,22 @@
 import { existsSync, readdirSync } from "node:fs";
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createContext, runInContext, Script } from "node:vm";
-import { RecordId, specsRelOf, stateDirOf, type ToolDefinition } from "@maycombhq/core";
+import {
+  decodeText,
+  ignoredBy,
+  ignoreRules,
+  isBinaryBytes,
+  isBinaryPath,
+  RecordId,
+  specsRelOf,
+  stateDirOf,
+  walkRepo,
+  type IgnoreRule,
+  type ToolDefinition,
+} from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
-import { globMatcher, type GlobMatcher } from "./glob.js";
+import { globMatcher } from "./glob.js";
 import { fuse, type GraphNodeRow } from "./select.js";
 
 /**
@@ -548,7 +560,7 @@ async function excerpt(
   const size = (await stat(file)).size;
   if (size > CONTEXT_TOOL_BOUNDS.codeFileBytes)
     return `${c.what} ${c.verb ?? "cites"} ${c.repo}/${c.path}:${c.line}, a file too big to show (${size} bytes).`;
-  const lines = (await readFile(file, "utf8")).split(/\r?\n/);
+  const lines = decodeText(await readFile(file)).split(/\r?\n/);
   if (c.line > lines.length)
     return `${c.what} ${c.verb ?? "cites"} ${c.repo}/${c.path}:${c.line}, but the file has ${lines.length} lines now: the cite is stale.`;
   const from = Math.max(1, c.line - around);
@@ -735,15 +747,17 @@ export async function namesInCode(
       if (!o.outline || (o.outlines && !o.outlines(p))) return;
       const names = open.filter((n) => !found.has(n) && DECLARABLE.test(n));
       if (!names.length) return;
-      const buf = await readFile(join(dir, ...p.split("/"))).catch(() => undefined);
+      const file = join(dir, ...p.split("/"));
+      if (!(await readableCode(file, p))) return;
+      const buf = await readFile(file).catch(() => undefined);
       if (!buf || buf.length > B.codeFileBytes) return;
-      if (buf.subarray(0, 8000).includes(0)) return;
+      if (isBinaryBytes(buf)) return;
       bytes += buf.length;
       if (bytes > B.grepBytes) {
         cut = true;
         return false;
       }
-      const text = buf.toString("utf8");
+      const text = decodeText(buf);
       if (!names.some((n) => text.includes(n))) return;
       const decls = await o.outline(p, text).catch(() => undefined);
       for (const d of decls ?? []) {
@@ -812,58 +826,14 @@ function reposOf(root: string, input: Record<string, unknown>, o: ContextToolOpt
   return out;
 }
 
-interface IgnoreRule {
-  /** The folder of the .gitignore, repo-relative ("" for the root). */
-  base: string;
-  /** Matched in linear time (glob.ts): a scanned repo's .gitignore can't stall the scan. */
-  re: GlobMatcher;
-  negate: boolean;
-  dirOnly: boolean;
-}
-
-/** The rules of one .gitignore file (git's syntax: #, !, a trailing /, a leading or inner /). */
-function ignoreRules(text: string, base: string): IgnoreRule[] {
-  const out: IgnoreRule[] = [];
-  for (let line of text.split(/\r?\n/)) {
-    line = line.replace(/(?<!\\)\s+$/, "");
-    if (!line || line.startsWith("#")) continue;
-    let negate = false;
-    if (line.startsWith("!")) {
-      negate = true;
-      line = line.slice(1);
-    } else if (line.startsWith("\\!") || line.startsWith("\\#")) line = line.slice(1);
-    const dirOnly = line.endsWith("/");
-    if (dirOnly) line = line.slice(0, -1);
-    if (!line) continue;
-    const anchored = line.includes("/");
-    try {
-      out.push({ base, re: globMatcher(line.replace(/^\//, ""), !anchored), negate, dirOnly });
-    } catch {
-      // A line git would read some other way is left out rather than guessed at.
-    }
-  }
-  return out;
-}
-
-/** Whether git would ignore a path: the last rule that matches decides. */
-function ignored(rules: IgnoreRule[], path: string, isDir: boolean): boolean {
-  let out = false;
-  for (const r of rules) {
-    if (r.dirOnly && !isDir) continue;
-    if (r.base && !path.startsWith(`${r.base}/`)) continue;
-    const rel = r.base ? path.slice(r.base.length + 1) : path;
-    if (r.re.test(rel)) out = !r.negate;
-  }
-  return out;
-}
-
 /** The rules that apply to a path in a clone: every .gitignore from the root down to its folder. */
 async function rulesFor(dir: string, path: string): Promise<IgnoreRule[]> {
   const parts = path.split("/").slice(0, -1);
   const rules: IgnoreRule[] = [];
   for (let i = 0; i <= parts.length; i++) {
     const base = parts.slice(0, i).join("/");
-    const text = await readFile(join(dir, ...parts.slice(0, i), ".gitignore"), "utf8").catch(
+    const text = await readFile(join(dir, ...parts.slice(0, i), ".gitignore")).then(
+      decodeText,
       () => undefined,
     );
     if (text) rules.push(...ignoreRules(text, base));
@@ -876,55 +846,31 @@ async function isIgnored(dir: string, path: string): Promise<boolean> {
   const rules = await rulesFor(dir, path);
   const parts = path.split("/");
   for (let i = 1; i < parts.length; i++)
-    if (ignored(rules, parts.slice(0, i).join("/"), true)) return true;
-  return ignored(rules, path, false);
+    if (ignoredBy(rules, parts.slice(0, i).join("/"), true)) return true;
+  return ignoredBy(rules, path, false);
 }
 
 /**
  * A clone's files, sorted, repo-relative: never .git/, a link, or what a .gitignore ignores (an
- * ignored folder isn't walked). Stops after `max` files and says so.
+ * ignored folder isn't walked). Stops after `max` files and says so. Review round 49: the walker
+ * the verifier and the scan share (@maycombhq/core `walkRepo`), so all three list the same files.
  */
-async function walkClone(
+function walkClone(
   dir: string,
   max: number,
   visit: (path: string) => Promise<boolean | void>,
 ): Promise<{ files: number; cut: boolean }> {
-  let files = 0;
-  let cut = false;
-  const go = async (rel: string, inherited: IgnoreRule[]): Promise<boolean> => {
-    let entries;
-    try {
-      entries = await readdir(rel ? join(dir, ...rel.split("/")) : dir, { withFileTypes: true });
-    } catch {
-      return true;
-    }
-    const here = entries.find((e) => e.name === ".gitignore" && e.isFile());
-    const rules = here
-      ? [
-          ...inherited,
-          ...ignoreRules(await readFile(join(dir, ...rel.split("/"), ".gitignore"), "utf8"), rel),
-        ]
-      : inherited;
-    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (e.isSymbolicLink() || e.name === ".git") continue;
-      const p = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) {
-        if (ignored(rules, p, true)) continue;
-        if (!(await go(p, rules))) return false;
-      } else if (e.isFile()) {
-        if (ignored(rules, p, false)) continue;
-        if (files >= max) {
-          cut = true;
-          return false;
-        }
-        files++;
-        if ((await visit(p)) === false) return false;
-      }
-    }
-    return true;
-  };
-  await go("", []);
-  return { files, cut };
+  return walkRepo(dir, visit, { max });
+}
+
+/**
+ * A file the code tools may read whole (review round 49): judged by its name and its size before
+ * a byte is read. A binary by its extension, or a file over the size a code file may be, is not.
+ */
+async function readableCode(file: string, path: string): Promise<boolean> {
+  if (isBinaryPath(path)) return false;
+  const size = (await stat(file).catch(() => undefined))?.size;
+  return size !== undefined && size <= CONTEXT_TOOL_BOUNDS.codeFileBytes;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -1020,9 +966,11 @@ async function grepTool(
   for (const { repo, dir } of repos) {
     const walked = await walkClone(dir, B.walkFiles - read, async (p) => {
       if (only && !only.test(p)) return;
-      const buf = await readFile(join(dir, ...p.split("/"))).catch(() => undefined);
+      const file = join(dir, ...p.split("/"));
+      if (!(await readableCode(file, p))) return;
+      const buf = await readFile(file).catch(() => undefined);
       if (!buf || buf.length > B.codeFileBytes) return;
-      if (buf.subarray(0, 8000).includes(0)) return;
+      if (isBinaryBytes(buf)) return;
       bytes += buf.length;
       if (bytes > B.grepBytes) {
         cut = true;
@@ -1030,8 +978,7 @@ async function grepTool(
       }
       read++;
       // A long line is searched in its first 2,000 characters only.
-      const lines = buf
-        .toString("utf8")
+      const lines = decodeText(buf)
         .split(/\r?\n/)
         .map((l) => l.slice(0, 2000));
       const found = matching(lines);
@@ -1156,7 +1103,7 @@ async function outlineTool(
   const size = (await stat(file)).size;
   if (size > CONTEXT_TOOL_BOUNDS.codeFileBytes)
     throw new ContextToolError(`${path} is too big to outline (${size} bytes).`);
-  const text = await readFile(file, "utf8");
+  const text = decodeText(await readFile(file));
   const head = `Outline of ${repo}:${rel}`;
   let how: string;
   let lines: string[];

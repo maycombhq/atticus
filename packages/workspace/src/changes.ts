@@ -3,9 +3,9 @@ import { createGit, type GitRunner } from "./git.js";
 
 /**
  * The files changed between two commits of a checkout (ADR 0124 addendum A-incremental), so a
- * repo read at one commit is read again only where it changed. Local git only: `git diff
- * --name-status -M` between the two commits (renames followed), never the working tree and never
- * the network. Sorted by path, so the same two commits give the same list.
+ * repo read at one commit is read again only where it changed. Local git only: `git diff --raw
+ * -M` between the two commits (renames followed, a submodule's gitlink marked), never the working
+ * tree and never the network. Sorted by path, so the same two commits give the same list.
  */
 
 const STATUS: Record<string, FileChange["status"]> = {
@@ -23,24 +23,30 @@ export async function changedFiles(
   to: string,
   git: GitRunner = createGit({ timeoutMs: 60_000 }),
 ): Promise<FileChange[]> {
+  // Review round 49: --raw, not --name-status, so the modes say when a path is a submodule's
+  // gitlink (160000): its bump changes files under it that the diff never names.
   const r = await git(
-    ["diff", "--name-status", "-M", "-z", "--no-color", "--no-ext-diff", from, to, "--"],
+    ["diff", "--raw", "--no-abbrev", "-M", "-z", "--no-color", "--no-ext-diff", from, to, "--"],
     dir,
   );
   const parts = r.stdout.split("\0");
   const out: FileChange[] = [];
   for (let i = 0; i < parts.length;) {
-    const code = parts[i++] ?? "";
-    if (!code) continue;
-    const status = STATUS[code[0]!];
+    const head = parts[i++] ?? "";
+    if (!head) continue;
+    // ":<old mode> <new mode> <old sha> <new sha> <status>"
+    const [oldMode, newMode, , , code = ""] = head.replace(/^:/, "").split(" ");
+    const gitlink = oldMode === "160000" || newMode === "160000";
+    const link = gitlink ? { gitlink: true } : {};
+    const status = STATUS[code[0] ?? ""];
     if (status === "renamed" || status === "copied") {
       const old = parts[i++] ?? "";
       const path = parts[i++] ?? "";
-      if (old && path) out.push({ status, path, from: old });
+      if (old && path) out.push({ status, path, from: old, ...link });
     } else {
       const path = parts[i++] ?? "";
       // an unmerged or unknown status (U, X) is no commit-to-commit change: said as an edit
-      if (path) out.push({ status: status ?? "modified", path });
+      if (path) out.push({ status: status ?? "modified", path, ...link });
     }
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));

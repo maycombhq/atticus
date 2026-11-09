@@ -143,17 +143,20 @@ describe("changedFiles: what changed between two commits", () => {
     const runner: GitRunner = async (args) => {
       calls.push(args);
       return {
+        // Review round 49: --raw, whose modes say a submodule's gitlink (160000)
         stdout: [
-          "M",
+          `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M`,
           "docs/a b.md",
-          "C075",
+          `:100644 100644 ${"a".repeat(40)} ${"a".repeat(40)} C075`,
           "src/A.java",
           "src/B.java",
-          "T",
+          `:100644 120000 ${"a".repeat(40)} ${"c".repeat(40)} T`,
           "bin/run",
-          "R100",
+          `:100644 100644 ${"d".repeat(40)} ${"d".repeat(40)} R100`,
           "old/x.ts",
           "new/x.ts",
+          `:160000 160000 ${"e".repeat(40)} ${"f".repeat(40)} M`,
+          "lib/sm",
           "",
         ].join("\0"),
         stderr: "",
@@ -162,12 +165,14 @@ describe("changedFiles: what changed between two commits", () => {
     expect(await changedFiles("/repo", "1111111", "2222222", runner)).toEqual([
       { status: "type-changed", path: "bin/run" },
       { status: "modified", path: "docs/a b.md" },
+      { status: "modified", path: "lib/sm", gitlink: true },
       { status: "renamed", path: "new/x.ts", from: "old/x.ts" },
       { status: "copied", path: "src/B.java", from: "src/A.java" },
     ]);
     expect(calls[0]).toEqual([
       "diff",
-      "--name-status",
+      "--raw",
+      "--no-abbrev",
       "-M",
       "-z",
       "--no-color",

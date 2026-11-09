@@ -8,7 +8,7 @@ import {
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { readingOrder } from "./batches.js";
-import type { FileSource } from "./source.js";
+import { tooBigToRead, type FileSource } from "./source.js";
 import { changesFor, isSourceFile, sameCommit, type CarryChanges } from "./verify.js";
 
 /**
@@ -72,8 +72,17 @@ export function rereadPlan(o: {
   const excludeRes = (o.exclude ?? []).map(globToRegExp);
   const status = new Map<string, FileChange["status"]>();
   for (const changes of used.values())
-    for (const c of changes) if (c.status !== "deleted") status.set(c.path, c.status);
+    for (const c of changes) {
+      if (c.status === "deleted") continue;
+      // Review round 49: a submodule's bump names its folder; every file under it is read again.
+      if (c.gitlink) {
+        for (const p of o.source.list()) if (p.startsWith(`${c.path}/`)) status.set(p, "modified");
+      } else status.set(c.path, c.status);
+    }
+  const rules = readRulesOf(o.conventions);
   const readable = [...status.keys()].filter((p) => {
+    // by its path and size before its bytes (review round 49)
+    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) return false;
     const text = o.source.read(p);
     if (text === undefined || !text.trim()) return false;
     const ls = text.split(/\r?\n/);

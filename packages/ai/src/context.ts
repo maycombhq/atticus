@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ContextPackManifest } from "@maycombhq/core";
+import { estimateTokens, type ContextPackManifest } from "@maycombhq/core";
 import {
   defendSource,
   escapeDelimiters,
@@ -10,9 +10,28 @@ import { currentPromptLimit, fitBudget, PromptTooLong } from "./fit.js";
 
 export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
-/** Rough token estimate (about four characters a token); budgets are checked against it. */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+/**
+ * Rough token estimate; budgets are checked against it. Review round 49: the one estimate every
+ * budget shares (@maycombhq/core): four ASCII characters a token and each other character one,
+ * so a prompt in Japanese or Cyrillic is no longer counted at a quarter of its size.
+ */
+export { estimateTokens };
+
+/**
+ * A source the step can't do without (`required`) was left out of the prompt, for whatever
+ * reason: the defences quarantined it, its classification is above what the runtime may send,
+ * or it didn't fit the budget. The step stops rather than run without it.
+ */
+export class RequiredSourceLeftOut extends Error {
+  constructor(
+    readonly step: string,
+    readonly left: { id: string; origin: string; reason: string }[],
+  ) {
+    super(
+      `atticus ${step} can't go without ${left.map((l) => `${l.origin}: ${l.reason}`).join("; ")}.`,
+    );
+    this.name = "RequiredSourceLeftOut";
+  }
 }
 
 export interface SourceInput {
@@ -170,6 +189,18 @@ export function buildContextPack(given: BuildContextOptions): ContextPack {
   }
   if (total > o.budget)
     throw new Error(`instructions alone (${total} tokens) exceed the ${o.budget}-token budget`);
+  // Review round 49: checked with or without a model limit, whatever left it out.
+  const required = new Set(o.required ?? []);
+  const left = dropped.filter((d) => required.has(d.id));
+  if (left.length)
+    throw new RequiredSourceLeftOut(
+      o.step ?? o.agent,
+      left.map((d) => ({
+        id: d.id,
+        origin: o.sources.find((s) => s.id === d.id)?.origin ?? d.id,
+        reason: d.reason,
+      })),
+    );
   const prompt = parts.join("\n\n") + "\n";
   return {
     prompt,

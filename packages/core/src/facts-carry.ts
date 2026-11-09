@@ -8,13 +8,19 @@ import type { Cite, Fact } from "./schema/facts.js";
  * (`changedFiles` in @maycombhq/workspace), so the same facts and the same diff split the same way.
  */
 
-/** One file changed between two commits, as `git diff --name-status -M` says it. */
+/** One file changed between two commits, as `git diff --raw -M` says it. */
 export interface FileChange {
   status: "added" | "modified" | "deleted" | "renamed" | "copied" | "type-changed";
   /** The path at the newer commit (a deleted file's path at the older one). */
   path: string;
   /** A rename's or copy's path at the older commit. */
   from?: string;
+  /**
+   * Review round 49: the path is a submodule's gitlink (mode 160000 at either commit), so the
+   * diff names the folder, not the files in it that changed. Every cited file under it is read
+   * again.
+   */
+  gitlink?: boolean;
 }
 
 /** Why a fact must be read again: the first file it cites that changed, and how. */
@@ -64,7 +70,16 @@ export function citedFiles(f: Fact): string[] {
  */
 export function staleCite(f: Fact, changes: readonly FileChange[]): StaleCite | undefined {
   const at = new Map<string, StaleCite>();
+  const links: { prefix: string; how: StaleCite["how"] }[] = [];
   for (const c of changes) {
+    if (c.gitlink) {
+      // A submodule moved or went: anything it holds may have changed (the simplest safe rule).
+      if (c.status === "added" || c.status === "copied") continue;
+      const how = c.status === "deleted" ? "deleted" : "edited";
+      links.push({ prefix: `${c.path}/`, how });
+      if (c.from !== undefined) links.push({ prefix: `${c.from}/`, how });
+      continue;
+    }
     if (c.status === "copied") continue;
     if (c.status === "renamed" && c.from !== undefined)
       at.set(c.from, { file: c.from, how: "renamed", to: c.path });
@@ -75,6 +90,8 @@ export function staleCite(f: Fact, changes: readonly FileChange[]): StaleCite | 
   for (const file of citedFiles(f)) {
     const s = at.get(file);
     if (s) return s;
+    const l = links.find((x) => file.startsWith(x.prefix));
+    if (l) return { file, how: l.how };
   }
   return undefined;
 }

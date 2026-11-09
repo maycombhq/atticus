@@ -272,6 +272,15 @@ export function withExcludes<R extends RepoHandle>(repo: R, exclude: RegExp[]): 
       for await (const f of repo.listFiles(globs)) if (!exclude.some((x) => x.test(f))) yield f;
     },
   });
+  // Review round 49: the exclusions are part of how the files are listed, which keys the stored
+  // scan (`listingOf` in @maycombhq/sdk, under this registered symbol), so a changed exclusion
+  // scans the commit again.
+  const listing = Symbol.for("@maycombhq/sdk.listing");
+  const before = (repo as unknown as Record<symbol, unknown>)[listing];
+  Object.defineProperty(wrapped, listing, {
+    value: `${typeof before === "string" ? before : ""}|exclude:${JSON.stringify(exclude.map((x) => `${x.source}/${x.flags}`))}`,
+    configurable: true,
+  });
   return wrapped;
 }
 
