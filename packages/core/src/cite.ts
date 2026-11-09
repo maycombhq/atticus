@@ -161,9 +161,16 @@ const SECRET_PATH = [
   /(^|\/)id_(rsa|ed25519|ecdsa|dsa)(\.|$)/i,
 ];
 
-/** Paths whose lines are never quoted into a map. */
+/**
+ * Paths whose lines are never quoted into a map. Each part is read as NTFS opens it (review round
+ * 46): a stream's name after `:` (`.env::$DATA` is `.env`) and trailing dots and spaces dropped.
+ */
 export function isSecretPath(path: string): boolean {
-  const p = path.replace(/\\/g, "/");
+  const p = path
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((x) => x.replace(/:.*$/, "").replace(/[. ]+$/, ""))
+    .join("/");
   return SECRET_PATH.some((re) => re.test(p));
 }
 

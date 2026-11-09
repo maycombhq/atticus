@@ -89,6 +89,35 @@ const SESSION = [
   "task run-ready c1 --dry-run",
 ];
 
+// Review round 46: `atticus legacy <words>` runs <words>, so it is refused as <words> is.
+const LEGACY_PERSON = [
+  "legacy questions answer q1 --option 1",
+  "legacy finding c1 F-1 waive",
+  "legacy baseline",
+  "legacy knowledge verify k1",
+  "legacy onboard accept spring",
+];
+const LEGACY_SESSION = [
+  "legacy",
+  "legacy --all",
+  "legacy knowledge list",
+  "legacy questions show q1",
+];
+
+describe("what only a person does, named under legacy", () => {
+  it.each(LEGACY_PERSON)("refuses %s", (line) => {
+    expect(personOnlyWhy(line.split(" "))).toBeTruthy();
+    expect(atticusArgvOf(`atticus ${line}`).refused).toMatch(/^Refused: /);
+  });
+  it.each(["legacy ui", "legacy serve", "legacy map --all"])("refuses %s", (line) =>
+    expect(atticusArgvOf(`atticus ${line}`).refused).toMatch(/^Refused: /),
+  );
+  it.each(LEGACY_SESSION)("lets a session run %s", (line) => {
+    expect(personOnlyWhy(line.split(" "))).toBeUndefined();
+    expect(atticusArgvOf(`atticus ${line}`).refused).toBeUndefined();
+  });
+});
+
 describe("what only a person does", () => {
   it.each(PERSON)("refuses %s", (line) => {
     expect(personOnlyWhy(line.split(" "))).toBeTruthy();
@@ -142,5 +171,8 @@ describe("a person's records under facts/", () => {
 
 it("a session's command comes first, so a flag can't hide it", () => {
   expect(atticusArgvOf("atticus --mode x questions answer q1").refused).toMatch(/command first/);
+  expect(atticusArgvOf("atticus legacy --mode x questions answer q1").refused).toMatch(
+    /command first/,
+  );
   expect(atticusArgvOf("atticus --version").refused).toBeUndefined();
 });

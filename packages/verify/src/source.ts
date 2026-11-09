@@ -73,10 +73,17 @@ export function skippedFolder(
   return !ONLY_BESIDE.has(name);
 }
 
-/** Whether a repo-relative path stays inside the repo (no `..`, not absolute). */
+/**
+ * Whether a repo-relative path stays inside the repo (no `..`, not absolute), read with `\` as
+ * `/` as Windows reads it. Review round 46: NTFS opens `.env::$DATA` as `.env` and `a.ts.` or
+ * `a.ts ` as `a.ts`, so a path with a `:` anywhere, or a part ending in a dot or a space, is
+ * refused: no file a repo lists is named so on Windows, and the name could open another file.
+ */
 export function insideRepo(path: string): boolean {
-  if (path === "" || isAbsolute(path) || /^[A-Za-z]:/.test(path)) return false;
-  const n = normalize(path).split(sep).join("/");
+  const p = path.replace(/\\/g, "/");
+  if (p === "" || p.includes(":") || isAbsolute(p) || p.startsWith("/")) return false;
+  if (p.split("/").some((x) => x !== "." && x !== ".." && /[. ]$/.test(x))) return false;
+  const n = normalize(p).split(sep).join("/");
   return n !== ".." && !n.startsWith("../");
 }
 

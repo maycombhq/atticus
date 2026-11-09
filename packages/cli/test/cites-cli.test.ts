@@ -49,6 +49,14 @@ describe("atticus cites", () => {
         join(root, "workspace", ".worktrees", "add-limit", "forge-web", "src", "a.ts"),
       ),
     ).toEqual({ repo: "forge-web", path: "src/a.ts" });
+    // Review round 46: a task run's worktree, workspace/.worktrees/<change>/.tasks/<task>/<repo>/
+    const task = ["workspace", ".worktrees", "add-limit", ".tasks", "1.2", "forge-web"];
+    expect(fileInRepo(root, join(root, ...task, "src", "a.ts"))).toEqual({
+      repo: "forge-web",
+      path: "src/a.ts",
+    });
+    expect(fileInRepo(root, join(root, ...task))).toBeUndefined();
+    expect(fileInRepo(root, join(root, ...task.slice(0, 5), "a.ts"))).toBeUndefined();
     expect(
       fileInRepo(root, join(root, "workspace", ".branches", "forge-web", "develop", "src", "a.ts")),
     ).toEqual({ repo: "forge-web", path: "src/a.ts" });

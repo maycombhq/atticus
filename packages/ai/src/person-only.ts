@@ -102,9 +102,21 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   },
 ];
 
+/**
+ * The command a line names once a leading `legacy` is dropped, as the CLI's aliasArgv drops it
+ * (`atticus legacy <words>` runs <words>; `legacy` alone, or before a flag, is the list). Review
+ * round 46: `legacy questions answer` was checked as written, so a session's check let it by.
+ */
+export function withoutLegacy(argv: readonly string[]): readonly string[] {
+  return argv[0] === "legacy" && argv[1] !== undefined && !argv[1].startsWith("-")
+    ? argv.slice(1)
+    : argv;
+}
+
 /** Why the command is a person's to run, or undefined when a session may run it. */
 export function personOnlyWhy(argv: readonly string[]): string | undefined {
   const words: string[] = [];
+  argv = withoutLegacy(argv);
   for (const x of argv) {
     if (x.startsWith("-")) break;
     words.push(x);

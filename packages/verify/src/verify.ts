@@ -575,6 +575,31 @@ function refsOf(f: Fact): { field: string; id: string }[] {
   return out;
 }
 
+/**
+ * The fact with each cited file (every `{ file, line }` in it: its cite and parts, an auth cite,
+ * scopes, callers, steps, error paths) as `canonical` spells it; the same object when none moves.
+ */
+function withCanonicalFiles(f: Fact, canonical: (path: string) => string): Fact {
+  const walk = (x: unknown): unknown => {
+    if (Array.isArray(x)) {
+      const out = x.map(walk);
+      return out.some((v, i) => v !== x[i]) ? out : x;
+    }
+    if (!x || typeof x !== "object") return x;
+    const o = x as Record<string, unknown>;
+    let out: Record<string, unknown> | undefined;
+    for (const [k, v] of Object.entries(o)) {
+      const w =
+        k === "file" && typeof v === "string" && typeof o.line === "number"
+          ? canonical(v)
+          : walk(v);
+      if (w !== v) (out ??= { ...o })[k] = w;
+    }
+    return out ?? o;
+  };
+  return walk(f) as Fact;
+}
+
 export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // ADR 0147: the org pack's folder lists and house frameworks, the built-in ones without.
   const rules = readRulesOf(o.conventions);
@@ -583,8 +608,27 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const carriedFrom = new Map<string, string>();
   const stale = new Map<string, StaleCite>();
   const corrected = applyCorrections(o.facts, o.corrections ?? []);
+  // Review round 46: a cited path is the repo's file only as the repo lists it. Windows opens
+  // `SRC\App.ts` as `src/App.ts`, so a path is mapped to the one listed entry it names ignoring
+  // case and `\`, and stored so; one naming no listed file is read as none (`no-file`).
+  let fileList: string[] | undefined;
+  const listed = () => (fileList ??= o.source.list());
+  let listedSet: Set<string> | undefined;
+  let folded: Map<string, string | null> | undefined;
+  const fold = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+  const canonical = (path: string): string => {
+    listedSet ??= new Set(listed());
+    if (listedSet.has(path)) return path;
+    if (!folded) {
+      folded = new Map();
+      // two files that differ only in case (a case-sensitive checkout) name neither
+      for (const p of listed()) folded.set(fold(p), folded.has(fold(p)) ? null : p);
+    }
+    return folded.get(fold(path)) ?? path;
+  };
   const facts = [...corrected.facts]
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((f) => withCanonicalFiles(f, canonical))
     .map((f) => {
       if (!o.commit || sameCommit(f.commit, o.commit)) return f;
       const changes = changesFor(o.carry, f.commit);
@@ -603,8 +647,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // The facts are in id order and a fact's cite, parts, steps and error paths sit in a handful of
   // files, so a small window keeps nearly every hit; past it, the oldest file's lines are freed.
   const readLines = (path: string) => {
-    // a path a rule builds (`app/models/user.rb`) is read only when it stays in the repo
-    const text = insideRepo(path) && !isSecretPath(path) ? o.source.read(path) : undefined;
+    // a path a rule builds (`app/models/user.rb`) is read only when it stays in the repo, and
+    // only as the repo lists it (review round 46: Windows would open `SRC/app.ts` too)
+    listedSet ??= new Set(listed());
+    const text =
+      insideRepo(path) && !isSecretPath(path) && listedSet.has(path)
+        ? o.source.read(path)
+        : undefined;
     // the raw text is dropped as soon as it is split, so only one copy of a file is ever held
     return text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n");
   };
@@ -622,8 +671,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (linesCache.size > LINES_HELD) linesCache.delete(linesCache.keys().next().value!);
     return lines;
   };
-  let fileList: string[] | undefined;
-  const deriveEnv: DeriveEnv = { lines: linesOf, files: () => (fileList ??= o.source.list()) };
+  const deriveEnv: DeriveEnv = { lines: linesOf, files: listed };
 
   /** One citation checked against its file: undefined when it holds, else why not. */
   const checkCite = (

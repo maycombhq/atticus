@@ -6,6 +6,20 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- Review round 46 (Windows and editors):
+  - **A secret's file can't be cited through an NTFS stream or a trailing dot.** The verifier refuses a cited path with a `:` anywhere (`.env::$DATA`, `certs/server.key::$DATA`) or a part ending in a dot or a space, reading `\` as `/` first (so `..\x` is outside the repo too); the secret-file rule reads each part as NTFS opens it, as a defence.
+  - **Ticking a task in a CRLF tasks.md ticks it.** The line was matched without its `\r` but rewritten with it, so nothing changed while hand-up said "marked done"; the box is ticked and the `\r` kept. (A `.gitattributes` for new metarepos is left for a later change: creating one changes what `atticus init` writes.)
+  - **A cited path is stored as the repo lists it.** On Windows `SRC\App.ts` opened `src/App.ts` and was accepted as written; each cited path (cite, parts, auth, scopes, callers, steps, error paths) is mapped to the one listed file it names ignoring case and `\`, before the carry's changed-file check and coverage, and a path naming no listed file is `no-file`.
+  - **Branches differing only in case get folders of their own.** `Feature/Login` and `feature/login` shared `.branches/<repo>/Feature-Login` on NTFS; a name with capitals now has a lower-case folder with a short hash of the exact name (`feature-login-1a2b3c4d`), and a lower-case name keeps its folder. A checkout under the old name moves (`git worktree move`) on the next checkout, and a branch scan under `catalog/branches/<old name>/` is still compared until the next scan of the branch moves it.
+  - **No id is a Windows device name.** `slugify` and the fact-id slug suffix `con`, `aux`, `nul`, `prn`, `com1`-`com9` and `lpt1`-`lpt9` (`aux` is `aux-1`, `con.v2` is `con-1.v2`), as Windows can't create `aux.yaml`. C1's RecordId is unchanged, so a record already named so still reads.
+  - **`atticus onboard accept` retries the move into the org pack** (dialects and frameworks) when Windows holds the file for a moment, as Atticus's other moves do.
+  - **Citations are found in a task run's worktree** (`workspace/.worktrees/<change>/.tasks/<task>/<repo>/`): the editors' gutter and `atticus cites --file` named no repo there.
+  - **`atticus task run-ready <change>` runs.** The `task <change> <task>` shorthand read `run-ready` as a change and ran `task run run-ready <change>`.
+  - **A Copilot session can't act as you through `atticus legacy`.** `legacy questions answer`, `legacy finding`, `legacy baseline`, `legacy knowledge verify` (and `legacy ui`, `legacy map --all`) are refused in the session's command check as the commands they name; the CLI already refused them.
+  - **VS Code types the atticus you set.** A command typed into a terminal starts with the atticus `atticus.path` names (`node "<bin.js>" …` or the program's path, after `&` in PowerShell), not a bare `atticus`.
+  - **The VS Code Atticus tab frames the app in a remote window.** The page's frame-src is the origin of the address VS Code gave (localhost, or the forwarded https host), not only `http://127.0.0.1:*`.
+  - **Prerelease versions are ordered alpha, beta, rc, then the release** in VS Code and IntelliJ: 2.0.0-rc.1 counted older than 2.0.0-beta.21.
+  - **VS Code starts the app again when `atticus.path` or the metarepo changes**, stopping the old one, and an open Atticus tab opens again on it.
 - **The IntelliJ plugin names the brief step** ("Write the brief of <change>") as VS Code does. Its words check failed the beta.21 editor-plugins build, so beta.21 has no IntelliJ or JetBrains files attached; beta.22 carries them.
 
 ## 2.0.0-beta.21 (2026-11-08)

@@ -61,9 +61,19 @@ describe("the panel's page", () => {
       '<iframe src="http://127.0.0.1:53211/#/architecture?node=repo%3Anadiengine"',
     );
     expect(html).toMatch(/default-src 'none'/);
-    expect(html).toMatch(/frame-src http:\/\/127\.0\.0\.1:\*/);
+    expect(html).toMatch(/frame-src http:\/\/127\.0\.0\.1:53211;/);
     expect(html).not.toMatch(/<script/);
     expect(html).toContain('title="Atticus"');
+  });
+
+  it("frames the address asExternalUri gave, local or forwarded (review round 46)", () => {
+    const local = panelHtml("http://localhost:53211/#/home");
+    expect(local).toMatch(/frame-src http:\/\/localhost:53211;/);
+    const remote = panelHtml("https://53211-codespace-x.app.github.dev/#/home");
+    expect(remote).toMatch(/frame-src https:\/\/53211-codespace-x\.app\.github\.dev;/);
+    expect(remote).not.toMatch(/frame-src[^;]*127\.0\.0\.1/);
+    // an address that isn't one frames nothing at all
+    expect(panelHtml("not a url")).toMatch(/frame-src 'none';/);
   });
 
   it("escapes the address it frames", () => {
@@ -177,5 +187,15 @@ describe("the atticus found against the one the extension needs", () => {
     expect(versionAtLeast("1.9.9", "2.0.0-beta.21")).toBe(false);
     expect(versionAtLeast("dev", "2.0.0-beta.21")).toBe(true);
     expect(WORDS.cliOld("2.0.0-beta.20", MIN_CLI)).toContain("2.0.0-beta.20");
+  });
+
+  it("orders the prerelease words alpha, beta, rc, then the release (review round 46)", () => {
+    expect(versionAtLeast("2.0.0-rc.1", "2.0.0-beta.21")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.21", "2.0.0-rc.1")).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.1", "2.0.0-alpha.9")).toBe(true);
+    expect(versionAtLeast("2.0.0-alpha.9", "2.0.0-beta.1")).toBe(false);
+    expect(versionAtLeast("2.0.0", "2.0.0-rc.3")).toBe(true);
+    expect(versionAtLeast("2.0.0-rc.3", "2.0.0")).toBe(false);
+    expect(versionAtLeast("2.0.0-RC.2", "2.0.0-rc.2")).toBe(true);
   });
 });

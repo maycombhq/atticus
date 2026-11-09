@@ -93,16 +93,30 @@ export class Service {
   }
 
   private app: Promise<RunningApp> | undefined;
+  /** The metarepo and the atticus the running app was started with. */
+  private appKey: string | undefined;
+
+  private keyOf(root: string): string {
+    return JSON.stringify([root, this.cliOptions(root).atticusPath]);
+  }
+
+  /** Whether the app running was started for another metarepo or another atticus.path. */
+  appStale(root: string): boolean {
+    return !!this.app && this.appKey !== this.keyOf(root);
+  }
 
   /**
    * The app, `atticus ui --embed vscode` on a free port, started once per window for the tab and
-   * the sidebar (ADR 0091, 0093), and again if it stops.
+   * the sidebar (ADR 0091, 0093), and again if it stops. Review round 46: and again when
+   * atticus.path or the metarepo changed since it started, the old one stopped.
    */
   runningApp(root: string): Promise<RunningApp> {
+    if (this.appStale(root)) this.restartApp();
     if (!this.app) {
       const full = vscode.workspace.getConfiguration("atticus").get<boolean>(FULL_UI, false);
       const started = startApp(this.cliOptions(root), { full });
       this.app = started;
+      this.appKey = this.keyOf(root);
       const drop = () => {
         if (this.app === started) this.app = undefined;
       };

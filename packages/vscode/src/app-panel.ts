@@ -66,13 +66,27 @@ export const MIN_CLI = "2.0.0-beta.21";
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/** The panel's page: the app in a frame, from 127.0.0.1 only. The page runs no script. */
+/** The origin a frame's address is from, as a CSP source; `'none'` when it isn't an address. */
+function frameOrigin(src: string): string {
+  try {
+    const u = new URL(src);
+    return /^https?:$/.test(u.protocol) ? u.origin : "'none'";
+  } catch {
+    return "'none'";
+  }
+}
+
+/**
+ * The panel's page: the app in a frame, from the app's own origin only. Review round 46: the
+ * address is what asExternalUri gave (127.0.0.1, localhost, or an https host a remote window
+ * forwards), so the frame-src is that address's origin. The page runs no script.
+ */
 export function panelHtml(src: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src http://127.0.0.1:*; style-src 'unsafe-inline'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${attr(frameOrigin(src))}; style-src 'unsafe-inline'" />
 <style>html, body, iframe { margin: 0; padding: 0; border: 0; width: 100%; height: 100%; overflow: hidden; }</style>
 </head>
 <body>
@@ -217,19 +231,26 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
   });
 }
 
-/** `a` is at least `b`, for versions like 2.0.0-beta.21 (a release is newer than its betas). */
+/** The prerelease words in order; a release comes after them all. */
+const PRERELEASE = ["alpha", "beta", "rc"];
+
+/**
+ * `a` is at least `b`, for versions like 2.0.0-beta.21: alpha before beta before rc before the
+ * release (review round 46: 2.0.0-rc.1 counted older than 2.0.0-beta.21), then the number.
+ */
 export function versionAtLeast(a: string, b: string): boolean {
   const parse = (v: string) => {
     const m = /(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?/i.exec(v);
     if (!m) return undefined;
+    // a word not in the list ranks before alpha
+    const word = m[4] ? PRERELEASE.indexOf(m[4].toLowerCase()) : PRERELEASE.length;
     return {
-      n: [Number(m[1]), Number(m[2]), Number(m[3])],
-      pre: m[4] ? Number(m[5]) : Number.POSITIVE_INFINITY,
+      n: [Number(m[1]), Number(m[2]), Number(m[3]), word, m[4] ? Number(m[5]) : 0],
     };
   };
   const x = parse(a);
   const y = parse(b);
   if (!x || !y) return true; // an unreadable version is given the benefit of the doubt
-  for (let i = 0; i < 3; i++) if (x.n[i] !== y.n[i]) return x.n[i]! > y.n[i]!;
-  return x.pre >= y.pre;
+  for (let i = 0; i < x.n.length; i++) if (x.n[i] !== y.n[i]) return x.n[i]! > y.n[i]!;
+  return true;
 }

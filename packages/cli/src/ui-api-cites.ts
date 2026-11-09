@@ -153,7 +153,8 @@ async function citeList(
 
 /**
  * Which repo a file on disk belongs to, from where it sits in the metarepo: workspace/<repo>/,
- * a change's worktree (workspace/.worktrees/<change>/<repo>/) or another branch's checkout
+ * a change's worktree (workspace/.worktrees/<change>/<repo>/), a task run's worktree
+ * (workspace/.worktrees/<change>/.tasks/<task>/<repo>/) or another branch's checkout
  * (workspace/.branches/<repo>/<branch>/). Anywhere else in the metarepo (an adopted repo's own
  * files) only the path is known; undefined outside the metarepo.
  */
@@ -165,7 +166,9 @@ export function fileInRepo(
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) return undefined;
   const parts = rel.split(sep);
   if (parts[0] !== "workspace") return { path: parts.join("/") };
-  const at = parts[1] === ".worktrees" ? 3 : parts[1] === ".branches" ? 2 : 1;
+  // a task run's worktree (review round 46): workspace/.worktrees/<change>/.tasks/<task>/<repo>/
+  const task = parts[1] === ".worktrees" && parts[3] === ".tasks";
+  const at = task ? 5 : parts[1] === ".worktrees" ? 3 : parts[1] === ".branches" ? 2 : 1;
   const repo = parts[at];
   const rest = parts.slice(parts[1] === ".branches" ? 4 : at + 1);
   if (!repo || !rest.length || !RecordId.safeParse(repo).success) return undefined;
