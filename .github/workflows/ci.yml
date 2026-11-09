@@ -29,7 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # ubuntu-latest became 26.04, where Playwright 1.56 has no Chromium to install.
+        os: [ubuntu-24.04, windows-latest]
         node: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('[22,24]') || fromJSON('[22]') }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -60,7 +61,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # ubuntu-latest became 26.04, where Playwright 1.56 has no Chromium to install.
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -18,7 +18,7 @@ import {
   trace,
   withFilter,
   withLayers,
-} from "../src/screens/architecture/tools.js";
+} from "../src/screens/architecture/canvas-tools.js";
 
 /**
  * G6 (ADR 0175): the canvas's tools on a picture of the invented Forge estate: the portal calls

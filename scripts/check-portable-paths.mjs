@@ -20,7 +20,21 @@ const RULES = [
 ];
 
 const problems = [];
+// Windows' file names ignore case: "tools.ts" beside "Tools.tsx" makes "./Tools.js" one or the
+// other, and the app's build failed on Windows only (beta.23).
+const stem = (e) => e.replace(EXT, "").toLowerCase();
 function walk(dir) {
+  const byStem = new Map();
+  for (const e of readdirSync(dir)) {
+    if (!EXT.test(e) && !statSync(join(dir, e)).isDirectory()) continue;
+    const k = EXT.test(e) ? stem(e) : e.toLowerCase();
+    const other = byStem.get(k);
+    if (other && other.replace(EXT, "") !== e.replace(EXT, ""))
+      problems.push(
+        `${relative(ROOT, join(dir, e))}: differs from ${other} only in case, and Windows can't tell them apart: rename one`,
+      );
+    byStem.set(k, e);
+  }
   for (const e of readdirSync(dir)) {
     if (SKIP.has(e) || e.startsWith(".")) continue;
     const f = join(dir, e);

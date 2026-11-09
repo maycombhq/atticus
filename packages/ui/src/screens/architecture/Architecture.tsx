@@ -31,7 +31,7 @@ import {
   withFilter,
   withLayers,
   type Snapshot,
-} from "./tools.js";
+} from "./canvas-tools.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";

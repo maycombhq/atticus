@@ -20,7 +20,7 @@ import {
   type Layers,
   type Placed,
   type Snapshot,
-} from "./tools.js";
+} from "./canvas-tools.js";
 
 /**
  * G6 (ADR 0175): the canvas's tools panel. Every tool works on the picture already loaded; the

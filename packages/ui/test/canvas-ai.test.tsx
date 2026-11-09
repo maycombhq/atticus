@@ -22,7 +22,7 @@ import {
   toMermaid,
   toSvg,
   withLayers,
-} from "../src/screens/architecture/tools.js";
+} from "../src/screens/architecture/canvas-tools.js";
 import { LinkInspector } from "../src/screens/architecture/WhyLinked.js";
 
 /**
