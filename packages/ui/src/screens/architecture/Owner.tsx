@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
-import { CopyButton } from "../run/shared.js";
+import { WrittenNext } from "../../app/app-step.js";
 
 /**
  * G2 (ADR 0174): a repo's owner and system, set from its box. Pick a team (or add one, for
@@ -211,15 +211,8 @@ export function OwnerForm(p: {
           </div>
           {preview && previewed === asked && <Diff r={preview} />}
           {written && (
-            <div className="stack" role="status">
-              <p className="ev-say">{O.written}</p>
-              {[written.verify, written.commit].map((c) => (
-                <div key={c} className="row" style={{ gap: 6 }}>
-                  <code className="mono">{c}</code>
-                  <CopyButton text={c} label={`${O.copy}: ${c}`} />
-                </div>
-              ))}
-            </div>
+            // ADR 0188: Apply redraws the map, then Propose for review.
+            <WrittenNext said={O.written} verify={written.verify} commit={written.commit} />
           )}
         </>
       )}

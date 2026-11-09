@@ -4,6 +4,8 @@ import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { CatalogEmpty } from "../../app/app-step.js";
+import { Command } from "../work/RunNext.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 import { AiChip } from "../../app/decisions.js";
 import { ShowInConsole } from "../../app/activity.js";
@@ -140,7 +142,7 @@ function useFactsByRepo(on: boolean): Loaded<RepoFactsCount[]> {
 export function FactsByRepo({ of }: { of: Loaded<RepoFactsCount[]> }) {
   const F = T.factsByRepo;
   return (
-    <View of={of} empty={(c) => c.length === 0} emptyText={F.none}>
+    <View of={of} empty={(c) => c.length === 0} emptyContent={<CatalogEmpty text={F.none} />}>
       {(c) => (
         <div className="stack" style={{ gap: 8 }}>
           <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
@@ -190,7 +192,11 @@ export function EcosystemMap() {
           )
         }
       >
-        <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
+        <View
+          of={graph}
+          empty={(g) => g.nodes.length === 0}
+          emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
+        >
           {(g) => <GraphView g={g} {...(focus ? { focus } : {})} onPick={setFocus} height={520} />}
         </View>
       </Panel>
@@ -1407,6 +1413,8 @@ export function Scans() {
           <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
             {T.scansReadFilesOnly}
           </p>
+          {/* ADR 0188: finished changes' worktrees cleaned up here; uncommitted work is kept. */}
+          <Command text="atticus workspace prune" label={COPY.runNext.copy} />
         </div>
       </Panel>
       <Panel title={T.repos} span="span 8">

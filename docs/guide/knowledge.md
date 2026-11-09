@@ -36,6 +36,8 @@ An OpenAPI spec or a diagram is read into the catalog by intake, not into knowle
 
 ## 2. Take a snapshot
 
+In the app: **Sync all wikis** on Set up › Onboarding (a wiki's own card syncs just that wiki). From a terminal:
+
 ```sh
 atticus sources sync                 # every source, inputs/ included
 atticus sources sync --source inputs # one source
@@ -126,6 +128,8 @@ The change's list is the knowledge for the change as a whole. Each task gets its
 atticus stories add-sso --handoff        # or atticus change small add-sso for a small change
 atticus task context add-sso 1.1
 ```
+
+In the app, the stories stage's **Prepare it for your assistant** (or **Draft the stories again** over stories a person wrote), the fast path's Prepare on At a glance, and **Copy task context for my assistant** beside a task's next step do the same (ADR 0188).
 
 How a task's list is chosen:
 

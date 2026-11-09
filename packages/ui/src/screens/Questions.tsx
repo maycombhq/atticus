@@ -563,6 +563,14 @@ export const verifyRepoOf = (rerun: string) =>
   /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(rerun.trim())?.[1];
 
 /**
+ * ADR 0188: the repo an answer is applied to: a rerun of `atticus verify <repo> --write`, or of
+ * the read that asked it (`atticus map <repo>`), whose answers Apply puts on the map without
+ * reading the repo again.
+ */
+export const applyRepoOf = (rerun: string) =>
+  verifyRepoOf(rerun) ?? /^atticus map ([a-z0-9][a-z0-9._-]*)$/.exec(rerun.trim())?.[1];
+
+/**
  * Seventh UX walk: when a question was asked, in words. The app never shows the command that
  * asked it (`atticus verify <repo> --write`); the command stays in the question's file.
  */
@@ -599,15 +607,29 @@ export function changesInWords(text: string): string {
  * Seventh UX walk: Apply beside an answered map question while its repo's answers aren't in the
  * map yet (the server's applyFirst), so leaving the page never loses the step. Nothing otherwise.
  */
-export function ApplyPending({ repo }: { repo: string }) {
-  const plan = useApi<{ applyFirst?: string[] }>("/api/propose?scope=work");
-  if (plan.state !== "ready" || !plan.data.applyFirst?.includes(repo)) return null;
+export function ApplyPending({ repo, file }: { repo: string; file?: string }) {
+  const plan = useApi<{ applyFirst?: string[]; files?: { path: string; proposed?: string }[] }>(
+    "/api/propose?scope=work",
+  );
+  if (plan.state !== "ready") return null;
+  if (plan.data.applyFirst?.includes(repo))
+    return (
+      <div className="stack" style={{ gap: 4 }}>
+        <p className="work-say" style={{ margin: 0 }}>
+          {C.notApplied}
+        </p>
+        <ApplyAndPropose scope="answers" repo={repo} />
+      </div>
+    );
+  // ADR 0188: applied, but its file isn't proposed yet: Propose stays on the question.
+  const waiting = file && plan.data.files?.some((f) => f.path === file && !f.proposed);
+  if (!waiting) return null;
   return (
     <div className="stack" style={{ gap: 4 }}>
       <p className="work-say" style={{ margin: 0 }}>
-        {C.notApplied}
+        {C.notProposed}
       </p>
-      <ApplyAndPropose scope="answers" repo={repo} />
+      <ApplyAndPropose scope="answers" />
     </div>
   );
 }
@@ -657,10 +679,11 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
         </p>
       )}
       {/* Sixth UX walk: what to do next is in the app first, the command after it. */}
-      {verifyRepoOf(result.rerun) || !stepArgs(result.rerun) ? (
+      {/* ADR 0188: an answer to a read's question is applied (verify --write), not read again. */}
+      {applyRepoOf(result.rerun) || !stepArgs(result.rerun) ? (
         <>
-          <ApplyAndPropose scope="answers" repo={verifyRepoOf(result.rerun)} />
           <p style={{ margin: 0 }}>{C.next}</p>
+          <ApplyAndPropose scope="answers" repo={applyRepoOf(result.rerun)} />
         </>
       ) : (
         <>
@@ -668,13 +691,13 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
           <RunStep command={result.rerun} />
         </>
       )}
-      <p className="work-say" style={{ margin: 0 }}>
-        {C.orCommandLine}
-      </p>
-      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <code className="mono">{result.rerun}</code>
-        <CopyButton text={result.rerun} label={C.copy} />
-      </div>
+      <details className="work-terminal">
+        <summary>{C.orCommandLine}</summary>
+        <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <code className="mono">{result.rerun}</code>
+          <CopyButton text={result.rerun} label={C.copy} />
+        </div>
+      </details>
     </div>
   );
 }
@@ -787,8 +810,8 @@ export function QuestionDetail(p: {
           )}
         </div>
       )}
-      {q.state === "answered" && !done && verifyRepoOf(q.rerun) && (
-        <ApplyPending repo={verifyRepoOf(q.rerun)!} />
+      {q.state === "answered" && !done && applyRepoOf(q.rerun) && (
+        <ApplyPending repo={applyRepoOf(q.rerun)!} file={`questions/${q.id}.yaml`} />
       )}
       {q.reopened && (
         <p className="state" style={{ margin: 0 }}>

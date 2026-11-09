@@ -302,10 +302,24 @@ describe("Run next", () => {
   it("says when no slash command does the step", () => {
     const out = html(
       <RunNextPanel
-        step={{ command: "atticus verify forge-ledger --write", why: W.why.refresh }}
+        step={{ command: "atticus repo-type detect forge-ledger", why: W.why.refresh }}
       />,
     );
     expect(out).toContain(esc(R.noSlash));
+  });
+
+  it("offers Apply for verify --write, the command folded (ADR 0188)", () => {
+    const out = html(
+      <RunNextPanel
+        step={{ command: "atticus verify forge-ledger --write", why: W.why.refresh }}
+      />,
+    );
+    expect(out).toContain(esc(COPY.propose.apply("forge-ledger")));
+    expect(out).toContain('<details class="work-terminal">');
+    expect(out.indexOf(esc(COPY.propose.apply("forge-ledger")))).toBeLessThan(
+      out.indexOf("atticus verify forge-ledger --write"),
+    );
+    expect(out).not.toContain(esc(R.noSlash));
   });
 });
 
@@ -327,10 +341,10 @@ describe("the menu: six entries (the Surfaces design)", () => {
   });
 
   it("keeps the six with --full, Atticus's own pages under More pages, open", () => {
-    const out = html(<Nav current={screenOf("#/history")} full />);
+    const out = html(<Nav current={screenOf("#/evals")} full />);
     expect(out).not.toContain(">Atticus</a>");
     expect(out).toContain('aria-expanded="true"');
-    expect(out).toContain('href="#/history" aria-current="page">Prompt history</a>');
+    expect(out).toContain('href="#/evals" aria-current="page">AI quality</a>');
     expect(out).toContain('href="#/changes">Change</a>');
   });
 
@@ -406,13 +420,18 @@ describe("an entry's tabs", () => {
 
   it("shows no tabs for a one-page entry, but says where a page reached by a link is", () => {
     expect(html(<SectionTabs current={screenOf("#/questions")} hash="#/questions" />)).toBe("");
-    expect(html(<SectionTabs current={screenOf("#/home")} hash="#/home" />)).toBe("");
+    // ADR 0188: Home has its Manual steps tab.
+    expect(html(<SectionTabs current={screenOf("#/home")} hash="#/home" />)).toContain(
+      'href="#/todo"',
+    );
     const words = html(<SectionTabs current={screenOf("#/words")} hash="#/words" />);
     expect(words).toContain('aria-label="You are here"');
-    expect(words).not.toContain('aria-label="Home pages"');
+    // ADR 0188: Home's tabs (Home, Manual steps), neither of them the page shown.
     expect(words).not.toContain('aria-current="page"');
     // The Overview is Home now: no tabs for its old address either.
-    expect(html(<SectionTabs current={screenOf("#/dashboard")} hash="#/dashboard" />)).toBe("");
+    expect(
+      html(<SectionTabs current={screenOf("#/dashboard")} hash="#/dashboard" />),
+    ).not.toContain("dashboard");
   });
 });
 

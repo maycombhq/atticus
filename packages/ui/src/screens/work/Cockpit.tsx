@@ -7,6 +7,7 @@ import { Note, queryParam, useAction } from "../know/common.js";
 import { isManualLink, ManualPr, TaskRunState, taskNext } from "../know/task-pr.js";
 import type { Task } from "../Changes.js";
 import { kindOfStep, type ChangeRow } from "./next.js";
+import { inAppWords } from "../../app/app-words.js";
 import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 import { hasAction, StepAction } from "./step-action.js";
@@ -51,7 +52,14 @@ function NextAction({ change, next }: { change: string; next: NonNullable<Cockpi
       </p>
     );
   // Sixth UX walk: a hand-off is raised from here too, on the person's click.
-  const kind = isHandoffCommand(next.command) ? "handoff" : kindOfStep(next.step);
+  // ADR 0188: a finding that holds the gate is answered on the change's page.
+  const kind = isHandoffCommand(next.command)
+    ? "handoff"
+    : next.step === "finding"
+      ? /\bask$/.test(next.command.trim())
+        ? "gap"
+        : "findings"
+      : kindOfStep(next.step);
   const step = { kind, command: next.command, change, pr: next.pr };
   const action = hasAction(step);
   return (
@@ -171,7 +179,7 @@ export function CockpitView(p: {
           c.next && (
             <>
               <p className="muted" style={{ margin: 0 }}>
-                {c.next.why}
+                {inAppWords(c.next.why)}
               </p>
               <NextAction change={c.id} next={c.next} />
             </>

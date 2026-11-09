@@ -13,6 +13,7 @@ import { latestCall } from "../../api/latest.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { CatalogEmpty } from "../../app/app-step.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
@@ -632,7 +633,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       {status.state === "error" && (
         <Panel span="1 / -1">
           {status.notYet ? (
-            <div className="state">{WORDS.emptyEstate}</div>
+            <CatalogEmpty text={WORDS.emptyEstate} />
           ) : (
             <div className="state error" role="alert">
               {WORDS.loadFailed(status.error)}

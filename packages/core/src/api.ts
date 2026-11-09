@@ -377,8 +377,19 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   POST /api/scan asks host questions only for repos with facts on file unless `askAll`, and
  *   its job's result says what the readers added, changed and removed (`added`, `changed`,
  *   `removed`) and how many questions it asked (`questions`).
+ * 3.5.0 (ADR 0188, a button for every step in the daily path): the local steps the app's pages
+ *   named as commands, as the person's click. POST /api/facts/apply-all (`atticus verify --all
+ *   --write`), POST /api/estate/join, POST /api/knowledge/sources/sync (every wiki) and POST
+ *   /api/workspace/prune (`{ change? }`; uncommitted worktrees kept) run as local jobs (409 while
+ *   another local step runs); GET /api/changes/{changeId}/tasks/{taskId}/context gives the task's
+ *   context as markdown; PUT /api/history/recording (`{ on }`) is `atticus history on|off`. POST
+ *   /api/runs and /api/runs/handoff take `map <repo>` and `change small <change>`, and `--force`
+ *   on `plan stories` only (Draft the stories again); a read's Done (POST /api/runs/{runId}/done)
+ *   runs `verify <repo> --write` after its last batch and says so in `applied`. Propose's `work`
+ *   scope also takes a change's target-flows/ and knowledge.yaml; an answered question a read
+ *   raised (rerun `atticus map <repo>`) counts in `applyFirst`. Additive only.
  */
-export const API_VERSION = "3.4.0";
+export const API_VERSION = "3.5.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -888,7 +899,16 @@ export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(
 export const RunDoneView = RunView.extend({
   lines: z.array(z.string()).optional(),
   next: z.string().optional(),
+  /** 3.5.0 (ADR 0188): the repo a read's last batch put on the map (verify --write). */
+  applied: z.string().optional(),
 });
+/** 3.5.0 (ADR 0188): a task's context, as `atticus task context --markdown` prints it. */
+export const TaskContextView = z.object({ markdown: z.string() });
+/** 3.5.0 (ADR 0188): this machine's prompt history recording, on or off. */
+export const HistoryRecordingRequest = z.object({ on: z.boolean() });
+export const HistoryRecordingView = z.object({ on: z.boolean() });
+/** 3.5.0 (ADR 0188): the worktrees cleaned up: one change's, or every change's when left out. */
+export const PruneRequest = z.object({ change: z.string().optional() });
 /** 2.66.0 (UX review): the step prepared for the person's own assistant, and its run. */
 export const PreparedStepView = z.object({
   /** Left out when the step had nothing left to hand off: its lines say what it did. */
@@ -6112,6 +6132,73 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [409],
     },
   },
+  "/api/facts/apply-all": {
+    post: {
+      id: "applyAllFacts",
+      summary:
+        "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas",
+      tag: "workspace",
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines verify printed",
+      },
+      errors: [409],
+    },
+  },
+  "/api/estate/join": {
+    post: {
+      id: "joinEstate",
+      summary:
+        "3.5.0 (ADR 0188): run atticus estate join as a local job: each flow's calls to other repos followed into the flows they reach",
+      tag: "workspace",
+      ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [409],
+    },
+  },
+  "/api/knowledge/sources/sync": {
+    post: {
+      id: "syncAllKnowledgeSources",
+      summary:
+        "3.5.0 (ADR 0188): run atticus sources sync as a local job: every wiki in sources.yaml read into a dated snapshot",
+      tag: "knowledge",
+      ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [409],
+    },
+  },
+  "/api/workspace/prune": {
+    post: {
+      id: "pruneWorktrees",
+      summary:
+        "3.5.0 (ADR 0188): run atticus workspace prune as a local job, for one change or every change with worktrees; a worktree with uncommitted work is kept",
+      tag: "workspace",
+      body: PruneRequest,
+      ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [400, 409],
+    },
+  },
+  "/api/changes/{changeId}/tasks/{taskId}/context": {
+    get: {
+      id: "getTaskContext",
+      summary:
+        "3.5.0 (ADR 0188): a task's context as atticus task context --markdown prints it, for the person to copy into their assistant",
+      tag: "changes",
+      params: [p("changeId"), p("taskId")],
+      ok: { status: 200, schema: "TaskContextView", description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/history/recording": {
+    put: {
+      id: "setPromptHistoryRecording",
+      summary:
+        "3.5.0 (ADR 0188): atticus history on|off, this machine's recording (.atticus/me.yaml); the org pack's history.record: false still holds",
+      tag: "ai",
+      body: HistoryRecordingRequest,
+      ok: { status: 200, schema: "HistoryRecordingView", description: "OK" },
+      errors: [400],
+    },
+  },
   "/api/upgrade": {
     get: {
       id: "getUpgrade",
@@ -6398,7 +6485,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "markRunDone",
       summary:
-        "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt",
+        "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`",
       tag: "ai",
       params: [p("runId")],
       ok: { status: 200, schema: "RunDoneView", description: "OK" },
@@ -7272,6 +7359,8 @@ export function openApiDocument(): Record<string, unknown> {
     UndoBatchResult,
     QuestionsProposeView,
     UpgradeView,
+    TaskContextView,
+    HistoryRecordingView,
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,

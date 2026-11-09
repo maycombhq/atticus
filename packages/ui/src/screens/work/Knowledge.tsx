@@ -6,6 +6,7 @@ import { COPY } from "../../copy.js";
 import { message, Table } from "../know/common.js";
 import { ConflictList } from "../knowledge/shared.js";
 import { Command } from "./RunNext.js";
+import { Propose } from "../../app/propose.js";
 import "./work.css";
 
 /**
@@ -105,7 +106,12 @@ function WrittenNote({ w, named }: { w: Written; named: (id: string) => string }
       <p className="work-say">
         {K.set(named(w.id), K.statuses[w.status]!.toLowerCase(), w.result.file)}
       </p>
-      <Command text={w.result.commit} label={K.copyCommit} />
+      {/* ADR 0188: Propose for review; the git commands are folded under In a terminal. */}
+      <Propose scope="work" />
+      <details className="work-terminal">
+        <summary>{COPY.appStep.inTerminal}</summary>
+        <Command text={w.result.commit} label={K.copyCommit} noRun />
+      </details>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
 import { parse } from "yaml";
 import { orgPackDirOf } from "@maycombhq/core";
 import { isHandoffStep } from "./handoff-flag.js";
+import { FORCE_STEPS } from "./handoff-resume.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { listRuns, runTranscript } from "./runs-view.js";
 
@@ -186,7 +187,11 @@ function stepWords(body: unknown): string[] {
     throw badRequest(
       `atticus ${words.slice(0, 2).join(" ")} isn't an AI step; the app starts only those.`,
     );
-  const option = withoutSource(words).find((a) => a.startsWith("-"));
+  // ADR 0188: Draft the stories again passes `--force`, on plan stories only, once.
+  const force = FORCE_STEPS.has(`${words[0]} ${words[1]}`);
+  const option = withoutSource(words)
+    .filter((a, i, all) => !(force && a === "--force" && all.indexOf(a) === i))
+    .find((a) => a.startsWith("-"));
   if (option)
     throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
   return words;

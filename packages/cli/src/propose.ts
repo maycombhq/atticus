@@ -104,6 +104,11 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
         // (ADR 0181), saved in the app; they ride the stage's hand-off too.
         `${changesRelOf(root)}/*/stage/corrections.yaml`,
         `${changesRelOf(root)}/*/stage/drafted.yaml`,
+        // ADR 0188: what a person drew on a change's diagram (its target flows), proposed from
+        // the Change diagram; it rides the stage's hand-off too.
+        `${changesRelOf(root)}/*/target-flows`,
+        // ADR 0188: the knowledge a person confirmed or excluded on Change › Knowledge.
+        `${changesRelOf(root)}/*/knowledge.yaml`,
       ];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];

@@ -92,10 +92,14 @@ const resumeFile = (runId: string) => {
 /** The steps that read the wikis take `--source <wiki>` from the app (round 36). */
 export const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);
 
+/** ADR 0188: the one step the app starts with `--force`: the stories drafted again. */
+export const FORCE_STEPS = new Set(["plan stories"]);
+
 /**
  * Why these words aren't a step's own resume, or undefined when they are: an AI step that takes
  * --handoff, its arguments, and no option but --handoff, `--resume <this run>` and (on a step
- * that reads the wikis) `--source <wiki>`, each once. Never --approve, --send, --level or --mode.
+ * that reads the wikis) `--source <wiki>`, each once, and `--force` on plan stories (ADR 0188).
+ * Never --approve, --send, --level or --mode.
  */
 export function resumeRefusal(args: unknown, runId: string): string | undefined {
   if (!Array.isArray(args) || !args.every((a) => typeof a === "string" && a !== ""))
@@ -114,6 +118,8 @@ export function resumeRefusal(args: unknown, runId: string): string | undefined 
       i++;
       continue;
     }
+    // ADR 0188: Draft the stories again (`plan stories <change> --force`), on that step only.
+    if (a === "--force" && FORCE_STEPS.has(`${words[0]} ${words[1]}`)) continue;
     const value = words[i + 1];
     if (
       a === "--source" &&
@@ -264,7 +270,7 @@ export async function resumeAfterDone(
   runStep: StepRunner,
   change: string,
   runId: string,
-): Promise<{ next?: string; lines: string[] } | undefined> {
+): Promise<{ next?: string; lines: string[]; applied?: string } | undefined> {
   // Round 50: only the resume Atticus kept for this run; a resume.json in the run's folder (the
   // assistant writes there) is never read.
   const kept = await readUserState<{ change?: unknown; runId?: unknown; args?: unknown }>(
@@ -286,7 +292,21 @@ export async function resumeAfterDone(
   // --resume <run> is in args; prepareStep adds --handoff --json and keeps the next resume.
   const words = (kept.args as string[]).filter((a) => a !== "--handoff");
   const r = await prepareStep(root, runStep, words, { next: true });
-  return r.prepared.runId && r.prepared.runId !== runId
-    ? { next: r.prepared.runId, lines: r.prepared.lines }
-    : { lines: r.prepared.lines };
+  if (r.prepared.runId && r.prepared.runId !== runId)
+    return { next: r.prepared.runId, lines: r.prepared.lines };
+  // ADR 0188: a read of a repo (`atticus map <repo>`) whose last batch is in is put on the map
+  // here, as `atticus verify <repo> --write` does in a terminal: the facts checked again, the
+  // kept ones in the catalog, the flows in specs/ and the map drawn. Nothing is written to the
+  // catalog while a fact is rejected; verify says which, in the lines Done shows.
+  const repo = mapRepoOf(words);
+  if (repo && !r.prepared.runId) {
+    const v = await runStep(["verify", repo, "--write"]);
+    return { lines: [...r.prepared.lines, ...appLines([...v.out, ...v.err])], applied: repo };
+  }
+  return { lines: r.prepared.lines };
+}
+
+/** The repo a read of one repo (`map <repo> …`) is of; undefined for any other step. */
+export function mapRepoOf(words: readonly string[]): string | undefined {
+  return words[0] === "map" && words[1] && !words[1].startsWith("-") ? words[1] : undefined;
 }

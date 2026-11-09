@@ -273,6 +273,20 @@ body {
 a {
   color: var(--accent-soft);
 }
+/* A button that reads as a link (the canvas tools' trace and inbox, Dismiss): a link's colour,
+   never the browser's grey button, which failed contrast on the dark theme (WCAG 1.4.3). */
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-soft);
+  text-decoration: underline;
+  cursor: pointer;
+}
+button.link:hover {
+  color: var(--accent-hover);
+}
 a:hover {
   color: var(--accent-hover);
 }

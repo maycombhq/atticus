@@ -1,10 +1,9 @@
 import { useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
-import { RunWithCopilot } from "../../app/copilot-runs.js";
+import { ReadRepo, WrittenNext } from "../../app/app-step.js";
 import { COPY } from "../../copy.js";
 import { AiChip } from "../../app/decisions.js";
-import { CopyButton } from "../run/shared.js";
 import { Diff } from "./Owner.js";
 
 /**
@@ -24,18 +23,9 @@ const errorOf = (e: unknown) =>
       ? e.message
       : String(e);
 
+/** ADR 0188: written; Apply redraws the map, then Propose for review (the commands folded). */
 function Cmds({ r, label }: { r: Api.FileChangeResultT; label: string }) {
-  return (
-    <div className="stack" role="status">
-      <p className="ev-say">{label}</p>
-      {[r.verify, r.commit].filter(Boolean).map((c) => (
-        <div key={c} className="row" style={{ gap: 6 }}>
-          <code className="mono">{c}</code>
-          <CopyButton text={c} label={`${D.copy}: ${c}`} />
-        </div>
-      ))}
-    </div>
-  );
+  return <WrittenNext said={label} verify={r.verify} commit={r.commit} />;
 }
 
 /** A request built from the form, or none when it lacks the topic or the route. */
@@ -261,17 +251,7 @@ export function CorrectionsList(p: {
           {error}
         </p>
       )}
-      {done && (
-        <div className="stack" role="status">
-          <p className="ev-say">{K.undone}</p>
-          {[done.verify, done.commit].map((c) => (
-            <div key={c} className="row" style={{ gap: 6 }}>
-              <code className="mono">{c}</code>
-              <CopyButton text={c} label={`${D.copy}: ${c}`} />
-            </div>
-          ))}
-        </div>
-      )}
+      {done && <WrittenNext said={K.undone} verify={done.verify} commit={done.commit} />}
     </div>
   );
 }
@@ -358,11 +338,12 @@ export function AddBoxForm(p: {
                   {unread.map((r) => (
                     <li key={r.id} className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                       <span className="mono">{r.name}</span>
-                      <RunWithCopilot
-                        ask={{ kind: "repos", repos: [r.id] }}
-                        label={COPY.copilotRuns.start.repos(r.id)}
-                      />
-                      <code className="mono">{A.readCommand(r.id)}</code>
+                      {/* ADR 0188: Copilot, the server's model or the person's assistant. */}
+                      <ReadRepo repo={r.id} />
+                      <details className="work-terminal">
+                        <summary>{COPY.appStep.inTerminal}</summary>
+                        <code className="mono">{A.readCommand(r.id)}</code>
+                      </details>
                     </li>
                   ))}
                 </ul>

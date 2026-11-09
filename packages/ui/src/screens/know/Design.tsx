@@ -5,6 +5,7 @@ import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
 import { COPY } from "../../copy.js";
+import { CatalogEmpty } from "../../app/app-step.js";
 import { CommitmentState, NewInitiative, PlanInitiative } from "./InitiativeForms.js";
 import {
   AiChip,
@@ -783,7 +784,7 @@ export function Diagrams({ hash }: { hash: string }) {
               {T.systemsFailed(cov.error)}
             </p>
           ) : (
-            <p className="state">{T.noSystemToDraw}</p>
+            <CatalogEmpty text={T.noSystemToDraw} />
           )
         ) : canvas ? (
           <View
@@ -794,7 +795,11 @@ export function Diagrams({ hash }: { hash: string }) {
             {(x) => <FlowCanvas view={x.view} height={460} />}
           </View>
         ) : (
-          <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
+          <View
+            of={graph}
+            empty={(g) => g.nodes.length === 0}
+            emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
+          >
             {(g) => <GraphView g={g} {...(v.focus && f ? { focus: f } : {})} height={460} />}
           </View>
         )}
@@ -817,7 +822,7 @@ export function Diagrams({ hash }: { hash: string }) {
         }
       >
         {noFocus ? (
-          <p className="state">{T.noSystemToDraw}</p>
+          <CatalogEmpty text={T.noSystemToDraw} />
         ) : (
           <View of={text} empty={(t) => !t.text.trim()} emptyText={T.nothingToDrawFor}>
             {(t) => (

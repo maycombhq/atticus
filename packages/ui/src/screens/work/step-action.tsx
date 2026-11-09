@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useApi, useReloadOnFiles } from "../../api/client.js";
-import { stepArgs, RunStep } from "../../app/runstep.js";
+import { AppStepFor, appStep } from "../../app/app-step.js";
 import { ExternalLink } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { RaiseHandoff } from "../know/Phase.js";
@@ -81,7 +81,8 @@ export function hasAction(p: {
   )
     return !!p.change;
   if (p.kind === "merge") return !!p.pr;
-  return !!p.kind || stepArgs(p.command) !== undefined;
+  // ADR 0188: any step the app takes itself (an AI step, Apply, a sync...).
+  return !!p.kind || appStep(p.command) !== undefined;
 }
 
 /** The step's in-app action, or nothing when the app has none for it. */
@@ -151,6 +152,6 @@ export function StepAction(p: {
         </p>
       );
     default:
-      return stepArgs(p.command) ? <RunStep command={p.command} /> : null;
+      return <AppStepFor command={p.command} />;
   }
 }

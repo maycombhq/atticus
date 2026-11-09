@@ -192,7 +192,8 @@ describe("pages in the right section", () => {
     expect(screenOf("#/initiatives").section).toBe("Home");
     expect(screenOf("#/todo").section).toBe("Home");
     expect(screenOf("#/governance").section).toBe("SetUp");
-    expect(tabsOf("Home").map((t) => t.id)).toEqual(["home"]);
+    // ADR 0188: the manual steps are a tab of Home by default.
+    expect(tabsOf("Home").map((t) => t.id)).toEqual(["home", "todo"]);
   });
 });
 

@@ -325,7 +325,13 @@ function FlowDetail({ repo, flow, step }: { repo: string; flow: string; step?: n
                 ))}
               </p>
             )}
-            {!d.joined && <p className="muted">{C.notJoined}</p>}
+            {!d.joined && (
+              // ADR 0188: Join the estate's flows from here; the command folded.
+              <div className="stack" style={{ gap: 4 }}>
+                <p className="muted">{C.notJoined}</p>
+                <Command text="atticus estate join" label={COPY.runNext.copy} />
+              </div>
+            )}
             {seq.gaps.map((g) => (
               <p key={g} className="seq-unjoined">
                 {g}
