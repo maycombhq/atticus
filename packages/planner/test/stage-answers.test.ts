@@ -204,7 +204,7 @@ describe("S5: an answer that isn't YAML", () => {
     // The rule the stop names above isn't counted again.
     expect(e.message).not.toContain("  - stage.format: in");
     expect(e.message).toContain(
-      "  - stories.no-criteria: in 2 drafts (1 to 2), for example: Task 1.3 (Change the write step: The order is inserted with the screen's verdict) has no acceptance criteria.",
+      "  - stories.no-criteria: in 2 drafts (1 to 2), for example: Task 1.2 (id 1.3) (Change the write step: The order is inserted with the screen's verdict) has no acceptance criteria.",
     );
   });
 

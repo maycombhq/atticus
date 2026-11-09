@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, normalize, sep } from "node:path";
 import {
@@ -6,6 +5,7 @@ import {
   changeStore,
   loadChangeContext,
   writeFileAtomic,
+  wroteThis,
   type ChangeContext,
 } from "@maycombhq/changes";
 import {
@@ -481,10 +481,13 @@ function renderedRefusal(change: string, file: string, from: RenderedFrom): stri
 /**
  * The change-folder files a person changed since a stage wrote them: each stage's loop file
  * (`stage/<stage>.yaml`) keeps the sha-256 of what it wrote (`written`, ADR 0087 addendum), and a
- * file whose hash differs, or is gone, was changed. Facts, read off the files.
+ * file whose hash differs, or is gone, was changed. Facts, read off the files. Review round 50:
+ * a file two stages write (proposal.md: the feature stage, and the stories stage's Capabilities)
+ * is compared with what each wrote, so it is a person's edit only when no stage wrote it as it is
+ * now; and the hash is the edit checks' one (`editSha`: line endings aside, tasks.md's boxes too).
  */
 export async function editedByPerson(folder: string): Promise<string[]> {
-  const out = new Set<string>();
+  const byFile = new Map<string, string[]>();
   const stages = await readdir(join(folder, "stage")).catch(() => [] as string[]);
   for (const s of stages.filter((x) => x.endsWith(".yaml")).sort()) {
     let written: unknown;
@@ -495,15 +498,13 @@ export async function editedByPerson(folder: string): Promise<string[]> {
       continue;
     }
     if (!written || typeof written !== "object") continue;
-    for (const [file, hash] of Object.entries(written as Record<string, unknown>)) {
-      const now = await readFile(join(folder, ...file.split("/")), "utf8").catch(() => undefined);
-      // Line endings aside: a Windows checkout (core.autocrlf) is not a person's edit.
-      const h =
-        now !== undefined
-          ? createHash("sha256").update(now.replace(/\r\n?/g, "\n"), "utf8").digest("hex")
-          : undefined;
-      if (h !== hash) out.add(file);
-    }
+    for (const [file, hash] of Object.entries(written as Record<string, unknown>))
+      if (typeof hash === "string") byFile.set(file, [...(byFile.get(file) ?? []), hash]);
   }
-  return [...out].sort();
+  const out: string[] = [];
+  for (const [file, hashes] of byFile) {
+    const now = await readFile(join(folder, ...file.split("/")), "utf8").catch(() => undefined);
+    if (now === undefined || !hashes.some((h) => wroteThis(file, now, h))) out.push(file);
+  }
+  return out.sort();
 }

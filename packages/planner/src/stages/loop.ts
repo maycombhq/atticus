@@ -38,7 +38,9 @@ import {
   loadChangeContext,
   phaseGates,
   stageCommand,
+  editSha,
   writeFileAtomic,
+  wroteThis,
   type ChangeContext,
 } from "@maycombhq/changes";
 import {
@@ -1739,17 +1741,39 @@ async function sourceFiles(dir: string, source: string): Promise<string[]> {
     .map((f) => `${sub}/${f}`);
 }
 
-/** A file's text with LF line endings (as Atticus writes it), for comparing across checkouts. */
-const lf = (b: Buffer): Buffer =>
-  b.includes(13) ? Buffer.from(b.toString("utf8").replace(/\r\n?/g, "\n"), "utf8") : b;
-
-/** The sha-256 of each file as it is now; a missing file is left out. */
+/**
+ * The sha-256 of each file as it is now, as edit checks compare it (`editSha`: line endings
+ * aside, and tasks.md's boxes, review round 50); a missing file is left out.
+ */
 async function hashFiles(dir: string, files: string[]): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const f of [...files].sort()) {
     const b = await readFile(join(dir, ...f.split("/"))).catch(() => undefined);
-    // Line endings aside: a Windows checkout (core.autocrlf) is not a person's edit.
-    if (b) out[f] = sha(lf(b));
+    if (b) out[f] = editSha(f, b);
+  }
+  return out;
+}
+
+/**
+ * What the other stages' loop files say they wrote, by file (review round 50): proposal.md is
+ * written by the feature stage and its Capabilities by the stories stage, so a file another stage
+ * wrote last, as it wrote it, is no person's edit.
+ */
+async function othersWrote(dir: string, stage: Stage): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (const s of Stage.options) {
+    if (s === stage) continue;
+    const t = await readFile(join(dir, ...loopRel(s).split("/")), "utf8").catch(() => undefined);
+    if (t === undefined) continue;
+    let w: unknown;
+    try {
+      w = (parse(t) as { written?: unknown } | null)?.written;
+    } catch {
+      continue;
+    }
+    if (w && typeof w === "object")
+      for (const [f, h] of Object.entries(w as Record<string, unknown>))
+        if (typeof h === "string") out.set(f, [...(out.get(f) ?? []), h]);
   }
   return out;
 }
@@ -1763,9 +1787,18 @@ async function hashFiles(dir: string, files: string[]): Promise<Record<string, s
 async function editedFiles(dir: string, loop: StageLoop, source: string): Promise<string[]> {
   const on = await sourceFiles(dir, source);
   if (loop.written) {
-    const now = await hashFiles(dir, [...new Set([...Object.keys(loop.written), ...on])]);
+    const files = [...new Set([...Object.keys(loop.written), ...on])];
+    const now = await hashFiles(dir, files);
+    const others = await othersWrote(dir, loop.stage);
     const out = new Set<string>();
-    for (const [f, h] of Object.entries(loop.written)) if (now[f] !== h) out.add(f);
+    for (const [f, h] of Object.entries(loop.written)) {
+      if (now[f] === h) continue;
+      const b = await readFile(join(dir, ...f.split("/"))).catch(() => undefined);
+      // A hash kept before review round 50 (tasks.md with its boxes), or another stage's write.
+      if (b && (wroteThis(f, b, h) || (others.get(f) ?? []).some((x) => wroteThis(f, b, x))))
+        continue;
+      out.add(f);
+    }
     for (const f of on) if (!(f in loop.written)) out.add(f);
     return [...out].sort();
   }

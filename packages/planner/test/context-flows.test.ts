@@ -245,7 +245,7 @@ describe("stories from a change that reads more flows than it changes", () => {
       "The stories stage stopped after 3 drafts: your assistant kept getting this wrong, and it isn't a question for a person to decide.",
     );
     expect(e.message).toContain(
-      `  - Task 1.3 (Change the write step: The order is inserted with the screen's verdict) has no acceptance criteria. (rule stories.no-criteria; in ${REL}/stage/stories-answer.yaml)`,
+      `  - Task 1.2 (id 1.3) (Change the write step: The order is inserted with the screen's verdict) has no acceptance criteria. (rule stories.no-criteria; in ${REL}/stage/stories-answer.yaml)`,
     );
     expect(e.message).toContain(`then run atticus plan stories ${CHANGE} again.`);
     expect((await listQuestions(root, { state: "open" })).questions).toEqual([]);

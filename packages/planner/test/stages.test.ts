@@ -818,7 +818,9 @@ describe("the stories stage", () => {
       now: NOW,
     });
     expect(r.state).toBe("done");
-    expect(prompts[1]).toContain("Task 1.3's criteria check no value of quantity, fraud_verdict");
+    expect(prompts[1]).toContain(
+      "Task 1.2 (id 1.3)'s criteria check no value of quantity, fraud_verdict",
+    );
     // B-tasks: the call-out and the branch both go in after OrderController.java:4,9: one task.
     expect(r.stories.map((s) => [s.id, s.repo, s.tasks.map((t) => t.id)])).toEqual([
       ["s1-place-order", "forge-orders", ["1.1", "1.3"]],
@@ -957,7 +959,7 @@ describe("a criterion that checks a field without naming it", () => {
     expect(prompts[1]).toContain(
       "a criterion says it checks colour, which isn't one of the task's fields",
     );
-    expect(prompts[1]).toContain("Task 1.3's criteria check no value of fraud_verdict");
+    expect(prompts[1]).toContain("Task 1.2 (id 1.3)'s criteria check no value of fraud_verdict");
   });
 });
 
