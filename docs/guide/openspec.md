@@ -24,6 +24,22 @@ Drew it elsewhere first? `atticus change sketch <change> --from <file.drawio|.mm
 
 The drawn files are ordinary target flows, so review them in the pull request like any other; `atticus change architecture <change>` then drafts the steps around them and never removes or moves a drawn step. A stroke is a plan: the map changes only when the code lands and is read.
 
+**A component retired** takes a component away: every flow of it today is removed, in one stroke that Undo takes back together. A component you draw as new (a new flow of a component the catalog doesn't have, or a call to one marked new) is _planned in this change_: the architecture and stories stages and the critic know it before any repo builds it, and the deploy order may name it, marked planned ([ADR 0188](../adr/0188-a-stage-is-one-conversation.md)). After each stroke is drawn the form starts clean: _the API doesn't exist yet_ isn't carried over to the next one.
+
+## A stage is one conversation
+
+Each stage of a change is one thread on its own tab ([ADR 0188](../adr/0188-a-stage-is-one-conversation.md)): the proposal and a small change's one step on **At a glance**, the feature stage on **Feature design**, the architecture stage on **Architecture**, the stories stage on **Stories**. The thread holds, in order, the prompt for your assistant, its answer and what the checks said, what the stage wrote, what the critic found, the questions it asks a person, and what you told the assistant.
+
+One round, from the app only:
+
+1. Press **Start the stage** (or **Start the next round**). Atticus writes the prompt; it appears in the thread with **Copy the prompt**.
+2. Paste it into your assistant (Copilot or Claude Code, in VS Code or IntelliJ). The prompt asks it to write one file and stop; there is nothing to run.
+3. Wait. The app notices the file once it is complete (it has sat unchanged for a few seconds and reads as an answer), checks it as Done would, and the thread shows the answer, what the stage wrote, and the critic's findings and questions as they come. **Done** on Set up › Model runs still checks an answer at once if you want it to.
+4. Answer the questions in place; on a finding, **Reply** (your words go to the next round about it), **Make the fix** (to the assistant in the next round, or, for a file the stage's assistant doesn't write, the file opens at its line here), **Ask** its owner, or **Not relevant** with why. A question the assistant raised whose line didn't match is shown, never dropped: **Keep it anyway** keeps it, citing the nearest line.
+5. Write in **Tell the assistant…** at the bottom and **Send and start the next round**: the next prompt carries your words as your answer.
+
+A round is one paste: the context step that used to come first (the expander) is read without a model in a hand-off. Where the critic's AI lenses are on, they review the draft in a prompt of their own, a fresh session as before, shown in the thread as the critic's prompt. The prompt sizes, models and file paths are under **Details**; **Set up › Model runs** keeps every run for an administrator.
+
 ## Starting a change from your own analysis
 
 If you start a change with notes of your own (acceptance criteria, edge cases, field rules, error messages, what it must do under load), attach them to the change before its first stage: `atticus change attach <change> notes/*.md`, or **Attach a file** on the change's page ([ADR 0113](../adr/0113-small-changes-fast-files-into-a-change-and-the-task-context.md)). Markdown and text are read line by line; a PDF or slides page by page.

@@ -15,7 +15,7 @@ import {
   type SelectOptions,
 } from "@maycombhq/index";
 import type { ContextGap } from "./gaps.js";
-import { expandFor, expansionInput } from "./stages/expand.js";
+import { expandFor, expansionInput, namesExpansion } from "./stages/expand.js";
 import { fileJudgments, retrievalOf } from "@maycombhq/core";
 import type { Judgments } from "./stages/judged.js";
 import { rerankFor } from "./stages/rerank.js";
@@ -104,7 +104,17 @@ export async function retrieve(
   const notes: string[] = [];
   let used = input;
   const defaults = retrievalOf(undefined);
-  if (ai && (context?.expand ?? ai.settings?.expansion ?? defaults.expansion)) {
+  // ADR 0188: one paste per round. A hand-off asks no separate expander prompt: the estate's
+  // names the input uses are its seeds, read without a model (namesExpansion).
+  const handoff = ai?.runtime.kind === "hand-off";
+  if (ai && handoff && (context?.expand ?? ai.settings?.expansion ?? defaults.expansion)) {
+    const e = await namesExpansion(root, input);
+    if ("note" in e) notes.push(e.note);
+    else {
+      retrieval.expansion = { cached: false, terms: [], names: e.expansion.names, dropped: [] };
+      used = { ...input, expansion: expansionInput(e.expansion) };
+    }
+  } else if (ai && (context?.expand ?? ai.settings?.expansion ?? defaults.expansion)) {
     const e = await expandFor(root, change, input, {
       runtime: ai.runtime,
       ...(resume ? { resume } : {}),
@@ -125,8 +135,10 @@ export async function retrieve(
     }
   }
   let got = await select(used);
+  // ADR 0188: nor a separate rerank prompt; the assistant reads what was left out by its ids.
   if (
     ai &&
+    !handoff &&
     got.selection &&
     got.selection.leftOut.length > 0 &&
     (context?.rerank ?? ai.settings?.rerank ?? defaults.rerank)

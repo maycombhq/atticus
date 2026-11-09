@@ -471,7 +471,7 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
       id,
     );
     expect(next!.lines).toEqual([
-      "Context: 3 records. Handed the critic's true lens to your assistant to review the feature draft (run run-20261023034005-0001). The next prompt is ready: open it on Runs.",
+      "Context: 3 records. Handed the critic's true lens to your assistant to review the feature draft (run run-20261023034005-0001). The next prompt is ready in the stage's thread.",
     ]);
     // Prepared from the app: its prompt is the one just prepared.
     const prep = await prepareStep(
@@ -486,7 +486,7 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
       ["change", "needs", "c1"],
     );
     expect(prep.prepared.lines).toEqual([
-      "Handed the change's needs to your assistant (run run-x). The prompt is ready: open it on Runs, then press Done once your assistant has written the answer.",
+      "Handed the change's needs to your assistant (run run-x). The prompt is ready in the stage's thread: paste it into your assistant. The app checks the answer once your assistant has written the file.",
     ]);
     // A stage that stopped for a person, or finished.
     expect(

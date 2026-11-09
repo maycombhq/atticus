@@ -123,6 +123,7 @@ import {
   withoutResume,
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
+import { plannedRepos } from "./planned.js";
 import {
   lastPart,
   readStoryNumbers,
@@ -2098,6 +2099,8 @@ export function checkSections(
   ]);
   const repos = new Set([
     ...stories.map((s) => s.repo),
+    // ADR 0188: the repos of the components the change plans, before they exist.
+    ...(e ? plannedRepos(deltas, e) : []),
     ...(e?.flows.map((f) => f.repo) ?? []),
     ...((e?.records ?? []) as (CatalogRecord & Record<string, unknown>)[]).flatMap((r) =>
       r.kind === "Component" && typeof r.repo === "string" ? [r.repo] : [],

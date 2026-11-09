@@ -2,6 +2,7 @@ import { endpointKey, type Estate } from "./estate.js";
 import { endpointName } from "./contracts.js";
 import type { StageIssue } from "./loop.js";
 import type { DeployStep, FlowDelta } from "./schema.js";
+import { plannedRepos } from "./planned.js";
 
 /**
  * The deploy order the architecture stage drafts across a change's repos (ADR 0124 addendum
@@ -180,7 +181,10 @@ export function deployIssues(
     ];
   }
   const out: StageIssue[] = [];
+  // ADR 0188: a repo the change's own diagram plans (a new component, before it has a repo)
+  // may be deployed; the deploy order marks it planned.
   const known = new Set<string>([
+    ...plannedRepos(deltas, e),
     ...codes.map((u) => u.repo),
     ...e.flows.map((f) => f.repo),
     ...(e.records as Rec[])
@@ -193,7 +197,7 @@ export function deployIssues(
       out.push({
         rule: "delta.deploy-unknown-repo",
         target: `deploy#${n}`,
-        message: `Step ${n} of the deploy order deploys ${s.repo}, which isn't a repo the estate has: name a repo from the index.`,
+        message: `Step ${n} of the deploy order deploys ${s.repo}, which isn't a repo the estate has or a component this change plans: name a repo from the index, or draw ${s.repo} as a new component.`,
         blocking: true,
       });
       return undefined;
@@ -259,7 +263,11 @@ export function deployIssues(
 }
 
 /** design.md's deploy order, as drafted, or nothing when there is none. */
-export function renderDeploy(deploy: DeployStep[] | undefined): string[] {
+export function renderDeploy(
+  deploy: DeployStep[] | undefined,
+  /** ADR 0188: the repos the change plans, which no repo builds yet: each step is marked planned. */
+  planned: ReadonlySet<string> = new Set(),
+): string[] {
   if (!deploy?.length) return [];
   const end = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
   return [
@@ -267,7 +275,7 @@ export function renderDeploy(deploy: DeployStep[] | undefined): string[] {
     "",
     ...deploy.map(
       (s, i) =>
-        `${i + 1}. ${s.migration ? `Migration ${s.migration}, in ${s.repo}.` : `${s.repo}.`}${s.why?.trim() ? ` ${end(s.why)}` : ""}`,
+        `${i + 1}. ${s.migration ? `Migration ${s.migration}, in ${s.repo}.` : `${s.repo}${planned.has(s.repo) ? " (planned in this change: no repo builds it yet)" : ""}.`}${s.why?.trim() ? ` ${end(s.why)}` : ""}`,
     ),
     "",
   ];

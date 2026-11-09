@@ -1,6 +1,5 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cp, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   atticus,
@@ -16,14 +15,13 @@ import {
 } from "./helpers.js";
 
 /**
- * M3 exit with retrieval's real defaults (ADR 0116 addendum): the model's expansion of a step's
- * input is on, and in hand-off mode (Copilot, one prompt per round) it is a round of its own.
- * `change feature` on the fixture change hands the expansion off first, with a prompt small
- * enough for the GPT-4o mini floor; answered, the step hands off its own prompt with the
- * expansion recorded in the run; run again, it waits on that prompt and asks nothing new.
+ * M3 exit with retrieval's real defaults (ADR 0116 addendum): the expansion of a step's input is
+ * on. In hand-off mode a round is one paste (ADR 0188): the expansion is read without a model
+ * (the estate's names the input uses), and `change feature` on the fixture change hands off its
+ * own prompt first, with the expansion recorded in the run; run again, it waits on that prompt
+ * and asks nothing new.
  */
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 let e: Estate;
 const env = { ...process.env };
 beforeAll(async () => {
@@ -52,45 +50,37 @@ const runJson = async (run: string) =>
   JSON.parse(await readFile(join(e.root, ".runs", CHANGE, run, "run.json"), "utf8")) as {
     request: {
       agent: { id: string };
-      retrieval?: { expansion?: { run?: string; cached: boolean; names: { name: string }[] } };
+      retrieval?: {
+        expansion?: { run?: string; cached: boolean; names: { name: string; id?: string }[] };
+      };
     };
   };
 
-describe("M3 exit: the expansion in hand-off mode, on by default", () => {
+describe("M3 exit: the expansion in hand-off mode, on by default (ADR 0188: one paste per round)", () => {
   it(
-    "change feature hands the expansion off first, then its own prompt with the expansion recorded; a rerun asks nothing new",
+    "change feature hands off its own prompt first, the estate's names read without a model; a rerun asks nothing new",
     async () => {
       const step = async (...args: string[]) =>
         json<Handoff>(
           await atticus(e.root, "change", "feature", CHANGE, "--handoff", "--json", ...args),
         );
-      const rounds: string[] = [];
-
-      const expansion = await step();
-      expect(expansion.state, JSON.stringify(expansion)).toBe("handoff");
-      expect(expansion.resultFile).toMatch(/\/expansion\.yaml$/);
-      rounds.push((await runJson(expansion.runId)).request.agent.id);
-      // Small for the GPT-4o mini floor: the expander's budget is 6,000 tokens.
-      const prompt = await readFile(join(e.root, expansion.promptFile), "utf8");
-      expect(prompt.length).toBeLessThan(6000 * 4);
-      expect(prompt).toContain("Northwind Pay's velocity check");
-
-      await writeFile(
-        join(e.root, expansion.resultFile),
-        await readFile(join(HERE, "fixtures/expansion/add-transfer-limit.yaml"), "utf8"),
-      );
-      expect((await atticus(e.root, ...expansion.doneArgs)).code).toBe(0);
-      const draft = json<Handoff>(await atticus(e.root, ...expansion.resumeArgs));
+      const draft = await step();
       expect(draft.state, JSON.stringify(draft)).toBe("handoff");
       const req = (await runJson(draft.runId)).request;
-      rounds.push(req.agent.id);
-      expect(req.retrieval?.expansion).toMatchObject({ run: expansion.runId, cached: false });
-      expect(req.retrieval?.expansion?.names.map((n) => n.name)).toEqual(["Northwind Pay"]);
+      // The round's one prompt is the stage's own: no expander prompt before it.
+      expect(req.agent.id).toBe("feature-placer");
+      expect(req.retrieval?.expansion).toMatchObject({ cached: false });
+      expect(req.retrieval?.expansion?.run).toBeUndefined();
+      expect(req.retrieval?.expansion?.names.map((n) => n.id)).toContain("northwind-pay");
+      const prompt = await readFile(join(e.root, draft.promptFile), "utf8");
+      expect(prompt).toContain("Northwind Pay's velocity check");
+      // The prompt's last line asks for the file, and runs nothing.
+      expect(prompt).not.toContain("atticus handoff done");
+      expect(prompt.trimEnd()).toMatch(/There is nothing to run\.$/);
 
-      // Run again without --resume: the same prompt waits; the expansion isn't asked again.
+      // Run again without --resume: the same prompt waits; nothing new is asked.
       const again = await step();
       expect(again).toMatchObject({ runId: draft.runId, stillWaiting: true });
-      expect(rounds).toEqual(["context-expander", "feature-placer"]);
     },
     T,
   );

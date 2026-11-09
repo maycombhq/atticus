@@ -13,6 +13,7 @@ import {
 import { PlannerError } from "../errors.js";
 import { readStageLoop, rerunOf, writeStageLoop } from "./loop.js";
 import type { Stage } from "./schema.js";
+import { REPLY_COMMAND } from "./thread.js";
 
 /**
  * A person's comment on a critic finding, from a stage tab in the app (ADR 0124 addendum D-app,
@@ -77,7 +78,8 @@ export async function stageComments(
         read: loop.read.includes(q.id),
         about: aboutOf(q),
       });
-    else others.push(q.id);
+    // ADR 0188: a reply in the stage's thread is the thread's, not one of the stage's questions.
+    else if (q.askedBy.command !== REPLY_COMMAND) others.push(q.id);
   }
   comments.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   return { comments, others, present };

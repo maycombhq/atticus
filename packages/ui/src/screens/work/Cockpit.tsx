@@ -10,6 +10,7 @@ import { kindOfStep, type ChangeRow } from "./next.js";
 import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 import { hasAction, StepAction } from "./step-action.js";
+import { StageThreadPanel } from "./StageThread.js";
 
 /**
  * The change cockpit (WP7.1): one page per change with what a person needs to follow it. Where
@@ -418,11 +419,21 @@ export function CockpitPicked(p: {
       <ChangePicker list={p.list} current={p.current} screen="cockpit" />
       <View of={p.c}>
         {(d) => (
-          <CockpitView
-            c={d}
-            tasks={tasks.state === "ready" ? tasks.data : undefined}
-            onTasks={tasks.reload}
-          />
+          <>
+            <CockpitView
+              c={d}
+              tasks={tasks.state === "ready" ? tasks.data : undefined}
+              onTasks={tasks.reload}
+            />
+            {/* ADR 0188: the first step, and a small change's one step, as conversations too. */}
+            <div className="bento" style={{ marginTop: 12 }}>
+              {d.next?.command?.startsWith("atticus change small ") ? (
+                <StageThreadPanel change={d.id} stage="small" />
+              ) : (
+                <StageThreadPanel change={d.id} stage="proposal" />
+              )}
+            </div>
+          </>
         )}
       </View>
       <PastChanges change={p.current} />

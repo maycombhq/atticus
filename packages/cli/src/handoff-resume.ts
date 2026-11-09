@@ -45,12 +45,19 @@ const againWords = (command: string) =>
  * `next`: the app has prepared the step's next prompt (Done's resume), not this step's first.
  */
 export function appLines(lines: string[], o: { next?: boolean } = {}): string[] {
+  // ADR 0188: the prompt is in the stage's thread, and the app checks the answer when it arrives.
   const ready = o.next
-    ? "The next prompt is ready: open it on Runs."
-    : "The prompt is ready: open it on Runs, then press Done once your assistant has written the answer.";
+    ? "The next prompt is ready in the stage's thread."
+    : "The prompt is ready in the stage's thread: paste it into your assistant. The app checks the answer once your assistant has written the file.";
   return lines.map((l) =>
     l
       .replace(/\s*When it is done(?:, run)?: atticus handoff done \S+.*$/, ` ${ready}`)
+      // ADR 0188 (app-only audit): a step's own resume is the app's to run; the line says the
+      // next prompt is in the stage's thread, never a command with --resume to type.
+      .replace(
+        /\s*(?:Next:\s*|[Rr]un:?\s*)?atticus [^\n]*?--resume run-[0-9a-z-]+(?::[^\n]*|\.)?$/,
+        " The next prompt is ready in the stage's thread.",
+      )
       // Ninth UX walk: an answer that failed its checks is fixed, then Done is pressed again.
       .replace(/,? (?:and|then) run atticus handoff done \S+ again/g, ", then press Done again")
       .replace(/\b([Rr])un atticus handoff done \S+ again/g, (_m, r: string) =>
@@ -88,6 +95,11 @@ const resumeFile = (runId: string) => {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId)) throw new Error(`${runId} isn't a run id.`);
   return `resume/${runId}.json`;
 };
+
+/** ADR 0188: whether Atticus kept a step's resume for this run (Done, or the app's check, runs it). */
+export async function hasKeptResume(root: string, runId: string): Promise<boolean> {
+  return !!(await readUserState(root, resumeFile(runId)).catch(() => undefined));
+}
 
 /** The steps that read the wikis take `--source <wiki>` from the app (round 36). */
 export const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);

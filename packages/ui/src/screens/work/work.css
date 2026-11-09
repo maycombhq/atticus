@@ -166,3 +166,36 @@
   border-top: 1px solid var(--line-2);
   padding-top: 8px;
 }
+/* ADR 0188: a stage as one conversation. */
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.thread-item {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--inset);
+  margin: 0;
+}
+.thread-reply {
+  border-left: 3px solid var(--line-2);
+}
+.thread-prompt {
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+  font: 12px/1.5 var(--mono);
+  margin: 6px 0 0;
+}
+.thread-headline {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.thread-reply-box textarea {
+  width: 100%;
+}

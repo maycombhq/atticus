@@ -18,6 +18,7 @@ import {
 } from "../Changes.js";
 import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
 import { COPY } from "../../copy.js";
+import { lensesWaiting, type CriticRan } from "../work/critic-ran.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangePrototypes } from "../ChangePrototypes.js";
@@ -149,8 +150,15 @@ export function GateHeader(p: {
                   onClick={() =>
                     void act.run(
                       () =>
-                        api(`/api/changes/${p.id}/critic`, { method: "POST", body: {} }).then(done),
-                      aiOn ? T.theRuleChecksRan : T.theRuleChecksRan2,
+                        api<CriticRan>(`/api/changes/${p.id}/critic`, {
+                          method: "POST",
+                          body: {},
+                        }).then((r) => {
+                          done();
+                          return r;
+                        }),
+                      // ADR 0188 (app-only audit): a lens is said to wait only when one does.
+                      (r) => (aiOn ? COPY.thread.criticRan(lensesWaiting(r)) : T.theRuleChecksRan2),
                     )
                   }
                 >

@@ -559,7 +559,7 @@ describe("the deploy order puts a callee before its caller and a migration befor
       ["delta.deploy-unknown-migration", "deploy#3"],
     ]);
     expect(got.map((i) => i.message)).toEqual([
-      "Step 2 of the deploy order deploys forge-billing, which isn't a repo the estate has: name a repo from the index.",
+      "Step 2 of the deploy order deploys forge-billing, which isn't a repo the estate has or a component this change plans: name a repo from the index, or draw forge-billing as a new component.",
       "Step 3 of the deploy order runs migration V9__drop_orders.sql, which no target flow names: name the migration a step gives under store.migration (V4__add_hold_id.sql).",
     ]);
   });

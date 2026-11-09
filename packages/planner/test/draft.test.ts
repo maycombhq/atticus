@@ -153,6 +153,39 @@ describe("draftChange", () => {
     await expect(readFile(join(changeDir(root), "proposal.md"), "utf8")).rejects.toThrow();
   });
 
+  it("reads the files attached to the change, and what the person said in the proposal's thread (ADR 0188)", async () => {
+    const root = await briefOnly();
+    const { attachToChange } = await import("@maycombhq/intake");
+    const { replyInStage, threadReplies } = await import("../src/index.js");
+    await attachToChange(
+      changeDir(root),
+      [{ name: "idea.txt", bytes: new TextEncoder().encode("Limits reset at local midnight.\n") }],
+      { by: "priya", at: NOW },
+    );
+    await replyInStage(root, {
+      change: CHANGE,
+      stage: "proposal",
+      text: "Say which team owns the limit.",
+      by: "priya",
+      at: NOW,
+    });
+    const prompts: string[] = [];
+    const mock = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return GOOD;
+      },
+      { now: () => new Date(NOW) },
+    );
+    expect((await draftChange(root, CHANGE, { runtime: mock, now: new Date(NOW) })).state).toBe(
+      "written",
+    );
+    expect(prompts[0]).toContain("Limits reset at local midnight.");
+    expect(prompts[0]).toContain("Say which team owns the limit.");
+    // Read by the draft that was written.
+    expect((await threadReplies(root, CHANGE, "proposal"))[0]!.read).toBe(true);
+  });
+
   it("refuses a brief that is still the template", async () => {
     const root = await briefOnly();
     await writeFile(

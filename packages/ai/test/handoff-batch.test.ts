@@ -125,10 +125,15 @@ describe("a batched hand-off (ADR 0185)", () => {
       at = head;
     }
     expect(prompt).toContain("=== complete");
-    expect(prompt.trimEnd().endsWith(`atticus handoff done ${batch.runId}`)).toBe(true);
+    expect(
+      prompt.trimEnd().endsWith("Atticus notices the file and checks it. There is nothing to run."),
+    ).toBe(true);
+    expect(prompt).not.toContain("atticus handoff done");
     // The parts' own prompts are as they were: each can still be answered alone.
     const own = await readFile(join(root, ".runs", CHANGE, parts[0]!.runId, "prompt.md"), "utf8");
-    expect(own).toContain(`atticus handoff done ${parts[0]!.runId}`);
+    expect(
+      own.trimEnd().endsWith("Atticus notices the file and checks it. There is nothing to run."),
+    ).toBe(true);
     for (const p of parts) expect((await runJson(root, p.runId)).batch).toBe(batch.runId);
     expect((await runJson(root, batch.runId)).parts).toEqual(parts);
     // The batch's size is its parts' together.

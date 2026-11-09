@@ -16,8 +16,8 @@ import { Command } from "./RunNext.js";
  */
 
 const S = COPY.sketch;
-type Kind = "call" | "topic" | "table" | "remove" | "retarget";
-const KINDS: Kind[] = ["call", "topic", "table", "remove", "retarget"];
+type Kind = "call" | "topic" | "table" | "remove" | "retarget" | "retire";
+const KINDS: Kind[] = ["call", "topic", "table", "remove", "retarget", "retire"];
 
 /** The form, as typed. */
 export interface SketchForm {
@@ -154,6 +154,12 @@ export function strokeOf(
           ...what,
         },
       };
+    }
+    // ADR 0188: a component taken away: every flow of it today goes.
+    case "retire": {
+      if (!t(f.component)) return { missing: S.missing.component };
+      if (!t(f.why)) return { missing: S.missing.why };
+      return { stroke: { kind: "retire", component: t(f.component), why: t(f.why) } };
     }
     case "remove":
     case "retarget": {
@@ -312,6 +318,20 @@ export function SketchForm(p: {
         setWritten(r);
         setWrote(true);
         setPreview(undefined);
+        // ADR 0188 (app-only audit): the next stroke starts clean: "doesn't exist yet" and the
+        // stroke's own words don't carry over from the one just drawn.
+        setF((o) => ({
+          ...o,
+          toComponent: "",
+          toEntry: "",
+          toNew: false,
+          tableNew: false,
+          table: "",
+          columns: "",
+          what: "",
+          step: "",
+          why: "",
+        }));
         p.onWritten?.(r);
       }
     } catch (e) {
@@ -348,7 +368,7 @@ export function SketchForm(p: {
     ...new Set([...(p.map?.nodes.filter((n) => n.kind === "component").map((n) => n.id) ?? [])]),
   ].sort();
   const flowsOf = pick && pick.component === t(f.component) ? pick.flows : [];
-  const needsFrom = f.kind !== "remove" && f.kind !== "retarget";
+  const needsFrom = f.kind !== "remove" && f.kind !== "retarget" && f.kind !== "retire";
   const field = (k: keyof SketchForm, label: string, extra: Record<string, unknown> = {}) => (
     <label className="stack" style={{ gap: 2 }}>
       <span className="hud">{label}</span>
@@ -463,6 +483,10 @@ export function SketchForm(p: {
               )}
             </div>
           )}
+        </div>
+      ) : f.kind === "retire" ? (
+        <div className="stack" style={{ gap: 6 }}>
+          {field("component", S.retireComponent, { list: `${id}-c` })}
         </div>
       ) : (
         <div className="stack" style={{ gap: 6 }}>

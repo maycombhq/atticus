@@ -522,5 +522,25 @@ export const StageLoop = z.strictObject({
         .default([]),
     })
     .optional(),
+  /**
+   * ADR 0188: the assistant's questions that couldn't be kept because none of their evidence is a
+   * line in the metarepo (a citation a few lines off). Never dropped in silence: the stage's
+   * thread shows each, and a person keeps it anyway (`keepDroppedQuestion`), citing the nearest
+   * line of the file it named, or none. Optional and additive: stage schema 1 stays.
+   */
+  dropped: z
+    .array(
+      z.strictObject({
+        /** Short and stable: sha-256 of the question's words and evidence (first 12 hex). */
+        key: z.string().regex(/^[0-9a-f]{12}$/),
+        question: text(),
+        evidence: z.array(z.string()),
+        /** The nearest line of the file it cited, when that file is there: path:line. */
+        nearest: z.string().optional(),
+        iteration: z.number().int().min(0),
+        at: z.string(),
+      }),
+    )
+    .optional(),
 });
 export type StageLoop = z.infer<typeof StageLoop>;

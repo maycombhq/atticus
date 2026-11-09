@@ -211,6 +211,23 @@ describe("the feature stage", () => {
     expect(loop.state).toBe("done");
   });
 
+  it("keeps a question whose citation isn't a line in the loop file, said, never dropped in silence (ADR 0188)", async () => {
+    const root = await estateRoot();
+    const brief = `openspec/changes/${CHANGE}/brief.md`;
+    const lines = (await readFile(join(root, brief), "utf8")).replace(/\n$/, "").split("\n").length;
+    const asked = `${PLACED}questions:\n  - question: Should a rejected order be held for review?\n    evidence: ["${brief}:${lines + 2}"]\n`;
+    const r = await featureStage(root, CHANGE, { runtime: assistant([asked]), now: NOW });
+    expect(r.notes.join("\n")).toContain("1 question couldn't be kept");
+    const loop = parse(await readFile(join(dir(root), "stage/feature.yaml"), "utf8"));
+    expect(loop.dropped).toEqual([
+      expect.objectContaining({
+        question: "Should a rejected order be held for review?",
+        evidence: [`${brief}:${lines + 2}`],
+        nearest: `${brief}:${lines}`,
+      }),
+    ]);
+  });
+
   // P1: a person's edit of a stage's file is that stage's draft, in every stage.
   it("checks a person's edit of feature.yaml as their draft and stops on what fails, never drafting over it", async () => {
     const root = await estateRoot();
@@ -305,8 +322,8 @@ describe("the feature stage", () => {
 });
 
 describe("the loop in hand-off mode", () => {
-  it("hands the expansion off first, then each draft, and a draft with findings hands off again with them", async () => {
-    // The real default (ADR 0116 addendum): the expansion is on, a round of its own.
+  it("one paste per round (ADR 0188): each draft is the round's only hand-off, and a draft with findings hands off again with them", async () => {
+    // The real default (the expansion on): in a hand-off it is read without a model.
     const root = await estateRoot();
     const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
     const rounds: string[] = [];
@@ -320,24 +337,17 @@ describe("the loop in hand-off mode", () => {
           };
         }
       ).request;
-    const expansion = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
-    expect(expansion.state).toBe("waiting");
-    const run0 = expansion.waiting!.runId;
-    rounds.push((await requestOf(run0)).agent.id);
-    expect(rounds).toEqual([EXPAND_AGENT]);
-    // The expansion's prompt stays small for the GPT-4o mini floor (a 6,000-token budget).
-    const prompt0 = await readFile(join(root, ".runs", CHANGE, run0, "prompt.md"), "utf8");
-    expect(prompt0.length).toBeLessThan(6000 * 4);
-    await writeFile(
-      join(root, ".runs", CHANGE, run0, (await requestOf(run0)).outputPath),
-      EXPANSION,
-    );
-    await rt().done(run0);
-    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run0 });
+    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
     expect(first.state).toBe("waiting");
     const run1 = first.waiting!.runId;
     rounds.push((await requestOf(run1)).agent.id);
-    expect((await requestOf(run1)).retrieval?.expansion).toMatchObject({ run: run0 });
+    // No model was asked to expand: the expansion has no run.
+    expect((await requestOf(run1)).retrieval?.expansion?.run).toBeUndefined();
+    const prompt1 = await readFile(join(root, ".runs", CHANGE, run1, "prompt.md"), "utf8");
+    expect(prompt1).not.toContain("atticus handoff done");
+    expect(prompt1.trimEnd()).toMatch(
+      /Atticus notices the file and checks it\. There is nothing to run\.$/,
+    );
     const out = (run: string) => join(root, ".runs", CHANGE, run, "feature-answer.yaml");
     await writeFile(out(run1), PLACED.replace("cap-ordering", "cap-checkout"));
     await rt().done(run1);
@@ -355,55 +365,19 @@ describe("the loop in hand-off mode", () => {
     await rt().done(run2);
     const third = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run2 });
     expect(third.state).toBe("done");
-    // One expansion round, kept in the judgments store: the next draft doesn't ask it again.
-    expect(rounds).toEqual([EXPAND_AGENT, "feature-placer", "feature-placer"]);
-    expect((await requestOf(run2)).retrieval?.expansion).toMatchObject({ cached: true });
+    expect(rounds).toEqual(["feature-placer", "feature-placer"]);
+    expect(rounds).not.toContain(EXPAND_AGENT);
     // The org pack has no AI rule at the define gate, so no lens had anything to review.
     expect(third.notes.join("\n")).not.toContain("/atticus-critic");
   });
 
-  it("an expansion answer that fails its check: the step goes on by words and names, with a note, not stuck", async () => {
-    const root = await estateRoot();
-    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
-    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
-    const run0 = first.waiting!.runId;
-    const req = JSON.parse(await readFile(join(root, ".runs", CHANGE, run0, "run.json"), "utf8"))
-      .request as { agent: { id: string }; outputPath: string };
-    expect(req.agent.id).toBe(EXPAND_AGENT);
-    await writeFile(join(root, ".runs", CHANGE, run0, req.outputPath), "not: [yaml");
-    await rt().done(run0);
-    const second = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run0 });
-    // The step's own draft is handed off: the expansion was left out and said so.
-    expect(second.state).toBe("waiting");
-    const main = JSON.parse(
-      await readFile(join(root, ".runs", CHANGE, second.waiting!.runId, "run.json"), "utf8"),
-    ) as { request: { agent: { id: string }; retrieval?: unknown } };
-    expect(main.request.agent.id).toBe("feature-placer");
-    expect(main.request.retrieval).toBeUndefined();
-    expect(second.context?.note).toMatch(
-      /the model's expansion was left out: the expansion isn't YAML with terms and names/,
-    );
-  });
-
-  it("run again without --resume, it waits on the same expansion prompt, then reads its answer in", async () => {
+  it("run again without --resume, it waits on the same draft prompt, then reads its answer in", async () => {
     const root = await estateRoot();
     const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
     const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
     const run0 = first.waiting!.runId;
     const again = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
     expect(again).toMatchObject({ state: "waiting", waiting: { runId: run0 } });
-    const req = JSON.parse(await readFile(join(root, ".runs", CHANGE, run0, "run.json"), "utf8"))
-      .request as { outputPath: string };
-    await writeFile(join(root, ".runs", CHANGE, run0, req.outputPath), EXPANSION);
-    await rt().done(run0);
-    // The runner lost its place: no --resume, and the answer is still read in, not asked again.
-    const third = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
-    expect(third.state).toBe("waiting");
-    const main = JSON.parse(
-      await readFile(join(root, ".runs", CHANGE, third.waiting!.runId, "run.json"), "utf8"),
-    ) as { request: { agent: { id: string }; retrieval?: { expansion?: { run?: string } } } };
-    expect(main.request.agent.id).toBe("feature-placer");
-    expect(main.request.retrieval?.expansion?.run).toBe(run0);
   });
 });
 

@@ -184,7 +184,8 @@ export const interfaceEndsInCatalog: DeterministicCheckDef = {
         ["caller", h.caller],
         ["callee", h.callee],
       ] as const) {
-        if (!end || ctx.isKnown(end)) continue;
+        // ADR 0188: an end the change's own diagram plans is planned in this change, not missing.
+        if (!end || ctx.isKnown(end) || ctx.planned.get(end) === "new") continue;
         hits.push({
           kind: "issue",
           artifact: IFACES,

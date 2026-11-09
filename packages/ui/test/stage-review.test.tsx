@@ -253,7 +253,8 @@ describe("a stage tab's findings", () => {
     expect(clean).toContain(esc(S.noQuestions));
   });
 
-  it("is on Feature design and Stories, not Tasks; Architecture shows it for the change named, else a list", () => {
+  // ADR 0188: the stage tabs show the stage's thread, which holds the findings, in its place.
+  it("its place on Feature design, Stories and Architecture is the stage's thread now, not on Tasks", () => {
     const list = {
       state: "ready" as const,
       data: [{ id: CHANGE, title: "Add a daily transfer limit", state: "plan" }],
@@ -268,14 +269,16 @@ describe("a stage tab's findings", () => {
           tasks={undefined}
         />,
       );
-    expect(page("feature")).toContain(esc(S.title));
-    expect(page("stories")).toContain(esc(S.title));
-    expect(page("tasks")).not.toContain(esc(S.title));
+    const T = COPY.thread;
+    expect(page("feature")).toContain(esc(T.title("feature")));
+    expect(page("stories")).toContain(esc(T.title("stories")));
+    expect(page("feature")).not.toContain(esc(S.title));
+    expect(page("tasks")).not.toContain(esc(T.title("stories")));
     const pick = renderToStaticMarkup(<ArchitectureReview list={list} wanted={undefined} />);
     expect(pick).toContain(esc(S.pickForArchitecture));
     expect(pick).toContain(`href="#/architecture?change=${CHANGE}"`);
     expect(renderToStaticMarkup(<ArchitectureReview list={list} wanted={CHANGE} />)).toContain(
-      esc(S.title),
+      esc(T.title("architecture")),
     );
   });
 });
