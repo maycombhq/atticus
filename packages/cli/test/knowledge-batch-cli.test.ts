@@ -78,6 +78,10 @@ async function wikiWithReader(pageTokens: number): Promise<string> {
   return root;
 }
 
+// Round 47: the scan's shared-paths and removed-pages lists are data blocks too, not pages.
+const isPage = (s: { trusted?: boolean; origin: string }) =>
+  !s.trusted && s.origin.startsWith("forge-wiki/");
+
 const hashes = async (root: string) =>
   Object.keys(
     (
@@ -93,7 +97,7 @@ describe("atticus knowledge scan reads every page, in batches that fit", () => {
     const sent: string[][] = [];
     const runtime = new MockRuntime((r: AiRequest) => {
       expect(r.pack.manifest.dropped).toEqual([]);
-      sent.push(r.pack.manifest.sources.filter((s) => !s.trusted).map((s) => s.origin));
+      sent.push(r.pack.manifest.sources.filter(isPage).map((s) => s.origin));
       return "items: []\n";
     });
     const c = capture();
@@ -149,7 +153,7 @@ describe("atticus knowledge scan reads every page, in batches that fit", () => {
     const root = await wikiWithReader(-260);
     const sent: string[] = [];
     const runtime = new MockRuntime((r: AiRequest) => {
-      sent.push(...r.pack.manifest.sources.filter((s) => !s.trusted).map((s) => s.origin));
+      sent.push(...r.pack.manifest.sources.filter(isPage).map((s) => s.origin));
       return "items: []\n";
     });
     const c = capture();
