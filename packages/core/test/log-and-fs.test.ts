@@ -127,17 +127,24 @@ describe("whole files and locks", () => {
       /Wait for it to finish; if nothing is running, delete .*task-run-c-1\.2\.json\./,
     );
     await mine.release();
-    // Held by a live process elsewhere on this machine (PID 1), but older than the age allowed.
+    // Held by a live process elsewhere on this machine (the one that started this test: PID 1 is
+    // no process on Windows), but older than the age allowed.
+    const other = process.ppid;
     await writeFile(
       file,
-      JSON.stringify({ pid: 1, host: hostname(), startedAt: "2026-11-07T08:00:00Z", what: "run" }),
+      JSON.stringify({
+        pid: other,
+        host: hostname(),
+        startedAt: "2026-11-07T08:00:00Z",
+        what: "run",
+      }),
     );
     const now = () => new Date("2026-11-07T21:00:00Z");
     await expect(acquireLock(root, "task-run-c-1.2", "run", now)).rejects.toBeInstanceOf(
       LockHeldError,
     );
     const late = await acquireLock(root, "task-run-c-1.2", "run", now, { maxAgeMs: 12 * 3600_000 });
-    expect(late.interrupted).toMatchObject({ pid: 1 });
+    expect(late.interrupted).toMatchObject({ pid: other });
     await late.release();
   });
 });

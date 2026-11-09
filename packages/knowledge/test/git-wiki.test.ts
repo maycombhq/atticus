@@ -94,11 +94,14 @@ describe("a wiki kept in git", () => {
 
   it("dates a page with a non-ASCII or quoted name (git quotes those paths)", async () => {
     const { wiki, root } = await wikiRepo();
+    // Windows allows no " in a file name, so that page is only made where it can exist; git
+    // quotes the non-ASCII name everywhere.
+    const quotes = process.platform !== "win32";
     await commit(
       wiki,
       {
         "docs/how-to/Política-de-Pagos.md": "# Política de pagos\n\nUse the payments hub.\n",
-        'docs/how-to/the "fast" path.md': "# The fast path\n\nOne step.\n",
+        ...(quotes ? { 'docs/how-to/the "fast" path.md': "# The fast path\n\nOne step.\n" } : {}),
       },
       "2026-10-05T10:00:00Z",
     );
@@ -109,7 +112,7 @@ describe("a wiki kept in git", () => {
     });
     const dated = Object.fromEntries(pages.map((p) => [p.pagePath, p.updatedAt]));
     expect(dated["how-to/Política-de-Pagos.md"]).toBe("2026-10-05");
-    expect(dated['how-to/the "fast" path.md']).toBe("2026-10-05");
+    if (quotes) expect(dated['how-to/the "fast" path.md']).toBe("2026-10-05");
   });
 
   it("reads a branch when one is named", async () => {
