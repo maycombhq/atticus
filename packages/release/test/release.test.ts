@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import { HandoffRuntime } from "@maycombhq/ai";
 import {
   deploymentPlan,
+  orderSteps,
   evidencePack,
   findMeasure,
   loadRelease,
@@ -39,6 +40,46 @@ function golden(name: string, text: string) {
 
 const plain = async () =>
   loadRelease(await forgeRoot(), ID, { now: NOW, runtime: forgeJudge().runtime });
+
+describe("step order with a cycle (round 47)", () => {
+  // forge-b and forge-c wait on each other; forge-a waits on forge-b (b deploys first). The
+  // cycle is broken inside itself, forge-a still goes after forge-b, and the gap names b and c.
+  const keys = ["code:forge-a", "code:forge-b", "code:forge-c"];
+  const preds = new Map<string, { from: string }[]>([
+    ["code:forge-a", [{ from: "code:forge-b" }]],
+    ["code:forge-b", [{ from: "code:forge-c" }]],
+    ["code:forge-c", [{ from: "code:forge-b" }]],
+  ]);
+  const byPrio = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const repoOf = (k: string) => k.slice("code:".length);
+
+  it("breaks only a real cycle and names its members", () => {
+    const r = orderSteps(keys, preds, byPrio, repoOf);
+    expect(r.order).toEqual(["code:forge-b", "code:forge-a", "code:forge-c"]);
+    expect(r.gaps).toEqual([
+      "forge-b and forge-c depend on each other, so no order satisfies both; agree one and write it in design.md.",
+    ]);
+  });
+
+  it("breaks the cycle nothing else waits on first, when a second cycle waits on it", () => {
+    // d <-> e wait on b (b -> d); b <-> c is the cycle to break first, though d sorts after.
+    const more = new Map(preds);
+    more.set("code:forge-d", [{ from: "code:forge-e" }, { from: "code:forge-b" }]);
+    more.set("code:forge-e", [{ from: "code:forge-d" }]);
+    const r = orderSteps([...keys, "code:forge-d", "code:forge-e"], more, byPrio, repoOf);
+    expect(r.order).toEqual([
+      "code:forge-b",
+      "code:forge-a",
+      "code:forge-c",
+      "code:forge-d",
+      "code:forge-e",
+    ]);
+    expect(r.gaps.map((g) => g.split(" depend")[0])).toEqual([
+      "forge-b and forge-c",
+      "forge-d and forge-e",
+    ]);
+  });
+});
 
 describe("deployment plan", () => {
   it("orders the seeded change's repos from its dependencies, as worked out by hand", async () => {

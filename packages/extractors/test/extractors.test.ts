@@ -719,6 +719,40 @@ describe("dialect engine", () => {
     expect(() => dialectExtractor(child)).toThrow(/extends base, which isn't loaded/);
   });
 
+  it("keeps a parent's override in a diamond: the shared base is applied once (round 47)", async () => {
+    const rule = (who: string) => ({
+      id: "r",
+      description: who,
+      match: { regex: "A", files: ["f"] },
+      emit: { kind: "Unresolved", id: `${who}.x`, fields: { unresolvedKind: "k", raw: "a" } },
+      confidence: "inferred" as const,
+    });
+    const other = {
+      id: "o",
+      description: "c's own",
+      match: { regex: "A", files: ["f"] },
+      emit: { kind: "Unresolved", id: "c.o", fields: { unresolvedKind: "k", raw: "a" } },
+      confidence: "inferred" as const,
+    };
+    const a = dialect([rule("a")], { name: "a" });
+    const b = dialect([rule("b")], { name: "b", extends: ["a"] });
+    const c = dialect([other], { name: "c", extends: ["a"] });
+    const d = dialect([{ ...other, id: "own", emit: { ...other.emit, id: "d.own" } }], {
+      name: "d",
+      extends: ["b", "c"],
+    });
+    const parents = new Map([
+      ["a", a],
+      ["b", b],
+      ["c", c],
+    ]);
+    const s = await scanRepo({
+      repo: memoryRepo("x", SHA, { f: "A" }),
+      extractors: [dialectExtractor(d, parents)],
+    });
+    expect(s.records.map((r) => r.id).sort()).toEqual(["b.x", "c.o", "d.own"]);
+  });
+
   it("reports failing dialect tests so the dialect won't load", async () => {
     const bad = Dialect.parse({
       ...forge,

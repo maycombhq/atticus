@@ -305,6 +305,26 @@ export async function runCritic(
       .map((h) => h.hit.artifact),
   );
 
+  // Round 47: the round's record says it is in progress before anything of it is written (the
+  // lenses' packs, findings one by one); the finished record below replaces it last. A round
+  // that stops part way then stops the gate (checkFindings) instead of passing on the findings
+  // it got to write.
+  const metaDir = join(changeFolder(root, change.id), "review", gate.id, String(round), "meta");
+  await writeFileAtomic(
+    join(metaDir, "round.yaml"),
+    toCanonicalYaml(
+      {
+        schemaVersion: 1,
+        change: change.id,
+        gate: gate.id,
+        round,
+        createdAt: now,
+        state: "in-progress",
+      },
+      ROUND_LEADING,
+    ),
+  );
+
   // Layer 2: AI lenses, only on artifacts that passed layer 1.
   // One lens per question (ADR 0124 addendum, Part 4); an old lens's name asks its question.
   const lenses = opts.lenses ? questionsOf(opts.lenses) : [...CriticQuestion.options];
@@ -425,7 +445,6 @@ export async function runCritic(
   await keepLensRecords(root, change.id, gate.id, round, ai.runs);
 
   const model = criticModel(lifecycle.orgPack.runtime, opts.authorModel);
-  const metaDir = join(changeFolder(root, change.id), "review", gate.id, String(round), "meta");
   for (const r of ai.runs)
     if (r.summary)
       await writeFileAtomic(

@@ -3,6 +3,7 @@ import type { CatalogRecord } from "@maycombhq/core";
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
 import type { Ev } from "../facts.js";
 import { settingSlug } from "../spring.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * Helpers the platform extractors share: ids, environments, component names and the
@@ -200,7 +201,7 @@ export function deployment(f: {
   evidence: Ev[];
 }): CatalogRecord {
   const ingress = [...(f.ingress ?? [])].sort((a, b) =>
-    `${a.host}|${a.path ?? ""}`.localeCompare(`${b.host}|${b.path ?? ""}`),
+    cmpText(`${a.host}|${a.path ?? ""}`, `${b.host}|${b.path ?? ""}`),
   );
   return {
     schemaVersion: 1,

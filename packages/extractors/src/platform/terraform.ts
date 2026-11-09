@@ -1,6 +1,7 @@
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
 import { attrOf, isRef, parseHcl, type HclBlock, type HclValue } from "./hcl.js";
 import { dirOf, readOrWarn } from "./util.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * Terraform modules as folders of .tf files: their resources, and the variables (defaults,
@@ -76,7 +77,7 @@ export async function loadTerraform(
     byDir.set(dirOf(path), [...(byDir.get(dirOf(path)) ?? []), { path, text }]);
   }
   const folders = new Map<string, Folder>();
-  for (const [dir, list] of [...byDir.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [dir, list] of [...byDir.entries()].sort(([a], [b]) => cmpText(a, b))) {
     const f: Folder = {
       dir,
       relevant: list.some((x) => x.path.endsWith(".tf") && relevant.test(x.text)),

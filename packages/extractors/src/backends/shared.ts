@@ -8,6 +8,7 @@ import {
   type SourceRead,
   type SrcTok,
 } from "../lang/source-tree.js";
+import { cmpText } from "@maycombhq/core";
 
 export type { ImportDecl, SourceLang, SrcTok };
 
@@ -61,7 +62,7 @@ export async function dotenv(repo: RepoHandle): Promise<Map<string, EnvValue>> {
     (a, b) =>
       Number(a.endsWith(".example")) - Number(b.endsWith(".example")) ||
       a.split("/").length - b.split("/").length ||
-      a.localeCompare(b),
+      cmpText(a, b),
   );
   for (const f of files) {
     (await repo.readText(f)).split(/\r?\n/).forEach((raw, i) => {

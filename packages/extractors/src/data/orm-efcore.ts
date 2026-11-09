@@ -17,6 +17,7 @@ import {
 import { at } from "../lang/parsed.js";
 import { isTestOrBuildPath } from "./common.js";
 import type { OrmColumn, OrmModel, OrmTable, Where } from "./orm-model.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * Entity Framework Core, read from C# syntax trees (ADR 0060): entities are the DbSet<T> types
@@ -381,7 +382,7 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   const info = new Map<string, Info>();
   const sorted = entities
     .map((n) => classes.get(n)!)
-    .sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+    .sort((a, b) => cmpText(a.path, b.path) || a.line - b.line);
   for (const c of sorted) {
     const tableAttr = has(c, "Table");
     const name =

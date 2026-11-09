@@ -15,6 +15,7 @@ import {
   type DialectFieldValue,
   type DialectRule,
   type TemplateSource,
+  cmpText,
 } from "@maycombhq/core";
 import {
   defineExtractor,
@@ -546,13 +547,19 @@ export function dialectExtractor(
   o: { emitted?: (ruleId: string) => void } = {},
 ): Extractor {
   const rules = new Map<string, DialectRule>();
+  // Round 47: each ancestor is applied once, the first time the walk reaches it (parents in
+  // their `extends` order, each after its own parents), so in a diamond (B and C both extend A)
+  // A's rule doesn't come back over B's override of it when C is walked.
+  const applied = new Set<string>();
   const visit = (d: Dialect, seen: Set<string>) => {
     for (const p of d.extends) {
       if (seen.has(p)) throw new Error(`dialect ${d.name} extends itself through ${p}`);
       const parent = parents.get(p);
       if (!parent) throw new Error(`dialect ${d.name} extends ${p}, which isn't loaded`);
+      if (applied.has(p)) continue;
       visit(parent, new Set([...seen, p]));
     }
+    applied.add(d.name);
     for (const r of d.rules) rules.set(r.id, r);
   };
   visit(dialect, new Set([dialect.name]));
@@ -689,7 +696,7 @@ export function dialectExtractor(
         tables.set(name, table);
       }
 
-      for (const rule of [...rules.values()].sort((a, b) => a.id.localeCompare(b.id))) {
+      for (const rule of [...rules.values()].sort((a, b) => cmpText(a.id, b.id))) {
         const emits = Array.isArray(rule.emit) ? rule.emit : [rule.emit];
         const yamlValues = await yamlFor([
           ...emits.flatMap(templatesOf),

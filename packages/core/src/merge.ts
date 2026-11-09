@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseRecord, type CatalogRecord, type RecordIssue } from "./catalog.js";
-import { interfaceId, normalizePath } from "./identity.js";
+import { interfaceId, normalizePath, cmpText } from "./identity.js";
 import { COMPONENT_TYPES } from "./schema/kinds.js";
 import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
 
@@ -910,7 +910,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   const records: CatalogRecord[] = [];
   const seen = new Set<string>();
   for (const r of out.sort((a, b) =>
-    a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
+    a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind),
   )) {
     const key = `${r.kind}|${r.id}`;
     if (seen.has(key)) continue;

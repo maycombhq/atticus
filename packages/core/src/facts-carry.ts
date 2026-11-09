@@ -26,11 +26,14 @@ export interface StaleCite {
   to?: string;
 }
 
-const filesOfCite = (c: Cite): string[] => [c.file, ...(c.with ?? []).map((p) => p.file)];
+const filesOfCite = (c: Pick<Cite, "file" | "with">): string[] => [
+  c.file,
+  ...(c.with ?? []).map((p) => p.file),
+];
 
 /**
  * The files a fact rests on: its cite and the cite's `with` parts, an entry's `authCite` (ADR
- * 0124 addendum A-read), and for a flow every step's and error path's cite and parts. Unique and
+ * 0124 addendum A-read) and a call's `authCite` and `tlsCite` (ADR 0163), with their parts, and for a flow every step's and error path's cite and parts. Unique and
  * sorted, except that a fact's own cited file comes first for a non-flow fact.
  */
 export function citedFiles(f: Fact): string[] {
@@ -38,7 +41,10 @@ export function citedFiles(f: Fact): string[] {
     return [
       ...new Set([
         ...filesOfCite(f.cite),
-        ...(f.kind === "entry" && f.authCite ? [f.authCite.file] : []),
+        ...(f.kind === "entry" && f.authCite ? filesOfCite(f.authCite) : []),
+        // Round 47: a call's auth and TLS lines, and the lines they're built from, as an entry's.
+        ...(f.kind === "call" && f.authCite ? filesOfCite(f.authCite) : []),
+        ...(f.kind === "call" && f.tlsCite ? filesOfCite(f.tlsCite) : []),
         // A-gateway2: a changed scope line invalidates the entry that demands the scope.
         ...(f.kind === "entry" ? (f.scopes ?? []).flatMap(filesOfCite) : []),
         // A-callers: so does a changed line naming a consumer (an API product, a developer app).

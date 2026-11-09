@@ -38,6 +38,7 @@ import {
 import { ChecklistPack } from "./schema/review.js";
 import { RepoManifest } from "./schema/workspace.js";
 import { Conventions, DEFAULT_CONVENTIONS } from "./schema/conventions.js";
+import { cmpText } from "./identity.js";
 
 export interface OrgPackProblem {
   /** File relative to the org-pack folder. */
@@ -106,7 +107,7 @@ async function listFiles(dir: string, re: RegExp): Promise<string[]> {
     } catch {
       return;
     }
-    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
       else if (re.test(e.name)) out.push(full);
@@ -268,7 +269,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   // plugin.yaml of each folder: anything under test/ is a test repo's data.
   const plugins: OrgPack["plugins"] = [];
   const pluginDirs = await readdir(join(dir, "plugins"), { withFileTypes: true }).catch(() => []);
-  for (const e of pluginDirs.sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of pluginDirs.sort((a, b) => cmpText(a.name, b.name))) {
     const f = join(dir, "plugins", e.name, "plugin.yaml");
     if (!e.isDirectory() || !(await exists(f))) continue;
     const v = await load(f, ScannerPlugin);
@@ -284,7 +285,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const modelProviders: OrgPack["modelProviders"] = [];
   const mpRoot = join(dir, "plugins", "model-providers");
   const mpDirs = await readdir(mpRoot, { withFileTypes: true }).catch(() => []);
-  for (const e of mpDirs.sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of mpDirs.sort((a, b) => cmpText(a.name, b.name))) {
     const f = join(mpRoot, e.name, "plugin.yaml");
     if (!e.isDirectory() || !(await exists(f))) continue;
     const v = await load(f, ModelProviderPlugin);

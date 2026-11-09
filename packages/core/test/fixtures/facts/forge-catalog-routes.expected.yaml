@@ -1,0 +1,231 @@
+schemaVersion: 5
+kind: Component
+id: catalog-api
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 14
+    path: src/Forge.Catalog/BrandsController.cs
+    repo: forge-catalog
+    source: code
+repo: forge-catalog
+system: forge-catalog
+type: service
+---
+schemaVersion: 5
+kind: Component
+id: catalog-web
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/Forge.Catalog.Web/CatalogClient.cs
+    repo: forge-catalog
+    source: code
+repo: forge-catalog
+system: forge-catalog
+type: service
+---
+schemaVersion: 5
+kind: Endpoint
+id: catalog-api.get-item
+status: current
+confidence: verified
+component: catalog-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 14
+    path: src/Forge.Catalog/BrandsController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+method: GET
+normalizedPath: /brands/{}/items
+pathOrTopic: /brands/{brandId:int?}/items
+schemaRefs: []
+---
+schemaVersion: 5
+kind: Endpoint
+id: catalog-api.get-label
+status: current
+confidence: verified
+component: catalog-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 11
+    path: src/Forge.Catalog/CodesController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+method: GET
+normalizedPath: /codes/{}/label
+pathOrTopic: /codes/{code:regex(^\d{3}$)}/label
+schemaRefs: []
+---
+schemaVersion: 5
+kind: Endpoint
+id: catalog-api.get-page
+status: current
+confidence: verified
+component: catalog-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 9
+    path: src/Forge.Catalog/PagesController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+method: GET
+normalizedPath: /pages/{}
+pathOrTopic: /pages/{slug:regex(^[a-z]+$)}
+schemaRefs: []
+---
+schemaVersion: 5
+kind: Endpoint
+id: catalog-api.get-price
+status: current
+confidence: verified
+component: catalog-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 22
+    path: src/Forge.Catalog/BrandsController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+method: GET
+normalizedPath: /brands/{}/prices
+pathOrTopic: /brands/{brandId:int?}/prices
+schemaRefs: []
+---
+schemaVersion: 5
+kind: Interface
+id: if-2ea1bec030eb8c79
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: catalog-api.get-page
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 37
+    path: src/Forge.Catalog.Web/CatalogClient.cs
+    repo: forge-catalog
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 9
+    path: src/Forge.Catalog/PagesController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+from: catalog-web
+method: GET
+normalizedPath: /pages/{}
+sync: sync
+to: catalog-api
+via: direct
+---
+schemaVersion: 5
+kind: Interface
+id: if-3bc7e3c6c07565fa
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: catalog-api.get-price
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 34
+    path: src/Forge.Catalog.Web/CatalogClient.cs
+    repo: forge-catalog
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 22
+    path: src/Forge.Catalog/BrandsController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+from: catalog-web
+method: GET
+normalizedPath: /brands/{}/prices
+sync: sync
+to: catalog-api
+via: direct
+---
+schemaVersion: 5
+kind: Interface
+id: if-7c2e051420ded286
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: catalog-api.get-label
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 40
+    path: src/Forge.Catalog.Web/CatalogClient.cs
+    repo: forge-catalog
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 11
+    path: src/Forge.Catalog/CodesController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+from: catalog-web
+method: GET
+normalizedPath: /codes/{}/label
+sync: sync
+to: catalog-api
+via: direct
+---
+schemaVersion: 5
+kind: Interface
+id: if-fccb71fdff9adbdd
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: catalog-api.get-item
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/Forge.Catalog.Web/CatalogClient.cs
+    repo: forge-catalog
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 14
+    path: src/Forge.Catalog/BrandsController.cs
+    repo: forge-catalog
+    side: callee
+    source: code
+from: catalog-web
+method: GET
+normalizedPath: /brands/{}/items
+sync: sync
+to: catalog-api
+via: direct

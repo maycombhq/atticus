@@ -15,6 +15,7 @@ import {
   type Fact,
   type OrgPack,
   stackHelpersOff,
+  cmpText,
 } from "@maycombhq/core";
 import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
@@ -161,7 +162,7 @@ export async function factsForScan(
     extra.set(r.kind, (extra.get(r.kind) ?? 0) + 1);
   }
   const said = [...extra.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => cmpText(a[0], b[0]))
     .map(([k, n]) => `${n} ${k}`)
     .join(", ");
   return {

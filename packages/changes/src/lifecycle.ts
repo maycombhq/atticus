@@ -332,10 +332,27 @@ export async function checkFindings(
     // A round started in hand-off mode isn't decided until every AI lens has answered; a lens
     // that failed (no answer, or an answer that isn't a review) never reviewed, so it stops the
     // gate too, until a new critic round reviews.
+    const files = (await readdir(dir)).filter((f) => /\.ya?ml$/.test(f)).sort();
+    // Round 47: the critic writes `state: in-progress` in meta/round.yaml before its lenses run
+    // and the finished record last, so a round it didn't finish (a crash, a kill, or one still
+    // running) is never judged by the findings it got to write. A round folder with neither its
+    // record nor a finding is one a crash left behind; an older round with finding files and no
+    // record is still judged by its findings.
+    const unfinished = {
+      code: "round-unfinished" as const,
+      message: `Critic round ${round} on the ${gate} gate didn't finish: run atticus critic ${change.id} --gate ${gate} again.`,
+    };
+    let hasMeta = false;
     try {
       const meta = parse(await readFile(join(dir, "meta", "round.yaml"), "utf8")) as {
+        state?: string;
         lenses?: { lens?: string; state?: string; runId?: string; reason?: string }[];
       } | null;
+      hasMeta = true;
+      if (meta?.state === "in-progress") {
+        reasons.push(unfinished);
+        continue;
+      }
       for (const l of meta?.lenses ?? [])
         if (l.state === "waiting")
           reasons.push({
@@ -350,7 +367,10 @@ export async function checkFindings(
     } catch {
       // No meta/round.yaml: an older round, judged by its finding files alone.
     }
-    const files = (await readdir(dir)).filter((f) => /\.ya?ml$/.test(f)).sort();
+    if (!hasMeta && files.length === 0) {
+      reasons.push(unfinished);
+      continue;
+    }
     for (const f of files) {
       const rel = `review/${gate}/${round}/${f}`;
       let data: unknown;

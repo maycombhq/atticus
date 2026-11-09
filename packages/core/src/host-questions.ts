@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
-import { slugify } from "./identity.js";
+import { slugify, cmpText } from "./identity.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { migrateProfileText } from "./profile-migrate.js";
 import { Profile } from "./schema/orgpack.js";
@@ -94,7 +94,7 @@ async function platformsOf(root: string): Promise<{ dir: string; platform: strin
   return names
     .filter((x) => x.isDirectory())
     .map((x) => ({ dir: join(profiles, x.name), platform: x.name }))
-    .sort((a, b) => a.platform.localeCompare(b.platform));
+    .sort((a, b) => cmpText(a.platform, b.platform));
 }
 
 /**
@@ -289,9 +289,7 @@ export async function addManifestHost(
 ): Promise<{ manifest: string; added: boolean }> {
   const profiles = join(orgPackDirOf(root), "profiles");
   const names = await readdir(profiles, { withFileTypes: true }).catch(() => []);
-  for (const d of names
-    .filter((x) => x.isDirectory())
-    .sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const d of names.filter((x) => x.isDirectory()).sort((a, b) => cmpText(a.name, b.name))) {
     const file = join(profiles, d.name, "repos.manifest.yaml");
     const text = await readFile(file, "utf8").catch(() => undefined);
     if (text === undefined) continue;

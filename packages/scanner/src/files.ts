@@ -8,6 +8,7 @@ import {
   recordPath,
   serializeRecord,
   type CatalogRecord,
+  cmpText,
 } from "@maycombhq/core";
 
 type CatalogRead = { records: CatalogRecord[]; problems: { file: string; message: string }[] };
@@ -71,7 +72,7 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
     } catch {
       return;
     }
-    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
       else if (/\.ya?ml$/.test(e.name)) files.push(relative(dir, full).split(sep).join("/"));
@@ -97,9 +98,7 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
     else problems.push({ file: p.rel, message: p.problem });
   }
   // The same order as a scan's records (kind, then id), whatever the file names sort to.
-  records.sort((a, b) =>
-    a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
-  );
+  records.sort((a, b) => (a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind)));
   return { records, problems };
 }
 
@@ -212,9 +211,7 @@ export function diffCatalogs(before: CatalogRecord[], after: CatalogRecord[]): C
   }
   for (const [k, r] of a) if (!b.has(k)) diff.removed.push({ kind: r.kind, id: r.id });
   const sort = <T extends { kind: string; id: string }>(xs: T[]) =>
-    xs.sort((x, y) =>
-      x.kind === y.kind ? x.id.localeCompare(y.id) : x.kind.localeCompare(y.kind),
-    );
+    xs.sort((x, y) => (x.kind === y.kind ? cmpText(x.id, y.id) : cmpText(x.kind, y.kind)));
   sort(diff.added);
   sort(diff.removed);
   sort(diff.changed);

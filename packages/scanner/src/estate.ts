@@ -9,6 +9,7 @@ import {
   type EvidenceT,
   type FlowRecord,
   type RecordOf,
+  cmpText,
 } from "@maycombhq/core";
 import { familyMismatches, fieldKey, pathScore, repoComponents } from "./spec-check.js";
 
@@ -192,7 +193,7 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
           sameMethod(want.method, e.method) &&
           pathScore(want.path, e.normalizedPath ?? e.pathOrTopic) === 1000,
       )
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a, b) => cmpText(a.id, b.id));
 
   const joins: EstateJoin[] = [];
   const unmatched: EstateUnmatched[] = [];
@@ -387,7 +388,7 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
     }
   }
   const order = (a: { from: { flow: string; step: number } }, b: typeof a) =>
-    a.from.flow.localeCompare(b.from.flow) || a.from.step - b.from.step;
+    cmpText(a.from.flow, b.from.flow) || a.from.step - b.from.step;
   return {
     joins: joins.sort(order),
     unmatched: unmatched.sort(order),

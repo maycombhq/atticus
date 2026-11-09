@@ -31,6 +31,7 @@ import {
   type OrgPack,
   helperOn,
   stackHelpersOff,
+  cmpText,
 } from "@maycombhq/core";
 import {
   BUILT_IN_EXTRACTORS,
@@ -671,7 +672,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   // The glossary is an enrichment: what it can't read (a missing wiki folder) is a note, not a scan failure.
   const notes = [...factNotes, ...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`)];
   const withFeatures = [...glossary.records, ...fedRecords].sort((a, b) =>
-    a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
+    a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind),
   );
   const applied = applyCurated(withFeatures, curated.records);
   for (const p of applied.problems)

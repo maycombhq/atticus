@@ -8,6 +8,8 @@ import {
   urlHostPort,
   type CatalogRecord,
   type QuestionDraft,
+  cmpNatural,
+  cmpText,
 } from "@maycombhq/core";
 import type { RepoHandle } from "@maycombhq/sdk";
 
@@ -183,7 +185,7 @@ export async function unknownHosts(o: {
   };
 
   const asks: HostAsk[] = [];
-  for (const [host, entry] of [...byHost.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [host, entry] of [...byHost.entries()].sort(([a], [b]) => cmpText(a, b))) {
     if (servers.length === 0) continue;
     const hits: NonNullable<HostAsk["suggest"]>[] = [];
     if (entry.explicit && entry.port !== undefined)
@@ -196,9 +198,7 @@ export async function unknownHosts(o: {
             }
       }
     const suggest = hits.length === 1 ? hits[0] : undefined;
-    const calls = entry.calls.sort(
-      (a, b) => a.repo.localeCompare(b.repo) || a.at.localeCompare(b.at, "en", { numeric: true }),
-    );
+    const calls = entry.calls.sort((a, b) => cmpText(a.repo, b.repo) || cmpNatural(a.at, b.at));
     // Beta.12: the gateway repos (their GatewayRoutes) whose base path the calls' paths are
     // under: a gateway's proxies, each its own repo, on a host none of them lists.
     const byPath: NonNullable<HostAsk["byPath"]> = [];
@@ -222,7 +222,7 @@ export async function unknownHosts(o: {
           : `the routes under ${g.basepath}`,
       });
     }
-    byPath.sort((a, b) => a.repo.localeCompare(b.repo));
+    byPath.sort((a, b) => cmpText(a.repo, b.repo));
     const first = suggest
       ? [suggest.repo]
       : byPath.map((b) => b.repo).filter((x) => servers.includes(x));

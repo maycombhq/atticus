@@ -6,6 +6,7 @@ import {
   type PrefixRule,
   type RepoType,
   type ScanSettings,
+  cmpText,
 } from "@maycombhq/core";
 import { PREFIX_CONVENTIONS } from "@maycombhq/extractors";
 import { globToRegExp, type RepoHandle } from "@maycombhq/sdk";
@@ -216,8 +217,7 @@ export async function matchRepoType(
   for (const t of types) matches.push(await scoreType(t, files));
   const pct = (m: TypeMatch) => Math.round(m.score * 100);
   matches.sort(
-    (a, b) =>
-      Number(a.ruledOut) - Number(b.ruledOut) || pct(b) - pct(a) || a.type.localeCompare(b.type),
+    (a, b) => Number(a.ruledOut) - Number(b.ruledOut) || pct(b) - pct(a) || cmpText(a.type, b.type),
   );
   const said = typeFromWords(o.description, types);
   const eligible = matches.filter((m) => !m.ruledOut && pct(m) >= PARTIAL_MATCH * 100);
@@ -316,7 +316,7 @@ export async function resolveSettingsTemplate(
   for (const rule of t.settings.prefixes) {
     // application.properties before application-dev.properties: the shortest name first.
     const candidates = (await files.matching(rule.files)).sort(
-      (a, b) => a.length - b.length || a.localeCompare(b),
+      (a, b) => a.length - b.length || cmpText(a, b),
     );
     for (const f of candidates) {
       const hit = await readRule(rule, f, files);
@@ -400,7 +400,7 @@ const PLAIN_ANNOTATIONS = new Set([
 /** The top names by the number of files they're in, ties by name. */
 function top(counts: Map<string, number>, n: number): string[] {
   return [...counts]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || cmpText(a[0], b[0]))
     .slice(0, n)
     .map(([k]) => k);
 }

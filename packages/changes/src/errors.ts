@@ -11,6 +11,8 @@ export type ReasonCode =
   | "critic-round-missing"
   | "lens-waiting"
   | "lens-failed"
+  /** Round 47: the newest critic round didn't finish (its record says in-progress, or it has none and no finding). */
+  | "round-unfinished"
   | "stage-not-done"
   | "pr-not-merged"
   | "approval-missing"

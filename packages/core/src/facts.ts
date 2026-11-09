@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { CatalogRecord } from "./catalog.js";
 import { interfaceId, normalizePath, slugify } from "./identity.js";
@@ -187,7 +188,46 @@ export function entryEndpointId(f: FactOf<"entry">, component: string): string {
  */
 export function callPath(callType: string, path: string): string {
   if (callType === "grpc" || callType === "soap") return path.trim().replace(/^\/+/, "");
-  return normalizePath(path.replace(/\{([^}:?]*)[^}]*\}/g, "{$1}"));
+  return normalizePath(path);
+}
+
+const shortHash = (text: string) =>
+  createHash("sha256").update(text, "utf8").digest("hex").slice(0, 8);
+
+/** What a record claims, without where it was seen: two records that differ here aren't one. */
+function claimOf(r: CatalogRecord): string {
+  const { evidence: _e, confidence: _c, ...rest } = r as CatalogRecord & { confidence?: unknown };
+  return JSON.stringify(canonicalize(rest));
+}
+
+/**
+ * Round 47: records of one kind and id that claim different things (other than their evidence
+ * and confidence) would be merged into one, silently, by the catalog merge. Each such id is
+ * reported, with the facts that made it; the same claim seen on several lines is one record and
+ * is not reported.
+ */
+function duplicateRecords(out: readonly CatalogRecord[], ids: Record<string, string>): FactIssue[] {
+  const claims = new Map<string, Set<string>>();
+  for (const r of out) {
+    // A REST endpoint is keyed by its component, method and normalised path in the merge, not by
+    // this id, so two routes that slug alike stay two there.
+    if (r.kind === "Endpoint" && r.endpointType === "rest") continue;
+    const k = `${r.kind}|${r.id}`;
+    claims.set(k, (claims.get(k) ?? new Set()).add(claimOf(r)));
+  }
+  const issues: FactIssue[] = [];
+  for (const [k, seen] of claims) {
+    if (seen.size < 2) continue;
+    const kind = k.slice(0, k.indexOf("|"));
+    const id = k.slice(k.indexOf("|") + 1);
+    const by = Object.keys(ids).filter((f) => ids[f] === id);
+    issues.push({
+      ...(by[0] ? { factId: by[0] } : {}),
+      code: "duplicate-record",
+      message: `${kind} ${id} is made by ${by.length ? by.join(", ") : "several facts"}, which say different things; the catalog merge would join them into one`,
+    });
+  }
+  return issues;
 }
 
 function evidenceOf(f: Fact, source: EvidenceT["source"], side?: EvidenceT["side"]): EvidenceT {
@@ -590,10 +630,26 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   }
 
   // ---- deploy -> Deployment
+  // Round 47: two deploy facts of one component whose `<env ?? platform>` is the same but which
+  // say different things (kubernetes and lambda, both for prod) are two Deployments, so each
+  // gets its platform after its env (`<component>.<env>.<platform>`; an id part has no dots, so
+  // this can't meet a plain `<component>.<env>`).
+  const deployBase = (f: FactOf<"deploy">) => `${componentOf(f)}.${idPart(f.env ?? f.platform)}`;
+  const deployShapes = new Map<string, Set<string>>();
+  for (const f of facts)
+    if (f.kind === "deploy")
+      deployShapes.set(
+        deployBase(f),
+        (deployShapes.get(deployBase(f)) ?? new Set()).add(`${f.env ?? ""}\u0000${f.platform}`),
+      );
   for (const f of facts) {
     if (f.kind !== "deploy") continue;
     const component = componentOf(f);
-    const id = `${component}.${idPart(f.env ?? f.platform)}`;
+    const base = deployBase(f);
+    const id =
+      (deployShapes.get(base)?.size ?? 0) > 1
+        ? `${component}.${idPart(f.env ?? "default")}.${idPart(f.platform)}`
+        : base;
     catalogIdOf.set(f.id, id);
     out.push({
       kind: "Deployment",
@@ -609,10 +665,26 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   }
 
   // ---- config -> Setting
+  // Round 47: `<env>.<key>` and a dotted key (`x` for prod, and `prod.x`), or two keys that slug
+  // the same (`DB_URL`, `db_url`), meet on one id; each of them then gets a short hash of its
+  // env and key after it, so neither is merged into the other.
+  const settingBase = (f: FactOf<"config">) =>
+    `${componentOf(f)}.${f.env ? `${slugify(f.env)}.` : ""}${slugify(f.key)}`;
+  const settingShapes = new Map<string, Set<string>>();
+  for (const f of facts)
+    if (f.kind === "config")
+      settingShapes.set(
+        settingBase(f),
+        (settingShapes.get(settingBase(f)) ?? new Set()).add(`${f.env ?? ""}\u0000${f.key}`),
+      );
   for (const f of facts) {
     if (f.kind !== "config") continue;
     const component = componentOf(f);
-    const id = `${component}.${f.env ? `${slugify(f.env)}.` : ""}${slugify(f.key)}`;
+    const base = settingBase(f);
+    const id =
+      (settingShapes.get(base)?.size ?? 0) > 1
+        ? `${base}-${shortHash(`${f.env ?? ""}\u0000${f.key}`)}`
+        : base;
     catalogIdOf.set(f.id, id);
     out.push({
       kind: "Setting",
@@ -779,5 +851,6 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   });
   const ids: Record<string, string> = {};
   for (const id of [...catalogIdOf.keys()].sort()) ids[id] = catalogIdOf.get(id)!;
+  issues.push(...duplicateRecords(out, ids));
   return { records: out, issues, ids };
 }

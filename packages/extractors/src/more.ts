@@ -22,6 +22,7 @@ import {
   type SqlDrop,
   type SqlTable,
 } from "./lang/sql.js";
+import { cmpText } from "@maycombhq/core";
 
 const slug = (s: string) =>
   s
@@ -384,7 +385,7 @@ export const migrationsExtractor = defineExtractor({
       const y = num(b.version);
       for (let i = 0; i < Math.max(x.length, y.length); i++)
         if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
-      return a.path.localeCompare(b.path);
+      return cmpText(a.path, b.path);
     });
     let first = true;
     const state = new DesignState();

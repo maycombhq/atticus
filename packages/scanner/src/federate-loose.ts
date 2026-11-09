@@ -1,4 +1,5 @@
 import type { CatalogRecord, MergeResult } from "@maycombhq/core";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * Federated loose ends through merge identity resolution (ADR 0038 "not yet", closed in ADR
@@ -60,7 +61,7 @@ export function resolveFederatedLooseEnds(o: {
   });
   return {
     federated: [...kept, ...added].sort((a, b) =>
-      a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
+      a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind),
     ),
     resolved,
   };
