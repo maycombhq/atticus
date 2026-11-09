@@ -783,39 +783,65 @@ function checkConflict(
   };
 }
 
+/**
+ * The page a reference names among every page of the snapshots (their manifests), not only the
+ * pages this scan reads: a rescan reads the changed pages, and the page that replaces one may be
+ * as it was (review round 50). A page this scan reads comes first.
+ */
+function resolveAnyPage(
+  pages: PreparedPage[],
+  snapshots: Snapshot[],
+  ref: string,
+): PageRef | undefined {
+  const read = resolvePage(pages, ref);
+  if (read) return { source: read.page.source, page: read.page.pagePath };
+  const r = ref.trim().replace(/^\.\//, "");
+  const all = snapshots.flatMap((s) =>
+    s.manifest.pages.map((p) => ({ source: s.manifest.source, page: p.page })),
+  );
+  const exact = all.find((p) => p.page === r || `${p.source}/${p.page}` === r);
+  if (exact) return exact;
+  const byName = all.filter((p) => basename(p.page) === basename(r));
+  return byName.length === 1 ? byName[0] : undefined;
+}
+
 function checkSuperseded(
   raw: unknown,
   pages: PreparedPage[],
+  snapshots: Snapshot[],
 ): { ok: SupersededPage } | { problem: string } {
   const p = SupersededIn.safeParse(raw);
   if (!p.success) return { problem: `a superseded page: ${fmt(p.error.issues).join("; ")}` };
   const s = p.data;
   const oldP = resolvePage(pages, s.old);
-  const newP = resolvePage(pages, s.new);
+  const newRef = resolveAnyPage(pages, snapshots, s.new);
   if (!oldP) return { problem: `superseded: there is no page ${s.old} in the snapshot` };
-  if (!newP) return { problem: `superseded: there is no page ${s.new} in the snapshot` };
+  if (!newRef) return { problem: `superseded: there is no page ${s.new} in the snapshot` };
+  const newP = pages.find(
+    (x) => x.page.source === newRef.source && x.page.pagePath === newRef.page,
+  );
   const on = s.page ? resolvePage(pages, s.page, s.quote) : undefined;
-  const candidates = on ? [on] : [newP, oldP];
+  const candidates = on ? [on] : newP ? [newP, oldP] : [oldP];
   const where = candidates.find((c) => checkQuote(c.page.text ?? "", s.quote).ok);
   if (!where)
     return {
       problem: `superseded ${s.old}: the quote is not on ${candidates.map((c) => c.page.pagePath).join(" or ")}, word for word`,
     };
   const ref = (x: PreparedPage) => ({ source: x.page.source, page: x.page.pagePath });
-  return { ok: { old: ref(oldP), new: ref(newP), quote: s.quote, quotedOn: ref(where) } };
+  return { ok: { old: ref(oldP), new: newRef, quote: s.quote, quotedOn: ref(where) } };
 }
 
 /** A page whose front matter names the page that replaces it (`superseded-by`). */
-function frontMatterSuperseded(pages: PreparedPage[]): SupersededPage[] {
+function frontMatterSuperseded(pages: PreparedPage[], snapshots: Snapshot[]): SupersededPage[] {
   const out: SupersededPage[] = [];
   for (const p of pages) {
     const fm = p.page.frontMatter;
     const by = fm["superseded-by"] ?? fm.superseded_by ?? fm.supersededBy;
     if (typeof by !== "string") continue;
-    const n = resolvePage(pages, by) ?? resolvePage(pages, `${by}.md`);
+    const n = resolveAnyPage(pages, snapshots, by) ?? resolveAnyPage(pages, snapshots, `${by}.md`);
     if (!n) continue;
     const ref = (x: PreparedPage) => ({ source: x.page.source, page: x.page.pagePath });
-    out.push({ old: ref(p), new: ref(n), quote: `superseded-by: ${by}`, quotedOn: ref(p) });
+    out.push({ old: ref(p), new: n, quote: `superseded-by: ${by}`, quotedOn: ref(p) });
   }
   return out;
 }
@@ -845,6 +871,44 @@ function checkInjection(raw: unknown, pages: PreparedPage[]): Injection | string
 }
 
 const norm = (s: string) => words(s).join(" ");
+
+const recordTitle = (r: KnowledgeRecord) =>
+  r.kind === "Pattern" || r.kind === "Party" || r.kind === "Product" ? r.name : r.title;
+
+/**
+ * Review round 50: the check's conflict between two records, as checkConflicts finds it between
+ * two items of one scan: one kind, different pages, the same title or catalogue item, and lead
+ * times or teams that differ. A rescan runs it between what it read again and what it kept.
+ */
+export function recordConflict(
+  x: KnowledgeRecord,
+  y: KnowledgeRecord,
+): KnowledgeConflict | undefined {
+  if (x.kind !== y.kind || !x.quote || !y.quote) return undefined;
+  if (x.quote.source === y.quote.source && x.quote.page === y.quote.page) return undefined;
+  const field = (r: KnowledgeRecord, f: "leadTime" | "handledBy" | "catalogueItem") => {
+    const v = (r as unknown as Record<string, unknown>)[f];
+    return typeof v === "string" ? v : undefined;
+  };
+  const cx = field(x, "catalogueItem");
+  const sameThing =
+    norm(recordTitle(x)) === norm(recordTitle(y)) ||
+    (!!cx && norm(cx) === norm(field(y, "catalogueItem") ?? ""));
+  if (!sameThing) return undefined;
+  const differ = (f: "leadTime" | "handledBy") => {
+    const a = field(x, f);
+    const b = field(y, f);
+    return a !== undefined && b !== undefined && norm(a) !== norm(b);
+  };
+  if (!differ("leadTime") && !differ("handledBy")) return undefined;
+  return {
+    about: [x.id, y.id],
+    pages: [x, y].map((i) => ({ source: i.quote!.source, page: i.quote!.page })),
+    says: [x.quote.text, y.quote.text],
+    summary: `${recordTitle(x)}: the pages disagree on ${differ("leadTime") ? "the lead time" : "who handles it"}`,
+    foundBy: "check",
+  };
+}
 
 /** Two items of one kind with the same title or catalogue item, on different pages, that disagree. */
 function checkConflicts(items: CheckedItem[]): KnowledgeConflict[] {
@@ -1071,6 +1135,12 @@ export interface ScanOptions {
    * normalised lead times under judgments/lead-time/. Default: kept in memory only.
    */
   judgments?: JudgmentStore;
+  /**
+   * Review round 50: the items that stay as they are (other pages, other sources): an item
+   * written with one of their ids, on another page, is refused and handed back ("id x is used by
+   * <page>; choose another"), so it never takes that item's place or its review.
+   */
+  taken?: KnowledgeRecord[];
 }
 
 /** Scan snapshots: the AI reads, the checks confirm, what fails goes back to the AI. */
@@ -1200,9 +1270,10 @@ export async function scanKnowledge(
     return result;
   }
   const kept = new Map<string, CheckedItem>();
+  const takenBy = new Map((o.taken ?? []).map((r) => [r.id, r]));
   let failed: FailedItem[] = [];
   let conflicts: KnowledgeConflict[] = [];
-  const superseded: SupersededPage[] = frontMatterSuperseded(pages);
+  const superseded: SupersededPage[] = frontMatterSuperseded(pages, snapshots);
   const aiInjections: Injection[] = [];
   let feedback: SourceInput[] = [];
   let answered = false;
@@ -1287,7 +1358,7 @@ export async function scanKnowledge(
     answered = true;
     // Superseded pages first: nothing from an old page is a current rule.
     for (const s of answer.superseded) {
-      const c = checkSuperseded(s, pages);
+      const c = checkSuperseded(s, pages, snapshots);
       if ("problem" in c) problems.push(c.problem);
       else if (
         !superseded.some((x) => x.old.page === c.ok.old.page && x.old.source === c.ok.old.source)
@@ -1314,6 +1385,18 @@ export async function scanKnowledge(
         continue;
       }
       seen.add(id);
+      const other = takenBy.get(id);
+      const at = c.ok.page.page;
+      if (other && !(other.quote?.source === at.source && other.quote.page === at.pagePath)) {
+        failed.push({
+          id,
+          kind: c.ok.item.kind,
+          title: c.ok.item.title,
+          page: at.pagePath,
+          problems: [idTaken(id, other, at.source)],
+        });
+        continue;
+      }
       kept.set(id, c.ok);
     }
     for (const [id, c] of kept) {
@@ -1392,6 +1475,16 @@ export async function scanKnowledge(
   }
 }
 
+/** What to say of an id another page's item has: its page, with its source when another's. */
+export const idTaken = (id: string, other: KnowledgeRecord, source: string) => {
+  const where = other.quote
+    ? other.quote.source === source
+      ? other.quote.page
+      : `${other.quote.source}/${other.quote.page}`
+    : "another item";
+  return `id ${id} is used by ${where}; choose another`;
+};
+
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
 
@@ -1415,9 +1508,9 @@ export function checkScanAnswer(snapshots: Snapshot[], output: string): string[]
     return [`the answer isn't YAML: ${(e as Error).message.split("\n")[0]}`];
   }
   const problems: string[] = [];
-  const superseded = frontMatterSuperseded(pages);
+  const superseded = frontMatterSuperseded(pages, snapshots);
   for (const s of answer.superseded) {
-    const c = checkSuperseded(s, pages);
+    const c = checkSuperseded(s, pages, snapshots);
     if ("problem" in c) problems.push(c.problem);
     else superseded.push(c.ok);
   }

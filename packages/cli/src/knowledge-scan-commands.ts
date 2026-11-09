@@ -24,6 +24,7 @@ import {
   saveFind,
   filterItems,
   knowledgeScanRoom,
+  keptBy,
   planRescan,
   readReviews,
   reviewItem,
@@ -216,6 +217,8 @@ export async function knowledgeScan(
           maxAttempts: o.attempts ?? 3,
           ...(o.resume && !batches.length ? { resume: o.resume } : {}),
           ...(plan.previous.length ? { previous: plan.previous } : {}),
+          // Review round 50: the ids of the items this batch keeps (other pages and sources).
+          taken: keptBy(before.items, plan),
           judgments: fileJudgments(root),
         })
       : {
@@ -782,6 +785,10 @@ export function reviewWord(r: ReviewSummary | undefined): string {
   if (r.state === "verified") return `✓ ${r.by}`;
   if (r.state === "corrected") return `✓ corrected by ${r.by}`;
   if (r.state === "rejected") return `✗ rejected by ${r.by}`;
+  // Review round 50: a stale rejection still keeps the item out; a stale correction isn't used.
+  if (r.verdict === "rejected") return `✗ rejected by ${r.by}, page changed: check again`;
+  if (r.verdict === "corrected")
+    return `check again: correction made before the page changed (${(r.corrected ?? []).join(", ")})`;
   return "check again";
 }
 

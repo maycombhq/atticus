@@ -30,6 +30,10 @@ export function reviewText(r: Review | undefined): string {
   if (r.state === "verified") return K.review.verified(r.by, day(r.at));
   if (r.state === "corrected") return K.review.corrected(r.by, day(r.at));
   if (r.state === "rejected") return K.review.rejected(r.by, day(r.at));
+  // Review round 50: a rejection made before the page changed still holds; a correction isn't used.
+  if (r.verdict === "rejected") return K.review.staleRejected(r.by, day(r.at));
+  if (r.verdict === "corrected" && r.corrected?.length)
+    return K.review.staleCorrected(r.by, r.corrected.map(fieldLabel).join(", "));
   return K.review.stale(r.by);
 }
 
@@ -43,7 +47,11 @@ const CHIP: Record<string, string> = {
 /** The review as a chip; the words always carry it, never the colour alone. */
 export function ReviewChip({ review }: { review: Review | undefined }) {
   return (
-    <span className={`chip ${review ? CHIP[review.state] : "dim"}`}>{reviewText(review)}</span>
+    <span
+      className={`chip ${review ? (review.verdict === "rejected" ? CHIP.rejected : CHIP[review.state]) : "dim"}`}
+    >
+      {reviewText(review)}
+    </span>
   );
 }
 

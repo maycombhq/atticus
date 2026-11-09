@@ -24,7 +24,10 @@ import type { KnowledgeRecord } from "./knowledge-scan.js";
  *
  * A review keeps a hash of what the item meant when it was checked. When a rescan changes the
  * item (its page changed), the review is stale: its tick waits for a person to check it again.
- * What the page quoted can't be corrected: a quote is checked word for word on its page.
+ * A stale rejection still keeps the item out of plans and answers ("rejected, page changed"),
+ * and a stale correction isn't applied ("correction made before the page changed"): a person
+ * checks either again (review round 50). What the page quoted can't be corrected: a quote is
+ * checked word for word on its page.
  */
 
 export const REVIEWS_DIR = "reviews";
@@ -144,14 +147,32 @@ function canonical(v: unknown): unknown {
 }
 
 /**
- * What an item means, as a short hash: everything but its evidence and where its quotes were
- * read (the snapshot date and line move when a page is copied again or edited above them).
+ * What an item means, as a short hash: everything but its evidence, where its quotes were read
+ * (the snapshot date and line move when a page is copied again or edited above them), and its
+ * flags and tags (a conflict found or gone, a source's tags: not what the item says; review
+ * round 50).
  */
 export function itemMeaning(r: KnowledgeRecord): string {
+  return meaningHash(r, false);
+}
+
+/**
+ * The hash a review written before round 50 kept: flags and tags in. A review is current when
+ * its hash is either, so the reviews written before don't all turn stale.
+ */
+export function itemMeaningBefore50(r: KnowledgeRecord): string {
+  return meaningHash(r, true);
+}
+
+function meaningHash(r: KnowledgeRecord, flagsAndTags: boolean): string {
   const strip = (q: Record<string, unknown> | undefined) =>
     q ? Object.fromEntries(Object.entries(q).filter(([k]) => k !== "snapshot" && k !== "line")) : q;
   const x = { ...(r as unknown as Record<string, unknown>) };
   delete x.evidence;
+  if (!flagsAndTags) {
+    delete x.flags;
+    delete x.tags;
+  }
   x.quote = strip(x.quote as Record<string, unknown> | undefined);
   if (Array.isArray(x.alsoOn)) x.alsoOn = (x.alsoOn as Record<string, unknown>[]).map(strip);
   return createHash("sha256")
@@ -261,13 +282,17 @@ export async function readReviews(root: string): Promise<{
   return { reviews, problems };
 }
 
-/** An item as people reviewed it: the corrections applied, and its review's state. */
+/**
+ * An item as people reviewed it: the corrections applied, and its review's state. A stale
+ * review's corrections are not applied (its summary names the fields they set).
+ */
 export function applyReview(
   item: KnowledgeRecord,
   review: KnowledgeReview | undefined,
 ): { item: KnowledgeRecord; summary?: ReviewSummary } {
   if (!review) return { item };
-  const stale = review.checked !== itemMeaning(item);
+  const stale =
+    review.checked !== itemMeaning(item) && review.checked !== itemMeaningBefore50(item);
   const summary: ReviewSummary = {
     state: stale ? "stale" : review.verdict,
     verdict: review.verdict,
@@ -276,7 +301,8 @@ export function applyReview(
     ...(review.note ? { note: review.note } : {}),
     ...(review.corrections ? { corrected: Object.keys(review.corrections).sort() } : {}),
   };
-  if (!review.corrections) return { item, summary };
+  // A correction made before the item changed isn't applied: a person checks it again.
+  if (!review.corrections || stale) return { item, summary };
   const merged = parseRecord({ ...item, ...review.corrections });
   return { item: merged.ok ? (merged.record as KnowledgeRecord) : item, summary };
 }

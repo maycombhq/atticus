@@ -56,9 +56,9 @@ atticus knowledge scan --handoff
 
 Your assistant reads every page and writes the items. Atticus checks each quote on its page, word for word, and each lead time, owner, status and date against the quote that states it. `atticus handoff done` runs the same checks on the answer and lists what fails, so your assistant can fix it before you resume; after three checks the answer goes in as it is. Anything that still fails goes back to the assistant in the next prompt, and the resume says which checks failed, up to three attempts. The scan keeps what passed and writes it to `knowledge/items/` and `knowledge/scan.yaml`. It also lists pages that disagree, superseded pages and hidden instructions.
 
-A quote is matched with the page's blockquote (`>`) and list markers left out, so a sentence that wraps inside a blockquote, or runs on into the next list item, can be quoted; every word must still be on the page, in order.
+A quote is matched with the page's blockquote (`>`) and list markers left out, so a sentence that wraps inside a blockquote, or runs on into the next list item, can be quoted; every word must still be on the page, in order. What a reader sees is matched, not the Markdown: bold, emphasis, `code`, a link's text, inline HTML such as `<b>`, entities such as `&amp;` and zero-width spaces read as the words they show, a dash as `-`, `…` as `...`, and a setext heading (a line with `===` or `---` under it) is a heading. A quote matches whole words only: "safe to deploy" isn't on a page that says "Unsafe to deploy", nor "The timeout is 5" on one that says 500 ms.
 
-A rescan reads only the pages that changed (`--full` reads them all; `--source <id>` reads one source).
+A rescan reads only the pages that changed (`--full` reads them all; `--source <id>` reads one source). An item whose also-on page changed keeps each also-on quote still on that page and drops the rest; an item whose id another page's (or another source's) item has is refused and goes back to your assistant ("id … is used by …; choose another"); a conflict with a page that wasn't read again stays, and is checked against the items read now.
 
 **From the app.** The Knowledge sources page runs these without a terminal. **Sync** copies a source's pages to a snapshot. Each source's card and the last scan's panel run the scan: with the server's model when `runtime.yaml` sets one, with Copilot in a VS Code panel, or else **Prepare it for your assistant**, which writes the hand-off and opens its run, with the prompt to paste and Done to check the answer. A source's card reads only that source (`--source <id>`, the one option the app passes to a step). The command and slash command stay beside each button.
 
@@ -75,7 +75,7 @@ atticus knowledge ask "What do I need before Forge can call a new vendor host?" 
 
 `ask` answers from the items only, citing each one, and says when two pages disagree. `query --search` also finds wiki and document sections that no item covers. To turn one of those into an item, use `atticus knowledge find "<phrase>"`, then `atticus knowledge keep <item>`.
 
-Check an item with `atticus knowledge verify <item>`, fix it with `atticus knowledge correct <item> --set leadTime="5 working days"` (the scan's own field names, such as `lead_time`, work too), or drop it with `atticus knowledge reject <item> --note "<why>"`.
+Check an item with `atticus knowledge verify <item>`, fix it with `atticus knowledge correct <item> --set leadTime="5 working days"` (the scan's own field names, such as `lead_time`, work too), or drop it with `atticus knowledge reject <item> --note "<why>"`. When a rescan changes an item a person reviewed, the review waits to be checked again: a rejected item stays out of plans and answers ("rejected, page changed"), and a correction isn't used ("correction made before the page changed") until a person checks it again. A conflict found or gone, or a change to the item's tags, doesn't make a review wait.
 
 A document in `inputs/` is searched once, from the file itself, cited by its file and section. A file the sync skipped, such as a copy of a wiki page, isn't searched. A wiki's sections are searched from the pages its snapshot lists, and once the scan has read the source, from the pages it read. A `#` line in a fenced code block (a shell comment) is code, not a heading.
 
@@ -225,7 +225,7 @@ byPage:
   - { match: ["old/**"], status: archived }
 ```
 
-Then the page itself: a `status` or label (deprecated, obsolete, superseded, archived), an archived space, or a banner at its top ("Deprecated: superseded by …", "This page is superseded by …"). A page no longer current ranks below every current page. `reviewMonths` says how old a standard may get: one not updated in longer is shown as "may be out of date".
+Then the page itself: a `status` or label (deprecated, obsolete, superseded, archived), an archived space, or a banner at its top ("Deprecated: superseded by …", "> **Archived.** …", "Superseded by …", "This page is superseded by …", an admonition titled "Deprecated", "Status: Deprecated"). A heading is never a banner ("# Deprecated API removal standard"), nor a sentence that starts with the word ("Archived ledgers are kept for seven years."). A page no longer current ranks below every current page. `reviewMonths` says how old a standard may get: one not updated in longer is shown as "may be out of date".
 
 **Scope** (`appliesTo`): a scoped source's pages reach only the tasks whose places fall in it. Any dimension it names may match:
 

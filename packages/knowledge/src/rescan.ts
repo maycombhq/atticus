@@ -108,3 +108,12 @@ export function planRescan(
   }
   return plan;
 }
+
+/**
+ * Review round 50: the items a rescan keeps as they are, those not read from a page it reads
+ * again: the AI may not give their ids to an item of another page (ScanOptions.taken).
+ */
+export function keptBy(items: KnowledgeRecord[], plan: RescanPlan): KnowledgeRecord[] {
+  const previous = new Set(plan.previous);
+  return items.filter((i) => !previous.has(i));
+}

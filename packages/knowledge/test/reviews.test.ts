@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { loadOrgPack } from "@maycombhq/core";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
+  applyReview,
+  itemMeaning,
   planRescan,
   readKnowledge,
   readSnapshot,
@@ -390,5 +393,123 @@ describe("a scan in batches that fit the model", () => {
       expect(plan.changed).toEqual({ platform: ["how-to/kafka.md"] });
       expect(plan.deferred).toEqual({ platform: ["how-to/sso.md"] });
     })();
+  });
+});
+
+// Review round 50: a person's verdict outlives a rescan that changes the item; it waits for a
+// person to check it again, and is never dropped or applied silently.
+describe("a review made before the page changed", () => {
+  async function rescan(root: string, wiki: string, kafkaWhen: string) {
+    await writeFile(
+      join(wiki, "how-to", "kafka.md"),
+      `${KAFKA}\nAsk in the messaging channel first.\n`,
+    );
+    const snap = await sync(root, "2026-10-22T09:00:00Z");
+    const before = await readKnowledge(root, { raw: true });
+    const plan = planRescan([snap], before.report, before.items);
+    const r = await scanKnowledge(plan.snapshots, {
+      runtime: new MockRuntime(() => answer({ kafkaWhen, sso: false })),
+      now: new Date("2026-10-22T09:00:00Z"),
+      previous: plan.previous,
+    });
+    await writeKnowledge(root, r, "2026-10-22T09:00:00Z", { snapshots: [snap], plan });
+  }
+
+  it("keeps a rejected item out of plans and answers until a person checks it again", async () => {
+    const { root, wiki } = await scanned();
+    const item = (await readKnowledge(root)).items.find((i) => i.id === "kafka-topic-request")!;
+    const r = reviewItem(item, {
+      verdict: "rejected",
+      by: "Pat",
+      at: "2026-10-21T10:00:00Z",
+      note: "Topics are raised by the platform team now.",
+    });
+    if ("error" in r) throw new Error(r.error);
+    await writeReview(root, r.review);
+    await rescan(root, wiki, "A service uses a topic that does not exist yet.");
+    const after = await readKnowledge(root);
+    expect(after.items.map((i) => i.id)).toEqual(["sso-intake"]);
+    expect(after.rejected.map((i) => i.id)).toEqual(["kafka-topic-request"]);
+    expect(after.reviews["kafka-topic-request"]).toMatchObject({
+      state: "stale",
+      verdict: "rejected",
+      note: "Topics are raised by the platform team now.",
+    });
+  });
+
+  it("doesn't apply a correction made before the item changed, and says it was made", async () => {
+    const { root, wiki } = await scanned();
+    const item = (await readKnowledge(root)).items.find((i) => i.id === "kafka-topic-request")!;
+    const r = reviewItem(item, {
+      verdict: "corrected",
+      by: "Pat",
+      at: "2026-10-21T10:00:00Z",
+      set: { leadTime: "3 working days" },
+    });
+    if ("error" in r) throw new Error(r.error);
+    await writeReview(root, r.review);
+    expect((await readKnowledge(root)).items.find((i) => i.id === item.id)).toMatchObject({
+      leadTime: "3 working days",
+    });
+    await rescan(root, wiki, "A service uses a topic that does not exist yet.");
+    const after = await readKnowledge(root);
+    expect(after.items.find((i) => i.id === item.id)).toMatchObject({
+      leadTime: "5 working days",
+    });
+    expect(after.reviews[item.id]).toMatchObject({
+      state: "stale",
+      verdict: "corrected",
+      corrected: ["leadTime"],
+    });
+  });
+
+  it("isn't made stale by a change to the item's flags or tags alone", async () => {
+    const { root } = await scanned();
+    const item = (await readKnowledge(root, { raw: true })).items[0]!;
+    const r = reviewItem(item, { verdict: "verified", by: "Pat", at: "2026-10-21T10:00:00Z" });
+    if ("error" in r) throw new Error(r.error);
+    const moved = { ...item, flags: ["conflict:a.md|b.md"], tags: [...item.tags, "payments"] };
+    expect(itemMeaning(moved as typeof item)).toBe(itemMeaning(item));
+    expect(applyReview(moved as typeof item, r.review).summary!.state).toBe("verified");
+  });
+
+  it("reads a review whose hash was taken with the flags and tags (before round 50) as current", async () => {
+    const { root } = await scanned();
+    const item = (await readKnowledge(root, { raw: true })).items[0]!;
+    const flagged = { ...item, flags: ["conflict:a.md|b.md"] } as typeof item;
+    // The hash an older Atticus wrote: every field but the evidence and the quotes' snapshot and line.
+    const strip = (q: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(q).filter(([k]) => k !== "snapshot" && k !== "line"));
+    const canon = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(canon)
+        : v && typeof v === "object"
+          ? Object.fromEntries(
+              Object.keys(v)
+                .sort()
+                .map((k) => [k, canon((v as Record<string, unknown>)[k])]),
+            )
+          : v;
+    const x = { ...(flagged as unknown as Record<string, unknown>) };
+    delete x.evidence;
+    x.quote = strip(x.quote as Record<string, unknown>);
+    x.alsoOn = (x.alsoOn as Record<string, unknown>[]).map(strip);
+    const older = createHash("sha256")
+      .update(JSON.stringify(canon(x)))
+      .digest("hex")
+      .slice(0, 16);
+    expect(older).not.toBe(itemMeaning(flagged));
+    const review = {
+      schemaVersion: 1 as const,
+      item: item.id,
+      verdict: "verified" as const,
+      by: "Pat",
+      at: "2026-10-21T10:00:00Z",
+      checked: older,
+    };
+    expect(applyReview(flagged, review).summary!.state).toBe("verified");
+    // The item changed since: stale, by either hash.
+    const changed = { ...flagged, appliesWhen: "Something else entirely." } as typeof item;
+    expect(applyReview(changed, review).summary!.state).toBe("stale");
   });
 });

@@ -124,8 +124,21 @@ export async function writeSnapshots(o: {
         .filter((s) => s.source === w.id)
         .map((s) => ({ page: s.path, reason: s.reason })),
     };
+    // Review round 50: a page path (or the copy's file) is listed once; a second page with it is
+    // refused, with why, rather than listed twice and copied over the first.
+    const listed = new Map<string, string>();
     for (const p of pages) {
       const file = safe(fileFor(p.pagePath));
+      const first = listed.get(p.pagePath) ?? listed.get(`\0${file}`);
+      if (first !== undefined) {
+        manifest.skipped.push({
+          page: p.path,
+          reason: `another page of the source has the path ${p.pagePath} (${first}), which is kept`,
+        });
+        continue;
+      }
+      listed.set(p.pagePath, p.path);
+      listed.set(`\0${file}`, p.path);
       const was = before.get(p.pagePath);
       const keep = was && was.sha256 === p.hash && was.file === file ? was.in : undefined;
       if (!keep) {
@@ -143,7 +156,7 @@ export async function writeSnapshots(o: {
       });
     }
     await writeFileAtomic(join(dir, SNAPSHOT_FILE), stringify(manifest));
-    out.push({ source: w.id, dir: rel, pages: pages.length, copied });
+    out.push({ source: w.id, dir: rel, pages: manifest.pages.length, copied });
   }
   return out;
 }

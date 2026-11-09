@@ -118,6 +118,34 @@ describe("a page's standing: source default, page override, then the page's own 
     expect(pageStanding(team, "a.md", { spaceStatus: "archived" }).status).toBe("archived");
   });
 
+  it("reads a banner only: not a heading, nor a status word that starts a sentence", () => {
+    const team = { id: "t", authority: "team" as const };
+    const status = (text: string) => pageStanding(team, "a.md", { text }).status;
+    // Review round 50: a title or a sentence that begins with the word is not a banner.
+    expect(
+      status("# Deprecated API removal standard\n\nEvery endpoint is removed after 90 days.\n"),
+    ).toBe("current");
+    expect(status("# Data retention\n\nArchived ledgers are kept for seven years.\n")).toBe(
+      "current",
+    );
+    expect(status("# Hosts\n\nRetired hosts must be wiped before disposal.\n")).toBe("current");
+    expect(status("# Hosts\n\n> Retired hosts must be wiped before disposal.\n")).toBe("current");
+    expect(status("Deprecated endpoints\n====================\n\nThey go after 90 days.\n")).toBe(
+      "current",
+    );
+    // The documented banners still count.
+    expect(status("# A\n\nDeprecated: superseded by the v2 page.\n")).toBe("deprecated");
+    expect(status("# A\n\n**Deprecated** — use the v2 page.\n")).toBe("deprecated");
+    expect(status("# A\n\nArchived - kept for the record.\n")).toBe("archived");
+    expect(status("# A\n\nSuperseded by [B](b.md).\n")).toBe("superseded");
+    expect(status("# A\n\n> **Archived.** Nothing here is current.\n")).toBe("archived");
+    expect(status("# A\n\nThis document has been retired.\n")).toBe("deprecated");
+    expect(status('# A\n\n!!! warning "Deprecated"\n    Use the v2 page.\n')).toBe("deprecated");
+    expect(status("# A\n\n> [!WARNING]\n> Deprecated: use the v2 page.\n")).toBe("deprecated");
+    expect(status("---\ntitle: x\n...\n> **Deprecated:** use the v2 page\n")).toBe("deprecated");
+    expect(status("# A\n\nStatus: Deprecated\n")).toBe("deprecated");
+  });
+
   it("marks a standard nobody reviewed within its review months as may be out of date", () => {
     expect(
       pageStanding(ea, "Standards/Idempotency-Keys.md", { updated: "2023-01-10" }, "2026-10-20"),

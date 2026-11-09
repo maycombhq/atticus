@@ -143,6 +143,19 @@ describe("the shared knowledge pieces", () => {
     expect(reviewText(logging.review)).toBe(K.review.verified("priya.nair", "2026-10-22"));
     expect(reviewText(history.review)).toBe(K.review.stale("tom"));
     expect(reviewText(northwind.review)).toBe(K.review.rejected("priya.nair", "2026-10-22"));
+    // Review round 50: a review made before the page changed says what it was.
+    expect(reviewText({ ...northwind.review!, state: "stale" })).toBe(
+      K.review.staleRejected("priya.nair", "2026-10-22"),
+    );
+    expect(reviewText({ ...history.review!, verdict: "corrected", corrected: ["ownedBy"] })).toBe(
+      K.review.staleCorrected("tom", K.fields.ownedBy!),
+    );
+    const stale = { ...needs.needs[0]!, review: { ...northwind.review!, state: "stale" as const } };
+    expect(needTick(stale)).toEqual({
+      text: K.review.staleRejected("priya.nair", "2026-10-22"),
+      ok: false,
+      rejected: true,
+    });
   });
 
   it("searches items by every word, and groups them by kind in order", () => {

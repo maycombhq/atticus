@@ -520,6 +520,10 @@ export const COPY = {
       corrected: (by: string, day: string) => `✓ Corrected by ${by} on ${day}`,
       rejected: (by: string, day: string) => `✗ Rejected by ${by} on ${day}`,
       stale: (by: string) => `Check again: its page changed since ${by} reviewed it`,
+      staleRejected: (by: string, day: string) =>
+        `✗ Rejected by ${by} on ${day}, then its page changed: still left out until checked again`,
+      staleCorrected: (by: string, fields: string) =>
+        `Check again: ${by} corrected ${fields} before its page changed; the correction isn't used until checked again`,
       none: "Not yet verified: check it against its page",
       because: "Why",
       correctedFields: (f: string) => `Corrected: ${f}`,

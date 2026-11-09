@@ -828,27 +828,54 @@ const statusOfWord = (w: string | undefined): PageStatus | undefined => {
   return STATUS_WORDS.find(([re]) => re.test(x))?.[1];
 };
 
-/** A banner near the top of a page: "> **Deprecated:** ...", "This page is superseded by ...". */
+const BANNER_WORD = /^(deprecated|obsolete|superseded|archived|retired)\b/i;
+/** After the status word, what makes it a banner: `:`, a dash, a full stop, "by …", or nothing. */
+const BANNER_REST = /^\s*(?:[:—–.!]|-(?=\s|$)|$|(?:by|in favou?r of|since|as of|on|in)\b)/i;
+const BANNER_SENTENCE =
+  /^this (?:page|document|standard|runbook|article|space) (?:is|has been|was) (?:now )?(deprecated|obsolete|superseded|archived|retired|replaced)\b/i;
+
+/**
+ * A banner near the top of a page (its first six lines of text): "> **Deprecated:** ...",
+ * "Deprecated: superseded by ...", "Superseded by ...", "This page is superseded by ...", an
+ * admonition titled so (`!!! warning "Deprecated"`), or "Status: Deprecated". A heading is never
+ * one ("# Deprecated API removal standard"), nor a sentence that starts with the word ("Archived
+ * ledgers are kept ...", review round 50).
+ */
 function bannerStatus(text: string): PageStatus | undefined {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let start = 0;
   if (lines[0]?.trim() === "---") {
-    const end = lines.findIndex((l, k) => k > 0 && l.trim() === "---");
+    const end = lines.findIndex((l, k) => k > 0 && (l.trim() === "---" || l.trim() === "..."));
     start = end + 1;
   }
   let seen = 0;
-  for (const raw of lines.slice(start)) {
-    const l = raw
-      .replace(/^[\s>*_#|-]+/, "")
+  const body = lines.slice(start);
+  for (let k = 0; k < body.length; k++) {
+    const raw = body[k]!;
+    if (!raw.trim()) continue;
+    if (++seen > 6) break;
+    // A heading, ATX or setext (a line with === or --- under it), is the page's title.
+    if (/^ {0,3}#{1,6}(?:\s|$)/.test(raw) || /^ {0,3}(?:=+|-+)\s*$/.test(raw)) continue;
+    if (/^ {0,3}(?:=+|-+)\s*$/.test(body[k + 1] ?? "")) continue;
+    let l = raw.replace(/^[\s>|]+/, "");
+    // An admonition: `!!! warning "Deprecated"`, `::: deprecated`, `> [!WARNING] Deprecated`.
+    const adm = /^(?:!!!|\?\?\?\+?|:::+)\s*([\w-]+)?\s*(?:"([^"]*)")?/.exec(l);
+    if (adm && adm[0].trim()) {
+      const named = statusOfWord(adm[2]) ?? statusOfWord(adm[1]);
+      if (named) return named;
+      l = l.slice(adm[0].length);
+    }
+    l = l
+      .replace(/^\[![A-Za-z]+\]\s*/, "")
+      .replace(/^(?:[-*+]\s+)/, "")
       .replace(/[*_]/g, "")
       .trim();
     if (!l) continue;
-    if (++seen > 6) break;
-    const m =
-      /^(deprecated|obsolete|superseded|archived|retired)\b/i.exec(l) ??
-      /^this (?:page|document|standard|runbook) (?:is|has been|was) (deprecated|obsolete|superseded|archived|retired|replaced)\b/i.exec(
-        l,
-      );
+    const field = /^status\s*[:—–-]\s*(\w+)\s*\.?$/i.exec(l);
+    if (field && statusOfWord(field[1])) return statusOfWord(field[1]);
+    const w = BANNER_WORD.exec(l);
+    if (w && BANNER_REST.test(l.slice(w[0].length))) return statusOfWord(w[1]!);
+    const m = BANNER_SENTENCE.exec(l);
     if (m) return statusOfWord(m[1]!);
   }
   return undefined;

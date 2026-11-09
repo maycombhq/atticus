@@ -159,6 +159,8 @@ export async function findKnowledge(
     ...(o.resume ? { resume: o.resume } : {}),
     ...(o.maxAttempts ? { maxAttempts: o.maxAttempts } : {}),
     focus: { phrase, known },
+    // Review round 50: an id an item of another page has is handed back, never reused.
+    taken: o.items.filter((i) => !known.includes(i)),
     ...(o.judgments ? { judgments: o.judgments } : {}),
   });
   const ids = new Set(o.items.map((i) => i.id));

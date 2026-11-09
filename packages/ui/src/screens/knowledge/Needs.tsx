@@ -26,6 +26,11 @@ export function needTick(n: Need): { text: string; ok: boolean; rejected?: true 
   const r = n.review;
   if (r?.state === "verified" || r?.state === "corrected")
     return { text: R.verified(r.by, r.at.slice(0, 10)), ok: true };
+  // Review round 50: a rejection made before the page changed still holds.
+  if (r?.state === "stale" && r.verdict === "rejected")
+    return { text: R.staleRejected(r.by, r.at.slice(0, 10)), ok: false, rejected: true };
+  if (r?.state === "stale" && r.verdict === "corrected" && r.corrected?.length)
+    return { text: R.staleCorrected(r.by, r.corrected.join(", ")), ok: false };
   if (r?.state === "stale") return { text: R.stale(r.by), ok: false };
   // Its item was rejected: say so, so the person doesn't raise a request no one stands behind.
   if (r?.state === "rejected")

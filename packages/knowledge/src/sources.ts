@@ -462,8 +462,50 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     read.push({ source, raw: reads.filter((r) => !r.skipReason) });
   }
   const owners = pageOwners(read.filter((x) => !o.adaptersById?.[x.source.id]));
+  /**
+   * Each page as read, or why it can't be: front matter that doesn't read, view restrictions,
+   * a classification above the limit. Read once, by source and page.
+   */
+  const checked = new Map<string, { page: KnowledgePage; skip?: string }>();
+  const checkedPage = (source: WikiSource, r: RawPage) => {
+    const key = `${source.id}\0${r.path}\0${r.pagePath}`;
+    const known = checked.get(key);
+    if (known) return known;
+    const page = readPage({
+      source: source.id,
+      sourceType: source.type,
+      path: r.path,
+      pagePath: r.pagePath,
+      content: r.content,
+      ...(r.updatedAt ? { updatedAt: r.updatedAt } : {}),
+      ...(r.version ? { version: r.version } : {}),
+      records,
+      systems,
+      defaultClassification,
+      mentions: index,
+    });
+    const level = levels.indexOf(page.classification);
+    // ADR 0132: a page under view restrictions is above the limit for the metarepo's audience
+    // (its snapshot is committed), unless the source says that audience may read it.
+    // Round 41: front matter that doesn't read may hold the page's classification or its
+    // restrictions: the page is skipped with why, never read at the default classification.
+    const skip = page.doc.frontMatterProblem
+      ? page.doc.frontMatterProblem
+      : !source.readRestricted && pageRestricted(page.frontMatter)
+        ? "under view restrictions, so above the limit for the metarepo's audience (readRestricted on the source says everyone who reads the metarepo may read it)"
+        : level === -1
+          ? `unknown classification ${page.classification}`
+          : level > limitLevel
+            ? `${page.classification} is above the limit (${limit})`
+            : undefined;
+    const out = { page, ...(skip !== undefined ? { skip } : {}) };
+    checked.set(key, out);
+    return out;
+  };
   // ADR 0132: the same page mirrored in two wikis (the same words, front matter aside) is read
   // once, by the more authoritative source (then the first listed); the mirror is skipped.
+  // Review round 50: only among the copies that can be read, so a restricted copy never makes
+  // its readable mirror skipped.
   const mirrors = mirrorReaders(
     read
       .filter((x) => !o.adaptersById?.[x.source.id])
@@ -472,7 +514,7 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
         source: x.source,
         raw: x.raw.filter((r) => {
           const owner = owners.get(r.path);
-          return !owner || owner.source === x.source.id;
+          return (!owner || owner.source === x.source.id) && !checkedPage(x.source, r).skip;
         }),
       })),
     o.orgPack,
@@ -506,46 +548,9 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
       ),
     );
     for (const r of raw) {
-      const page = readPage({
-        source: source.id,
-        sourceType: source.type,
-        path: r.path,
-        pagePath: r.pagePath,
-        content: r.content,
-        ...(r.updatedAt ? { updatedAt: r.updatedAt } : {}),
-        ...(r.version ? { version: r.version } : {}),
-        records,
-        systems,
-        defaultClassification,
-        mentions: index,
-      });
-      // ADR 0132: a page under view restrictions is above the limit for the metarepo's audience
-      // (its snapshot is committed), unless the source says that audience may read it.
-      // Round 41: front matter that doesn't read may hold the page's classification or its
-      // restrictions: the page is skipped with why, never read at the default classification.
-      if (page.doc.frontMatterProblem) {
-        res.skipped.push({ source: source.id, path: r.path, reason: page.doc.frontMatterProblem });
-        continue;
-      }
-      if (!source.readRestricted && pageRestricted(page.frontMatter)) {
-        res.skipped.push({
-          source: source.id,
-          path: r.path,
-          reason:
-            "under view restrictions, so above the limit for the metarepo's audience (readRestricted on the source says everyone who reads the metarepo may read it)",
-        });
-        continue;
-      }
-      const level = levels.indexOf(page.classification);
-      if (level === -1 || level > limitLevel) {
-        res.skipped.push({
-          source: source.id,
-          path: r.path,
-          reason:
-            level === -1
-              ? `unknown classification ${page.classification}`
-              : `${page.classification} is above the limit (${limit})`,
-        });
+      const { page, skip } = checkedPage(source, r);
+      if (skip !== undefined) {
+        res.skipped.push({ source: source.id, path: r.path, reason: skip });
         continue;
       }
       if (page.date) {
@@ -573,7 +578,49 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
       res.documents.push(sourceDocument(page));
     }
   }
+  res.documents = uniqueDocumentIds(res.pages, res.documents);
   return res;
+}
+
+/**
+ * Review round 50: two pages whose names slug alike ("Retry Policy.md", "retry_policy.md",
+ * "retry-policy.md") get document ids of their own. The page whose name is its slug keeps the
+ * plain id (else the first by path); each other takes a short hash of its source and path. An id
+ * no other page has is unchanged.
+ */
+function uniqueDocumentIds(
+  pages: KnowledgePage[],
+  docs: SourceDocumentRecord[],
+): SourceDocumentRecord[] {
+  const by = new Map<string, number[]>();
+  docs.forEach((d, k) => by.set(d.id, [...(by.get(d.id) ?? []), k]));
+  const out = [...docs];
+  const taken = new Set(docs.map((d) => d.id));
+  const plain = (k: number) => {
+    const base = pages[k]!.pagePath.replace(/\.(md|markdown)$/i, "");
+    return slug(base) === base;
+  };
+  const byPath = (a: number, b: number) => {
+    const x = pages[a]!.pagePath;
+    const y = pages[b]!.pagePath;
+    return x < y ? -1 : x > y ? 1 : 0;
+  };
+  for (const [id, ks] of by) {
+    if (ks.length < 2) continue;
+    const order = [...ks].sort((a, b) => Number(plain(b)) - Number(plain(a)) || byPath(a, b));
+    for (const k of order.slice(1)) {
+      const p = pages[k]!;
+      const h = createHash("sha256").update(`${p.source}\0${p.pagePath}`).digest("hex");
+      const withHash = (n: number) =>
+        `${id.slice(0, 119 - n).replace(/[-.]+$/, "")}-${h.slice(0, n)}`;
+      let n = 8;
+      while (taken.has(withHash(n)) && n < 32) n += 4;
+      const next = withHash(n);
+      taken.add(next);
+      out[k] = { ...docs[k]!, id: next };
+    }
+  }
+  return out;
 }
 
 /**

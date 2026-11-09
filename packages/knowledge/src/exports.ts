@@ -259,6 +259,33 @@ export const titleSegment = (t: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "") || "page";
 
+/**
+ * Review round 50: two pages of one export never share a path. A page whose path another has
+ * too gets `alt(page)` (its Confluence page id, its file's extension), unless `keeps` says it
+ * keeps the plain path; a path still taken gets "-2", "-3"… A path no other page has is unchanged.
+ */
+export function uniquePagePaths(
+  pages: RawPage[],
+  alt: (p: RawPage) => string,
+  keeps: (p: RawPage) => boolean = () => false,
+): RawPage[] {
+  const count = new Map<string, number>();
+  for (const p of pages) count.set(p.pagePath, (count.get(p.pagePath) ?? 0) + 1);
+  const taken = new Set(pages.filter((p) => count.get(p.pagePath) === 1).map((p) => p.pagePath));
+  const out: RawPage[] = [];
+  for (const p of pages) {
+    if (count.get(p.pagePath) === 1) {
+      out.push(p);
+      continue;
+    }
+    let path = keeps(p) && !taken.has(p.pagePath) ? p.pagePath : alt(p);
+    for (let n = 2; taken.has(path); n++) path = alt(p).replace(/\.md$/, `-${n}.md`);
+    taken.add(path);
+    out.push({ ...p, pagePath: path });
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ export metadata (CSV)
 
 /** A CSV file's rows (RFC 4180 quoting), the first row as the header, lower-cased. */
@@ -450,7 +477,16 @@ export const confluenceExportAdapter: KnowledgeSourceAdapter = {
         ...(m.updated ? { updatedAt: m.updated } : {}),
       });
     }
-    return out;
+    // Two titles that make one path ("C# coding standard", "C++ coding standard") each take
+    // their page id: `<Title>_<id>.html`, else the file's name.
+    return uniquePagePaths(out, (p) => {
+      const file = p.path
+        .split("/")
+        .pop()!
+        .replace(/\.html?$/i, "");
+      const id = /(?:^|_)(\d+)$/.exec(file)?.[1] ?? titleSegment(file);
+      return p.pagePath.replace(/\.md$/, `-${id}.md`);
+    });
   },
 };
 
@@ -527,6 +563,13 @@ export const sharepointExportAdapter: KnowledgeSourceAdapter = {
         ...(m.updated ? { updatedAt: m.updated } : {}),
       });
     }
-    return out;
+    // `x.aspx`, `x.html` and `x.markdown` all read as `x.md`: a Markdown `x.md` keeps it, the
+    // others take their extension (`x.aspx.md`).
+    const ext = (p: RawPage) => /\.([^./]+)$/.exec(p.path)?.[1]?.toLowerCase() ?? "";
+    return uniquePagePaths(
+      out,
+      (p) => p.pagePath.replace(/\.md$/, `.${ext(p)}.md`),
+      (p) => ext(p) === "md",
+    );
   },
 };

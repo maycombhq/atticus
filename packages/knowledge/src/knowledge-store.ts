@@ -13,8 +13,11 @@ import {
   type CatalogRecord,
   type KnowledgeKind,
 } from "@maycombhq/core";
+import { conflictOwner, pageFacts } from "./conflict-owner.js";
 import {
+  idTaken,
   isKnowledgeRecord,
+  recordConflict,
   type FailedItem,
   type Injection,
   type KnowledgeConflict,
@@ -81,7 +84,7 @@ export interface KnowledgeRead {
    * `raw`, the scan's own records, every one, as they are on disk.
    */
   items: KnowledgeRecord[];
-  /** Items a person rejected (empty with `raw`). */
+  /** Items a person rejected, before their page changed too (empty with `raw`). */
   rejected: KnowledgeRecord[];
   /** Each reviewed item's review, by id. */
   reviews: Record<string, ReviewSummary>;
@@ -140,7 +143,9 @@ export async function readKnowledge(
     for (const item of items) {
       const a = applyReview(item, r.reviews.get(item.id));
       if (a.summary) reviews[item.id] = a.summary;
-      if (a.summary?.state === "rejected") rejected.push(a.item);
+      // A rejection made before the page changed still keeps the item out (review round 50):
+      // it is listed as rejected, page changed, until a person checks it again.
+      if (a.summary?.verdict === "rejected") rejected.push(a.item);
       else shown.push(a.item);
     }
   }
@@ -160,7 +165,13 @@ export async function writeKnowledge(
   result: KnowledgeScanResult,
   scannedAt: string,
   o: { snapshots?: Snapshot[]; plan?: RescanPlan } = {},
-): Promise<{ written: number; removed: number; changes: KnowledgeChanges }> {
+): Promise<{
+  written: number;
+  removed: number;
+  changes: KnowledgeChanges;
+  /** Review round 50: items refused as their id is a kept item's of another page or source. */
+  refused?: (FailedItem & { source?: string })[];
+}> {
   const plan = o.plan;
   const scanned = new Set([
     ...result.snapshots.map((x) => x.source),
@@ -179,16 +190,76 @@ export async function writeKnowledge(
   };
   const before = await readKnowledge(root, { raw: true, cacheRoot: root });
   // An item a person kept from a search stays while its quote is still on its page.
-  const pageText = (source: string, page: string) =>
-    o.snapshots?.find((x) => x.manifest.source === source)?.pages.find((p) => p.pagePath === page)
-      ?.text;
+  const snapPage = (source: string, page: string) => {
+    const snap = o.snapshots?.find((x) => x.manifest.source === source);
+    const p = snap?.pages.find((x) => x.pagePath === page);
+    return snap && p ? { snap, p } : undefined;
+  };
+  const pageText = (source: string, page: string) => snapPage(source, page)?.p.text;
   const stillQuoted = (r: KnowledgeRecord) => {
     if (!r.flags?.some((f) => f.startsWith("found:")) || !r.quote) return false;
     const text = pageText(r.quote.source, r.quote.page);
     return text !== undefined && checkQuote(text, r.quote.text, r.quote.section).ok;
   };
-  const keep = before.items.filter((r) => !touches(sourceOf(r), r.quote?.page) || stillQuoted(r));
-  const all = [...keep, ...result.items];
+  /**
+   * Review round 50: an item whose also_on page changed or is gone keeps each also_on quote still
+   * on its page (read where it is now), and drops the others with their evidence.
+   */
+  const recheckAlsoOn = (r: KnowledgeRecord): KnowledgeRecord => {
+    if (!r.alsoOn.some((a) => touches(a.source, a.page))) return r;
+    const alsoOn: KnowledgeRecord["alsoOn"] = [];
+    const evidence = [...r.evidence];
+    const paired = evidence.length === r.alsoOn.length + 1;
+    const keptEvidence = paired ? [evidence[0]!] : evidence;
+    r.alsoOn.forEach((a, k) => {
+      if (!touches(a.source, a.page)) {
+        alsoOn.push(a);
+        if (paired) keptEvidence.push(evidence[k + 1]!);
+        return;
+      }
+      const at = snapPage(a.source, a.page);
+      const c = at ? checkQuote(at.p.text ?? "", a.text, a.section) : undefined;
+      if (!at || !c?.ok) return;
+      const m = at.snap.manifest.pages.find((x) => x.page === a.page);
+      const snapshot = m?.in ?? at.snap.manifest.date;
+      alsoOn.push({ ...a, section: c.section, line: c.line, snapshot });
+      if (paired) keptEvidence.push({ ...evidence[k + 1]!, path: at.p.path, line: c.line });
+    });
+    return { ...r, alsoOn, evidence: keptEvidence } as KnowledgeRecord;
+  };
+  const keep = before.items
+    .filter((r) => !touches(sourceOf(r), r.quote?.page) || stillQuoted(r))
+    .map(recheckAlsoOn);
+  // Review round 50: an item of this scan with the id of a kept item of another page or source
+  // is refused (it would take that item's place, and a person's review of it); it is reported
+  // as failed, for the next scan to give it an id of its own.
+  const keptById = new Map(keep.map((r) => [r.id, r]));
+  const refused: (FailedItem & { source?: string })[] = [];
+  const accepted: KnowledgeRecord[] = [];
+  for (const r of result.items) {
+    const k = keptById.get(r.id);
+    if (k && !(k.quote?.source === r.quote?.source && k.quote?.page === r.quote?.page)) {
+      refused.push({
+        id: r.id,
+        kind: knowledgeKindOf(r) ?? r.kind,
+        title: itemTitle(r),
+        ...(r.quote ? { page: r.quote.page, source: r.quote.source } : {}),
+        problems: [idTaken(r.id, k, r.quote?.source ?? "")],
+      });
+      continue;
+    }
+    accepted.push(r);
+  }
+  const readNow = new Set(accepted.map((r) => r.id));
+  const merged = [...keep.filter((r) => !readNow.has(r.id)), ...accepted];
+  const refusedIds = new Set(refused.map((f) => f.id));
+  const found = result.conflicts.filter((c) => !c.about.some((a) => refusedIds.has(a)));
+  const conflicts = mergeConflicts(before.report?.conflicts ?? [], found, merged, {
+    readNow,
+    ...(o.snapshots ? { snapshots: o.snapshots } : {}),
+    superseded: result.superseded,
+  });
+  const all = merged.map((r) => withConflictFlags(r, conflicts));
   const dir = join(knowledgeDirOf(root), "items");
   const wanted = new Map(all.map((r) => [recordPath(r), serializeRecord(r)]));
   let written = 0;
@@ -265,7 +336,7 @@ export async function writeKnowledge(
     scannedAt,
     snapshots,
     changes: { at: scannedAt, ...changes },
-    conflicts: [...other(old?.conflicts), ...result.conflicts],
+    conflicts,
     superseded: [
       ...(old?.superseded ?? []).filter((x) => !touches(x.old.source, x.old.page)),
       ...result.superseded,
@@ -277,10 +348,82 @@ export async function writeKnowledge(
         ...f,
         ...(result.snapshots.length === 1 ? { source: result.snapshots[0]!.source } : {}),
       })),
+      ...refused,
     ],
   };
   await writeFileAtomic(join(knowledgeDirOf(root), KNOWLEDGE_REPORT), stringify(report));
-  return { written, removed, changes };
+  return { written, removed, changes, ...(refused.length ? { refused } : {}) };
+}
+
+const sameAbout = (a: string[], b: string[]) =>
+  a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+
+/**
+ * Review round 50: the conflicts after a scan, across what it read and what it kept. The scan's
+ * own come first; an old one stays while its items are there, unless both were read again (the
+ * scan says it again if they still differ) or, found by the check, they no longer differ; and a
+ * new item is checked against each kept item of its kind and title, as the scan checks its own.
+ */
+function mergeConflicts(
+  old: KnowledgeConflict[],
+  found: KnowledgeConflict[],
+  items: KnowledgeRecord[],
+  o: { readNow: Set<string>; snapshots?: Snapshot[]; superseded: SupersededPage[] },
+): KnowledgeConflict[] {
+  const byId = new Map(items.map((r) => [r.id, r]));
+  const out = found.filter((c) => c.about.every((a) => byId.has(a)));
+  const has = (about: string[]) => out.some((c) => sameAbout(c.about, about));
+  for (const c of old) {
+    if (has(c.about) || !c.about.every((a) => byId.has(a))) continue;
+    const reread = c.about.filter((a) => o.readNow.has(a));
+    if (c.foundBy === "check") {
+      if (!reread.length) {
+        out.push(c);
+        continue;
+      }
+      const [x, y] = c.about.map((a) => byId.get(a)!);
+      const again = x && y && c.about.length === 2 ? recordConflict(x, y) : undefined;
+      if (again) out.push({ ...again, ...(c.owner ? { owner: c.owner } : {}) });
+    } else if (reread.length < c.about.length) out.push(c);
+  }
+  const facts = (o.snapshots ?? []).flatMap((s) => s.pages.map((p) => pageFacts(p, s.manifest)));
+  const kept = items.filter((r) => !o.readNow.has(r.id));
+  for (const x of items.filter((r) => o.readNow.has(r.id)))
+    for (const y of kept) {
+      if (has([x.id, y.id])) continue;
+      const c = recordConflict(x, y);
+      if (!c) continue;
+      const handledBy = [x, y]
+        .map((r) => ("handledBy" in r ? r.handledBy : undefined))
+        .filter((h): h is string => typeof h === "string");
+      const owner = facts.length
+        ? conflictOwner(
+            c,
+            facts,
+            {
+              ...(knowledgeKindOf(x) ? { kind: knowledgeKindOf(x)! } : {}),
+              ...(new Set(handledBy).size === 1 ? { handledBy: handledBy[0]! } : {}),
+            },
+            o.superseded,
+          )
+        : undefined;
+      out.push(owner ? { ...c, owner } : c);
+    }
+  return out;
+}
+
+/** An item's conflict flags as the conflicts now say: none left naming a conflict that is gone. */
+function withConflictFlags(r: KnowledgeRecord, conflicts: KnowledgeConflict[]): KnowledgeRecord {
+  const mine = conflicts
+    .filter((c) => c.about.includes(r.id))
+    .map((c) => `conflict:${c.pages.map((p) => p.page).join("|")}`);
+  const flags = [
+    ...new Set([...(r.flags ?? []).filter((f) => !f.startsWith("conflict:")), ...mine.sort()]),
+  ];
+  const same = flags.length === (r.flags ?? []).length && flags.every((f, k) => f === r.flags![k]);
+  if (same) return r;
+  const { flags: _, ...rest } = r as KnowledgeRecord & { flags?: string[] };
+  return (flags.length ? { ...rest, flags } : rest) as KnowledgeRecord;
 }
 
 /** Items with a tag (a source kind, framework or page tag) and of a knowledge kind. */

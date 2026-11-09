@@ -14,6 +14,7 @@ import {
   knowledgeList,
   knowledgeReview,
   knowledgeScan,
+  reviewWord,
   sourcesTag,
 } from "../src/knowledge-scan-commands.js";
 import { main } from "../src/main.js";
@@ -413,5 +414,19 @@ describe("the knowledge scan through a hand-off", () => {
     );
     expect(text).toMatch(/request made-up: quote: .*the quote is not on the page/);
     expect(c.out.at(-1)).toMatch(/^Handed the knowledge scan to your assistant \(run run-/);
+  });
+});
+
+// Review round 50: a review made before the page changed says what it was.
+describe("a stale review in the list", () => {
+  it("says a rejection still stands until checked, and a correction isn't used", () => {
+    const base = { by: "Pat", at: "2026-10-21T10:00:00Z" };
+    expect(reviewWord({ ...base, state: "stale", verdict: "rejected" })).toBe(
+      "✗ rejected by Pat, page changed: check again",
+    );
+    expect(
+      reviewWord({ ...base, state: "stale", verdict: "corrected", corrected: ["leadTime"] }),
+    ).toBe("check again: correction made before the page changed (leadTime)");
+    expect(reviewWord({ ...base, state: "stale", verdict: "verified" })).toBe("check again");
   });
 });
