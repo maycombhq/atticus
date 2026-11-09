@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { stateDirOf, type CatalogRecord, type RecordKind } from "@maycombhq/core";
 import { textSha, type Embedder, type QuantVector } from "@maycombhq/ai";
 import { openDb, type Db } from "./db.js";
@@ -56,6 +56,12 @@ export interface OpenOptions {
    */
   embedOnOpen?: number;
   /**
+   * beta.23: the caller knows no file changed since its last open (the app's server, which
+   * follows the metarepo's files and hears every change): the files aren't listed and checked
+   * again. An index file that is new or at another version is still built from the files.
+   */
+  trusted?: boolean;
+  /**
    * Where the embedding plugin comes from (ADR 0124 addendum D-bundle): `@maycombhq/embed`, which
    * the default offline bundle leaves out. Tests pass one that fails as a missing package does.
    */
@@ -69,6 +75,9 @@ const vectorsFileOf = (file: string) => join(dirname(file), "vectors.sqlite");
 const notInstalled = (e: unknown, pkg: string) =>
   (e as { code?: string }).code === "ERR_MODULE_NOT_FOUND" &&
   String((e as Error).message).includes(pkg);
+
+/** The embedders made in this process, by root and model (see embedderOf). */
+const embedders = new Map<string, Embedder>();
 
 async function embedderOf(
   root: string,
@@ -91,7 +100,15 @@ async function embedderOf(
   try {
     const { embedderFor } = embed;
     const r = await embedderFor(root);
-    return r.embedder ? { embedder: r.embedder } : { why: r.state.problem ?? "no embedding model" };
+    if (!r.embedder) return { why: r.state.problem ?? "no embedding model" };
+    // beta.23: one model per process for the same model files. Each open made a new one, and
+    // the first embedding of each loaded the model again (a hash of its ~90 MB file and a new
+    // session): seconds on every page of the app while vectors were missing.
+    const key = `${resolve(root)}\u0000${r.state.dir ?? ""}\u0000${r.state.id ?? r.embedder.id}`;
+    const had = embedders.get(key);
+    if (had) return { embedder: had };
+    embedders.set(key, r.embedder);
+    return { embedder: r.embedder };
   } catch (e) {
     return { why: `the embedding model couldn't be read: ${(e as Error).message.split("\n")[0]}` };
   }
@@ -106,11 +123,15 @@ async function embedderOf(
 export async function openIndex(root: string, o: OpenOptions = {}): Promise<CatalogIndex> {
   const file = o.file ?? join(stateDirOf(root), ".index", "catalog.sqlite");
   await mkdir(dirname(file), { recursive: true });
-  const files = await listSources(root);
   const db = openDb(file);
   try {
     const fresh = ensureSchema(db, o.rebuild === true);
-    const u = await updateIndex(db, root, files, { force: fresh });
+    // beta.23: listing and checking every file took most of a request's time on a large estate
+    // (and far more on Windows); a caller that heard no change since its last open skips it.
+    const u: UpdateResult =
+      o.trusted && !fresh
+        ? { changed: [], removed: [], problems: [], rematched: false }
+        : await updateIndex(db, root, await listSources(root), { force: fresh });
     const rebuilt = fresh || u.changed.length > 0 || u.removed.length > 0;
     attachVectors(db, vectorsFileOf(file));
     const e = await embedderOf(root, o.embeddings, o.loadEmbed);

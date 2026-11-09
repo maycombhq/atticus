@@ -6,6 +6,8 @@ import { SCHEMA_VERSION } from "./schema/common.js";
 import { FLOW_SCHEMA_VERSION, RECORD_KINDS } from "./schema/kinds.js";
 import { serializeRecord } from "./serialize.js";
 import { writeFileAtomic } from "./fs.js";
+import { keptParse } from "./kept-files.js";
+import { mapAtOnce } from "./record-cache.js";
 
 export interface MigrationResult {
   /** Files rewritten at the current schema version (relative to the folder, "/"-separated). */
@@ -50,6 +52,32 @@ function statedVersion(text: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
+/** What migrateCatalog does with one file's text, as its loop below decides it. */
+function verdictOf(
+  text: string,
+  o: { versions?: readonly number[]; pendingOnly?: boolean },
+): "skip" | "current" | "migrate" | { problem: string } {
+  if (o.pendingOnly && o.versions) {
+    const stated = statedVersion(text);
+    if (stated !== undefined && !o.versions.includes(stated)) return "skip";
+  }
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch {
+    return "skip";
+  }
+  if (typeof data !== "object" || data === null || !isRecordKind((data as { kind?: unknown }).kind))
+    return "skip";
+  const version = (data as { schemaVersion?: unknown }).schemaVersion;
+  const kind = (data as { kind?: unknown }).kind;
+  if (version === (kind === "Flow" ? FLOW_SCHEMA_VERSION : SCHEMA_VERSION)) return "current";
+  if (o.versions && !(typeof version === "number" && o.versions.includes(version))) return "skip";
+  const p = parseRecord(data);
+  if (!p.ok) return { problem: p.issues.map((i) => `${i.path}: ${i.message}`).join("; ") };
+  return "migrate";
+}
+
 /**
  * Rewrite every older record file under a catalog folder (generated and curated) at the
  * current schema version, in canonical form. Readers accept old files anyway; migrating once
@@ -71,7 +99,26 @@ export async function migrateCatalog(
   o: { dryRun?: boolean; versions?: readonly number[]; pendingOnly?: boolean } = {},
 ): Promise<MigrationResult> {
   const res: MigrationResult = { migrated: [], current: [], problems: [] };
-  for (const full of await yamlFiles(dir)) {
+  const files = await yamlFiles(dir);
+  if (o.dryRun) {
+    // beta.23: a dry run's answer for each file is kept until the file changes (the app's
+    // upgrade check and doctor ask it of every record on each look; reading them all made Home
+    // slow on a large estate).
+    const kind = `catalog-migrate:${o.pendingOnly ? "p" : ""}:${(o.versions ?? ["*"]).join(",")}`;
+    const verdicts = await mapAtOnce(files, (full) =>
+      keptParse(full, kind, (text) => verdictOf(text, o)),
+    );
+    files.forEach((full, i) => {
+      const v = verdicts[i];
+      const file = relative(dir, full).split(sep).join("/");
+      if (v === "current") {
+        if (!o.pendingOnly) res.current.push(file);
+      } else if (v === "migrate") res.migrated.push(file);
+      else if (v && typeof v === "object") res.problems.push({ file, message: v.problem });
+    });
+    return res;
+  }
+  for (const full of files) {
     const file = relative(dir, full).split(sep).join("/");
     const text = await readFile(full, "utf8");
     if (o.pendingOnly && o.versions) {

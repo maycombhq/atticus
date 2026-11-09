@@ -5,8 +5,25 @@ import type { Duplex } from "node:stream";
 import { Api, DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
-import { JobManager } from "./jobs.js";
-import { apiRoutes, type Context } from "./routes.js";
+import { JobManager, type JobKind } from "./jobs.js";
+
+/** Every kind of job, so RunningServer.quiet asks after each (a new kind must be added here). */
+const JOB_KINDS: Record<JobKind, true> = {
+  scan: true,
+  sync: true,
+  reconcile: true,
+  index: true,
+  intake: true,
+  step: true,
+  local: true,
+};
+import {
+  apiRoutes,
+  indexFilesChanged,
+  stopEmbedding,
+  trustIndexBetweenChanges,
+  type Context,
+} from "./routes.js";
 import { appCsp, staticFile } from "./static.js";
 import { Confirmations, sameSecret } from "./confirm.js";
 import { watchMetarepo } from "./watch.js";
@@ -125,6 +142,11 @@ export interface RunningServer {
   person: GitUser;
   /** The folders followed for live events, from the root (ADR 0119); empty when not watching. */
   following: string[];
+  /**
+   * beta.23: nothing in this process is writing: no call but a GET is being answered and no job
+   * runs. What the server keeps read from the files may then be trusted until a change is heard.
+   */
+  readonly quiet: boolean;
   close(): Promise<void>;
 }
 
@@ -188,6 +210,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       ? o.pageKey
       : randomBytes(32).toString("base64url");
   const events = new EventHub();
+  let writing = 0;
   const jobs = new JobManager((e) => events.publish(e));
   const confirmations = new Confirmations();
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);
@@ -248,7 +271,16 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
 
   const server = createServer(async (req, res) => {
     const t0 = Date.now();
+    // beta.23: a call that may write is counted while it runs (RunningServer.quiet).
+    let writes = req.method !== "GET" && req.method !== "HEAD";
+    if (writes) writing++;
     const done = (status: number, error?: Error) => {
+      if (writes) {
+        writes = false;
+        writing--;
+        // It may have written, answered or refused: the index checks its files on the next open.
+        indexFilesChanged(o.root);
+      }
       const path = (req.url ?? "/").split("?")[0]!;
       if (path.startsWith("/api/"))
         o.onRequest?.({
@@ -338,6 +370,13 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     o.watch === false
       ? undefined
       : watchMetarepo({ root: o.root, publish: (e) => events.publish(e) });
+  // beta.23: while the server follows the files, the index is checked against them only after a
+  // change it hears (a live event, a job that finished), not on every request.
+  const stopHearing = events.listen((e) => {
+    if (e.type === "file.changed" || e.type === "index.rebuilt" || e.type === "job.done")
+      indexFilesChanged(o.root);
+  });
+  if (watcher) trustIndexBetweenChanges(o.root, true);
   return {
     url: `http://127.0.0.1:${port}`,
     port,
@@ -350,9 +389,15 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     get following() {
       return watcher?.following ?? [];
     },
+    get quiet() {
+      return writing === 0 && !(Object.keys(JOB_KINDS) as JobKind[]).some((k) => jobs.runningOf(k));
+    },
     close: () =>
       new Promise<void>((resolve) => {
         watcher?.close();
+        stopHearing();
+        trustIndexBetweenChanges(o.root, false);
+        stopEmbedding(o.root);
         events.closeAll();
         server.closeAllConnections?.();
         server.close(() => resolve());

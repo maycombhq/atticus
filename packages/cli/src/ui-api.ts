@@ -68,6 +68,7 @@ import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { partStates } from "./runs-view.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
+import { keptAnswer } from "./watched-memo.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -119,6 +120,8 @@ export interface UiDeps {
   taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
   /** Tests: the in-process atticus a step's resume runs with (fourth UX walk). */
   runStep?: import("./handoff-resume.js").StepRunner;
+  /** Tests: the machine's checks (otherwise atticus doctor's). */
+  doctor?: (root: string) => Promise<import("./doctor.js").DoctorCheck[]>;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -560,19 +563,23 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // Ninth UX walk: the upgrade steps this metarepo waits on (runtime.yaml at an older schema,
       // say), and atticus upgrade run here as a local job on the person's click. It backs up what
       // it changes; the changes are files to propose for review like any other.
-      .add("GET", "/api/upgrade", async () => {
-        const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
-        const c = await upgradeCheck(root);
-        // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
-        const stamp = c.stamp?.atticus ?? newerAtticusOf(c);
-        const body: Api.UpgradeViewT = {
-          atticus: c.atticus,
-          newer: c.newer,
-          ...(stamp ? { stamp } : {}),
-          pending: c.pending,
-        };
-        return { status: 200, body };
-      })
+      // beta.23: every migration's dry run reads every record and question; Home asks this on
+      // each load, so the answer is kept until a change is heard (watched-memo.ts).
+      .add("GET", "/api/upgrade", async () =>
+        keptAnswer(root, "upgrade", async () => {
+          const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
+          const c = await upgradeCheck(root);
+          // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
+          const stamp = c.stamp?.atticus ?? newerAtticusOf(c);
+          const body: Api.UpgradeViewT = {
+            atticus: c.atticus,
+            newer: c.newer,
+            ...(stamp ? { stamp } : {}),
+            pending: c.pending,
+          };
+          return { status: 200, body };
+        }),
+      )
       .add("POST", "/api/upgrade", async () => {
         const { newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");

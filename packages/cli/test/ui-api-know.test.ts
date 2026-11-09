@@ -166,6 +166,40 @@ describe("the machine checks in the app", () => {
     expect((s.body as unknown as { steps: { id: string }[] }).steps[0]!.id).toBe("machine");
   });
 
+  it("gives Home's checklist without waiting for the machine's checks, and their step once they finish (beta.23)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-nowait-"));
+    await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
+    let finish: () => void = () => undefined;
+    const doctor = () =>
+      new Promise<{ id: string; label: string; status: "ok"; detail: string }[]>((resolve) => {
+        finish = () => resolve([{ id: "node", label: "Node.js", status: "ok", detail: "Node 22" }]);
+      });
+    const s = await startServer({
+      root,
+      port: 0,
+      extend: (r, ctx) => uiKnowRoutes(r, ctx, { warm: true, doctor }),
+    });
+    const ask = async (path: string) =>
+      (await (
+        await fetch(`${s.url}${path}`, { headers: { "X-Atticus-Token": s.token } })
+      ).json()) as { steps: { id: string; done: boolean; checking?: boolean; detail: string }[] };
+    try {
+      // The checks never finish until told: the checklist answers anyway.
+      const first = await ask("/api/setup");
+      expect(first.steps[0]).toMatchObject({ id: "machine", done: false, checking: true });
+      expect(first.steps.length).toBeGreaterThan(3);
+      // ?machine=wait waits for them, as /api/doctor does.
+      const waiting = ask("/api/setup?machine=wait");
+      finish();
+      expect((await waiting).steps[0]).toMatchObject({ id: "machine", done: true });
+      const after = await ask("/api/setup");
+      expect(after.steps[0]).toMatchObject({ id: "machine", done: true });
+      expect(after.steps[0]!.checking).toBeUndefined();
+    } finally {
+      await s.close();
+    }
+  });
+
   it("starts the machine checks when the server starts, so the Set up page's first load finds them done or running", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-ui-warm-"));
     await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });

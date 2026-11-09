@@ -43,8 +43,11 @@ export interface WatchOptions {
 
 /** Never followed: they change as the app reads, or they are code, not Atticus's files. */
 const SKIP = new Set([".git", "node_modules", ".index", "workspace", "logs", ".vitest-cache"]);
-/** Editors' and downloads' temporary files. */
-const TEMP = /(~|\.swp|\.swx|\.tmp|\.crdownload|\.part)$/i;
+/**
+ * Editors' and downloads' temporary files, and doctor's probe that the state folder is writable
+ * (beta.23: each check sent a change, and Home read everything again).
+ */
+const TEMP = /(~|\.swp|\.swx|\.tmp|\.crdownload|\.part|(^|\/)\.doctor-\d+)$/i;
 
 const posix = (p: string) => p.split(sep).join("/");
 

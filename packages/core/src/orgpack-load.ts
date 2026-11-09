@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import { parse } from "yaml";
+import { keptParse } from "./kept-files.js";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { RepoType } from "./schema/repo-type.js";
@@ -130,7 +131,9 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   async function load<T>(path: string, schema: z.ZodType<T>): Promise<T | undefined> {
     let data: unknown;
     try {
-      data = parse(await readFile(path, "utf8"));
+      // beta.23: each file's YAML kept until it changes (most of the app's pages load the pack).
+      const kept = await keptParse(path, "yaml", (t) => parse(t) as unknown, { copy: true });
+      data = kept === undefined ? parse(await readFile(path, "utf8")) : kept;
     } catch (e) {
       problems.push({
         file: rel(path),

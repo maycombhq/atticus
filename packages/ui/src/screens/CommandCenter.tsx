@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
 import { COPY } from "../copy.js";
-import { api, ApiError, isOffline, useApi, useLiveEvents } from "../api/client.js";
+import {
+  api,
+  ApiError,
+  catalogMayHaveChanged,
+  isOffline,
+  useApi,
+  useFileChanges,
+  useLiveEvents,
+} from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
@@ -88,7 +96,22 @@ interface Setup {
     detail: string;
     fix?: string;
     optional?: boolean;
+    /** beta.23: the machine's checks still run; Home doesn't wait for them. */
+    checking?: boolean;
   }[];
+}
+
+/**
+ * beta.23: while the machine's checks run, wait for them here (GET /api/doctor answers when they
+ * finish), then read the checklist again. The rest of Home doesn't wait.
+ */
+function WhenMachineChecked({ onDone }: { onDone: () => void }) {
+  const d = useApi<{ ok: boolean }>("/api/doctor");
+  const done = d.state !== "loading";
+  useEffect(() => {
+    if (done) onDone();
+  }, [done, onDone]);
+  return null;
 }
 
 /**
@@ -247,15 +270,15 @@ export function SetupChecklist() {
             <li key={x.id} className="row" style={{ alignItems: "flex-start", gap: 10 }}>
               <span
                 aria-hidden="true"
-                className={`chip ${x.done ? "done" : x.optional ? "dim" : "warn"}`}
+                className={`chip ${x.done ? "done" : x.optional || x.checking ? "dim" : "warn"}`}
                 style={{ minWidth: 24, textAlign: "center" }}
               >
-                {x.done ? "✓" : "·"}
+                {x.done ? "✓" : x.checking ? "…" : "·"}
               </span>
-              <span className="stack" style={{ gap: 2 }}>
+              <span className="stack" style={{ gap: 2 }} aria-busy={x.checking || undefined}>
                 <span style={{ fontSize: 13 }}>
                   {x.label}
-                  <span className="sr">{x.done ? T.done : T.toDo}</span>
+                  <span className="sr">{x.done ? T.done : x.checking ? T.checking : T.toDo}</span>
                   <span className="muted" style={{ fontSize: 12 }}>
                     {" "}
                     · {x.detail}
@@ -275,6 +298,7 @@ export function SetupChecklist() {
             </li>
           ))}
         </ol>
+        {s.steps.some((x) => x.checking) && <WhenMachineChecked onDone={setup.reload} />}
         {scanned && (
           <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
             <button type="button" className="btn primary" onClick={() => void accept()}>
@@ -728,7 +752,10 @@ export function CommandCenter() {
         }
       : {}),
   });
-  const graph = useApi<Graph>("/api/graph");
+  // beta.23: the map is the heaviest panel; it is asked for once what needs you has come, so it
+  // never holds up the panels above it (a browser asks a server only a few things at a time).
+  const firstDone = changes.state !== "loading" && findings.state !== "loading";
+  const graph = useApi<Graph>(firstDone ? "/api/graph" : undefined);
   // The map is the estate's context view; with one system, that system's components and links.
   const systems =
     graph.state === "ready"
@@ -747,15 +774,20 @@ export function CommandCenter() {
         ? `/api/diagram/container/graph?focus=${encodeURIComponent(systems[0]!)}`
         : "/api/diagram/context/graph",
   );
-  useLiveEvents((e) => {
-    if (e.type === "index.rebuilt" || e.type === "file.changed") {
+  // beta.23: a burst of file events is read once, and the catalog's panels (the counts, the
+  // graph, the map) only when the burst can change the catalog.
+  useFileChanges((events) => {
+    const files = events.some((e) => e.type === "file.changed");
+    if (catalogMayHaveChanged(events)) {
       kinds.reload();
       graph.reload();
       map.reload();
+    }
+    if (files || events.some((e) => e.type === "index.rebuilt")) {
       changes.reload();
       findings.reload();
     }
-    if (e.type === "file.changed") {
+    if (files) {
       onboarding.reload();
       trust.reload();
       needs.reload();
@@ -764,7 +796,7 @@ export function CommandCenter() {
       asked.reload();
       knowledge.reload();
     }
-    if (e.type === "run.changed") findings.reload();
+    if (!files && events.some((e) => e.type === "run.changed")) findings.reload();
   });
 
   const inFlight = changes.state === "ready" ? changes.data.filter((c) => ACTIVE.has(c.state)) : [];

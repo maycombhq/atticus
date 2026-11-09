@@ -185,26 +185,40 @@ export async function proposePlan(
     else files.push({ path: e.slice(3), status });
   }
   const was = await readProposed(root);
-  for (const f of files) {
-    const p = was[f.path];
-    if (!p) continue;
-    // A branch the remote no longer has (merged and deleted, or closed: Bring in prunes) is no
-    // proposal any more.
-    if (
-      p.branch &&
-      !(await git(
-        ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${p.branch}`],
-        root,
-      ).then(
-        () => true,
-        () => false,
-      ))
-    )
-      continue;
-    const blob = existsSync(join(root, f.path))
-      ? (await git(["hash-object", "--", f.path], root).catch(() => ({ stdout: "" }))).stdout.trim()
-      : "";
-    if (blob === p.blob) f.proposed = p.where;
+  // beta.23: one git call per proposal branch and one for every file's content, not two per
+  // file (Home asks this on every load; after proposing a few hundred answers it started a
+  // thousand git processes, seconds each on Windows).
+  const asked = files.filter((f) => was[f.path]);
+  const branches = [...new Set(asked.map((f) => was[f.path]!.branch).filter((b) => !!b))];
+  const live = new Set<string>();
+  await Promise.all(
+    branches.map((b) =>
+      git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${b!}`], root).then(
+        () => live.add(b!),
+        () => undefined,
+      ),
+    ),
+  );
+  // A branch the remote no longer has (merged and deleted, or closed: Bring in prunes) is no
+  // proposal any more.
+  const still = asked.filter((f) => {
+    const b = was[f.path]!.branch;
+    return !b || live.has(b);
+  });
+  const there = still.filter((f) => existsSync(join(root, f.path)));
+  const blobs = new Map<string, string>();
+  // In slices, so a command line stays well under Windows' limit.
+  for (let i = 0; i < there.length; i += 200) {
+    const part = there.slice(i, i + 200);
+    const out = await git(["hash-object", "--", ...part.map((f) => f.path)], root).then(
+      (r) => r.stdout.split(/\r?\n/).map((l) => l.trim()),
+      () => [] as string[],
+    );
+    part.forEach((f, j) => blobs.set(f.path, out[j] ?? ""));
+  }
+  for (const f of still) {
+    const p = was[f.path]!;
+    if ((blobs.get(f.path) ?? "") === p.blob) f.proposed = p.where;
   }
   // Review round 35: each proposal its own branch (a second one the same day isn't added to
   // the first's PR).

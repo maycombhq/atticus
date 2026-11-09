@@ -241,10 +241,63 @@ export const isFileChange = (e: LiveEvent): boolean =>
 export function useReloadOnFiles(...views: ({ reload(): void } | undefined)[]): void {
   const current = useRef(views);
   current.current = views;
-  useLiveEvents((e) => {
-    if (isFileChange(e)) for (const v of current.current) v?.reload();
+  useFileChanges(() => {
+    for (const v of current.current) v?.reload();
   });
 }
+
+/** How long a burst of file events is let settle before a screen reads again. */
+export const FILE_QUIET_MS = 250;
+
+/**
+ * beta.23 ("Home loads fast"): the file events of a burst, heard once. A scan, a verify or an
+ * assistant writes many files; the server sends each as an event (up to fifty at once), and a
+ * screen that read everything again for each sent the server hundreds of requests. `on` gets the
+ * burst's events after a quiet moment (and at least every two seconds while they keep coming).
+ */
+export function useFileChanges(on: (events: LiveEvent[]) => void, quietMs = FILE_QUIET_MS): void {
+  const handler = useRef(on);
+  handler.current = on;
+  const burst = useRef<{
+    events: LiveEvent[];
+    timer?: ReturnType<typeof setTimeout>;
+    first: number;
+  }>({ events: [], first: 0 });
+  useEffect(
+    () => () => {
+      clearTimeout(burst.current.timer);
+    },
+    [],
+  );
+  useLiveEvents((e) => {
+    if (!isFileChange(e)) return;
+    const b = burst.current;
+    const now = Date.now();
+    if (!b.events.length) b.first = now;
+    b.events.push(e);
+    clearTimeout(b.timer);
+    const flush = () => {
+      const events = b.events;
+      b.events = [];
+      b.timer = undefined;
+      if (events.length) handler.current(events);
+    };
+    b.timer = setTimeout(flush, now - b.first > 2000 ? 0 : quietMs);
+  });
+}
+
+/**
+ * Whether a burst can change what the catalog says (its records, so the counts, the graph and
+ * the map): a file under a catalog folder or the org pack, a top folder (the watcher names top
+ * folders when many files change), the index rebuilt, or an event that names no path.
+ */
+export const catalogMayHaveChanged = (events: LiveEvent[]): boolean =>
+  events.some((e) => {
+    if (e.type === "index.rebuilt") return true;
+    if (e.type !== "file.changed") return false;
+    const p = typeof e.path === "string" ? e.path.replace(/^\.\//, "") : "";
+    return !p || !p.includes("/") || /(^|\/)(catalog|org-pack)(\/|$)/.test(p);
+  });
 
 /** Live events on /api/events; reconnects with a backoff while the page is open. */
 export function useLiveEvents(onEvent: (e: LiveEvent) => void): void {

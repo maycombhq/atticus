@@ -65,9 +65,10 @@ describe.skipIf(typeof (nodeModule as { registerHooks?: unknown }).registerHooks
       // Round 47: the option table is ai's cli-options entry (node:util only), never the rest of ai.
       for (const f of r.files.filter((x) => owner(x) === "packages/ai"))
         expect(f).toMatch(/\/ai\/dist\/cli-options\.js$/);
-      // Only core's light entry (the schema version and the log), never its schemas.
+      // Only core's light entry (the schema version and the log), never its schemas; fs tells
+      // kept-files (node only, beta.23) of each write.
       for (const f of r.files.filter((x) => owner(x) === "packages/core"))
-        expect(f).toMatch(/\/core\/dist\/(light|log|fs|schema\/version)\.js$/);
+        expect(f).toMatch(/\/core\/dist\/(light|log|fs|kept-files|schema\/version)\.js$/);
     });
 
     it("runs a command that calls no model without the model providers or the context tools", async () => {

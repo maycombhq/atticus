@@ -341,8 +341,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the credential store (422). POST /api/workspace/sync and /api/reconcile answer 409 while one of
  *   their kind runs; GET /api/past-changes?change= and /api/changes/{changeId}/cockpit answer 400
  *   for a change id that isn't one, and /api/view/{name} 404 for a name that isn't a view.
+ * 3.1.0 (beta.23, Home loads fast): GET /api/setup no longer waits for the machine's checks:
+ *   until they finish, its `machine` step has `checking: true` (and `done: false`), and GET
+ *   /api/doctor answers when they do; `?machine=wait` waits for them as before. Additive only.
  */
-export const API_VERSION = "3.0.0";
+export const API_VERSION = "3.1.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -4681,8 +4684,16 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/setup": {
     get: {
       id: "getSetup",
-      summary: "The setup checklist until the catalog is accepted, with a plain fix for each step",
+      summary:
+        "The setup checklist until the catalog is accepted, with a plain fix for each step; the machine step says `checking` while the machine's checks run",
       tag: "system",
+      params: [
+        q(
+          "machine",
+          { type: "string", enum: ["wait"] },
+          "Wait for the machine's checks instead of answering with the machine step checking",
+        ),
+      ],
       ok: {
         status: 200,
         schema: { type: "object", required: ["steps", "baselined"] },

@@ -8,6 +8,7 @@ import {
   factsRelOf,
   headFromFiles,
   isAdopted,
+  keptParse,
   auditItemHolds,
   auditPrecision,
   listQuestions,
@@ -22,6 +23,7 @@ import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import { contractCheckOf } from "./contract-check-files.js";
+import { keptAnswer, stampOfFiles } from "./watched-memo.js";
 
 /**
  * GET /api/trust (ADR 0124 addendum, C4 2.22.0): how far to trust each repo's map, for the Map's
@@ -200,10 +202,14 @@ export async function trustView(root: string): Promise<View> {
   const repos: Repo[] = [];
   for (const repo of ids) {
     const factsPath = join(dir, `${repo}.jsonl`);
-    const raw = await text(factsPath);
+    // beta.23: each repo's facts parsed once and kept until the file changes (read-only here).
+    const read = await keptParse(factsPath, "facts", (t) =>
+      t.trim() ? parseFacts(t) : null,
+    ).catch(() => undefined);
+    const factsPresent = read !== undefined;
     const facts: Repo["facts"] = {
       path: rel(factsPath),
-      present: raw !== undefined,
+      present: factsPresent,
       count: 0,
       unverified: 0,
     };
@@ -211,8 +217,8 @@ export async function trustView(root: string): Promise<View> {
     let terms: Repo["terms"];
     let kept: Fact[] = [];
     const lists: Lists = { rejected: [], excluded: [], asked: [], unverified: [] };
-    if (raw !== undefined && raw.trim()) {
-      const parsed = parseFacts(raw);
+    if (read) {
+      const parsed = read;
       if (parsed.ok) {
         kept = parsed.facts;
         facts.count = parsed.facts.length;
@@ -357,10 +363,40 @@ export async function trustView(root: string): Promise<View> {
   return { factsDir: factsRel, repos, problems, ...(contracts ? { contracts } : {}) };
 }
 
+/**
+ * The state of the checkouts trustView reads (each base clone's .git, its HEAD and branch refs),
+ * which the server's watcher doesn't follow: a pull or a checkout there changes it.
+ */
+export async function checkoutsStamp(root: string): Promise<string> {
+  const dirs = isAdopted(root)
+    ? [root]
+    : (await loadRepos(root).catch(() => [])).flatMap((r) => {
+        try {
+          return [baseClonePath(root, r.id)];
+        } catch {
+          return [];
+        }
+      });
+  return stampOfFiles(
+    dirs.flatMap((d) =>
+      [".git", ".git/HEAD", ".git/packed-refs", ".git/refs/heads"].map((p) => join(d, p)),
+    ),
+  );
+}
+
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
   return (
     r
-      .add("GET", "/api/trust", async () => ({ status: 200, body: await trustView(ctx.root) }))
+      // beta.23: kept until a change is heard or a base clone's commit moves (watched-memo.ts).
+      .add("GET", "/api/trust", async () => ({
+        status: 200,
+        body: await keptAnswer(
+          ctx.root,
+          "trust",
+          () => trustView(ctx.root),
+          () => checkoutsStamp(ctx.root),
+        ),
+      }))
       // ADR 0141 (P5): the estate's freshness. It runs read-only local git in the clones
       // (`git diff --name-status` between two commits they have); nothing fetched or written.
       .add("GET", "/api/trust/fresh", async () => {

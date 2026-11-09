@@ -80,6 +80,19 @@ describe("watchMetarepo", () => {
     );
   });
 
+  it("leaves out doctor's probe that the state folder is writable (beta.23)", async () => {
+    const root = await metarepo();
+    await mkdir(join(root, ".atticus"), { recursive: true });
+    const { events } = collect(root);
+    // As doctor writes it, then removes it; then a file that is Atticus's.
+    await writeFile(join(root, ".atticus/.doctor-4242"), "ok");
+    await rm(join(root, ".atticus/.doctor-4242"));
+    await writeFile(join(root, "org-pack/pack.yaml"), "id: forge\n");
+    await until(() => paths(events).includes("org-pack/pack.yaml"));
+    expect(paths(events)).toContain("org-pack/pack.yaml");
+    expect(paths(events).some((p) => p.includes(".doctor-"))).toBe(false);
+  });
+
   it("starts following a folder that is made after it started", async () => {
     const root = await metarepo();
     const { events } = collect(root);

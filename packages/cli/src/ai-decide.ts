@@ -784,7 +784,10 @@ export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
   // Links as the catalog has them, by how each was joined (C1 flags): the map as last written.
   const linkCounts = { fromCode: 0, byPerson: 0, byAi: 0 };
   const { readCatalog } = await import("@maycombhq/scanner");
-  const cat = await readCatalog(join(catalogDirOf(root), "generated")).catch(() => undefined);
+  // beta.23: with the metarepo's record cache, as every other read here (no parse of every file).
+  const cat = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
+    () => undefined,
+  );
   for (const r of cat?.records ?? []) {
     if (r.kind !== "Interface") continue;
     const flags = (r as { flags?: string[] }).flags ?? [];

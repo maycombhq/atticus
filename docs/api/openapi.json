@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -1088,9 +1088,23 @@
     "/api/setup": {
       "get": {
         "operationId": "getSetup",
-        "summary": "The setup checklist until the catalog is accepted, with a plain fix for each step",
+        "summary": "The setup checklist until the catalog is accepted, with a plain fix for each step; the machine step says `checking` while the machine's checks run",
         "tags": [
           "system"
+        ],
+        "parameters": [
+          {
+            "name": "machine",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "wait"
+              ]
+            },
+            "description": "Wait for the machine's checks instead of answering with the machine step checking",
+            "required": false
+          }
         ],
         "responses": {
           "200": {

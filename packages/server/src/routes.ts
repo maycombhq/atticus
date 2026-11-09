@@ -43,13 +43,95 @@ export interface Context {
 /** Index work runs one call at a time per root: a first build or a rebuild must not race. */
 const queues = new Map<string, Promise<unknown>>();
 
+/**
+ * beta.23 ("Home loads fast"). The roots whose index was checked against its files since the
+ * last change the server heard (`indexFilesChanged`), and the roots whose server follows their
+ * files (`trustIndexBetweenChanges`): only those skip the check. A root's change count tells an
+ * open that a change came while it ran.
+ */
+const checked = new Map<string, number>();
+/** A watcher can miss a change (Windows drops one on an error): the files are checked again after this long anyway. */
+const TRUST_MS = 30_000;
+const following = new Set<string>();
+const changes = new Map<string, number>();
+
+/** The server follows this root's files and says each change (startServer with its watcher). */
+export function trustIndexBetweenChanges(root: string, on: boolean): void {
+  if (on) following.add(root);
+  else {
+    following.delete(root);
+    checked.delete(root);
+  }
+}
+
+/** A file may have changed (a live event, a write through the API): the next open checks. */
+export function indexFilesChanged(root?: string): void {
+  for (const r of root ? [root] : [...following, ...checked.keys()]) {
+    checked.delete(r);
+    changes.set(r, (changes.get(r) ?? 0) + 1);
+  }
+}
+
+/**
+ * Embedding runs in the background, a few nodes at a time between requests, never inside a
+ * page's request: an open embedded up to 500 nodes before answering (with the bundled model,
+ * from seconds to a minute on a laptop), so Home's first loads waited on it.
+ */
+const embedding = new Map<string, ReturnType<typeof setTimeout>>();
+/** When a request last opened each root's index. */
+const asked = new Map<string, number>();
+function embedSoon(root: string): void {
+  if (embedding.has(root) || process.env.ATTICUS_EMBEDDINGS === "off") return;
+  const step = () => {
+    // A page is asking: wait for it to finish, then go on.
+    if (Date.now() - (asked.get(root) ?? 0) < 1500) {
+      embedding.set(root, setTimeout(step, 1000).unref());
+      return;
+    }
+    void withIndex(root, (ix) => ix.embed({ max: 8 }), { meaning: true })
+      .then(
+        (n) => n > 0,
+        () => false,
+      )
+      .then((more) => {
+        if (more && embedding.has(root)) embedding.set(root, setTimeout(step, 50).unref());
+        else embedding.delete(root);
+      });
+  };
+  // After the page's burst of requests, not during it.
+  embedding.set(root, setTimeout(step, 2000).unref());
+}
+
+/** Stop a root's background embedding (its server closes). */
+export function stopEmbedding(root: string): void {
+  const t = embedding.get(root);
+  if (t) clearTimeout(t);
+  embedding.delete(root);
+}
+
 /** Open the index for one request; it rebuilds itself when catalog files changed (ADR 0003). */
-async function withIndex<T>(root: string, f: (ix: CatalogIndex) => T): Promise<T> {
+async function withIndex<T>(
+  root: string,
+  f: (ix: CatalogIndex) => T | Promise<T>,
+  o: { meaning?: boolean } = {},
+): Promise<T> {
+  if (!o.meaning) asked.set(root, Date.now());
   const before = queues.get(root) ?? Promise.resolve();
   const mine = before.then(async () => {
-    const ix = await openIndex(root);
+    const trusted = following.has(root) && Date.now() - (checked.get(root) ?? -Infinity) < TRUST_MS;
+    const at = changes.get(root) ?? 0;
+    const ix = await openIndex(root, {
+      embedOnOpen: 0,
+      // Only search and ask compare by meaning; the counts, lists and graph never need the model.
+      ...(o.meaning ? {} : { embeddings: "off" as const }),
+      ...(trusted ? { trusted: true } : {}),
+    });
+    if (!trusted && following.has(root) && (changes.get(root) ?? 0) === at)
+      checked.set(root, Date.now());
+    // Files were read again: their new nodes get vectors in the background.
+    if (!trusted && !o.meaning) embedSoon(root);
     try {
-      return f(ix);
+      return await f(ix);
     } finally {
       ix.close();
     }
