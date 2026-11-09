@@ -27,6 +27,12 @@ import {
 } from "@maycombhq/model-providers";
 import { conflict, HttpError, requireConfirmation, type Router } from "@maycombhq/server";
 import type { ServerContext } from "@maycombhq/server";
+import {
+  addressRefusal,
+  recordConfirmedAddress,
+  whereKeyGoes,
+  type ModelSetting,
+} from "./model-address.js";
 
 /**
  * The AI tab (ADR 0121): how AI runs here, read from and written to the org pack's runtime.yaml.
@@ -48,21 +54,12 @@ export interface AiDeps {
 const unprocessable = (detail: string) => new HttpError(422, "The settings aren't valid", detail);
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
-type ModelSetting = { type?: unknown; settings?: Record<string, unknown> } | undefined;
-
-/**
- * Review round 48 (ADR 0186): where a model's key goes: its provider, the variable it is read
- * from, and every address (and the CA that vouches for one). A change of any of them is the
- * person's to confirm in the app: with the session token alone it could send a key elsewhere.
+/*
+ * Review round 48 (ADR 0186): where a model's key goes (whereKeyGoes: its provider, the variable
+ * it is read from, every address and the CA that vouches for one) is the person's to confirm in
+ * the app. Review round 50: and what they confirm is kept outside the metarepo
+ * (model-address.ts), so a run the app starts later sends the key only there.
  */
-function whereKeyGoes(m: ModelSetting): string {
-  const s = m?.settings ?? {};
-  const picked = Object.keys(s)
-    .filter((k) => k === "keyEnv" || k === "caFile" || /url|endpoint|host|address/i.test(k))
-    .sort()
-    .map((k) => [k, s[k]]);
-  return JSON.stringify([m?.type ?? null, picked]);
-}
 
 /** A model setting as JSON with sorted keys, to compare one file's with another's. */
 function canonical(v: unknown): string {
@@ -171,6 +168,8 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           text !== undefined ? (parse(text) ?? {}) : structuredClone(DEFAULT_RUNTIME)
         ) as Record<string, unknown>;
         for (const f of FIELDS) if (b[f] !== undefined) raw[f] = b[f];
+        // The address the person confirmed with this save, kept once the file is written.
+        let confirmedModel: ModelSetting;
         if (b.model !== undefined) {
           const adapters = { ...((raw.adapters as Record<string, unknown>) ?? {}) };
           if (b.model === null) delete adapters.model;
@@ -203,8 +202,10 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           if (
             adapters.model !== undefined &&
             whereKeyGoes(was) !== whereKeyGoes(adapters.model as ModelSetting)
-          )
+          ) {
             requireConfirmation(ctx.confirmations, "ai-model", "model", b.confirmation);
+            confirmedModel = adapters.model as ModelSetting;
+          }
           raw.adapters = adapters;
         }
         // UX review: choosing copilot-acp on a version 2 file lifts it to 3, which only adds the
@@ -239,6 +240,9 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
         // line endings.
         await writeFileIfUnchanged(file(), text, inEol(out, eolOf(text ?? "")));
+        // Review round 50: the person confirmed where the key goes: runs the app starts send it
+        // there (model-address.ts).
+        if (confirmedModel) await recordConfirmedAddress(root, confirmedModel);
         return {
           status: 200,
           body: {
@@ -267,16 +271,21 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         const model = op.runtime.adapters.model;
         if (!model || model.type === "mock")
           throw conflict("No model provider is set in runtime.yaml: choose one first.");
-        // Review round 48 (ADR 0186): Test sends the key at once. Settings as committed were
-        // reviewed like code; any others (a hand edit, a write meanwhile) are the person's yes.
+        // Review round 48 (ADR 0186): Test sends the key at once, so settings that aren't the
+        // committed ones are the person's yes. Review round 50: and HEAD alone isn't (the
+        // assistant can commit): the address must be the one the person last confirmed (or,
+        // with none yet, the provider's own). Confirmed here, it is the confirmed one after.
         const committed = committedModel(file());
-        if (!committed || canonical(committed.model) !== canonical(model))
+        const unconfirmed = await addressRefusal(root, model);
+        if (!committed || canonical(committed.model) !== canonical(model) || unconfirmed) {
           requireConfirmation(
             ctx.confirmations,
             "ai-test",
             "model",
             (body as { confirmation?: unknown } | undefined)?.confirmation,
           );
+          await recordConfirmedAddress(root, model);
+        }
         const started = Date.now();
         try {
           const p = await build(op, model.type, model.settings);

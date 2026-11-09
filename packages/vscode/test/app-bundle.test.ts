@@ -119,6 +119,55 @@ describe("answering the app's calls", () => {
     expect(calls.length).toBe(before);
   });
 
+  // Review round 50: the app (`atticus ui`) stopped and started again makes a new page key, and an
+  // open panel's page still holds the old one: every write button was 403 until the tab was
+  // closed. The extension asks for the confirmation with the running app's key instead.
+  it("asks for a confirmation with the running app's page key, whatever the page held", async () => {
+    const before = calls.length;
+    const oldKey = "o".repeat(43);
+    const current = "n".repeat(43);
+    let running = current;
+    const key = async () => running;
+    await answerApp(
+      {
+        type: "api",
+        id: 5,
+        method: "POST",
+        path: "/api/confirmations",
+        body: { write: "handoff", target: "add-transfer-limit", pageKey: oldKey },
+      },
+      call,
+      { pageKey: key },
+    );
+    expect(calls.at(-1)).toEqual([
+      "POST",
+      "/api/confirmations",
+      { write: "handoff", target: "add-transfer-limit", pageKey: current },
+    ]);
+    // Started again: the next click uses that app's key.
+    running = "m".repeat(43);
+    await answerApp(
+      {
+        type: "api",
+        id: 6,
+        method: "POST",
+        path: "/api/confirmations",
+        body: { write: "merge", target: "c1", pageKey: oldKey },
+      },
+      call,
+      { pageKey: key },
+    );
+    expect((calls.at(-1) as [string, string, { pageKey: string }])[2].pageKey).toBe(running);
+    // Any other call goes as the page sent it.
+    await answerApp(
+      { type: "api", id: 8, method: "POST", path: "/api/me/digest", body: { pageKey: oldKey } },
+      call,
+      { pageKey: key },
+    );
+    expect(calls.at(-1)).toEqual(["POST", "/api/me/digest", { pageKey: oldKey }]);
+    expect(calls.length).toBe(before + 3);
+  });
+
   it("says so when the local API doesn't answer", async () => {
     const r = await answerApp(
       { type: "api", id: 4, method: "GET", path: "/api/specs" },

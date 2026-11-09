@@ -56,9 +56,32 @@ describe("withSharedFileLock: one process at a time", () => {
     expect(await withSharedFileLock(file, async () => "gone")).toBe("gone");
     expect(existsSync(sharedLockFileOf(file))).toBe(false);
 
-    await holdAs(file, process.ppid, new Date(Date.now() - 60_000).toISOString());
+    // Another machine's lock (a shared drive): its PID can't be asked, so it goes by its age.
+    await writeFile(
+      sharedLockFileOf(file),
+      JSON.stringify({
+        pid: process.ppid,
+        host: `not-${hostname()}`,
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        what: "a test",
+        token: "other",
+      }),
+    );
     expect(await withSharedFileLock(file, async () => "old", { staleMs: 10_000 })).toBe("old");
     expect(existsSync(sharedLockFileOf(file))).toBe(false);
+  });
+
+  // Review round 50: a clone of a big repo outlasts any stale time; while its process on this
+  // machine is alive, its lock is never taken over by age (two gits in one folder).
+  it("never takes over by age a lock whose process on this machine is alive", async () => {
+    const dir = await temp();
+    const file = join(dir, "w.corrections.jsonl");
+    await holdAs(file, process.ppid, new Date(Date.now() - 60 * 60_000).toISOString());
+    await expect(
+      withSharedFileLock(file, async () => "taken", { staleMs: 1_000, waitMs: 300 }),
+    ).rejects.toThrow(new RegExp(`process ${process.ppid}`));
+    expect(existsSync(sharedLockFileOf(file))).toBe(true);
+    await rm(sharedLockFileOf(file));
   });
 
   it("gives up after the wait, naming the holder, and lets go when the work throws", async () => {

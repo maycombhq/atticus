@@ -1561,8 +1561,12 @@ ${view.next.why}`
           });
           if (saved) return void web.postMessage(saved);
           // Every call gets an answer, even when the app can't be reached: the page doesn't wait.
-          const reply = await answerApp(m, async (method, path, body) =>
-            (await svc.api(root)).request(method, path, body),
+          // Review round 50: a confirmation is asked for with the running app's page key, so a
+          // page built for an app since started again still confirms (ADR 0186).
+          const reply = await answerApp(
+            m,
+            async (method, path, body) => (await svc.api(root)).request(method, path, body),
+            { pageKey: async () => (await svc.runningApp(root)).pageKey },
           );
           if (reply) void web.postMessage(reply);
         });

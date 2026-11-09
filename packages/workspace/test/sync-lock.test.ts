@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ManifestRepo, sharedLockFileOf } from "@maycombhq/core";
@@ -51,5 +51,42 @@ describe("a base clone's git work", () => {
     expect([a!.action, b!.action].sort()).toEqual(["cloned", "updated"]);
     expect(seen.filter((c) => c === "clone")).toHaveLength(1);
     expect(existsSync(sharedLockFileOf(dest))).toBe(false);
+  });
+
+  // Review round 50: an app route waits for the base clone only briefly (lockWaitMs), and a
+  // sync in another live process is never taken over for being old.
+  it("gives up after a short wait for a sync another live process runs, running no git", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-sync-lock-"));
+    const repo = ManifestRepo.parse({
+      id: "forge-ledger",
+      url: "https://git.example.com/forge/forge-ledger.git",
+      type: "service",
+      owner: "team",
+    });
+    const dest = baseClonePath(root, repo.id);
+    await mkdir(join(dest, ".."), { recursive: true });
+    // An hour-old lock of a live process on this machine (this test's parent): a long clone.
+    await writeFile(
+      sharedLockFileOf(dest),
+      JSON.stringify({
+        pid: process.ppid,
+        host: hostname(),
+        startedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+        what: "git work on the base clone of forge-ledger",
+        token: "other",
+      }),
+    );
+    const seen: string[] = [];
+    const git: GitRunner = async (args) => {
+      seen.push(args[0]!);
+      return { stdout: "", stderr: "" };
+    };
+    const started = Date.now();
+    await expect(createWorkspace(root, git, { lockWaitMs: 300 }).sync([repo])).rejects.toThrow(
+      /base clone of forge-ledger/,
+    );
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(seen).toEqual([]);
+    expect(existsSync(sharedLockFileOf(dest))).toBe(true);
   });
 });

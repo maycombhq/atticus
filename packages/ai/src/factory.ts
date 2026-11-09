@@ -571,6 +571,25 @@ export function registerToolSource(source: ((root: string) => ToolSource | undef
   toolSource = source;
 }
 
+/**
+ * Review round 50 (ADR 0186 addendum): asked before a model provider is made, with where its
+ * settings send the key. The command line registers one that refuses (RuntimeConfigError) when
+ * a run the app or a Copilot session started would send the key somewhere the person hasn't
+ * confirmed; nothing is built then, so no key is read and nothing is sent.
+ */
+export type ModelGuard = (o: {
+  root: string;
+  type: string;
+  settings: Record<string, unknown>;
+}) => Promise<void> | void;
+
+let modelGuard: ModelGuard | undefined;
+
+/** Register the model guard (the command line does, as it starts). Undefined forgets it (tests). */
+export function registerModelGuard(g: ModelGuard | undefined): void {
+  modelGuard = g;
+}
+
 let acpRunner: CreateRuntimeOptions["copilotAcp"] | undefined;
 
 /**
@@ -693,6 +712,9 @@ export async function createRuntime(
         throw new RuntimeConfigError(
           "Model mode needs a model adapter in runtime.yaml (adapters.model with its type and settings). Until one is configured, use hand-off mode.",
         );
+      // Review round 50: where the key goes is checked before any provider is made.
+      if (modelGuard && cfg.type !== "mock")
+        await modelGuard({ root: o.root, type: cfg.type, settings: { ...cfg.settings } });
       const make =
         o.providers?.[cfg.type] ??
         (await providerFactoryFor(orgPack, cfg.type)) ??

@@ -304,10 +304,12 @@ async function isStaleShared(
   held: LockInfo | undefined,
   staleMs: number,
 ): Promise<boolean> {
-  // Its process is gone (a crash, a closed terminal): taken over at once.
-  if (held && held.host === hostname() && held.pid !== process.pid && !alive(held.pid)) return true;
-  // Otherwise by its age (another machine's process, a reused PID); a lock file still being
-  // written (empty, or cut short) by the file's own time.
+  // Another process on this machine: by whether it is alive, never by age. Its process is gone (a
+  // crash, a closed terminal): taken over at once. Review round 50: alive, it is still working
+  // (a clone of a big repo outlasts any stale time), so it is waited for.
+  if (held && held.host === hostname() && held.pid !== process.pid) return !alive(held.pid);
+  // Otherwise by its age (another machine's process, or this process's own left by a release
+  // that failed); a lock file still being written (empty, or cut short) by the file's own time.
   const since = held
     ? Date.parse(held.startedAt)
     : await stat(file).then(

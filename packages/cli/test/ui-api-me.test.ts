@@ -52,7 +52,8 @@ describe("who is using the app (ADR 0073)", () => {
       email: "priya.nair@forge.example",
       source: "git",
       ai: "on",
-      notify: { digest: "weekly" },
+      // Review round 50: where Send it to me posts (the person, with no channel chosen).
+      notify: { digest: "weekly", to: "@priya.nair" },
       watching: [],
     });
   });

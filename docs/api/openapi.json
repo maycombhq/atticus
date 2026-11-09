@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -180,7 +180,7 @@
     "/api/me": {
       "get": {
         "operationId": "getMe",
-        "summary": "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073)",
+        "summary": "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073); 3.1.0: notify.to, where Send it to me posts",
         "tags": [
           "system"
         ],
@@ -352,7 +352,7 @@
     "/api/me/digest": {
       "post": {
         "operationId": "sendDigest",
-        "summary": "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation (`digest-send`, `me`), else 403",
+        "summary": "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation, else 403. 3.1.0 (review round 50): its target is the channel it posts to (GET /api/me's notify.to, read again at the send), not `me`",
         "tags": [
           "system"
         ],
@@ -6975,7 +6975,7 @@
     "/api/changes/{changeId}/tasks/run-ready": {
       "post": {
         "operationId": "runReadyTasks",
-        "summary": "2.79.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level",
+        "summary": "2.79.0 (ADR 0181 part 4): Run all ready tasks, one task run each in order as one job, stopping on the first that needs a person; the click is the approval for draft, never the pr level. 3.1.0: in model mode 403 unless runtime.yaml sends the key where the person last confirmed",
         "tags": [
           "changes"
         ],
@@ -7201,7 +7201,7 @@
     "/api/changes/{changeId}/workspace": {
       "post": {
         "operationId": "openWorkspace",
-        "summary": "Create the change's worktrees and editor workspaces",
+        "summary": "Create the change's worktrees and editor workspaces; 3.1.0: 409 while a sync of one of its repos' base clones runs elsewhere",
         "tags": [
           "changes"
         ],
@@ -7274,6 +7274,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7462,7 +7472,7 @@
       },
       "post": {
         "operationId": "startRun",
-        "summary": "Prepare an AI run (hand-off by default)",
+        "summary": "Prepare an AI run (hand-off by default); 3.1.0: in model mode 403 unless runtime.yaml sends the key where the person last confirmed (ADR 0186 addendum), and 409 while a sync of the task's repo runs elsewhere",
         "tags": [
           "ai"
         ],
@@ -7564,6 +7574,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7791,7 +7811,7 @@
       },
       "post": {
         "operationId": "startStep",
-        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs",
+        "summary": "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs; 3.1.0: 403 unless runtime.yaml sends the key where the person last confirmed (ADR 0186 addendum)",
         "tags": [
           "ai"
         ],
@@ -7845,6 +7865,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12253,7 +12283,7 @@
     "/api/settings/ai/test": {
       "post": {
         "operationId": "testAiProvider",
-        "summary": "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403",
+        "summary": "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403. 3.1.0: also whenever they send the key to an address the person hasn't confirmed, committed or not; a confirmed Test makes it the confirmed address",
         "tags": [
           "run"
         ],

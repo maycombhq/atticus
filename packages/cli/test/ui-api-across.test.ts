@@ -195,7 +195,12 @@ describe("the digest (ADR 0048, 0073)", () => {
   it("saves digest settings in the person's own file, dropping the old groups and view", async () => {
     const r = await call("PUT", "/api/me/notify", { digest: "daily", channel: "#dana-updates" });
     expect(r.status).toBe(200);
-    expect(r.body.notify).toEqual({ digest: "daily", channel: "#dana-updates" });
+    // Review round 50: and where Send it to me posts, which its confirmation names.
+    expect(r.body.notify).toEqual({
+      digest: "daily",
+      channel: "#dana-updates",
+      to: "#dana-updates",
+    });
     const saved = parse(await readFile(join(root, ".atticus/me.yaml"), "utf8")) as Record<
       string,
       unknown
@@ -233,7 +238,15 @@ describe("the digest (ADR 0048, 0073)", () => {
       403,
     );
     expect(notifier.sent).toHaveLength(0);
-    const yes = await confirmFor(srv, "digest-send", "me");
+    // Review round 50: the person's yes names where it posts. One for "me" (as before), or for a
+    // channel the settings don't name, posts nothing.
+    for (const target of ["me", "@dana", "#everyone"]) {
+      const c = await confirmFor(srv, "digest-send", target);
+      const r = await call("POST", "/api/me/digest", { send: true, confirmation: c });
+      expect(r.status, target).toBe(403);
+    }
+    expect(notifier.sent).toHaveLength(0);
+    const yes = await confirmFor(srv, "digest-send", "#dana-updates");
     const sent = await call("POST", "/api/me/digest", { send: true, confirmation: yes });
     expect(sent.body.sent).toEqual({ id: "msg-1", channel: "#dana-updates" });
     // Used once.
@@ -243,6 +256,16 @@ describe("the digest (ADR 0048, 0073)", () => {
     expect(notifier.sent[0]).toMatchObject({ channel: "#dana-updates", mentions: ["dana"] });
     expect(notifier.sent[0]!.body).toMatch(/pull\/3/);
     expect(notifier.journal.at(-1)?.approval).toMatchObject({ by: "dana", ref: "digest:dana" });
+    // The channel changed in the person's file (which the assistant can write) between the
+    // button and the click: the yes for the old channel sends nothing to the new one.
+    const before = await confirmFor(srv, "digest-send", "#dana-updates");
+    const me = join(root, ".atticus/me.yaml");
+    const mine = await readFile(me, "utf8");
+    await writeFile(me, mine.replace("#dana-updates", "#everyone"));
+    const moved = await call("POST", "/api/me/digest", { send: true, confirmation: before });
+    expect(moved.status).toBe(403);
+    expect(notifier.sent).toHaveLength(1);
+    await writeFile(me, mine);
     await writeFile(file, was);
   });
 

@@ -1,7 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { runsDirOf } from "@maycombhq/core";
+import { isHandoffStep } from "./handoff-steps.js";
 import { listRuns } from "./runs-view.js";
+import { forgetUserState, readUserState, writeUserState } from "./user-state.js";
 
 /** One atticus command run in-process: its code and lines. */
 export type StepRunner = (
@@ -75,7 +74,86 @@ export function appLines(lines: string[], o: { next?: boolean } = {}): string[] 
   );
 }
 
-/** Runs the step as a hand-off (`--json`), and keeps its resume beside the run it made. */
+/**
+ * Review round 50 (ADR 0186 addendum): a step's resume is kept where the assistant can't write
+ * it, the person's own state folder (user-state.ts), never beside the run in `.runs/`: Done runs
+ * it as the person, so a command written there (a hand-off's `--approve`, `digest --send`) would
+ * have been the assistant's, run with the person's click. It is made by Atticus from the words
+ * the step was started with, and checked again before it runs.
+ */
+const resumeFile = (runId: string) => {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId)) throw new Error(`${runId} isn't a run id.`);
+  return `resume/${runId}.json`;
+};
+
+/** The steps that read the wikis take `--source <wiki>` from the app (round 36). */
+export const SOURCE_STEPS = new Set(["knowledge scan", "knowledge find"]);
+
+/**
+ * Why these words aren't a step's own resume, or undefined when they are: an AI step that takes
+ * --handoff, its arguments, and no option but --handoff, `--resume <this run>` and (on a step
+ * that reads the wikis) `--source <wiki>`, each once. Never --approve, --send, --level or --mode.
+ */
+export function resumeRefusal(args: unknown, runId: string): string | undefined {
+  if (!Array.isArray(args) || !args.every((a) => typeof a === "string" && a !== ""))
+    return "it isn't a step's words";
+  const words = args as string[];
+  if (!isHandoffStep(words[0], words[1]))
+    return `atticus ${words.slice(0, 2).join(" ")} isn't an AI step the app prepares`;
+  let resumed = false;
+  let source = false;
+  for (let i = 2; i < words.length; i++) {
+    const a = words[i]!;
+    if (!a.startsWith("-")) continue;
+    if (a === "--handoff") continue;
+    if (a === "--resume" && !resumed && words[i + 1] === runId) {
+      resumed = true;
+      i++;
+      continue;
+    }
+    const value = words[i + 1];
+    if (
+      a === "--source" &&
+      !source &&
+      SOURCE_STEPS.has(`${words[0]} ${words[1]}`) &&
+      value &&
+      !value.startsWith("-")
+    ) {
+      source = true;
+      i++;
+      continue;
+    }
+    return `it names ${a}${a === "--resume" ? " for another run" : ""}, which a step's resume never does`;
+  }
+  return resumed ? undefined : `it doesn't resume ${runId}`;
+}
+
+/** The step's words without what prepareStep adds (--handoff, --json) and its --resume. */
+function ownWords(args: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--handoff" || a === "--json") continue;
+    if (a === "--resume") {
+      i++;
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
+}
+
+/** Keep a step's resume for Done, in the person's own state (tests call it too). */
+export async function keepResume(
+  root: string,
+  change: string,
+  runId: string,
+  args: string[],
+): Promise<void> {
+  await writeUserState(root, resumeFile(runId), { change, runId, args });
+}
+
+/** Runs the step as a hand-off (`--json`), and keeps its resume (outside the metarepo). */
 export async function prepareStep(
   root: string,
   runStep: StepRunner,
@@ -117,12 +195,13 @@ export async function prepareStep(
   );
   if (h.state !== "handoff" || !h.runId) return { code: res.code, prepared: { lines: said } };
   const run = (await listRuns(root, { limit: 100000 })).find((x) => x.runId === h.runId);
-  if (run && h.resumeArgs)
-    await writeFile(
-      join(runsDirOf(root), run.change, run.runId, "resume.json"),
-      JSON.stringify({ args: h.resumeArgs.filter((a) => a !== "--json") }) + "\n",
-      "utf8",
-    ).catch(() => undefined);
+  // Round 50: from the words this step was started with (the app checked them), not from
+  // anything in the run's folder; a step that offers no resume keeps none.
+  if (run && h.resumeArgs) {
+    const resume = [...ownWords(args), "--resume", run.runId];
+    if (!resumeRefusal(resume, run.runId))
+      await keepResume(root, run.change, run.runId, resume).catch(() => undefined);
+  }
   return {
     code: res.code,
     prepared: {
@@ -143,13 +222,26 @@ export async function resumeAfterDone(
   change: string,
   runId: string,
 ): Promise<{ next?: string; lines: string[] } | undefined> {
-  const t = await readFile(join(runsDirOf(root), change, runId, "resume.json"), "utf8").catch(
-    () => undefined,
+  // Round 50: only the resume Atticus kept for this run; a resume.json in the run's folder (the
+  // assistant writes there) is never read.
+  const kept = await readUserState<{ change?: unknown; runId?: unknown; args?: unknown }>(
+    root,
+    resumeFile(runId),
   );
-  if (!t) return undefined;
-  const { args } = JSON.parse(t) as { args: string[] };
+  if (!kept) return undefined;
+  const no =
+    kept.runId !== runId || kept.change !== change
+      ? "it was kept for another run"
+      : resumeRefusal(kept.args, runId);
+  if (no)
+    return {
+      lines: [
+        `The step's resume for ${runId} wasn't run: ${no}. Prepare the step again from the page you prepared it on.`,
+      ],
+    };
+  await forgetUserState(root, resumeFile(runId)).catch(() => undefined);
   // --resume <run> is in args; prepareStep adds --handoff --json and keeps the next resume.
-  const words = args.filter((a) => a !== "--handoff");
+  const words = (kept.args as string[]).filter((a) => a !== "--handoff");
   const r = await prepareStep(root, runStep, words, { next: true });
   return r.prepared.runId && r.prepared.runId !== runId
     ? { next: r.prepared.runId, lines: r.prepared.lines }

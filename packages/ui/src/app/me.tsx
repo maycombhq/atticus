@@ -18,7 +18,12 @@ export interface Me {
   /** What AI may do here (runtime.yaml ai, ADR 0046). */
   ai: "on" | "text-only" | "off";
   /** The person's digest settings (.atticus/me.yaml, ADR 0048). */
-  notify?: { digest: "off" | "daily" | "weekly"; channel?: string };
+  notify?: {
+    digest: "off" | "daily" | "weekly";
+    channel?: string;
+    /** Review round 50: where Send it to me posts (the channel, else the person). */
+    to?: string;
+  };
 }
 
 interface MeState {

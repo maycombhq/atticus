@@ -12,5 +12,6 @@ export {
   remoteDefaultBranch,
   type SyncResult,
   type WorkspaceManager,
+  type WorkspaceOptions,
 } from "./manager.js";
 export * from "./identity.js";
