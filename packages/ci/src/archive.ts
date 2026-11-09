@@ -151,7 +151,8 @@ export async function archiveGate(
   // ---- repos: release PRs merged (ADR 0184), builds passed
   const repos = (await readChangeRepos(root, change.id))?.repos ?? [];
   const mustMerge = config.archive.requireMergedPrs;
-  const nothing = await nothingToRelease(root, change.id);
+  // Final review (git and tasks): an entry is void once the change branch moved past it.
+  const nothing = await nothingToRelease(root, change.id, o.git ? { git: o.git } : {});
   for (const r of repos) {
     // The raise found nothing to release here (ADR 0184): no PR, no code shipped, nothing to read.
     if (!r.pr && nothing.has(r.id)) continue;

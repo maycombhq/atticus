@@ -463,18 +463,35 @@ export async function bringInMerged(
         () => false,
       );
       const id = k.split("/").at(-2)!;
-      const handoff = inHead
-        ? undefined
-        : (
-            await run([
-              "for-each-ref",
-              "--sort=-committerdate",
-              "--count=1",
-              "--format=%(refname)",
-              `refs/heads/handoff/${id}/`,
-              `refs/remotes/origin/handoff/${id}/`,
-            ]).catch(() => "")
-          ).trim() || undefined;
+      const newest = async (prefix: string) =>
+        (
+          await run([
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--count=1",
+            "--format=%(refname)",
+            prefix,
+          ]).catch(() => "")
+        ).trim() || undefined;
+      // Final review (git and tasks): the local hand-off ref is what this copy published. The
+      // remote's branch can carry a reviewer's commits on top, so its tip is never the base: only
+      // its first commit after it left this copy's HEAD (Atticus's published commit), or none.
+      const publishedOnRemote = async (ref: string) => {
+        const fork = (await run(["merge-base", "HEAD", ref]).catch(() => "")).trim();
+        if (!fork) return undefined;
+        const after = (
+          await run(["rev-list", "--first-parent", "--reverse", `${fork}..${ref}`]).catch(() => "")
+        ).trim();
+        return after.split("\n")[0] || undefined;
+      };
+      let handoff: string | undefined;
+      if (!inHead) {
+        handoff = await newest(`refs/heads/handoff/${id}/`);
+        if (!handoff) {
+          const remote = await newest(`refs/remotes/origin/handoff/${id}/`);
+          if (remote) handoff = await publishedOnRemote(remote);
+        }
+      }
       const baseText = inHead ? await at("HEAD") : handoff ? await at(handoff) : "";
       const mine = await readFile(join(root, k), "utf8");
       original.set(k, mine);

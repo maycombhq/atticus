@@ -9,6 +9,7 @@ import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
 import {
   baseClonePath,
   branchCheckoutPath,
+  changeWorktreesDir,
   checkoutState,
   createGit,
   createWorkspace,
@@ -410,6 +411,64 @@ describe("prune", () => {
       expect(git(baseClonePath(root, "forge-ledger"), "worktree", "list")).not.toContain(
         "add-transfer-limit",
       );
+    },
+    T,
+  );
+
+  // Final review (git and tasks): an AI task run's worktree lives inside the change's folder
+  // (.worktrees/<change>/.tasks/<task>/<repo>) and gets the same care as a change worktree.
+  const taskWorktree = (task: string) => {
+    const path = join(
+      changeWorktreesDir(root, "add-transfer-limit"),
+      ".tasks",
+      task,
+      "forge-ledger",
+    );
+    git(
+      baseClonePath(root, "forge-ledger"),
+      "worktree",
+      "add",
+      "-q",
+      "--no-track",
+      "-b",
+      `task/add-transfer-limit/${task}`,
+      "--",
+      path,
+      "change/add-transfer-limit",
+    );
+    return path;
+  };
+
+  it(
+    "keeps a task worktree with uncommitted work, and the change's folder with it, unless forced",
+    async () => {
+      const ws = createWorkspace(root);
+      await ws.sync(repos);
+      await ws.openChange("add-transfer-limit", [repos[0]!]);
+      const busy = taskWorktree("1-2");
+      const idle = taskWorktree("1-3");
+      await writeFile(join(busy, "half-done.txt"), "a person's work in progress\n");
+
+      const first = await ws.prune("add-transfer-limit", { all: true });
+      expect(first.removed).toEqual(["forge-ledger", "forge-ledger task 1-3"]);
+      expect(first.kept).toEqual([
+        { id: "forge-ledger task 1-2", reason: "uncommitted changes in the worktree" },
+      ]);
+      expect(await readFile(join(busy, "half-done.txt"), "utf8")).toBe(
+        "a person's work in progress\n",
+      );
+      expect(existsSync(idle)).toBe(false);
+      expect(existsSync(vscodeWorkspacePath(root, "add-transfer-limit"))).toBe(true);
+      const base = baseClonePath(root, "forge-ledger");
+      expect(git(base, "worktree", "list")).not.toContain("1-3");
+      // The task branches stay: removing a worktree never deletes a branch.
+      expect(git(base, "branch", "--list", "task/*")).toContain("task/add-transfer-limit/1-3");
+
+      const second = await ws.prune("add-transfer-limit", { all: true, force: true });
+      expect(second.removed).toEqual(["forge-ledger", "forge-ledger task 1-2"]);
+      expect(second.kept).toEqual([]);
+      expect(existsSync(changeWorktreesDir(root, "add-transfer-limit"))).toBe(false);
+      expect(git(base, "worktree", "list")).not.toContain("add-transfer-limit");
     },
     T,
   );

@@ -545,14 +545,140 @@ describe("review round 36: Bring in never loses an edit", () => {
   it("takes the base from the hand-off branch the remote keeps (round 41)", async () => {
     const { root, file } = await reviewed({ committed: false });
     g(root, "fetch", "-q", "origin");
-    // the hand-off was published from another clone: only origin's branch names its base
-    const remoteOf = g(root, "rev-list", "-n", "1", "origin/main~1").trim();
-    g(root, "push", "-q", "origin", `${remoteOf}:refs/heads/handoff/c1/define`);
+    // The hand-off was published from another clone: only origin's branch names its base. The
+    // branch is as the host keeps it after the merge, the reviewer's commit on top of Atticus's;
+    // the base is Atticus's commit, the branch's first after it left this copy's main.
+    g(root, "push", "-q", "origin", "origin/main:refs/heads/handoff/c1/define");
     const said: string[] = [];
     expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
     const now = await readFile(file, "utf8");
     expect(now).toContain("state: design");
     expect(now).toContain("forge-gateway");
+  });
+
+  /**
+   * Final review (git and tasks): a new change's hand-off as gitHandoffPublisher leaves it (a
+   * commit on main, the local ref and the remote branch), then a reviewer's commit on the hand-off
+   * branch, merged; here Sync recorded the merge. The remote branch is newer than the local ref.
+   */
+  const reviewedHandoff = async () => {
+    const { root, work } = await setup();
+    const remote = join(root, "..", "remote.git");
+    const ID = "c1";
+    const rel = `openspec/changes/${ID}`;
+    const T = (h: string) => `2026-11-08T${h}:00Z`;
+    const ho = (state: string, at: string) => ({
+      phase: "define",
+      branch: `handoff/${ID}/define`,
+      pr: { number: 7, url: "https://git.forge.example/pr/7" },
+      state,
+      by: "ada",
+      openedAt: T("10:00"),
+      updatedAt: at,
+      reviewers: [],
+      approvals: [],
+      artifacts: [],
+    });
+    const pushed = {
+      schemaVersion: 1 as const,
+      id: ID,
+      title: "Old title",
+      type: "feature",
+      state: "define" as const,
+      owners: {},
+      createdAt: T("09:00"),
+      createdBy: "ada",
+      history: [{ from: "draft", to: "define", at: T("09:00"), by: "ada" }],
+      handoffs: [ho("open", T("10:00"))],
+    };
+    await mkdir(join(root, rel), { recursive: true });
+    await writeFile(join(root, rel, "brief.md"), "# Brief\n");
+    await writeFile(join(root, rel, "change.yaml"), serializeChange(pushed as never));
+    g(root, "add", "-A");
+    const tree = g(root, "write-tree").trim();
+    g(root, "reset", "-q");
+    const at = (date: string) => ({
+      ...process.env,
+      GIT_COMMITTER_DATE: date,
+      GIT_AUTHOR_DATE: date,
+    });
+    const published = execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "commit-tree",
+        tree,
+        "-p",
+        "HEAD",
+        "-m",
+        "hand-off",
+      ],
+      { cwd: root, encoding: "utf8", env: at("2026-11-08T10:00:00Z") },
+    ).trim();
+    g(root, "update-ref", `refs/heads/handoff/${ID}/define`, published);
+    g(root, "push", "-q", "origin", `${published}:refs/heads/handoff/${ID}/define`);
+    // The reviewer edits the title on the hand-off branch; the PR merges (fast-forward).
+    const rev = join(root, "..", "reviewer");
+    g(join(root, ".."), "clone", "-q", "-b", `handoff/${ID}/define`, remote, rev);
+    await writeFile(
+      join(rev, rel, "change.yaml"),
+      serializeChange({ ...pushed, title: "Reviewer title" } as never),
+    );
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=r",
+        "-c",
+        "user.email=r@example.com",
+        "commit",
+        "-q",
+        "-am",
+        "reviewer: title",
+      ],
+      { cwd: rev, env: at("2026-11-08T10:30:00Z") },
+    );
+    g(rev, "push", "-q", "origin", `HEAD:refs/heads/handoff/${ID}/define`);
+    g(rev, "push", "-q", "origin", "HEAD:main");
+    void work;
+    // Here Sync recorded the merge.
+    const file = join(root, rel, "change.yaml");
+    await writeFile(
+      file,
+      serializeChange({
+        ...pushed,
+        state: "design",
+        history: [
+          ...pushed.history,
+          { from: "define", to: "design", at: T("11:00"), by: "ada", pr: 7 },
+        ],
+        handoffs: [ho("merged", T("11:00"))],
+      } as never),
+    );
+    return { root, file, ID };
+  };
+
+  it("keeps a reviewer's edit to a new change's record from the hand-off branch (final review)", async () => {
+    const { root, file } = await reviewedHandoff();
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    const now = await readFile(file, "utf8");
+    expect(now).toContain("title: Reviewer title");
+    expect(now).toContain("state: design");
+  });
+
+  it("keeps it when only the remote keeps the hand-off branch, its tip the reviewer's (final review)", async () => {
+    const { root, file, ID } = await reviewedHandoff();
+    g(root, "update-ref", "-d", `refs/heads/handoff/${ID}/define`);
+    g(root, "fetch", "-q", "origin");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    const now = await readFile(file, "utf8");
+    expect(now).toContain("title: Reviewer title");
+    expect(now).toContain("state: design");
   });
 
   it("brings in a record new here and staged, kept with the reviewer's edit (round 41)", async () => {

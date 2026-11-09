@@ -104,6 +104,8 @@ export async function catchUpChangeBranch(
     }
   };
   const rel = changeDir.slice(root.length + 1).replace(/\\/g, "/");
+  const note = (handedDown: boolean) =>
+    `Brought ${from} in ${repo} up to the Git host's first (the tasks merged into it there).${handedDown ? " Its local hand-down commits were already there, in the tasks' merged PRs." : ""}`;
   // Review round 44: a hand-down commit reaches the host only inside its task's PR, so a squash
   // or rebase merge leaves it local-only for good. When every local-only commit is a hand-down
   // of this change whose files the host's branch already has as they are, the local branch moves
@@ -115,6 +117,28 @@ export async function catchUpChangeBranch(
       "refused",
       `${from} in ${repo} has commits the Git host's hasn't, and the host's has commits it hasn't (tasks merged there): Atticus doesn't rewrite it. Merge origin/${from} into it in ${rel} (or push it), then run task ${task} again.`,
     );
+  // Final review (git and tasks): only change/<id> moves. The reset or merge runs in the change
+  // worktree only when that branch is checked out there; a person who switched the worktree to
+  // a branch of their own keeps it as it is, and change/<id> moves by compare-and-swap when no
+  // worktree has it checked out.
+  const there = await git(["symbolic-ref", "-q", "HEAD"], changeDir).then(
+    (r) => r.stdout.trim(),
+    () => "",
+  );
+  if (there !== `refs/heads/${from}`) {
+    const list = await git(["worktree", "list", "--porcelain"], base);
+    const out = list.stdout.split("\n").includes(`branch refs/heads/${from}`);
+    if (out) {
+      const has = there ? there.replace(/^refs\/heads\//, "") : "a detached HEAD";
+      const own = there ? ` (commit your work on ${has} first)` : "";
+      throw new SpecKitError(
+        "refused",
+        `${from} in ${repo} is behind the Git host's (tasks merged there), but the change worktree ${rel} has ${has} checked out, not ${from}, and ${from} is checked out in another worktree: Atticus doesn't move a branch you're working on. Switch ${rel} back to ${from}${own}, then run task ${task} again.`,
+      );
+    }
+    await git(["update-ref", `refs/heads/${from}`, remote, local], base);
+    return note(handedDown);
+  }
   try {
     await git(
       handedDown ? ["reset", "-q", "--keep", remote] : ["merge", "-q", "--ff-only", remote],
@@ -126,7 +150,7 @@ export async function catchUpChangeBranch(
       `${from} in ${repo} is behind the Git host's (tasks merged there), and it can't fast-forward in ${rel}: ${(e instanceof Error ? e.message : String(e)).trim()}. Commit or put aside the edits there, then run task ${task} again.`,
     );
   }
-  return `Brought ${from} in ${repo} up to the Git host's first (the tasks merged into it there).${handedDown ? " Its local hand-down commits were already there, in the tasks' merged PRs." : ""}`;
+  return note(handedDown);
 }
 
 export async function openTaskWorktree(

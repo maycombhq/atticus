@@ -1,4 +1,5 @@
-import { cp, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Finding, parseFacts, toCanonicalYaml } from "@maycombhq/core";
@@ -270,6 +271,42 @@ describe("archive gate", () => {
     await facts(lax, COMMIT);
     await trace(lax, "dismissed");
     expect((await archiveGate(lax, CHANGE, { commit: COMMIT })).blockers).toEqual([]);
+  });
+
+  it("passes a repo with nothing to release only while its change branch is where the raise found it (final review)", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed", "none");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    // The change worktree, on change/<id> with no commits beyond main, as the raise found it.
+    const dir = join(root, `workspace/.worktrees/${CHANGE}/forge-ledger`);
+    await mkdir(dir, { recursive: true });
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Tia",
+      GIT_AUTHOR_EMAIL: "tia@example.com",
+      GIT_COMMITTER_NAME: "Tia",
+      GIT_COMMITTER_EMAIL: "tia@example.com",
+    };
+    const git = (...a: string[]) =>
+      execFileSync("git", a, { cwd: dir, env, encoding: "utf8" }).trim();
+    git("init", "-q", "-b", "main");
+    await writeFile(join(dir, "README.md"), "# forge-ledger\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "start");
+    git("checkout", "-q", "-b", `change/${CHANGE}`);
+    await writeFile(
+      join(root, "openspec/changes", CHANGE, "release-prs.yaml"),
+      `schemaVersion: 1\nnothingToRelease:\n  - repo: forge-ledger\n    commit: ${git("rev-parse", "HEAD")}\n    at: 2026-11-08T10:00:00Z\n    by: tia\n`,
+    );
+    expect((await archiveGate(root, CHANGE, { commit: COMMIT })).blockers).toEqual([]);
+    // Work landed on the change branch since: the entry is void, and the release PR is missing.
+    await writeFile(join(dir, "Late.java"), "class Late {}\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "late task");
+    expect(
+      (await archiveGate(root, CHANGE, { commit: COMMIT })).blockers.map((b) => b.code),
+    ).toEqual(["pr-missing"]);
   });
 
   it("blocks a change that isn't released", async () => {

@@ -59,7 +59,8 @@ export interface WorkspaceManager {
   openChange(change: string, repos: ManifestRepo[]): Promise<ChangeRepos>;
   /**
    * Remove worktrees whose PR merged or closed (or all of them with `all`), and the editor
-   * workspaces once none remain. Worktrees with uncommitted work are kept unless `force`.
+   * workspaces once none remain. Worktrees with uncommitted work are kept unless `force`;
+   * the task worktrees under the change's `.tasks/` folder get the same care.
    */
   prune(
     change: string,
@@ -369,10 +370,27 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       const removed: string[] = [];
       const kept: { id: string; reason: string }[] = [];
       if (!repos) return { removed, kept };
+      // One worktree: kept with uncommitted work unless forced, else `git worktree remove`.
+      const removeOne = async (id: string, path: string, repo: string) => {
+        try {
+          if (!opts.force && (await dirty(path))) {
+            kept.push({ id, reason: "uncommitted changes in the worktree" });
+            return;
+          }
+          const args = ["worktree", "remove"];
+          if (opts.force) args.push("--force");
+          await g([...args, "--", path], baseClonePath(root, repo));
+          removed.push(id);
+        } catch (err) {
+          kept.push({ id, reason: err instanceof GitError ? err.message : String(err) });
+        }
+      };
+      const waiting = new Set<string>();
       for (const r of repos.repos) {
         const done = r.pr?.state === "merged" || r.pr?.state === "closed";
         if (!done && !opts.all) {
           kept.push({ id: r.id, reason: r.pr ? `PR is ${r.pr.state}` : "no PR yet" });
+          waiting.add(r.id);
           continue;
         }
         const path = worktreePath(root, change, r.id);
@@ -380,23 +398,31 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
           removed.push(r.id);
           continue;
         }
-        const base = baseClonePath(root, r.id);
-        try {
-          if (!opts.force && (await dirty(path))) {
-            kept.push({ id: r.id, reason: "uncommitted changes in the worktree" });
-            continue;
-          }
-          const args = ["worktree", "remove"];
-          if (opts.force) args.push("--force");
-          await g([...args, "--", path], base);
-          removed.push(r.id);
-        } catch (err) {
-          kept.push({ id: r.id, reason: err instanceof GitError ? err.message : String(err) });
-        }
+        await removeOne(r.id, path, r.id);
       }
-      for (const r of repos.repos) {
-        if (existsSync(baseClonePath(root, r.id)))
-          await g(["worktree", "prune"], baseClonePath(root, r.id)).catch(() => undefined);
+      // Final review (git and tasks): an AI task run's worktree sits inside the change's folder,
+      // .tasks/<task>/<repo>; each gets the same care, so the folder goes only once none is kept.
+      const tasksDir = join(changeWorktreesDir(root, change), ".tasks");
+      const subdirs = async (dir: string) =>
+        (await readdir(dir, { withFileTypes: true }).catch(() => []))
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name)
+          .sort();
+      const taskRepos = new Set<string>();
+      for (const task of await subdirs(tasksDir))
+        for (const repo of await subdirs(join(tasksDir, task))) {
+          taskRepos.add(repo);
+          if (waiting.has(repo)) continue;
+          await removeOne(`${repo} task ${task}`, join(tasksDir, task, repo), repo);
+        }
+      for (const id of new Set([...repos.repos.map((r) => r.id), ...taskRepos])) {
+        let base: string;
+        try {
+          base = baseClonePath(root, id);
+        } catch {
+          continue;
+        }
+        if (existsSync(base)) await g(["worktree", "prune"], base).catch(() => undefined);
       }
       if (kept.length === 0) {
         await removeEditorWorkspaces(root, change);
