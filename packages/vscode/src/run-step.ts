@@ -40,6 +40,16 @@ function withoutSource(words: string[]): string[] {
   return [...words.slice(0, at), ...words.slice(at + 2)];
 }
 
+/** ADR 0188: the one step the app starts with `--force` (Draft the stories again), once. */
+const FORCE_STEPS = new Set(["plan stories"]);
+
+/** The words without one `--force` on a step that may be drafted again; as given otherwise. */
+function withoutForce(words: string[]): string[] {
+  if (!FORCE_STEPS.has(`${words[0]} ${words[1]}`)) return words;
+  const at = words.indexOf("--force");
+  return at < 0 ? words : [...words.slice(0, at), ...words.slice(at + 1)];
+}
+
 const okId = (id: unknown) =>
   typeof id === "number" || (typeof id === "string" && id.length <= 100) ? id : undefined;
 
@@ -67,11 +77,11 @@ export function checkRunStep(m: unknown, catalog: Catalog): RunStepCheck | undef
     return refuse("An argument holds a control character or a line break.");
   // Round 36: a wiki's card passes `--source <wiki>` to the steps that read the wikis; it is
   // the one option the app passes, and it isn't counted as an argument below.
-  const plain = withoutSource(words);
+  const plain = withoutForce(withoutSource(words));
   const dashed = plain.find((a) => a.startsWith("-"));
   if (dashed)
     return refuse(
-      `The argument ${JSON.stringify(dashed)} starts with "-": the app passes no options to a step.`,
+      `The argument ${JSON.stringify(dashed)} starts with "-": the app passes no options to a step but a wiki's --source and --force to draft the stories again.`,
     );
   let cmd: Catalog["commands"][number] | undefined;
   for (const c of catalog.commands)

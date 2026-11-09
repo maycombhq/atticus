@@ -66,6 +66,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Added
 
+- **Draft the stories again works in VS Code's bundled panel too**: the extension passes `--force` on that one step, once, as the app's server does.
 - Every daily step has a button (ADR 0188, local API 3.5.0): a person never types a command for a step of the day; where the app takes the step, its command is folded under "In a terminal".
   - **Read a repo with your assistant from the app.** Map › Trust, Home's Run next, Onboarding and Add to the picture offer Read with my assistant (or Run with the server's model, or Copilot): Atticus writes the prompt, and Done checks the answer, takes each batch and, after the last, puts the kept facts on the map (`verify --write`), saying what was kept and rejected. Read again and the rejected and unknown files' lists have the same button.
   - **The fast path's step** (`change small`) is Prepare or Run on Home and At a glance.

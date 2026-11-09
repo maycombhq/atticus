@@ -33,6 +33,16 @@ const catalog: Catalog = {
       runs: "ai",
     },
     {
+      id: "plan stories",
+      words: ["plan", "stories"],
+      usage: "atticus plan stories <change> [--force]",
+      summary: "Your assistant drafts the stories",
+      args: [{ name: "change", kind: "change", optional: false, many: false }],
+      flags: [],
+      area: "repos",
+      runs: "ai",
+    },
+    {
       id: "knowledge scan",
       words: ["knowledge", "scan"],
       usage: "atticus knowledge scan [--source s]",
@@ -132,6 +142,22 @@ describe("a step started from the app in a panel (ADR 0106)", () => {
       ["knowledge", "scan", "--source", "--full"],
       ["knowledge", "scan", "--source", "a", "--source", "b"],
       ["scan", "survey", "forge-ledger", "--source", "forge-wiki"],
+    ]) {
+      const r = checkRunStep(msg(args), catalog);
+      expect(r?.ok, args.join(" ")).toBe(false);
+    }
+  });
+
+  it("passes --force to plan stories only, once: Draft the stories again (ADR 0188)", () => {
+    expect(checkRunStep(msg(["plan", "stories", "add-holds", "--force"]), catalog)).toMatchObject({
+      ok: true,
+      command: "plan stories",
+      args: ["plan", "stories", "add-holds", "--force"],
+    });
+    for (const args of [
+      ["plan", "stories", "add-holds", "--force", "--force"],
+      ["spec", "draft", "forge-ledger", "--force"],
+      ["plan", "stories", "add-holds", "--approve"],
     ]) {
       const r = checkRunStep(msg(args), catalog);
       expect(r?.ok, args.join(" ")).toBe(false);
