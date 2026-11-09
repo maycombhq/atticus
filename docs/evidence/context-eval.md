@@ -13,18 +13,18 @@ With tools (ADR 0107 addendum) the model is a scripted mock, the same on every r
 | needs | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 1 / 2 | 1067 | 131 | - | firewall-rule-request, vendor-onboarding |
 | needs | shop: add-fraud-check | tight | engine | 0.50 | 1.00 | 1 / 2 | 1092 | 100 | - | firewall-rule-request |
 | needs | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.18 | 11 / 2 | 2560 | 1568 | 8 | none |
-| feature | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.33 | 12 / 4 | 1168 | 421 | - | none |
-| feature | shop: add-fraud-check | org pack | engine | 1.00 | 0.33 | 12 / 4 | 1311 | 422 | - | none |
-| feature | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.29 | 14 / 4 | 1838 | 949 | 3 | none |
-| feature | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 4 | 747 | 0 | - | cap-ordering, forge-orders.place-order, forge-stock.reserve-stock, northwind-pay |
-| feature | shop: add-fraud-check | tight | engine | 1.00 | 0.33 | 12 / 4 | 915 | 168 | - | none |
-| feature | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.27 | 15 / 4 | 2802 | 2055 | 9 | none |
-| feature | forge: add-transfer-limit | org pack | whole lists | 0.86 | 0.33 | 18 / 7 | 1881 | 328 | - | ledger-db.limit-change |
-| feature | forge: add-transfer-limit | org pack | engine | 0.86 | 0.33 | 18 / 7 | 1881 | 328 | - | ledger-db.limit-change |
-| feature | forge: add-transfer-limit | org pack | engine + tools | 0.86 | 0.29 | 21 / 7 | 2979 | 1426 | 4 | ledger-db.limit-change |
-| feature | forge: add-transfer-limit | tight | whole lists | 0.00 | 0.00 | 0 / 7 | 1553 | 0 | - | audit, ledger, ledger-api.post-transfer, ledger-db.account, ledger-db.limit-change, northwind-pay, portal |
-| feature | forge: add-transfer-limit | tight | engine | 0.86 | 0.33 | 18 / 7 | 1715 | 162 | - | ledger-db.limit-change |
-| feature | forge: add-transfer-limit | tight | engine + tools | 0.86 | 0.27 | 22 / 7 | 3799 | 2246 | 10 | ledger-db.limit-change |
+| feature | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.33 | 12 / 4 | 1252 | 421 | - | none |
+| feature | shop: add-fraud-check | org pack | engine | 1.00 | 0.33 | 12 / 4 | 1395 | 422 | - | none |
+| feature | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.29 | 14 / 4 | 1922 | 949 | 3 | none |
+| feature | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 4 | 831 | 0 | - | cap-ordering, forge-orders.place-order, forge-stock.reserve-stock, northwind-pay |
+| feature | shop: add-fraud-check | tight | engine | 1.00 | 0.33 | 12 / 4 | 999 | 168 | - | none |
+| feature | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.27 | 15 / 4 | 2886 | 2055 | 9 | none |
+| feature | forge: add-transfer-limit | org pack | whole lists | 0.86 | 0.33 | 18 / 7 | 1965 | 328 | - | ledger-db.limit-change |
+| feature | forge: add-transfer-limit | org pack | engine | 0.86 | 0.33 | 18 / 7 | 1965 | 328 | - | ledger-db.limit-change |
+| feature | forge: add-transfer-limit | org pack | engine + tools | 0.86 | 0.29 | 21 / 7 | 3063 | 1426 | 4 | ledger-db.limit-change |
+| feature | forge: add-transfer-limit | tight | whole lists | 0.00 | 0.00 | 0 / 7 | 1637 | 0 | - | audit, ledger, ledger-api.post-transfer, ledger-db.account, ledger-db.limit-change, northwind-pay, portal |
+| feature | forge: add-transfer-limit | tight | engine | 0.86 | 0.33 | 18 / 7 | 1795 | 158 | - | ledger-db.limit-change |
+| feature | forge: add-transfer-limit | tight | engine + tools | 0.86 | 0.29 | 21 / 7 | 3852 | 2215 | 10 | ledger-db.limit-change |
 | architecture | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.25 | 12 / 3 | 3753 | 423 | - | none |
 | architecture | shop: add-fraud-check | org pack | engine | 1.00 | 0.25 | 12 / 3 | 3753 | 423 | - | none |
 | architecture | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.23 | 13 / 3 | 4988 | 1658 | 6 | none |
@@ -48,7 +48,7 @@ A step uses the engine by default only where its recall is at least the whole li
 With tools, a step's pack may start smaller only where the engine with tools at the tight budget recalls at least what the engine alone does at the org pack's, on every case:
 
 - needs: recall holds with the tight pack and tools; 2560 tokens in all with tools against 1496 for the engine's full pack, so the pack stays as it is
-- feature: recall holds with the tight pack and tools; 6601 tokens in all with tools against 3192 for the engine's full pack, so the pack stays as it is
+- feature: recall holds with the tight pack and tools; 6738 tokens in all with tools against 3360 for the engine's full pack, so the pack stays as it is
 - architecture: recall holds with the tight pack and tools; 5488 tokens in all with tools against 3753 for the engine's full pack, so the pack stays as it is
 - stories: recall holds with the tight pack and tools; 4068 tokens in all with tools against 2989 for the engine's full pack, so the pack stays as it is
 
