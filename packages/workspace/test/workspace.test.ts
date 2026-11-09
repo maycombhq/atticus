@@ -9,12 +9,14 @@ import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
 import {
   baseClonePath,
   branchCheckoutPath,
+  branchSlug,
   changeWorktreesDir,
   checkoutState,
   createGit,
   createWorkspace,
   ensureGitignore,
   intellijProjectPath,
+  legacyBranchSlug,
   loadRepos,
   readChangeRepos,
   remoteDefaultBranch,
@@ -586,6 +588,52 @@ describe("another branch beside the base clone (ADR 0123)", () => {
       await writeFile(join(next.dir, "src", "More.java"), "class More { int edited; }\n");
       await expect(ws.checkoutBranch(repos[0]!, "develop")).rejects.toThrow(/local changes/);
       expect(await readFile(join(next.dir, "src", "More.java"), "utf8")).toContain("edited");
+    },
+    T,
+  );
+
+  it("names a branch's folder so two names differing only in case never share one (NTFS)", () => {
+    // a lower-case name keeps the folder it always had
+    expect(branchSlug("develop")).toBe("develop");
+    expect(branchSlug("feature/login")).toBe("feature-login");
+    // one with capitals is lower-cased and told apart by a short hash of the exact name
+    const upper = branchSlug("Feature/Login");
+    expect(upper).toMatch(/^feature-login-[0-9a-f]{8}$/);
+    expect(upper.toLowerCase()).not.toBe(branchSlug("feature/login").toLowerCase());
+    expect(branchSlug("FEATURE/LOGIN").toLowerCase()).not.toBe(upper.toLowerCase());
+    expect(branchSlug("Feature/Login")).toBe(upper);
+    expect(legacyBranchSlug("Feature/Login")).toBe("Feature-Login");
+  });
+
+  it(
+    "moves a checkout made under the old folder name of a branch with capitals to its new folder",
+    async () => {
+      const ws = createWorkspace(root);
+      await ws.sync(repos.slice(0, 1));
+      const work = join(dir, "src", "forge-ledger");
+      git(work, "checkout", "-q", "-b", "Feature/Login");
+      await writeFile(join(work, "src", "Login.java"), "class Login {}\n");
+      git(work, "add", "-A");
+      git(work, "commit", "-q", "-m", "login");
+      git(work, "push", "-q", "origin", "Feature/Login");
+      // as an earlier version checked it out: workspace/.branches/forge-ledger/Feature-Login
+      const base = baseClonePath(root, "forge-ledger");
+      const old = join(root, "workspace", ".branches", "forge-ledger", "Feature-Login");
+      await mkdir(join(old, ".."), { recursive: true });
+      git(
+        base,
+        "fetch",
+        "-q",
+        "origin",
+        "+refs/heads/Feature/Login:refs/remotes/origin/Feature/Login",
+      );
+      git(base, "worktree", "add", "-q", "--detach", old, "refs/remotes/origin/Feature/Login");
+      const r = await ws.checkoutBranch(repos[0]!, "Feature/Login");
+      expect(r.dir).toBe(branchCheckoutPath(root, "forge-ledger", "Feature/Login"));
+      expect(r.dir).not.toBe(old);
+      expect(existsSync(old)).toBe(false);
+      expect(existsSync(join(r.dir, "src", "Login.java"))).toBe(true);
+      expect(git(base, "worktree", "list")).not.toContain("Feature-Login");
     },
     T,
   );

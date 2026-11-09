@@ -355,19 +355,25 @@ object Commands {
         return out
     }
 
-    /** `a` is at least `b`, for versions like 2.0.0-beta.21 (a release is newer than its betas). */
+    /** The prerelease words in order; a release comes after them all. */
+    private val PRERELEASE = listOf("alpha", "beta", "rc")
+
+    /**
+     * `a` is at least `b`, for versions like 2.0.0-beta.21: alpha before beta before rc before the
+     * release (review round 46: 2.0.0-rc.1 counted older than 2.0.0-beta.21), then the number.
+     */
     fun versionAtLeast(a: String, b: String): Boolean {
         val re = Regex("""(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?""", RegexOption.IGNORE_CASE)
-        val x = re.find(a) ?: return true
-        val y = re.find(b) ?: return true
-        for (i in 1..3) {
-            val p = x.groupValues[i].toInt()
-            val q = y.groupValues[i].toInt()
-            if (p != q) return p > q
+        val parts = { m: MatchResult ->
+            val word = m.groupValues[4]
+            // a word not in the list ranks before alpha
+            val rank = if (word.isEmpty()) PRERELEASE.size else PRERELEASE.indexOf(word.lowercase())
+            listOf(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(), rank, m.groupValues[5].toIntOrNull() ?: 0)
         }
-        val px = x.groupValues[5].toIntOrNull() ?: Int.MAX_VALUE
-        val py = y.groupValues[5].toIntOrNull() ?: Int.MAX_VALUE
-        return px >= py
+        val x = parts(re.find(a) ?: return true)
+        val y = parts(re.find(b) ?: return true)
+        for (i in x.indices) if (x[i] != y[i]) return x[i] > y[i]
+        return true
     }
 
     /** The version in `atticus --version`'s output, if it reads as one. */

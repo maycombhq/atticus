@@ -184,6 +184,36 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
   });
 });
 
+describe("a branch whose name has capitals (review round 46, NTFS)", { timeout: 300_000 }, () => {
+  it("keeps its catalog in a lower-case folder of its own, and moves one an earlier version made", async () => {
+    const root = await estate();
+    const work = join(root, "..", "src", "forge-notes");
+    git(work, "push", "-q", "origin", "develop:Release/Next");
+    expect((await run(["workspace", "sync", "--root", root])).code).toBe(0);
+    expect((await run(["scan", "--root", root])).code).toBeLessThan(2);
+    const scan = () =>
+      run(["scan", "--ref", "Release/Next", "--repos", "forge-notes", "--root", root]);
+    const first = await scan();
+    expect(first.code, first.err).toBeLessThan(2);
+    const branches = join(root, "catalog", "branches");
+    const [folder] = await readdir(branches);
+    expect(folder).toMatch(/^release-next-[0-9a-f]{8}$/);
+    // as an earlier version kept it: catalog/branches/Release-Next
+    const { rename } = await import("node:fs/promises");
+    await rename(join(branches, folder!), join(branches, "Release-Next"));
+    const { compareBranch } = await import("../src/repo-branches.js");
+    expect((await compareBranch(root, "Release/Next"))?.added).toContain(
+      "Endpoint/notes-svc.get-export",
+    );
+    const again = await scan();
+    expect(again.code, again.err).toBeLessThan(2);
+    expect(await readdir(branches)).toEqual([folder]);
+    expect((await compareBranch(root, "Release/Next"))?.added).toContain(
+      "Endpoint/notes-svc.get-export",
+    );
+  });
+});
+
 describe("the Repos screen's API (ADR 0123)", { timeout: 300_000 }, () => {
   it("shows each repo's branches and scans, compares a branch, and edits the manifest", async () => {
     const { startServer } = await import("@maycombhq/server");

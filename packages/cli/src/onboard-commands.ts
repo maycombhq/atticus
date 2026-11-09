@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { type AiRuntime } from "@maycombhq/ai";
@@ -28,6 +28,7 @@ import {
   orgPackDirOf,
   questionsRelOf,
   raiseQuestions,
+  renameRetrying,
   reusedLine,
   RecordId,
   type OrgPack,
@@ -191,7 +192,7 @@ export async function onboardAccept(
     return 1;
   }
   await mkdir(join(orgPackDirOf(root), "dialects"), { recursive: true });
-  await rename(from, to);
+  await renameRetrying(from, to);
   const types = parsed.data.appliesTo.repoTypes;
   io.out(
     `Accepted: org-pack/dialects/${name}.yaml. ${
@@ -538,7 +539,7 @@ export async function onboardFrameworkAccept(
     return 1;
   }
   await mkdir(join(orgPackDirOf(root), "frameworks"), { recursive: true });
-  await rename(from, to);
+  await renameRetrying(from, to);
   io.out(
     `Accepted: org-pack/frameworks/${name}.yaml. Scans read every repo that imports ${model.packages.join(", ")} through it. Commit the org pack for review, as with any change to it.`,
   );

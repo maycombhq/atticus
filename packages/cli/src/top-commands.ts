@@ -88,7 +88,9 @@ export function aliasArgv(argv: readonly string[], positions: readonly number[])
   else if (word === "join" && second === "contracts") out.splice(first, 2, "estate", "contracts");
   else if (word === "join") out.splice(first, 1, "estate", "join");
   else if (word === "stories") out.splice(first, 1, "plan", "stories");
-  else if (word === "task" && second !== "run" && second !== "context")
+  // `task run`, `task context` and `task run-ready` are commands of their own (review round 46:
+  // `task run-ready c1` became `task run run-ready c1`).
+  else if (word === "task" && !["run", "context", "run-ready"].includes(second ?? ""))
     out.splice(first + 1, 0, "run");
   return out;
 }

@@ -1,4 +1,10 @@
-import { Fact as FactSchema, FactId, type BadFactLine, type Fact } from "@maycombhq/core";
+import {
+  Fact as FactSchema,
+  FactId,
+  notDeviceName,
+  type BadFactLine,
+  type Fact,
+} from "@maycombhq/core";
 
 /**
  * R6: the reader's slips of form, fixed in code rather than refused (ADR 0124 addendum A-read, as
@@ -29,15 +35,16 @@ export interface FormSlip {
 
 /** A fact id as a lowercase slug: camelCase split at its capitals, other characters as `-`. */
 export function slugFactId(id: string): string {
-  return id
+  // never a Windows device name (review round 46): `aux` is `aux-1`
+  const slug = id
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^[^a-z0-9]+/, "")
-    .replace(/-+$/, "")
-    .slice(0, 120);
+    .replace(/-+$/, "");
+  return notDeviceName(slug).slice(0, 120);
 }
 
 const isId = (x: unknown): x is string => typeof x === "string" && FactId.safeParse(x).success;

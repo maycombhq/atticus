@@ -155,6 +155,18 @@ describe("the new names are the commands that exist", () => {
       "c1",
       "t1",
     ]);
+    // Review round 46: `task run-ready` is a command of its own, never `task run run-ready`.
+    expect(at(["task", "run-ready", "c1", "--dry-run"], [0, 1, 2])).toEqual([
+      "task",
+      "run-ready",
+      "c1",
+      "--dry-run",
+    ]);
+    expect(at(["legacy", "task", "run-ready", "c1"], [0, 1, 2, 3])).toEqual([
+      "task",
+      "run-ready",
+      "c1",
+    ]);
     expect(at(["join", "--json"], [0])).toEqual(["estate", "join", "--json"]);
     expect(at(["join", "measure", "ref.yaml", "--json"], [0, 1, 2])).toEqual([
       "estate",
@@ -191,6 +203,15 @@ describe("the new names are the commands that exist", () => {
       expect(a, mine.join(" ")).toEqual(b);
       expect(a.code).toBe(2);
     }
+  });
+
+  it("runs task run-ready as itself, --dry-run and all (review round 46)", async () => {
+    const r = await run(["task", "run-ready", "--dry-run", "--by", "ari", "--root", empty]);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/^Usage: atticus task run-ready <change>/);
+    const c = await run(["task", "run-ready", "c1", "--dry-run", "--by", "ari", "--root", empty]);
+    expect(c.err).not.toMatch(/task run /);
+    expect(c.err).not.toMatch(/run-ready isn't|no change run-ready/i);
   });
 
   it("are in the command catalogue, the twelve marked apart from the legacy ones", async () => {

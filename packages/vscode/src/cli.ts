@@ -98,6 +98,23 @@ export const quoteArg = (a: string) =>
 /** The command line as the log shows it. */
 export const commandText = (args: string[]) => `atticus ${args.map(quoteArg).join(" ")}`;
 
+/** A program's path as a terminal takes it: bare when plain, else in double quotes (no escapes). */
+const quotePath = (p: string) => (/^[\w./:\\@+-]+$/.test(p) ? p : `"${p}"`);
+
+/**
+ * Review round 46: the line typed into a terminal, starting with the atticus that atticus.path
+ * resolves to (`node "<bin.js>" …`, or the program's path), not a bare `atticus`. PowerShell
+ * (`shell`, VS Code's env.shell) runs a quoted program only after `&`.
+ */
+export function terminalLine(cmd: Command, args: string[], shell?: string): string {
+  const program = quotePath(cmd.file);
+  const call =
+    program.startsWith('"') && /(^|[\\/])(pwsh|powershell)(\.exe)?$/i.test(shell ?? "")
+      ? `& ${program}`
+      : program;
+  return [call, ...cmd.prefix.map(quotePath), ...args.map(quoteArg)].join(" ");
+}
+
 export function cliRunner(o: CliOptions): Cli {
   return (args: string[], token?: Cancel, input?: string) => runCli(o, args, token, input);
 }

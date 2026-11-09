@@ -37,7 +37,7 @@ import type { NextStep, OpenQuestion } from "./types";
 import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
-import { commandText } from "./cli";
+import { commandText, terminalLine } from "./cli";
 import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
@@ -361,7 +361,8 @@ ${view.next.why}`
           shellArgs: [...cmd.prefix, ...args],
         })
       : vscode.window.createTerminal({ name, cwd: root });
-    if (!own) t.sendText(commandText(args), run);
+    // typed as the configured atticus runs (review round 46), not always a bare `atticus`
+    if (!own) t.sendText(terminalLine(cmd, args, vscode.env.shell), run);
     t.show(true);
     if (run) svc.log.appendLine(`> ${commandText(args)} (in the terminal "${name}")`);
     return t;
@@ -655,11 +656,24 @@ ${view.next.why}`
       !!vscode.extensions.getExtension("GitHub.copilot-chat"),
     );
   };
+  /**
+   * Review round 46: the app runs the atticus atticus.path named, in the metarepo open, when it
+   * started; when either changed it starts again, and an open Atticus tab opens again on it.
+   */
+  const restartAppIfStale = () => {
+    const root = svc.root;
+    if (!root || !svc.appStale(root)) return;
+    svc.restartApp();
+    const open = !!panel;
+    panel?.dispose();
+    if (open) void vscode.commands.executeCommand("atticus.showApp");
+  };
   context.subscriptions.push(
     // Another metarepo: forget what was read, so every section says Reading… again.
     vscode.workspace.onDidChangeWorkspaceFolders(
       () =>
         void updateContext().then(() => {
+          restartAppIfStale();
           for (const t of sections) t.reset();
           waiting.reset();
           questions.reset();
@@ -667,9 +681,13 @@ ${view.next.why}`
         }),
     ),
     vscode.extensions.onDidChange(() => void updateContext()),
-    // A new atticus.path: look for the command line again, so the welcome goes or comes at once.
+    // A new atticus.path: look for the command line again, so the welcome goes or comes at once,
+    // and start the app again with it.
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
+      if (e.affectsConfiguration("atticus.path")) {
+        restartAppIfStale();
+        void updateContext().then(refreshAll);
+      }
       // A model picked: the Next view's "in VS Code" says the new one.
       else if (e.affectsConfiguration("atticus.model") || e.affectsConfiguration("atticus.models"))
         refreshAll();

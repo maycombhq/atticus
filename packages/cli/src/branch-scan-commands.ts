@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { parse, stringify } from "yaml";
-import { catalogDirOf, writeFileAtomic, type CatalogRecord } from "@maycombhq/core";
+import { catalogDirOf, renameRetrying, writeFileAtomic, type CatalogRecord } from "@maycombhq/core";
 import { diffCatalogs, readCatalog, scanEstate, writeCatalog } from "@maycombhq/scanner";
 import { branchSlug, createWorkspace, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { branchCatalogFolder } from "./repo-branches.js";
 import { diffLines } from "./scan-commands.js";
 
 /**
@@ -72,6 +73,10 @@ export async function scanBranch(
   });
   const rel = branchCatalogRel(branch);
   const dir = join(catalogDirOf(root), ...rel.split("/"));
+  // Review round 46: a scan an earlier version kept under the name's own case moves to the
+  // lower-case folder first, so what it kept for other repos is merged as before.
+  const at = await branchCatalogFolder(root, branch);
+  if (at.legacy) await renameRetrying(join(catalogDirOf(root), "branches", at.legacy), dir);
   const ofRepos = new Set(ids);
   // Merged with what an earlier scan of this branch kept for other repos (Set up › Repos scans
   // one repo's row at a time): their records and commits stay; only this scan's repos are new.

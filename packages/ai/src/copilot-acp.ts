@@ -33,7 +33,7 @@ import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime } from "./handoff.js";
 import { OneShotRuntime, RuntimeError, type AiRequest, type Run, type Usage } from "./runtime.js";
 import { stepClassOf } from "./step-class.js";
-import { isPersonsFactsFile, personOnlyWhy } from "./person-only.js";
+import { isPersonsFactsFile, personOnlyWhy, withoutLegacy } from "./person-only.js";
 
 /**
  * copilot-acp (C5, ADR 0171): GitHub Copilot driven unattended through the Copilot language
@@ -138,9 +138,16 @@ export function atticusArgvOf(
   const argv = all.slice(1);
   if (!argv.length)
     return { refused: "atticus needs a command (atticus next, atticus verify <repo>, ...)" };
-  for (const p of PERSONS) if (p.test(argv)) return { refused: `Refused: ${p.why}.` };
-  // The command comes first, so what it is can't hide behind a flag and its value.
-  if (argv[0]!.startsWith("-") && !["--help", "--version", "-h"].includes(argv[0]!))
+  // `legacy <words>` is <words> (review round 46), as the CLI reads it
+  const named = [...withoutLegacy(argv)];
+  for (const p of PERSONS) if (p.test(named)) return { refused: `Refused: ${p.why}.` };
+  // The command comes first, so what it is can't hide behind a flag and its value (after
+  // `legacy` too: `legacy --mode x questions answer` runs `questions answer`).
+  const hidden =
+    argv[0] === "legacy" &&
+    argv[1]?.startsWith("-") &&
+    argv.slice(2).some((x) => !x.startsWith("-"));
+  if (hidden || (argv[0]!.startsWith("-") && !["--help", "--version", "-h"].includes(argv[0]!)))
     return {
       refused: `Put the command first: atticus <command> [arguments] (got ${short(argv.join(" "))})`,
     };

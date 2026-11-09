@@ -15,6 +15,7 @@ import {
   branchCheckoutPath,
   changeWorktreesDir,
   ensureGitignore,
+  legacyBranchCheckoutPath,
   toRepoRelative,
   worktreePath,
 } from "./layout.js";
@@ -331,6 +332,12 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         throw new Error(`${repo.id} has no branch ${branch} on its remote`);
       }
       const dir = branchCheckoutPath(root, repo.id, branch);
+      // Review round 46: a branch with capitals had a folder named with them; its checkout moves
+      // to the new name (git's own move, so the base clone's worktree list follows) and is then
+      // checked out as any other, so a folder shared on NTFS ends on the right commit.
+      const old = legacyBranchCheckoutPath(root, repo.id, branch);
+      if (old !== dir && !existsSync(dir) && existsSync(old))
+        await g(["worktree", "move", "--", old, dir], base).catch(() => undefined);
       if (!existsSync(dir)) {
         await mkdir(dirname(dir), { recursive: true });
         await g(["worktree", "add", "--detach", "--", dir, ref], base);

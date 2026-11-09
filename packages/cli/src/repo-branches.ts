@@ -21,9 +21,32 @@ import {
   branchSlug,
   checkoutState,
   gitUser,
+  legacyBranchSlug,
   loadRepos,
   remoteDefaultBranch,
 } from "@maycombhq/workspace";
+
+/**
+ * The folder under catalog/branches/ that holds a branch's scan. Review round 46: a name with
+ * capitals has a lower-case folder of its own (branchSlug); one an earlier version kept under the
+ * name's own case (`Release-Next`) is still read when its branch.yaml names this branch, until
+ * the next scan of the branch moves it (scanBranch).
+ */
+export async function branchCatalogFolder(
+  root: string,
+  branch: string,
+): Promise<{ slug: string; legacy?: string }> {
+  const slug = branchSlug(branch);
+  const old = legacyBranchSlug(branch);
+  if (old === slug) return { slug };
+  const dir = join(catalogDirOf(root), "branches");
+  const named = async (d: string) => {
+    const text = await readFile(join(dir, d, "branch.yaml"), "utf8").catch(() => undefined);
+    return text !== undefined && (parse(text) as { branch?: unknown } | null)?.branch === branch;
+  };
+  if (await named(slug)) return { slug };
+  return (await named(old)) ? { slug, legacy: old } : { slug };
+}
 
 /**
  * Branches you can see and choose (ADR 0123), from files only: each repo's default branch (the
@@ -97,7 +120,8 @@ export async function compareBranch(root: string, branch: string) {
     records.filter((r) => r.evidence.some((e) => e.repo && ids.has(e.repo)));
   const cat = catalogDirOf(root);
   const before = await readCatalog(join(cat, "generated"), { cacheRoot: root });
-  const after = await readCatalog(join(cat, "branches", branchSlug(branch), "generated"), {
+  const at = await branchCatalogFolder(root, branch);
+  const after = await readCatalog(join(cat, "branches", at.legacy ?? at.slug, "generated"), {
     cacheRoot: root,
   });
   const d = diffCatalogs(ofRepos(before.records), ofRepos(after.records));

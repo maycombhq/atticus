@@ -92,10 +92,9 @@ export async function markTaskDone(
   const m = l === undefined ? null : TASK_LINE.exec(l.replace(/\r$/, ""));
   if (!m || m[4]!.toLowerCase() !== task.id) return false;
   if (m[2]!.toLowerCase() === "x") return false;
-  lines[task.line - 1] = l!.replace(
-    TASK_LINE,
-    (_a, a: string, _b: string, c: string, d: string, e: string) => `${a}x${c}${d} ${e}`,
-  );
+  // Review round 46: the line is rebuilt from what matched, without its `\r`, which is put back
+  // (a CRLF tasks.md was matched but never ticked, and hand-up still said "marked done").
+  lines[task.line - 1] = `${m[1]}x${m[3]}${m[4]} ${m[5]}${l!.endsWith("\r") ? "\r" : ""}`;
   await writeFileAtomic(path, lines.join("\n"));
   return true;
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { changesDirOf, RecordId } from "@maycombhq/core";
@@ -29,12 +30,31 @@ export function baseClonePath(root: string, repo: string): string {
   return join(root, WORKSPACE_DIR, id("repo id", repo));
 }
 
-/** A branch name as one folder name: what isn't a letter, digit, dot or hyphen becomes "-". */
-export const branchSlug = (branch: string) => branch.replace(/[^A-Za-z0-9.-]+/g, "-");
+/** The folder name earlier versions gave a branch: what isn't a letter, digit, dot or hyphen becomes "-". */
+export const legacyBranchSlug = (branch: string) => branch.replace(/[^A-Za-z0-9.-]+/g, "-");
+
+/**
+ * A branch name as one folder name: what isn't a letter, digit, dot or hyphen becomes "-".
+ * Review round 46: NTFS and APFS don't tell `Feature-Login` from `feature-login`, so a name with
+ * capitals is lower-cased and given a short hash of the exact name (`feature-login-1a2b3c4d`).
+ * A lower-case name keeps the folder it always had, so existing checkouts and branch catalogs
+ * of such branches stay where they are.
+ */
+export const branchSlug = (branch: string) => {
+  const s = legacyBranchSlug(branch);
+  if (!/[A-Z]/.test(s)) return s;
+  const hash = createHash("sha256").update(branch, "utf8").digest("hex").slice(0, 8);
+  return `${s.toLowerCase()}-${hash}`;
+};
 
 /** Where another branch of a repo is checked out, read-only, to be scanned (ADR 0123). */
 export function branchCheckoutPath(root: string, repo: string, branch: string): string {
   return join(root, WORKSPACE_DIR, ".branches", id("repo id", repo), branchSlug(branch));
+}
+
+/** Where an earlier version checked out a branch (the name's case kept); moved on the next checkout. */
+export function legacyBranchCheckoutPath(root: string, repo: string, branch: string): string {
+  return join(root, WORKSPACE_DIR, ".branches", id("repo id", repo), legacyBranchSlug(branch));
 }
 
 export function changeWorktreesDir(root: string, change: string): string {

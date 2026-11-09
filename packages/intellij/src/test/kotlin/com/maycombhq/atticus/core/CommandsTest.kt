@@ -237,4 +237,15 @@ class CommandsTest {
         assertFalse(Commands.versionAtLeast("2.0.0-beta.20", "2.0.0-beta.21"))
         assertFalse(Commands.versionAtLeast("1.9.9", "2.0.0-beta.21"))
     }
+
+    @Test
+    fun `the prerelease words are ordered alpha, beta, rc, then the release (review round 46)`() {
+        assertTrue(Commands.versionAtLeast("2.0.0-rc.1", "2.0.0-beta.21"))
+        assertFalse(Commands.versionAtLeast("2.0.0-beta.21", "2.0.0-rc.1"))
+        assertTrue(Commands.versionAtLeast("2.0.0-beta.1", "2.0.0-alpha.9"))
+        assertFalse(Commands.versionAtLeast("2.0.0-alpha.9", "2.0.0-beta.1"))
+        assertTrue(Commands.versionAtLeast("2.0.0", "2.0.0-rc.3"))
+        assertFalse(Commands.versionAtLeast("2.0.0-rc.3", "2.0.0"))
+        assertTrue(Commands.versionAtLeast("2.0.0-RC.2", "2.0.0-rc.2"))
+    }
 }

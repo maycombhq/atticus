@@ -45,5 +45,19 @@ export function slugify(text: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
-  return slug.slice(0, 120) || "unnamed";
+  return notDeviceName(slug).slice(0, 120) || "unnamed";
+}
+
+/** The names Windows keeps for devices, whatever extension follows (`aux.yaml` opens AUX). */
+const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * A slug that is never a Windows device name (review round 46): a record is the file
+ * `<kind>/<id>.yaml` and Windows can't create `aux.yaml`, so the slug's first dot-separated part,
+ * when it is one, gets `-1` (`aux` is `aux-1`, `con.v2` is `con-1.v2`). C1's RecordId is unchanged.
+ */
+export function notDeviceName(slug: string): string {
+  const dot = slug.indexOf(".");
+  const head = dot < 0 ? slug : slug.slice(0, dot);
+  return DEVICE_NAME.test(head) ? `${head}-1${slug.slice(head.length)}` : slug;
 }
