@@ -55,8 +55,20 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.21";
+const release = "2.0.0-beta.22";
 const news = [
+  {
+    body: "A person approves every shared write, from the app too: hand-off, release PRs, merging and task PRs need the page's own confirmation, so an assistant holding the API token can't push or merge; AI model keys come only from ATTICUS_* or the providers' own names.",
+    link: "/guide/admin.html",
+  },
+  {
+    body: "Your word stands over the AI's: a person's answer, \"None of these\" or declined link is never overridden by an AI pairing or a correction's spread, and Undo puts the AI's proposals back.",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "Sturdier on Windows and big repos: no NTFS-stream or symlink way around the secret-file rule, CRLF task lists tick, UTF-16 and Latin-1 files verify, one walker that honours .gitignore, and `next` leads from a manual PR to archive with no dead ends.",
+    link: "/guide/troubleshooting.html",
+  },
   {
     body: "Correct the map on the canvas: connect two boxes call by call, set a repo's owner, declare a link the code can't show, each previewed and undoable; layers, filters, blast radius, trace and export.",
     link: "/guide/correcting-the-map.html",

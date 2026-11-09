@@ -2,6 +2,14 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.22 (pre-release, with Atticus 2.0.0-beta.22)
+
+- **Ships with Atticus 2.0.0-beta.22, and needs it.** Writes to shared systems from the app (hand-off, release PRs, merging in Sync, task PRs) now need the app page's own confirmation (ADR 0186); the extension passes the page its key, so an older `atticus` gets refused there until it is updated.
+- **A step typed into a terminal uses your `atticus.path`**, quoted for PowerShell, instead of a bare `atticus`.
+- **The app tab works in remote windows** (WSL, Remote-SSH, Codespaces): the panel allows the forwarded address.
+- **The app restarts when `atticus.path` or the workspace folders change.**
+- **A pre-release is compared by its word** (alpha < beta < rc), so a newer rc isn't called out of date.
+
 ## 0.7.21 (pre-release, with Atticus 2.0.0-beta.21)
 
 - **Ships with Atticus 2.0.0-beta.21.** The app in its tab gains the canvas corrections (connect two boxes, owner, declared links, Undo), the canvas tools, faster pages with a loading bar, and Copilot runs started from the app with their Console. No change to the extension itself.

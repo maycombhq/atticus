@@ -185,7 +185,8 @@ describe("stopping the app", { timeout: 60_000 }, () => {
 
 describe("the atticus found against the one the extension needs", () => {
   it("tells an older atticus from a newer one, betas before the release, and gives an unreadable one the benefit of the doubt", () => {
-    expect(versionAtLeast("2.0.0-beta.21", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.22", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.21", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.22", "2.0.0-beta.21")).toBe(true);
     expect(versionAtLeast("2.0.0", "2.0.0-beta.21")).toBe(true);
     expect(versionAtLeast("2.1.0-beta.1", "2.0.0-beta.21")).toBe(true);
