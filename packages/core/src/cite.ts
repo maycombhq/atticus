@@ -182,19 +182,93 @@ const PLACEHOLDER = /^(\$\{|\{\{|env:|vault:|secret:|ref:|<)/;
 const KEY_VALUE =
   /^(\s*[-"']?\s*)([A-Za-z0-9_.:-]*?(?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?))(["']?\s*[:=]\s*)(.+)$/i;
 
+const SECRET_WORDS =
+  "(?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?)";
+// Review round 47: a secret-looking key anywhere on the line (a declaration, a JSON member, an
+// argument), an optional type (`apiKey: String`), `=` (not `==`), `:`, `:=` or `=>`, then a
+// quoted literal.
+const KEY_LITERAL = new RegExp(
+  `((?:^|[^A-Za-z0-9_.$-])[A-Za-z0-9_.$-]*?${SECRET_WORDS}["'\`]?\\]?(?:\\s*:\\s*[A-Za-z_][\\w.<>?\\[\\]]*(?=\\s*=))?\\s*(?::=|=>|=(?!=)|:(?!:))\\s*)(["'\`])((?:(?!\\2)[^\\\\]|\\\\.)+)\\2`,
+  "i",
+);
+// A setter given a literal: setPassword("x"), withApiKey('x').
+const SETTER_LITERAL = new RegExp(
+  `(\\b(?:set|with)[A-Za-z0-9_]*?${SECRET_WORDS}\\s*\\(\\s*)(["'\`])((?:(?!\\2)[^\\\\]|\\\\.)+)\\2`,
+  "i",
+);
+// An unquoted value after a key in a shell export, a command-line flag, a query string or a
+// connection string: export DB_PASSWORD=x, --password=x, ?password=x, ;Password=x;
+const KEY_BARE = new RegExp(
+  `((?:\\bexport\\s+|--|[?&;])[A-Za-z0-9_.-]*?${SECRET_WORDS}\\s*=\\s*)([^\\s&;"'\`]+)`,
+  "gi",
+);
+// A URL's password: scheme://user:password@host.
+const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)([^\s@/]+)(?=@)/gi;
+const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{16,}=*)/g;
+const BASIC = /\b(Basic\s+)((?=[A-Za-z0-9+/]*[0-9+/=])[A-Za-z0-9+/]{12,}={0,2})/g;
+// Well-known token shapes, whatever names them: GitHub, Stripe, AWS access key ids, Slack,
+// Google API keys and JWTs.
+const TOKEN_SHAPES = [
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /\bAIza[0-9A-Za-z_-]{35}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+];
+/** A value that only refers to a secret: `${X}`, `{{ x }}`, `env:X`, `vault:...`, `<...>`. */
+const placeholder = (v: string) => PLACEHOLDER.test(v.trim().replace(/^["'`]/, ""));
+const refersOnly = (v: string) => placeholder(v) || /^[$%{]/.test(v);
+
 /**
- * Redact a line that carries a secret-looking key with a literal value; a placeholder or a
- * reference (`${X}`, `env:X`, `vault:...`) stays, as does a line that names no such key.
- * A private-key block is redacted whole.
+ * Redact the secrets on a line, keeping what names them: a value after a secret-looking key
+ * (at the line's start, whatever the value; anywhere on it, a quoted literal), a setter's
+ * literal, a URL's password, a bearer or basic token and well-known token shapes. A
+ * placeholder or a reference (`${X}`, `env:X`, `vault:...`) stays, as does code that only names
+ * a secret word (`if (password == null)`, `tokenizer.next()`). A private-key block is redacted
+ * whole. A key's value is redacted to the end of the line.
  */
 export function redactSecrets(line: string): string {
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(line)) return "<redacted>";
-  if (!SECRET_KEY.test(line)) return line;
-  const m = KEY_VALUE.exec(line);
-  if (!m) return line;
-  const value = m[4]!.trim();
-  if (PLACEHOLDER.test(value)) return line;
-  return `${m[1]}${m[2]}${m[3]}<redacted>`;
+  let out = line;
+  if (SECRET_KEY.test(out)) {
+    const m = KEY_VALUE.exec(out);
+    if (m && !placeholder(m[4]!)) out = `${m[1]}${m[2]}${m[3]}<redacted>`;
+    for (const re of [KEY_LITERAL, SETTER_LITERAL]) {
+      const k = re.exec(out);
+      if (k && !placeholder(k[3]!)) out = `${out.slice(0, k.index)}${k[1]}<redacted>`;
+    }
+    out = out.replace(KEY_BARE, (all, key: string, v: string) =>
+      refersOnly(v) || v === "<redacted>" ? all : `${key}<redacted>`,
+    );
+  }
+  out = out.replace(URL_CREDENTIALS, (all, head: string, pass: string) =>
+    refersOnly(pass) ? all : `${head}<redacted>`,
+  );
+  out = out.replace(BEARER, "$1<redacted>").replace(BASIC, "$1<redacted>");
+  for (const re of TOKEN_SHAPES) out = out.replace(re, "<redacted>");
+  return out;
+}
+
+const SECRET_IDENT = new RegExp(`[A-Za-z0-9_]*${SECRET_WORDS}[A-Za-z0-9_]*`, "i");
+const OPAQUE_LITERAL = /(["'`])([^\s"'`]{8,})\1/g;
+
+/**
+ * Whether a quote redaction left as it is still holds what looks like a secret: an identifier
+ * with a secret word and an opaque quoted literal (8 or more characters with letters and digits,
+ * no spaces, not a path, URL or placeholder) on the same line, e.g.
+ * `creds.put(PASSWORD_KEY, "Xk9fQ2mZ7p")`. Code that only names a secret word
+ * (`passwordEncoder.encode(x)`, `getToken("Authorization")`) doesn't.
+ */
+export function quoteHoldsSecret(quote: string): boolean {
+  if (!SECRET_IDENT.test(quote)) return false;
+  for (const m of quote.matchAll(OPAQUE_LITERAL)) {
+    const v = m[2]!;
+    if (/^[/.#$%{<]/.test(v) || v.includes("://") || placeholder(v)) continue;
+    if (/[A-Za-z]/.test(v) && /[0-9]/.test(v)) return true;
+  }
+  return false;
 }
 
 /**

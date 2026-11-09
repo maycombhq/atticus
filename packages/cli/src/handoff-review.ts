@@ -1,3 +1,4 @@
+import { redactSecrets } from "@maycombhq/core";
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
 import { changeMapBody, changeMapOf } from "./change-map.js";
 import { estimateOf } from "./change-estimate.js";
@@ -9,6 +10,19 @@ import { knowledgeAppliesMarkdown, readKnowledgeApplies } from "@maycombhq/plann
  * DevOps draw), its estimate as a range with what drives it, what changed since each gate's last
  * round, and the findings still open at its gates, blocking first. Read from the change's files; nothing is worked out again.
  */
+
+/**
+ * Review round 47: a finding's words (the AI's) as inline code on one line, its secrets
+ * redacted, so in a PR body they can't mention people, draw an image, link or start a section.
+ * The backtick run around it is longer than any inside it.
+ */
+function inlineCode(text: string): string {
+  const s = redactSecrets(text.replace(/\s+/g, " ").trim());
+  const longest = Math.max(0, ...[...s.matchAll(/`+/g)].map((m) => m[0].length));
+  const tick = "`".repeat(longest + 1);
+  const pad = s.startsWith("`") || s.endsWith("`") ? " " : "";
+  return `${tick}${pad}${s}${pad}${tick}`;
+}
 
 const days = (d: { p20: number; p50: number; p80: number }) =>
   `${d.p20}–${d.p80} days (most likely ${d.p50})`;
@@ -87,7 +101,7 @@ export async function handoffReview(root: string, change: string): Promise<strin
   else {
     const order = ["blocking", "gap", "risk", "idea"];
     for (const f of open.sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity)))
-      lines.push(`- **${f.severity}** (${f.gate}): ${f.summary} \`${f.id}\``);
+      lines.push(`- **${f.severity}** (${f.gate}): ${inlineCode(f.summary)} ${inlineCode(f.id)}`);
     lines.push("");
   }
   return lines.join("\n");

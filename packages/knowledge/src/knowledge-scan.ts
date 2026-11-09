@@ -372,6 +372,45 @@ const KIND_GUIDE: Record<string, string> = {
   framework: "standards for building on the framework: what every service on it must do",
 };
 
+/**
+ * Review round 47: page paths are the wiki's words (a page can be named anything), so the
+ * instructions only point at them; they go to the model quoted, in data blocks, screened.
+ */
+const SHARED_PATHS = "1-shared-paths";
+const REMOVED_AT = "1-removed";
+
+function pathSources(snapshots: Snapshot[], removed: Injection[]): SourceInput[] {
+  const shared = sharedPagePaths(snapshots);
+  return [
+    ...(shared.length
+      ? [
+          {
+            id: SHARED_PATHS,
+            kind: "document" as const,
+            origin: "atticus/knowledge-scan (page paths)",
+            text: shared.map((p) => `- ${JSON.stringify(p)}`).join("\n"),
+            classification: "internal",
+            priority: 50,
+          },
+        ]
+      : []),
+    ...(removed.length
+      ? [
+          {
+            id: REMOVED_AT,
+            kind: "document" as const,
+            origin: "atticus/knowledge-scan (text cut out)",
+            text: removed
+              .map((r) => `- ${JSON.stringify(`${r.source}/${r.page}`)} line ${r.line}`)
+              .join("\n"),
+            classification: "internal",
+            priority: 50,
+          },
+        ]
+      : []),
+  ];
+}
+
 const INSTRUCTIONS = (
   snapshots: Snapshot[],
   removed: Injection[],
@@ -426,7 +465,7 @@ ${snapshots
   })
   .join("\n")}${
   sharedPagePaths(snapshots).length
-    ? `\n\nMore than one source has a page at these paths, so write them as <source>/<page>: ${sharedPagePaths(snapshots).join(", ")}.`
+    ? `\n\nMore than one source has a page at the same path: the paths are in the data block "${SHARED_PATHS}". Write those pages as <source>/<page>.`
     : ""
 }
 
@@ -454,9 +493,7 @@ ${snapshots
 - Ids are lowercase slugs (a-z, 0-9, '-'), unique across all items.
 ${
   removed.length
-    ? `\nAtticus already cut out text that tries to instruct AI tools, so you won't see it: ${removed
-        .map((r) => `${r.source}/${r.page} line ${r.line}`)
-        .join(", ")}. It is flagged; there is nothing to do about it.\n`
+    ? `\nAtticus already cut out text that tries to instruct AI tools, so you won't see it; the data block "${REMOVED_AT}" says where. It is flagged; there is nothing to do about it.\n`
     : ""
 }
 ## Answer
@@ -1128,7 +1165,14 @@ export async function scanKnowledge(
       change,
       agent: agent.id,
       budget,
-      sources: [task, ...pageSources, ...previousSource, ...focusSource, ...extra],
+      sources: [
+        task,
+        ...pathSources(snapshots, removed),
+        ...pageSources,
+        ...previousSource,
+        ...focusSource,
+        ...extra,
+      ],
       levels,
       maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
       now,

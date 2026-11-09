@@ -38,6 +38,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - **A facts file cut short in the middle of a JSON array** is refused as not JSON (the repo shows as read incompletely) instead of failing the read.
   - **An answer never overwrites one given meanwhile.** Answering, retiring or reopening a question, and refreshing its options, write only over the file as they read it; otherwise nothing is written (409 in the app). The AI's batch leaves such a question to the person ("a person changed it meanwhile") and goes on with the rest.
   - **A history record after a hand-edited line** goes on a line of its own when the file's last line has no newline.
+- Review round 47 (outside content):
+  - The task context (`atticus task context --markdown`, the task_context MCP tool, `/atticus-task`) puts the story, the acceptance criteria, the flow's words and each knowledge item in `<atticus-data>` blocks, screened with suspicious lines marked, and leaves a high-risk item out for a person; titles, steps and page titles stay on one line, and the prompt's code fence is longer than any backticks in it, so wiki text can't forge a "How to work" section. `atticus task run` keeps wrapping the whole file as one source.
+  - An API wiki's restriction and labels are merged into a page's own front matter, never dropped by it: a restricted page with front matter of its own is skipped, not snapshotted.
+  - The knowledge scan's instructions no longer carry wiki page paths: the paths shared by two sources and where text was cut out go to the model JSON-quoted in data blocks.
+  - Secrets are redacted anywhere on a line: a secret-looking key's quoted value in declarations, JSON and arguments, setters, shell exports, flags and connection strings, a URL's password, bearer and basic tokens, and GitHub, Stripe, AWS, Slack, Google and JWT token shapes; code that only names a secret word (`if (password == null)`, `tokenizer.next()`) is unchanged. The verifier drops a stored quote that still holds an opaque literal beside a secret word.
+  - A component type's name and notes file are JSON-quoted in the data block, and `<` is escaped in every quoted name, description and signal, so none can close the block.
+  - A hand-off PR body gives each open finding's summary in inline code, on one line, with its secrets redacted, so it can't mention people, draw an image, link or start a section.
 
 ## 2.0.0-beta.21 (2026-11-08)
 
