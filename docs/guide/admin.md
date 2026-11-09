@@ -262,7 +262,7 @@ retrieval:
 
 ### Outside systems
 
-`runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
+`runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. Write one as `gitHost: { type: github, settings: { metarepo: forge/forge-metarepo } }`, or, with no settings, by its type alone: `gitHost: manual` is short for `gitHost: { type: manual }`. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
 
 ### OpenSpec stores (beta)
 

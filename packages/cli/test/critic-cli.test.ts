@@ -175,7 +175,7 @@ describe("atticus critic", () => {
     expect(c.out.some((l) => /^risk\s+AI\s+release-plan-complete-snow-l12\s/.test(l))).toBe(true);
     expect(c.out.some((l) => / lens (skipped|failed): /.test(l))).toBe(false);
     expect(c.out.at(-1)).toBe(
-      "The plan gate is closed: 12 blocking, 14 open gaps. Act on each with atticus finding <id> <action>.",
+      `The plan gate is closed: 12 blocking, 14 open gaps. Act on each with atticus finding ${CHANGE} <id> <action>.`,
     );
 
     c = capture();

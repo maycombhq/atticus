@@ -1,0 +1,11 @@
+{
+  "accepted": [
+    "call.any.ledger",
+    "call.any.rates",
+    "entry.any.forge-ledger-v1",
+    "entry.any.forge-rates-v1"
+  ],
+  "rejected": [],
+  "authUncited": [],
+  "entriesNoFlowFollows": []
+}

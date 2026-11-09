@@ -1,0 +1,16 @@
+<ProxyEndpoint name="default">
+  <PreFlow name="PreFlow">
+    <Request>
+      <Step>
+        <Name>VAK-Ledger</Name>
+      </Step>
+    </Request>
+  </PreFlow>
+  <HTTPProxyConnection>
+    <BasePath>/forge/ledger/v1</BasePath>
+    <VirtualHost>secure</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="ledger">
+    <TargetEndpoint>ledger</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

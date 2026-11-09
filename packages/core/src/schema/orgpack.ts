@@ -949,14 +949,16 @@ const AdapterSettings = z
 const adapter = <T extends readonly [string, ...string[]]>(
   types: T,
   o: { manual?: boolean } = {},
-) =>
-  z.strictObject({
-    type: z.enum([...types, "mock", ...(o.manual === false ? [] : ["manual"])] as unknown as [
-      string,
-      ...string[],
-    ]),
-    settings: AdapterSettings.default({}),
-  });
+) => {
+  const type = z.enum([...types, "mock", ...(o.manual === false ? [] : ["manual"])] as unknown as [
+    string,
+    ...string[],
+  ]);
+  const full = z.strictObject({ type, settings: AdapterSettings.default({}) });
+  // Review round 49: the type alone (`gitHost: manual`, as the admin guide words it) is short
+  // for `{ type: manual }`. A loosening: every file valid before stays valid and reads the same.
+  return z.union([type.transform((t): z.infer<typeof full> => ({ type: t, settings: {} })), full]);
+};
 
 /** How a code repo runs a task (ADR 0030): Spec Kit inside the repo, or plain Atticus task files. */
 export const BuildEngine = z.enum(["speckit", "atticus"]);

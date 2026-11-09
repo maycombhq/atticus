@@ -174,9 +174,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // facts and a call's cited auth and tls were added (ADR 0163), and when a term's note became
     // its key and a call's TLS was told to rest on a line that writes it, with its parts (the
     // beta.11 review, ADR 0163), and when a call's path was told never to be the name of what
-    // holds it (ADR 0172).
+    // holds it (ADR 0172), and when an Apigee proxy with no conditional flow was told where to
+    // cite its forwarding call and a config key was told to be its full dotted path (round 49).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "5f9d4ed44140c59c4a83f5fba7fb303ef60ab06c45e169335647e3a74b63c255",
+      "4eccc5d072ebbf2b4d7da0a6ade6c138074fcdc76c6df3976fd007f4e3e05a82",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

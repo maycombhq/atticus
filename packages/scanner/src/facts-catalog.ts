@@ -26,6 +26,8 @@ import {
   slugify,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
+  TOPICS_STEP_ID,
+  topicOfQuestion,
   urlHostPort,
   type CallersResult,
   type CatalogRecord,
@@ -1014,6 +1016,41 @@ export function staleTargetQuestions(input: {
         why: reasons.join("; "),
         ...(rules.length ? { replacedBy: rules } : {}),
       });
+  }
+  return out.sort((a, b) => cmpText(a.id, b.id));
+}
+
+/**
+ * Review round 49: the open topic owner questions (ADR 0162, F8) to retire after a write, each
+ * with why, as staleTargetQuestions does for calls. One whose topic this write asks about again
+ * under another id (its lines moved) names the question that asks it now; one whose topic is no
+ * longer a loose end of the repo (a repo of the estate read since serves the other side and the
+ * join found it, or the profile now names the system that owns it) says so. Only the repo's own
+ * open questions of the topics step: an answered question is never listed.
+ */
+export function staleTopicQuestions(input: {
+  repo: string;
+  /** The repo's open questions (others are skipped). */
+  open: readonly Question[];
+  /** The topic questions this write asks (`topicQuestionDrafts`). */
+  drafted: readonly { topic: string; id: string }[];
+}): { id: string; why: string; replacedBy?: string[] }[] {
+  const drafted = new Set(input.drafted.map((d) => d.id));
+  const out: { id: string; why: string; replacedBy?: string[] }[] = [];
+  for (const q of input.open) {
+    if (q.state !== "open" || q.askedBy.step !== TOPICS_STEP_ID || q.repo !== input.repo) continue;
+    if (drafted.has(q.id)) continue;
+    const topic = topicOfQuestion(q);
+    if (!topic) continue;
+    const by = input.drafted.filter((d) => d.topic === topic).map((d) => d.id);
+    out.push(
+      by.length
+        ? { id: q.id, why: `${topic} is asked now in ${by.join(", ")}`, replacedBy: by }
+        : {
+            id: q.id,
+            why: `${topic} is no longer a loose end: a repo of the estate serves its other side now, or the profile names who owns it`,
+          },
+    );
   }
   return out.sort((a, b) => cmpText(a.id, b.id));
 }
