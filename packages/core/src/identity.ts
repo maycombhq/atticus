@@ -12,7 +12,9 @@ import { createHash } from "node:crypto";
 export function normalizePath(input: string): string {
   const trimmed = input.trim();
   if (trimmed === "") return "";
-  const withoutQuery = trimmed.split(/[?#]/, 1)[0] ?? "";
+  // Round 47: a parameter's constraint and optional marker go first (`{id:int?}`,
+  // `{slug:regex(^[a-z]+$)}`), so a `?` or `#` inside braces isn't read as a query string.
+  const withoutQuery = stripParamConstraints(trimmed).split(/[?#]/, 1)[0] ?? "";
   const isPath = withoutQuery.startsWith("/") || withoutQuery.includes("/");
   if (!isPath) return withoutQuery;
   const segments = withoutQuery
@@ -20,6 +22,69 @@ export function normalizePath(input: string): string {
     .filter((s) => s.length > 0)
     .map((s) => (/^(\{[^}]*\}|:[^/]+|<[^>]+>|\$\{[^}]*\})$/.test(s) ? "{}" : s));
   return "/" + segments.join("/");
+}
+
+/**
+ * A path with each `{...}` parameter cut to its name: what follows the first `:`, `?` or `=` in
+ * braces nested inside a constraint (`{code:regex(^\\d{3}$)}`) are matched, not cut at the first `}`.
+ * braces nested inside a constraint (`{code:regex(^\\d{{3}}$)}`) are matched, not cut at the first `}`.
+ * An unclosed `{` leaves the rest as written.
+ */
+export function stripParamConstraints(path: string): string {
+  let out = "";
+  let i = 0;
+  while (i < path.length) {
+    const ch = path[i]!;
+    if (ch !== "{") {
+      out += ch;
+      i++;
+      continue;
+    }
+    let depth = 0;
+    let j = i;
+    for (; j < path.length; j++) {
+      if (path[j] === "{") depth++;
+      else if (path[j] === "}" && --depth === 0) break;
+    }
+    if (j >= path.length) {
+      out += path.slice(i);
+      break;
+    }
+    const inner = path.slice(i + 1, j);
+    out += "{" + (/^[^:?=]*/.exec(inner)?.[0] ?? "") + "}";
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Code-unit string order, the same in every locale (`localeCompare` is not: ICU orders `_`/`-`
+ * and, in `da`, `aa` differently), for every sort that feeds records, ids, hashes or a merge. */
+export function cmpText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * `cmpText`, but a run of digits is compared as a number (`a.ts:9` before `a.ts:10`): what
+ * `localeCompare(b, "en", { numeric: true })` was used for, without ICU.
+ */
+export function cmpNatural(a: string, b: string): number {
+  const pa = a.split(/(\d+)/);
+  const pb = b.split(/(\d+)/);
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+    const x = pa[i]!;
+    const y = pb[i]!;
+    if (x === y) continue;
+    // Odd pieces are digit runs (split with a capture group alternates text and digits).
+    if (i % 2 === 1) {
+      const nx = x.replace(/^0+(?=\d)/, "");
+      const ny = y.replace(/^0+(?=\d)/, "");
+      if (nx.length !== ny.length) return nx.length - ny.length;
+      if (nx !== ny) return cmpText(nx, ny);
+      continue;
+    }
+    return cmpText(x, y);
+  }
+  return pa.length !== pb.length ? pa.length - pb.length : cmpText(a, b);
 }
 
 /**
@@ -45,7 +110,20 @@ export function slugify(text: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
-  return notDeviceName(slug).slice(0, 120) || "unnamed";
+  const out = notDeviceName(slug).slice(0, 120);
+  return /[a-z0-9]/.test(out) ? out : unnamedId(text);
+}
+
+/**
+ * Round 47: a name with no Latin letter or digit in it (`注文`, `Заказы`, `...`) slugs to
+ * nothing, so every such name used to become the same `unnamed` and their records merged.
+ * It gets `unnamed-<short hash of the name>` instead: stable, and different per name. Blank
+ * text stays `unnamed`.
+ */
+export function unnamedId(text: string): string {
+  const name = text.normalize("NFC").trim();
+  if (name === "") return "unnamed";
+  return "unnamed-" + createHash("sha256").update(name, "utf8").digest("hex").slice(0, 8);
 }
 
 /** The names Windows keeps for devices, whatever extension follows (`aux.yaml` opens AUX). */

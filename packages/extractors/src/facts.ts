@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { normalizePath, type CatalogRecord, type EvidenceSource } from "@maycombhq/core";
+import { normalizePath, type CatalogRecord, type EvidenceSource, cmpText } from "@maycombhq/core";
 import type { z } from "zod";
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
 import { flattenProperties, flattenYamlDocuments, type ConfigValue } from "./lang/config.js";
@@ -198,9 +198,9 @@ function layer(
     .sort(
       (a, b) =>
         rank(a) - rank(b) ||
-        (a.profile ?? "").localeCompare(b.profile ?? "") ||
+        cmpText(a.profile ?? "", b.profile ?? "") ||
         a.file.split("/").pop()!.length - b.file.split("/").pop()!.length ||
-        a.file.localeCompare(b.file),
+        cmpText(a.file, b.file),
     );
   const out = new Map<string, ConfigValue>();
   for (const s of ordered) for (const [k, v] of s.values) if (!out.has(k)) out.set(k, v);

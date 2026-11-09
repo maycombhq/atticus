@@ -289,7 +289,9 @@ export async function roundsOf(root: string, change: string, gate: string): Prom
 export async function countedRounds(root: string, change: string, gate: string): Promise<number[]> {
   const out: number[] = [];
   for (const n of await roundsOf(root, change, gate)) {
-    const m = await readRoundMeta(root, change, gate, n);
+    const m0 = await readRoundMeta(root, change, gate, n);
+    // A round that didn't finish (round 47) is judged as one a crash left behind.
+    const m = m0?.state === "in-progress" ? undefined : m0;
     if (!m) {
       const r = await readRound(root, change, gate, n);
       if (!r.findings.length && !r.bad.length) continue;
@@ -445,6 +447,12 @@ export interface RoundMeta extends Record<string, unknown> {
   gate: string;
   round: number;
   createdAt: string;
+  /**
+   * Round 47 (additive): `in-progress` from the moment the critic starts writing the round until
+   * it writes the finished record, which has no `state`. A record that still says in-progress is
+   * a round that didn't finish.
+   */
+  state?: "in-progress";
   findings: {
     id: string;
     layer: Layer;

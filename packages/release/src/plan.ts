@@ -136,6 +136,103 @@ interface Edge {
   why: string;
 }
 
+/**
+ * Kahn's algorithm over the units, ties by `byPrio`. When nothing is ready (round 47), the first
+ * by priority among the members of a cycle nothing else left waits on is taken, and the gap names
+ * that cycle's repos: a unit that only waits on a cycle (a caller of one of its members) isn't
+ * in it, so it still goes after.
+ */
+export function orderSteps(
+  keys: readonly string[],
+  preds: ReadonlyMap<string, readonly { from: string }[]>,
+  byPrio: (a: string, b: string) => number,
+  repoOf: (key: string) => string,
+): { order: string[]; gaps: string[] } {
+  const order: string[] = [];
+  const gaps: string[] = [];
+  const left = new Set(keys);
+  while (left.size) {
+    const ready = [...left]
+      .filter((k) => (preds.get(k) ?? []).every((e) => !left.has(e.from)))
+      .sort(byPrio);
+    if (ready.length) {
+      order.push(ready[0]!);
+      left.delete(ready[0]!);
+      continue;
+    }
+    const cycle = sourceCycle(left, preds, byPrio);
+    const next = cycle[0]!;
+    const stuck = [...new Set(cycle.filter((k) => k !== next).map(repoOf))];
+    gaps.push(
+      `${repoOf(next)} and ${sortStrings(stuck).join(", ")} depend on each other, so no order satisfies both; agree one and write it in design.md.`,
+    );
+    order.push(next);
+    left.delete(next);
+  }
+  return { order, gaps };
+}
+
+/**
+ * Round 47: when no unit left is ready, the units of a cycle to break: the strongly connected
+ * components (Tarjan) of what is left, keeping those of two or more units that wait on no unit
+ * outside themselves; of those, the one holding the first unit by priority. Its members come
+ * back sorted by priority, so the first is the one to take. Only called when nothing is ready,
+ * so such a component exists (a unit that waits on nothing would be ready).
+ */
+function sourceCycle(
+  left: ReadonlySet<string>,
+  preds: ReadonlyMap<string, readonly { from: string }[]>,
+  byPrio: (a: string, b: string) => number,
+): string[] {
+  const nodes = [...left].sort(byPrio);
+  // successors among what's left: from -> to, so a component's members reach each other
+  const succ = new Map<string, string[]>(nodes.map((k) => [k, []]));
+  for (const k of nodes)
+    for (const e of preds.get(k) ?? []) if (left.has(e.from)) succ.get(e.from)!.push(k);
+  for (const list of succ.values()) list.sort(byPrio);
+  const index = new Map<string, number>();
+  const low = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const comps: string[][] = [];
+  let n = 0;
+  const strong = (v: string) => {
+    index.set(v, n);
+    low.set(v, n);
+    n++;
+    stack.push(v);
+    onStack.add(v);
+    for (const w of succ.get(v)!) {
+      if (!index.has(w)) {
+        strong(w);
+        low.set(v, Math.min(low.get(v)!, low.get(w)!));
+      } else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+    }
+    if (low.get(v) === index.get(v)) {
+      const comp: string[] = [];
+      let w: string;
+      do {
+        w = stack.pop()!;
+        onStack.delete(w);
+        comp.push(w);
+      } while (w !== v);
+      comps.push(comp.sort(byPrio));
+    }
+  };
+  for (const v of nodes) if (!index.has(v)) strong(v);
+  const sources = comps.filter((c) => {
+    if (c.length < 2) return false;
+    const inside = new Set(c);
+    return c.every((k) =>
+      (preds.get(k) ?? []).every((e) => !left.has(e.from) || inside.has(e.from)),
+    );
+  });
+  const pick = (sources.length ? sources : comps.filter((c) => c.length > 1)).sort((a, b) =>
+    byPrio(a[0]!, b[0]!),
+  )[0];
+  return pick ?? nodes.slice(0, 1);
+}
+
 function requestWait(ctx: ReleaseContext, r: ServiceRequestView, why: string): RequestWait {
   const base = {
     heading: r.heading,
@@ -424,29 +521,9 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
     const [rb, pb, kb] = prio(b);
     return ra !== rb ? ra - rb : pa !== pb ? cmp(pa, pb) : cmp(ka, kb);
   };
-  const order: string[] = [];
-  const left = new Set(keys);
-  while (left.size) {
-    const ready = [...left]
-      .filter((k) => preds.get(k)!.every((e) => !left.has(e.from)))
-      .sort(byPrio);
-    if (ready.length) {
-      order.push(ready[0]!);
-      left.delete(ready[0]!);
-      continue;
-    }
-    // a cycle: take the first by priority and say so
-    const next = [...left].sort(byPrio)[0]!;
-    const stuck = preds
-      .get(next)!
-      .filter((e) => left.has(e.from))
-      .map((e) => units.get(e.from)!.repo);
-    gaps.push(
-      `${units.get(next)!.repo} and ${sortStrings(stuck).join(", ")} depend on each other, so no order satisfies both; agree one and write it in design.md.`,
-    );
-    order.push(next);
-    left.delete(next);
-  }
+  const ordered = orderSteps(keys, preds, byPrio, (k) => units.get(k)!.repo);
+  const order = ordered.order;
+  gaps.push(...ordered.gaps);
   const numOf = new Map(order.map((k, i) => [k, i + 1]));
 
   // ---- rollback texts (ADR 0117 addendum): which sentences say how a step is undone is a

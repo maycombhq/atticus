@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { orgPackDirOf, orgPackRelOf } from "./metarepo.js";
 import { Roles, type Team } from "./schema/orgpack.js";
 import type { Question } from "./schema/question.js";
+import { cmpText } from "./identity.js";
 
 /**
  * Route each question to its owner (ADR 0140, Q4): the team that owns the question's repo is the
@@ -82,7 +83,10 @@ export function peopleOfChange(owners: Readonly<Record<string, readonly string[]
   for (const list of Object.values(owners))
     for (const h of list)
       if (!seen.has(handleKey(h))) seen.set(handleKey(h), h.trim().replace(/^@/, ""));
-  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  // Case-folded first (as people read handles), then by code unit: the same in every locale.
+  return [...seen.values()].sort(
+    (a, b) => cmpText(a.toLowerCase(), b.toLowerCase()) || cmpText(a, b),
+  );
 }
 
 export function routeOfQuestion(

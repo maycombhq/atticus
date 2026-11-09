@@ -57,6 +57,8 @@ import {
   type ContractsFileT,
   type LinkEvidenceResult,
   type TrafficOnFile,
+  cmpNatural,
+  cmpText,
 } from "@maycombhq/core";
 import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
 import {
@@ -176,7 +178,7 @@ type Rec = CatalogRecord & Record<string, unknown>;
 type Ev = { repo?: string; path?: string; line?: number; side?: string; source: string };
 
 const byKindId = (a: CatalogRecord, b: CatalogRecord) =>
-  a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind);
+  a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind);
 
 const URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const joinUrl = (base: string, path: string) =>
@@ -296,7 +298,7 @@ function targetAsks(
   const repoOf = new Map<string, string>();
   for (const r of records) if (r.kind === "Component" && r.repo) repoOf.set(r.id, r.repo);
   const list: TargetAsk[] = [];
-  for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const f of [...facts].sort((a, b) => cmpText(a.id, b.id))) {
     const ask = asks?.find(
       (a) => a.reason === "ambiguous" && a.call.repo === f.repo && a.call.fact === f.id,
     );
@@ -448,7 +450,7 @@ function offered(
       b.score - a.score ||
       Number(b.read) - Number(a.read) ||
       (a.kind === b.kind ? 0 : a.kind === "repo" ? -1 : 1) ||
-      a.label.localeCompare(b.label),
+      cmpText(a.label, b.label),
   );
   const serving = new Set(members.flatMap((m) => m.servers));
   const types = new Set(members.flatMap((m) => SERVES[m.f.callType] ?? []));
@@ -581,7 +583,7 @@ export function targetGroupWordings(
 
 const repo0 = (members: readonly TargetAsk[]) => members[0]!.f.repo;
 
-const byLine = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
+const byLine = (a: string, b: string) => cmpNatural(a, b);
 
 /** The answer's option label, or the person's words. */
 const answerLabel = (q: Question): string | undefined =>
@@ -675,7 +677,7 @@ export function groupedTargetDrafts(
       draft,
     });
   }
-  return out.sort((a, b) => a.factId.localeCompare(b.factId));
+  return out.sort((a, b) => cmpText(a.factId, b.factId));
 }
 
 /** A rule several open target questions share (beta.12): one answer with it covers them all. */
@@ -796,8 +798,8 @@ export function ruledTargets(
       (a, b) =>
         (a.answer!.scope.level === "repo" ? 0 : 1) - (b.answer!.scope.level === "repo" ? 0 : 1) ||
         b.answer!.match!.length - a.answer!.match!.length ||
-        b.answer!.at.localeCompare(a.answer!.at) ||
-        a.id.localeCompare(b.id),
+        cmpText(b.answer!.at, a.answer!.at) ||
+        cmpText(a.id, b.id),
     );
   const out = new Map<string, RuledCall>();
   if (!rules.length) return out;
@@ -843,11 +845,11 @@ export function targetsFromAnswers(
         !!x.answer &&
         typeof x.question === "string",
     )
-    .sort((a, b) => a.answer!.at.localeCompare(b.answer!.at) || a.id.localeCompare(b.id)))
+    .sort((a, b) => cmpText(a.answer!.at, b.answer!.at) || cmpText(a.id, b.id)))
     groups.set(q.question.trim(), q);
   const ruled = ruledTargets(repo, facts, questions, o);
   const out: Record<string, string> = {};
-  for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const f of [...facts].sort((a, b) => cmpText(a.id, b.id))) {
     // A call that names a target is asked only when the estate has no such target and two or
     // more entries could answer it; its answer counts the same.
     if (f.kind !== "call") continue;
@@ -1003,7 +1005,7 @@ export function staleTargetQuestions(input: {
         ...(rules.length ? { replacedBy: rules } : {}),
       });
   }
-  return out.sort((a, b) => a.id.localeCompare(b.id));
+  return out.sort((a, b) => cmpText(a.id, b.id));
 }
 
 /** A repo's component renames: the id a fact's component had, and the estate-unique id it gets. */
@@ -1034,7 +1036,7 @@ export function componentRenames(
   }
   for (const t of taken) if (users.has(t.id)) use(t.id, t.repo);
   const out: Record<string, Record<string, string>> = {};
-  for (const [id, set] of [...users].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [id, set] of [...users].sort((a, b) => cmpText(a[0], b[0]))) {
     if (set.size < 2) continue;
     for (const repo of repos.map((r) => r.repo).filter((r) => set.has(r))) {
       if (factIdPart(repo) === id) continue;
@@ -1614,11 +1616,11 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
       raw: r.raw,
     });
   }
-  unresolved.sort((a, b) => a.factId.localeCompare(b.factId));
+  unresolved.sort((a, b) => cmpText(a.factId, b.factId));
 
   return {
     records: applied.records.sort(byKindId),
-    flows: flows.sort((a, b) => a.id.localeCompare(b.id)),
+    flows: flows.sort((a, b) => cmpText(a.id, b.id)),
     unresolved,
     curated: {
       applied: applied.applied,
@@ -1778,7 +1780,7 @@ export function answerRuleOffers(input: {
       ]);
     }
   const out: AnswerRuleOffer[] = [];
-  for (const [via, xs] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [via, xs] of [...groups].sort(([a], [b]) => cmpText(a, b))) {
     const repos = [...new Set(xs.map((x) => x.repo))].sort();
     const labels = new Set(xs.map((x) => slugify(x.label)));
     if (repos.length < 2 || labels.size !== 1) continue;

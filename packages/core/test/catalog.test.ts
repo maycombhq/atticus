@@ -97,7 +97,7 @@ describe("identity", () => {
   it("slugifies free text into valid ids", () => {
     expect(slugify("Ledger Platform (EU)")).toBe("ledger-platform-eu");
     expect(slugify("Café Système")).toBe("cafe-systeme");
-    expect(slugify("!!!")).toBe("unnamed");
+    expect(slugify("!!!")).toMatch(/^unnamed-[0-9a-f]{8}$/);
   });
 
   it("puts each record in its own file by kind and id", () => {

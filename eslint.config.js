@@ -35,4 +35,26 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Review round 47: an order that feeds records, ids, hashes or a merge is the same in every
+    // locale, so these packages sort with `cmpText` / `cmpNatural` from @maycombhq/core, never
+    // `localeCompare` (ICU orders `_` and `-`, and `aa` in Danish, differently by locale).
+    files: [
+      "packages/core/src/**/*.ts",
+      "packages/scanner/src/**/*.ts",
+      "packages/verify/src/**/*.ts",
+      "packages/extractors/src/**/*.ts",
+      "packages/release/src/**/*.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='localeCompare']",
+          message:
+            "localeCompare depends on the locale: use cmpText (or cmpNatural) from @maycombhq/core.",
+        },
+      ],
+    },
+  },
 );

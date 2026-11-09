@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RecordId } from "./common.js";
 import { COMPONENT_TYPES } from "./kinds.js";
 import { OrgNotes } from "./repo-type.js";
+import { cmpText } from "../identity.js";
 
 /**
  * A component type (ADR 0180, C6): org-pack/component-types/<id>/type.yaml, with an optional
@@ -215,7 +216,7 @@ export function effectiveComponentTypes(
     if (own?.off) continue;
     out.push(own ? { ...b, ...own, draws: { ...b.draws, ...(own.draws ?? {}) } } : b);
   }
-  for (const t of [...pack].sort((a, b) => a.id.localeCompare(b.id)))
+  for (const t of [...pack].sort((a, b) => cmpText(a.id, b.id)))
     if (!t.off && !BUILTIN_COMPONENT_TYPES.some((b) => b.id === t.id)) out.push(t);
   return out;
 }

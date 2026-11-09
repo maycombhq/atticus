@@ -33,6 +33,7 @@ import {
   type QuestionScopeLevel,
   type QuestionState,
 } from "./schema/question.js";
+import { cmpText } from "./identity.js";
 
 /**
  * Questions as files (ADR 0078): raise, list, read and answer questions/<id>.yaml. The CLI
@@ -213,7 +214,7 @@ export async function listQuestions(
           (!o.repo || q.repo === o.repo) &&
           (!o.step || askedByStep(q, o.step)),
       )
-      .sort((a, b) => a.askedBy.at.localeCompare(b.askedBy.at) || a.id.localeCompare(b.id)),
+      .sort((a, b) => cmpText(a.askedBy.at, b.askedBy.at) || cmpText(a.id, b.id)),
     problems,
   };
 }

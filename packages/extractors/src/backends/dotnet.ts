@@ -16,6 +16,7 @@ import {
   type Arg,
   type SrcCall,
 } from "./shared.js";
+import { cmpText } from "@maycombhq/core";
 
 const HTTP_ATTRS: Record<string, string> = {
   HttpGet: "GET",
@@ -200,9 +201,7 @@ function attrGroup(src: SourceFile, open: number, close: number): Attr[] {
 /** appsettings.json, then appsettings.{Environment}.json for keys the base doesn't set. */
 async function appsettings(repo: RepoHandle): Promise<Map<string, ConfigValue>> {
   const files = await listSources(repo, ["**/appsettings.json", "**/appsettings.*.json"]);
-  files.sort(
-    (a, b) => a.split("/").pop()!.length - b.split("/").pop()!.length || a.localeCompare(b),
-  );
+  files.sort((a, b) => a.split("/").pop()!.length - b.split("/").pop()!.length || cmpText(a, b));
   const out = new Map<string, ConfigValue>();
   for (const f of files) {
     const flat = flattenYaml(stripJsonComments(await repo.readText(f)), f, repo.parseCache);
@@ -492,7 +491,7 @@ export const dotnetExtractor = defineExtractor({
     // ---- connection strings
     const csproj = (await listSources(repo, ["**/*.csproj"])).map((p) => repo.readText(p));
     const packages = (await Promise.all(csproj)).join("\n");
-    for (const [key, v] of [...config.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [key, v] of [...config.entries()].sort(([a], [b]) => cmpText(a, b))) {
       if (!key.startsWith("connectionstrings.")) continue;
       const scheme = /Npgsql/i.test(packages)
         ? "postgresql"

@@ -1,6 +1,7 @@
 import type { RepoHandle } from "@maycombhq/sdk";
 import { repoConfigFor } from "./facts.js";
 import { UI_PACKAGES } from "./module-uses.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * The deployable modules of a multi-part repo (ADR 0057, W1): the parts a repo builds and runs
@@ -91,6 +92,6 @@ export async function detectModules(
 
   if (parts.size + (rootPart ? 1 : 0) < 2) return [];
   return [...parts]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => cmpText(a, b))
     .map(([path, component]) => ({ path, component }));
 }

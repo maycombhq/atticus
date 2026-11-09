@@ -14,6 +14,7 @@ import {
   stripComments,
   templatePath,
 } from "./common.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * Mobile and desktop apps (ADR 0040): the repo's component as type `mobile-app` or
@@ -111,7 +112,7 @@ async function markers(repo: RepoHandle, ctx: ScanContext): Promise<Marker[]> {
       });
   }
   return found.sort(
-    (a, b) => order.indexOf(a.runtime) - order.indexOf(b.runtime) || a.path.localeCompare(b.path),
+    (a, b) => order.indexOf(a.runtime) - order.indexOf(b.runtime) || cmpText(a.path, b.path),
   );
 }
 

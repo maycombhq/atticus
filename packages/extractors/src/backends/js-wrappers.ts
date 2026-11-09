@@ -3,6 +3,7 @@ import type { RepoHandle } from "@maycombhq/sdk";
 import type Parser from "web-tree-sitter";
 import { grammarOf } from "../lang/source-tree.js";
 import { useSyntaxTree } from "../lang/syntax.js";
+import { cmpText } from "@maycombhq/core";
 
 /**
  * HTTP helpers a JavaScript or TypeScript repo writes for itself (ADR 0069): a function whose
@@ -407,5 +408,5 @@ export async function wrapperRequests(
     const url = shown(w.url, w.at.params);
     if (url) out.push({ method: w.method.v, url, path: w.at.path, line: w.at.line });
   }
-  return out.sort((x, y) => x.path.localeCompare(y.path) || x.line - y.line);
+  return out.sort((x, y) => cmpText(x.path, y.path) || x.line - y.line);
 }

@@ -14,6 +14,7 @@ import {
   type OrgPack,
   type Question,
   type QuestionDraft,
+  cmpText,
 } from "@maycombhq/core";
 import { estateRepos } from "./merge-input.js";
 
@@ -391,7 +392,7 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
       b.score - a.score ||
       Number(b.read) - Number(a.read) ||
       (a.kind === b.kind ? 0 : a.kind === "repo" ? -1 : 1) ||
-      a.label.localeCompare(b.label),
+      cmpText(a.label, b.label),
   );
 }
 
@@ -438,13 +439,13 @@ export function targetPicker(op: OrgPack, read: ReadonlySet<string> = new Set())
       name: r.component && r.component !== r.id ? `${r.id} (${r.component})` : r.id,
       read: read.has(r.id),
     }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => cmpText(a.id, b.id));
   const seen = new Set<string>();
   const systems: TargetPick[] = op.profiles
     .flatMap((p) => p.profile?.systems ?? [])
     .filter((s) => !seen.has(s.id) && !!seen.add(s.id))
     .map((s) => ({ id: s.id, kind: "system" as const, name: s.name, boundary: s.boundary }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => cmpText(a.id, b.id));
   const owned = new Set(
     op.profiles.flatMap((p) =>
       (p.profile?.systems ?? []).flatMap((s) => (s.owner ? [s.owner] : [])),
@@ -470,7 +471,7 @@ export function targetPicker(op: OrgPack, read: ReadonlySet<string> = new Set())
             }),
       };
     })
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => cmpText(a.id, b.id));
   return [...repos, ...systems, ...teams];
 }
 
@@ -546,5 +547,5 @@ export function topicQuestionDrafts(
     const id = questionId({ step: TOPICS_STEP_ID, repo, question, evidence: draft.evidence });
     if (!out.has(id)) out.set(id, { topic, id, draft });
   }
-  return [...out.values()].sort((a, b) => a.topic.localeCompare(b.topic));
+  return [...out.values()].sort((a, b) => cmpText(a.topic, b.topic));
 }

@@ -16,6 +16,7 @@ import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
 import { cleanJdbcUrl, SECRET_NAME } from "./backends/shared.js";
 import { applyAnnotations, modelsFor, modelValues, wrapperCalls } from "./frameworks.js";
 import { springName } from "./data/orm-jpa.js";
+import { cmpText } from "@maycombhq/core";
 
 const MAPPINGS: Record<string, string | undefined> = {
   GetMapping: "GET",
@@ -491,7 +492,7 @@ function* settings(
   component: string,
   config: Map<string, ConfigValue>,
 ): Generator<CatalogRecord> {
-  for (const [key, v] of [...config.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [key, v] of [...config.entries()].sort(([a], [b]) => cmpText(a, b))) {
     const kind = SETTING_KIND.find(([re]) => re.test(key.split(".").pop() ?? ""))?.[1];
     if (!kind || v.value === "") continue;
     yield {

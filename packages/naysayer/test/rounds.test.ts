@@ -285,3 +285,34 @@ describe("rounds, gates and actions", () => {
     expect(design.findings.some((f) => f.finding.artifact === "interfaces.md")).toBe(true);
   });
 });
+
+describe("a round's record while it runs (round 47)", () => {
+  it("says in-progress before the lenses run, and the finished record replaces it", async () => {
+    const root = await forgeChangeRoot();
+    const real = await replay();
+    const meta = join(changeDir(root), "review/plan/1/meta/round.yaml");
+    const seen: unknown[] = [];
+    const reasons: string[][] = [];
+    // The lenses run inside the round: what a crash at that moment would leave behind.
+    const runtime = new Proxy(real, {
+      get(t, k, r) {
+        if (k !== "prepare") return Reflect.get(t, k, r) as unknown;
+        return async (...a: Parameters<typeof real.prepare>) => {
+          seen.push((parse(await readText(meta)) as { state?: string }).state);
+          reasons.push((await canAdvance(CHANGE, root)).reasons.map((x) => x.code));
+          return real.prepare(...a);
+        };
+      },
+    });
+    await runCritic(root, CHANGE, { now: NOW, runtime });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(["in-progress"]));
+    expect(reasons.every((r) => r.includes("round-unfinished"))).toBe(true);
+    const done = parse(await readText(meta)) as { state?: string; findings: unknown[] };
+    expect(done.state).toBeUndefined();
+    expect(done.findings.length).toBeGreaterThan(0);
+    expect((await canAdvance(CHANGE, root)).reasons.map((x) => x.code)).not.toContain(
+      "round-unfinished",
+    );
+  });
+});

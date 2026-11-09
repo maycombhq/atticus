@@ -10,6 +10,7 @@ import {
   type RecordOf,
   type SpecTemplate,
   type StepRequirement,
+  cmpText,
 } from "@maycombhq/core";
 import type { RepoHandle } from "@maycombhq/sdk";
 import { fieldKey, lineNamesField, lineNamesRoute, lineNamesWord } from "@maycombhq/core";
@@ -225,7 +226,7 @@ export function specTriggers(
       }
     }
   }
-  return out.sort((a, b) => a.id.localeCompare(b.id));
+  return out.sort((a, b) => cmpText(a.id, b.id));
 }
 
 interface Claim {
