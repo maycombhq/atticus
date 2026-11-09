@@ -52,6 +52,8 @@ export async function askHosts(
     command: string;
     now?: Date;
     /** The command that reads the answer; default atticus scan. */ rerun?: string;
+    /** App-only audit: ask only about the calls of these repos (the ones the assistant read). */
+    only?: ReadonlySet<string>;
   },
 ): Promise<HostQuestions & { lines: string[] }> {
   const repos = await loadRepos(root).catch(() => []);
@@ -73,7 +75,9 @@ export async function askHosts(
   const OUTSIDE = new Set([HOSTS_OUTSIDE_INTERNAL, HOSTS_OUTSIDE_VENDOR]);
   // Beta.12: a host whose calls reach a gateway's routes, by path: said once, with the fix.
   const gateway = new Map<string, string>();
-  for (const { repo, draft, byPath } of hostQuestionDrafts(asks)) {
+  for (const { repo, draft, byPath } of hostQuestionDrafts(
+    o.only ? asks.filter((a) => a.calls.some((c) => o.only!.has(c.repo))) : asks,
+  )) {
     const host = hostOfQuestion(draft);
     if (byPath?.length && host) gateway.set(host, gatewayHostFix(host, byPath));
     if (asked.has(hostOfQuestion(draft))) {

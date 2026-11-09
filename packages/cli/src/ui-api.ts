@@ -13,6 +13,7 @@ import {
   changesDirOf,
   changesRelOf,
   factsDirOf,
+  factsFileOf,
   loadOrgPack,
   orgPackDirOf,
   runsDirOf,
@@ -34,7 +35,13 @@ import {
   liveHandoff,
   requiredArtifacts,
   loadChangeContext,
+  handoffBranchPushed,
+  pushHandoffBranch,
+  readTaskDecision,
+  recordTaskDecision,
   setChangeOwners,
+  unmergedTaskBranches,
+  unmergedTaskWords,
   type ChangeReport,
 } from "@maycombhq/changes";
 import type { GitHost } from "@maycombhq/adapters";
@@ -55,6 +62,7 @@ import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
 import {
+  buildTask,
   cancelTaskRunWait,
   findTaskRunOfRun,
   previewTaskRun,
@@ -285,6 +293,10 @@ async function changeDetail(root: string, id: string) {
   const h = liveHandoff(c) ?? c.handoffs.at(-1);
   // ADR 0113: whether it takes the fast path.
   const fast = (await changeSize(cctx, c)).fast;
+  // App-only audit (3.3.0): the open hand-off's branch is here but not on the remote as it is
+  // here (its push failed): the change page offers Push again. Local refs only.
+  const live = liveHandoff(c);
+  const unpushed = !!live && !(await handoffBranchPushed(root, live.branch).catch(() => true));
   return {
     id: c.id,
     title: c.title,
@@ -303,6 +315,7 @@ async function changeDetail(root: string, id: string) {
             phase: h.phase,
             ...(h.pr?.url ? { pr: h.pr.url } : {}),
             state: h.state === "merged" ? "merged" : h.state === "closed" ? "closed" : "open",
+            ...(unpushed && h === live ? { unpushed: true, branch: live.branch } : {}),
           },
         }
       : {}),
@@ -390,9 +403,22 @@ async function taskViews(
   const waits = new Map(
     (await readyTasksOf(root, change).catch(() => ({ tasks: [] }))).tasks.map((x) => [x.id, x]),
   );
+  // App-only audit (3.3.0): each task branch's commits not in the change branch here (local refs
+  // only, so the board stays quick), whether a person let one go, and whether its repo builds now.
+  const unmerged = new Map(
+    (await unmergedTaskBranches(root, change, { offline: true }).catch(() => [])).map((u) => [
+      u.task,
+      u,
+    ]),
+  );
+  const builds = new Map(
+    (await loadRepos(root).catch(() => [])).map((r) => [r.id, !!r.build?.trim()]),
+  );
   const out: Api.TaskT[] = [];
   for (const [i, t] of tasks.entries()) {
     const w = t.done ? undefined : waits.get(t.id);
+    const u = unmerged.get(t.id);
+    const decision = await readTaskDecision(root, change, t.id).catch(() => undefined);
     const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
     const run = tr ? (tr.waiting ?? tr.runs[0]) : undefined;
     const prState = tr?.state === "pr-open" ? states[i]?.state : undefined;
@@ -419,6 +445,12 @@ async function taskViews(
           }
         : {}),
       ...(w?.waitsFor.length ? { waits: { tasks: w.waitsFor, sameRepo: w.sameRepo ?? [] } } : {}),
+      ...(u ? { unmerged: { commits: u.commits, branch: u.branch } } : {}),
+      ...(decision
+        ? { decision: { by: decision.by, at: decision.at, reason: decision.reason } }
+        : {}),
+      // Only beside a run: the card reads it to offer Build and raise PR.
+      ...(tr ? { repoBuilds: builds.get(t.repo) ?? false } : {}),
     });
   }
   return out;
@@ -678,6 +710,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const { bringInMerged } = await import("./propose.js");
         return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)));
       })
+      // App-only audit (3.3.0): Set the upstream, when Bring in found the branch follows none and
+      // the remote has the same branch: a local setting of this copy (nothing is sent).
+      .add("POST", "/api/propose/upstream", async ({ body }) => {
+        const b = parseBody(Api.UpstreamRequest, body);
+        const { setUpstream } = await import("./propose.js");
+        return asJob(`Setting the upstream to ${b.upstream}`, () =>
+          run((io) => setUpstream(root, b.upstream, io)),
+        );
+      })
       // 2.76.0 (eighth UX walk): Check the code again, on the person's click (ADR 0114). It
       // scans each repo's branch from its base clone, a local step like Apply.
       .add("POST", "/api/changes/{changeId}/conformance", async ({ params }) => {
@@ -864,6 +905,24 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const b = parseBody(Api.TaskDoneRequest, body);
         if (!(await taskViews(root, change)).some((t) => t.id === task))
           throw notFound(`Change ${change} has no task ${task}.`);
+        // App-only audit (3.3.0): a task whose branch has commits the change branch hasn't (here
+        // or on the Git host) isn't done until its PR merges, unless a person says why its work
+        // isn't needed: that decision is recorded with their reason, and lets Build ready pass.
+        if (b.done) {
+          const held = await unmergedTaskBranches(root, change, { task });
+          if (held.length && !b.reason?.trim())
+            throw conflict(
+              `${held.map((h) => unmergedTaskWords(change, h)).join(" ")} To mark it done anyway, say why its work isn't needed.`,
+            );
+          if (held.length)
+            await recordTaskDecision(root, change, task, {
+              by: user,
+              at: (deps.now ? new Date(deps.now) : new Date())
+                .toISOString()
+                .replace(/\.\d{3}Z$/, "Z"),
+              reason: b.reason!,
+            });
+        }
         if (await setTaskDone(root, change, task, b.done))
           ctx.events.publish({
             type: "file.changed",
@@ -1032,6 +1091,53 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           ).find((t) => t.id === task)!,
         };
       })
+      // App-only audit (3.3.0): Build and raise PR on a task drafted but not built (UNVERIFIED) or
+      // one a person took over: built where it is with its repo's build command as it is now, and
+      // with `raise`, the person's confirmation (ADR 0186, `task-pr`) pushes its branch and opens
+      // its PR into the change branch. The AI step isn't run again.
+      .add("POST", "/api/changes/{changeId}/tasks/{taskId}/build", async ({ params, body }) => {
+        await readChange(root, params.changeId!);
+        const change = params.changeId!;
+        const task = params.taskId!;
+        const b = parseBody(Api.TaskBuildRequest, body ?? {});
+        if (!(await taskViews(root, change)).some((t) => t.id === task))
+          throw notFound(`Change ${change} has no task ${task}.`);
+        if (b.raise) confirmed("task-pr", `${change}/${task}`, b.confirmation);
+        let built: Awaited<ReturnType<typeof buildTask>>;
+        try {
+          built = await buildTask(root, change, task, {
+            ...(b.raise
+              ? {
+                  approval: {
+                    by: user,
+                    at: (deps.now ? new Date(deps.now) : new Date()).toISOString(),
+                    ref: `task ${task} of ${change}: build, push and PR (the app's Build and raise PR)`,
+                  },
+                }
+              : {}),
+            ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
+            ...(deps.taskRun?.commands ? { commands: deps.taskRun.commands } : {}),
+            ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+          });
+        } catch (e) {
+          if (e instanceof Error && (e.name === "TaskRunError" || TASK_ERRORS.has(e.name)))
+            throw refused({ code: 1, out: [], err: [e.message] });
+          throw e;
+        }
+        ctx.events.publish({
+          type: "file.changed",
+          path: `${changesRelOf(root)}/${change}/tasks/${task}/task-run.yaml`,
+        });
+        // The build failed: said as the refusal (422), with its log; the card offers it again.
+        if (built.state !== "built" && built.state !== "pr-open")
+          throw refused({ code: 1, out: [], err: [built.notes.at(-1) ?? "The build fails."] });
+        return {
+          status: built.state === "pr-open" ? 201 : 200,
+          body: (
+            await taskViews(root, change, { ...(deps.gitHost ? { gitHost: deps.gitHost } : {}) })
+          ).find((t) => t.id === task)!,
+        };
+      })
       .add("POST", "/api/changes/{changeId}/workspace", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.OpenWorkspaceRequest, body);
@@ -1071,6 +1177,50 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           status: 201,
           body: { ...(await changeDetail(root, params.changeId!)), notes: res.out },
         };
+      })
+      // App-only audit (3.3.0): Push again. The open hand-off's branch, kept here when its push
+      // failed, goes to the remote by name, never forced, on the person's confirmation (ADR 0186,
+      // `handoff`): a push to a shared system. What git said is the refusal (422).
+      .add("POST", "/api/changes/{changeId}/handoff/push", async ({ params, body }) => {
+        const c = await readChange(root, params.changeId!);
+        const b = parseBody(Api.ConfirmedRequest, body ?? {});
+        confirmed("handoff", params.changeId!, b.confirmation);
+        const live = liveHandoff(c);
+        if (!live)
+          throw refused({
+            code: 1,
+            out: [],
+            err: [`${c.id} has no open hand-off, so there is no branch to push.`],
+          });
+        try {
+          const r = await pushHandoffBranch(root, live.branch, {
+            approval: {
+              by: user,
+              at: (deps.now ? new Date(deps.now) : new Date()).toISOString(),
+              ref: `${c.id}: push ${live.branch} (the app's Push again)`,
+            },
+          });
+          ctx.events.publish({
+            type: "file.changed",
+            path: `${changesRelOf(root)}/${c.id}/change.yaml`,
+          });
+          return {
+            status: 200,
+            body: {
+              ...(await changeDetail(root, c.id)),
+              notes: [`Pushed ${r.branch} (${r.commit.slice(0, 12)}).`],
+            },
+          };
+        } catch (e) {
+          const words = (e instanceof Error ? e.message : String(e)).split("\n")[0]!;
+          throw refused({
+            code: 1,
+            out: [],
+            err: [
+              `${live.branch} wasn't pushed (${words}): fix that and Push again, or push it yourself (git push origin ${live.branch}).`,
+            ],
+          });
+        }
       })
       .add("POST", "/api/changes/{changeId}/release-prs", async ({ params, body }) => {
         const id = params.changeId!;
@@ -1495,7 +1645,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const job = jobs.start(
           "scan",
           async (c) => {
-            c.progress(0, 1, "Scanning");
+            c.progress(0, 1, "Checking with the built-in readers");
+            // App-only audit: host questions only for the repos the assistant has read (facts
+            // on file), unless the person asks for every repo.
+            const askFrom = b.askAll
+              ? undefined
+              : new Set(
+                  (await readdir(factsDirOf(root)).catch(() => [] as string[]))
+                    .map((f) => factsFileOf(f))
+                    .filter((f) => f?.facts)
+                    .map((f) => f!.repo),
+                );
             const res = await run((io) =>
               scanCommand(
                 root,
@@ -1505,6 +1665,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                   json: true,
                   // ADR 0123: another branch, scanned beside the baseline.
                   ...(b.ref ? { ref: b.ref } : {}),
+                  ...(askFrom ? { askFrom } : {}),
                 },
                 io,
               ),
@@ -1522,8 +1683,18 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               type: "index.rebuilt",
               records: Number((parsed.stats as { records?: number } | undefined)?.records ?? 0),
             });
+            // App-only audit: what the readers added, changed and removed, and the questions
+            // it asked, said in the job's result and its Console lines.
+            const diff = (parsed.diff ?? {}) as Record<string, unknown[] | undefined>;
+            const added = diff.added?.length ?? 0;
+            const changed = diff.changed?.length ?? 0;
+            const removed = diff.removed?.length ?? 0;
+            const questions = (parsed.questions as unknown[] | undefined)?.length ?? 0;
+            printToCurrent(
+              `The built-in readers added ${added} record${added === 1 ? "" : "s"}, changed ${changed} and removed ${removed}; ${questions} host question${questions === 1 ? " is" : "s are"} open.`,
+            );
             return {
-              result: { stats: parsed.stats, problems },
+              result: { stats: parsed.stats, problems, added, changed, removed, questions },
               errors: res.code === 2 ? res.err : [],
             };
           },

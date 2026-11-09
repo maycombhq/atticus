@@ -16,6 +16,7 @@ export * from "./new-change.js";
 export * from "./publish.js";
 export * from "./handoff.js";
 export * from "./release-prs.js";
+export * from "./task-branches.js";
 export * from "./drafted.js";
 export * from "./learn.js";
 export * from "./conflicts.js";

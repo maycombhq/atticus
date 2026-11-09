@@ -91,9 +91,11 @@ export function gitHandoffPublisher(
         const startTree = await out(["rev-parse", `${start}^{tree}`]);
         const commit =
           tree === startTree ? start : await out(["commit-tree", tree, "-p", start, "-m", message]);
+        // App-only audit: the local branch holds the commit before the push, so a push that
+        // fails leaves it here for Push again (or the person) to send.
+        await keepLocalBranch(out, tryOut, branch, start, commit);
         // The commit goes up by itself: never forced, so the remote's branch only moves on.
         await out(["push", "--quiet", remote, `${commit}:refs/heads/${branch}`]);
-        await keepLocalBranch(out, tryOut, branch, start, commit);
         return { commit, changed: commit !== onRemote };
       } finally {
         await rm(index, { force: true });
@@ -103,6 +105,50 @@ export function gitHandoffPublisher(
 }
 
 const queue = new Map<string, Promise<unknown>>();
+
+/**
+ * App-only audit: whether the hand-off branch here is on the remote as it is here, by the
+ * remote-tracking ref a push or fetch leaves (no network). False when the branch is here and the
+ * remote's (as last seen) is missing or at another commit; true when it isn't here at all.
+ */
+export async function handoffBranchPushed(
+  root: string,
+  branch: string,
+  o: { remote?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<boolean> {
+  const git = createGit({ env: o.env ?? process.env });
+  const sha = (ref: string) =>
+    git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], root).then(
+      (x) => x.stdout.trim() || undefined,
+      () => undefined,
+    );
+  const here = await sha(`refs/heads/${branch}`);
+  if (!here) return true;
+  return (await sha(`refs/remotes/${o.remote ?? "origin"}/${branch}`)) === here;
+}
+
+/**
+ * App-only audit: Push again. The hand-off branch here goes to the remote by name, never forced
+ * (the remote's only moves on), on the person's approval. A push that fails throws with git's
+ * words; the branch stays here.
+ */
+export async function pushHandoffBranch(
+  root: string,
+  branch: string,
+  o: { approval: Approval; remote?: string; env?: NodeJS.ProcessEnv },
+): Promise<{ branch: string; commit: string }> {
+  requireApproval("git", o.approval);
+  if (!/^handoff\//.test(branch)) throw new Error(`${branch} isn't a hand-off branch`);
+  const git = createGit({ env: o.env ?? process.env });
+  const commit = (
+    await git(["rev-parse", "--verify", `refs/heads/${branch}^{commit}`], root)
+  ).stdout.trim();
+  await git(
+    ["push", "--quiet", o.remote ?? "origin", `refs/heads/${branch}:refs/heads/${branch}`],
+    root,
+  );
+  return { branch, commit };
+}
 
 /**
  * Review round 48: the local hand-off branch follows the published commit only when that can't

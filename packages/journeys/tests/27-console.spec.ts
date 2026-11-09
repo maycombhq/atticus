@@ -19,7 +19,7 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   await expect(consoleBox.getByText("Nothing has run yet on this metarepo.")).toBeVisible();
   await accessible(page, "the empty Console");
 
-  await page.getByRole("button", { name: "Scan now" }).click();
+  await page.getByRole("button", { name: "Check with the built-in readers" }).click();
   const list = consoleBox.getByRole("tablist", { name: "What ran" });
   const scan = list.getByRole("tab", { name: /Scan/ }).first();
   await expect(scan).toBeVisible();

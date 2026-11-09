@@ -26,6 +26,7 @@ import {
 } from "@maycombhq/workspace";
 import { ChangeError, type Reason } from "./errors.js";
 import { changeFolder, changeStore } from "./store.js";
+import { taskBranchReasons, unmergedTaskBranches, unmergedTaskWords } from "./task-branches.js";
 
 /**
  * The release PRs (ADR 0184): one PR per code repo from `change/<id>` into the repo's default
@@ -338,6 +339,9 @@ export async function raiseReleasePrs(
   const before = file.nothingToRelease;
   const nothing = new Map(before.map((x) => [x.repo, x]));
   const stale = await staleReleasePrs(root, id, { git, remote });
+  // App-only audit: a repo whose task branches hold commits the change branch hasn't gets no
+  // release PR (and nothing is pushed), so the change never ships without its tasks' code.
+  const unmerged = await unmergedTaskBranches(root, id, { git, remote });
 
   for (const r of repos) {
     // Review round 48: a merged release PR the change branch has moved past is raised again.
@@ -353,6 +357,15 @@ export async function raiseReleasePrs(
         outcome: "kept",
         pr: r.pr!,
         message: `${r.id}: release PR #${r.pr!.number} is already ${r.pr!.state} (${r.pr!.url}).`,
+      });
+      continue;
+    }
+    const held = unmerged.filter((u) => u.repo === r.id);
+    if (held.length) {
+      rows.push({
+        repo: r.id,
+        outcome: "refused",
+        message: `${r.id}: no release PR, since ${r.branch} lacks the code of ${held.length === 1 ? `task ${held[0]!.task}` : `tasks ${held.map((u) => u.task).join(", ")}`}. ${held.map((u) => unmergedTaskWords(id, u)).join(" ")}`,
       });
       continue;
     }
@@ -662,7 +675,8 @@ export async function releasePrReasons(
   const merged = await requireMergedPrs(root);
   const nothing = await nothingToRelease(root, id, o);
   const stale = await staleReleasePrs(root, id, o);
-  const out: Reason[] = [];
+  // App-only audit: go/no-go is never decided over a change branch missing a task's code.
+  const out: Reason[] = await taskBranchReasons(root, id, o);
   for (const r of cr.repos) {
     if (!r.pr && nothing.has(r.id)) continue;
     if (r.pr?.state === "merged" && stale.has(r.id)) {

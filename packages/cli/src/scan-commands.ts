@@ -36,6 +36,11 @@ export interface ScanCommandOptions {
   warnings?: boolean;
   /** Another branch, scanned beside the baseline into catalog/branches/<branch>/ (ADR 0123). */
   ref?: string;
+  /**
+   * App-only audit: ask which repo answers on an unknown host only for calls from these repos
+   * (the app passes the repos the assistant has read); every repo when left out.
+   */
+  askFrom?: ReadonlySet<string>;
 }
 
 function driftLine(d: DriftAfterScan): string {
@@ -115,7 +120,10 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
   // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
   const hosts = write
-    ? await askHosts(root, scan.records, { command: "atticus scan" })
+    ? await askHosts(root, scan.records, {
+        command: "atticus scan",
+        ...(o.askFrom ? { only: o.askFrom } : {}),
+      })
     : { raised: [], open: [], lines: [] };
   const problems = [
     ...before.problems.map((p) => ({ source: `catalog/generated/${p.file}`, message: p.message })),

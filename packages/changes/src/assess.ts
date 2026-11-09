@@ -21,6 +21,7 @@ import {
   statePhase,
 } from "./lifecycle.js";
 import { releasePrReasons } from "./release-prs.js";
+import { taskBranchReasons } from "./task-branches.js";
 import { stageCompletion, workProgress, type WorkProgress } from "./progress.js";
 import { scoreRisk, testPlanFor, type Risk, type TestPlan } from "./risk.js";
 import { changeFolder, changeStore } from "./store.js";
@@ -132,6 +133,8 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     // ADR 0184: go/no-go is decided over the release PRs, each repo's change branch into its
     // default branch, merged (unless the org pack's ci.yaml says archive.requireMergedPrs: false).
     ...(phase === "release" ? await releasePrReasons(ctx.root, change.id) : []),
+    // App-only audit: Build ready waits for every task's work to be in the change branch.
+    ...(phase === "build" ? await taskBranchReasons(ctx.root, change.id) : []),
   ];
   const next = change.state === "returned" ? phaseState(phase) : nextState(type, phase);
   const live = change.state === "returned" ? undefined : liveHandoff(change);

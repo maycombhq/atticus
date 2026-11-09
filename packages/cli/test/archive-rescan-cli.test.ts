@@ -127,6 +127,31 @@ describe("atticus change archive and the catalog", () => {
     T,
   );
 
+  // App-only audit: a MODIFIED delta for a spec openspec/specs doesn't have passed validate and
+  // failed at the archive with a bare 500, leaving change.yaml archived and the folder unmoved.
+  it(
+    "refuses an archive OpenSpec would refuse, with its words and what to do, changing nothing",
+    async () => {
+      const root = await released({ clones: false, openspec: true });
+      const spec = join(root, "openspec/changes", CHANGE, "specs/transfer-limits/spec.md");
+      await writeFile(
+        spec,
+        (await readFile(spec, "utf8")).replace("## ADDED Requirements", "## MODIFIED Requirements"),
+      );
+      const c = capture();
+      const code = await changeArchive(root, CHANGE, { by: "dana" }, c.io);
+      expect(code).toBe(1);
+      const said = c.err.join("\n");
+      expect(said).toContain(`${CHANGE} doesn't pass openspec validate --strict.`);
+      expect(said).toContain("target spec does not exist");
+      expect(said).toContain('takes "## ADDED Requirements" only');
+      expect((await changeStore(root).read(CHANGE)).state).toBe("released");
+      expect(existsSync(join(root, "openspec/changes", CHANGE))).toBe(true);
+      expect(existsSync(join(root, "openspec/specs/transfer-limits"))).toBe(false);
+    },
+    T,
+  );
+
   // Round 49: OpenSpec moves the change's folder to openspec/changes/archive/<date>-<id>/, so
   // the rescan works out the change's repos before archiving rather than reading it after.
   it(

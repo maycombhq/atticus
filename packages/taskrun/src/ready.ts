@@ -60,7 +60,9 @@ export interface ReadyPlan {
 const PAST: Partial<Record<TaskRunState, string>> = {
   waiting: "it is with your assistant: Done on its run carries on",
   built: "it is drafted: its PR is the next step",
-  unverified: "it is drafted but not built: its repo has no build command",
+  // App-only audit: Build and raise PR builds it (once its repo has a build command), or Run again.
+  unverified:
+    "it is drafted but not built yet: Build and raise PR on its card builds it with its repo's build command, or Run again drafts it afresh",
   "pr-open": "its PR is open on the Git host",
   "needs-person": "it needs a person: carry on in its worktree, or Run with AI on it",
 };

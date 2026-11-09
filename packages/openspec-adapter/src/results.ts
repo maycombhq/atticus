@@ -81,6 +81,19 @@ export const ValidationIssue = z.looseObject({
 });
 export type ValidationIssue = z.infer<typeof ValidationIssue>;
 
+/**
+ * App-only audit (archive): `openspec validate` passes a delta its archive would refuse (a
+ * MODIFIED, REMOVED or RENAMED requirement for a spec openspec/specs doesn't have), saying so only
+ * as INFO ("Archive would refuse this delta: …"). Atticus treats it as an error at every gate
+ * that validates, so it is caught when drafted, never at the archive.
+ */
+export const archiveRefuses = (i: Pick<ValidationIssue, "message">): boolean =>
+  /^Archive would refuse\b/i.test(i.message.trim());
+
+/** The issues a gate refuses on: every ERROR and WARNING, and an INFO the archive would refuse. */
+export const blockingIssues = (issues: readonly ValidationIssue[]): ValidationIssue[] =>
+  issues.filter((i) => i.level !== "INFO" || archiveRefuses(i));
+
 export const ValidationItem = z.looseObject({
   id: z.string(),
   type: z.enum(["change", "spec"]),

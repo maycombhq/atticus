@@ -8,6 +8,7 @@ import { changeFolder, changeStore, writeFileAtomic } from "@maycombhq/changes";
 import type { SourceInput } from "@maycombhq/ai";
 import {
   ARTIFACT_STAGE,
+  archiveRefuses,
   artifactsOfStage,
   createOpenSpec,
   type OpenSpec,
@@ -653,8 +654,9 @@ const ADVICE = /Consider splitting changes/i;
 const issueOf = (change: string, i: ValidationIssue): StageIssue => ({
   rule: "openspec.validate",
   target: `${change}/${i.path}`,
-  message: `openspec validate --strict: ${i.message}`,
-  blocking: i.level !== "INFO" && !ADVICE.test(i.message),
+  // App-only audit: a delta the archive would refuse is said with what to do, and blocks.
+  message: `openspec validate --strict: ${i.message}${archiveRefuses(i) ? ' A spec openspec/specs doesn\'t have yet takes "## ADDED Requirements" only.' : ""}`,
+  blocking: (i.level !== "INFO" || archiveRefuses(i)) && !ADVICE.test(i.message),
   kind: "drafting",
 });
 
@@ -696,7 +698,7 @@ export async function validateDraft(
       strict: true,
     });
     return (r.items[0]?.issues ?? [])
-      .filter((i) => i.level !== "INFO")
+      .filter((i) => i.level !== "INFO" || archiveRefuses(i))
       .map((i) => issueOf(change, i));
   } catch (e) {
     return [

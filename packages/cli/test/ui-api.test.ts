@@ -229,6 +229,14 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect(["done", "failed"]).toContain(job.state);
     const read = Api.Job.parse((await call(`/api/jobs/${jobId}`)).body);
     expect(read.progress).toEqual({ done: 1, total: 1, message: "Scanned" });
+    // App-only audit: what the built-in readers added, changed and removed, and its questions.
+    if (job.state === "done")
+      expect(read.result).toMatchObject({
+        added: expect.any(Number),
+        changed: expect.any(Number),
+        removed: expect.any(Number),
+        questions: expect.any(Number),
+      });
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });
 

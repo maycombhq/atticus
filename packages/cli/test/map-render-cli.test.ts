@@ -519,6 +519,38 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(existsSync(join(root, "map"))).toBe(false);
   });
 
+  // App-only audit: one rejected fact held the repo; the app's Drop this fact writes the person's
+  // correction that it is wrong (as Correct does), and Apply then writes the rest.
+  it("writes the rest once a person marks the one rejected fact wrong", async () => {
+    const bad = readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!;
+    const root = await metarepo(
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") + bad + "\n",
+    );
+    const o = io();
+    expect(await write(root, o)).toBe(1);
+    expect(o.err.join("\n")).toMatch(/Nothing written to the catalog: 1 facts were rejected/);
+    const f = JSON.parse(bad) as {
+      id: string;
+      kind: string;
+      cite: { file: string; line: number; value: string };
+    };
+    const { correctionLine, FactCorrection } = await import("@maycombhq/core");
+    const c = FactCorrection.parse({
+      schemaVersion: 1,
+      fact: f.id,
+      target: { kind: f.kind, file: f.cite.file, line: f.cite.line, value: f.cite.value },
+      action: "wrong",
+      reason: "The controller was removed; this fact is stale.",
+      by: "pat",
+      at: "2026-11-09T09:00:00Z",
+    });
+    const { appendFileSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(root, "facts"), { recursive: true });
+    appendFileSync(join(root, "facts", "forge-ledger.corrections.jsonl"), correctionLine(c) + "\n");
+    const again = io();
+    expect(await write(root, again), again.err.join("\n")).toBe(0);
+  });
+
   it("rejects a call-out step that names no call at verify, before anything is written (B-fixes)", async () => {
     // The B-stories-bench run: three flows' call-out steps named no call; the verifier kept them,
     // and --write wrote the catalog, then couldn't write the flows. Now the verifier rejects such

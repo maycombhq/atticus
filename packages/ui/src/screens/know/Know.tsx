@@ -1253,6 +1253,31 @@ interface Job {
   result?: Record<string, unknown>;
 }
 
+/**
+ * App-only audit (API 3.3.0): what a finished check with the built-in readers added, changed and
+ * removed, and the host questions open, from its job's result; undefined for any other job.
+ */
+export function scanAdded(job: Pick<Job, "state" | "result"> | undefined): string | undefined {
+  const r = job?.state === "done" ? job.result : undefined;
+  const n = (k: string) => (typeof r?.[k] === "number" ? (r[k] as number) : undefined);
+  const added = n("added");
+  if (added === undefined) return undefined;
+  return T.scanAdded(added, n("changed") ?? 0, n("removed") ?? 0, n("questions") ?? 0);
+}
+
+/**
+ * App-only audit: the note beside a job's state. "Scan started." next to DONE said two things at
+ * once: once the job has ended its state says what happened, so a note that it started goes; a
+ * note that it couldn't start stays.
+ */
+export function jobNote<N extends { ok: boolean }>(
+  job: Pick<Job, "state"> | undefined,
+  note: N | undefined,
+): N | undefined {
+  const ended = !!job && job.state !== "queued" && job.state !== "running";
+  return ended && note?.ok ? undefined : note;
+}
+
 export function Scans() {
   const repos = useApi<Repo[]>("/api/repos");
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
@@ -1273,12 +1298,17 @@ export function Scans() {
     }
   });
   const [stopping, setStopping] = useState(false);
-  const start = (path: string, label: string) =>
+  const [askAll, setAskAll] = useState(false);
+  const start = (path: string, label: string, body: Record<string, unknown> = {}) =>
     act.run(async () => {
       setStopping(false);
-      const r = await api<{ jobId: string }>(path, { method: "POST", body: {} });
+      const r = await api<{ jobId: string }>(path, { method: "POST", body });
       setJob(await api<Job>(`/api/jobs/${r.jobId}`));
     }, T.started(label));
+  // App-only audit: "Sync started." beside a DONE chip said two things at once; once the job
+  // ends, its state says what happened and the note that it started goes.
+  const note = jobNote(job, act.note);
+  const added = scanAdded(job);
   const cancel = (id: string) => {
     setStopping(true);
     // A job that ended meanwhile says so with 409; its end arrives as job.done either way.
@@ -1315,11 +1345,22 @@ export function Scans() {
               type="button"
               className="btn primary"
               disabled={act.busy}
-              onClick={() => void start("/api/scan", T.scan2)}
+              aria-describedby="scan-cross-check"
+              onClick={() => void start("/api/scan", T.scan2, askAll ? { askAll: true } : {})}
             >
               {T.scanNow}
             </button>
           </div>
+          <p id="scan-cross-check" className="muted" style={{ margin: 0, fontSize: 12 }}>
+            {T.scanCrossCheck}
+          </p>
+          <label className="row" style={{ gap: 6, fontSize: 12, alignItems: "center" }}>
+            <input type="checkbox" checked={askAll} onChange={(e) => setAskAll(e.target.checked)} />
+            {T.scanAskAll}
+          </label>
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            {T.readAgainWhere} <a href="#/trust">{T.readAgain}</a>
+          </p>
           {job && (
             <div className="stack" role="status" aria-live="polite">
               <span className="hud" style={{ fontSize: 10 }}>
@@ -1331,6 +1372,7 @@ export function Scans() {
                 max={Math.max(job.progress.total, 1)}
                 label={T.jobProgress}
               />
+              {added && <span>{added}</span>}
               {/* ADR 0187: what it printed, in the Console. */}
               <ShowInConsole id={job.id} />
               {job.state === "running" && (
@@ -1361,7 +1403,7 @@ export function Scans() {
               )}
             </div>
           )}
-          <Note note={act.note} />
+          <Note note={note} />
           <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
             {T.scansReadFilesOnly}
           </p>

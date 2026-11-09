@@ -18,7 +18,7 @@ import {
   type ChangeLifecycle,
   type LifecycleState,
 } from "@maycombhq/core";
-import type { OpenSpec } from "@maycombhq/openspec-adapter";
+import { archiveRefuses, blockingIssues, type OpenSpec } from "@maycombhq/openspec-adapter";
 import { prApprovers } from "./approvals.js";
 import { assess, liveHandoff, type Assessment } from "./assess.js";
 import { ownersFor } from "./codeowners.js";
@@ -740,15 +740,23 @@ export async function returnToPo(
 export async function requireValid(openspec: OpenSpec, id: string): Promise<void> {
   const r = await openspec.validate({ item: id, type: "change", strict: true });
   const item = r.items[0];
-  if (!item || item.valid) return;
+  // App-only audit: a delta OpenSpec's archive would refuse is only INFO to validate, so a change
+  // passed every gate and failed at the archive. It is refused here, with what to do.
+  const issues = item ? blockingIssues(item.issues) : [];
+  if (!item || (item.valid && issues.length === 0)) return;
   throw new ChangeError(
     "refused",
     `${id} doesn't pass openspec validate --strict.`,
-    item.issues
-      .filter((i) => i.level !== "INFO")
-      .map((i) => ({ code: "openspec-invalid", message: `${i.path}: ${i.message}` })),
+    issues.map((i) => ({
+      code: "openspec-invalid",
+      message: `${i.path}: ${i.message}${archiveRefuses(i) ? ` ${ADDED_ONLY}` : ""}`,
+    })),
   );
 }
+
+/** What to do about a delta OpenSpec's archive would refuse: a new spec's requirements are ADDED. */
+const ADDED_ONLY =
+  "A spec that openspec/specs doesn't have yet takes \"## ADDED Requirements\" only: change the delta's MODIFIED (or RENAMED, REMOVED) heading to ADDED, or run the stage that wrote it again.";
 
 /**
  * Archive a released change (or one whose post-release review is clear). With an OpenSpec
@@ -780,7 +788,26 @@ export async function archiveChange(
       { from: change.state, to: "archived", at: now, by: strip(opts.by), reason: "Archived" },
     ],
   };
+  // App-only audit: all or nothing. change.yaml says archived before OpenSpec moves the folder (so
+  // the archived copy says so); if OpenSpec refuses, the change is put back as it was and its
+  // words are said, never a bare failure with the state archived and the folder unmoved.
   await changeStore(root).write(updated);
-  if (opts.openspec) await opts.openspec.archive(id);
+  if (opts.openspec)
+    try {
+      await opts.openspec.archive(id);
+    } catch (e) {
+      await changeStore(root).write(change);
+      const words = (e instanceof Error ? e.message : String(e)).trim();
+      throw new ChangeError(
+        "refused",
+        `OpenSpec refused to archive ${id}, so nothing was archived.`,
+        [
+          {
+            code: "openspec-invalid",
+            message: `${words.replace(/\.?$/, ".")}${/target spec does not exist|only ADDED/i.test(words) ? ` ${ADDED_ONLY}` : " Fix what it says, then archive again (atticus openspec validate " + id + " --strict says more)."}`,
+          },
+        ],
+      );
+    }
   return updated;
 }

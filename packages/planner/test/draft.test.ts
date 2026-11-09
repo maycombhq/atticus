@@ -188,6 +188,46 @@ describe("checkDraft", () => {
     ]);
     expect(checkDraft(files, records)).toEqual([]);
   });
+
+  // App-only audit (archive): OpenSpec's archive refuses MODIFIED for a spec that doesn't exist.
+  it("refuses MODIFIED, REMOVED or RENAMED for a capability openspec/specs doesn't have", async () => {
+    const { checkDraft } = await import("../src/index.js");
+    const spec = (op: string) =>
+      `## ${op} Requirements\n\n### Requirement: A\nThe system SHALL a.\n\n#### Scenario: B\n- **WHEN** c\n- **THEN** d\n`;
+    const files = (op: string) =>
+      new Map([
+        ["proposal.md", "# Proposal\n\n## Why\n\nx\n\n## What Changes\n\n- y\n"],
+        ["specs/new-cap/spec.md", spec(op)],
+      ]);
+    const problems = checkDraft(files("MODIFIED"), [], { existingSpecs: ["old-cap"] });
+    expect(problems).toContain(
+      'specs/new-cap/spec.md: openspec/specs has no new-cap yet, so its requirements are "## ADDED Requirements" only (MODIFIED, REMOVED and RENAMED are for a spec it has: old-cap).',
+    );
+    expect(checkDraft(files("ADDED"), [], { existingSpecs: [] })).toEqual([]);
+    const had = new Map(
+      [...files("MODIFIED")].map(([k, v]) => [k.replace("new-cap", "old-cap"), v]),
+    );
+    expect(checkDraft(had, [], { existingSpecs: ["old-cap"] })).toEqual([]);
+  });
+});
+
+describe("the change drafter's prompt (app-only audit)", () => {
+  it("names the specs openspec/specs has, and asks for ADDED for any other", async () => {
+    const root = await briefOnly();
+    const prompts: string[] = [];
+    const mock = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return GOOD;
+      },
+      { now: () => new Date(NOW) },
+    );
+    await draftChange(root, CHANGE, { runtime: mock, now: new Date(NOW) });
+    expect(prompts[0]).toContain(
+      "A capability openspec/specs doesn't have yet takes ## ADDED Requirements only; MODIFIED, REMOVED and RENAMED are only for one it has: none yet.",
+    );
+    expect(prompts[0]).not.toContain("(or MODIFIED, REMOVED, RENAMED)");
+  });
 });
 
 describe("planning a drafted design in a repo with modules", () => {

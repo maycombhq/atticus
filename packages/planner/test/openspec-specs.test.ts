@@ -298,6 +298,33 @@ describe("the stories stage as an OpenSpec citizen", () => {
     T,
   );
 
+  // App-only audit (archive): validate passes it with an INFO note; the archive refuses it.
+  it(
+    "refuses a MODIFIED delta for a spec openspec/specs doesn't have, saying the archive would",
+    async () => {
+      const root = await openspecRoot();
+      const dir = join(root, "openspec/changes", CHANGE);
+      const issues = await validateDraft(root, CHANGE, dir, {
+        "specs/forge-orders-new-thing/spec.md": [
+          "## MODIFIED Requirements",
+          "",
+          "### Requirement: A client places an order",
+          "The system SHALL screen every order.",
+          "",
+          "#### Scenario: Screened",
+          "- **WHEN** a client places an order",
+          "- **THEN** the order is screened",
+          "",
+        ].join("\n"),
+      });
+      const refused = issues.filter((i) => /Archive would refuse/.test(i.message));
+      expect(refused).toHaveLength(1);
+      expect(refused[0]!.blocking).toBe(true);
+      expect(refused[0]!.message).toContain('takes "## ADDED Requirements" only');
+    },
+    T,
+  );
+
   it(
     "exports the change's stories and tasks as Azure DevOps' import CSV, and Jira's",
     async () => {

@@ -16,7 +16,7 @@ test("sees the repos and the catalog", async ({ page }) => {
   await open(page, app(), "home");
   await open(page, app(), "scans");
   await expect(page.getByText("forge-ledger").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Scan now" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check with the built-in readers" })).toBeVisible();
   await accessible(page, "scans");
 });
 

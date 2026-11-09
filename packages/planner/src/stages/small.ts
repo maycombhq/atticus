@@ -30,6 +30,7 @@ import {
   mergedFlowsSource,
 } from "./architecture.js";
 import { dropUncitedQuestions } from "./uncited.js";
+import { openspecFiles, openspecRootOf, validateDraft } from "./openspec-files.js";
 import { estateContext } from "./estate-context.js";
 import { estateIndex, loadEstate, type Estate } from "./estate.js";
 import { checkPlacement, writePlacement } from "./feature.js";
@@ -521,6 +522,18 @@ export async function smallStage(
           d.stories,
         ),
       );
+      // App-only audit (archive): the specs and proposal this draft makes pass OpenSpec's
+      // validate --strict, with a delta its archive would refuse as an error, as the stories
+      // stage's gate does; so the archive never meets it.
+      if (openspecRootOf(root) && d.deltas.length) {
+        const f = await openspecFiles(root, change.id, d.stories, d.wording, estate);
+        out.push(
+          ...(await validateDraft(root, change.id, dir, {
+            ...f.files,
+            ...(f.proposal ? { "proposal.md": f.proposal } : {}),
+          })),
+        );
+      }
       return out;
     },
     reviewSources: (a) => [

@@ -1279,6 +1279,131 @@ export async function raiseTaskPr(
   }
 }
 
+/**
+ * App-only audit (tasks): Build and raise PR. A task drafted and committed while its repo had no
+ * build command (unverified), or one a person took over and committed in its worktree
+ * (needs-person), is built where it is with the repo's build command as repos.manifest.yaml has it
+ * now, checked against the design, and, with the person's yes, its branch pushed and its PR raised
+ * into the change branch: the AI step isn't run again. Refused, with nothing changed, while the
+ * repo still has no build command, while the worktree has edits not committed, and for a task
+ * with no commit of its own to build. A failing build leaves the task for a person, with its log.
+ */
+export async function buildTask(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: {
+    approval?: Approval;
+    git?: GitRunner;
+    gitHost?: GitHost;
+    commands?: CommandRunner;
+    now?: () => Date;
+  } = {},
+): Promise<TaskRunRecord> {
+  if (o.approval) requireApproval("git-host", o.approval);
+  const lock = await holdTask(root, changeId, taskId);
+  try {
+    const record = await readTaskRun(root, changeId, taskId);
+    if (!record || !["unverified", "needs-person"].includes(record.state))
+      throw new TaskRunError(
+        "refused",
+        !record
+          ? `Task ${taskId} hasn't been drafted yet: run it with AI first.`
+          : record.state === "built"
+            ? `Task ${taskId} is built already: raise its PR (Raise the task's PR).`
+            : `Task ${taskId} is ${record.state}: Build and raise PR is for a task drafted but not built (UNVERIFIED) or one a person took over; run it again instead.`,
+      );
+    const t = await loadTask(root, changeId, taskId);
+    const command = t.repo.build;
+    if (!command)
+      throw new TaskRunError(
+        "refused",
+        `${record.repo} has no build command yet: set it on Set up › Repos (build: under its entry in repos.manifest.yaml), then Build and raise PR again.`,
+      );
+    const now = o.now ?? (() => new Date());
+    const git = o.git ?? createGit();
+    const worktree = join(root, record.worktree);
+    if (!existsSync(worktree))
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId}'s worktree ${record.worktree} isn't here any more: run the task again.`,
+      );
+    const c: Ctx = {
+      root,
+      t,
+      record,
+      worktree,
+      runtime: undefined as unknown as AiRuntime,
+      commands: o.commands ?? shellCommandRunner(),
+      git,
+      ...(o.gitHost ? { gitHost: o.gitHost } : {}),
+      ...(o.approval ? { approval: o.approval } : {}),
+      now,
+      maxFix: t.ctx.orgPack.runtime.autonomy.maxFixRounds,
+    };
+    if ((await changedFiles(c)).length)
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId}'s worktree ${record.worktree} has edits that aren't committed: commit them on ${record.branch} (or put them aside), then Build and raise PR again.`,
+      );
+    const own = await ownTaskCommit(c);
+    const head = (
+      await git(["rev-parse", "--verify", "-q", `refs/heads/${record.branch}`], worktree).catch(
+        () => ({ stdout: "" }),
+      )
+    ).stdout.trim();
+    const ahead = await git(
+      ["rev-list", "--count", `refs/heads/${changeBranch(changeId)}..refs/heads/${record.branch}`],
+      worktree,
+    ).then(
+      (x) => Number(x.stdout.trim()) || 0,
+      () => 0,
+    );
+    if (!head || (!own && ahead === 0))
+      throw new TaskRunError(
+        "refused",
+        `Task ${taskId}'s branch ${record.branch} has nothing beyond ${changeBranch(changeId)} to build: run the task again.`,
+      );
+    record.commit = head;
+    const runId = record.runs[0] ?? `build-${stamp(now()).replace(/[:]/g, "")}`;
+    const a = (await build(c, runId))!;
+    if (c.stopped || stopRequested()) {
+      record.state = "needs-person";
+      record.notes.push(`Atticus was stopped while the build ran; Build and raise PR again.`);
+      return await done(c);
+    }
+    if (!a.passed) {
+      record.state = "needs-person";
+      record.notes.push(
+        `The build fails (${command}, exit ${a.exitCode ?? "none"}): fix it in ${record.worktree} and commit, then Build and raise PR again. See ${a.log}.`,
+      );
+      return await done(c);
+    }
+    record.state = "built";
+    record.notes.push(`Built with ${command}: it passes at ${head.slice(0, 12)}.`);
+    await conformAfterBuild(c);
+    if (o.approval && record.state === "built") {
+      const host = o.gitHost ?? gitHostOf(root, t);
+      if (host) c.gitHost = host;
+      try {
+        if (host) await openPr(c);
+        else
+          record.notes.push(
+            `No Git host is connected (runtime.yaml adapters.gitHost): push ${record.branch} and open its PR into ${changeBranch(changeId)} yourself.`,
+          );
+      } catch (e) {
+        // A refusal (a protected branch) leaves the build standing: said, its PR raised by hand.
+        record.notes.push(`${PR_NOT_RAISED} ${(e as Error).message}`);
+      }
+      if ((record.state as string) === "pr-open")
+        record.notes.push(`PR raised by ${o.approval.by} after the build (${o.approval.ref}).`);
+    }
+    return await done(c);
+  } finally {
+    await lock.release();
+  }
+}
+
 /** Whether a run id belongs to a waiting task run (the lead routes `atticus handoff done` with it). */
 export async function isTaskRun(root: string, runId: string): Promise<boolean> {
   return (await findWaitingTaskRun(root, runId)) !== undefined;

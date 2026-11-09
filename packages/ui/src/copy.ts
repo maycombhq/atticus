@@ -1030,6 +1030,20 @@ export const COPY = {
       `The cited line doesn't say what the fact claims, or the line isn't a fact. Your assistant fixes each from ${file}, then the verifier checks them again:`,
     rejectedLine: (code: string, message: string) => (message ? `${code}: ${message}` : code),
     rejectedNoLine: "No file or line: the line isn't a fact",
+    /** App-only audit: one rejected fact holds the repo; a person may drop it, with why. */
+    rejectedHolds: (n: number) =>
+      `Nothing is written to the catalog while ${n === 1 ? "a fact is" : `${n} facts are`} rejected: fix ${n === 1 ? "it" : "them"} with your assistant, or drop ${n === 1 ? "it" : "each"} below.`,
+    dropFact: "Drop this fact",
+    dropFactLabel: (fact: string) => `Drop fact ${fact}`,
+    dropFactReason: (fact: string) => `Why is ${fact} wrong?`,
+    dropFactHelp:
+      "Recorded as your correction (the fact is wrong) with your name, then Apply writes the rest of the repo's facts.",
+    dropFactNeedsReason: "Say why the fact is wrong first.",
+    dropFactAndApply: "Drop it and apply",
+    droppingFact: "Dropping it…",
+    dropFactCancel: "Keep it",
+    droppedFact: (fact: string) =>
+      `Dropped ${fact} as wrong and applied the rest. Propose the correction for review from Home.`,
     unknownFix: (repo: string) =>
       `No fact cites these yet. Have your assistant read them, or exclude generated code in org-pack/scan/${repo}.yaml:`,
     excludedFix: (repo: string) =>
@@ -2781,7 +2795,15 @@ export const COPY = {
       `${present} of ${total} repos cloned`,
     reposClonedLocally: "repos cloned locally",
     syncRepos: "Sync repos",
-    scanNow: "Scan now",
+    /** App-only audit: the old built-in readers are a cross-check, never how the map is made. */
+    scanNow: "Check with the built-in readers",
+    scanCrossCheck:
+      "A cross-check, not how the map is made: the built-in readers read the cloned repos' files and add what they find beside your assistant's facts. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+    scanAskAll: "Also ask about the repos your assistant hasn't read",
+    scanAdded: (added: number, changed: number, removed: number, questions: number) =>
+      `The built-in readers added ${added} ${added === 1 ? "record" : "records"}, changed ${changed} and removed ${removed}. ${questions === 1 ? "1 host question is" : `${questions} host questions are`} open.`,
+    readAgain: "Read again with your assistant",
+    readAgainWhere: "Your assistant reads each repo and cites its facts: on Map › Trust.",
     jobProgress: "Job progress",
     /** A job's state in words (ADR 0119). */
     jobState: {
@@ -2958,7 +2980,38 @@ export const COPY = {
     taskBuilt: (branch: string, commit: string) =>
       `Drafted and built: committed on ${branch} (${commit.slice(0, 7)}). Its PR is the next step.`,
     taskUnverified: (repo: string, branch: string, base: string) =>
-      `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: set ${repo}'s build command on Set up › Repos and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
+      `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: set ${repo}'s build command on Set up › Repos, then Build and raise PR here; or push ${branch} and open its PR into ${base} yourself.`,
+    /** App-only audit: the card says the build command set since, from the state now. */
+    taskUnverifiedBuildable: (repo: string, branch: string) =>
+      `Drafted and committed on ${branch}, not built yet. ${repo} has a build command now: Build and raise PR builds it and, on your yes, raises its PR. Run again drafts it afresh.`,
+    /** A person took the task over: once their work is committed, Build and raise PR carries on. */
+    taskNeedsPersonBuild: (branch: string) =>
+      `Once your fix is committed on ${branch}, Build and raise PR builds it and raises its PR.`,
+    /** App-only audit: a hand-off branch whose push failed is kept here; Push again sends it. */
+    handoffUnpushed: (branch: string) =>
+      `The hand-off's branch ${branch} is here but wasn't pushed, so its PR has no files on the Git host yet.`,
+    pushAgain: "Push again",
+    pushingAgain: "Pushing…",
+    pushAgainWhy: "Your click is your approval to push the branch (never forced).",
+    handoffPushed: (branch: string) => `Pushed ${branch}.`,
+    buildAndRaise: "Build and raise PR",
+    buildingTask: "Building…",
+    buildAndRaiseWhy:
+      "Builds the task where it was drafted; your click is your approval to push its branch and open its PR once the build passes.",
+    taskBuiltAndRaised: (task: string) =>
+      `Task ${task} is built and its PR is raised into the change branch. A person reviews and merges it on the Git host.`,
+    taskBuiltOnly: (task: string) =>
+      `Task ${task} is built. Its PR is the next step: Raise the task's PR.`,
+    /** App-only audit: Mark done on a task whose code isn't in the change branch yet. */
+    taskUnmerged: (branch: string, n: number, base: string) =>
+      `Its branch ${branch} has ${n === 1 ? "a commit" : `${n} commits`} not in ${base}, so its code isn't in the change yet: raise its PR and merge it. Build ready and the release wait for that.`,
+    taskDecided: (by: string, at: string, reason: string) =>
+      `${by} let its work go on ${at}: "${reason}"`,
+    markDoneAnyway: "Mark done anyway",
+    markDoneReason: "Why isn't its work needed?",
+    markDoneReasonHelp:
+      "Recorded with your name. Build ready and the release then go without this task's commits.",
+    markDoneNeedsReason: "Say why its work isn't needed first.",
     taskWaiting: "Your assistant has it: Done on its run checks the work.",
     taskPrOpen: "Its PR is open:",
     /** Review round 43: the Git host says the task's PR is merged or closed. */
@@ -3261,7 +3314,7 @@ export const COPY = {
     releasePrsNotYet: "The release PRs are raised once the build is done (in QA or at go / no-go).",
     releasePrs: "Release PRs",
     releasePrsIntro:
-      "Each code repo's change branch, with the task PRs merged into it, goes into the repo's default branch by one PR. Go / no-go is decided over these; Atticus never pushes to the default branch, and a person merges each on the Git host.",
+      "Each code repo's change branch, with the task PRs merged into it, goes into the repo's default branch by one PR. Atticus raises none while a task's branch has commits the change branch hasn't, and says which task. Go / no-go is decided over these; Atticus never pushes to the default branch, and a person merges each on the Git host.",
     noCodeRepos: "This change has no code repos (repos.yaml), so there is no release PR.",
     releasePrCol: { repo: "Repo", branch: "From", pr: "Release PR", build: "Checks" },
     releasePrsCaption: "Each code repo's release PR and its checks",
@@ -4193,6 +4246,11 @@ export const COPY = {
     inReview: (where: string) => `already proposed (${where})`,
     bringIn: "Bring in what merged",
     bringingIn: "Bringing it in…",
+    /** App-only audit: said at once, while the fetch runs. */
+    bringingInSay: "Fetching what merged from the remote, then catching your copy up.",
+    setUpstream: (upstream: string) => `Set the upstream to ${upstream}`,
+    setUpstreamWhy:
+      "A setting of your copy only: nothing is sent. Then Bring in what merged again.",
     bringInWhy:
       "When the PR has merged: your copy of the metarepo catches up, and your own edits stay.",
     whoMerges:

@@ -8,6 +8,7 @@ import { COPY } from "../../copy.js";
 import { Command, Problems } from "../work/RunNext.js";
 import "../work/work.css";
 import { AuditAnswer } from "./AuditAnswer.js";
+import { DropFact } from "./drop-fact.js";
 import { mismatchesHash } from "../../app/contracts.js";
 import { DecidePaused, useDecisions } from "../../app/decisions.js";
 
@@ -200,6 +201,8 @@ export function TrustRow({ r }: { r: Repo }) {
                         {x.fact && <span className="mono"> {x.fact}</span>}
                         {" · "}
                         {T.rejectedLine(x.code, x.message)}
+                        {/* App-only audit: a person may drop a rejected fact, with why. */}
+                        {x.fact && <DropFact repo={r.repo} fact={x.fact} />}
                       </li>
                     ))}
                   </ul>
@@ -371,6 +374,8 @@ export function TrustRow({ r }: { r: Repo }) {
         <dt>{T.catalogFrom}</dt>
         <dd>
           {T.from[r.catalog.from]} · {T.records(r.catalog.fromFacts, r.catalog.fromReaders)}
+          {/* App-only audit: "Nothing yet" while a rejected fact holds the repo said why. */}
+          {report && report.rejected > 0 && <> · {T.rejectedHolds(report.rejected)}</>}
           {r.catalog.fromFacts + r.catalog.fromReaders > 0 && (
             <>
               {" · "}

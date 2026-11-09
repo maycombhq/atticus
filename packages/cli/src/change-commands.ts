@@ -113,9 +113,45 @@ export async function syncAfterManualStep(
 ): Promise<boolean> {
   if (s.state === "open") return false;
   const pr = await handoffPrStep(root, s);
-  if (!pr) return false;
-  await changeSync(root, s.change!, { by, ...(pr.repo ? { repo: pr.repo } : {}) }, io, deps);
+  if (pr) {
+    await changeSync(root, s.change!, { by, ...(pr.repo ? { repo: pr.repo } : {}) }, io, deps);
+    return true;
+  }
+  // App-only audit: a release PR's step (from change/<id>) syncs the change too, which reads the
+  // release PRs back; a task PR's step (from task/<id>/<task>) settles the task's record (its PR's
+  // link, and the task ticked once it merged). Read-only, as above.
+  const head = await prStepHead(root, s);
+  if (!head || !s.change) return false;
+  if (head === changeBranch(s.change)) {
+    await changeSync(root, s.change, { by }, io, deps);
+    return true;
+  }
+  const task = head.startsWith(`task/${s.change}/`) ? head.split("/").at(-1) : undefined;
+  if (!task) return false;
+  const { settleTaskPr } = await import("@maycombhq/taskrun");
+  const settled = await settleTaskPr(root, s.change, task, {
+    ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+    ...(deps.now ? { now: () => new Date(deps.now!) } : {}),
+  }).catch(() => ({}) as { state?: string; ticked?: true });
+  // Only a merge is news; the record is kept in step either way (its PR's link).
+  if (settled.state !== "merged") return false;
+  io.out(
+    `Task ${task}'s PR is merged into ${changeBranch(s.change)}${settled.ticked ? `; ticked ${task} in tasks.md` : ""}.`,
+  );
   return true;
+}
+
+/** The head branch of the PR a Git host step is about: its open step's, or its own. */
+async function prStepHead(root: string, s: ManualStep): Promise<string | undefined> {
+  if (s.system !== "git-host" || !s.change) return undefined;
+  const open =
+    s.action === "open-pull-request"
+      ? s
+      : (await fileStepStore(root).list({ change: s.change, system: "git-host" })).find(
+          (x) => x.action === "open-pull-request" && s.dependsOn.includes(x.id),
+        );
+  const head = open?.inputs.head;
+  return typeof head === "string" ? head : undefined;
 }
 
 function printReasons(io: Output, reasons: Reason[]) {
@@ -190,7 +226,8 @@ export function handoffPublisherFor(
         return await git.publish(input);
       } catch (e) {
         io?.out(
-          `The branch ${input.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}): push it yourself before you open the PR.`,
+          // App-only audit: the branch is kept here (the publisher makes it before the push).
+          `The branch ${input.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}): it is kept here with the hand-off's files. Push again on the change page once that is fixed, or push it yourself (git push origin ${input.branch}) before you open the PR.`,
         );
         return { commit: "" };
       }

@@ -13,7 +13,7 @@ import { ChangeInputs } from "./ChangeInputs.js";
 import { ChangePrototypes } from "./ChangePrototypes.js";
 import { COPY } from "../copy.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
-import { isManualLink, ManualHandoff } from "./know/task-pr.js";
+import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
 
 const T = COPY.changes;
@@ -47,7 +47,8 @@ export interface ArtifactStatus {
 }
 export interface ChangeDetail extends ChangeSummary {
   artifacts: ArtifactStatus[];
-  handoff?: { phase: string; pr?: string; state: string };
+  /** API 3.3.0 (app-only audit): `unpushed` when its branch is kept here, its push failed. */
+  handoff?: { phase: string; pr?: string; state: string; unpushed?: boolean; branch?: string };
   /** API 2.83.0 (ninth UX walk): change.yaml's owners, role id to handles. */
   owners?: Record<string, string[]>;
 }
@@ -91,6 +92,12 @@ export interface Task {
   };
   /** API 2.83.0 (ninth UX walk): the not-done tasks it waits for; `sameRepo`, its own repo's. */
   waits?: { tasks: string[]; sameRepo: string[] };
+  /** API 3.3.0 (app-only audit): its branch's commits the change branch here hasn't. */
+  unmerged?: { commits: number; branch: string };
+  /** API 3.3.0: a person let its work go, and why. */
+  decision?: { by: string; at: string; reason: string };
+  /** API 3.3.0: whether its repo has a build command now. */
+  repoBuilds?: boolean;
 }
 export interface Run {
   runId: string;
@@ -651,6 +658,9 @@ function Detail({ id }: { id: string }) {
                         </span>
                       )}
                     </div>
+                    {d.handoff?.unpushed && d.handoff.branch && (
+                      <PushAgain change={d.id} branch={d.handoff.branch} onDone={reloadAll} />
+                    )}
                     {s.blockers.length > 0 && (
                       <ul
                         style={{
