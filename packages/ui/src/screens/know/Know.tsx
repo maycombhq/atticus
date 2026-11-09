@@ -5,6 +5,7 @@ import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
+import { AiChip } from "../../app/decisions.js";
 
 const T = COPY.know;
 
@@ -432,7 +433,16 @@ function blastGraph(d: Impact): Graph {
 
 interface Impact {
   root: string;
-  affected: { id: string; kind: string; path: string[]; reason: string; owner?: string }[];
+  affected: {
+    id: string;
+    kind: string;
+    path: string[];
+    reason: string;
+    owner?: string;
+    /** ADR 0181 (ninth UX walk): a record the AI decided, with its run. */
+    byAi?: boolean;
+    run?: string;
+  }[];
   gaps: { record: string; field: string; question: string }[];
 }
 
@@ -631,7 +641,21 @@ export function ImpactExplorer({ hash }: { hash: string }) {
                   rows={d.affected}
                   rowKey={(a) => `${a.kind}/${a.id}`}
                   cols={[
-                    { label: T.record, cell: (a) => a.id, mono: true },
+                    {
+                      label: T.record,
+                      // Ninth UX walk: an Interface the AI joined carries its chip, as on a
+                      // change's Impact page.
+                      cell: (a) =>
+                        a.byAi ? (
+                          <span className="stack" style={{ gap: 4 }}>
+                            <span>{a.id}</span>
+                            <AiChip run={a.run} />
+                          </span>
+                        ) : (
+                          a.id
+                        ),
+                      mono: true,
+                    },
                     { label: T.kind, cell: (a) => <span className="chip dim">{a.kind}</span> },
                     { label: T.why, cell: (a) => a.reason },
                     {

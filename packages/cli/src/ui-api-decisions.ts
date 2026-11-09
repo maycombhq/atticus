@@ -1,4 +1,4 @@
-import { Api } from "@maycombhq/core";
+import { Api, loadOrgPack, orgPackDirOf, runsRelOf } from "@maycombhq/core";
 import {
   badRequest,
   conflict,
@@ -34,40 +34,75 @@ export function uiDecisionRoutes(
   deps: { now?: () => Date } = {},
 ): Router {
   const now = () => deps.now?.() ?? new Date();
-  return r
-    .add("GET", "/api/decisions", async () => ({
-      status: 200,
-      body: await decisionsView(ctx.root),
-    }))
-    .add("POST", "/api/decisions/correct", async ({ body }) => {
-      const b = Api.CorrectDecisionRequest.safeParse(body ?? {});
-      if (!b.success)
-        throw badRequest(
-          "Say the item and the right answer: { item, option } for a question, { item, api, repo } or { item, none: true } for a pairing.",
-          {
-            errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-          },
-        );
-      let out: Api.CorrectDecisionResultT;
-      try {
-        out = await correctDecision(ctx.root, b.data, { by: ctx.user, now: now() });
-      } catch (e) {
-        fail(e);
-      }
-      if (out.written)
+  return (
+    r
+      .add("GET", "/api/decisions", async () => ({
+        status: 200,
+        body: await decisionsView(ctx.root),
+      }))
+      .add("POST", "/api/decisions/correct", async ({ body }) => {
+        const b = Api.CorrectDecisionRequest.safeParse(body ?? {});
+        if (!b.success)
+          throw badRequest(
+            "Say the item and the right answer: { item, option } for a question, { item, api, repo } or { item, none: true } for a pairing.",
+            {
+              errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+            },
+          );
+        let out: Api.CorrectDecisionResultT;
+        try {
+          out = await correctDecision(ctx.root, b.data, { by: ctx.user, now: now() });
+        } catch (e) {
+          fail(e);
+        }
+        if (out.written)
+          for (const path of out.files) ctx.events.publish({ type: "file.changed", path });
+        return { status: 200, body: out };
+      })
+      // Ninth UX walk (ADR 0181): Ask AI to propose answers, handed to the person's assistant as an
+      // Atticus hand-off run; its Done (POST /api/runs/{runId}/done) decides from the proposals.
+      .add("GET", "/api/propose-answers", async () => {
+        const { openDecideRun, PROPOSE_CHANGE } = await import("./decide-handoff.js");
+        const run = await openDecideRun(ctx.root, PROPOSE_CHANGE);
+        const body: Api.QuestionsProposeViewT = run
+          ? {
+              state: "waiting",
+              run: run.runId,
+              line: "/atticus-propose",
+              prompt: `${runsRelOf(ctx.root)}/${PROPOSE_CHANGE}/${run.runId}/prompt.md`,
+              done: `atticus handoff done ${run.runId}`,
+            }
+          : { state: "none", line: "/atticus-propose" };
+        return { status: 200, body };
+      })
+      .add("POST", "/api/propose-answers", async () => {
+        const op = await loadOrgPack(orgPackDirOf(ctx.root));
+        if (op.runtime.ai === "off")
+          throw conflict(
+            "runtime.yaml turns AI off here (ai: off): answer the questions yourself.",
+          );
+        const { startProposeHandoff } = await import("./copilot-acp-steps.js");
+        const h = await startProposeHandoff(ctx.root, { now: now() });
+        const body: Api.QuestionsProposeViewT = {
+          state: "waiting",
+          run: h.runId,
+          line: h.line,
+          prompt: h.promptRel,
+          done: h.done,
+        };
+        return { status: 201, body };
+      })
+      .add("POST", "/api/decisions/batches/{batchId}/undo", async ({ params }) => {
+        const id = params.batchId ?? "";
+        if (!BATCH.test(id)) throw notFound(`There is no batch ${JSON.stringify(id)}.`);
+        let out: Api.UndoBatchResultT;
+        try {
+          out = await undoBatch(ctx.root, id, { by: ctx.user, now: now() });
+        } catch (e) {
+          fail(e);
+        }
         for (const path of out.files) ctx.events.publish({ type: "file.changed", path });
-      return { status: 200, body: out };
-    })
-    .add("POST", "/api/decisions/batches/{batchId}/undo", async ({ params }) => {
-      const id = params.batchId ?? "";
-      if (!BATCH.test(id)) throw notFound(`There is no batch ${JSON.stringify(id)}.`);
-      let out: Api.UndoBatchResultT;
-      try {
-        out = await undoBatch(ctx.root, id, { by: ctx.user, now: now() });
-      } catch (e) {
-        fail(e);
-      }
-      for (const path of out.files) ctx.events.publish({ type: "file.changed", path });
-      return { status: 200, body: out };
-    });
+        return { status: 200, body: out };
+      })
+  );
 }

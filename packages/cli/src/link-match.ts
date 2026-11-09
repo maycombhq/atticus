@@ -16,6 +16,13 @@ import { badRequest } from "@maycombhq/server";
 import type { Output } from "./commands.js";
 import { copilotAcpAllowed, copilotAcpByDefault, type AcpStepRunner } from "./copilot-acp-steps.js";
 import { dataBlock } from "./rules-commands.js";
+import {
+  finishDecideRun,
+  matchChangeOf,
+  openMatchRun,
+  startDecideRun,
+  type DecideRun,
+} from "./decide-handoff.js";
 
 /**
  * ADR 0178, part 2: Match with Copilot. When the shapes aren't enough, a Copilot session reads a
@@ -210,8 +217,31 @@ export async function runMatch(
   await writeFileAtomic(join(root, ...files.brief.split("/")), `${brief}\n`);
   const op = await loadOrgPack(orgPackDirOf(root));
   const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
-  if (!acp || (!copilotAcpAllowed(op) && !o.runner))
-    return { ...base, state: "handoff", proposals: [], none: [], rejected: [] };
+  if (!acp || (!copilotAcpAllowed(op) && !o.runner)) {
+    // Ninth UX walk: the hand-off is an Atticus run, so the AI's pairings read back on its Done
+    // can be decided as the AI's with the run (ADR 0181); an earlier open run of the same pair
+    // is of an earlier brief and is ended.
+    const was = await openMatchRun(root, view.from, view.to);
+    if (was)
+      await finishDecideRun(root, was, {
+        state: "failed",
+        errors: ["A new brief was written for the same two boxes: this run's answer isn't read."],
+        ...(o.now ? { now: o.now } : {}),
+      });
+    const run = await startDecideRun(root, {
+      kind: "links",
+      change: matchChangeOf(view.from),
+      prompt: [
+        brief,
+        "",
+        `When ${files.answer} is written, the person reads it in: Read the answer on the app's Connect panel, or atticus connect match ${view.from} ${view.to.repo ? `--to ${view.to.repo}` : `--system ${view.to.system}`} --read.`,
+      ].join("\n"),
+      outputPath: files.answer,
+      decide: { kind: "links", from: view.from, to: view.to },
+      ...(o.now ? { now: o.now } : {}),
+    });
+    return { ...base, state: "handoff", run: run.runId, proposals: [], none: [], rejected: [] };
+  }
   const runner =
     o.runner ?? (await (await import("./copilot-acp-steps.js")).acpStepRunner(root, { op }));
   let runId: string | undefined;
@@ -278,12 +308,15 @@ export async function readMatch(
   const text = await readFile(join(root, ...files.answer.split("/")), "utf8").catch(
     () => undefined,
   );
+  // Ninth UX walk: the hand-off run the brief waits on, so the app's Read the answer is its Done.
+  const run = briefThere ? (await openMatchRun(root, view.from, view.to))?.runId : undefined;
   if (text === undefined)
     return {
       ...base,
       ...(briefThere
         ? { brief: files.brief, answer: files.answer, state: "handoff" as const }
         : { state: "idle" as const }),
+      ...(run ? { run } : {}),
       proposals: [],
       none: [],
       rejected: [],
@@ -300,7 +333,103 @@ export async function readMatch(
       rejected: [],
       error: c.error,
     };
-  return { ...base, brief: files.brief, answer: files.answer, state: "done", ...c };
+  return {
+    ...base,
+    brief: files.brief,
+    answer: files.answer,
+    state: "done",
+    ...(run ? { run } : {}),
+    ...c,
+  };
+}
+
+/**
+ * Ninth UX walk (ADR 0181): Done for a hand-off Match. The answer the person's assistant wrote is
+ * read and checked; when runtime.yaml's decide.links is auto, Atticus applies each proposal that
+ * passes the citation check and the bar as the AI's, recorded with runtime `hand-off` and this
+ * run (never as the person), and the rest stay proposals. No answer yet: said, the run stays open.
+ */
+export async function matchDone(
+  root: string,
+  o: {
+    view: Api.LinkCandidatesViewT;
+    facts: readonly Fact[];
+    /** The hand-off run; left out, the open one of the two boxes. */
+    run?: DecideRun;
+    now?: Date;
+  },
+): Promise<Api.MatchLinksViewT> {
+  const { view } = o;
+  const run = o.run ?? (await openMatchRun(root, view.from, view.to));
+  const m = await readMatch(root, view);
+  if (!run) return m;
+  if (m.state === "handoff" || m.state === "idle")
+    return {
+      ...m,
+      run: run.runId,
+      error: `The answer isn't written yet: ${m.answer ?? matchFilesOf(root, view.from, view.to).answer}. Your assistant writes it from the brief; then read it in again.`,
+    };
+  const at = o.now ? { now: o.now } : {};
+  if (m.state === "failed") {
+    await finishDecideRun(root, run, { state: "failed", errors: [m.error ?? "unreadable"], ...at });
+    return { ...m, run: run.runId };
+  }
+  const { decideLinks } = await import("./ai-decide.js");
+  const decided = await decideLinks(root, {
+    view,
+    proposals: m.proposals,
+    facts: o.facts,
+    run: run.runId,
+    runtime: "hand-off",
+    ...at,
+  });
+  await finishDecideRun(root, run, { state: "validated", ...at });
+  // Read in: no run waits on the brief any more (`run` names only an open one).
+  const { run: _open, ...read } = m;
+  if (!decided) return read;
+  const applied = new Set(decided.applied.map((x) => x.call));
+  return {
+    ...read,
+    proposals: m.proposals.filter((p) => !applied.has(p.call)),
+    decided,
+  };
+}
+
+/** A read match in words: the proposals, what Atticus applied as the AI's, and what is left. */
+export function matchLines(
+  r: Api.MatchLinksViewT,
+  from: string,
+  toName: string,
+  _to?: Api.LinkBoxT,
+): string[] {
+  const out: string[] = [];
+  out.push(
+    `${r.proposals.length} proposed pairing${r.proposals.length === 1 ? "" : "s"}, ${r.none.length} said to match nothing${r.rejected.length ? `, ${r.rejected.length} line${r.rejected.length === 1 ? "" : "s"} left out` : ""}.`,
+  );
+  for (const p of r.proposals)
+    out.push(
+      `  ${p.call} → ${p.api}${p.why ? `: ${p.why}` : ""}${p.lines.length ? ` (${p.lines.join(", ")})` : ""}`,
+    );
+  for (const n of r.none) out.push(`  ${n.call}: none${n.why ? ` (${n.why})` : ""}`);
+  for (const x of r.rejected) out.push(`  left out: ${x}`);
+  // ADR 0181: what Atticus applied itself, as the AI's (runtime.yaml decide.links: auto).
+  const d = r.decided;
+  if (d?.paused) out.push(`Deciding is paused: ${d.paused}`);
+  if (d?.applied.length) {
+    out.push(
+      `Detected by AI: ${d.applied.length} pairing${d.applied.length === 1 ? "" : "s"} applied in batch ${d.batch} (link lines by atticus in ${from}.corrections.jsonl, flagged with the run):`,
+    );
+    for (const a of d.applied) out.push(`  ${a.call} → ${a.api} (${a.bar})`);
+    out.push(
+      `Correct one with atticus questions correct link:${from}:<call> --api <entry> --to <repo> | --none; undo them all with atticus questions undo ${d.batch}.`,
+    );
+  }
+  for (const k of d?.kept ?? []) out.push(`  kept as a proposal: ${k.call} → ${k.api} (${k.why})`);
+  if (r.proposals.length || !d?.applied.length)
+    out.push(
+      `${d?.applied.length ? "The rest are proposals" : "Nothing is written"}: tick the proposals in the app's Connect panel (${from} › Connect to… › ${toName}) and confirm; each becomes a link line in ${from}.corrections.jsonl.`,
+    );
+  return out;
 }
 
 /** atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off]. */
@@ -343,8 +472,9 @@ export async function connectMatchCommand(
     io.err(`${view.toName} has no API on record${view.noApis ? `: ${view.noApis.command}` : ""}.`);
     return 2;
   }
+  // Ninth UX walk: --read is the hand-off run's Done: the AI's pairings are decided from it.
   const r = o.read
-    ? await readMatch(root, view)
+    ? await matchDone(root, { view, facts })
     : await runMatch(root, {
         view,
         quotes: quotesOf(facts),
@@ -361,9 +491,13 @@ export async function connectMatchCommand(
     io.out(`No brief yet for ${from} and ${view.toName}: run without --read first.`);
     return 1;
   }
+  if (r.state === "handoff" && o.read) {
+    io.err(r.error ?? `The answer isn't written yet: ${r.answer}.`);
+    return 1;
+  }
   if (r.state === "handoff") {
     io.out(
-      `In a NEW Copilot Chat (agent mode) or Claude Code session: read ${r.brief} and do what it says.`,
+      `In a NEW Copilot Chat (agent mode) or Claude Code session: read ${r.brief} and do what it says.${r.run ? ` (hand-off run ${r.run})` : ""}`,
     );
     io.out(
       `It writes ${r.answer}; then atticus connect match ${from} ${o.to ? `--to ${o.to}` : `--system ${o.system}`} --read reads it back, or the app's Connect panel does (Read the answer).`,
@@ -374,31 +508,6 @@ export async function connectMatchCommand(
     io.err(r.error ?? "The session ended without an answer.");
     return 1;
   }
-  io.out(
-    `${r.proposals.length} proposed pairing${r.proposals.length === 1 ? "" : "s"}, ${r.none.length} said to match nothing${r.rejected.length ? `, ${r.rejected.length} line${r.rejected.length === 1 ? "" : "s"} left out` : ""}.`,
-  );
-  for (const p of r.proposals)
-    io.out(
-      `  ${p.call} → ${p.api}${p.why ? `: ${p.why}` : ""}${p.lines.length ? ` (${p.lines.join(", ")})` : ""}`,
-    );
-  for (const n of r.none) io.out(`  ${n.call}: none${n.why ? ` (${n.why})` : ""}`);
-  for (const x of r.rejected) io.out(`  left out: ${x}`);
-  // ADR 0181: what Atticus applied itself, as the AI's (runtime.yaml decide.links: auto).
-  const d = r.decided;
-  if (d?.paused) io.out(`Deciding is paused: ${d.paused}`);
-  if (d?.applied.length) {
-    io.out(
-      `Detected by AI: ${d.applied.length} pairing${d.applied.length === 1 ? "" : "s"} applied in batch ${d.batch} (link lines by atticus in ${from}.corrections.jsonl, flagged with the run):`,
-    );
-    for (const a of d.applied) io.out(`  ${a.call} → ${a.api} (${a.bar})`);
-    io.out(
-      `Correct one with atticus questions correct link:${from}:<call> --api <entry> --to <repo> | --none; undo them all with atticus questions undo ${d.batch}.`,
-    );
-  }
-  for (const k of d?.kept ?? []) io.out(`  kept as a proposal: ${k.call} → ${k.api} (${k.why})`);
-  if (r.proposals.length || !d?.applied.length)
-    io.out(
-      `${d?.applied.length ? "The rest are proposals" : "Nothing is written"}: tick the proposals in the app's Connect panel (${from} › Connect to… › ${view.toName}) and confirm; each becomes a link line in ${from}.corrections.jsonl.`,
-    );
+  for (const l of matchLines(r, from, view.toName)) io.out(l);
   return 0;
 }

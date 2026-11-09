@@ -18,6 +18,7 @@ import {
   loadOrgPack,
   orgPackDirOf,
   proposalsDirOf,
+  proposalsRelOf,
   runsDirOf,
   type OrgPack,
 } from "@maycombhq/core";
@@ -183,10 +184,59 @@ export async function acpStepRunner(
 export const readWrites = (root: string) => [factsDirOf(root)];
 
 /**
+ * Ninth UX walk (ADR 0181): hand `/atticus-propose` to the person's assistant as an Atticus
+ * hand-off run (`.runs/questions-propose/<runId>/`), remembering the proposals on file, so its
+ * Done reads the new ones back and decides from them as the AI's (runtime hand-off, this run).
+ * An earlier open run is ended: its proposals are read by this one.
+ */
+export async function startProposeHandoff(
+  root: string,
+  o: { id?: string; now?: Date } = {},
+): Promise<{ runId: string; line: string; promptRel: string; done: string }> {
+  const line = `/atticus-propose${o.id ? ` ${o.id}` : ""}`;
+  const { finishDecideRun, openDecideRun, PROPOSE_CHANGE, sha256, startDecideRun } =
+    await import("./decide-handoff.js");
+  const { proposalsSnapshot } = await import("./ai-decide.js");
+  const was = await openDecideRun(root, PROPOSE_CHANGE);
+  if (was)
+    await finishDecideRun(root, was, {
+      state: "failed",
+      errors: ["A new hand-off of /atticus-propose was started: its Done reads these proposals."],
+      ...(o.now ? { now: o.now } : {}),
+    });
+  const before = Object.fromEntries(
+    [...(await proposalsSnapshot(root))].map(([id, text]) => [id, sha256(text)]),
+  );
+  const prompt = await expandSlashLine(root, line);
+  const run = await startDecideRun(root, {
+    kind: "questions",
+    change: PROPOSE_CHANGE,
+    prompt: [
+      `In a NEW Copilot Chat (agent mode) or Claude Code session at the metarepo, run: ${line}`,
+      "",
+      prompt,
+      "",
+      "When every proposal is written, Done reads them in: Done on the Questions page, or the command below.",
+    ].join("\n"),
+    outputPath: `${proposalsRelOf(root)}/questions/`,
+    decide: { kind: "questions", before },
+    ...(o.now ? { now: o.now } : {}),
+  });
+  return {
+    runId: run.runId,
+    line,
+    promptRel: run.promptRel,
+    done: `atticus handoff done ${run.runId}`,
+  };
+}
+
+/**
  * `atticus questions propose [<id>]` (ADR 0171): /atticus-propose as a command. Under copilot-acp
  * it runs the step in one new Copilot session (it may write only proposals/questions/), then
- * checks what it wrote with `atticus questions proposed`; otherwise it says the line to paste.
- * A person still accepts each proposal: the session can't (atticus questions answer is refused).
+ * checks what it wrote with `atticus questions proposed`; otherwise it hands the line to the
+ * person's assistant as a hand-off run, whose Done (`atticus handoff done <run>`) decides from the
+ * proposals (ninth UX walk). Atticus applies what passes as the AI's; a session never answers as
+ * a person (atticus questions answer is refused).
  */
 export async function questionsProposeCommand(
   root: string,
@@ -198,8 +248,15 @@ export async function questionsProposeCommand(
   const line = `/atticus-propose${o.id ? ` ${o.id}` : ""}`;
   const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
   if (!acp) {
-    io.out(`In a NEW Copilot Chat (agent mode), run: ${line}`);
-    io.out("Then atticus questions proposed checks each proposal; a person accepts each one.");
+    const h = await startProposeHandoff(root, {
+      ...(o.id ? { id: o.id } : {}),
+      ...(o.now ? { now: o.now } : {}),
+    });
+    io.out(`In a NEW Copilot Chat (agent mode) or Claude Code session, run: ${line}`);
+    io.out(`Handed off as run ${h.runId} (${h.promptRel}).`);
+    io.out(
+      `When the proposals are written, read them in: ${h.done} (or Done on the Questions page). Atticus checks each one; when runtime.yaml's decide.questions is auto it applies those that meet the bar as the AI's, and the rest wait for a person.`,
+    );
     return 0;
   }
   if (!copilotAcpAllowed(op) && !o.runner) {

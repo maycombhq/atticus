@@ -532,6 +532,33 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           ),
         );
       })
+      // Ninth UX walk: the upgrade steps this metarepo waits on (runtime.yaml at an older schema,
+      // say), and atticus upgrade run here as a local job on the person's click. It backs up what
+      // it changes; the changes are files to propose for review like any other.
+      .add("GET", "/api/upgrade", async () => {
+        const { upgradeCheck } = await import("./upgrade.js");
+        const c = await upgradeCheck(root);
+        const body: Api.UpgradeViewT = {
+          atticus: c.atticus,
+          newer: c.newer,
+          ...(c.stamp ? { stamp: c.stamp.atticus } : {}),
+          pending: c.pending,
+        };
+        return { status: 200, body };
+      })
+      .add("POST", "/api/upgrade", async () => {
+        const { upgradeCheck, upgradeCommand } = await import("./upgrade.js");
+        const c = await upgradeCheck(root);
+        if (c.newer)
+          throw conflict(
+            `This metarepo was upgraded by Atticus ${c.stamp!.atticus}; this is ${c.atticus}. Install ${c.stamp!.atticus} or later first.`,
+          );
+        if (!c.pending.length)
+          throw conflict(`Nothing to upgrade: up to date for Atticus ${c.atticus}.`);
+        return asJob("Upgrading the metarepo", () =>
+          run((io) => upgradeCommand(root, { by: user }, io)),
+        );
+      })
       .add("GET", "/api/propose", async ({ query }) => {
         const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
         const scope = query.get("scope") ?? "";

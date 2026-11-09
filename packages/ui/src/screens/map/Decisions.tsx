@@ -23,6 +23,33 @@ import { queryParam, setQueryParam } from "../know/common.js";
 const D = COPY.decisions;
 const day = (at: string) => at.slice(0, 10);
 
+/**
+ * Ninth UX walk: where deciding happens here, as runtime.yaml allows the runs; nothing when
+ * neither kind decides (the mode line says propose) or the server doesn't say.
+ */
+export function decideWhere(decide: Api.DecisionsViewT["decide"]): string | undefined {
+  const on = decide.now.links === "auto" || decide.now.questions === "auto";
+  const runs = decide.decideIn;
+  if (!on || !runs) return undefined;
+  const acp = runs.includes("copilot-acp");
+  const handoff = runs.includes("hand-off");
+  return acp && handoff
+    ? D.decideIn.both
+    : handoff
+      ? D.decideIn.handoff
+      : acp
+        ? D.decideIn.acp
+        : D.decideIn.none;
+}
+
+/** The batch's kind in words: by AI, a person's rule, or a person's correction alone. */
+export const batchKindOf = (b: Api.DecisionBatchViewT): string =>
+  b.kind === "ai"
+    ? D.batchKind.ai!
+    : b.correction?.rule
+      ? D.batchKind.rule!
+      : D.batchKind.correction!;
+
 /** The decisions a filter keeps: one repo, one kind, or all. */
 export function decisionsShown(
   items: readonly Decision[],
@@ -97,9 +124,19 @@ export function DecisionsPage(p: {
                   {D.modeLine(
                     D.mode[v.decide.now.links] ?? v.decide.now.links,
                     D.mode[v.decide.now.questions] ?? v.decide.now.questions,
-                  )}
+                  )}{" "}
+                  {decideWhere(v.decide)} <a href="#/ai">{D.setUp}</a>
                 </p>
-                <SplitCounts counts={v.links.counts} what={D.counts.links} />
+                {/* Ninth UX walk: the catalog's counts are the map as last applied; the lines
+                    standing now are said beside them when they differ. */}
+                <SplitCounts counts={v.links.counts} what={D.counts.linksInMap} />
+                {v.links.lines &&
+                  (v.links.lines.byAi !== v.links.counts.byAi ||
+                    v.links.lines.byPerson > v.links.counts.byPerson) && (
+                    <p className="ev-say" style={{ margin: 0 }}>
+                      {D.counts.lines(v.links.lines.byAi, v.links.lines.byPerson)}
+                    </p>
+                  )}
                 <SplitCounts counts={v.questions.counts} what={D.counts.questions} />
                 {v.problems.length > 0 && (
                   <div className="state error" role="alert">
@@ -210,9 +247,9 @@ export function DecisionsPage(p: {
                               <code className="mono">{b.id}</code>
                               <div>
                                 {b.kind === "ai" ? (
-                                  <AiChip run={b.run} />
+                                  <AiChip run={b.run} short />
                                 ) : (
-                                  <span className="chip done">{D.batchKind.rule}</span>
+                                  <span className="chip done">{batchKindOf(b)}</span>
                                 )}
                               </div>
                             </th>

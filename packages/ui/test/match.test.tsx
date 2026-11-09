@@ -25,7 +25,7 @@ vi.mock("../src/api/client.js", async () => {
 });
 
 const { COPY } = await import("../src/copy.js");
-const { MatchWithCopilot } = await import("../src/screens/architecture/Match.js");
+const { MatchDecided, MatchWithCopilot } = await import("../src/screens/architecture/Match.js");
 const M = COPY.match;
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -153,6 +153,56 @@ describe("Match with Copilot", () => {
     expect(
       all(m.tree).some((e) => e.props.role === "alert" && text(e).includes("doesn't read as YAML")),
     ).toBe(true);
+  });
+
+  it("reads a hand-off's answer in through its run's Done, so the AI decides from it (ninth UX walk)", async () => {
+    let got: Api.MatchLinksViewT = view("idle");
+    let doneCalls = 0;
+    const m = mount(
+      MatchWithCopilot as never,
+      {
+        from: "forge-billing",
+        box: { repo: "gw" },
+        toName: "gw",
+        calls,
+        apis,
+        onTake: () => undefined,
+        io: {
+          get: async () => got,
+          post: async () => {
+            got = view("handoff", {
+              brief: "proposals/matching/b.md",
+              answer: "proposals/matching/b.yaml",
+              run: "run-20261108101500-0001",
+            });
+            return got;
+          },
+          done: async () => {
+            doneCalls++;
+            return view("done", {
+              decided: {
+                mode: "auto",
+                batch: "b-20261108-101500-a1b2c3",
+                applied: [{ call: "call.a", api: "e1", bar: "agrees-with-shapes" }],
+                kept: [],
+              },
+            });
+          },
+        },
+      } as never,
+    );
+    await flush();
+    m.render();
+    await click(m, M.start);
+    expect(text(m.tree)).toContain(M.handoff("proposals/matching/b.md"));
+    await click(m, M.readAnswer);
+    expect(doneCalls).toBe(1);
+    // Read in: nothing waits on the brief, so Read the answer is gone.
+    expect(button(m.tree, M.readAnswer)).toBeUndefined();
+    const decided = all(m.tree).find((e) => e.type === MatchDecided);
+    expect((decided?.props as { decided?: { applied: unknown[] } }).decided?.applied).toHaveLength(
+      1,
+    );
   });
 
   it("renders without a DOM", () => {

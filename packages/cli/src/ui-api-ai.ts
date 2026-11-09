@@ -6,6 +6,7 @@ import { providerFactoryFor, type ModelProvider, type ModelProviderFactory } fro
 import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
 import {
   ASSISTANTS,
+  decideOf,
   DEFAULT_RUNTIME,
   loadOrgPack,
   orgPackDirOf,
@@ -46,7 +47,7 @@ const unprocessable = (detail: string) => new HttpError(422, "The settings aren'
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 /** What the tab may change; everything else in runtime.yaml is kept as it is. */
-const FIELDS = ["ai", "modes", "assistants", "models", "budgets"] as const;
+const FIELDS = ["ai", "modes", "assistants", "models", "budgets", "decide"] as const;
 
 export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Router {
   const root = ctx.root;
@@ -108,6 +109,9 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
             keySet: keyEnv ? !!env[keyEnv]?.trim() || !!keys().get(keyEnv) : false,
             models: rt.models,
             budgets: rt.budgets,
+            // Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it.
+            decide: decideOf(rt),
+            schemaVersion: rt.schemaVersion,
             path: rel(),
           },
         };
@@ -149,6 +153,10 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         };
         const lifted = names(b.modes) && raw.schemaVersion === 2;
         if (lifted) raw.schemaVersion = 3;
+        // Ninth UX walk: decide on a version 3 file lifts it to 4, which only adds decide
+        // (ADR 0181, runtime-v4). Older files need atticus upgrade first (the message says).
+        const liftedDecide = b.decide !== undefined && raw.schemaVersion === 3;
+        if (liftedDecide) raw.schemaVersion = 4;
         const checked = Runtime.safeParse(raw);
         if (!checked.success)
           throw unprocessable(
@@ -163,7 +171,7 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           const doc = parseDocument(text);
           for (const f of FIELDS) if (b[f] !== undefined) doc.set(f, raw[f]);
           if (b.model !== undefined) doc.set("adapters", raw.adapters);
-          if (lifted) doc.set("schemaVersion", 3);
+          if (lifted || liftedDecide) doc.set("schemaVersion", raw.schemaVersion);
           return doc.toString({ lineWidth: 0 });
         })();
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own

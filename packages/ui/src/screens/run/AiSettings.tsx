@@ -18,7 +18,17 @@ export interface AiSettings {
   keySet: boolean;
   models: { allowed: string[]; recommended: Record<string, string> };
   budgets: { defaultTokens: number; perAgent: Record<string, number> };
+  /** Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it. */
+  decide?: Decide;
+  /** runtime.yaml's own version (decide needs 4; a version 3 file is lifted on save). */
+  schemaVersion?: number;
   path: string;
+}
+
+export interface Decide {
+  links: "auto" | "propose";
+  questions: "auto" | "propose";
+  minPrecision: number;
 }
 
 /** What the form holds while a person edits it. */
@@ -30,6 +40,16 @@ export interface AiForm {
   settings: Record<string, string>;
   /** The models allowed and the budgets, as typed; sent only when the form has them. */
   limits?: AiLimits;
+  /** decide, with the precision as typed in percent; sent only when it changed. */
+  decide?: { links: Decide["links"]; questions: Decide["questions"]; minPrecision: string };
+}
+
+/** The form's decide as runtime.yaml takes it, or what doesn't read. */
+export function decideOfForm(d: NonNullable<AiForm["decide"]>): Decide | { error: string } {
+  const t = d.minPrecision.trim();
+  const n = /^\d{1,3}$/.test(t) ? Number(t) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n > 100) return { error: T.badMinPrecision };
+  return { links: d.links, questions: d.questions, minPrecision: n / 100 };
 }
 
 /** The models allowed (one a line) and the budgets (a default, and agent: tokens lines). */
@@ -72,12 +92,24 @@ export function limitsOf(l: AiLimits):
 const MODES = ["hand-off", "model", "headless-claude-code", "copilot-acp"] as const;
 const AI = ["on", "text-only", "off"] as const;
 
-/** The body of PUT /api/settings/ai: only what the tab changes, and no empty settings. */
-export function toSave(f: AiForm): Record<string, unknown> {
+/**
+ * The body of PUT /api/settings/ai: only what the tab changes, and no empty settings. decide goes
+ * only when it differs from the file's (`was`), so a save of anything else never lifts the file.
+ */
+export function toSave(f: AiForm, was?: Pick<AiSettings, "decide">): Record<string, unknown> {
   const limits = f.limits ? limitsOf(f.limits) : undefined;
   if (limits && "error" in limits) throw new Error(limits.error);
+  const decide = f.decide ? decideOfForm(f.decide) : undefined;
+  if (decide && "error" in decide) throw new Error(decide.error);
+  const same =
+    !decide ||
+    (was?.decide !== undefined &&
+      was.decide.links === decide.links &&
+      was.decide.questions === decide.questions &&
+      Math.abs(was.decide.minPrecision - decide.minPrecision) < 1e-9);
   return {
     ...(limits ?? {}),
+    ...(same ? {} : { decide }),
     ai: f.ai,
     modes: f.modes,
     assistants: f.assistants,
@@ -103,6 +135,15 @@ const formOf = (d: AiSettings): AiForm => ({
   settings: Object.fromEntries(
     Object.entries(d.model?.settings ?? {}).map(([k, v]) => [k, String(v)]),
   ),
+  ...(d.decide
+    ? {
+        decide: {
+          links: d.decide.links,
+          questions: d.decide.questions,
+          minPrecision: String(Math.round(d.decide.minPrecision * 100)),
+        },
+      }
+    : {}),
   limits: {
     models: d.models.allowed.join("\n"),
     recommended: d.models.recommended,
@@ -159,7 +200,7 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
         e.preventDefault();
         const asSent = JSON.stringify(f);
         void save.run(async () => {
-          await api("/api/settings/ai", { method: "PUT", body: toSave(f) });
+          await api("/api/settings/ai", { method: "PUT", body: toSave(f, p.data) });
           // Only a save that went through takes the file as the server stored it.
           sent.current = asSent;
           p.onSaved?.();
@@ -346,6 +387,60 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
         )}
         <Note note={keep.note} />
       </fieldset>
+
+      {f.decide && (
+        <fieldset className="stack" aria-describedby="ai-decide-hint">
+          <legend className="hud">{T.decideLabel}</legend>
+          <p id="ai-decide-hint" className="muted" style={{ margin: 0, maxWidth: "70ch" }}>
+            {T.decideHint}
+          </p>
+          {(p.data.schemaVersion ?? 4) < 3 && (
+            <p className="state" role="note" style={{ margin: 0 }}>
+              {T.decideNeedsUpgrade(p.data.schemaVersion ?? 1)}
+            </p>
+          )}
+          {(["links", "questions"] as const).map((k) => (
+            <label key={k} className="row" style={{ gap: 8 }}>
+              <span style={{ minWidth: 220 }}>
+                {k === "links" ? T.decideLinks : T.decideQuestions}
+              </span>
+              <select
+                id={`ai-decide-${k}`}
+                className="field"
+                value={f.decide![k]}
+                onChange={(e) =>
+                  setF({
+                    ...f,
+                    decide: { ...f.decide!, [k]: e.target.value as Decide["links"] },
+                  })
+                }
+              >
+                {(["propose", "auto"] as const).map((m) => (
+                  <option key={m} value={m}>
+                    {T.decideMode[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <label className="row" style={{ gap: 8 }} htmlFor="ai-decide-precision">
+            <span style={{ minWidth: 220 }}>{T.minPrecisionLabel}</span>
+            <input
+              id="ai-decide-precision"
+              className="field mono"
+              inputMode="numeric"
+              aria-describedby="ai-decide-precision-hint"
+              value={f.decide.minPrecision}
+              onChange={(e) =>
+                setF({ ...f, decide: { ...f.decide!, minPrecision: e.target.value } })
+              }
+            />
+          </label>
+          <span id="ai-decide-precision-hint" className="muted" style={{ fontSize: 12 }}>
+            {T.minPrecisionHint}
+          </span>
+        </fieldset>
+      )}
 
       {f.limits && (
         <fieldset className="stack">

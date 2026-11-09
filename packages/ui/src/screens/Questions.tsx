@@ -769,7 +769,10 @@ export function QuestionDetail(p: {
       {q.answer?.proposal && (
         <div className="stack" style={{ gap: 4 }}>
           <p className="muted" style={{ margin: 0 }}>
-            {C.fromProposal(q.answer.proposal.by, day(q.answer.proposal.at))}
+            {/* Ninth UX walk: an AI answer was applied by Atticus, never confirmed by a person. */}
+            {isAiBy(q.answer.by)
+              ? C.fromAiProposal(q.answer.proposal.by, day(q.answer.proposal.at), q.answer.by.run)
+              : C.fromProposal(q.answer.proposal.by, day(q.answer.proposal.at))}
           </p>
           <ul style={{ margin: 0 }}>
             {q.answer.proposal.cites.map((c) => (
@@ -793,6 +796,11 @@ export function QuestionDetail(p: {
       )}
       {q.state === "retired" ? (
         <p className="state">{C.retired}</p>
+      ) : q.answer && isAiBy(q.answer.by) && !done ? (
+        // Ninth UX walk: one way to change an AI answer: Correct (above), which spreads.
+        <p className="ev-say" style={{ margin: 0 }}>
+          {C.changeAiAnswer}
+        </p>
       ) : (
         <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)} noValidate>
           <fieldset className="stack" style={{ gap: 6, border: 0, padding: 0, margin: 0 }}>
@@ -1127,13 +1135,35 @@ export function countsOf(d: QuestionListView, repo = "") {
 /**
  * Seventh UX walk: AI proposes first. Proposed answers came only from /atticus-propose, which the
  * page never named; here it is, with its command, while questions are open. Each proposal then
- * shows on its question, and a person accepts it or answers otherwise (it never answers alone).
+ * shows on its question, and a person accepts it or answers otherwise.
+ *
+ * Ninth UX walk (ADR 0181): it says what happens as runtime.yaml's decide says (with auto, each
+ * proposal that meets the bar is applied as the AI's, Detected by AI; paused, why), and hands the
+ * line to the person's assistant as an Atticus hand-off run whose Done reads the proposals in.
  */
-export function AskAiToPropose({ open }: { open: number }) {
+export function AskAiToProposeView(p: {
+  open: number;
+  /** runtime.yaml's decide and the pause, from GET /api/decisions; unknown while it loads. */
+  decide?: Api.DecisionsViewT["decide"] | undefined;
+  /** The hand-off run open for the assistant (GET /api/propose-answers). */
+  handoff?: Api.QuestionsProposeViewT | undefined;
+  busy?: "handoff" | "done" | undefined;
+  /** What Done said, or why it or the hand-off couldn't be done. */
+  note?: { ok: boolean; lines: string[] } | undefined;
+  onHandoff?: () => void;
+  onDone?: () => void;
+}) {
   const P = C.proposal;
-  if (open === 0) return null;
-  const slash = "/atticus-propose";
+  if (p.open === 0 && !p.note) return null;
+  const slash = p.handoff?.line ?? "/atticus-propose";
   const command = "atticus questions propose";
+  const d = p.decide;
+  const why = d?.paused
+    ? P.askWhyPaused(d.paused.why)
+    : d?.now.questions === "auto" && d.decideIn?.includes("hand-off") !== false
+      ? P.askWhyAuto
+      : P.askWhy;
+  const waiting = p.handoff?.state === "waiting" && p.handoff.run ? p.handoff : undefined;
   return (
     <section
       aria-labelledby="ask-ai-propose"
@@ -1144,23 +1174,133 @@ export function AskAiToPropose({ open }: { open: number }) {
         {P.askTitle}
       </h2>
       <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>
-        {P.askWhy}
+        {why}
       </p>
-      <p className="work-say" style={{ margin: 0 }}>
-        {P.askSlash}
-      </p>
-      <div className="work-cmd">
-        <code className="mono">{slash}</code>
-        <CopyButton text={slash} label={`${P.askCopy}: ${slash}`} />
-      </div>
-      <p className="work-say" style={{ margin: 0 }}>
-        {P.askCommand}
-      </p>
-      <div className="work-cmd">
-        <code className="mono">{command}</code>
-        <CopyButton text={command} label={`${P.askCopy}: ${command}`} />
-      </div>
+      {waiting ? (
+        <>
+          <p className="work-say" role="status" style={{ margin: 0 }}>
+            {P.askWaiting(waiting.run!)}
+          </p>
+          <div className="work-cmd">
+            <code className="mono">{slash}</code>
+            <CopyButton text={slash} label={`${P.askCopy}: ${slash}`} />
+          </div>
+          {p.onDone && (
+            <div className="row" style={{ gap: 8 }}>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={!!p.busy}
+                aria-busy={p.busy === "done"}
+                onClick={p.onDone}
+              >
+                {p.busy === "done" ? P.askReading : P.askDone}
+              </button>
+            </div>
+          )}
+          {waiting.done && (
+            <>
+              <p className="work-say" style={{ margin: 0 }}>
+                {P.askTerminal}
+              </p>
+              <div className="work-cmd">
+                <code className="mono">{waiting.done}</code>
+                <CopyButton text={waiting.done} label={`${P.askCopy}: ${waiting.done}`} />
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {p.onHandoff && p.open > 0 && (
+            <div className="row" style={{ gap: 8 }}>
+              <button
+                type="button"
+                className="btn"
+                disabled={!!p.busy}
+                aria-busy={p.busy === "handoff"}
+                onClick={p.onHandoff}
+              >
+                {p.busy === "handoff" ? P.askHandingOff : P.askHandoff}
+              </button>
+            </div>
+          )}
+          <p className="work-say" style={{ margin: 0 }}>
+            {P.askSlash}
+          </p>
+          <div className="work-cmd">
+            <code className="mono">{slash}</code>
+            <CopyButton text={slash} label={`${P.askCopy}: ${slash}`} />
+          </div>
+          <p className="work-say" style={{ margin: 0 }}>
+            {P.askCommand}
+          </p>
+          <div className="work-cmd">
+            <code className="mono">{command}</code>
+            <CopyButton text={command} label={`${P.askCopy}: ${command}`} />
+          </div>
+        </>
+      )}
+      {p.note && (
+        <div role={p.note.ok ? "status" : "alert"} className={p.note.ok ? "ev-say" : "state error"}>
+          {p.note.ok && <p style={{ margin: 0 }}>{P.askRead}</p>}
+          <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
+            {p.note.lines.join("\n")}
+          </pre>
+        </div>
+      )}
     </section>
+  );
+}
+
+const linesOf = (e: unknown): string[] => {
+  const prob = (e as { problem?: { detail?: string; lines?: string[] } }).problem;
+  if (prob?.lines?.length) return prob.lines;
+  if (prob?.detail) return [prob.detail];
+  return [e instanceof Error ? e.message : String(e)];
+};
+
+export function AskAiToPropose({ open }: { open: number }) {
+  const ds = useDecisions();
+  const v = readyView(ds);
+  const h = useApi<Api.QuestionsProposeViewT>(open > 0 ? "/api/propose-answers" : undefined);
+  const [busy, setBusy] = useState<"handoff" | "done" | undefined>();
+  const [note, setNote] = useState<{ ok: boolean; lines: string[] } | undefined>();
+  const handoff = h.state === "ready" ? h.data : undefined;
+  return (
+    <AskAiToProposeView
+      open={open}
+      decide={v?.decide}
+      handoff={handoff}
+      busy={busy}
+      note={note}
+      onHandoff={() => {
+        setBusy("handoff");
+        setNote(undefined);
+        api<Api.QuestionsProposeViewT>("/api/propose-answers", { method: "POST" })
+          .then(
+            () => h.reload(),
+            (e: unknown) => setNote({ ok: false, lines: linesOf(e) }),
+          )
+          .finally(() => setBusy(undefined));
+      }}
+      onDone={() => {
+        const run = handoff?.run;
+        if (!run) return;
+        setBusy("done");
+        setNote(undefined);
+        api<{ lines?: string[] }>(`/api/runs/${encodeURIComponent(run)}/done`, { method: "POST" })
+          .then(
+            (r) => {
+              setNote({ ok: true, lines: r.lines ?? [] });
+              h.reload();
+              ds?.reload();
+            },
+            (e: unknown) => setNote({ ok: false, lines: linesOf(e) }),
+          )
+          .finally(() => setBusy(undefined));
+      }}
+    />
   );
 }
 
