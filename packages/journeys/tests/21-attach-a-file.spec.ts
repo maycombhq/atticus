@@ -87,7 +87,10 @@ test("the Feature page has the same control, and a small change's step is the fa
 }) => {
   await open(page, a(), "feature-design?change=show-transfer-time");
   await expect(page.getByRole("heading", { name: "Files attached", level: 2 })).toBeVisible();
-  await expect(page.getByText("atticus change small show-transfer-time").first()).toBeVisible();
-  await expect(page.getByText("/atticus-small show-transfer-time").first()).toBeVisible();
+  // ADR 0188: the small change's step is a button; its command waits under "In a terminal".
+  await expect(
+    page.getByRole("button", { name: /Prepare it for your assistant|Run it|Start/ }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("In a terminal").first()).toBeVisible();
   await accessible(page, "the Feature page of a small change");
 });

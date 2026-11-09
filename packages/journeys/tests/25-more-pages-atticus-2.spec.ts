@@ -34,9 +34,9 @@ test("every page in More pages opens on an Atticus 2 change without an API error
   const hrefs = await page
     .locator("#more-pages a")
     .evaluateAll((as) => as.map((x) => x.getAttribute("href")!));
-  expect(hrefs).toHaveLength(26);
+  expect(hrefs).toHaveLength(21);
   // A change's pages keep the change picked.
-  expect(hrefs).toContain(`#/brief?change=${CHANGE}`);
+  expect(hrefs).toContain(`#/arch-review?change=${CHANGE}`);
   for (const href of hrefs) {
     // A fresh load each time, so every answer counted is this page's.
     await page.goto("about:blank");

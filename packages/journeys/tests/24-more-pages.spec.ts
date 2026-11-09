@@ -9,7 +9,8 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
  */
 const app = forgeJourney();
 
-const HIDDEN = 26;
+// Beta.23: Manual steps, Release, Scans, Prompt history and the Brief became tabs (ADR 0188, 0191).
+const HIDDEN = 21;
 
 test("More pages is in the menu on first load, closed, and lists every page the six don't show", async ({
   page,
@@ -28,20 +29,20 @@ test("More pages is in the menu on first load, closed, and lists every page the 
   const more = nav.getByRole("button", { name: `More pages ${HIDDEN}` });
   await expect(more).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(nav.getByRole("link", { name: "Prompt history" })).toBeHidden();
+  await expect(nav.getByRole("link", { name: "AI quality" })).toBeHidden();
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   // By section, Change's by phase.
   for (const [group, pages] of [
-    ["Home", ["Initiatives", "Manual steps"]],
+    ["Home", ["Initiatives"]],
     ["Map", ["Ecosystem map", "Features", "API mappings", "Diagrams", "Reconcile"]],
-    ["Define", ["Feature brief", "Prototypes and UX"]],
+    ["Define", ["Prototypes and UX"]],
     ["Plan", ["Breakdown", "Estimate"]],
     ["Build", ["Task board", "Code against design", "Test trace"]],
     ["Knowledge", ["Teams, vendors and products", "Org pack from the wikis"]],
-    // Seventh UX walk: Governance is set up; Manual steps and Initiatives are Home's.
-    ["Set up", ["Scans", "Intake", "Settings", "Governance"]],
-    ["Atticus", ["Prompt history", "AI quality", "Learning"]],
+    // Seventh UX walk: Governance is set up; Initiatives is Home's (Manual steps is a tab now).
+    ["Set up", ["Intake", "Settings", "Governance"]],
+    ["Atticus", ["AI quality", "Learning"]],
   ] as const) {
     const g = nav.getByRole("group", { name: group, exact: true }).last();
     for (const p of pages)
@@ -53,20 +54,17 @@ test("More pages is in the menu on first load, closed, and lists every page the 
   await accessible(page, "the menu with More pages open, light theme");
 });
 
-test("Prompt history and Estimate open from More pages; Model runs is a tab of Set up", async ({
+test("Estimate opens from More pages; Prompt history and Model runs are tabs of Set up", async ({
   page,
 }) => {
   await open(page, app(), "home");
   const nav = page.getByRole("navigation", { name: "Main" });
   const more = nav.getByRole("button", { name: /^More pages/ });
   if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
-  await nav.getByRole("link", { name: "Prompt history" }).click();
-  await expect(page).toHaveURL(/#\/history$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Prompt history" })).toBeAttached();
-  await expect(nav.getByRole("link", { name: "Prompt history" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  // ADR 0188: Prompt history is a tab of Set up, beside Model runs, not under More pages.
+  await expect(
+    nav.locator("#more-pages").getByRole("link", { name: "Prompt history" }),
+  ).toHaveCount(0);
   // A change's page keeps the change it is about, else asks for one as from Ctrl+K.
   await open(page, app(), "stories?change=add-transfer-limit");
   await nav.getByRole("link", { name: "Estimate", exact: true }).click();
@@ -75,7 +73,17 @@ test("Prompt history and Estimate open from More pages; Model runs is a tab of S
   // Model runs, in plain sight: Set up's tabs, beside AI.
   await nav.getByRole("link", { name: "Set up" }).click();
   const tabs = page.getByRole("navigation", { name: "Set up pages" });
-  await expect(tabs.getByRole("link")).toHaveText(["Repos", "AI", "Model runs", "Org pack"]);
+  await expect(tabs.getByRole("link")).toHaveText([
+    "Repos",
+    "AI",
+    "Model runs",
+    "Org pack",
+    "Scans",
+    "Prompt history",
+  ]);
+  await tabs.getByRole("link", { name: "Prompt history" }).click();
+  await expect(page).toHaveURL(/#\/history$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Prompt history" })).toBeAttached();
   await tabs.getByRole("link", { name: "Model runs" }).click();
   await expect(page).toHaveURL(/#\/runs$/);
   await expect(nav.getByRole("link", { name: "Set up" })).toHaveAttribute("aria-current", "page");
@@ -91,7 +99,7 @@ test("More pages stays open or closed as the viewer left it", async ({ page }) =
   await page.reload();
   await expect(page.locator(".panel").first()).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("link", { name: "Prompt history" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "AI quality" })).toBeVisible();
   await more.click();
   await page.goto(`${app().url}/#/trust`);
   await page.reload();
