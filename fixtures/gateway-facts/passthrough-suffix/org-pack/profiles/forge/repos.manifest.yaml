@@ -1,0 +1,56 @@
+# Invented Forge repos: a BFF, two Apigee gateway repos on one host (a proxy per repo, and
+# three bundles in one), and the four Spring Boot services behind them. Only forge-rates gives
+# its base path here; forge-fees sets a context path in code, forge-refunds is under an
+# OpenShift Route's path, and nothing says forge-limits' (the join guesses it, inferred).
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge-billing-bff
+    url: https://git.forge.example/forge/forge-billing-bff.git
+    type: spring-boot
+    owner: team-billing
+    component: billing-bff
+    system: billing
+  - id: forge-fees-proxy
+    url: https://git.forge.example/forge/forge-fees-proxy.git
+    type: gateway
+    owner: team-platform
+    component: fees-proxy
+    system: platform
+    hosts: [api.forge.example]
+  - id: forge-edge
+    url: https://git.forge.example/forge/forge-edge.git
+    type: gateway
+    owner: team-platform
+    component: edge-gateway
+    system: platform
+    hosts: [api.forge.example]
+  - id: forge-fees
+    url: https://git.forge.example/forge/forge-fees.git
+    type: spring-boot
+    owner: team-billing
+    component: fees-api
+    system: billing
+    hosts: [fees.forge.internal]
+  - id: forge-rates
+    url: https://git.forge.example/forge/forge-rates.git
+    type: spring-boot
+    owner: team-treasury
+    component: rates-api
+    system: treasury
+    hosts: [rates.forge.internal]
+    basePath: /forge-rates/2.0
+  - id: forge-limits
+    url: https://git.forge.example/forge/forge-limits.git
+    type: spring-boot
+    owner: team-risk
+    component: limits-api
+    system: risk
+    hosts: [limits.forge.internal]
+  - id: forge-refunds
+    url: https://git.forge.example/forge/forge-refunds.git
+    type: spring-boot
+    owner: team-billing
+    component: refunds-api
+    system: billing
+    hosts: [refunds.forge.internal]

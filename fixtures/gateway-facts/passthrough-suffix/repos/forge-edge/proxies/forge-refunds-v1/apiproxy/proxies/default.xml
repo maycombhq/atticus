@@ -1,0 +1,18 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="SubmitRefund">
+      <Request>
+        <Step>
+          <Name>JS-NoSuffix</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/submit") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/refunds/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="refunds">
+    <TargetEndpoint>refunds</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

@@ -1,0 +1,5 @@
+<TargetEndpoint name="limits">
+  <HTTPTargetConnection>
+    <URL>https://limits.forge.internal/forge-limits/v3/limits</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

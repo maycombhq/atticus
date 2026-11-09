@@ -1,0 +1,10 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: forge-refunds
+spec:
+  host: refunds.forge.internal
+  path: /forge-refunds/1.0
+  to:
+    kind: Service
+    name: forge-refunds

@@ -1,0 +1,356 @@
+- kind: GatewayRoute
+  schemaVersion: 2
+  id: gw-fees-proxy-get-forge-fees-v1-retrieve
+  status: current
+  confidence: verified
+  proxy: forge-fees-v1
+  basepath: /forge/fees/v1
+  target: fees-api
+  policies: []
+  scopes: []
+  evidence:
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/proxies/default.xml
+      line: 4
+      commit: 2222bbb
+      side: gateway
+      by: assistant
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/targets/TE-Fees.xml
+      line: 3
+      commit: 2222bbb
+      side: gateway
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-0f6b1b0f251655ad
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: fees-proxy
+  to: fees-api
+  via: direct
+  method: GET
+  normalizedPath: /fees/retrieve
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-fees-proxy
+      path: apiproxy/targets/TE-Fees.xml
+      line: 3
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/proxies/default.xml
+      line: 4
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-fees-proxy
+      path: config/prod.properties
+      line: 2
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-fees
+      path: src/main/java/forge/fees/FeesController.java
+      line: 9
+      commit: 4444ddd
+      side: callee
+      by: assistant
+    - source: config
+      repo: forge-fees
+      path: src/main/resources/application.properties
+      line: 2
+      commit: 4444ddd
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-24478882cf2d1781
+  status: current
+  confidence: verified
+  from: billing-bff
+  to: fees-api
+  via: gateway
+  route: gw-fees-proxy-get-forge-fees-v1-retrieve
+  flags:
+    - joined-by-host
+  method: GET
+  normalizedPath: /fees/retrieve
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-billing-bff
+      path: src/main/java/forge/billing/FeesGatewayClient.java
+      line: 17
+      commit: 1111aaa
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-billing-bff
+      path: src/main/resources/application.yml
+      line: 3
+      commit: 1111aaa
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/proxies/default.xml
+      line: 4
+      commit: 2222bbb
+      side: gateway
+      by: assistant
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/targets/TE-Fees.xml
+      line: 3
+      commit: 2222bbb
+      side: gateway
+      by: assistant
+    - source: config
+      repo: forge-fees-proxy
+      path: config/prod.properties
+      line: 2
+      commit: 2222bbb
+      side: gateway
+      by: assistant
+    - source: code
+      repo: forge-fees
+      path: src/main/java/forge/fees/FeesController.java
+      line: 9
+      commit: 4444ddd
+      side: callee
+      by: assistant
+    - source: config
+      repo: forge-fees
+      path: src/main/resources/application.properties
+      line: 2
+      commit: 4444ddd
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-4c7c1e7aa157721b
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: fees-proxy
+  to: fees-api
+  via: direct
+  method: POST
+  normalizedPath: /fees/quote
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-fees-proxy
+      path: apiproxy/targets/TE-Fees.xml
+      line: 3
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-fees-proxy
+      path: apiproxy/proxies/default.xml
+      line: 7
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-fees-proxy
+      path: config/prod.properties
+      line: 2
+      commit: 2222bbb
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-fees
+      path: src/main/java/forge/fees/FeesController.java
+      line: 14
+      commit: 4444ddd
+      side: callee
+      by: assistant
+    - source: config
+      repo: forge-fees
+      path: src/main/resources/application.properties
+      line: 2
+      commit: 4444ddd
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-6c0208177f2538a7
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: edge-gateway
+  to: rates-api
+  via: direct
+  method: GET
+  normalizedPath: /rates/history/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-edge
+      path: proxies/forge-rates-v2/apiproxy/targets/rates.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-edge
+      path: proxies/forge-rates-v2/apiproxy/proxies/default.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-rates
+      path: src/main/java/forge/rates/RatesController.java
+      line: 14
+      commit: 5555eee
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-85c3fb3b313e485c
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: edge-gateway
+  to: refunds-api
+  via: direct
+  method: POST
+  normalizedPath: /refunds
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-edge
+      path: proxies/forge-refunds-v1/apiproxy/targets/refunds.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-edge
+      path: proxies/forge-refunds-v1/apiproxy/proxies/default.xml
+      line: 9
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-edge
+      path: proxies/forge-refunds-v1/apiproxy/resources/jsc/no-suffix.js
+      line: 2
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-refunds
+      path: src/main/java/forge/refunds/RefundsController.java
+      line: 6
+      commit: 7777abc
+      side: callee
+      by: assistant
+    - source: infrastructure
+      repo: forge-refunds
+      path: deploy/openshift/route.yaml
+      line: 4
+      commit: 7777abc
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-910390c12441b84c
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: edge-gateway
+  to: rates-api
+  via: direct
+  method: GET
+  normalizedPath: /rates/today
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-edge
+      path: proxies/forge-rates-v2/apiproxy/targets/rates.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-edge
+      path: proxies/forge-rates-v2/apiproxy/proxies/default.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-rates
+      path: src/main/java/forge/rates/RatesController.java
+      line: 9
+      commit: 5555eee
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-e8d58590e8c58444
+  status: current
+  confidence: inferred
+  flags:
+    - joined-by-path-overlap
+    - joined-by-host
+  from: edge-gateway
+  to: limits-api
+  via: direct
+  method: GET
+  normalizedPath: /limits/check
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-edge
+      path: proxies/forge-limits-v3/apiproxy/targets/limits.xml
+      line: 3
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: gateway
+      repo: forge-edge
+      path: proxies/forge-limits-v3/apiproxy/proxies/default.xml
+      line: 4
+      commit: 3333ccc
+      side: caller
+      by: assistant
+    - source: code
+      repo: forge-limits
+      path: src/main/java/forge/limits/LimitsController.java
+      line: 9
+      commit: 6666fff
+      side: callee
+      by: assistant

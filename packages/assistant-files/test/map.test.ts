@@ -175,9 +175,12 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // its key and a call's TLS was told to rest on a line that writes it, with its parts (the
     // beta.11 review, ADR 0163), and when a call's path was told never to be the name of what
     // holds it (ADR 0172), and when an Apigee proxy with no conditional flow was told where to
-    // cite its forwarding call and a config key was told to be its full dotted path (round 49).
+    // cite its forwarding call and a config key was told to be its full dotted path (round 49),
+    // and when a forwarding call was told the target's path is its path when the suffix can't be
+    // put on, `target.copy.pathsuffix` became a setting and a context path's setting was named
+    // with the servlet and WebFlux base paths (the path suffix).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "4eccc5d072ebbf2b4d7da0a6ade6c138074fcdc76c6df3976fd007f4e3e05a82",
+      "07a04798c0eb1f407da3479b2eef6af94e77ece4296b9994c966c515724c4561",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -363,6 +366,29 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
       "cited on the host line",
     ])
       expect(rule, words).toContain(words);
+  });
+
+  it("asks for the target's path, copy.pathsuffix and a service's context path as settings (the path suffix)", () => {
+    // The join adds each route's suffix to the target's path and takes the service's base path
+    // off, so a gateway batch records what turns the suffix off and a back end its context path.
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      "the target's `<URL>` or `<Path>` path as written",
+      "Apigee adds each route's suffix after it",
+      "`target.copy.pathsuffix` set false is a `config` fact",
+      "`key` `target.copy.pathsuffix`",
+      "`context.setVariable`",
+    ])
+      expect(rule, words).toContain(words);
+    const gw = batch(["gateway"]);
+    expect(gw).toContain("`target.copy.pathsuffix` set false is a `config` fact");
+    const spring = batch(["routes"]);
+    for (const words of [
+      "`spring.mvc.servlet.path`",
+      "`spring.webflux.base-path`",
+      "whether or not the entries' paths include it",
+    ])
+      expect(spring, words).toContain(words);
   });
 
   it("says how a route's scopes and its virtual host are read and cited (A-gateway2)", () => {

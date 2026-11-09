@@ -177,7 +177,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["routes", "frontend"],
-      text: "An entry's `path` is the full path a caller uses: class-level and group prefixes, and a context or base path the code or config sets (`server.servlet.context-path`, `UsePathBase`), joined; record that base as a `config` fact too. A route served as HTML (a server-rendered page or form post) is `entryType: rest` with its method, and so is a route that receives webhooks; `screen` is for a front end's own routes.",
+      text: "An entry's `path` is the full path a caller uses: class-level and group prefixes, and a context or base path the code or config sets (`server.servlet.context-path`, `UsePathBase`), joined; record each such setting as a `config` fact too, its whole key and value as written (`server.servlet.context-path`, `spring.mvc.servlet.path`, `spring.webflux.base-path`), whether or not the entries' paths include it. A route served as HTML (a server-rendered page or form post) is `entryType: rest` with its method, and so is a route that receives webhooks; `screen` is for a front end's own routes.",
     },
     {
       when: ["routes", "protocols", "gateway"],
@@ -344,7 +344,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["gateway"],
-      text: "Each route has a forwarding `call` (`from` the entry, no `to`) to its `RouteRule`'s target. Its `path` is what the service receives: the target's `<Path>` and the suffix (base path dropped), or, when `target.copy.pathsuffix` is false or an AssignMessage or JavaScript policy sets the path, the path set there. Cite it where the path comes from (the rewrite, else the `<Condition>`), with the target's `<Server>` or `<URL>` line and the rewrite's other lines in `cite.with`. `base` is the TargetServer's name (or the KVM key), with a `config` fact of that `key` whose `value` is its host, cited on the host line; a `<URL>`'s host goes in `host`.",
+      text: "Each route has a forwarding `call` (`from` the entry, no `to`) to its `RouteRule`'s target. Its `path` is what the service receives: the target's `<Path>` and the suffix (base path dropped), or, when `target.copy.pathsuffix` is false or an AssignMessage or JavaScript policy sets the path, the path set there. Cite it where the path comes from (the rewrite, else the `<Condition>`), with the target's `<Server>` or `<URL>` line and the rewrite's other lines in `cite.with`. `base` is the TargetServer's name (or the KVM key), with a `config` fact of that `key` whose `value` is its host, cited on the host line; a `<URL>`'s host goes in `host`. Where you can't put the path together, it is the target's `<URL>` or `<Path>` path as written: Apigee adds each route's suffix after it, and so does the join. `target.copy.pathsuffix` set false is a `config` fact (`key` `target.copy.pathsuffix`, `value` `false`, `target` the proxy) cited on the line that sets it: an `<AssignVariable>`'s `<Name>` line, a JavaScript policy's `context.setVariable`.",
     },
     {
       when: ["gateway"],

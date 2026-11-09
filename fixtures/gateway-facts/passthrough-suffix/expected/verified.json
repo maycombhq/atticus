@@ -1,0 +1,49 @@
+{
+  "forge-billing-bff": {
+    "accepted": ["call.get.forge-fees-v1-retrieve", "config.gateway-base-url"],
+    "rejected": []
+  },
+  "forge-edge": {
+    "accepted": [
+      "call.any.rates",
+      "call.get.limits",
+      "call.post.refunds",
+      "config.refunds-copy-pathsuffix",
+      "entry.any.forge-rates-v2",
+      "entry.get.forge-limits-v3-check",
+      "entry.post.forge-refunds-v1-submit"
+    ],
+    "rejected": []
+  },
+  "forge-fees": {
+    "accepted": [
+      "config.context-path",
+      "entry.get.fees-retrieve",
+      "entry.get.ping",
+      "entry.post.fees-quote"
+    ],
+    "rejected": []
+  },
+  "forge-fees-proxy": {
+    "accepted": [
+      "call.fees.target",
+      "call.get.retrieve",
+      "config.target-fees-url",
+      "entry.get.forge-fees-v1-retrieve",
+      "entry.post.forge-fees-v1-quote"
+    ],
+    "rejected": []
+  },
+  "forge-limits": {
+    "accepted": ["entry.get.limits-check"],
+    "rejected": []
+  },
+  "forge-rates": {
+    "accepted": ["entry.get.rates-history-date", "entry.get.rates-today", "entry.post.admin-reload"],
+    "rejected": []
+  },
+  "forge-refunds": {
+    "accepted": ["deploy.route.forge-refunds", "entry.post.refunds", "entry.post.refunds-submit"],
+    "rejected": []
+  }
+}

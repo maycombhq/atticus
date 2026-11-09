@@ -1,0 +1,16 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="RetrieveFees">
+      <Condition>(proxy.pathsuffix MatchesPath "/retrieve") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="QuoteFee">
+      <Condition>(proxy.pathsuffix MatchesPath "/quote") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/fees/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="fees">
+    <TargetEndpoint>TE-Fees</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

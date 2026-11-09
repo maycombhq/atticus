@@ -1,0 +1,13 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="CheckLimit">
+      <Condition>(proxy.pathsuffix MatchesPath "/check") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/limits/v3</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="limits">
+    <TargetEndpoint>limits</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>
