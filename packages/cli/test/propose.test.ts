@@ -336,6 +336,43 @@ describe("review round 35", () => {
   });
 });
 
+describe("beta.23: Home's list of what to propose, with many files already proposed", () => {
+  it("asks Git once per proposal branch and once for the files' contents, not twice a file", async () => {
+    const { root } = await metarepo();
+    await mkdir(join(root, "questions"), { recursive: true });
+    const git = createGit();
+    const proposed: Record<string, { blob: string; where: string; branch: string }> = {};
+    g(root, "update-ref", "refs/remotes/origin/propose/answers/a", "HEAD");
+    for (let i = 0; i < 60; i++) {
+      const rel = `questions/q${i}.yaml`;
+      await writeFile(join(root, rel), `answer: ${i}\n`);
+      proposed[rel] = {
+        blob: g(root, "hash-object", "--", rel).trim(),
+        // Half on a branch the remote has, half on one it no longer has (merged and deleted).
+        where: i % 2 ? "propose/answers/a" : "propose/answers/gone",
+        branch: i % 2 ? "propose/answers/a" : "propose/answers/gone",
+      };
+    }
+    // One changed since it was proposed.
+    await writeFile(join(root, "questions/q1.yaml"), "answer: changed\n");
+    await mkdir(join(root, ".index"), { recursive: true });
+    await writeFile(join(root, ".index/proposed.json"), JSON.stringify(proposed));
+    const calls: string[][] = [];
+    const counted = (args: string[], cwd: string) => {
+      calls.push(args);
+      return git(args, cwd);
+    };
+    const plan = await proposePlan(root, "answers", { by: "pat", git: counted });
+    const of = (n: number) => plan.files.find((f) => f.path === `questions/q${n}.yaml`);
+    expect(of(3)?.proposed).toBe("propose/answers/a");
+    expect(of(1)?.proposed).toBeUndefined();
+    expect(of(2)?.proposed).toBeUndefined();
+    expect(plan.files).toHaveLength(60);
+    // status, a rev-parse per branch, one hash-object: four, where it was 91.
+    expect(calls.length).toBeLessThanOrEqual(4);
+  });
+});
+
 describe("review round 36: Bring in never loses an edit", () => {
   const setup = async () => {
     const { root, remote } = await metarepo();

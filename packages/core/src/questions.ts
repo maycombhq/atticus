@@ -17,6 +17,8 @@ import {
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
 import { roleOfStep } from "./question-roles.js";
+import { keptParse } from "./kept-files.js";
+import { mapAtOnce } from "./record-cache.js";
 import { questionAiProblem } from "./ai-decisions.js";
 import { hostMatches } from "./schema/workspace.js";
 import {
@@ -191,37 +193,53 @@ export interface QuestionList {
   problems: { file: string; message: string }[];
 }
 
+type QuestionRead = { question: Question } | { error: string };
+
+/** One question file's text, read as a question or as why it isn't one. */
+function questionOfText(text: string): QuestionRead {
+  const data: unknown = parse(text);
+  const newer = newerQuestion(data);
+  if (newer) return { error: newer };
+  const r = Question.safeParse(data);
+  if (!r.success)
+    return {
+      error: r.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; "),
+    };
+  return { question: r.data };
+}
+
 /** Every question, oldest first; with `state`, only those in it. */
 export async function listQuestions(
   root: string,
   o: { state?: QuestionState; repo?: string; step?: string } = {},
 ): Promise<QuestionList> {
   const rel = questionsRelOf(root);
+  // Once: each call checks whether the metarepo is adopted, a stat.
+  const qdir = questionsDirOf(root);
   let names: string[];
   try {
-    names = (await readdir(questionsDirOf(root))).filter((n) => n.endsWith(".yaml")).sort();
+    names = (await readdir(qdir)).filter((n) => n.endsWith(".yaml")).sort();
   } catch {
     return { questions: [], problems: [] };
   }
   const questions: Question[] = [];
   const problems: QuestionList["problems"] = [];
-  for (const n of names) {
-    try {
-      const data: unknown = parse(await readFile(join(questionsDirOf(root), n), "utf8"));
-      const newer = newerQuestion(data);
-      const r = Question.safeParse(data);
-      if (newer) problems.push({ file: `${rel}/${n}`, message: newer });
-      else if (!r.success)
-        problems.push({
-          file: `${rel}/${n}`,
-          message: r.error.issues
-            .map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`)
-            .join("; "),
-        });
-      else questions.push(r.data);
-    } catch (e) {
-      problems.push({ file: `${rel}/${n}`, message: (e as Error).message.split("\n")[0]! });
-    }
+  // beta.23: each file's parse is kept until it changes; the app reads every question on most
+  // pages, and reading them all again each time made Home slow on a large estate.
+  const read = await mapAtOnce(names, (n) =>
+    keptParse(join(qdir, n), "question", questionOfText, { copy: true }).then(
+      (r) => ({ n, r }),
+      (e: unknown) => ({
+        n,
+        r: { error: (e as Error).message.split("\n")[0]! } as QuestionRead,
+      }),
+    ),
+  );
+  for (const { n, r } of read) {
+    // Gone since the folder was listed: as if it was never there.
+    if (!r) continue;
+    if ("question" in r) questions.push(r.question);
+    else problems.push({ file: `${rel}/${n}`, message: r.error });
   }
   return {
     questions: questions
@@ -774,6 +792,18 @@ export async function raiseQuestions(
   return { raised, known, reused, of, held, decidedBy, refreshed };
 }
 
+/** Whether a question file's text is at an older question version (one migrateQuestions rewrites). */
+function olderQuestionText(text: string): boolean {
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch {
+    return false;
+  }
+  const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
+  return v === 1 || v === 2 || v === 3 || v === 4;
+}
+
 /**
  * Rewrite questions/<id>.yaml files written at an older question schema version (1, ADR 0078;
  * 2, ADR 0117) at the current one (3, ADR 0153): only the version changes, since what each
@@ -789,15 +819,19 @@ export async function migrateQuestions(
   } = {},
 ): Promise<string[]> {
   const rel = questionsRelOf(root);
+  const qdir = questionsDirOf(root);
   const out: string[] = [];
   let names: string[];
   try {
-    names = (await readdir(questionsDirOf(root))).filter((n) => n.endsWith(".yaml")).sort();
+    names = (await readdir(qdir)).filter((n) => n.endsWith(".yaml")).sort();
   } catch {
     return out;
   }
   for (const n of names) {
-    const file = join(questionsDirOf(root), n);
+    const file = join(qdir, n);
+    // beta.23: a file already at the current version, by its kept reading, isn't read again
+    // (the app's upgrade check and doctor ask this of every question on each look).
+    if (!(await keptParse(file, "question-older", olderQuestionText).catch(() => true))) continue;
     // Round 49: written back to the file it was read from, only while it still holds what was
     // read (an answer landing meanwhile is read again, never lost); a few tries, then left.
     for (let attempt = 0; attempt < 3; attempt++) {

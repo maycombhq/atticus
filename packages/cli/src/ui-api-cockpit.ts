@@ -1,6 +1,8 @@
 import { Api, RecordId } from "@maycombhq/core";
 import { badRequest, HttpError, notFound, type Router } from "@maycombhq/server";
 import type { ServerContext } from "@maycombhq/server";
+import { checkoutsStamp } from "./ui-api-trust.js";
+import { keptAnswer } from "./watched-memo.js";
 
 /**
  * Review round 48: a change id from the address, checked before it is used: a path (../..) or
@@ -22,10 +24,16 @@ export function uiCockpitRoutes(r: Router, ctx: ServerContext): Router {
       const id = changeIdOf(params.changeId!);
       const { cockpit } = await import("./cockpit.js");
       try {
-        return {
-          status: 200,
-          body: Api.ChangeCockpit.parse(await cockpit(ctx.root, id, { user: ctx.user })),
-        };
+        // beta.23: kept until a change is heard or a base clone moves (Home asks it on each load).
+        return await keptAnswer(
+          ctx.root,
+          `cockpit:${id}:${ctx.user}`,
+          async () => ({
+            status: 200,
+            body: Api.ChangeCockpit.parse(await cockpit(ctx.root, id, { user: ctx.user })),
+          }),
+          () => checkoutsStamp(ctx.root),
+        );
       } catch (e) {
         if (e instanceof Error && e.name === "ChangeFileError")
           throw notFound(`There is no change ${params.changeId}.`);

@@ -61,6 +61,26 @@ describe("the local index", () => {
     expect((await stat(join(root, ".index/catalog.sqlite"))).size).toBeLessThan(2 * 1024 * 1024);
   });
 
+  it("skips checking the files when the caller heard no change (trusted), but never for a new index (beta.23)", async () => {
+    const root = await forgeRoot();
+    // A new index file is built from the files even when trusted.
+    const a = await openIndex(root, { trusted: true, embeddings: "off" });
+    expect(a.rebuilt).toBe(true);
+    expect(a.get("System", "audit")).toBeTruthy();
+    a.close();
+    const f = join(root, "catalog/generated/system/audit.yaml");
+    await writeFile(f, readFileSync(f, "utf8").replace("name: Audit", "name: Audit Service"));
+    // Trusted: the change isn't read (the app's server says a change before its next open).
+    const b = await openIndex(root, { trusted: true, embeddings: "off" });
+    expect(b.rebuilt).toBe(false);
+    expect(b.get("System", "audit")).not.toMatchObject({ name: "Audit Service" });
+    b.close();
+    const c = await openIndex(root, { embeddings: "off" });
+    expect(c.rebuilt).toBe(true);
+    expect(c.get("System", "audit")).toMatchObject({ name: "Audit Service" });
+    c.close();
+  });
+
   it("reports files that fail C1 and leaves them out", async () => {
     const root = await forgeRoot();
     await writeFile(

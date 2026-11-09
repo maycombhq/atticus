@@ -743,6 +743,66 @@ describe("the index on a fresh metarepo", () => {
   });
 });
 
+describe("the index between changes (beta.23)", () => {
+  it("checks the files once after a change it hears, not on every request, and never answers with an old catalog after one", async () => {
+    const root = await forgeMetarepo();
+    const s = await startServer({ root, port: 0 });
+    const systems = async () =>
+      (
+        z
+          .array(KindCount)
+          .parse(
+            await (
+              await fetch(`${s.url}/api/catalog/kinds`, { headers: { "X-Atticus-Token": s.token } })
+            ).json(),
+          ) as { kind: string; count: number }[]
+      ).find((k) => k.kind === "System")?.count ?? 0;
+    const heard = () =>
+      new Promise<void>((resolve) => {
+        const stop = s.events.listen((e) => {
+          if (e.type === "file.changed") {
+            stop();
+            resolve();
+          }
+        });
+      });
+    try {
+      const before = await systems();
+      const p = parseRecord({
+        schemaVersion: 1,
+        status: "current",
+        confidence: "verified",
+        kind: "System",
+        id: "forge-extra",
+        name: "Forge extra",
+        boundary: "product",
+        owner: "team-forge",
+        repos: [],
+        evidence: [{ source: "manual", path: "notes.md" }],
+      });
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const told = heard();
+      const f = join(root, "catalog/generated", recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+      await told;
+      expect(await systems()).toBe(before + 1);
+      // A call that may write (any but a GET) has the next open check the files too.
+      await writeFile(
+        f.replace("forge-extra", "forge-extra-2"),
+        serializeRecord({ ...p.record, id: "forge-extra-2" } as typeof p.record),
+      );
+      await fetch(`${s.url}/api/jobs/no-such-job/cancel`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token },
+      });
+      expect(await systems()).toBe(before + 2);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe("Ask", () => {
   it("answers a question with the query it ran, an impact walk or an owner", async () => {
     const root = await forgeMetarepo();

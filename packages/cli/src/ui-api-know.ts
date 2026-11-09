@@ -2,9 +2,10 @@ import { Api } from "@maycombhq/core";
 import { initiativeStatus, readView } from "@maycombhq/initiatives";
 import { systemGuide } from "@maycombhq/site";
 import { catalogRecords, openChanges } from "./site-commands.js";
-import { baselineCommand, setupSteps } from "./baseline-commands.js";
+import { baselineCommand, MACHINE_CHECKING, setupSteps } from "./baseline-commands.js";
 
 import { doctorChecks, type DoctorCheck } from "./doctor.js";
+import { keptAnswer } from "./watched-memo.js";
 import {
   badRequest,
   HttpError,
@@ -61,16 +62,29 @@ export function uiKnowRoutes(
   // The machine doesn't change between page loads: check it at most every five minutes. The
   // checks in flight are kept too, so a request while they run waits for them, not a second run.
   let checked: { at: number; checks: Promise<DoctorCheck[]> } | undefined;
+  // beta.23: the last checks that finished, for Home, which never waits for the machine.
+  let last: DoctorCheck[] | undefined;
   const machine = (fresh = false): Promise<DoctorCheck[]> => {
     if (fresh || !checked || Date.now() - checked.at > 300_000) {
       const run = { at: Date.now(), checks: doctor(ctx.root) };
       checked = run;
-      // A run that failed is forgotten, so the next request checks again.
-      run.checks.catch(() => {
-        if (checked === run) checked = undefined;
-      });
+      run.checks.then(
+        (c) => {
+          if (checked === run) last = c;
+        },
+        // A run that failed is forgotten, so the next request checks again.
+        () => {
+          if (checked === run) checked = undefined;
+        },
+      );
     }
     return checked.checks;
+  };
+  /** The machine's checks if they have finished (the newest that did), else that they run. */
+  const machineNow = (): DoctorCheck[] | typeof MACHINE_CHECKING => {
+    // Started (or started again after five minutes) for the next look; this one doesn't wait.
+    void machine().catch(() => undefined);
+    return last ?? MACHINE_CHECKING;
   };
   // The Set up page's first load waited about 3 s for these (found on Windows): start them now.
   if (o.warm) void machine().catch(() => undefined);
@@ -174,9 +188,14 @@ export function uiKnowRoutes(
         ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
         return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
       })
-      .add("GET", "/api/setup", async () => ({
+      // beta.23: Home's checklist never waits for the machine's checks (on Windows, starting Git,
+      // the OpenSpec CLI and the Copilot language server took seconds): until they finish, the
+      // machine step says it is checking. ?machine=wait waits for them, as it did before.
+      .add("GET", "/api/setup", async ({ query }) => ({
         status: 200,
-        body: await setupSteps(ctx.root, { doctor: machine() }),
+        body: await setupSteps(ctx.root, {
+          doctor: query.get("machine") === "wait" ? machine() : machineNow(),
+        }),
       }))
       .add("GET", "/api/doctor", async ({ query }) => {
         const checks = await machine(query.get("fresh") === "1");
@@ -267,7 +286,13 @@ export function uiKnowRoutes(
         const data = r.body.data as { api?: unknown } | null;
         return { status: 200, body: data?.api ?? { areas: [], systems: [] } };
       })
-      .add("GET", "/api/view/{name}", ({ params }) => view(params.name!))
+      // beta.23: Home's triage list, kept until a change is heard (watched-memo.ts); the other
+      // views run as they did.
+      .add("GET", "/api/view/{name}", ({ params }) =>
+        params.name === "triage"
+          ? keptAnswer(ctx.root, "view:triage", () => view("triage"))
+          : view(params.name!),
+      )
       .add("GET", "/api/view/{name}/{id}", ({ params }) => view(params.name!, params.id!))
   );
 }

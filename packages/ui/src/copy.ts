@@ -2312,6 +2312,8 @@ export const COPY = {
     aiLenses: "AI lenses",
     done: " (done)",
     toDo: " (to do)",
+    // beta.23: the machine's checks still run; Home doesn't wait for them.
+    checking: " (checking)",
     optional: " · optional",
     acceptTheCatalogAs: "Accept the catalog as the baseline",
     afterWalkingTheEcosystem:

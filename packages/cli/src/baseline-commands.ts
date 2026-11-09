@@ -31,7 +31,15 @@ export interface SetupStep {
   /** What to do when the step isn't done, in words a lead can follow. */
   fix?: string;
   optional?: boolean;
+  /**
+   * beta.23: the machine's checks are still running (the app's Home doesn't wait for them; its
+   * step says so and GET /api/doctor gives them when done). Only the machine step has it.
+   */
+  checking?: boolean;
 }
+
+/** What setupSteps says of the machine while its checks still run (the app's Home). */
+export const MACHINE_CHECKING = "checking";
 
 export const BASELINE_FILE = "baseline.yaml";
 
@@ -57,8 +65,9 @@ async function countFiles(dir: string): Promise<number> {
 
 export async function setupSteps(
   root: string,
-  o: { doctor?: DoctorCheck[] | Promise<DoctorCheck[]> } = {},
+  o: { doctor?: DoctorCheck[] | Promise<DoctorCheck[]> | typeof MACHINE_CHECKING } = {},
 ): Promise<{ steps: SetupStep[]; baselined: boolean }> {
+  const checking = o.doctor === MACHINE_CHECKING;
   // Every part only reads, so they are read at once (the machine's checks take the longest).
   const clonedOf = async (repos: { id: string }[]) =>
     (
@@ -72,7 +81,7 @@ export async function setupSteps(
       )
     ).filter(Boolean).length;
   const [doctor, op, repos, records, inputs, baseline, probes] = await Promise.all([
-    o.doctor ?? doctorChecks(root),
+    o.doctor === MACHINE_CHECKING ? ([] as DoctorCheck[]) : (o.doctor ?? doctorChecks(root)),
     loadOrgPack(orgPackDirOf(root)),
     loadRepos(root).catch(() => []),
     catalogRecords(root),
@@ -85,17 +94,26 @@ export async function setupSteps(
   const generated = records.filter((r) => r.evidence.some((e) => e.source !== "manual")).length;
   const wikis = op.sources.wikis.length;
   const steps: SetupStep[] = [
-    {
-      id: "machine",
-      label: "This machine has what Atticus needs",
-      done: failing.length === 0,
-      detail: failing.length
-        ? `to fix: ${failing.map((c) => c.label).join(", ")}`
-        : `${doctor.filter((c) => c.status === "warn").length} to look at`,
-      fix: failing.length
-        ? `Run atticus doctor: ${failing.map((c) => c.fix ?? c.label).join(" ")}`
-        : "Run atticus doctor for the details.",
-    },
+    checking
+      ? {
+          id: "machine",
+          label: "This machine has what Atticus needs",
+          done: false,
+          checking: true,
+          detail: "checking this machine (Git, OpenSpec, your assistant)",
+          fix: "Wait a moment: the checks finish on their own. Set up › Doctor (atticus doctor) shows each one.",
+        }
+      : {
+          id: "machine",
+          label: "This machine has what Atticus needs",
+          done: failing.length === 0,
+          detail: failing.length
+            ? `to fix: ${failing.map((c) => c.label).join(", ")}`
+            : `${doctor.filter((c) => c.status === "warn").length} to look at`,
+          fix: failing.length
+            ? `Run atticus doctor: ${failing.map((c) => c.fix ?? c.label).join(" ")}`
+            : "Run atticus doctor for the details.",
+        },
     {
       id: "org-pack",
       label: "The org pack's files are valid",

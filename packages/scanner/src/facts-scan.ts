@@ -9,6 +9,7 @@ import {
   normalizePath,
   pairsFromCorrections,
   parseCorrections,
+  keptParse,
   parseFacts,
   type CatalogRecord,
   type PersonPair,
@@ -225,11 +226,15 @@ export async function estateFacts(
   // A prototype's facts are never part of the estate join (ADR 0133).
   for (const r of productionRepos(op)) {
     if (r.id === except) continue;
-    const text = await readFile(join(factsDirOf(root), `${r.id}.jsonl`), "utf8").catch(
-      () => undefined,
-    );
-    if (text === undefined || text.trim() === "") continue;
-    const parsed = parseFacts(text);
+    // beta.23: each repo's facts parsed once and kept until the file changes (the app works the
+    // estate join out again after every answer; a copy, as the join may change what it reads).
+    const parsed = await keptParse(
+      join(factsDirOf(root), `${r.id}.jsonl`),
+      "facts",
+      (t) => (t.trim() ? parseFacts(t) : null),
+      { copy: true },
+    ).catch(() => undefined);
+    if (!parsed) continue;
     if (!parsed.ok) {
       notes.push(`${r.id}: its facts don't read, so the estate join leaves them out.`);
       continue;

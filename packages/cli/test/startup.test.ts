@@ -68,7 +68,9 @@ describe.skipIf(typeof (nodeModule as { registerHooks?: unknown }).registerHooks
       // Only core's light entry (the schema version, the log and, ADR 0187, a run's log and the
       // job printer: node built-ins only), never its schemas.
       for (const f of r.files.filter((x) => owner(x) === "packages/core"))
-        expect(f).toMatch(/\/core\/dist\/(light|log|fs|run-log|printer|schema\/version)\.js$/);
+        expect(f).toMatch(
+          /\/core\/dist\/(light|log|fs|run-log|printer|kept-files|schema\/version)\.js$/,
+        );
     });
 
     it("runs a command that calls no model without the model providers or the context tools", async () => {

@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { catalogDirOf, createLog, DEFAULT_PORT, orgPackDirOf } from "@maycombhq/core";
+import {
+  catalogDirOf,
+  createLog,
+  DEFAULT_PORT,
+  keptFilesMayHaveChanged,
+  orgPackDirOf,
+  trustKeptFiles,
+} from "@maycombhq/core";
 import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
 import {
   startServer,
@@ -11,6 +18,7 @@ import {
 import { stopAllBuilds } from "@maycombhq/taskrun";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
+import { answersMayHaveChanged, keepAnswersWhileWatched } from "./watched-memo.js";
 import { uiRoutes, type UiDeps } from "./ui-api.js";
 import { uiRunRoutes } from "./ui-api-run.js";
 import { uiMeRoutes } from "./ui-api-me.js";
@@ -78,6 +86,7 @@ export function extendUiRoutes(
     add(method, pattern, (req) => asTheApp(() => handler(req)), opts)) as Router["add"];
   const known = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
     warm: o.warm === true,
+    ...(deps.doctor ? { doctor: deps.doctor } : {}),
   });
   // UX review: initiatives started, planned and recorded in the app.
   const base = uiInitiativeRoutes(known, ctx);
@@ -197,6 +206,11 @@ export async function startUi(
     onRequest: (() => {
       const log = createLog(root);
       return (r) => {
+        // beta.23: a call that may have written: the answers kept are worked out again.
+        if (r.method !== "GET" && r.method !== "HEAD") {
+          answersMayHaveChanged();
+          keptFilesMayHaveChanged();
+        }
         const fields = { method: r.method, path: r.path, status: r.status, ms: r.ms };
         if (r.error) log.error("request", r.error, fields);
         else if (r.status >= 500) log.warn("request", fields);
@@ -214,16 +228,37 @@ export async function startUi(
   void readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
     () => undefined,
   );
+  // beta.23: the answers Home asks for again and again are kept until a change is heard.
+  // Whether the watcher follows the files, asked of it at most once a second (it lists them).
+  let followed = { at: 0, yes: false };
+  const following = () => {
+    if (Date.now() - followed.at > 1000)
+      followed = { at: Date.now(), yes: srv.following.length > 0 };
+    return followed.yes;
+  };
+  const unkeep = keepAnswersWhileWatched(root, following);
+  // And the small files read (each question, the org pack's files, each repo's facts) aren't
+  // checked again, while nothing here writes, until a change is heard.
+  trustKeptFiles(() => srv.quiet && following());
   const stop = srv.events.listen((e) => {
     const changed =
       e.type === "file.changed" &&
       (typeof e.path !== "string" || catalogMayHaveChanged(root, e.path));
     if (changed || e.type === "index.rebuilt") forgetCatalogs();
+    if (e.type === "file.changed" || e.type === "index.rebuilt" || e.type === "job.done") {
+      answersMayHaveChanged();
+      // Only the files at or under the path the watcher names are checked again.
+      keptFilesMayHaveChanged(
+        e.type === "file.changed" && typeof e.path === "string" ? join(root, e.path) : undefined,
+      );
+    }
   });
   const close = srv.close;
   return Object.assign(srv, {
     close: async () => {
       stop();
+      unkeep();
+      trustKeptFiles(undefined);
       keepCatalogsInMemory(false);
       servingTheApp(false);
       await close();

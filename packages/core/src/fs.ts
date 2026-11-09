@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { keptFilesMayHaveChanged } from "./kept-files.js";
 
 /**
  * Write a file so a crash never leaves it half-written: write a temporary file beside it,
@@ -19,6 +20,9 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
   } catch (e) {
     await rm(tmp, { force: true });
     throw e;
+  } finally {
+    // beta.23: the files kept read (kept-files.ts) are checked again after any write.
+    keptFilesMayHaveChanged(path);
   }
 }
 
