@@ -63,6 +63,8 @@ import { storeChangeRows } from "./openspec-stores-commands.js";
 /** Things tests (and the local API) inject instead of what runtime.yaml configures. */
 export interface ChangeDeps {
   gitHost?: GitHost;
+  /** ADR 0191: tests inject a notifier for the hand-off's reviewers; otherwise runtime.yaml's. */
+  notify?: import("@maycombhq/adapters").Notifier;
   publisher?: HandoffPublisher;
   /** ISO timestamp used for every time this command records. */
   now?: string;
@@ -521,8 +523,18 @@ export async function changeHandoff(
         : `Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`,
     );
     io.out(
-      `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named"}.`,
+      `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named: name the next role under Owners on the change's page"}.`,
     );
+    // ADR 0191: the next role's owners are told it waits on them, through the notify adapter.
+    const { notifyHandoffReviewers } = await import("./roles-work.js");
+    for (const line of await notifyHandoffReviewers(
+      root,
+      await changeStore(root).read(id),
+      h,
+      approvalOf(o.by, now, ref),
+      deps.notify,
+    ).catch(() => [] as string[]))
+      io.out(line);
     io.out(`Merging it approves the gate; the Git host's own rules decide who may approve it.`);
     return 0;
   } catch (e) {

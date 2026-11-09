@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { Api } from "@maycombhq/core";
+import { KnowledgeAnswerBlock } from "./KnowledgeAnswer.js";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
 import { Panel, View } from "../app/ui.js";
@@ -67,6 +69,8 @@ interface Asked {
   id?: string;
   owner?: string | null;
   error?: string;
+  /** ADR 0191: what the organisation's knowledge says to the question, each cited. */
+  knowledge?: Api.KnowledgeAnswerViewT;
 }
 
 function Detail({ row }: { row: Row }) {
@@ -239,6 +243,7 @@ export function Explore({ hash }: { hash: string }) {
                     {a.error}
                   </span>
                 )}
+                {a.knowledge && <KnowledgeAnswerBlock k={a.knowledge} />}
               </div>
             )}
           </View>

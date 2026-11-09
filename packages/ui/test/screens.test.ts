@@ -84,7 +84,6 @@ const UNDER_MORE = [
   "reconcile",
   "governance",
   "initiatives",
-  "brief",
   "ux",
   "arch-review",
   "breakdown",
@@ -133,6 +132,8 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(of("Change")).toEqual([
       "changes",
       "cockpit",
+      // ADR 0191 (app-only audit): the product owner writes the brief on a tab of the change.
+      "brief",
       "feature-design",
       // 2026-10-27: the product owner couldn't find a change's knowledge at the foot of Feature.
       "change-knowledge",
@@ -175,7 +176,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     // Change's by phase, in the order of a change.
     const change = more.find((g) => g.section === "Change")!;
     expect(change.phases!.map((p) => [p.phase, p.pages.map((x) => x.id)])).toEqual([
-      ["Define", ["brief", "ux"]],
+      ["Define", ["ux"]],
       ["Design", ["arch-review"]],
       ["Plan", ["breakdown", "estimate"]],
       ["Build", ["tasks", "conformance", "trace"]],

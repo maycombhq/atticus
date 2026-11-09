@@ -279,7 +279,7 @@ export const MIGRATIONS: Migration[] = [
   {
     id: "roles-v2",
     summary:
-      "roles.yaml at version 2: it can name the teams repos are owned by and who is on each, so questions go to their owner; no team is named until a person writes one (ADR 0140)",
+      "roles.yaml at version 3: it can name the teams repos are owned by and who is on each, so questions go to their owner (ADR 0140), and who takes each role on a change, so a new change's owners are suggested (ADR 0191); no team or role is named until a person writes one",
     async pending(root) {
       const rel = packRel(root, "roles.yaml");
       const text = await readFile(join(root, rel), "utf8").catch(() => undefined);

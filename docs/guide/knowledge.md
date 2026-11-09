@@ -79,6 +79,8 @@ atticus knowledge ask "What do I need before Forge can call a new vendor host?" 
 
 Check an item with `atticus knowledge verify <item>`, fix it with `atticus knowledge correct <item> --set leadTime="5 working days"` (the scan's own field names, such as `lead_time`, work too), or drop it with `atticus knowledge reject <item> --note "<why>"`. When a rescan changes an item a person reviewed, the review waits to be checked again: a rejected item stays out of plans and answers ("rejected, page changed"), and a correction isn't used ("correction made before the page changed") until a person checks it again. A conflict found or gone, or a change to the item's tags, doesn't make a review wait.
 
+**In the app (ADR 0191).** _Ask Atticus_ at the top answers from knowledge too: "How do I request a firewall rule?" lists the knowledge items and the passages of the wikis' snapshots and the `inputs/` files that share the question's words, each quoted with its page and line, and offers `atticus knowledge ask` for your assistant to word an answer from them. Nothing is worded by AI on that page. **Knowledge › Search the wikis** searches `inputs/` as it is when it has no snapshot yet, so the documents a change is suggested can be searched before anyone runs `atticus sources sync`.
+
 A document in `inputs/` is searched once, from the file itself, cited by its file and section. A file the sync skipped, such as a copy of a wiki page, isn't searched. A wiki's sections are searched from the pages its snapshot lists, and once the scan has read the source, from the pages it read. A `#` line in a fenced code block (a shell comment) is code, not a heading.
 
 ## 5. See what applies to a change
@@ -104,7 +106,7 @@ Each stage writes what it picked to `openspec/changes/<id>/knowledge.yaml`: each
 
 `atticus change knowledge` lists each item by its title, with its id in brackets, and says why in plain words: "The change names it", "Linked to northwind-pay, which the change leads to", or "Its words match the change's title and words".
 
-**Where to see a change's knowledge:** in the app, open the change and its **Knowledge** tab, beside Feature design (`#/change-knowledge?change=<id>`, or Ctrl+K and "knowledge that applies"; `GET /api/changes/<id>/knowledge`), filled from the feature stage on. Feature design links to it.
+**Where to see a change's knowledge:** in the app, open the change and its **Knowledge** tab, beside Feature design (`#/change-knowledge?change=<id>`, or Ctrl+K and "knowledge that applies"; `GET /api/changes/<id>/knowledge`), filled from the feature stage on. Feature design links to it. Each suggestion is named by its title (or its section's heading), and **Read it here** opens what it says in place: a section's own text with its page, or an item's quote (ADR 0191; `passage` on each item, and `GET /api/knowledge/passage?id=<source>/<page>#<heading>` for any section). The id and the file are under Details.
 
 ## 6. Confirm or exclude
 

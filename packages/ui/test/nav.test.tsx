@@ -31,7 +31,8 @@ describe("the menu's More pages", () => {
   it("is there on first load, closed, naming how many pages it holds", () => {
     const html = at("#/home");
     // ADR 0188: Manual steps, Release, Scans and Prompt history are tabs now (26 before).
-    expect(COUNT).toBe(22);
+    // ADR 0191: the brief is a tab of a change too.
+    expect(COUNT).toBe(21);
     expect(html).toMatch(
       new RegExp(`<button type="button"[^>]*aria-expanded="false"[^>]*>.*More pages.*${COUNT}`),
     );

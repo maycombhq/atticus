@@ -19,6 +19,7 @@ import {
   AI_RUNTIMES,
   DECIDE_BARS,
   Question,
+  QuestionAsks,
   QuestionRole,
   QuestionScopeLevel,
 } from "./schema/question.js";
@@ -410,8 +411,24 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   files are then proposed for review as before. PUT /api/settings/ai's `decide` lifts a
  *   runtime.yaml of any older version to 4 (upgrade's runtime-v4 step), not only a version 3
  *   one. Additive only.
+ * 3.8.0 (ADR 0191, roles and the BA): a change goes product owner → architect → business analyst →
+ *   tech lead. A question carries what it asks (`asks`, question version 6) and POST
+ *   /api/questions/{id}/route moves it to another role (`routed`); GET /api/questions' `about`
+ *   gains `asks`. GET /api/findings gives each finding's `asks` and takes `asks=` to filter. GET
+ *   /api/changes/{changeId}/owners/suggested suggests owners from roles.yaml (version 3: a team's
+ *   `roles`, the file's `defaults`). The cockpit's `waitsOn` names who the change waits on; a
+ *   hand-off names the next role's owners as reviewers and tells them through the notify adapter.
+ *   GET and POST /api/changes/{changeId}/work-items put the plan's feature, stories and tasks in
+ *   the work tracker (manual: a step each; live: `work-items`). POST
+ *   /api/owner-questions/{id}/send sends an owner question (`owner-ask`; a critic gap asked with
+ *   Ask is one of them). GET /api/ask answers from the organisation's knowledge too
+ *   (`knowledge`); GET /api/knowledge/search reads inputs/ when its source has no snapshot; GET
+ *   /api/knowledge/passage opens a suggested section inline; a change's knowledge item carries
+ *   `passage`. GET, POST /api/changes/{changeId}/stories/shape and POST
+ *   .../stories/shape/{entryId}/remove are the business analyst's shaping of the stories.
+ *   Additive only.
  */
-export const API_VERSION = "3.7.0";
+export const API_VERSION = "3.8.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1391,6 +1408,21 @@ export const ChangeKnowledgeItem = z.object({
   /** 2.30.0 (ADR 0132): the source of the page it is read from, and how much its word counts. */
   source: z.string().optional(),
   authority: z.enum(SOURCE_AUTHORITIES).optional(),
+  /**
+   * 3.6.0 (ADR 0191): what it says, to open it in place: a section's own text with its page and
+   * heading, or an item's quote with its page. Left out when the page can't be read.
+   */
+  passage: z
+    .object({
+      source: z.string(),
+      page: z.string(),
+      path: z.string(),
+      heading: z.string(),
+      line: z.number().int(),
+      text: z.string(),
+      quote: z.string().optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -2820,6 +2852,8 @@ export const ChangeCockpit = z.object({
    */
   openQuestionsByRole: z.partialRecord(QuestionRole, z.number().int()).optional(),
   yourRoles: z.array(QuestionRole).optional(),
+  /** 3.6.0 (ADR 0191): who the change waits on now, by role and name. */
+  waitsOn: z.lazy(() => WaitsOn).optional(),
   repos: z.array(
     z.object({ id: z.string(), branch: z.string(), base: z.string(), pr: z.string().optional() }),
   ),
@@ -2900,6 +2934,9 @@ export const CONFIRMED_WRITES = [
   "step-run",
   "ai-model",
   "ai-test",
+  // 3.6.0 (ADR 0191): the plan's work items in a live work tracker, and an owner question sent.
+  "work-items",
+  "owner-ask",
 ] as const;
 export const ConfirmedWrite = z.enum(CONFIRMED_WRITES);
 /** A confirmation the server gave the page: single use, for one write and target, two minutes. */
@@ -3537,6 +3574,8 @@ export const QuestionList = z.object({
          * the stage's that asked. Left out for a question no change's phase raised.
          */
         role: QuestionRole.optional(),
+        /** 3.6.0 (ADR 0191): what it asks (business, design, delivery), its own or its role's. */
+        asks: QuestionAsks.optional(),
         /**
          * 2.36.0 (ADR 0144, Q5): the answer the assistant proposed, for an open question, when
          * every line it cites says what it quotes. A person accepts it or answers otherwise.
@@ -4972,6 +5011,195 @@ export const LiveEvent = z.discriminatedUnion("type", [
   }),
 ]);
 
+// ------------------------------------------------------------------ roles and the BA (ADR 0191)
+
+/** 3.6.0 (ADR 0191): a person moves a question to another role. */
+export const RouteQuestionRequest = z.strictObject({ role: QuestionRole });
+
+/**
+ * 3.6.0 (ADR 0191): the owners roles.yaml suggests for a change's roles: the team that owns its
+ * repos (a team's `roles`), else the organisation's default for the role. Suggestions only: a
+ * person accepts one with a click (PUT .../owners), nothing is written by itself. A role the
+ * change already names is left out.
+ */
+export const OwnerSuggestion = z.object({
+  role: z.string(),
+  people: z.array(z.string()),
+  from: z.union([
+    z.object({ team: z.string(), name: z.string().optional(), repos: z.array(z.string()) }),
+    z.object({ default: z.literal(true) }),
+  ]),
+});
+export const OwnerSuggestionList = z.object({
+  change: z.string(),
+  suggestions: z.array(OwnerSuggestion),
+  /** Why there are none, in words, when there are none. */
+  note: z.string().optional(),
+});
+export type OwnerSuggestionListT = z.infer<typeof OwnerSuggestionList>;
+
+/** 3.6.0 (ADR 0191): who a change waits on now, by role, with their names. */
+export const WaitsOn = z.object({
+  /** The change.yaml owner key: product-owner, architect, business-analyst or team-lead. */
+  role: z.string(),
+  people: z.array(z.string()),
+  /** `handoff`: its hand-off PR waits on their review; `phase`: the phase's work is theirs. */
+  because: z.enum(["handoff", "phase"]),
+  phase: z.string(),
+});
+export type WaitsOnT = z.infer<typeof WaitsOn>;
+
+/** 3.6.0 (ADR 0191): a critic finding with the level of what it asks (business, design, delivery). */
+export const FindingView = z.strictObject({ ...Finding.shape, asks: QuestionAsks });
+
+/**
+ * 3.6.0 (ADR 0191): the work items a change's plan puts in the work tracker, one per feature,
+ * story and task, as sync.yaml remembers them. With a manual tracker each is a step for a person
+ * (the fields to copy, and where to record the tracker's id); with a live one, a write the
+ * person confirms (`work-items`).
+ */
+export const WorkItemPlan = z.object({
+  change: z.string(),
+  /** none: runtime.yaml names no work tracker; manual: steps for a person; live: the tracker. */
+  tracker: z.enum(["none", "manual", "live"]),
+  items: z.array(
+    z.object({
+      key: z.string(),
+      type: z.string(),
+      title: z.string(),
+      action: z.enum(["create", "update", "unchanged", "orphaned"]),
+      /** The tracker's id once known; `manual:<step>` until a person records it. */
+      id: z.string().optional(),
+      /** The step to record it on, for a manual id. */
+      step: z.string().optional(),
+      /** The story it is under, for a task; the story's own key for a story. */
+      story: z.string().optional(),
+    }),
+  ),
+  /** The command that does the same in a terminal. */
+  command: z.string(),
+});
+export type WorkItemPlanT = z.infer<typeof WorkItemPlan>;
+export const WorkItemSyncRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export const WorkItemSyncResult = z.object({
+  plan: WorkItemPlan,
+  lines: z.array(z.string()),
+  done: z.array(z.object({ key: z.string(), action: z.string(), id: z.string() })),
+  failed: z.array(z.object({ key: z.string(), reason: z.string() })),
+});
+export type WorkItemSyncResultT = z.infer<typeof WorkItemSyncResult>;
+
+/**
+ * 3.6.0 (ADR 0191): send an owner question through the configured notifications adapter, on the
+ * person's confirmation (`owner-ask`, target the question's id). With manual notifications it is
+ * a step for a person, as before.
+ */
+export const SendOwnerAskRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export const SentOwnerAsk = z.object({
+  /** sent: through the adapter; step: a manual step for a person; not-sent: why in `why`. */
+  state: z.enum(["sent", "step", "not-sent"]),
+  to: z.string(),
+  id: z.string().optional(),
+  why: z.string().optional(),
+});
+export type SentOwnerAskT = z.infer<typeof SentOwnerAsk>;
+
+/** 3.6.0 (ADR 0191): a passage of the org's wikis or inputs/ files, with where it is. */
+export const KnowledgePassageView = z.object({
+  source: z.string(),
+  page: z.string(),
+  /** The page's root-relative path (the snapshot copy, or the inputs/ file). */
+  path: z.string(),
+  heading: z.string(),
+  line: z.number().int(),
+  text: z.string(),
+});
+export type KnowledgePassageViewT = z.infer<typeof KnowledgePassageView>;
+
+/**
+ * 3.6.0 (ADR 0191): what the organisation's knowledge says to a question, found by its words (no
+ * AI): the knowledge items it matches, each with the quote it rests on, and the passages of the
+ * wikis' snapshots and inputs/ files. Nothing is made up: each shows where it is from.
+ */
+export const KnowledgeAnswerView = z.object({
+  items: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.string(),
+      title: z.string(),
+      quote: z
+        .object({
+          source: z.string(),
+          page: z.string(),
+          section: z.string().optional(),
+          text: z.string(),
+        })
+        .optional(),
+    }),
+  ),
+  passages: z.array(KnowledgePassageView),
+  /** The AI step that answers from the items in words, citing them (atticus knowledge ask). */
+  command: z.string(),
+});
+export type KnowledgeAnswerViewT = z.infer<typeof KnowledgeAnswerView>;
+
+/**
+ * 3.6.0 (ADR 0191): the business analyst's shaping of a change's stories, in plain words. A
+ * rename keeps the story's number; a split's first part keeps it and each other part gets the next
+ * free one; a merge keeps the first story's; an added story gets the next free one. The AI maps
+ * the tasks to the stories at the next draft, and the critic checks none is left without a story.
+ */
+export const StoryShapeOp = z.enum(["rename", "split", "merge", "add"]);
+export const StoryShapeRequest = z.strictObject({
+  op: StoryShapeOp,
+  /** rename, split: the story; merge: the stories, the first keeps its number. */
+  story: z.string().optional(),
+  stories: z.array(z.string()).min(2).optional(),
+  /** rename, merge, add: its name; split: the first part's. */
+  name: z.string().trim().min(1).max(200),
+  /** What the story is for, in the person's words (add, a split's parts). */
+  words: z.string().trim().max(2000).optional(),
+  /** split: the other parts, each a story of its own. */
+  parts: z
+    .array(
+      z.strictObject({
+        name: z.string().trim().min(1).max(200),
+        words: z.string().trim().max(2000).optional(),
+      }),
+    )
+    .optional(),
+});
+export const StoryShapeEntryView = z.object({
+  id: z.string(),
+  op: StoryShapeOp,
+  story: z.string().optional(),
+  stories: z.array(z.string()).optional(),
+  name: z.string(),
+  words: z.string().optional(),
+  parts: z
+    .array(z.object({ id: z.string(), name: z.string(), words: z.string().optional() }))
+    .optional(),
+  /** The story an added one is. */
+  added: z.string().optional(),
+  by: z.string(),
+  at: z.string(),
+  /** waiting: no draft has read it yet; applied: the stories now have it, with the run. */
+  state: z.enum(["waiting", "applied"]),
+  run: z.string().optional(),
+});
+export const StoryShapeView = z.object({
+  change: z.string(),
+  file: z.string(),
+  entries: z.array(StoryShapeEntryView),
+  /** Each task's story as the last draft mapped it, by task id. */
+  assigned: z.record(z.string(), z.string()),
+  /** What the coverage check found: a story with no task, a task with no story. */
+  uncovered: z.array(z.string()),
+  /** The step that maps the tasks to the stories again. */
+  command: z.string(),
+});
+export type StoryShapeViewT = z.infer<typeof StoryShapeView>;
+
 // ------------------------------------------------------------------ the document
 
 type Op = {
@@ -5445,7 +5673,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "ask",
       summary:
-        "Answer a plain-language question from the catalog; the query used is always returned",
+        "Answer a plain-language question from the catalog; the query used is always returned. 3.6.0 (ADR 0191): `knowledge` (KnowledgeAnswerView) says what the organisation's knowledge items, wiki snapshots and inputs/ files say to it, each cited",
       tag: "catalog",
       params: [q("q", str, "The question, e.g. who calls ledger-api?")],
       ok: {
@@ -6058,6 +6286,18 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "OwnerQuestionList", description: "OK" },
     },
   },
+  "/api/owner-questions/{id}/send": {
+    post: {
+      id: "sendOwnerQuestion",
+      summary:
+        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+      tag: "questions",
+      params: [p("id")],
+      body: SendOwnerAskRequest,
+      ok: { status: 200, schema: "SentOwnerAsk", description: "Sent, or why not" },
+      errors: [400, 403, 404],
+    },
+  },
   "/api/owner-questions/{id}/answer": {
     post: {
       id: "answerOwnerQuestion",
@@ -6101,6 +6341,70 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeDetail", description: "OK" },
       errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/owners/suggested": {
+    get: {
+      id: "suggestChangeOwners",
+      summary:
+        "3.6.0 (ADR 0191): who roles.yaml suggests for each role the change doesn't name yet: the team owning its repos, else the organisation's default; a person accepts one with PUT .../owners",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "OwnerSuggestionList", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/work-items": {
+    get: {
+      id: "planWorkItems",
+      summary:
+        "3.6.0 (ADR 0191): the feature, stories and tasks the plan puts in the work tracker, and what sync.yaml remembers of each (atticus ado sync --dry-run)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "WorkItemPlan", description: "OK" },
+      errors: [400, 404, 422],
+    },
+    post: {
+      id: "syncWorkItems",
+      summary:
+        "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates",
+      tag: "changes",
+      params: [p("changeId")],
+      body: WorkItemSyncRequest,
+      ok: { status: 200, schema: "WorkItemSyncResult", description: "Synced" },
+      errors: [400, 403, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/stories/shape": {
+    get: {
+      id: "getStoryShape",
+      summary:
+        "3.6.0 (ADR 0191): the business analyst's renames, splits, merges and added stories, each task's story as the last draft mapped it, and what is uncovered",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "StoryShapeView", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "shapeStories",
+      summary:
+        "3.6.0 (ADR 0191): rename, split, merge or add a story in plain words, as the signed-in person; a rename and a merge keep the number, a split's new part and an added story take the next free one. The next draft of the stories maps the tasks to them",
+      tag: "changes",
+      params: [p("changeId")],
+      body: StoryShapeRequest,
+      ok: { status: 201, schema: "StoryShapeView", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/stories/shape/{entryId}/remove": {
+    post: {
+      id: "removeStoryShape",
+      summary:
+        "3.6.0 (ADR 0191): take back a shaping no draft has read yet; one a draft applied stays, and a later one changes it",
+      tag: "changes",
+      params: [p("changeId"), p("entryId")],
+      ok: { status: 200, schema: "StoryShapeView", description: "Removed" },
+      errors: [400, 404, 422],
     },
   },
   "/api/changes/{changeId}/owners": {
@@ -6991,8 +7295,13 @@ const OPS: Record<string, Record<string, Op>> = {
         q("state"),
         q("lens", { type: "string", enum: Lens.options }),
         q("severity", { type: "string", enum: Severity.options }),
+        q(
+          "asks",
+          { type: "string", enum: ["business", "design", "delivery"] },
+          "3.6.0 (ADR 0191): only findings that ask at this level",
+        ),
       ],
-      ok: { status: 200, schema: arrayOf("Finding"), description: "OK" },
+      ok: { status: 200, schema: arrayOf("FindingView"), description: "OK" },
     },
   },
   "/api/findings/{changeId}/{findingId}": {
@@ -7419,6 +7728,18 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404, 422],
     },
   },
+  "/api/questions/{id}/route": {
+    post: {
+      id: "routeQuestion",
+      summary:
+        "3.6.0 (ADR 0191): move a question to another role (product, architecture, analysis, delivery), as the signed-in person; the question keeps its answer, and `routed` says from which role, by whom and when",
+      tag: "questions",
+      params: [p("id")],
+      body: RouteQuestionRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "The question, routed" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/questions/{id}/answer": {
     post: {
       id: "answerQuestion",
@@ -7520,6 +7841,17 @@ const OPS: Record<string, Record<string, Op>> = {
       body: ReviewItemRequest,
       ok: { status: 200, schema: "ReviewedItem", description: "Reviewed" },
       errors: [400, 404, 422],
+    },
+  },
+  "/api/knowledge/passage": {
+    get: {
+      id: "knowledgePassage",
+      summary:
+        "3.6.0 (ADR 0191): one section of a wiki snapshot page or an inputs/ file, by its id (<source>/<page>#<heading>), to open it in place",
+      tag: "knowledge",
+      params: [q("id", str, "The section's id, as a change's knowledge lists it")],
+      ok: { status: 200, schema: "KnowledgePassageView", description: "OK" },
+      errors: [400, 404],
     },
   },
   "/api/knowledge/search": {
@@ -7785,6 +8117,15 @@ export function openApiDocument(): Record<string, unknown> {
     ProposePlanView,
     OwnerQuestionView,
     OwnerQuestionList,
+    OwnerSuggestionList,
+    WaitsOn,
+    FindingView,
+    WorkItemPlan,
+    WorkItemSyncResult,
+    SentOwnerAsk,
+    KnowledgePassageView,
+    KnowledgeAnswerView,
+    StoryShapeView,
     OwnerAnswerRequest,
     OwnerAnswerResult,
     PreparedStepView,

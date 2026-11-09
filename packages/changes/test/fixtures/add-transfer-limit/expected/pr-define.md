@@ -12,6 +12,8 @@ Merging this pull request approves the hand-off. The Git host's own rules (branc
 
 ### Reviewers
 
+- @ari (architect)
+- @avery (architect)
 - @forge/platform
 
 ### Risk

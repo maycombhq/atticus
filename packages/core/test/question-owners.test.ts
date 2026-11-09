@@ -59,13 +59,14 @@ describe("roles.yaml version 2: the teams (ADR 0140)", () => {
     );
   });
 
-  it("moves a version-1 file to 2, changing only the number", () => {
+  it("moves a version-1 file to the current version (3 since ADR 0191), changing only the number", () => {
     const v1 = "# Forge roles\nschemaVersion: 1 # was 1\nenabledOptional: [sre]\n";
     expect(migrateRolesText(v1)).toEqual({
-      text: "# Forge roles\nschemaVersion: 2 # was 1\nenabledOptional: [sre]\n",
+      text: "# Forge roles\nschemaVersion: 3 # was 1\nenabledOptional: [sre]\n",
       changed: true,
     });
-    expect(migrateRolesText(ROLES_V2).changed).toBe(false);
+    expect(migrateRolesText(ROLES_V2).changed).toBe(true);
+    expect(migrateRolesText(migrateRolesText(ROLES_V2).text).changed).toBe(false);
   });
 });
 

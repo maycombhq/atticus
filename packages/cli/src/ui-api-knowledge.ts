@@ -258,12 +258,54 @@ export function uiKnowledgeRoutes(
         ? { source: id.slice(0, slash), page: id.slice(slash + 1, hash) }
         : undefined;
     };
+    // ADR 0191: what each says, to open it in place: a section's own text, or an item's quote.
+    const { knowledgePages } = await import("./roles-work.js");
+    const { sectionOf } = await import("@maycombhq/knowledge");
+    const pages = doc?.items.some((i) => i.id.includes("#")) ? await knowledgePages(root) : [];
+    const records = doc?.items.length
+      ? new Map((await readKnowledge(root, { cacheRoot: root })).items.map((r) => [r.id, r]))
+      : new Map();
+    const passageOf = (
+      id: string,
+    ): NonNullable<Api.ChangeKnowledgeViewT["items"][number]["passage"]> | undefined => {
+      if (id.includes("#")) {
+        const s = sectionOf(pages, id);
+        return s
+          ? {
+              source: s.source,
+              page: s.page,
+              path: s.path,
+              heading: s.heading,
+              line: s.line,
+              text: s.text,
+            }
+          : undefined;
+      }
+      const r = records.get(id) as
+        | {
+            quote?: { source: string; page: string; section?: string; text: string; line?: number };
+          }
+        | undefined;
+      const q = r?.quote;
+      return q
+        ? {
+            source: q.source,
+            page: q.page,
+            path: `${q.source}/${q.page}`,
+            heading: q.section ?? "",
+            line: q.line ?? 1,
+            text: q.text,
+            quote: q.text,
+          }
+        : undefined;
+    };
     return {
       change,
       file,
       present,
       items: (doc?.items ?? []).map((i) => {
         const reason = plainWhy(i);
+        const passage = passageOf(i.id);
         const at = sourceOf(i.id);
         const w = at ? settings.get(at.source) : undefined;
         const authority =
@@ -275,6 +317,7 @@ export function uiKnowledgeRoutes(
           ...(reason ? { reason } : {}),
           ...(at && settings.has(at.source) ? { source: at.source } : {}),
           ...(authority ? { authority } : {}),
+          ...(passage ? { passage } : {}),
         };
       }),
       nearMisses: (doc?.nearMisses ?? []).map(titled),
@@ -546,13 +589,29 @@ export function uiKnowledgeRoutes(
         const source = strParam(query, "source");
         if (source !== undefined) idOf(source, "source");
         const ids = await snapshotSources(root);
-        if (source && !ids.includes(source))
+        // ADR 0191: inputs/ is searched as it is when it has no snapshot yet (its files were
+        // suggested on a change, and search said no source had a snapshot).
+        const { inputsPassagePages } = await import("./roles-work.js");
+        const live =
+          !ids.includes(INPUTS_SOURCE_ID) && (!source || source === INPUTS_SOURCE_ID)
+            ? await inputsPassagePages(root)
+            : [];
+        if (source && !ids.includes(source) && !(source === INPUTS_SOURCE_ID && live.length))
           throw notFound(`${source} has no snapshot yet: atticus sources sync --source ${source}.`);
         const snapshots: Snapshot[] = [];
         for (const s of source ? [source] : ids) {
           const snap = await readSnapshot(root, s).catch(() => undefined);
           if (snap) snapshots.push(snap);
         }
+        if (live.length)
+          snapshots.push({
+            manifest: { source: INPUTS_SOURCE_ID } as Snapshot["manifest"],
+            dir: "inputs",
+            pages: live.map(
+              (p) =>
+                ({ pagePath: p.page, path: p.path, text: p.text }) as Snapshot["pages"][number],
+            ),
+          });
         const matches = searchPages(snapshots, phrase);
         const body: Api.WikiSearchResultT = {
           phrase,

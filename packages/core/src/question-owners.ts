@@ -18,7 +18,12 @@ import { cmpText } from "./identity.js";
 export type QuestionOwner = { team: string; name?: string } | { none: string };
 
 /** The teams roles.yaml names, and why they couldn't be read when they couldn't. */
-export async function readTeams(root: string): Promise<{ teams: Team[]; problem?: string }> {
+export async function readTeams(root: string): Promise<{
+  teams: Team[];
+  /** Version 3 (ADR 0191): the organisation's person for each role, when no team names one. */
+  defaults?: Record<string, string[]>;
+  problem?: string;
+}> {
   const rel = `${orgPackRelOf(root)}/roles.yaml`;
   const raw = await readFile(join(orgPackDirOf(root), "roles.yaml"), "utf8").catch(() => undefined);
   if (raw === undefined) return { teams: [] };
@@ -34,7 +39,7 @@ export async function readTeams(root: string): Promise<{ teams: Team[]; problem?
       teams: [],
       problem: `${rel} isn't valid: ${r.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ")}`,
     };
-  return { teams: r.data.teams };
+  return { teams: r.data.teams, ...(r.data.defaults ? { defaults: r.data.defaults } : {}) };
 }
 
 /** A handle as compared: no leading @, lower case. */

@@ -1,5 +1,10 @@
 import { BUILT_IN_ROLES } from "./schema/orgpack.js";
-import { QUESTION_ROLES, type Question, type QuestionRole } from "./schema/question.js";
+import {
+  QUESTION_ROLES,
+  type Question,
+  type QuestionAsks,
+  type QuestionRole,
+} from "./schema/question.js";
 
 /**
  * ADR 0181 part 4: each role answers its own questions. A change flows product owner (Define: the
@@ -50,11 +55,120 @@ export function roleOfStep(step: string, rerun?: string): QuestionRole | undefin
   return stage === undefined ? undefined : STAGE_ROLE[stage];
 }
 
-/** A question's role: its own (version 5), else derived from the step that asked and its rerun. */
-export function roleOfQuestion(
-  q: Pick<Question, "askedBy" | "rerun"> & { role?: QuestionRole | undefined },
-): QuestionRole | undefined {
-  return q.role ?? roleOfStep(q.askedBy.step, q.rerun);
+/**
+ * ADR 0191: the role that owns what a question asks. Design is the architect's and delivery the
+ * tech lead's, whichever stage asked. Business is the product owner's, or the business analyst's
+ * once the stories are being written (a question the stories or tasks stage raises about what the
+ * change must do is the analyst's to answer at that level).
+ */
+export function roleOfAsks(asks: QuestionAsks, stageRole?: QuestionRole): QuestionRole {
+  if (asks === "design") return "architecture";
+  if (asks === "delivery") return "delivery";
+  return stageRole === "analysis" || stageRole === "delivery" ? "analysis" : "product";
+}
+
+/** ADR 0191: what a role's questions ask, for a question that has no `asks` of its own. */
+export function asksOfRole(role: QuestionRole): QuestionAsks {
+  if (role === "architecture") return "design";
+  if (role === "delivery") return "delivery";
+  return "business";
+}
+
+type RoutedQuestion = Pick<Question, "askedBy" | "rerun"> & {
+  role?: QuestionRole | undefined;
+  asks?: QuestionAsks | undefined;
+};
+
+/**
+ * A question's role: a person's re-routing or the one it was raised with (versions 5 and 6), else
+ * what it asks (version 6), else derived from the step that asked and its rerun.
+ */
+export function roleOfQuestion(q: RoutedQuestion): QuestionRole | undefined {
+  if (q.role) return q.role;
+  const stage = roleOfStep(q.askedBy.step, q.rerun);
+  return q.asks ? roleOfAsks(q.asks, stage) : stage;
+}
+
+/** What a question asks: its own tag (version 6), else its role's level; undefined with neither. */
+export function asksOfQuestion(q: RoutedQuestion): QuestionAsks | undefined {
+  if (q.asks) return q.asks;
+  const r = roleOfQuestion(q);
+  return r ? asksOfRole(r) : undefined;
+}
+
+const DESIGN_FILES =
+  /^(design\.md|interfaces|target-flows\/|mappings\.md|data\.md|diagrams?\/|catalog$)/;
+const DELIVERY_FILES = /^(tasks\.md|tasks\/|release|qa|conformance|build)/;
+const DESIGN_WORDS =
+  /\b(hop|resilien\w*|timeouts?|retr(?:y|ies)|circuit[- ]breakers?|alerts?|alerting|observab\w*|monitor\w*|interfaces?|endpoints?|topics?|schemas?|idempoten\w*|latency|throughput|failover|fallback|rate[- ]limit\w*|mtls|oauth|queues?)\b/;
+
+/**
+ * ADR 0191: what a critic finding asks of people, by the same three levels, so a product owner's
+ * Home shows only the business ones (the audit: running the critic from the brief made findings
+ * about circuit breakers and alerts, and Home showed the product owner a change blocked by them).
+ * A finding on the design's files is design; on tasks.md, the build or the release, delivery; one
+ * on the brief, the proposal, the UX or the stories is business unless its rule, lens or words are
+ * about how the estate does it (resilience, timeouts, alerts, interfaces).
+ */
+export function asksOfFinding(f: {
+  artifact: string;
+  rule?: string | undefined;
+  lens?: string | undefined;
+  summary?: string | undefined;
+}): QuestionAsks {
+  const a = f.artifact.replace(/\\/g, "/");
+  if (DESIGN_FILES.test(a)) return "design";
+  if (DELIVERY_FILES.test(a)) return "delivery";
+  const words = `${(f.rule ?? "").replace(/[.-]/g, " ")} ${f.summary ?? ""}`.toLowerCase();
+  if (f.lens === "architecture" || DESIGN_WORDS.test(words)) return "design";
+  if (f.lens === "delivery" || f.lens === "release" || f.lens === "code-and-test")
+    return "delivery";
+  return "business";
+}
+
+/**
+ * ADR 0191: the levels a change's phase is decided at. In Define only the business level holds
+ * the change (a design finding waits for the architect); in Design, business and design; from
+ * Plan on, all three.
+ */
+export function asksOfPhase(state: string): QuestionAsks[] {
+  if (state === "draft" || state === "define" || state === "returned") return ["business"];
+  if (state === "design") return ["business", "design"];
+  return ["business", "design", "delivery"];
+}
+
+/** The change.yaml owner key of each phase's role, in the order a change goes. */
+export const OWNER_OF_ROLE: Readonly<Record<QuestionRole, string>> = {
+  product: "product-owner",
+  architecture: "architect",
+  analysis: "business-analyst",
+  delivery: "team-lead",
+};
+
+/**
+ * ADR 0191: whose turn a phase's hand-off is: the next role's owner key (define → the architect,
+ * design → the business analyst, plan → the tech lead), so the hand-off names its
+ * reviewers and At a glance says who it waits on.
+ */
+export function nextOwnerOf(phase: string): string | undefined {
+  if (phase === "define") return "architect";
+  if (phase === "design") return "business-analyst";
+  if (phase === "plan") return "team-lead";
+  // Build, QA and release are the tech lead's own: CODEOWNERS and the Git host's rules review them.
+  return undefined;
+}
+
+/** The people a phase's hand-off waits on: the next role's owners on the change (handles, no @). */
+export function nextOwnersOf(
+  phase: string,
+  owners: Readonly<Record<string, readonly string[]>>,
+): { role: string; people: string[] } | undefined {
+  const role = nextOwnerOf(phase);
+  if (!role) return undefined;
+  const people = [...new Set((owners[role] ?? []).map((p) => p.trim().replace(/^@/, "")))].filter(
+    (p) => p && !p.includes("/"),
+  );
+  return { role, people };
 }
 
 /** What each of the built-in roles change.yaml's `owners` names does on a change, as a question role. */

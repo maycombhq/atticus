@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.7.0",
+    "version": "3.8.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -111,7 +111,9 @@
                       "propose",
                       "step-run",
                       "ai-model",
-                      "ai-test"
+                      "ai-test",
+                      "work-items",
+                      "owner-ask"
                     ]
                   },
                   "target": {
@@ -2303,7 +2305,7 @@
     "/api/ask": {
       "get": {
         "operationId": "ask",
-        "summary": "Answer a plain-language question from the catalog; the query used is always returned",
+        "summary": "Answer a plain-language question from the catalog; the query used is always returned. 3.6.0 (ADR 0191): `knowledge` (KnowledgeAnswerView) says what the organisation's knowledge items, wiki snapshots and inputs/ files say to it, each cited",
         "tags": [
           "catalog"
         ],
@@ -5988,6 +5990,94 @@
         }
       }
     },
+    "/api/owner-questions/{id}/send": {
+      "post": {
+        "operationId": "sendOwnerQuestion",
+        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+        "tags": [
+          "questions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent, or why not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentOwnerAsk"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/owner-questions/{id}/answer": {
       "post": {
         "operationId": "answerOwnerQuestion",
@@ -6184,6 +6274,509 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/owners/suggested": {
+      "get": {
+        "operationId": "suggestChangeOwners",
+        "summary": "3.6.0 (ADR 0191): who roles.yaml suggests for each role the change doesn't name yet: the team owning its repos, else the organisation's default; a person accepts one with PUT .../owners",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSuggestionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/work-items": {
+      "get": {
+        "operationId": "planWorkItems",
+        "summary": "3.6.0 (ADR 0191): the feature, stories and tasks the plan puts in the work tracker, and what sync.yaml remembers of each (atticus ado sync --dry-run)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "syncWorkItems",
+        "summary": "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemSyncResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stories/shape": {
+      "get": {
+        "operationId": "getStoryShape",
+        "summary": "3.6.0 (ADR 0191): the business analyst's renames, splits, merges and added stories, each task's story as the last draft mapped it, and what is uncovered",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryShapeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "shapeStories",
+        "summary": "3.6.0 (ADR 0191): rename, split, merge or add a story in plain words, as the signed-in person; a rename and a merge keep the number, a split's new part and an added story take the next free one. The next draft of the stories maps the tasks to them",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "rename",
+                      "split",
+                      "merge",
+                      "add"
+                    ]
+                  },
+                  "story": {
+                    "type": "string"
+                  },
+                  "stories": {
+                    "minItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "words": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "words": {
+                          "type": "string",
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "op",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryShapeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stories/shape/{entryId}/remove": {
+      "post": {
+        "operationId": "removeStoryShape",
+        "summary": "3.6.0 (ADR 0191): take back a shaping no draft has read yet; one a draft applied stays, and a later one changes it",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryShapeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12406,6 +12999,20 @@
               ]
             },
             "required": false
+          },
+          {
+            "name": "asks",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "business",
+                "design",
+                "delivery"
+              ]
+            },
+            "description": "3.6.0 (ADR 0191): only findings that ask at this level",
+            "required": false
           }
         ],
         "responses": {
@@ -12416,7 +13023,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Finding"
+                    "$ref": "#/components/schemas/FindingView"
                   }
                 }
               }
@@ -14960,6 +15567,102 @@
         }
       }
     },
+    "/api/questions/{id}/route": {
+      "post": {
+        "operationId": "routeQuestion",
+        "summary": "3.6.0 (ADR 0191): move a question to another role (product, architecture, analysis, delivery), as the signed-in person; the question keeps its answer, and `routed` says from which role, by whom and when",
+        "tags": [
+          "questions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "product",
+                      "architecture",
+                      "analysis",
+                      "delivery"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The question, routed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/questions/{id}/answer": {
       "post": {
         "operationId": "answerQuestion",
@@ -15695,6 +16398,68 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/passage": {
+      "get": {
+        "operationId": "knowledgePassage",
+        "summary": "3.6.0 (ADR 0191): one section of a wiki snapshot page or an inputs/ file, by its id (<source>/<page>#<heading>), to open it in place",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The section's id, as a change's knowledge lists it",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePassageView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26868,6 +27633,814 @@
         ],
         "additionalProperties": false
       },
+      "OwnerSuggestionList": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "from": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "team": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "team",
+                        "repos"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "default": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "default"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "role",
+                "people",
+                "from"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "suggestions"
+        ],
+        "additionalProperties": false
+      },
+      "WaitsOn": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "because": {
+            "type": "string",
+            "enum": [
+              "handoff",
+              "phase"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "people",
+          "because",
+          "phase"
+        ],
+        "additionalProperties": false
+      },
+      "FindingView": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "issue",
+              "knowledge-gap"
+            ]
+          },
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "gate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "round": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rule": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "constitution",
+              "org",
+              "team"
+            ]
+          },
+          "lens": {
+            "type": "string",
+            "enum": [
+              "true",
+              "complete",
+              "safe",
+              "ship",
+              "business",
+              "architecture",
+              "story",
+              "ux",
+              "delivery",
+              "code-and-test",
+              "release"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "gap",
+              "risk",
+              "idea"
+            ]
+          },
+          "artifact": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locator": {
+            "type": "object",
+            "properties": {
+              "line": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "heading": {
+                "type": "string"
+              },
+              "record": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "patch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "evidence": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "code",
+                        "config",
+                        "spec",
+                        "gateway",
+                        "event-config",
+                        "infrastructure",
+                        "pipeline",
+                        "migration",
+                        "diagram",
+                        "document",
+                        "export",
+                        "manual"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "artifact",
+                        "catalog",
+                        "rule"
+                      ]
+                    }
+                  ]
+                },
+                "record": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "quote": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "question": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "owner"
+            ],
+            "additionalProperties": false
+          },
+          "answered": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string",
+                "pattern": "^q-[0-9a-f]{12}$"
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "question",
+              "quote"
+            ],
+            "additionalProperties": false
+          },
+          "waivable": {
+            "type": "boolean"
+          },
+          "state": {
+            "default": "open",
+            "type": "string",
+            "enum": [
+              "open",
+              "applied",
+              "dismissed",
+              "waived",
+              "asked"
+            ]
+          },
+          "resolution": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "apply",
+                  "edit-and-apply",
+                  "not-relevant",
+                  "waive",
+                  "ask"
+                ]
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "askedOf": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "action",
+              "by",
+              "at"
+            ],
+            "additionalProperties": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "asks": {
+            "type": "string",
+            "enum": [
+              "business",
+              "design",
+              "delivery"
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "id",
+          "kind",
+          "change",
+          "gate",
+          "round",
+          "rule",
+          "layer",
+          "lens",
+          "severity",
+          "artifact",
+          "locator",
+          "summary",
+          "why",
+          "fix",
+          "evidence",
+          "waivable",
+          "state",
+          "createdAt",
+          "asks"
+        ],
+        "additionalProperties": false
+      },
+      "WorkItemPlan": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "tracker": {
+            "type": "string",
+            "enum": [
+              "none",
+              "manual",
+              "live"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "update",
+                    "unchanged",
+                    "orphaned"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "step": {
+                  "type": "string"
+                },
+                "story": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "type",
+                "title",
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "tracker",
+          "items",
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "WorkItemSyncResult": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/WorkItemPlan"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "done": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "action",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "plan",
+          "lines",
+          "done",
+          "failed"
+        ],
+        "additionalProperties": false
+      },
+      "SentOwnerAsk": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "step",
+              "not-sent"
+            ]
+          },
+          "to": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgePassageView": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "heading": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "page",
+          "path",
+          "heading",
+          "line",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgeAnswerView": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "string"
+                    },
+                    "section": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "page",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "title"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "passages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePassageView"
+            }
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "passages",
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "StoryShapeView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "rename",
+                    "split",
+                    "merge",
+                    "add"
+                  ]
+                },
+                "story": {
+                  "type": "string"
+                },
+                "stories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "name": {
+                  "type": "string"
+                },
+                "words": {
+                  "type": "string"
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "words": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "added": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "applied"
+                  ]
+                },
+                "run": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "op",
+                "name",
+                "by",
+                "at",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "assigned": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "uncovered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "file",
+          "entries",
+          "assigned",
+          "uncovered",
+          "command"
+        ],
+        "additionalProperties": false
+      },
       "OwnerAnswerRequest": {
         "type": "object",
         "properties": {
@@ -27419,7 +28992,9 @@
               "propose",
               "step-run",
               "ai-model",
-              "ai-test"
+              "ai-test",
+              "work-items",
+              "owner-ask"
             ]
           },
           "target": {
@@ -34045,6 +35620,9 @@
               ]
             }
           },
+          "waitsOn": {
+            "$ref": "#/components/schemas/WaitsOn"
+          },
           "repos": {
             "type": "array",
             "items": {
@@ -38754,6 +40332,10 @@
               {
                 "type": "number",
                 "const": 5
+              },
+              {
+                "type": "number",
+                "const": 6
               }
             ]
           },
@@ -38905,6 +40487,42 @@
               "analysis",
               "delivery"
             ]
+          },
+          "asks": {
+            "type": "string",
+            "enum": [
+              "business",
+              "design",
+              "delivery"
+            ]
+          },
+          "routed": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "enum": [
+                  "product",
+                  "architecture",
+                  "analysis",
+                  "delivery"
+                ]
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "by",
+              "at"
+            ],
+            "additionalProperties": false
           },
           "askedOf": {
             "type": "string",
@@ -39607,6 +41225,14 @@
                     "product",
                     "architecture",
                     "analysis",
+                    "delivery"
+                  ]
+                },
+                "asks": {
+                  "type": "string",
+                  "enum": [
+                    "business",
+                    "design",
                     "delivery"
                   ]
                 },
@@ -42302,6 +43928,43 @@
                     "team",
                     "reference"
                   ]
+                },
+                "passage": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "heading": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "page",
+                    "path",
+                    "heading",
+                    "line",
+                    "text"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

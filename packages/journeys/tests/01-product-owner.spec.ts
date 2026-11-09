@@ -42,26 +42,29 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "aria-expanded",
     "false",
   );
-  await expect(page.getByRole("navigation", { name: "Home pages" })).toHaveCount(0);
-  // Change opens on All changes; At a glance, then a tab per stage. The separate brief is under
-  // More pages, not a tab; its address still opens.
+  // ADR 0188: Home's manual steps are a tab of Home.
+  await expect(page.getByRole("navigation", { name: "Home pages" })).toHaveCount(1);
+  // Change opens on All changes; At a glance, the Brief (ADR 0191), then a tab per stage.
   await main.getByRole("link", { name: "Change" }).click();
   await expect(page).toHaveURL(/#\/changes$/);
   const tabs = page.getByRole("navigation", { name: "Change pages" });
   await expect(tabs.getByRole("link")).toHaveText([
     "All changes",
     "At a glance",
+    "Brief",
     "Feature design",
     "Knowledge",
     "Architecture",
     "Stories",
     "Tasks",
+    "Release plan",
   ]);
   await expect(tabs.getByRole("link", { name: "All changes" })).toHaveAttribute(
     "aria-current",
     "page",
   );
   await expect(tabs.getByRole("link", { name: "Feature brief" })).toHaveCount(0);
+  await expect(tabs.getByRole("link", { name: "Brief" })).toBeVisible();
   // A change's tab with no change picked says to pick one in All changes.
   await tabs.getByRole("link", { name: "At a glance" }).click();
   await expect(page.getByText(/Pick it in All changes/)).toBeVisible();
@@ -89,20 +92,24 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   await expect(main.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
 });
 
-test("reads and edits the brief, then saves it", async ({ page }) => {
+test("reads and edits the brief in its form, one box per section, then saves it", async ({
+  page,
+}) => {
+  // ADR 0191: the brief is a form, one box per section of brief.md, the path under Details.
   await open(page, app(), "brief?change=add-transfer-limit");
-  await expect(page.getByRole("heading", { level: 2, name: "Feature brief" })).toBeVisible();
-  await expect(page.getByText("Add a daily transfer limit").first()).toBeVisible();
-  await accessible(page, "feature brief");
-  await page.getByRole("button", { name: "Edit" }).first().click();
-  const box = page.getByLabel("brief text");
+  await expect(page.getByRole("heading", { level: 2, name: "The brief" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Problem" })).toBeVisible();
+  await expect(page.getByText("<!--")).toHaveCount(0);
+  await accessible(page, "the brief");
+  await page.getByRole("button", { name: "Edit the brief" }).click();
+  const box = page.getByLabel("Success measures");
   await box.fill(
-    `${await box.inputValue()}\n\n## Examples\n\n- A customer with a 1000 limit sends 900, then 200: the 200 is refused.\n`,
+    `${await box.inputValue()} A customer with a 1000 limit sends 900, then 200: the 200 is refused.`,
   );
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(
-    page.getByText(/Saved openspec\/changes\/add-transfer-limit\/brief\.md/),
-  ).toBeVisible();
+  await accessible(page, "the brief's form");
+  await page.getByRole("button", { name: "Save the brief" }).click();
+  await expect(page.getByText("Saved the brief.")).toBeVisible();
+  await expect(page.getByText(/the 200 is refused/)).toBeVisible();
 });
 
 test("asks the critic, and sees prototypes and UX", async ({ page }) => {

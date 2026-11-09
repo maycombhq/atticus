@@ -55,6 +55,7 @@ import { asTheApp, servingTheApp } from "./model-address.js";
 import { uiActivityRoutes } from "./ui-api-activity.js";
 import { uiThreadRoutes } from "./ui-api-thread.js";
 import { uiSetupRoutes } from "./ui-api-setup.js";
+import { uiRolesRoutes } from "./ui-api-roles.js";
 
 /**
  * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
@@ -169,11 +170,21 @@ export function extendUiRoutes(
   );
   // ADR 0187: the Console's list of everything running or run lately, wherever it started.
   // ADR 0189: a stage of a change as one conversation, and a person's reply in it. ADR 0190:
-  // settings and setup in the app, Edit then Propose.
-  return uiSetupRoutes(
-    uiThreadRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx),
+  // settings and setup in the app, Edit then Propose. ADR 0191: roles and the business analyst
+  // (owners suggested, work items, the stories' shaping, an owner question sent, a knowledge
+  // section in place, Ask from knowledge).
+  return uiRolesRoutes(
+    uiSetupRoutes(
+      uiThreadRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx),
+      ctx,
+      deps.openFolder ? { openFolder: deps.openFolder } : {},
+    ),
     ctx,
-    deps.openFolder ? { openFolder: deps.openFolder } : {},
+    {
+      ...(deps.notify ? { notify: deps.notify } : {}),
+      ...(deps.workTracker ? { workTracker: deps.workTracker } : {}),
+      ...(deps.now ? { now: () => new Date(deps.now!) } : {}),
+    },
   );
 }
 

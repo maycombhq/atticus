@@ -82,6 +82,14 @@ atticus spec accept forge-orders
 
 From then on the stories stage writes `## MODIFIED Requirements` for each seeded flow a change touches, keeping the seeded scenarios, and each change's archive keeps the specs current. Accept a repo's seed before a change on its flows reaches the stories stage; if one got there first, run its stories stage again after accepting. Atticus warns when this happens ([ADR 0156](../adr/0156-a-changes-impact-up-the-chain-seeds-and-vendor-headers-and-errors.md)): the stories stage, when it writes ADDED for a flow an open seed adds too; `atticus spec seed`, naming each change that already adds one of the seed's flows; and `atticus next`, whose first step for that change is for a person to accept the seed (`atticus spec accept <repo>`), then run the change's stories stage again.
 
+## The business analyst shapes the stories (ADR 0191)
+
+The stories are worked out from the target flows, one per repo and flow. On the change's **Stories** tab the business analyst can rename a story, split one into two, merge stories of one repo, or add one, in plain words (`POST /api/changes/<id>/stories/shape`). Atticus keeps it in `stage/stories-shape.yaml`: a rename and a merge keep the story's number, a split's new part and an added story take the next free number at once (reserved in `stage/stories-numbers.yaml`, so they never move). The next draft of the stories (`atticus plan stories <change>`, or Draft the stories again on the tab) gets the shaping and puts each task under the story it belongs to; that mapping is kept, so the task's context and every later read agree. A task that moves takes the next free task number in its new story. The stage refuses a story the analyst named that ends up with no task, and the critic's `tasks-cover-stories` check at the plan gate says what no task serves. A shaping no draft has read yet can be taken back.
+
+## Putting the stories in the work tracker
+
+The Stories tab lists the change's feature, each story and its tasks as work items, with what `sync.yaml` remembers of each (`GET /api/changes/<id>/work-items`). **Put them in the work tracker** writes them (`POST`), the same as `atticus ado sync <change> --approve <you>`: with `adapters.workTracker: { type: manual }` each is a step on Home › Manual steps with the fields to copy (title, description, acceptance criteria, parent) and where to record the id the tracker gave it; with a live tracker it asks you to confirm first (ADR 0186). The ids are kept under each story's and task's stable key, so a later sync updates those items and never makes second ones.
+
 ## Exporting the stories to Azure DevOps or Jira
 
 With no API to your tracker, import a file:

@@ -96,7 +96,7 @@ describe("questions as files (ADR 0078)", () => {
   it("builds an open question with the scope proposed and the command that asked", () => {
     const q = questionFromDraft(QuestionDraft.parse(draft), asked);
     expect(q).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       askedBy: {
         step: "scan-survey",
         command: "atticus scan survey forge-notes",

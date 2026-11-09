@@ -22,6 +22,7 @@ import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { loadEstate, type Estate } from "./stages/estate.js";
 import { metarepoOpenSpec } from "./stages/openspec-files.js";
 import { readStoryNumbers } from "./stages/numbers.js";
+import { applyShape, readShape } from "./stages/story-shape.js";
 import {
   criteriaFor,
   findTask,
@@ -262,7 +263,10 @@ export async function taskContext(
   const deltas = (await readDeltas(dir)).deltas.filter((d) => !isEmptyDelta(d));
   // Review round 50: numbered as the stories stage numbered them (stage/stories-numbers.yaml).
   const stories: DeltaStory[] = deltas.length
-    ? storiesFromDeltas(deltas, estate, await readStoryNumbers(dir))
+    ? applyShape(
+        storiesFromDeltas(deltas, estate, await readStoryNumbers(dir)),
+        await readShape(dir),
+      ).stories
     : [];
   // B-short: tasks.md numbers tasks per story (1.1, 1.2, 2.1); the task's id (its first step's)
   // stays the key of the answer and the judgments, and still names it here.

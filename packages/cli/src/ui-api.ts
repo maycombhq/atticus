@@ -164,6 +164,10 @@ export interface UiDeps {
   autoDone?: AutoDoneOptions;
   /** Tests: Open another folder's app (ADR 0190; otherwise a second server in this process). */
   openFolder?: import("./ui-api-setup.js").SetupDeps["openFolder"];
+  /** Tests (ADR 0191): a notifier for the hand-off's reviewers and owner questions. */
+  notify?: import("@maycombhq/adapters").Notifier;
+  /** Tests (ADR 0191): a work tracker for the plan's work items. */
+  workTracker?: import("@maycombhq/adapters").WorkTracker;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -311,7 +315,9 @@ async function changeDetail(root: string, id: string) {
     title: c.title,
     type: c.type,
     state: c.state,
-    repos: c.touches.repos,
+    // ADR 0191 (app-only audit): the repos it names and its target flows' ("Name its repos on its
+    // brief" stayed after the stories named them; the brief has no repos).
+    repos: await (await import("./roles-work.js")).changeRepos(root, c),
     openFindings: open,
     updatedAt: c.history.at(-1)?.at ?? c.createdAt,
     ...(fast ? { fastPath: true } : {}),
@@ -596,6 +602,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   const changeDeps = {
     ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.notify ? { notify: deps.notify } : {}),
   };
   /**
    * Windows review: Apply, Propose and Bring in run git, verify and the Git host, which on a bank

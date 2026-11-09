@@ -98,6 +98,7 @@ gaps:                # what the estate lacks for this change, at a high level
     why: <why the change needs it>
 questions:           # what only a person can answer; never answer them yourself
   - question: <plain words>
+    asks: business | design | delivery
     options:
       - label: <a few words>
         means: <what picking it means>
@@ -108,6 +109,7 @@ Rules:
 - Pick features and flows by what they do, not by shared words. Name only ids that are in the index; a flow that doesn't exist yet goes under newFlows.
 - A flow the change only reads from is "read"; one whose steps change is "changed".
 - Leave conflicts with other changes out: Atticus finds those from the files.
+- Say what each question asks: business (what the change must do for whom: a rule, a limit, what happens to the customer or the money) goes to the product owner; design (how the estate does it: a call, a timeout, a topic) to the architect; delivery (how it is built and shipped) to the tech lead.
 - Where the organisation's knowledge below bears on the change (a standard it must meet, a request or process it starts, a vendor's rule), name the item or section in the gap or question it bears on. Never take a rule from it that the brief or the estate contradicts.
 - Plain, short English.`;
 

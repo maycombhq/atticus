@@ -19,7 +19,14 @@ export interface InboxData {
     summary: string;
     state: string;
     change?: string;
+    /** 3.6.0 (ADR 0191): what it asks, business, design or delivery. */
+    asks?: string;
   }[];
+  /**
+   * ADR 0191: the levels the person looks at (a product owner, business): a finding at another
+   * level is left out of their list. Left out, every finding shows.
+   */
+  levels?: readonly string[];
   questions: { id: string; question: string; owner?: string; system?: string }[];
   triage: { id: string; kind: string; summary: string }[];
   steps: { id: string; title: string; system: string; change?: string }[];
@@ -84,6 +91,29 @@ const ARTIFACT_SCREEN: [string, string][] = [
 const withChange = (screen: string, change?: string) =>
   `#/${screen}${change ? `?change=${encodeURIComponent(change)}` : ""}`;
 
+/**
+ * ADR 0191: whether a finding at this level holds a change in this state: in Define only the
+ * business level does; in Design, business and design; from Plan on, every level.
+ */
+export function holdsPhase(asks: string | undefined, state: string | undefined): boolean {
+  if (!asks || !state) return true;
+  if (state === "draft" || state === "define" || state === "returned") return asks === "business";
+  if (state === "design") return asks !== "delivery";
+  return true;
+}
+
+/** The levels each role looks at on Home (ADR 0191): the product owner and the BA, business. */
+export function levelsOfRoles(roles: readonly string[]): string[] | undefined {
+  if (!roles.length) return undefined;
+  const out = new Set<string>();
+  for (const r of roles) {
+    if (r === "product" || r === "analysis") out.add("business");
+    if (r === "architecture") ["business", "design"].forEach((x) => out.add(x));
+    if (r === "delivery") ["business", "design", "delivery"].forEach((x) => out.add(x));
+  }
+  return [...out];
+}
+
 /** Everything that needs a person: changes in a phase, blocking findings and gaps, then queues. */
 export function inboxOf(d: InboxData): InboxItem[] {
   const out: InboxItem[] = [];
@@ -100,8 +130,13 @@ export function inboxOf(d: InboxData): InboxItem[] {
       ...(c.updatedAt ? { since: c.updatedAt } : {}),
     });
   }
+  const stateOf = new Map(d.changes.map((c) => [c.id, c.state]));
   for (const f of d.findings)
-    if (f.state === "open" && (f.severity === "blocking" || f.severity === "gap"))
+    if (
+      f.state === "open" &&
+      (f.severity === "blocking" || f.severity === "gap") &&
+      (!d.levels || !f.asks || d.levels.includes(f.asks))
+    )
       out.push({
         kind: "finding",
         title: f.summary,
@@ -112,7 +147,12 @@ export function inboxOf(d: InboxData): InboxItem[] {
         ),
         id: f.id,
         ...(f.change ? { change: f.change } : {}),
-        ...(f.severity === "blocking" ? { blocking: true } : {}),
+        // ADR 0191: a design finding doesn't hold a change in Define (it waits for the
+        // architect): the brief's gate said Ready to raise while Home said BLOCKED.
+        ...(f.severity === "blocking" &&
+        holdsPhase(f.asks, f.change ? stateOf.get(f.change) : undefined)
+          ? { blocking: true }
+          : {}),
       });
   for (const n of d.needs ?? [])
     if (n.status === "open")

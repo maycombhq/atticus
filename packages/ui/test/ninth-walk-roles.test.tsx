@@ -83,12 +83,23 @@ describe("the change's owners", () => {
 
   it("labels a field for each role", () => {
     const html = renderToStaticMarkup(
-      <ChangeOwners change="add-holds" owners={{ "team-lead": ["sam"] }} />,
+      <ChangeOwners change="add-holds" owners={{ "team-lead": ["sam"] }} startEditing />,
     );
     for (const r of ["Product owner", "Architect", "Business analyst", "Tech lead"])
       expect(html).toContain(`>${r}</label>`);
     expect(html).toContain('value="sam"');
-    expect(html).toContain(COPY.changeOwners.save);
+    expect(html).toContain(COPY.roleWork.saveOwners);
+  });
+
+  it("shows who is on it, with one button to change it and no Save until then (ADR 0191)", () => {
+    const html = renderToStaticMarkup(
+      <ChangeOwners change="add-holds" owners={{ "team-lead": ["sam"] }} />,
+    );
+    expect(html).toContain(">sam</dd>");
+    expect(html).toContain(COPY.roleWork.nobody);
+    expect(html).toContain(COPY.roleWork.editOwners);
+    expect(html).not.toContain(COPY.roleWork.saveOwners);
+    expect(html).not.toContain("<input");
   });
 });
 

@@ -78,6 +78,7 @@ Every command under the twelve, with its options.
   atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
   atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
   atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
+  atticus questions route <id> --to product|architecture|analysis|delivery   Move a question to the role that answers it (ADR 0191): a business question to the product owner, a design one to the architect [--by who]
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
   atticus change new "<title>" --type <type>  Start a change from a template

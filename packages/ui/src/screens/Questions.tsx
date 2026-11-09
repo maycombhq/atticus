@@ -11,6 +11,7 @@ import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQue
 import { queryParam } from "./know/common.js";
 import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 import { AiChip, AiMark, isAiBy, readyView, SplitCounts, useDecisions } from "../app/decisions.js";
+import { RouteQuestion } from "./RouteQuestion.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -711,6 +712,10 @@ export function QuestionDetail(p: {
   rule?: RuleOffer;
   /** Ninth UX walk: the role it is for, from the list's about (derived for an older file). */
   role?: string;
+  /** ADR 0191: what it asks (business, design, delivery), from the list's about. */
+  asks?: string;
+  /** ADR 0191: told when a person sent it to another role. */
+  onRouted?: () => void;
 }) {
   const q = p.question;
   const forRole = roleWords(p.role ?? q.role);
@@ -783,6 +788,16 @@ export function QuestionDetail(p: {
         {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} · {forRole ? `${forRole} · ` : ""}
         <code className="mono">{q.id}</code> <CopyButton text={q.id} label={C.copyId} />
       </p>
+      {/* ADR 0191: who answers it is by what it asks; a person sends it to another role. */}
+      {q.state !== "retired" && (
+        <RouteQuestion
+          id={q.id}
+          role={p.role ?? q.role}
+          asks={p.asks ?? q.asks}
+          routed={q.routed}
+          {...(p.onRouted ? { onRouted: p.onRouted } : {})}
+        />
+      )}
       <div>
         <h3 className="hud" style={{ margin: "0 0 4px", fontSize: 10 }}>
           {C.evidence}
@@ -1003,12 +1018,14 @@ function Detail({
   proposal,
   rule,
   role,
+  asks,
 }: {
   id: string;
   onAnswered: () => void;
   proposal?: Proposal;
   rule?: RuleOffer;
   role?: string;
+  asks?: string;
 }) {
   const q = useApi<QuestionView>(`/api/questions/${id}`);
   useReloadOnFiles(q);
@@ -1028,6 +1045,11 @@ function Detail({
             {...(proposal ? { proposal } : {})}
             {...(rule ? { rule } : {})}
             {...(role ? { role } : {})}
+            {...(asks ? { asks } : {})}
+            onRouted={() => {
+              q.reload();
+              onAnswered();
+            }}
           />
         )}
       </View>
@@ -1659,6 +1681,9 @@ export function Questions({ hash }: { hash: string }) {
                     : {})}
                   {...(list.state === "ready" && list.data.about?.[current]?.role
                     ? { role: list.data.about[current].role }
+                    : {})}
+                  {...(list.state === "ready" && list.data.about?.[current]?.asks
+                    ? { asks: list.data.about[current].asks }
                     : {})}
                 />
               ) : (

@@ -202,16 +202,23 @@ function ChangeRoleQuestions(p: {
   picked: Role | undefined;
   /** Ninth UX walk: tells Home whether this change's owners name the person. */
   onNamed?: (change: string, named: boolean) => void;
+  /** ADR 0191: tells Home the person's roles on this change (the owners', else the pick). */
+  onRoles?: (change: string, roles: Role[]) => void;
 }) {
   const q = useApi<Api.QuestionListT>(
     `/api/questions?state=open&change=${encodeURIComponent(p.change)}`,
   );
   useReloadOnFiles(q);
   const named = q.state === "ready" ? (q.data.yourRoles ?? []).some(isRole) : undefined;
-  const { onNamed, change } = p;
+  const { onNamed, onRoles, change } = p;
   useEffect(() => {
     if (named !== undefined) onNamed?.(change, named);
   }, [named, change, onNamed]);
+  const roles =
+    q.state === "ready" ? yourRole(q.data.yourRoles, p.picked).roles.join(",") : undefined;
+  useEffect(() => {
+    if (roles !== undefined) onRoles?.(change, roles ? (roles.split(",") as Role[]) : []);
+  }, [roles, change, onRoles]);
   if (q.state === "loading") return null;
   if (q.state === "error")
     return (
@@ -238,7 +245,11 @@ const LANDED = new Set(["released", "archived", "post-release-review"]);
  * Home's "Your role's questions": for each change in flight (up to five), the open questions of
  * the person's role, and the picker when no change names them.
  */
-export function YourRoleQuestions(p: { changes: readonly { id: string; state: string }[] }) {
+export function YourRoleQuestions(p: {
+  changes: readonly { id: string; state: string }[];
+  /** ADR 0191: the person's roles on each change in flight, for Home to show by role. */
+  onRoles?: (byChange: Readonly<Record<string, Role[]>>) => void;
+}) {
   const [picked, setPicked] = useState<Role | undefined>(() => readViewerRole());
   // Ninth UX walk: which changes name the person, so the picker shows only where it is used.
   const [named, setNamed] = useState<Record<string, boolean>>({});
@@ -246,6 +257,18 @@ export function YourRoleQuestions(p: { changes: readonly { id: string; state: st
     () => (change: string, n: boolean) =>
       setNamed((o) => (o[change] === n ? o : { ...o, [change]: n })),
   );
+  // ADR 0191: each change's roles for the person, put together for Home.
+  const [byChange, setByChange] = useState<Record<string, Role[]>>({});
+  const [onChangeRoles] = useState(
+    () => (change: string, roles: Role[]) =>
+      setByChange((o) =>
+        o[change]?.join(",") === roles.join(",") ? o : { ...o, [change]: roles },
+      ),
+  );
+  const { onRoles } = p;
+  useEffect(() => {
+    onRoles?.(byChange);
+  }, [byChange, onRoles]);
   const live = p.changes.filter((c) => !LANDED.has(c.state)).slice(0, 5);
   if (!live.length) return null;
   const picker = pickerFor(live.map((c) => named[c.id]));
@@ -258,7 +281,13 @@ export function YourRoleQuestions(p: { changes: readonly { id: string; state: st
         {R.homeIntro}
       </p>
       {live.map((c) => (
-        <ChangeRoleQuestions key={c.id} change={c.id} picked={picked} onNamed={onNamed} />
+        <ChangeRoleQuestions
+          key={c.id}
+          change={c.id}
+          picked={picked}
+          onNamed={onNamed}
+          onRoles={onChangeRoles}
+        />
       ))}
       {picker.show && (
         <RolePicker

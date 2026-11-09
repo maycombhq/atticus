@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { StoryShapePanel, WorkItemsPanel } from "./StoryShape.js";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { artifactStatusWord } from "../../app/artifact-status.js";
@@ -295,6 +296,9 @@ export function StagePage(p: {
                   }
                 />
               )}
+              {/* ADR 0191: the business analyst shapes the stories; the plan's work items. */}
+              {p.stage === "stories" && <StoryShapePanel change={c.id} />}
+              {p.stage === "stories" && <WorkItemsPanel change={c.id} />}
               {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
               {p.stage === "feature" && <ChangeInputs change={c.id} />}
               {/* ADR 0124, Part 5: the org knowledge that applies is on the change's Knowledge

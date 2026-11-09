@@ -37,7 +37,15 @@ import { BasePath, HostPattern } from "./workspace.js";
  * question: `askedOf` (the team or person a person's Ask routed it to) and `finding` (the gap it
  * asks about, by change, gate, round and id). Both optional.
  */
-export const QUESTION_SCHEMA_VERSION = 5 as const;
+/**
+ * Version 6 (ADR 0191, routing by what a question asks) adds two optional fields: `asks`, what the
+ * question asks (business, design or delivery), which the AI tags when it raises it and which
+ * decides the role that owns it (business → the product owner, or the business analyst from the
+ * stories on; design → the architect; delivery → the tech lead); and `routed`, a person's
+ * re-routing of it to another role (from which, by whom, when), with `role` holding the new one.
+ * Version-1 to version-5 files read as before and come back as version 6 in memory.
+ */
+export const QUESTION_SCHEMA_VERSION = 6 as const;
 
 const QuestionSchemaVersion = z
   .union([
@@ -45,9 +53,10 @@ const QuestionSchemaVersion = z
     z.literal(2),
     z.literal(3),
     z.literal(4),
+    z.literal(5),
     z.literal(QUESTION_SCHEMA_VERSION),
   ])
-  .overwrite((): 1 | 2 | 3 | 4 | 5 => QUESTION_SCHEMA_VERSION);
+  .overwrite((): 1 | 2 | 3 | 4 | 5 | 6 => QUESTION_SCHEMA_VERSION);
 
 /**
  * ADR 0181 part 4: who owns a question on a change, by the phase that raised it. The product owner
@@ -57,6 +66,24 @@ const QuestionSchemaVersion = z
 export const QUESTION_ROLES = ["product", "architecture", "analysis", "delivery"] as const;
 export const QuestionRole = z.enum(QUESTION_ROLES);
 export type QuestionRole = z.infer<typeof QuestionRole>;
+
+/**
+ * ADR 0191: what a question asks, by its level. `business`: what the change must do for whom (a
+ * rule, a limit, what happens when money is short); `design`: how the estate does it (a call, a
+ * timeout, a topic, a circuit breaker); `delivery`: how and when it is built and shipped (a repo, a
+ * migration's order, a test). The AI tags each question it raises; a person can re-route it.
+ */
+export const QUESTION_ASKS = ["business", "design", "delivery"] as const;
+export const QuestionAsks = z.enum(QUESTION_ASKS);
+export type QuestionAsks = z.infer<typeof QuestionAsks>;
+
+/** ADR 0191: a person moved a question to another role: from which, by whom, when. */
+export const QuestionRouted = z.strictObject({
+  from: QuestionRole.optional(),
+  by: z.string().trim().min(1),
+  at: IsoDateTime,
+});
+export type QuestionRouted = z.infer<typeof QuestionRouted>;
 
 /**
  * ADR 0181: the runtimes whose runs Atticus records, so a decision can name its run: a Copilot
@@ -274,6 +301,10 @@ export const Question = z
      * that raised it unless the question said otherwise. Left out where no stage owns it.
      */
     role: QuestionRole.optional(),
+    /** Version 6 (ADR 0191): what the question asks, as the AI tagged it when it raised it. */
+    asks: QuestionAsks.optional(),
+    /** Version 6 (ADR 0191): a person re-routed it; `role` is the role they gave it. */
+    routed: QuestionRouted.optional(),
     /**
      * Version 5 (ninth UX walk): a critic knowledge gap a person routed with Ask: who it is
      * asked of (a team or a person, the finding's owner unless they named another).
@@ -373,6 +404,12 @@ export const QuestionDraft = z
      * design stage asking the product owner what the brief meant). Left out, the stage's role.
      */
     role: QuestionRole.optional(),
+    /**
+     * ADR 0191: what the question asks (business, design or delivery). It decides the role that
+     * owns it when `role` is left out, so a business question a design stage raises goes to the
+     * product owner, not the architect.
+     */
+    asks: QuestionAsks.optional(),
     /**
      * The step's own reading (ADR 0117): this question is one already on file (same), or asks
      * part of one (narrower), with the words of the earlier question that say so. Atticus checks

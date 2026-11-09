@@ -95,7 +95,9 @@ export const SCREENS: ScreenDef[] = [
   { id: "changes", label: S.changes, section: "Change" },
   // WP7.1: one change at a glance.
   { id: "cockpit", label: S.cockpit, section: "Change", group: "Define" },
-  { id: "brief", label: S.brief, section: "Change", group: "Define", full: true },
+  // ADR 0191 (app-only audit): the brief is a tab of a change ("Write the brief on Feature brief"
+  // pointed under More pages).
+  { id: "brief", label: S.brief, section: "Change", group: "Define" },
   { id: "ux", label: S.ux, section: "Change", group: "Define", full: true },
   { id: "feature-design", label: N.feature, section: "Change", group: "Define" },
   // 2026-10-27: the knowledge attached to a change, on its own page (it was only at the foot of

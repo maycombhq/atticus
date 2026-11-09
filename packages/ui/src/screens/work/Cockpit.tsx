@@ -120,6 +120,30 @@ function DraftedTaskNext({
   );
 }
 
+/**
+ * ADR 0191 (app-only audit): At a glance said what the change waits on but never who. Who it
+ * waits on now, by name and role: the next role's reviewers of an open hand-off, else the
+ * phase's own role; or that nobody is named for the role yet.
+ */
+export function WaitsOnLine({ w }: { w: NonNullable<Cockpit["waitsOn"]> }) {
+  const R = COPY.roleWork;
+  const role = R.roleNames[w.role] ?? w.role;
+  return (
+    <p style={{ margin: 0 }} className="row" aria-live="polite">
+      <strong>
+        {w.people.length
+          ? R.waitsOn(w.people.map((p) => `@${p}`).join(", "), role)
+          : R.waitsOnNobody(role)}
+      </strong>
+      {w.people.length > 0 && (
+        <span className="muted" style={{ marginLeft: 6 }}>
+          {w.because === "handoff" ? R.waitsOnReview : R.waitsOnWork}
+        </span>
+      )}
+    </p>
+  );
+}
+
 export function CockpitView(p: {
   c: Cockpit;
   /** The change's tasks, when the next step names one (sixth UX walk). */
@@ -135,6 +159,7 @@ export function CockpitView(p: {
           {C.where}
         </h3>
         <p style={{ margin: 0 }}>{C.state(c.state, c.risk.level)}</p>
+        {c.waitsOn && <WaitsOnLine w={c.waitsOn} />}
         {/* Where the stages' work is when it ran ahead of the gates (ADR 0124 addendum B-change). */}
         {c.work && (
           <p className="muted" style={{ margin: 0 }}>
@@ -290,7 +315,9 @@ export function OpenWorkspace({ change, onDone }: { change: string; onDone?: () 
             <>
               <p className="muted" style={{ margin: 0 }}>
                 {C.noReposToOpen}{" "}
-                <a href={`#/brief?change=${encodeURIComponent(change)}`}>{C.writeBrief}</a>
+                <a href={`#/architecture?change=${encodeURIComponent(change)}`}>
+                  {C.openArchitecture}
+                </a>
               </p>
               {/* Ninth UX walk: the command only under Or in a terminal, never the step itself. */}
               <details className="work-terminal">

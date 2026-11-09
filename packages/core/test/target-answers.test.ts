@@ -68,7 +68,7 @@ describe("a targets answer (ADR 0162)", () => {
     expect(open.answer).toBeUndefined();
     expect(open.reopened).toMatchObject({ why, answer: { option: 1, by: "pat" } });
     const text = await readFile(join(root, "questions", `${q.id}.yaml`), "utf8");
-    expect(text).toContain("schemaVersion: 5");
+    expect(text).toContain("schemaVersion: 6");
     expect(text).toContain("reopened:");
     await answerQuestion(root, q.id, { text: "forge-accounts", by: "pat", at: AT });
     const again = (await readQuestion(root, q.id))!;
