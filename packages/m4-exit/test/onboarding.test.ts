@@ -27,7 +27,10 @@ describe("the onboarding bars", () => {
     expect(before.code).toBe(1);
     const open = json<Setup>(before).steps.filter((s) => !s.done && !s.optional);
     // What is left on a new metarepo, each with a fix a lead can follow.
-    expect(open.map((s) => s.id)).toEqual(["scan", "baseline"]);
+    expect(
+      open.map((s) => s.id),
+      JSON.stringify(open),
+    ).toEqual(["scan", "baseline"]);
     expect(open.every((s) => s.fix && /atticus /.test(s.fix))).toBe(true);
     clock.lap("read the setup checklist");
 
