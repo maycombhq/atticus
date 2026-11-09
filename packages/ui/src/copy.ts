@@ -4600,6 +4600,10 @@ export const COPY = {
   connect: {
     open: "Connect to…",
     title: (from: string) => `Connect ${from} to another box`,
+    dropNeedsRepo:
+      "A line connects a repo's calls to another box: start or end it on a repo, a component in one, or a system that holds one repo. A system with several repos: open it (double-click) and draw from the repo. Two outside systems can't be connected here: declare the link on the system's box instead.",
+    dropSameRepo:
+      "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
     intro:
       "Pair this repo's calls that join nothing with the other box's APIs. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
     pickBox: "The other box",

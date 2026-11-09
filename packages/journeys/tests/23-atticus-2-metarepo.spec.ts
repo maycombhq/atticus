@@ -169,3 +169,27 @@ test("the tour left open closes when the person moves to another page", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await context.close();
 });
+
+test("a line dragged from a repo and dropped anywhere on another box opens Connect", async ({
+  page,
+}) => {
+  // Tall enough that both boxes are on screen, as a person sees them before dragging.
+  await page.setViewportSize({ width: 1440, height: 1400 });
+  await open(page, app(), "canvas");
+  const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+  // The studio system holds the one repo, forge-studio: a line from it is the repo's.
+  const from = node("system:studio").locator(".react-flow__handle.source");
+  const to = node("system:llm");
+  await expect(from).toBeVisible();
+  await expect(to).toBeVisible();
+  const a = (await from.boundingBox())!;
+  const b = (await to.boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  // Dropped on the box's body, well away from its small connecting dot (top middle).
+  await page.mouse.move(b.x + 40, b.y + 40, { steps: 12 });
+  await page.mouse.up();
+  await expect(
+    page.getByRole("heading", { name: /Connect forge-studio to another box/ }),
+  ).toBeVisible();
+});

@@ -417,6 +417,16 @@ export function buildEstate(records: CatalogRecord[]): Estate {
     });
   }
 
+  // A system box names the repos inside it, so a line drawn from or to it can mean its repo.
+  for (const [sys, n] of [...nodes.entries()].filter(([id]) => id.startsWith("system:"))) {
+    if (n.properties.repos) continue;
+    const inside = [...repoSystem.entries()]
+      .filter(([, s]) => `system:${s}` === sys && systems.has(s))
+      .map(([r]) => r)
+      .sort();
+    if (inside.length) n.properties = { ...n.properties, repos: inside };
+  }
+
   const unknown = (ref: string) =>
     add({
       id: `unknown:${slug(ref)}`,

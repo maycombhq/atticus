@@ -50,6 +50,7 @@ import {
   type Views,
 } from "./model.js";
 import { WORDS } from "./words.js";
+import { flash } from "../../app/flash.js";
 
 const LENSES = ["architecture", "repo", "data", "integration", "infrastructure"] as const;
 type Lens = (typeof LENSES)[number];
@@ -829,11 +830,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 onConnect={(a, b) => {
                   // A line is drawn from a repo (or its component) to another box; drawn the
                   // other way round from a system, the ends swap; within one repo, nothing.
-                  let from = boxOf(find(a));
-                  let to = boxOf(find(b));
+                  let from = drawnBoxOf(find(a));
+                  let to = drawnBoxOf(find(b));
                   if (from && !from.repo && to?.repo) [from, to] = [to, from];
-                  if (!from?.repo || !to) return;
-                  if (to.repo === from.repo) return;
+                  // Said, not silently dropped: a line needs a repo at one end and two boxes.
+                  if (!from?.repo || !to) return flash({ text: COPY.connect.dropNeedsRepo });
+                  if (to.repo === from.repo) return flash({ text: COPY.connect.dropSameRepo });
                   setConnecting({ from: from.repo, initial: to });
                 }}
                 aside={
@@ -969,6 +971,23 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
 }
 
 /** G1 (ADR 0174): the repo or outside system a box stands for, when it stands for one. */
+/**
+ * The box a line drawn on the canvas means: a system box that holds exactly one repo of the
+ * estate means that repo (its calls are the repo's); otherwise as boxOf says.
+ */
+export function drawnBoxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
+  const b = boxOf(n);
+  const repos = n?.kind === "system" ? n.properties.repos : undefined;
+  if (
+    b?.system &&
+    Array.isArray(repos) &&
+    repos.length === 1 &&
+    n?.properties.boundary !== "outside"
+  )
+    return { repo: String(repos[0]) };
+  return b;
+}
+
 export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
   if (!n) return undefined;
   if (n.kind === "repo") return { repo: n.label };

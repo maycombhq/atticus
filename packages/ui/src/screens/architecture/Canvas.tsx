@@ -155,6 +155,20 @@ function BoxView({ data }: NodeProps<BoxNode>) {
   );
 }
 
+/** The box a pointer or touch ended on, by the node element under it (its id). */
+export function boxUnder(e: MouseEvent | TouchEvent): string | undefined {
+  const t = "changedTouches" in e ? e.changedTouches[0] : undefined;
+  const x = t ? t.clientX : "clientX" in e ? e.clientX : undefined;
+  const y = t ? t.clientY : "clientY" in e ? e.clientY : undefined;
+  // The line being drawn lies over the box: look through every element under the point.
+  const under = x === undefined || y === undefined ? [] : document.elementsFromPoint(x, y);
+  for (const el of under) {
+    const node = el.closest?.(".react-flow__node");
+    if (node) return node.getAttribute("data-id") ?? undefined;
+  }
+  return undefined;
+}
+
 /** Who owns a topic or queue, as its box says it (F10). */
 export const ownerText = (b: Pick<CanvasBox, "owner" | "ownerOutside">) =>
   b.owner
@@ -577,6 +591,19 @@ export function ArchitectureCanvas(p: {
             onConnect={(c) => {
               if (c.source && c.target && c.source !== c.target) p.onConnect?.(c.source, c.target);
             }}
+            // A line dropped anywhere on a box connects to it, not only on the box's small dot.
+            {...(p.onConnect
+              ? {
+                  onConnectEnd: (
+                    e: MouseEvent | TouchEvent,
+                    state: { isValid: boolean | null; fromNode?: { id: string } | null },
+                  ) => {
+                    if (state.isValid || !state.fromNode) return;
+                    const to = boxUnder(e);
+                    if (to && to !== state.fromNode.id) p.onConnect!(state.fromNode.id, to);
+                  },
+                }
+              : {})}
             edgesFocusable={false}
             zoomOnDoubleClick={false}
             zoomOnPinch

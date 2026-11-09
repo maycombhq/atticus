@@ -6,6 +6,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- The canvas, drawing a line (found by the person using it):
+  - **A line dropped anywhere on a box connects to it.** It connected only when dropped on the box's small dot, so a drop on the box did nothing.
+  - **A line drawn from or to a system that holds one repo is that repo's.** On a canvas showing systems, every drawn line was dropped silently.
+  - **A line that can't connect says why** (two systems with several or no repos, or both ends in one repo) instead of doing nothing.
 - Review round 50 (knowledge):
   - **A quote matches whole words.** "safe to deploy" was taken as on a page that says "Unsafe to deploy", and "The timeout is 5" on one that says 500 ms; every match is now tried, and one starting or ending inside a longer word or number is not one. The conflicts' quotes, the values' grounding and the kept items' re-check all go through it.
   - **An also-on quote is checked again when its page changes.** A rescan kept every also-on quote of an item whose main page didn't change, even when its own page now said something else or was gone; each also-on quote of a changed page is checked against the new snapshot (line and snapshot updated), and one no longer on its page is dropped with its evidence, the item kept.
