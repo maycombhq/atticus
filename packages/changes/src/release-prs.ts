@@ -17,7 +17,13 @@ import {
   type ChangeRepo,
   type LifecycleState,
 } from "@maycombhq/core";
-import { createGit, readChangeRepos, writeChangeRepos, type GitRunner } from "@maycombhq/workspace";
+import {
+  baseClonePath,
+  createGit,
+  readChangeRepos,
+  writeChangeRepos,
+  type GitRunner,
+} from "@maycombhq/workspace";
 import { ChangeError, type Reason } from "./errors.js";
 import { changeFolder, changeStore } from "./store.js";
 
@@ -114,10 +120,56 @@ async function readNothing(root: string, id: string): Promise<NothingFile["nothi
   }
 }
 
-/** The repos of a change found to have nothing to release (ADR 0184). */
-export async function nothingToRelease(root: string, id: string): Promise<Set<string>> {
-  return new Set((await readNothing(root, id)).map((x) => x.repo));
+/**
+ * The repos of a change found to have nothing to release (ADR 0184). Final review (git and
+ * tasks): an entry holds only while the change branch is where the raise found it. Once the
+ * branch here or on the Git host is at another commit (work landed since), the entry is void and
+ * go/no-go and the archive wait for that repo's release PR again. A repo with no clone here to
+ * look in keeps its entry; a host that can't be reached is judged by the branch here.
+ */
+export async function nothingToRelease(
+  root: string,
+  id: string,
+  o: { git?: GitRunner; remote?: string } = {},
+): Promise<Set<string>> {
+  const entries = await readNothing(root, id);
+  const out = new Set<string>();
+  if (!entries.length) return out;
+  const cr = await readChangeRepos(root, id).catch(() => undefined);
+  const git = o.git ?? createGit({ timeoutMs: 30_000 });
+  const remote = o.remote ?? "origin";
+  for (const x of entries) {
+    const r = cr?.repos.find((y) => y.id === x.repo);
+    if (r && (await moved(r, x.commit))) continue;
+    out.add(x.repo);
+  }
+  return out;
+
+  async function moved(r: ChangeRepo, commit: string | undefined): Promise<boolean> {
+    const dirs = [join(root, r.worktree)];
+    try {
+      dirs.push(baseClonePath(root, r.id));
+    } catch {
+      // not a repo id a base clone can have
+    }
+    const dir = dirs.find((d) => existsSync(d));
+    if (!dir) return false;
+    const ref = `refs/heads/${r.branch}`;
+    const here = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir).then(
+      (x) => x.stdout.trim() || undefined,
+      () => undefined,
+    );
+    const onHost = await git(["ls-remote", "--heads", remote, ref], dir).then(
+      (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
+      () => undefined,
+    );
+    const at = (sha: string | undefined) =>
+      sha !== undefined && (commit === undefined || !sameSha(sha, commit));
+    return at(here) || at(onHost);
+  }
 }
+
+const sameSha = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
 const firstLine = (e: unknown) =>
   (e instanceof Error ? e.message : String(e)).split("\n")[0]!.replace(/\.$/, "");
 
@@ -432,11 +484,15 @@ export async function requireMergedPrs(root: string): Promise<boolean> {
  * (unless the org pack says `archive.requireMergedPrs: false`) merged, so go/no-go is over what
  * reached the default branch. No repos.yaml: no code repo, nothing to stop.
  */
-export async function releasePrReasons(root: string, id: string): Promise<Reason[]> {
+export async function releasePrReasons(
+  root: string,
+  id: string,
+  o: { git?: GitRunner } = {},
+): Promise<Reason[]> {
   const cr = await readChangeRepos(root, id).catch(() => undefined);
   if (!cr?.repos.length) return [];
   const merged = await requireMergedPrs(root);
-  const nothing = await nothingToRelease(root, id);
+  const nothing = await nothingToRelease(root, id, o);
   const out: Reason[] = [];
   for (const r of cr.repos) {
     if (!r.pr && nothing.has(r.id)) continue;

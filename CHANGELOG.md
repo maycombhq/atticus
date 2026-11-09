@@ -68,6 +68,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Final review (git and tasks):
+  - Hand-down commits only the files it wrote, with a pathspec commit: a person's uncommitted or staged edits elsewhere in the change worktree stay as they left them, and no longer go into the "Hand down task" commit the task branch is cut from and pushed with. A file Atticus merges into (a constitution section, the OpenSpec reference) that already held the person's uncommitted edits is left uncommitted, and the hand-down says so.
+  - `workspace prune` gives the task worktrees under a change's `.tasks/` folder the same care as its change worktrees: one with uncommitted work is kept unless `--force`, the rest go by `git worktree remove`, and the change's folder is removed only once none is kept. Before, removing the folder deleted them, uncommitted work included.
+  - Bring in keeps a reviewer's edit to a new change's `change.yaml` made on the hand-off branch. The merge base is the hand-off ref this copy published; with only the remote's branch, it is that branch's first commit after it left this copy (Atticus's published commit), never the remote's tip, which carries the reviewer's commits.
+  - Catching the change branch up with the Git host's moves `change/<id>` only. When the person switched the change worktree to a branch of their own, that branch is left as it is and `change/<id>` moves by compare-and-swap; when `change/<id>` is checked out in another worktree, the run refuses, saying to switch back.
+  - A "nothing to release" entry in `release-prs.yaml` holds only while the change branch, here and on the Git host, is at the commit the raise recorded. Once work lands on it, go/no-go and the archive wait for that repo's release PR again.
 - Ninth UX walk (no terminal in the daily path, wording):
   - **Questions opened for a change says that change has no question** when its list is empty, not that a scan adds one.
   - **A saved stage correction says where the file goes**: stage/corrections.yaml goes with the stage's hand-off; outside one, Propose for review; the git command is under "Or in a terminal".

@@ -225,6 +225,29 @@ describe("release PRs (ADR 0184)", () => {
     expect([...(await nothingToRelease(root, ID))]).toEqual([]);
   });
 
+  it("voids a nothing-to-release entry once the change branch moved, here or on the host (final review)", async () => {
+    const { root, repos } = await setup("release-ready", [{ id: "forge-ledger", work: false }]);
+    const host = new MockGitHost([{ repo: "forge-ledger" }]);
+    await raiseReleasePrs(root, ID, { gitHost: host, approval: YES, now: NOW });
+    expect([...(await nothingToRelease(root, ID))]).toEqual(["forge-ledger"]);
+    const { dir } = repos[0]!;
+    const recorded = git(dir, "rev-parse", BRANCH);
+    // Work lands on the local change branch, and nobody raised again: go/no-go waits for its PR.
+    await writeFile(join(dir, "Late.java"), "class Late {}\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "late task");
+    expect([...(await nothingToRelease(root, ID))]).toEqual([]);
+    expect((await releasePrReasons(root, ID)).map((x) => x.code)).toEqual(["release-pr-missing"]);
+    // Back at the recorded commit here, but the host's change branch has a task merged into it.
+    git(dir, "reset", "-q", "--hard", recorded);
+    expect([...(await nothingToRelease(root, ID))]).toEqual(["forge-ledger"]);
+    const merged = git(dir, "commit-tree", `${recorded}^{tree}`, "-p", recorded, "-m", "task");
+    git(dir, "push", "-q", "origin", `${merged}:refs/heads/${BRANCH}`);
+    expect(git(dir, "rev-parse", BRANCH)).toBe(recorded);
+    expect([...(await nothingToRelease(root, ID))]).toEqual([]);
+    expect((await releasePrReasons(root, ID)).map((x) => x.code)).toEqual(["release-pr-missing"]);
+  });
+
   it("Sync records a PR merged on the host and the build its checks say", async () => {
     const { root } = await setup("release-ready", [{ id: "forge-ledger" }]);
     const host = new MockGitHost([{ repo: "forge-ledger" }]);

@@ -156,7 +156,14 @@ export async function handDown(
     assistantFiles: { results: [], upToDate: true },
     problems: [],
   };
+  const commit = o.commit !== false;
+  const git = o.git ?? createGit();
+  // What the person has uncommitted in the change worktree before Atticus writes: never
+  // Atticus's to commit (the task branch is cut from this commit and pushed with the task PR).
+  const dirty = commit ? await dirtyPaths(git, dir) : new Set<string>();
   for (const [rel, text] of handDownFiles(t, engine)) await putIfFree(dir, rel, text, !!o.force, r);
+  // Files putIfFree wrote are wholly Atticus's text; any other write merges into the file.
+  const whole = new Set(r.written);
 
   // ADR 0126: when org-pack/openspec.yaml says so, the metarepo becomes read-only context for
   // the repo's own OpenSpec (references: in its openspec/config.yaml). Off by default.
@@ -218,24 +225,66 @@ export async function handDown(
   r.assistantFiles = { results: af.results, upToDate: af.upToDate };
   r.problems.push(...af.problems);
 
-  if (o.commit !== false && (r.written.length || af.results.some((x) => x.written))) {
-    const git = o.git ?? createGit();
-    await git(["add", "-A", "--", "."], dir);
-    const staged = (await git(["diff", "--cached", "--name-only"], dir)).stdout.trim();
-    if (staged) {
-      await git(
-        [
-          "commit",
-          "-q",
-          "-m",
-          `Hand down task ${t.task.id} of ${t.change.id}: ${t.task.title}`,
-          "-m",
-          `Atticus-Change: ${t.change.id}\nAtticus-Task: ${t.task.id}`,
-        ],
-        dir,
-      );
-      r.commit = (await git(["rev-parse", "HEAD"], dir)).stdout.trim();
+  if (commit) {
+    // Only the files this hand-down wrote, by a pathspec commit: whatever else the person has
+    // changed or staged in the worktree stays as they left it. A file Atticus merged into
+    // (a section, a reference) that already held their uncommitted edits stays uncommitted.
+    const ours: string[] = [];
+    for (const p of [...r.written, ...af.results.filter((x) => x.written).map((x) => x.path)]) {
+      if (ours.includes(p)) continue;
+      if (dirty.has(p) && !whole.has(p)) {
+        r.problems.push(
+          `${p} had your uncommitted edits, so the hand-down didn't commit it: Atticus's part is in the file with yours. Commit it yourself when it's ready.`,
+        );
+        continue;
+      }
+      ours.push(p);
+    }
+    if (ours.length) {
+      await git(["add", "-A", "--", ...ours.map(literal)], dir);
+      const staged = (
+        await git(["diff", "--cached", "--name-only", "--", ...ours.map(literal)], dir)
+      ).stdout.trim();
+      if (staged) {
+        await git(
+          [
+            "commit",
+            "-q",
+            "--only",
+            "-m",
+            `Hand down task ${t.task.id} of ${t.change.id}: ${t.task.title}`,
+            "-m",
+            `Atticus-Change: ${t.change.id}\nAtticus-Task: ${t.task.id}`,
+            "--",
+            ...ours.map(literal),
+          ],
+          dir,
+        );
+        r.commit = (await git(["rev-parse", "HEAD"], dir)).stdout.trim();
+      }
     }
   }
   return r;
+}
+
+/** A pathspec that matches the one file named, whatever characters its name has. */
+const literal = (p: string) => `:(literal)${p}`;
+
+/** Paths with uncommitted changes (staged, unstaged or untracked) in a worktree. */
+async function dirtyPaths(git: GitRunner, dir: string): Promise<Set<string>> {
+  const out = (
+    await git(
+      ["-c", "core.quotePath=false", "status", "--porcelain", "-z", "--untracked-files=all"],
+      dir,
+    )
+  ).stdout;
+  const parts = out.split("\0").filter(Boolean);
+  const paths = new Set<string>();
+  for (let k = 0; k < parts.length; k++) {
+    const e = parts[k]!;
+    paths.add(e.slice(3));
+    // A rename or copy is followed by its old name, which is the person's change too.
+    if (/^[RC]/.test(e) && parts[k + 1]) paths.add(parts[++k]!);
+  }
+  return paths;
 }

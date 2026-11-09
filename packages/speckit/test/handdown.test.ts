@@ -192,6 +192,59 @@ describe("hand-down (Spec Kit engine)", () => {
     },
     T,
   );
+
+  it(
+    "commits only the files it wrote: the person's uncommitted edits in the change worktree stay theirs, uncommitted",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const wt = worktree(root, "forge-ledger");
+      // The person is working in the change worktree: a new file, an edit, and a staged file.
+      await writeFile(join(wt, "my-wip.txt"), "half done, not for review\n");
+      const tracked = sh(wt, "ls-files").split("\n")[0]!;
+      const before = await read(join(wt, tracked));
+      await writeFile(join(wt, tracked), `${before}\n// my local experiment\n`);
+      await writeFile(join(wt, "staged-wip.txt"), "staged, still mine\n");
+      sh(wt, "add", "staged-wip.txt");
+      const r = await handDown(root, CHANGE, "1.2", { git });
+      expect(r.commit).toBeDefined();
+      const files = sh(wt, "show", "--name-only", "--format=", r.commit!).split("\n");
+      expect(files).toContain("specs/1.2/plan.md");
+      expect(files).toContain(".specify/feature.json");
+      expect(files).not.toContain("my-wip.txt");
+      expect(files).not.toContain(tracked);
+      expect(files).not.toContain("staged-wip.txt");
+      // Their work is where they left it: on disk, the edit unstaged, the staged file staged.
+      expect(await read(join(wt, "my-wip.txt"))).toBe("half done, not for review\n");
+      expect(await read(join(wt, tracked))).toContain("// my local experiment");
+      expect(sh(wt, "diff", "--name-only")).toBe(tracked);
+      expect(sh(wt, "diff", "--cached", "--name-only")).toBe("staged-wip.txt");
+      expect(sh(wt, "ls-files", "--others", "--exclude-standard")).toBe("my-wip.txt");
+    },
+    T,
+  );
+
+  it(
+    "leaves uncommitted a file it merged into that held the person's uncommitted edits, and says so",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const wt = worktree(root, "forge-ledger");
+      await handDown(root, CHANGE, "1.2", { git });
+      // The team's own words around Atticus's section, not committed yet.
+      const path = ".specify/memory/constitution.md";
+      await writeFile(join(wt, path), `# Our constitution\n\nOur own rule, not committed.\n`);
+      const head = sh(wt, "rev-parse", "HEAD");
+      const r = await handDown(root, CHANGE, "1.2", { git });
+      expect(r.written).toEqual([path]);
+      expect(await read(join(wt, path))).toContain("Our own rule, not committed.");
+      expect(r.commit).toBeUndefined();
+      expect(sh(wt, "rev-parse", "HEAD")).toBe(head);
+      expect(sh(wt, "status", "--porcelain", "--", path)).not.toBe("");
+      expect(r.problems.join("\n")).toContain(
+        `${path} had your uncommitted edits, so the hand-down didn't commit it`,
+      );
+    },
+    T,
+  );
 });
 
 describe("hand-down and OpenSpec stores (ADR 0126)", () => {
@@ -205,6 +258,10 @@ describe("hand-down and OpenSpec stores (ADR 0126)", () => {
       const config = join(wt, "openspec/config.yaml");
       await mkdir(join(wt, "openspec"), { recursive: true });
       await writeFile(config, await read(join(STORES, "references/no-references.yaml")));
+      // The repo's existing config, committed: a file with the person's uncommitted edits
+      // is never Atticus's to commit.
+      sh(wt, "add", "openspec/config.yaml");
+      sh(wt, "commit", "-q", "-m", "openspec config");
       await mkdir(join(root, ".openspec-store"), { recursive: true });
       await writeFile(join(root, ".openspec-store/store.yaml"), "version: 1\nid: forge\n");
 
