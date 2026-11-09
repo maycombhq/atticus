@@ -1,5 +1,5 @@
-import { readdir, readFile, rm, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   aiPause,
   AnswerMatch,
@@ -139,7 +139,7 @@ async function rewriteCorrections(
      * Round 45: the lines to add, chosen under the lock from the file as it is now (a person's
      * line written meanwhile is seen); replaces `add` when given.
      */
-    pick?: (now: FactCorrection[]) => string[];
+    pick?: (now: FactCorrection[]) => string[] | Promise<string[]>;
   },
 ): Promise<{ removed: number; added: number; picked?: string[] }> {
   const file = correctionsFile(root, repo);
@@ -158,7 +158,7 @@ async function rewriteCorrections(
       return true;
     });
     const have = new Set(kept.map((l) => l.trim()));
-    const wanted = o.pick ? o.pick(parseCorrections(text).corrections) : (o.add ?? []);
+    const wanted = o.pick ? await o.pick(parseCorrections(text).corrections) : (o.add ?? []);
     const add = wanted.filter((l) => !have.has(l.trim()));
     const out = [...kept.filter((l) => l.trim() !== ""), ...add];
     if (!removed && !add.length) return { removed: 0, added: 0, ...(o.pick ? { picked: [] } : {}) };
@@ -186,12 +186,56 @@ function subjectOfCall(f: FactOf<"call">): RuleSubject | undefined {
   return undefined;
 }
 
-/** Whether a rule covers a call: a path prefix or host as ADR 0153's rules do, a topic by its pattern. */
+/**
+ * Whether a rule covers a call: a path prefix or host as ADR 0153's rules do, a topic by its
+ * pattern. Review round 48: strictly, as core's `matchCovers` reads a rule: only the rule's own
+ * placeholders match any one segment, so a call whose path starts with one (`/{base}/accounts`)
+ * is in no folder a rule names.
+ */
 async function coversCall(match: string, f: FactOf<"call">, facts: readonly Fact[]) {
   const s = subjectOfCall(f);
   if (s?.topic) return matchCovers(match, s);
   const { ruleCoversCall } = await import("@maycombhq/scanner");
-  return ruleCoversCall(match, f, facts);
+  return ruleCoversCall(match, f, facts, { strict: true });
+}
+
+/**
+ * Review round 48: the calls of a repo whose target a person's answer names (the call's own
+ * targets question, its group's, or an answer's rule, as the join reads them, "None of these"
+ * too), by call fact id. The AI pairs none of them and no spread reaches them: a person's word
+ * stands over the AI's, and the join ranks the person's answer above an AI pairing.
+ */
+async function answeredByPerson(
+  root: string,
+  repo: string,
+  facts: readonly Fact[],
+): Promise<Set<string>> {
+  const questions = (await listQuestions(root, { step: TARGETS_STEP_ID })).questions;
+  const people = questions.filter(
+    (q) => q.state === "answered" && !!q.answer && !isAiBy(q.answer.by),
+  );
+  if (!people.length) return new Set();
+  const { estateRepos, targetsFromAnswers, TARGETS_SPLIT } = await import("@maycombhq/scanner");
+  // The calls a person's answered question asks about (its lines), unless the answer was "Not all
+  // to one place" (each call is then still to pair)...
+  const byRepo = new Map([[repo, facts]]);
+  const out = new Set(
+    people
+      .filter(
+        (q) => q.repo === repo && q.options[(q.answer!.option ?? 0) - 1]?.label !== TARGETS_SPLIT,
+      )
+      .flatMap((q) => callsOfQuestion(q, byRepo).map((c) => c.id)),
+  );
+  // ...and those the join reads a person's answer for (a group's, a rule's).
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
+  const ai: Record<string, { runtime: string; run: string }> = {};
+  const named = targetsFromAnswers(repo, facts, questions, {
+    ...(repoType ? { repoType } : {}),
+    ai,
+  });
+  for (const id of Object.keys(named)) if (!ai[id]) out.add(id);
+  return out;
 }
 
 // ------------------------------------------------------------------ whether the AI decides now
@@ -435,13 +479,22 @@ export async function decideLinks(
   if (!lines.length) return { mode: "auto", applied, kept };
   // Round 45: a person's word stands over the AI's, whenever it was written. Under the file's
   // lock, a call with any line of a person's (a pairing, or "none") since the view was read, or
-  // before it, gets no AI line: the person's stays the newest.
+  // before it, gets no AI line: the person's stays the newest. Round 48: nor does a call whose
+  // targets question a person answered (its own, its group's or a rule's; "None of these" too).
+  const answered = new Set<string>();
   const r = await rewriteCorrections(root, o.view.from, {
-    pick: (now) =>
-      lines.filter((l) => {
+    pick: async (now) => {
+      const byPerson = await answeredByPerson(root, o.view.from, o.facts);
+      return lines.filter((l) => {
         const f = calls.get(l)!;
-        return !linksFor(f, now).some((c) => !c.ai);
-      }),
+        if (linksFor(f, now).some((c) => !c.ai)) return false;
+        if (byPerson.has(f.id)) {
+          answered.add(l);
+          return false;
+        }
+        return true;
+      });
+    },
   });
   const written = new Set(r.picked ?? []);
   for (let i = applied.length - 1; i >= 0; i--) {
@@ -449,7 +502,9 @@ export async function decideLinks(
     kept.push({
       call: applied[i]!.call,
       api: applied[i]!.api,
-      why: "a person has said where this call goes: their word stands",
+      why: answered.has(lines[i]!)
+        ? "a person answered where this call goes (its targets question): their word stands"
+        : "a person has said where this call goes: their word stands",
     });
     applied.splice(i, 1);
     items.splice(i, 1);
@@ -500,10 +555,42 @@ async function targetRuleVerdict(
   const op = await loadOrgPack(orgPackDirOf(root));
   const { estateRepos, ruledTargets } = await import("@maycombhq/scanner");
   const repoType = estateRepos(op).find((r) => r.id === q.repo)?.type;
-  const ruled = ruledTargets(q.repo, facts, questions, repoType ? { repoType } : {});
+  // Round 48: strictly, as a correction's spread reads a rule.
+  const ruled = ruledTargets(q.repo, facts, questions, {
+    ...(repoType ? { repoType } : {}),
+    strict: true,
+  });
   const labels = calls.map((c) => ruled.get(c.id)?.label);
   if (labels.some((l) => l !== undefined && l !== label)) return "against";
   return labels.every((l) => l === label) ? "agrees" : undefined;
+}
+
+/**
+ * Review round 48: why a person's word on the link side stands over an AI answer to this targets
+ * question, or undefined. A call of the question with a person's pairing or "none" (any `link` or
+ * `unlink` line not the AI's), or one a person's link rule (a correction spread) covers naming
+ * another box or none: the AI's answer would join it otherwise, so it stays a proposal.
+ */
+async function personLinkVerdict(
+  root: string,
+  q: Question,
+  label: string,
+): Promise<string | undefined> {
+  const facts = await factsOf(root, q.repo);
+  const calls = callsOfQuestion(q, new Map([[q.repo, facts]]));
+  if (!calls.length) return undefined;
+  const corrections = await correctionsOf(root, q.repo);
+  if (calls.some((c) => linksFor(c, corrections).some((l) => !l.ai)))
+    return "a person said where its call goes on the canvas (a pairing or none): their word stands";
+  const rules = await linkRulesOf(root, q.repo);
+  for (const c of calls)
+    for (const r of rules)
+      if (await coversCall(r.match, c, facts)) {
+        if (r.answer !== label)
+          return `a person's rule (${r.match}) says these calls go to ${r.answer}`;
+        break;
+      }
+  return undefined;
 }
 
 /**
@@ -568,6 +655,11 @@ export async function decideAnswers(
       kept.push({ id: p.id, why: "a person's rule covers its calls and says otherwise" });
       continue;
     }
+    const declined = await personLinkVerdict(root, q, label);
+    if (declined) {
+      kept.push({ id: p.id, why: declined });
+      continue;
+    }
     const bar = questionBar(q, option!, { shapesFirst, ruleAgrees: rule === "agrees" });
     if (!bar) {
       kept.push({
@@ -577,6 +669,9 @@ export async function decideAnswers(
       continue;
     }
     const by: AiBy = { kind: "ai", runtime, run: o.run, bar };
+    // Round 48: the proposal as it was, kept on the batch so Undo puts it back.
+    const proposalFile = join(root, ...proposalRelOf(root, q.id).split("/"));
+    const proposalText = await readFile(proposalFile, "utf8").catch(() => undefined);
     try {
       await answerQuestion(root, q.id, {
         option: option!,
@@ -598,8 +693,12 @@ export async function decideAnswers(
       throw e;
     }
     // Atticus took the proposal up: its lines are in the answer now.
-    await rm(join(root, ...proposalRelOf(root, q.id).split("/")), { force: true });
-    items.push({ kind: "question", id: q.id });
+    await rm(proposalFile, { force: true });
+    items.push({
+      kind: "question",
+      id: q.id,
+      ...(proposalText?.trim() && proposalText.length <= 65536 ? { proposal: proposalText } : {}),
+    });
     applied.push({ id: q.id, option: option!, bar });
   }
   if (items.length)
@@ -1100,11 +1199,14 @@ async function correctLink(
     };
     const words = (c: FactOf<"call">) =>
       `${repo}'s call ${[c.method?.toUpperCase(), c.path].filter(Boolean).join(" ")} (${c.cite.file}:${c.cite.line})`;
+    // Round 48: a call whose targets question a person answered is theirs too.
+    const byPerson = await answeredByPerson(root, repo, facts);
     for (const c of facts) {
       if (c.kind !== "call" || c.id === f.id) continue;
       if (!(await coversCall(rule.match, c, facts))) continue;
       const st = linksFor(c, corrections)[0];
       if (st && !st.ai) continue; // a person's word stands
+      if (byPerson.has(c.id)) continue; // a person answered where it goes
       const item = `link:${repo}:${c.id}`;
       const was = st?.ai
         ? `${st.link!.repo} ${[st.link!.method, st.link!.path].filter(Boolean).join(" ")}`
@@ -1218,6 +1320,45 @@ async function batchStands(root: string, b: DecisionBatchT): Promise<boolean> {
   return false;
 }
 
+/**
+ * Review round 48: Undo of an AI answer puts its proposal back at proposals/questions/<id>.yaml:
+ * the file's text as the batch kept it, else (a batch from before) rebuilt from the answer's
+ * option and the proposal's lines the answer kept. Never over a proposal on file now. The folder,
+ * relative to the root, when one was written.
+ */
+async function restoreProposal(
+  root: string,
+  q: Question,
+  text: string | undefined,
+): Promise<string | undefined> {
+  const rel = proposalRelOf(root, q.id);
+  const file = join(root, ...rel.split("/"));
+  if (
+    await stat(file).then(
+      () => true,
+      () => false,
+    )
+  )
+    return undefined;
+  let out = text;
+  const p = q.answer?.proposal;
+  if (!out && p && q.answer?.option && p.cites.length) {
+    const { stringify } = await import("yaml");
+    out = stringify({
+      schemaVersion: 1,
+      answer: { option: q.answer.option },
+      why: `Put back on Undo of the AI's answer: ${p.by} proposed it, citing the lines below.`,
+      cites: p.cites,
+      by: p.by,
+      at: p.at,
+    });
+  }
+  if (!out) return undefined;
+  await mkdir(dirname(file), { recursive: true });
+  await writeFileAtomic(file, out);
+  return rel.replace(/[^/]+$/, "");
+}
+
 export async function undoBatch(
   root: string,
   id: string,
@@ -1294,6 +1435,11 @@ export async function undoBatch(
     if (!q || q.answer?.batch !== b.id) {
       skipped.push(`${i.id} was answered again since: left as it is`);
       continue;
+    }
+    // Round 48: an AI answer taken up from a proposal gives the proposal back (never over a newer one).
+    if (b.kind === "ai" && isAiBy(q.answer.by)) {
+      const restoredProposal = await restoreProposal(root, q, i.proposal);
+      if (restoredProposal) files.add(restoredProposal);
     }
     const { answer: _a, ...rest } = q;
     const before = i.before && !(await isUndone(i.before.batch)) ? i.before : undefined;

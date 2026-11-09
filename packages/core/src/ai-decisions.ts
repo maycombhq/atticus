@@ -125,6 +125,9 @@ const lcp = <T>(a: readonly T[], b: readonly T[]) => {
   while (i < a.length && i < b.length && a[i] === b[i]) i++;
   return a.slice(0, i);
 };
+/** The longest of some prefixes (the first of equals), or undefined when there are none. */
+const longest = <T>(xs: readonly (readonly T[])[]): T[] | undefined =>
+  xs.length ? [...xs.reduce((a, b) => (b.length > a.length ? b : a))] : undefined;
 /** Up to the first placeholder: a rule names fixed segments only. */
 const fixed = (segs: readonly string[]) => {
   const i = segs.findIndex(isPlaceholder);
@@ -137,6 +140,11 @@ const fixed = (segs: readonly string[]) => {
  * same way), as ADR 0153's `--match` takes it. Without a sibling sharing more, the corrected item's
  * own folder (`/forge/limits/{id}` → `/forge/limits/**`), its host's parent domain, or its topic's
  * family. Shown to the person before anything is saved; they may change it.
+ *
+ * Review round 48: the longest prefix shared with at least one sibling, not the prefix all the
+ * siblings share, so one distant sibling never widens `/api/v1/limits/**` to `/api/v1/**`; and a
+ * shared path of two segments or fewer that is wider than the item's own folder is too wide (as
+ * `/**` is): the item's own folder is taken instead.
  */
 export function deriveMatch(
   item: RuleSubject,
@@ -148,7 +156,7 @@ export function deriveMatch(
     const shared = siblings
       .map((s) => (s.topic ? lcp(own, s.topic.split(".")) : []))
       .filter((x) => x.length >= Math.max(1, parent.length - 1) && x.length < own.length);
-    const common = shared.length ? shared.reduce((a, b) => lcp(a, b)) : parent;
+    const common = longest(shared) ?? parent;
     const use = common.length ? common : parent;
     return { kind: "topic", match: use.length < own.length ? `${use.join(".")}.*` : item.topic };
   }
@@ -158,7 +166,7 @@ export function deriveMatch(
     const shared = siblings
       .map((s) => (s.host ? lcp(own, s.host.toLowerCase().split(".").reverse()) : []))
       .filter((x) => x.length >= 2 && x.length < own.length);
-    const common = shared.length ? shared.reduce((a, b) => lcp(a, b)) : parent;
+    const common = longest(shared) ?? parent;
     const use = common.length >= 2 ? common : parent;
     return {
       kind: "host",
@@ -170,7 +178,8 @@ export function deriveMatch(
   const shared = siblings
     .map((s) => (s.path ? fixed(lcp(own, segmentsOf(s.path))) : []))
     .filter((x) => x.length >= 2);
-  let use = shared.length ? shared.reduce((a, b) => lcp(a, b)) : parent;
+  let use = longest(shared) ?? parent;
+  if (use.length <= 2 && use.length < parent.length) use = parent;
   if (use.length < 2 && parent.length >= 2) use = parent;
   return { kind: "path", match: use.length ? `/${use.join("/")}/**` : "/**" };
 }
@@ -231,11 +240,16 @@ export const BatchLink = z.strictObject({
   fact: z.string().min(1),
   line: z.string().min(2),
 });
-/** A question a batch answered or opened again, with the answer it had before (none when open). */
+/**
+ * A question a batch answered or opened again, with the answer it had before (none when open).
+ * Review round 48 (additive): for an AI answer taken up from a proposal, the proposal file's text
+ * as it was (`proposal`), so Undo puts it back for a person to review.
+ */
 export const BatchQuestion = z.strictObject({
   kind: z.literal("question"),
   id: QuestionId,
   before: QuestionAnswer.optional(),
+  proposal: z.string().min(1).max(65536).optional(),
 });
 export const BatchItem = z.discriminatedUnion("kind", [BatchLink, BatchQuestion]);
 export type BatchItemT = z.infer<typeof BatchItem>;

@@ -209,7 +209,8 @@ export function linkCandidates(o: {
     if (x.call.repo === o.from) status.set(x.call.fact, { status: "outside", why: x.target });
   const pairedHere = (id: string) => {
     const p = o.pairs?.[id];
-    if (!p) return undefined;
+    // Round 48: a person's "none" is no pairing.
+    if (!p || p.none) return undefined;
     if (o.to.repo ? p.repo === o.to.repo : p.system === o.to.system) return p;
     return undefined;
   };

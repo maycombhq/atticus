@@ -196,16 +196,17 @@ export async function startProposeHandoff(
   o: { id?: string; now?: Date } = {},
 ): Promise<{ runId: string; line: string; promptRel: string; done: string }> {
   const line = `/atticus-propose${o.id ? ` ${o.id}` : ""}`;
-  const { finishDecideRun, openDecideRun, PROPOSE_CHANGE, sha256, startDecideRun } =
+  const { cancelOpenDecideRuns, PROPOSE_CHANGE, sha256, startDecideRun } =
     await import("./decide-handoff.js");
   const { proposalsSnapshot } = await import("./ai-decide.js");
-  const was = await openDecideRun(root, PROPOSE_CHANGE);
-  if (was)
-    await finishDecideRun(root, was, {
-      state: "failed",
-      errors: ["A new hand-off of /atticus-propose was started: its Done reads these proposals."],
-      ...(o.now ? { now: o.now } : {}),
-    });
+  // Round 48: an earlier open run is cancelled (never open again), so its Done can't take this
+  // run's proposals.
+  await cancelOpenDecideRuns(
+    root,
+    PROPOSE_CHANGE,
+    "A new hand-off of /atticus-propose was started: its Done reads these proposals.",
+    o.now ? { now: o.now } : {},
+  );
   const before = Object.fromEntries(
     [...(await proposalsSnapshot(root))].map(([id, text]) => [id, sha256(text)]),
   );
@@ -268,6 +269,16 @@ export async function questionsProposeCommand(
     return 2;
   }
   const run = o.runner ?? (await acpStepRunner(root, { op }));
+  // Round 48: a Copilot session proposes now: an open hand-off run would read its proposals.
+  {
+    const { cancelOpenDecideRuns, PROPOSE_CHANGE } = await import("./decide-handoff.js");
+    await cancelOpenDecideRuns(
+      root,
+      PROPOSE_CHANGE,
+      "A Copilot session was started for /atticus-propose: Atticus reads its proposals itself.",
+      o.now ? { now: o.now } : {},
+    );
+  }
   io.out(`Proposing answers in a new Copilot session: ${line}`);
   const { decideAnswers, proposalsSnapshot } = await import("./ai-decide.js");
   const before = await proposalsSnapshot(root);

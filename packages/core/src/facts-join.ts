@@ -523,6 +523,11 @@ export interface PersonPair {
   by: string;
   /** ADR 0181: the pairing is the AI's, with its run; joined `joined-by-ai`. */
   ai?: JoinAi;
+  /**
+   * Review round 48: a person said the call reaches none (their `unlink` is the newest): no
+   * pairing, and an AI answer naming a target doesn't join it (a person's answer still does).
+   */
+  none?: boolean;
 }
 
 export interface JoinFactsInput {
@@ -1426,7 +1431,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
 
     // G1 (ADR 0174): a person's pairing outranks every other way: the entry it names, found by
     // id, else by method and path (a read that gave it another id); none is a miss, said.
-    const pair = input.pairs?.[call.repo]?.[f.id];
+    const answer = input.targets?.[call.repo]?.[f.id];
+    const aiAnswer = answer ? input.aiTargets?.[call.repo]?.[f.id] : undefined;
+    const onFile = input.pairs?.[call.repo]?.[f.id];
+    // Review round 48: a person's word stands over the AI's. A person's answer (a "None of these"
+    // too) outranks an AI pairing, and a person's "none" on the canvas outranks an AI answer.
+    if (onFile?.none && !onFile.ai && aiAnswer) {
+      leave(call, "answered-none");
+      continue;
+    }
+    const pair = onFile && !onFile.none && !(onFile.ai && answer && !aiAnswer) ? onFile : undefined;
     if (pair) {
       if (pair.system) {
         // The call's fact carries the person's word (by: person, ADR 0174), from its corrections.
@@ -1474,8 +1488,6 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       }
       continue;
     }
-    const answer = input.targets?.[call.repo]?.[f.id];
-    const aiAnswer = answer ? input.aiTargets?.[call.repo]?.[f.id] : undefined;
     const named = (name: string) => {
       const slug = factIdPart(name);
       // A repo's name covers all its components; a component's, only that one.
