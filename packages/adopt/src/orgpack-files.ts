@@ -5,6 +5,7 @@ import {
   DEFAULT_GATES,
   DEFAULT_RUNTIME,
   DEFAULT_TEST_STRATEGY,
+  WORKSPACE_SCHEMA_VERSION,
   type Sources,
 } from "@maycombhq/core";
 import { STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
@@ -81,7 +82,8 @@ export async function writeStartingPack(dir: string, p: StartingPack): Promise<s
     ],
     [
       `profiles/${p.platform}/repos.manifest.yaml`,
-      yaml({ schemaVersion: 1, platform: p.platform, repos: [] }),
+      // Round 50: at the current version, so a new metarepo has no manifest step to upgrade.
+      yaml({ schemaVersion: WORKSPACE_SCHEMA_VERSION, platform: p.platform, repos: [] }),
     ],
     ["checklists/README.md", p.defaults ? STARTER_CHECKLISTS_README : CHECKLISTS_README],
     ...FOLDER_READMES,

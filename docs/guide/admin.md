@@ -105,7 +105,7 @@ The app shows the mode in the top bar and on Settings. See ADR 0046.
 
 ### Driving Copilot unattended (copilot-acp)
 
-Where Copilot is the assistant, `runtime.yaml` version 3 can let Atticus drive it through the GitHub Copilot language server's Agent Client Protocol mode (ADR 0171): `modes: { allowed: [hand-off, copilot-acp] }`, with an optional `copilotAcp:` section naming the server's command. Each step, and each part of `atticus map --all`, then runs in a new Copilot session on the person's own Copilot sign-in, which may read the metarepo, write only its step's result and run only `atticus` commands; those rules are not settings. [Running Copilot unattended](copilot-unattended.md) has the details; `atticus doctor` checks the server and its sign-in.
+Where Copilot is the assistant, `runtime.yaml` version 3 can let Atticus drive it through the GitHub Copilot language server's Agent Client Protocol mode (ADR 0171): `modes: { allowed: [hand-off, copilot-acp] }` (with no `default`, the first mode listed is the default; add `default: copilot-acp` to run every step that way), with an optional `copilotAcp:` section naming the server's command. Each step, and each part of `atticus map --all`, then runs in a new Copilot session on the person's own Copilot sign-in, which may read the metarepo, write only its step's result and run only `atticus` commands; those rules are not settings. [Running Copilot unattended](copilot-unattended.md) has the details; `atticus doctor` checks the server and its sign-in.
 
 ### Calling a model directly (model mode)
 

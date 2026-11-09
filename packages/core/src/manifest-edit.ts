@@ -157,6 +157,9 @@ export async function addManifestRepo(
       );
   }
   const d = entry.description ? RepoDescription.parse(entry.description) : undefined;
+  // Round 50: the `repos: []` init writes is a flow list; the first entry turns it into a block
+  // list, so each add is a few new lines and never rewrites the whole list on one line.
+  if (!list.items.length) list.flow = false;
   list.add(
     doc.createNode({
       id: entry.id,
@@ -372,6 +375,7 @@ export async function addRolesTeam(
   if (!isSeq(teams)) throw new ManifestEditError("invalid", `${rel} has no teams: list.`);
   if (teams.items.some((x) => isMap(x) && x.get("id") === team.id))
     throw new ManifestEditError("invalid", `${rel} already has a team ${team.id}.`);
+  if (!teams.items.length) teams.flow = false;
   teams.add(doc.createNode({ id: team.id, name: team.name }));
   const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
   const check = Roles.safeParse(doc.toJS());

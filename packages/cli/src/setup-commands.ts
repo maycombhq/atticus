@@ -18,7 +18,7 @@ import {
 import { assistantTier, readProbes, tierLine } from "@maycombhq/assistant-files";
 import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
-import { upgradeCommand } from "./upgrade.js";
+import { upgradeCheck, upgradeCommand } from "./upgrade.js";
 
 /**
  * ADR 0124 §4: the tier the org pack's assistant reads a repo at, said once at set-up, with where
@@ -142,6 +142,14 @@ export async function adoptCommand(
       ...(o.platform ? { platform: o.platform } : {}),
       ...(o.name ? { name: o.name } : {}),
     });
+    // Round 50: an adopted repo starts up to date too, the Atticus that adopted it recorded in
+    // .atticus/metarepo.yaml (ADR 0051), so its first doctor has nothing to upgrade. Only when
+    // every step left would change files in .atticus/: the repo's own files are never touched.
+    if (!r.problems.length) {
+      const c = await upgradeCheck(r.root);
+      if (!c.newer && c.pending.every((p) => p.files.every((f) => f.startsWith(".atticus/"))))
+        await upgradeCommand(r.root, {}, { out: () => undefined, err: (l) => io.err(l) });
+    }
     if (o.json) {
       io.out(
         JSON.stringify(
@@ -190,6 +198,11 @@ export async function adoptCommand(
       io.out(
         `${plural(r.questions.length, "question")} for people are in .atticus/proposals/repos/${r.platform}/QUESTIONS.md.`,
       );
+    // Round 50: adopt writes no assistant files (nothing outside .atticus/), so the slash commands
+    // the tier line names come from atticus assistant-files, said first.
+    io.out(
+      "Your assistant's files aren't written yet: atticus assistant-files writes the slash commands (/atticus-map and the rest) into the repo's assistant folders; commit them, or use atticus map <repo> instead.",
+    );
     await tierAt(r.root, io);
     io.out(`Next: atticus scan --root ${path}. To remove Atticus: atticus unadopt ${path}.`);
     return r.problems.length ? 1 : 0;
@@ -258,6 +271,7 @@ export async function reposDiscoverCommand(
             platform: r.platform,
             repos: r.repos.map((x) => ({ ...x.entry, signals: x.detection.signals })),
             skipped: r.skipped,
+            renamed: r.renamed,
             questions: r.questions,
             wrote: r.wrote,
             file: r.file,
@@ -273,6 +287,8 @@ export async function reposDiscoverCommand(
         `  ${x.entry.id}: ${x.entry.type}${x.detection.signals[0] ? ` (${x.detection.signals[0]})` : ""}`,
       );
     for (const s of r.skipped) io.out(`  Skipped ${s.path}: ${s.reason}`);
+    // Round 50: a repo given another id because the manifest has its id for another repo.
+    for (const n of r.renamed) io.out(`  ${n.from} is added as ${n.to}: ${n.why}.`);
     io.out(
       r.wrote === "manifest"
         ? `Wrote ${plural(r.repos.length, "repo")} to ${r.file}.`

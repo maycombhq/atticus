@@ -14,3 +14,4 @@ export {
   type WorkspaceManager,
 } from "./manager.js";
 export * from "./identity.js";
+export * from "./repo-ids.js";

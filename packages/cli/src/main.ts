@@ -2692,7 +2692,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "plan") {
     if (!arg) {
       io.err(
-        `plan ${command ?? ""} needs a change id, for example: atticus plan stories add-transfer-limit`.replace(
+        // Round 50: the example names the subcommand asked for (plan snow's is plan snow).
+        `plan ${command ?? ""} needs a change id, for example: atticus plan ${command && ["stories", "snow", "bar", "submit"].includes(command) ? command : "stories"} add-transfer-limit`.replace(
           "  ",
           " ",
         ),

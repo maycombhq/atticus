@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import {
@@ -138,6 +139,13 @@ export async function catalogValidate(
 export async function orgPackValidate(dir: string, io: Output): Promise<number> {
   const op = await loadOrgPack(dir);
   for (const p of op.problems) io.err(`${p.file}${p.path ? ` (${p.path})` : ""}: ${p.message}`);
+  // Round 50: a profile folder with no profile.yaml still loads (its systems are none), but is
+  // most likely one made by mistake (an older repos discover made profiles/default/): said.
+  for (const p of op.profiles)
+    if (!existsSync(join(dir, "profiles", p.platform, "profile.yaml")))
+      io.err(
+        `Note: profiles/${p.platform}/ has no profile.yaml, so the ${p.platform} platform names no systems; add one, or remove the folder if it was made by mistake.`,
+      );
   const counts = [
     `${op.profiles.length} profiles`,
     `${op.patterns.length} patterns`,

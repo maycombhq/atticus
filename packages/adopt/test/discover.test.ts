@@ -2,7 +2,7 @@ import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { loadOrgPack } from "@maycombhq/core";
+import { loadOrgPack, WORKSPACE_SCHEMA_VERSION } from "@maycombhq/core";
 import { fsRepo } from "@maycombhq/sdk";
 import {
   detectRepoType,
@@ -118,7 +118,8 @@ describe("reposDiscover from a folder of clones", () => {
     const manifest = parse(await readFile(join(root, r.file!), "utf8"));
     // Hand-written expectation: one entry per repo folder, in name order, url = the folder.
     expect(manifest).toEqual({
-      schemaVersion: 1,
+      // Round 50: at the version init wrote, the current one.
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       platform: "shop",
       repos: Object.entries(EXPECTED_TYPES).map(([id, type]) => ({
         id,
@@ -151,21 +152,22 @@ describe("reposDiscover from a folder of clones", () => {
     const proposal = parse(await readFile(join(root, r.file!), "utf8")) as {
       repos: { id: string; owner: string; url: string }[];
     };
-    // The person's entry is kept as it is; the nine other repos are added.
+    // The person's entry is kept as written (round 50: no field added); the found folders are
+    // added, and the folder orders-api, another clone than the person's orders-api, gets an id
+    // of its own (round 50, 7).
     expect(proposal.repos[0]).toEqual({
       id: "orders-api",
       url: "https://git.example.com/shop/orders-api.git",
-      defaultBranch: "main",
       type: "spring-boot",
       owner: "team-orders",
     });
     expect(proposal.repos.map((x) => x.id)).toEqual([
       "orders-api",
-      ...Object.keys(EXPECTED_TYPES).filter((x) => x !== "orders-api"),
+      ...Object.keys(EXPECTED_TYPES).map((x) => (x === "orders-api" ? "orders-api-2" : x)),
     ]);
   });
 
-  it("reads origin and branch from a clone's .git files without running git", async () => {
+  it("reads origin and branch from a clone's .git files (local, no network)", async () => {
     const root = await metarepo();
     const src = join(await tempDir(), "clones");
     await mkdir(join(src, "ledger", ".git"), { recursive: true });

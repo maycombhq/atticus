@@ -59,6 +59,9 @@ const ASK =
 export function idFromUrl(url: string): string {
   const last =
     url
+      // Round 50: a link pasted from the browser (`.../_git/forge-ledger?path=/src`) names the
+      // repo before its query or fragment.
+      .replace(/^([a-z][a-z0-9+.-]*:\/\/[^?#]*)[?#].*$/i, "$1")
       .replace(/[/\\]+$/, "")
       .split(/[/\\:]/)
       .pop() ?? "";

@@ -322,11 +322,17 @@ export async function planWrite(root: string): Promise<{
   const claudePath = join(root, "CLAUDE.md");
   const claude = await readFile(claudePath, "utf8").catch(() => "");
   const re = /<!-- atticus:team-instructions:begin[\s\S]*?atticus:team-instructions:end -->/;
+  // Round 50: in the file's own line endings (a Windows checkout's CRLF), and with no block to
+  // write nor one to take out, the file is left exactly as it is.
+  const eol = claude.includes("\r\n") ? "\r\n" : "\n";
+  const ours = block.replace(/\n/g, eol);
   const next = block
     ? re.test(claude)
-      ? claude.replace(re, () => block)
-      : `${claude.trimEnd()}${claude.trim() ? "\n\n" : ""}${block}\n`
-    : claude.replace(re, "").trimEnd() + (claude.trim() ? "\n" : "");
+      ? claude.replace(re, () => ours)
+      : `${claude.trimEnd()}${claude.trim() ? `${eol}${eol}` : ""}${ours}${eol}`
+    : re.test(claude)
+      ? claude.replace(re, "").trimEnd() + (claude.replace(re, "").trim() ? eol : "")
+      : claude;
   return { write, kept, current, clashes, ...(next !== claude ? { claude: next } : {}) };
 }
 
