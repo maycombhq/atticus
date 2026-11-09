@@ -66,7 +66,8 @@ export async function benchScoreCli(
       io,
     );
   }
-  // --draft is a switch elsewhere (plan stories --draft), so the file is the word after it.
+  // --draft takes the file here (cli-options' BY_COMMAND; a switch elsewhere, plan stories
+  // --draft); a file given as the argument is read too.
   const draft = str(values.draft) ?? arg;
   if (!draft) {
     io.err(

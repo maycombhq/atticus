@@ -5,6 +5,40 @@
  * asked for. A misspelled command gets the nearest command too.
  */
 
+import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
+
+/**
+ * A switch written with a value (review round 47): `--dry-run=true` is `--dry-run`, and
+ * `--dry-run=false` is no --dry-run (either way, any case). Every command reads a switch as
+ * present or absent, so `--dry-run=true` was no dry run and wrote. Any other value is refused,
+ * naming the switch; an option that takes a value, and anything after `--`, are left as given.
+ */
+export function switchValues(
+  argv: readonly string[],
+  options: ParseArgsOptionsConfig,
+): { argv: string[]; error?: undefined } | { argv?: undefined; error: string } {
+  const { tokens } = parseArgs({
+    args: [...argv],
+    allowPositionals: true,
+    options,
+    strict: false,
+    tokens: true,
+  });
+  const out: (string | undefined)[] = [...argv];
+  for (const t of tokens) {
+    if (t.kind !== "option" || !t.inlineValue || options[t.name]?.type !== "boolean") continue;
+    if (!t.rawName.startsWith("--")) continue;
+    const v = (t.value ?? "").toLowerCase();
+    if (v === "true") out[t.index] = t.rawName;
+    else if (v === "false") out[t.index] = undefined;
+    else
+      return {
+        error: `${t.rawName} is a switch: give it alone (${t.rawName}), or as ${t.rawName}=true or ${t.rawName}=false, not ${argv[t.index]}. Nothing was run.`,
+      };
+  }
+  return { argv: out.filter((a): a is string => a !== undefined) };
+}
+
 /** The `--name`s on a command line, up to `--`, without their `=value`. */
 export function flagNames(argv: string[]): string[] {
   const out: string[] = [];

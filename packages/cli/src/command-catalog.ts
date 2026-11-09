@@ -1,3 +1,5 @@
+import type { ParseArgsOptionsConfig } from "node:util";
+import { optionsFor } from "@maycombhq/ai/cli-options";
 import { isHandoffStep } from "./handoff-steps.js";
 import { aliasArgv, isLegacy } from "./top-commands.js";
 
@@ -257,24 +259,57 @@ function parseArgs(id: string, usage: string): CommandArg[] {
   return out;
 }
 
-function parseFlags(text: string, summaries: Map<string, string>): CommandFlag[] {
+/**
+ * The options a usage requires (review round 47): those outside brackets, but not one of a set
+ * of alternatives. `a | b | c` (each with its value and what follows it up to the next `|`) is
+ * one of them, so none is required alone; options before the first alternative are required
+ * whichever is given (`--reason "..." --org-wide | --type <t>`: --reason). What is inside
+ * brackets, angle brackets or quotes is never read here.
+ */
+export function requiredFlags(usage: string): Set<string> {
+  let masked = "";
+  let depth = 0;
+  let quoted = false;
+  for (const ch of usage) {
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && (ch === "[" || ch === "<")) depth++;
+    else if (!quoted && (ch === "]" || ch === ">")) depth = Math.max(0, depth - 1);
+    masked += depth || quoted || ch === '"' || ch === "]" || ch === ">" ? "_" : ch;
+  }
+  const tokens = masked.split(/\s+/).filter(Boolean);
+  const flagOf = (t: string) => (/^--[a-z]/.test(t) ? t.split("=")[0]! : undefined);
+  const bar = tokens.indexOf("|");
+  if (bar < 0) return new Set(tokens.map(flagOf).filter((f): f is string => !!f));
+  // Before the first `|`: everything but the first alternative (the last option there).
+  const first = tokens
+    .slice(0, bar)
+    .map(flagOf)
+    .filter((f): f is string => !!f);
+  return new Set(first.slice(0, -1));
+}
+
+function parseFlags(
+  text: string,
+  summaries: Map<string, string>,
+  required: ReadonlySet<string>,
+  options: ParseArgsOptionsConfig,
+): CommandFlag[] {
   const out = new Map<string, CommandFlag>();
   const re = /(--[a-z][a-z-]*)(?:[ =]("[^"]*"|<[^>]+>|[A-Za-z0-9][\w.,=-]*(?:\|[\w.-]+)*))?/g;
   for (const m of text.matchAll(re)) {
     const name = m[1]!;
     if (out.has(name)) continue;
-    const before = text.slice(0, m.index);
-    const opened = (before.match(/\[/g) ?? []).length - (before.match(/\]/g) ?? []).length;
+    // Review round 47: the value as the help names it (`--resume run`, `--dir path`), and none
+    // for a switch; the command line's own type decides which, where it knows the flag.
+    const type = options[name.slice(2)]?.type;
     let value = m[2]?.replace(/^<|>$/g, "");
-    // A value that is the next option or a command word isn't this one's value.
-    if (value?.startsWith("--") || (value && /^[a-z]+$/.test(value) && !m[2]!.startsWith("<")))
-      value = /^(m|n|t|s|k|f|c|d|o|p|file|dir|id)$/.test(value) ? value : undefined;
+    if (value?.startsWith("--") || type === "boolean") value = undefined;
+    else if (type === "string") value ??= "value";
     const summary = summaries.get(name);
     out.set(name, {
       name,
       ...(value ? { value } : {}),
-      // `<folder> | --org <org>`: the option is given instead of the argument, not as well.
-      required: opened <= 0 && !/(<[^>]+>|"[^"]*")\s*\|\s*$/.test(before),
+      required: required.has(name),
       ...(summary ? { summary } : {}),
     });
   }
@@ -305,12 +340,14 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs" | "le
     // The options a summary lists at its end are read as options; the summary keeps its words.
     const summary = written.replace(/(\s*\[[^\]]*--[^\]]*\](\.\.\.)?)+\s*$/, "");
     const tokens = usage.split(" ").slice(1);
-    const words: string[] = [];
+    const named: string[] = [];
     for (const t of tokens) {
       if (!isWord(t)) break;
-      words.push(t);
+      named.push(t);
     }
-    const id = words.join(" ");
+    // Review round 47: `secret set|check|forget <name>` is three commands, each with its id.
+    const after = tokens[named.length];
+    const ways = after && /^[a-z][a-z-]*(\|[a-z][a-z-]*)+$/.test(after) ? after.split("|") : [];
     const summaries = new Map<string, string>();
     for (const m of b.more) {
       const c = m.search(/ {2,}/);
@@ -319,23 +356,31 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs" | "le
       for (const f of opt.matchAll(/--[a-z][a-z-]*/g)) if (what) summaries.set(f[0], what);
     }
     // Two spaces after the usage: the summary's first word is never the last option's value.
+    // Review round 47: the usage, the options the summary lists at its end and the option lines
+    // only, never a flag the summary's words name (`map --all's waiting loop`).
     const optionText = [
       `${usage} `,
-      written,
+      written.slice(summary.length),
       // Each option line's option part only: its description may hold brackets of its own.
       ...b.more.map((m) => {
         const c = m.search(/ {2,}/);
         return `[${(c > 0 ? m.slice(0, c) : m).replace(/^\[|\]$/g, "")}]`;
       }),
     ].join(" ");
-    out.push({
-      id,
-      words,
-      usage,
-      summary,
-      args: parseArgs(id, usage.slice(`atticus ${id}`.length)),
-      flags: parseFlags(optionText, summaries),
-    });
+    const required = requiredFlags(usage);
+    // A summary's words may say how a person approves the write (`a dry run until you add
+    // --approve`): that flag is the command's, never required (the person's yes adds it).
+    const approves = APPROVE_FLAGS.filter((f) => new RegExp(`${f}(?![a-z-])`).test(written));
+    const rest = usage.slice(
+      `atticus ${[...named, ...(ways.length ? [after!] : [])].join(" ")}`.length,
+    );
+    for (const words of ways.length ? ways.map((w) => [...named, w]) : [named]) {
+      const id = words.join(" ");
+      const flags = parseFlags(optionText, summaries, required, optionsFor(words));
+      for (const name of approves)
+        if (!flags.some((f) => f.name === name)) flags.push({ name, required: false });
+      out.push({ id, words, usage, summary, args: parseArgs(id, rest), flags });
+    }
   }
   return out;
 }

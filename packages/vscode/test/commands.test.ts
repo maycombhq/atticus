@@ -431,6 +431,31 @@ describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-
   });
 });
 
+describe("the command line's own catalogue, as the extension runs it (review round 47)", () => {
+  const bin = join(process.cwd(), "../cli/dist/bin.js");
+  const real = normaliseCatalog(
+    JSON.parse(
+      execFileSync(process.execPath, [bin, "commands", "--json"], { encoding: "utf8" }),
+    ) as Catalog,
+  );
+  const get = (id: string) => real.commands.find((c) => c.id === id)!;
+
+  it("sets only the switches a command's usage requires", () => {
+    expect(requiredSwitches(get("map"))).toEqual({});
+    expect(requiredSwitches(get("map --all"))).toEqual({ "--all": true });
+    expect(requiredSwitches(get("join"))).toEqual({});
+    expect(requiredSwitches(get("stub serve"))).toEqual({});
+    expect(requiredSwitches(get("rules add"))).toEqual({});
+    expect(requiredSwitches(get("critic --resume"))).toEqual({ "--resume": true });
+  });
+
+  it("asks for the value an option takes, never sending it bare", () => {
+    expect(get("map").flags.find((f) => f.name === "--resume")?.value).toBe("run");
+    expect(get("map").flags.find((f) => f.name === "--idle")?.value).toBe("minutes");
+    expect(get("verify audit").flags.find((f) => f.name === "--right")?.value).toBe("ids");
+  });
+});
+
 describe("a next step's arguments as a line (WP4.2)", () => {
   it("reads back the same words, quoting one with a space", () => {
     const args = ["change", "new", "Let members pin a message", "--type", "feature"];

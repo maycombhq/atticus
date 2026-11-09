@@ -52,8 +52,11 @@ export async function watchCommand(
     return 0;
   }
   if (o.off) {
-    await writeMe(root, { ...me, watch: me.watch.filter((c) => c !== change) });
-    io.out(`You no longer watch ${change}.`);
+    const watching = me.watch.filter((c) => c !== change);
+    await writeMe(root, { ...me, watch: watching });
+    // Review round 47: --json says what it did as JSON, here as with no change.
+    if (o.json) io.out(JSON.stringify({ change, watched: false, watching }, null, 2));
+    else io.out(`You no longer watch ${change}.`);
     return 0;
   }
   const known = await changeStore(root)
@@ -66,8 +69,14 @@ export async function watchCommand(
     io.err(`There is no change ${change}: atticus change list shows them.`);
     return 1;
   }
-  await writeMe(root, { ...me, watch: [...me.watch, change] });
+  const watching = [...me.watch, change];
+  await writeMe(root, { ...me, watch: watching });
+  const line = await watchLine(root, change);
+  if (o.json) {
+    io.out(JSON.stringify({ change, watched: true, watching, line }, null, 2));
+    return 0;
+  }
   io.out(`You watch ${change}: your digest and atticus watch say how it is doing.`);
-  io.out(await watchLine(root, change));
+  io.out(line);
   return 0;
 }

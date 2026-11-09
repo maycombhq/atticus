@@ -66,4 +66,21 @@ describe("atticus watch (WP7.5)", () => {
     );
     expect((await run(["watch", "no-such-change", "--root", root])).code).toBe(1);
   });
+
+  it("says what it did as JSON with --json, starting and stopping (review round 47)", async () => {
+    const root = await estate();
+    const w = await run(["watch", CHANGE, "--json", "--root", root]);
+    expect(w.code).toBe(0);
+    const on = JSON.parse(w.out) as {
+      change: string;
+      watched: boolean;
+      watching: string[];
+      line: string;
+    };
+    expect(on).toMatchObject({ change: CHANGE, watched: true, watching: [CHANGE] });
+    expect(on.line).toContain(`${CHANGE}: in `);
+    const off = await run(["watch", CHANGE, "--off", "--json", "--root", root]);
+    expect(off.code).toBe(0);
+    expect(JSON.parse(off.out)).toEqual({ change: CHANGE, watched: false, watching: [] });
+  });
 });

@@ -1,4 +1,4 @@
-import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
+import { parseArgs } from "node:util";
 // Only what every command needs before it knows which one runs: no schema, no workspace package
 // (test/startup.test.ts holds this). The rest loads below, when its command runs.
 import { createLog, SCHEMA_VERSION } from "@maycombhq/core/light";
@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 
 import { VERSION } from "./version.js";
 import { aliasArgv } from "./top-commands.js";
+import { OPTIONS, optionsFor } from "@maycombhq/ai/cli-options";
 
 /**
  * The model runtime, loaded when a command uses it. Its error classes are read from the same
@@ -517,7 +518,7 @@ Usage:
   atticus types notes <id>             A component type's notes (the architect's write-up), or where to write them
   atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
-  atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
+  atticus rules add --key <k> --rule "..." --org-wide | --type <t> | --repo <r> [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
   atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
   atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
@@ -530,7 +531,7 @@ Usage:
           [--limit n] [--json]         (see docs/query-language.md)
   atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
   atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
-  atticus cites --repo <repo> --path <path>  What cites each line of one file: the flow steps, with the changes in flight on them, and the records (or --file <path on disk>) [--json]
+  atticus cites --repo <repo> --path <path>  What cites each line of one file: the flow steps, with the changes in flight on them, and the records (or --file <path on disk>) [--file <path on disk>] [--json]
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
   atticus context similar <id> [--kind k,k] [--limit n]  What reads like one id, by the local embedding model: a hint where to look, never a link
@@ -592,7 +593,7 @@ Usage:
   atticus questions propose [<id>]     /atticus-propose as a command (ADR 0171): under --mode copilot-acp (or runtime.yaml's default) Copilot proposes in a new session, unattended, writing only proposals/questions/, then the proposals are checked; otherwise it prints the line to paste. A person still accepts each one [--mode copilot-acp|hand-off]
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
-  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--preview] [--json]
+  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
   atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
@@ -606,7 +607,7 @@ Usage:
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
   atticus diagram library <file>       Write the draw.io shape library
-  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog (--from-catalog)
+  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog [--from-catalog]
           [--port 4010] [--host 127.0.0.1]
   atticus stub check <spec>            Which operations have examples to answer with
   atticus dialect new <name> --from <repo>[,<repo>...]   Scaffold a dialect from sample repos
@@ -631,12 +632,12 @@ Usage:
   atticus frameworks check [name]      Run each framework model's own tests; a failing model isn't used
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
-  atticus change new "<title>"         Start a change from a template: --type <type>
+  atticus change new "<title>" --type <type>  Start a change from a template
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
   atticus change sketch <change> --from <file.drawio|.mmd> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
-  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
+  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--change <id>] [--limit n] [--json]
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
@@ -911,7 +912,7 @@ function positionalsAt(argv: string[]): number[] {
   const { tokens } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: OPTIONS,
+    options: optionsFor(argv),
     strict: false,
     tokens: true,
   });
@@ -949,224 +950,21 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   }
 }
 
-/**
- * Every option any command takes. A flag not here, nor in the help, is refused (ADR 0119): see
- * checkFlags.
- */
-const OPTIONS = {
-  help: { type: "boolean", short: "h" },
-  // ADR 0141: what a read took, as the reader reports it (atticus map <repo> --spent).
-  spent: { type: "string" },
-  sessions: { type: "string" },
-  part: { type: "string" },
-  queue: { type: "boolean" },
-  // F10: atticus doctor --counts.
-  counts: { type: "boolean" },
-  version: { type: "boolean", short: "v" },
-  fix: { type: "boolean" },
-  root: { type: "string" },
-  repos: { type: "string" },
-  all: { type: "boolean" },
-  kind: { type: "string" },
-  executor: { type: "string" },
-  fixture: { type: "string" },
-  force: { type: "boolean" },
-  draft: { type: "boolean" },
-  story: { type: "string" },
-  gaps: { type: "boolean" },
-  // ADR 0167: atticus map <repo> --rules, a top-up for reading rules added since a read.
-  rules: { type: "boolean" },
-  // ADR 0169: atticus map <repo> --models reachable|all (ADR 0170: or entries).
-  models: { type: "string" },
-  // ADR 0161: atticus map --all.
-  stale: { type: "boolean" },
-  "max-parts": { type: "string" },
-  "budget-tokens": { type: "string" },
-  idle: { type: "string" },
-  full: { type: "boolean" },
-  "dry-run": { type: "boolean" },
-  json: { type: "boolean" },
-  limit: { type: "string" },
-  filter: { type: "string" },
-  "batch-tokens": { type: "string" },
-  "max-tokens": { type: "string" },
-  // atticus probe (ADR 0124 addendum A-probe).
-  assistant: { type: "string" },
-  pasted: { type: "boolean" },
-  "context-tokens": { type: "string" },
-  "whole-context": { type: "boolean" },
-  search: { type: "boolean" },
-  regex: { type: "boolean" },
-  "ignore-case": { type: "boolean" },
-  paths: { type: "string" },
-  // atticus context (ADR 0107 addendum): the context tools.
-  input: { type: "string" },
-  run: { type: "string" },
-  round: { type: "string" },
-  hops: { type: "string" },
-  line: { type: "string" },
-  around: { type: "string" },
-  depth: { type: "string" },
-  by: { type: "string" },
-  as: { type: "string" },
-  group: { type: "string", multiple: true },
-  channel: { type: "string" },
-  send: { type: "boolean" },
-  site: { type: "string" },
-  reason: { type: "string" },
-  focus: { type: "string" },
-  format: { type: "string" },
-  out: { type: "string" },
-  area: { type: "string" },
-  iteration: { type: "string" },
-  port: { type: "string" },
-  open: { type: "boolean" },
-  "show-token": { type: "boolean" },
-  embed: { type: "string" },
-  parent: { type: "string" },
-  host: { type: "string" },
-  catalog: { type: "string" },
-  "from-catalog": { type: "boolean" },
-  from: { type: "string" },
-  to: { type: "string" },
-  package: { type: "string" },
-  jars: { type: "string", multiple: true },
-  learn: { type: "boolean" },
-  type: { type: "string" },
-  template: { type: "string" },
-  like: { type: "string" },
-  impact: { type: "string" },
-  id: { type: "string" },
-  owner: { type: "string", multiple: true },
-  system: { type: "string", multiple: true },
-  base: { type: "string" },
-  repo: { type: "string" },
-  gate: { type: "string" },
-  lens: { type: "string" },
-  model: { type: "string" },
-  "asked-of": { type: "string" },
-  edit: { type: "string" },
-  description: { type: "string" },
-  title: { type: "string" },
-  name: { type: "string" },
-  badge: { type: "string" },
-  shape: { type: "string" },
-  colour: { type: "string" },
-  attempts: { type: "string" },
-  users: { type: "string" },
-  language: { type: "string" },
-  replace: { type: "boolean" },
-  into: { type: "string" },
-  level: { type: "string" },
-  mode: { type: "string" },
-  approve: { type: "boolean" },
-  pr: { type: "string" },
-  "pr-url": { type: "string" },
-  change: { type: "string" },
-  check: { type: "boolean" },
-  resume: { type: "string" },
-  eval: { type: "string" },
-  epic: { type: "string" },
-  "no-ai": { type: "boolean" },
-  "openspec-store": { type: "boolean" },
-  "no-drift": { type: "boolean" },
-  warnings: { type: "boolean" },
-  "no-rescan": { type: "boolean" },
-  refresh: { type: "string" },
-  export: { type: "string" },
-  result: { type: "string", multiple: true },
-  skip: { type: "boolean" },
-  note: { type: "string" },
-  for: { type: "string" },
-  with: { type: "string" },
-  inputs: { type: "string" },
-  "fill-only": { type: "boolean" },
-  platform: { type: "string" },
-  ref: { type: "string" },
-  task: { type: "string" },
-  latest: { type: "boolean" },
-  org: { type: "string" },
-  framework: { type: "string" },
-  csv: { type: "boolean" },
-  "no-write": { type: "boolean" },
-  junit: { type: "string" },
-  summary: { type: "string" },
-  "json-out": { type: "string" },
-  "warn-only": { type: "boolean" },
-  write: { type: "string" },
-  path: { type: "string" },
-  file: { type: "string" },
-  submodule: { type: "boolean" },
-  save: { type: "boolean" },
-  read: { type: "boolean" },
-  only: { type: "string" },
-  "verified-only": { type: "boolean" },
-  unverified: { type: "boolean" },
-  set: { type: "string", multiple: true },
-  find: { type: "string" },
-  drift: { type: "string", multiple: true },
-  journey: { type: "string" },
-  release: { type: "string" },
-  target: { type: "string" },
-  answer: { type: "string" },
-  lesson: { type: "string" },
-  step: { type: "string" },
-  agent: { type: "string", multiple: true },
-  runs: { type: "string" },
-  audience: { type: "string" },
-  value: { type: "string" },
-  bench: { type: "string" },
-  cache: { type: "string" },
-  batch: { type: "string" },
-  specs: { type: "boolean" },
-  estate: { type: "string" },
-  accept: { type: "boolean" },
-  // atticus repo add / repo describe (ADR 0128)
-  reject: { type: "boolean" },
-  cites: { type: "string" },
-  drafted: { type: "string" },
-  "no-description": { type: "boolean" },
-  component: { type: "string" },
-  tag: { type: "string" },
-  source: { type: "string" },
-  "from-figma": { type: "string" },
-  replaces: { type: "string" },
-  promote: { type: "string" },
-  prototype: { type: "string" },
-  off: { type: "boolean" },
-  surface: { type: "string" },
-  session: { type: "string" },
-  command: { type: "string" },
-  markdown: { type: "boolean" },
-  dir: { type: "string" },
-  commit: { type: "string" },
-  confirm: { type: "string" },
-  exclude: { type: "string" },
-  routed: { type: "string" },
-  // atticus map (ADR 0124 §4)
-  estimate: { type: "boolean" },
-  next: { type: "boolean" },
-  copy: { type: "boolean" },
-  facts: { type: "string" },
-  // ADR 0163: atticus repo-type note.
-  add: { type: "string" },
-  "org-wide": { type: "boolean" },
-  // G4 (ADR 0176): atticus rules.
-  key: { type: "string" },
-  rule: { type: "string" },
-  files: { type: "string" },
-  example: { type: "string" },
-  about: { type: "string" },
-  at: { type: "string" },
-  team: { type: "string" },
-  compare: { type: "boolean" },
-} satisfies ParseArgsOptionsConfig;
-
-async function dispatchCommand(argv: string[], io: Output): Promise<number> {
+async function dispatchCommand(raw: string[], io: Output): Promise<number> {
+  // Review round 47: every option read with its type, as the command named reads it (critic's
+  // --resume is a switch, ci snippet's --write a folder), and a switch written --x=true or
+  // --x=false read as the switch or none, before anything is routed.
+  const options = optionsFor(raw);
+  const switched = (await import("./flags.js")).switchValues(raw, options);
+  if (switched.error !== undefined) {
+    io.err(switched.error);
+    return 2;
+  }
+  const argv = switched.argv;
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: OPTIONS,
+    options,
     strict: false,
   });
 
@@ -1178,10 +976,11 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   const refused = await checkFlags(argv, positionals, io);
   if (refused !== undefined) return refused;
   // Review round 32: inside a Copilot session Atticus started, a person's decision is refused
-  // here too, whatever started the command (the list is the session check's own).
+  // here too, whatever started the command (the list is the session check's own). It reads the
+  // line as this does (review round 47): an option's value is never a command word.
   if (process.env.ATTICUS_ACP_SESSION) {
     const { personOnlyWhy } = await import("@maycombhq/ai");
-    const why = personOnlyWhy([...positionals, ...argv.filter((x) => x.startsWith("-"))]);
+    const why = personOnlyWhy(argv);
     if (why) {
       io.err(
         `This runs inside a Copilot session that Atticus started, so it is refused: ${why}. The person runs it, in the app or their own terminal.`,
@@ -2028,26 +1827,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     }
   }
   if (group === "verify") {
-    // --write is a switch here (elsewhere it takes a path): read the arguments again with it as
-    // one, so it never swallows the flag or the repo after it.
-    const v = parseArgs({
-      args: argv,
-      allowPositionals: true,
-      options: {
-        ...OPTIONS,
-        write: { type: "boolean" },
-        verbose: { type: "boolean" },
-        skipped: { type: "boolean" },
-        size: { type: "string" },
-        seed: { type: "string" },
-        answers: { type: "string" },
-        right: { type: "string" },
-        wrong: { type: "string" },
-        unsure: { type: "string" },
-        report: { type: "boolean" },
-      },
-      strict: false,
-    });
+    // --write is a switch, and verify's own options are in OPTIONS with their types (review
+    // round 47), so the first reading is verify's: no flag swallows the repo or flag after it.
+    const v = { values, positionals };
     const repo = v.positionals[1];
     const text = (x: unknown) => (typeof x === "string" ? x : undefined);
     // P3 (ADR 0148): atticus verify audit <repo>, the sample audit. `audit` alone, without
@@ -2112,8 +1894,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     }
     const { verifyCommand } = await import("./verify-commands.js");
     return verifyCommand(
-      // The first reading took --write's next word as its value, so a --root right after it
-      // was lost; this reading has --write as a switch.
+      // --write is a switch, so a --root right after it is read (it once took --root as its value).
       text(v.values.root) ? resolve(text(v.values.root)!) : root,
       repo,
       {
@@ -3981,13 +3762,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   return 2;
 }
 
-/** Flags the questions commands read themselves (question-commands.ts). */
-const QUESTION_FLAGS = ["state", "option", "text", "scope", "type"];
-
 /**
  * Refuse a flag no command knows, with the nearest one (ADR 0119): an ignored --aprove is a write
- * the person thought they'd asked for. Known: every option parsed here, the questions commands'
- * own, --handoff, and every flag the help names. Undefined when all are known.
+ * the person thought they'd asked for. Known: every option in OPTIONS (the questions commands'
+ * own and --handoff among them) and every flag the help names. Undefined when all are known.
  */
 async function checkFlags(
   argv: string[],
@@ -3995,7 +3773,7 @@ async function checkFlags(
   io: Output,
 ): Promise<number | undefined> {
   const { unknownFlags, unknownFlagMessages } = await import("./flags.js");
-  const quick = new Set([...Object.keys(OPTIONS), ...QUESTION_FLAGS, "handoff"]);
+  const quick = new Set(Object.keys(OPTIONS));
   if (!unknownFlags(argv, quick).length) return undefined;
   const { commandCatalog } = await import("./command-catalog.js");
   const catalog = commandCatalog(HELP);

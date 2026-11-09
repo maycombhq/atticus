@@ -109,7 +109,9 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
     ] as const) {
       const d = join(pack, folder, sub);
       for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
-        if (!e.isFile() || !e.name.endsWith(".md")) continue;
+        // Review round 47: the folder's README.md (init writes agents/README.md) says what the
+        // folder is for; it is no agent nor instructions.
+        if (!e.isFile() || !e.name.endsWith(".md") || /^readme\.md$/i.test(e.name)) continue;
         out.push({
           kind,
           name: e.name.slice(0, -3),
