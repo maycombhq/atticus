@@ -81,6 +81,7 @@ import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
+import { markCheckedByApp, startAutoDone, type AutoDoneOptions } from "./handoff-autodone.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -159,6 +160,8 @@ export interface UiDeps {
   runStep?: import("./handoff-resume.js").StepRunner;
   /** Tests: the machine's checks (otherwise atticus doctor's). */
   doctor?: (root: string) => Promise<import("./doctor.js").DoctorCheck[]>;
+  /** ADR 0189: how the app checks an answer once its file is complete (tests: quick, or off). */
+  autoDone?: AutoDoneOptions;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -625,6 +628,84 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   // ADR 0188: the local steps the pages named as commands, each a button.
   uiStepRoutes(r, ctx, asJob);
+  /**
+   * Done: a hand-off's answer checked, and the step it finishes resumed (fourth UX walk). ADR
+   * 0189: the same for the app's own check once the answer file is complete (`by: "app"`, from
+   * handoff-autodone.ts), so the two never differ. A run the command line already checked (the
+   * assistant ran atticus handoff done) is only resumed. One at a time per run, never twice.
+   */
+  const doneRun = async (runId: string, by: "person" | "app") => {
+    const before = await findRun(root, runId);
+    const { hasKeptResume } = await import("./handoff-resume.js");
+    const onlyResume = before.state === "validated" && (await hasKeptResume(root, runId));
+    if ((before.state === "validated" && !onlyResume) || before.state === "cancelled")
+      throw conflict(`Run ${runId} is already ${before.state}.`);
+    // One Done at a time per run: a second click while the first builds is told so (two
+    // builds in one worktree collide, on Windows over locked files).
+    if (doneBusy.has(runId))
+      throw conflict(`Done for ${runId} is already running; wait for it to finish.`);
+    doneBusy.add(runId);
+    let res: Ran;
+    try {
+      // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
+      // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
+      res = onlyResume
+        ? { code: 0, out: [], err: [] }
+        : await tracked(
+            ctx,
+            by === "app" ? `Checked the answer: ${runId}` : `Done: ${runId}`,
+            () => run((io) => runDone(root, runId, { by: user }, io, deps.taskRun)),
+            { meta: { handoffRun: runId } },
+          );
+      if (by === "app") await markCheckedByApp(root, before.change, runId).catch(() => undefined);
+    } finally {
+      doneBusy.delete(runId);
+    }
+    const after = await findRun(root, runId);
+    ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
+    // The answer had problems, the build failed, or the task needs a person: said as such,
+    // with what the command printed, never as a success. Ninth UX walk: in the app's words
+    // (fix the answer, then press Done again; not atticus handoff done <run> again).
+    const { resumeAfterDone, appLines } = await import("./handoff-resume.js");
+    if (res.code !== 0) throw refused({ ...res, out: appLines(res.out), err: appLines(res.err) });
+    // Fourth UX walk: a step the app prepared is finished here too: its resume writes what
+    // the answer said (a draft's proposal and specs), or offers its next prompt (`next`).
+    const stepRunner =
+      deps.runStep ??
+      (async (args: string[]) => {
+        const { main } = await import("./main.js");
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = await main(
+          [...args, "--root", root],
+          { out: (l) => out.push(l), err: (l) => err.push(l) },
+          { quiet: true },
+        );
+        return { code, out, err };
+      });
+    const resumed = await resumeAfterDone(root, stepRunner, after.change, after.runId).catch(
+      (e: Error) =>
+        ({ lines: [e.message] }) as { next?: string; lines: string[]; applied?: string },
+    );
+    if (resumed) ctx.events.publish({ type: "file.changed", path: changesRelOf(root) });
+    // ADR 0188 (a button for every step): a read's Done wrote the catalog: the map redraws.
+    if (resumed?.applied) ctx.events.publish({ type: "file.changed", path: "." });
+    return {
+      ...after,
+      // When the app resumed the step, runDone's "run the step again with --resume" is done;
+      // sixth UX walk: what is left to do is said in the app's words.
+      lines: [
+        ...(resumed
+          ? appLines([...res.out, ...res.err].filter((l) => !/--resume run-/.test(l)))
+          : appLines([...res.out, ...res.err])),
+        ...(resumed?.lines ?? []),
+      ],
+      ...(resumed?.next ? { next: resumed.next } : {}),
+      ...(resumed?.applied ? { applied: resumed.applied } : {}),
+    };
+  };
+  // ADR 0189: the answer arrives by itself: a waiting hand-off is checked once its file is complete.
+  startAutoDone(ctx, (runId) => doneRun(runId, "app"), deps.autoDone ?? {});
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
@@ -1479,76 +1560,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         status: 200,
         body: await findRun(root, params.runId!),
       }))
-      .add("POST", "/api/runs/{runId}/done", async ({ params }) => {
-        const before = await findRun(root, params.runId!);
-        if (before.state === "validated" || before.state === "cancelled")
-          throw conflict(`Run ${params.runId} is already ${before.state}.`);
-        // One Done at a time per run: a second click while the first builds is told so (two
-        // builds in one worktree collide, on Windows over locked files).
-        if (doneBusy.has(params.runId!))
-          throw conflict(`Done for ${params.runId} is already running; wait for it to finish.`);
-        doneBusy.add(params.runId!);
-        let res: Ran;
-        try {
-          // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
-          // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
-          res = await tracked(
-            ctx,
-            `Done: ${params.runId!}`,
-            () => run((io) => runDone(root, params.runId!, { by: user }, io, deps.taskRun)),
-            { meta: { handoffRun: params.runId! } },
-          );
-        } finally {
-          doneBusy.delete(params.runId!);
-        }
-        const after = await findRun(root, params.runId!);
-        ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
-        // The answer had problems, the build failed, or the task needs a person: said as such,
-        // with what the command printed, never as a success. Ninth UX walk: in the app's words
-        // (fix the answer, then press Done again; not atticus handoff done <run> again).
-        const { resumeAfterDone, appLines } = await import("./handoff-resume.js");
-        if (res.code !== 0)
-          throw refused({ ...res, out: appLines(res.out), err: appLines(res.err) });
-        // Fourth UX walk: a step the app prepared is finished here too: its resume writes what
-        // the answer said (a draft's proposal and specs), or offers its next prompt (`next`).
-        const stepRunner =
-          deps.runStep ??
-          (async (args: string[]) => {
-            const { main } = await import("./main.js");
-            const out: string[] = [];
-            const err: string[] = [];
-            const code = await main(
-              [...args, "--root", root],
-              { out: (l) => out.push(l), err: (l) => err.push(l) },
-              { quiet: true },
-            );
-            return { code, out, err };
-          });
-        const resumed = await resumeAfterDone(root, stepRunner, after.change, after.runId).catch(
-          (e: Error) =>
-            ({ lines: [e.message] }) as { next?: string; lines: string[]; applied?: string },
-        );
-        if (resumed) ctx.events.publish({ type: "file.changed", path: changesRelOf(root) });
-        // The read's catalog, specs and map changed: every page reads them again.
-        if (resumed?.applied) ctx.events.publish({ type: "file.changed", path: "." });
-        return {
-          status: 200,
-          body: {
-            ...after,
-            // When the app resumed the step, runDone's "run the step again with --resume" is done;
-            // sixth UX walk: what is left to do is said in the app's words.
-            lines: [
-              ...(resumed
-                ? appLines([...res.out, ...res.err].filter((l) => !/--resume run-/.test(l)))
-                : [...res.out, ...res.err]),
-              ...(resumed?.lines ?? []),
-            ],
-            ...(resumed?.next ? { next: resumed.next } : {}),
-            // ADR 0188: a read of a repo was put on the map (verify --write) by this Done.
-            ...(resumed?.applied ? { applied: resumed.applied } : {}),
-          },
-        };
-      })
+      .add("POST", "/api/runs/{runId}/done", async ({ params }) => ({
+        status: 200,
+        body: await doneRun(params.runId!, "person"),
+      }))
       .add("POST", "/api/runs/{runId}/retry", async ({ params }) => {
         const v = await findRun(root, params.runId!);
         if (v.state !== "failed")

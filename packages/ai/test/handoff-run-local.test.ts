@@ -56,7 +56,9 @@ describe("a hand-off answer that lives in the run folder", () => {
       `Write the result to .runs/add-transfer-limit/${p.runId}/answer.yaml.`,
     );
     expect(prompt).not.toContain("openspec/changes/add-transfer-limit/answer.yaml");
-    expect(prompt.trimEnd().endsWith(`atticus handoff done ${p.runId}`)).toBe(true);
+    expect(
+      prompt.trimEnd().endsWith("Atticus notices the file and checks it. There is nothing to run."),
+    ).toBe(true);
   });
 
   it("reads it from there on done, and leaves the change folder alone", async () => {

@@ -108,6 +108,11 @@ export const Stroke = z.discriminatedUnion("kind", [
   }),
   /** A stroke taken back: a drawn step, by flow and the step's index in the delta (its whole stroke goes). */
   z.object({ kind: z.literal("undo"), flow: Id, index: z.number().int().min(0) }),
+  /**
+   * ADR 0189: a component taken away by the change: every flow of it today is removed (one
+   * remove delta per flow, each carrying the stroke's mark, so Undo takes them all back).
+   */
+  z.object({ kind: z.literal("retire"), component: Id, why: text() }),
 ]);
 export type Stroke = z.infer<typeof Stroke>;
 
@@ -381,7 +386,47 @@ export function applyStroke(
         });
       return { deltas: all, changed: [stroke.flow] };
     }
+    case "retire": {
+      const flows = estate.flows.filter((f) => f.flow.component === stroke.component);
+      if (!flows.length)
+        return {
+          deltas: before,
+          changed: [],
+          problem: estate.ids.has(stroke.component)
+            ? `${stroke.component} has no flow on today's map, so there is nothing of it to retire yet.`
+            : `${stroke.component} isn't a component of today's map.`,
+        };
+      const busy = flows.filter((f) => before.some((d) => d.flow === f.flow.id));
+      if (busy.length)
+        return {
+          deltas: before,
+          changed: [],
+          problem: `${busy.map((f) => f.flow.id).join(", ")} ${busy.length === 1 ? "is" : "are"} changed in this change already: take ${busy.length === 1 ? "that" : "those"} back first, then retire ${stroke.component}.`,
+        };
+      const all = [
+        ...before,
+        ...flows.map((f): FlowDelta => ({
+          schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+          flow: f.flow.id,
+          repo: f.repo,
+          change: "remove",
+          why: why(`Retires ${stroke.component}: ${stroke.why}`).slice(0, 500),
+          steps: [],
+        })),
+      ];
+      return { deltas: all, changed: flows.map((f) => f.flow.id) };
+    }
     case "undo": {
+      // ADR 0189: a retired component's flows go back together.
+      const retired = before.find((x) => x.flow === stroke.flow && x.change === "remove");
+      const rid = retired ? strokeIdOf(retired) : undefined;
+      if (rid)
+        return {
+          deltas: before.filter((x) => !(x.change === "remove" && strokeIdOf(x) === rid)),
+          changed: before
+            .filter((x) => x.change === "remove" && strokeIdOf(x) === rid)
+            .map((x) => x.flow),
+        };
       const d = before.find((x) => x.flow === stroke.flow);
       const s = d?.steps[stroke.index];
       const id = s ? strokeIdOf(s) : undefined;
@@ -412,7 +457,20 @@ export function drawnStrokes(
 ): { flow: string; index: number; what: string; by?: string }[] {
   const out: { flow: string; index: number; what: string; by?: string }[] = [];
   const seen = new Set<string>();
-  for (const d of deltas)
+  for (const d of deltas) {
+    // ADR 0189: a retire stroke, once, at its first flow.
+    const rid = d.change === "remove" ? strokeIdOf(d) : undefined;
+    if (rid && !seen.has(rid)) {
+      seen.add(rid);
+      const by = drawnBy(d);
+      const component = /^Retires (\S+?):/.exec(d.why)?.[1];
+      out.push({
+        flow: d.flow,
+        index: 0,
+        what: `retired ${component ?? d.flow}`,
+        ...(by ? { by } : {}),
+      });
+    }
     d.steps.forEach((s, index) => {
       const id = strokeIdOf(s);
       if (!id || seen.has(id)) return;
@@ -427,6 +485,7 @@ export function drawnStrokes(
       const by = drawnBy(s);
       out.push({ flow: d.flow, index, what, ...(by ? { by } : {}) });
     });
+  }
   return out;
 }
 
@@ -434,7 +493,7 @@ export function drawnStrokes(
 export function sketchOf(deltas: readonly FlowDelta[]): FlowDelta[] {
   return deltas
     .map((d) => ({ ...d, steps: d.steps.filter(isDrawnStep) }))
-    .filter((d) => d.steps.length || isDrawnDelta(d));
+    .filter((d) => d.steps.length || isDrawnDelta(d) || strokeIdOf(d) !== undefined);
 }
 
 /** A delta file's text as the sketch writes it: the stage's header, by this person. */

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -228,7 +228,7 @@ describe("expansion and rerank in a step", () => {
     ]);
   });
 
-  it("in hand-off mode: the expansion is a hand-off of its own; resumed with it, the step hands off its own prompt", async () => {
+  it("in hand-off mode (ADR 0189): one paste: no expander prompt; the estate's names the input uses are its seeds, read without a model", async () => {
     const root = await shop();
     const rt = new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
     const first = await featureStage(root, CHANGE, {
@@ -238,27 +238,22 @@ describe("expansion and rerank in a step", () => {
     });
     expect(first.state).toBe("waiting");
     const runId = first.waiting!.runId;
-    const run = JSON.parse(
+    const main = JSON.parse(
       await readFile(join(root, ".runs", CHANGE, runId, "run.json"), "utf8"),
     ) as {
-      request: { agent: { id: string }; outputPath: string };
+      request: {
+        agent: { id: string };
+        retrieval?: { expansion?: { run?: string; cached: boolean; names: { id?: string }[] } };
+      };
     };
-    expect(run.request.agent.id).toBe(EXPAND_AGENT);
-    await writeFile(join(root, ".runs", CHANGE, runId, run.request.outputPath), EXPANDED);
-    expect((await rt.done(runId)).state).toBe("validated");
-    const second = await featureStage(root, CHANGE, {
-      runtime: new HandoffRuntime({ root, validate: async () => [], now: () => NOW }),
-      now: NOW,
-      resume: runId,
-      context: { expand: true },
-    });
-    expect(second.state).toBe("waiting");
-    expect(second.waiting!.runId).not.toBe(runId);
-    const main = JSON.parse(
-      await readFile(join(root, ".runs", CHANGE, second.waiting!.runId, "run.json"), "utf8"),
-    ) as { request: { agent: { id: string }; retrieval?: { expansion?: { run?: string } } } };
+    // The stage's own prompt is the first and only hand-off of the round.
     expect(main.request.agent.id).toBe("feature-placer");
-    expect(main.request.retrieval?.expansion?.run).toBe(runId);
+    expect(main.request.agent.id).not.toBe(EXPAND_AGENT);
+    const runs = await readdir(join(root, ".runs", CHANGE));
+    expect(runs).toEqual([runId]);
+    // The expansion is recorded without a run: no model was asked.
+    expect(main.request.retrieval?.expansion?.run).toBeUndefined();
+    expect(main.request.retrieval?.expansion?.cached).toBe(false);
   });
 
   it("rerank: asked only when the candidates don't fit; the fit runs in its order, and an answer naming an unseen candidate is ignored", async () => {

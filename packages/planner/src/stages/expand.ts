@@ -173,6 +173,53 @@ export type Expanded =
   | Extract<Judged<unknown>, { waiting: unknown }>
   | { note: string; consumed: boolean };
 
+/**
+ * ADR 0189: the expansion without a model, for a hand-off. A stage round handed to the person's
+ * assistant is one paste: the separate expander prompt is gone. Its effect on the selection is
+ * kept the way the index can keep it without a judgment: every name or alias of the estate's
+ * records (the digest's kinds) that the input uses as words of its own becomes that record's
+ * id, a seed of the selection, as the model's mapped names were. Names the estate doesn't know
+ * are still the index's own (names in backticks and endpoints), so the step's gaps stay; the
+ * synonyms a model would add are left to the assistant, which searches the code itself.
+ */
+export async function namesExpansion(
+  root: string,
+  input: ContextInput,
+): Promise<{ expansion: CheckedExpansion } | { note: string }> {
+  let ix: CatalogIndex;
+  try {
+    ix = await openIndex(root, { embeddings: "off" });
+  } catch (e) {
+    return { note: `the index couldn't be read (${(e as Error).message.split("\n")[0]})` };
+  }
+  try {
+    return { expansion: namesIn(`${input.title ?? ""}\n${input.text}`, ix) };
+  } finally {
+    ix.close();
+  }
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The estate's names the text uses as whole words, each with its id (pure, for tests). */
+export function namesIn(text: string, ix: Pick<CatalogIndex, "names">): CheckedExpansion {
+  const all = text.replace(/\s+/g, " ");
+  const names: CheckedExpansion["names"] = [];
+  const seen = new Set<string>();
+  for (const e of ix.names(DIGEST_KINDS))
+    for (const n of [e.id, ...e.names]) {
+      const name = n.trim();
+      // A name of three letters or fewer is never matched on its own: too many words are one.
+      if (name.length < 4 || seen.has(e.id)) continue;
+      const m = new RegExp(`(^|[^A-Za-z0-9_-])(${escapeRe(name)})(?![A-Za-z0-9_-])`, "i").exec(all);
+      if (!m) continue;
+      seen.add(e.id);
+      names.push({ name, id: e.id, quote: m[2]! });
+    }
+  names.sort((a, b) => a.id!.localeCompare(b.id!));
+  return { terms: [], names, dropped: [] };
+}
+
 /** Ask the model to read the input (or take its answer from the store), checked. */
 export async function expandFor(
   root: string,

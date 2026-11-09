@@ -388,8 +388,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   runs `verify <repo> --write` after its last batch and says so in `applied`. Propose's `work`
  *   scope also takes a change's target-flows/ and knowledge.yaml; an answered question a read
  *   raised (rerun `atticus map <repo>`) counts in `applyFirst`. Additive only.
+ * 3.6.0 (ADR 0189, a stage is one conversation). GET /api/changes/{changeId}/stages/{stage}/thread
+ *   is a stage's thread (proposal, feature, architecture, stories or small): the prompts handed to
+ *   the person's assistant, its answers and what their checks said, the critic's findings, the
+ *   stage's questions, the person's replies and corrections, and the questions that couldn't be
+ *   kept, in order (StageThreadView). POST .../thread is a person's reply (`reply`, which the
+ *   stage's next round reads as their answer), a comment on a finding (`finding`), or keeping a
+ *   dropped question anyway (`keep`). The server checks a waiting hand-off's answer once its file
+ *   is complete, as Done does (Done stays), and says so in the thread. A sketch stroke may be
+ *   `retire` (a component taken away). Additive only.
  */
-export const API_VERSION = "3.5.0";
+export const API_VERSION = "3.6.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1986,6 +1995,132 @@ export const StageCommentResult = z.object({
   next: z.object({ command: z.string(), slash: z.string() }),
 });
 export type StageReviewViewT = z.infer<typeof StageReviewView>;
+
+/**
+ * 3.5.0 (ADR 0189): a stage of a change as one conversation, assembled from the files that hold
+ * it (the runs, the stage's loop file, the critic's rounds, the questions, the corrections). The
+ * thread is a view and the place to reply: the AI still runs in the person's editor (a hand-off),
+ * unattended Copilot or a server model. Items are in order; a prompt's sizes, model and file
+ * paths are its `details`, for a Details disclosure.
+ */
+export const THREAD_STAGES = ["proposal", "feature", "architecture", "stories", "small"] as const;
+export const ThreadStage = z.enum(THREAD_STAGES);
+export const ThreadRunDetails = z.object({
+  agent: z.string(),
+  runtime: z.string(),
+  promptPath: z.string(),
+  output: z.string().optional(),
+  promptTokens: z.number().int().min(0).optional(),
+  model: z.string().optional(),
+  attempt: z.number().int().min(1),
+});
+export const ThreadItem = z.discriminatedUnion("kind", [
+  /** A prompt handed to the assistant (the stage's drafter, or the critic's lenses). */
+  z.object({
+    kind: z.literal("prompt"),
+    at: z.string(),
+    runId: z.string(),
+    who: z.enum(["drafter", "critic"]),
+    prompt: z.string(),
+    state: RunState,
+    details: ThreadRunDetails,
+  }),
+  /** What came back, and what its checks said. */
+  z.object({
+    kind: z.literal("answer"),
+    at: z.string(),
+    runId: z.string(),
+    who: z.enum(["drafter", "critic"]),
+    /** passed: the checks read it; failed: they found problems (listed); checking: not yet. */
+    checked: z.enum(["passed", "failed", "checking"]),
+    /** Who checked it: the app when the file arrived (ADR 0189), or a person's Done. */
+    by: z.enum(["app", "person"]).optional(),
+    summary: z.array(z.string()),
+    problems: z.array(z.string()),
+  }),
+  /** The files the stage wrote from an answer. */
+  z.object({ kind: z.literal("changed"), at: z.string(), files: z.array(z.string()) }),
+  z.object({
+    kind: z.literal("finding"),
+    at: z.string(),
+    view: StageFindingView,
+    /**
+     * Whether the stage's assistant writes the file the finding cites: Fix then goes to it in the
+     * next round; otherwise Fix opens the file at its line in the app's editor (`edit`).
+     */
+    assistantWrites: z.boolean(),
+    edit: z
+      .object({
+        artifact: z.string(),
+        file: z.string().optional(),
+        line: z.number().int().optional(),
+      })
+      .optional(),
+  }),
+  z.object({ kind: z.literal("question"), at: z.string(), question: Question }),
+  z.object({
+    kind: z.literal("reply"),
+    at: z.string(),
+    text: z.string(),
+    by: z.string(),
+    /** A round of the stage has read it. */
+    read: z.boolean(),
+    /** The finding it is about, for a comment on one. */
+    about: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("correction"),
+    at: z.string(),
+    text: z.string(),
+    label: z.string(),
+    by: z.string(),
+    state: z.string(),
+  }),
+  /** A question the assistant raised that couldn't be kept: its evidence was no line. */
+  z.object({
+    kind: z.literal("dropped"),
+    at: z.string(),
+    key: z.string(),
+    question: z.string(),
+    evidence: z.array(z.string()),
+    nearest: z.string().optional(),
+  }),
+  z.object({ kind: z.literal("note"), at: z.string(), text: z.string() }),
+]);
+export const StageThreadView = z.object({
+  change: z.string(),
+  stage: ThreadStage,
+  /** Where the stage is, in one word, and the one sentence the thread opens with. */
+  state: z.enum(["not-started", "waiting", "questions", "drafting", "stopped", "done"]),
+  headline: z.string(),
+  items: z.array(ThreadItem),
+  /** The run waiting for the assistant's answer, if one does. */
+  waiting: z.object({ runId: z.string(), prompt: z.string() }).optional(),
+  /** The step's words, for POST /api/runs/handoff (the next round's prompt). */
+  step: z.array(z.string()),
+  /** Whether a reply is taken now, and if not, why. */
+  reply: z.object({ open: z.boolean(), why: z.string().optional() }),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export const StageThreadPost = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("reply"), text: z.string().trim().min(1).max(4000) }),
+  z.strictObject({
+    kind: z.literal("finding"),
+    finding: z.string().min(1),
+    gate: z.string().optional(),
+    text: z.string().trim().min(1).max(4000),
+  }),
+  z.strictObject({ kind: z.literal("keep"), key: z.string().regex(/^[0-9a-f]{12}$/) }),
+]);
+export const StageThreadPostResult = z.object({
+  files: z.array(z.string()),
+  thread: StageThreadView,
+});
+export type ThreadStageT = z.infer<typeof ThreadStage>;
+export type ThreadItemT = z.infer<typeof ThreadItem>;
+export type StageThreadViewT = z.infer<typeof StageThreadView>;
+export type StageThreadPostT = z.infer<typeof StageThreadPost>;
+export type StageThreadPostResultT = z.infer<typeof StageThreadPostResult>;
 export type StageFindingViewT = z.infer<typeof StageFindingView>;
 export type StageCommentResultT = z.infer<typeof StageCommentResult>;
 
@@ -4265,7 +4400,7 @@ export const FileChangeResult = z.object({
  */
 export const SketchStrokeRequest = z.object({
   stroke: z
-    .object({ kind: z.enum(["call", "topic", "table", "remove", "retarget", "undo"]) })
+    .object({ kind: z.enum(["call", "topic", "table", "remove", "retarget", "undo", "retire"]) })
     .passthrough(),
   /** Say what it would write; write nothing. */
   preview: z.boolean().optional(),
@@ -7205,6 +7340,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409, 422],
     },
   },
+  "/api/changes/{changeId}/stages/{stage}/thread": {
+    get: {
+      id: "getStageThread",
+      summary:
+        "3.5.0 (ADR 0189): a stage of the change as one conversation: the prompts, the assistant's answers and their checks, the critic's findings, the questions, the replies and corrections, and the questions that couldn't be kept, in order",
+      tag: "changes",
+      params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...THREAD_STAGES] } })],
+      ok: { status: 200, schema: "StageThreadView", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "postToStageThread",
+      summary:
+        "3.5.0 (ADR 0189): a person's reply to the stage's assistant (read by its next round as their answer), a comment on a finding, or keeping a dropped question anyway",
+      tag: "changes",
+      params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...THREAD_STAGES] } })],
+      body: StageThreadPost,
+      ok: { status: 200, schema: "StageThreadPostResult", description: "Written" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/changes/{changeId}/knowledge": {
     get: {
       id: "getChangeKnowledge",
@@ -7402,6 +7558,8 @@ export function openApiDocument(): Record<string, unknown> {
     ContractsView,
     StageReviewView,
     StageCommentResult,
+    StageThreadView,
+    StageThreadPostResult,
     PlacementView,
     StageDraftsView,
     CorrectionResult,

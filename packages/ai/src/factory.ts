@@ -378,10 +378,7 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const promptFile = join(dir, "prompt.md");
     const self = reviewer ? undefined : request.selfCheck;
     const handoff =
-      HandoffRuntime.promptFor(run, changesRelOf(this.h.root), runsRelOf(this.h.root)).replace(
-        /\nWhen the file is complete.*\n$/s,
-        "\n",
-      ) +
+      HandoffRuntime.promptFor(run, changesRelOf(this.h.root), runsRelOf(this.h.root), false) +
       // W3a: the drafter checks its own file with the stage's checks before it finishes.
       (self
         ? `\nBefore you finish, check the file: run ${self.command} ${HandoffRuntime.outputRel(run, changesRelOf(this.h.root), runsRelOf(this.h.root))}. Fix each problem it lists and run it again, until it says the file is clean (at most ${self.limit} times).\n`
@@ -851,7 +848,7 @@ export async function runtimeForCli(
   });
   const describe =
     runtime.kind === "hand-off"
-      ? "AI steps are handed to your assistant: Atticus writes the prompt and waits for atticus handoff done."
+      ? "AI steps are handed to your assistant: Atticus writes the prompt and checks the answer once your assistant has written it."
       : mode === "model"
         ? `AI steps call the ${op.runtime.adapters.model?.type ?? "configured"} model directly.`
         : mode === "headless-claude-code"

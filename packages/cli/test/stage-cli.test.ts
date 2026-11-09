@@ -134,7 +134,8 @@ describe("atticus change feature", () => {
   });
 
   it("with --handoff prints only the prompt, the result file and the commands that finish it", async () => {
-    // The real default: the first round is the context expander's (ADR 0116 addendum).
+    // The real default (the expansion on): in a hand-off the round's one prompt is the stage's
+    // own (ADR 0189); the expansion is read without a model.
     const root = await estate();
     const out: string[] = [];
     const code = await main(
@@ -146,7 +147,7 @@ describe("atticus change feature", () => {
     expect(out).toHaveLength(5);
     expect(out[0]).toMatch(/^Prompt: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/prompt\.md$/);
     expect(out[1]).toMatch(
-      /^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/expansion\.yaml$/,
+      /^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/feature-answer\.yaml$/,
     );
     expect(out[4]).toMatch(
       /^ {2}atticus change feature add-fraud-check --root .+ --handoff --resume run-/,
@@ -178,8 +179,8 @@ describe("a stage run again while its hand-off waits (--handoff --json)", () => 
 });
 
 describe("atticus change feature --handoff --json with the critic's AI lenses (ADR 0115)", () => {
-  it("offers the expansion, then the draft, then its lenses in one prompt (ADR 0185), and ends done", async () => {
-    // The real default (ADR 0116 addendum): the expansion is a round of its own, first.
+  it("offers the draft, then its lenses in one prompt (ADR 0185), and ends done", async () => {
+    // The real default (the expansion on): a round is one paste (ADR 0189), the draft first.
     const root = await estate();
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
       recursive: true,
@@ -212,13 +213,9 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
       return json((await run(h.resumeArgs)).out);
     };
 
-    const expansion = json(
+    const draft = json(
       (await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root])).out,
     );
-    expect(expansion.state).toBe("handoff");
-    expect(expansion.lens).toBeUndefined();
-    expect(expansion.resultFile).toMatch(/\/expansion\.yaml$/);
-    const draft = await answer(expansion, EXPANSION);
     expect(draft.state).toBe("handoff");
     expect(draft.lens).toBeUndefined();
     expect(draft.resultFile).toMatch(/feature-answer\.yaml$/);
@@ -296,11 +293,8 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
     const finish = async (argv: string[]) =>
       expect(await main(argv, quiet, { quiet: true }), argv.join(" ")).toBe(0);
     let h = await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root]);
-    // The context expander's round first (on by default, ADR 0116 addendum), then the draft.
-    expect(h.resultFile).toMatch(/\/expansion\.yaml$/);
-    await writeFile(join(root, h.resultFile), EXPANSION);
-    await finish(h.doneArgs);
-    h = await run(h.resumeArgs);
+    // One paste per round (ADR 0189): the draft first.
+    expect(h.resultFile).toMatch(/feature-answer\.yaml$/);
     expect(h.lens).toBeUndefined();
     await writeFile(join(root, h.resultFile), PLACED);
     await finish(h.doneArgs);
@@ -388,13 +382,10 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
       recursive: true,
     });
-    // The context expander's round first (on by default, ADR 0116 addendum), then the draft.
-    const expansion = (
+    // One paste per round (ADR 0189): the draft first.
+    const draft = (
       await run(root, ["change", "feature", CHANGE, "--handoff", "--json", "--root", root])
     ).j;
-    await writeFile(join(root, expansion.resultFile as string), EXPANSION);
-    await run(root, expansion.doneArgs as string[]);
-    const draft = (await run(root, expansion.resumeArgs as string[])).j;
     expect(draft.resultFile as string).toMatch(/feature-answer\.yaml$/);
     await writeFile(join(root, draft.resultFile as string), PLACED);
     await run(root, draft.doneArgs as string[]);

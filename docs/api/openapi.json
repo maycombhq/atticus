@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.5.0",
+    "version": "3.6.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4177,7 +4177,8 @@
                           "table",
                           "remove",
                           "retarget",
-                          "undo"
+                          "undo",
+                          "retire"
                         ]
                       }
                     },
@@ -15671,6 +15672,251 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StageCommentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stages/{stage}/thread": {
+      "get": {
+        "operationId": "getStageThread",
+        "summary": "3.5.0 (ADR 0189): a stage of the change as one conversation: the prompts, the assistant's answers and their checks, the critic's findings, the questions, the replies and corrections, and the questions that couldn't be kept, in order",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "stage",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "proposal",
+                "feature",
+                "architecture",
+                "stories",
+                "small"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageThreadView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postToStageThread",
+        "summary": "3.5.0 (ADR 0189): a person's reply to the stage's assistant (read by its next round as their answer), a comment on a finding, or keeping a dropped question anyway",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "stage",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "proposal",
+                "feature",
+                "architecture",
+                "stories",
+                "small"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "reply"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "finding"
+                      },
+                      "finding": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "gate": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "finding",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "keep"
+                      },
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "key"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageThreadPostResult"
                 }
               }
             }
@@ -36273,7 +36519,8 @@
                   "table",
                   "remove",
                   "retarget",
-                  "undo"
+                  "undo",
+                  "retire"
                 ]
               }
             },
@@ -43801,6 +44048,597 @@
           "files",
           "commit",
           "next"
+        ],
+        "additionalProperties": false
+      },
+      "StageThreadView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "proposal",
+              "feature",
+              "architecture",
+              "stories",
+              "small"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not-started",
+              "waiting",
+              "questions",
+              "drafting",
+              "stopped",
+              "done"
+            ]
+          },
+          "headline": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "prompt"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "runId": {
+                      "type": "string"
+                    },
+                    "who": {
+                      "type": "string",
+                      "enum": [
+                        "drafter",
+                        "critic"
+                      ]
+                    },
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "prepared",
+                        "waiting",
+                        "produced",
+                        "validated",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "properties": {
+                        "agent": {
+                          "type": "string"
+                        },
+                        "runtime": {
+                          "type": "string"
+                        },
+                        "promptPath": {
+                          "type": "string"
+                        },
+                        "output": {
+                          "type": "string"
+                        },
+                        "promptTokens": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "attempt": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "agent",
+                        "runtime",
+                        "promptPath",
+                        "attempt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "runId",
+                    "who",
+                    "prompt",
+                    "state",
+                    "details"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "answer"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "runId": {
+                      "type": "string"
+                    },
+                    "who": {
+                      "type": "string",
+                      "enum": [
+                        "drafter",
+                        "critic"
+                      ]
+                    },
+                    "checked": {
+                      "type": "string",
+                      "enum": [
+                        "passed",
+                        "failed",
+                        "checking"
+                      ]
+                    },
+                    "by": {
+                      "type": "string",
+                      "enum": [
+                        "app",
+                        "person"
+                      ]
+                    },
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "runId",
+                    "who",
+                    "checked",
+                    "summary",
+                    "problems"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "changed"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "files"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "finding"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "view": {
+                      "type": "object",
+                      "properties": {
+                        "finding": {
+                          "$ref": "#/components/schemas/Finding"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "object",
+                          "properties": {
+                            "fix": {
+                              "type": "string"
+                            },
+                            "apply": {
+                              "type": "boolean"
+                            },
+                            "dismiss": {
+                              "type": "boolean"
+                            },
+                            "waive": {
+                              "type": "boolean"
+                            },
+                            "ask": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "owner": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "owner"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "fix",
+                            "apply",
+                            "dismiss",
+                            "waive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "question": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "by": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "read": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "question",
+                              "text",
+                              "by",
+                              "at",
+                              "read"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "proposal": {
+                          "type": "object",
+                          "properties": {
+                            "claim": {
+                              "type": "string",
+                              "enum": [
+                                "not-relevant",
+                                "fixed"
+                              ]
+                            },
+                            "by": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "claim",
+                            "by",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "finding",
+                        "file",
+                        "options",
+                        "comments"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "assistantWrites": {
+                      "type": "boolean"
+                    },
+                    "edit": {
+                      "type": "object",
+                      "properties": {
+                        "artifact": {
+                          "type": "string"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "artifact"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "view",
+                    "assistantWrites"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "question"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "question": {
+                      "$ref": "#/components/schemas/Question"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "question"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "reply"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "read": {
+                      "type": "boolean"
+                    },
+                    "about": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "text",
+                    "by",
+                    "read"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "correction"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "text",
+                    "label",
+                    "by",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "dropped"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "nearest": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "key",
+                    "question",
+                    "evidence"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "note"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "at",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "waiting": {
+            "type": "object",
+            "properties": {
+              "runId": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runId",
+              "prompt"
+            ],
+            "additionalProperties": false
+          },
+          "step": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reply": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "boolean"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "open"
+            ],
+            "additionalProperties": false
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "change",
+          "stage",
+          "state",
+          "headline",
+          "items",
+          "step",
+          "reply",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "StageThreadPostResult": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thread": {
+            "$ref": "#/components/schemas/StageThreadView"
+          }
+        },
+        "required": [
+          "files",
+          "thread"
         ],
         "additionalProperties": false
       },

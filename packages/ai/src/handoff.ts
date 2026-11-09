@@ -85,9 +85,10 @@ export function batchSections(text: string): Map<string, { text: string; twice?:
  * (Copilot or Claude Code, in VS Code or IntelliJ) writes the artifact, and Atticus checks it.
  *
  * prepared → waiting → produced → validated, or failed with the errors (then Retry).
- * Completion comes from `atticus handoff done <runId>` (the prompt ends by asking the
- * assistant to run it), from the file watcher once the output has been unchanged for
- * `stableMs`, or from the person clicking Mark done. State is kept on disk so it survives a
+ * Completion comes from the app noticing the answer file once it is complete (ADR 0189: the
+ * prompt ends by asking the assistant to write the file, nothing more), from the file watcher
+ * once the output has been unchanged for `stableMs`, from `atticus handoff done <runId>`, or
+ * from the person clicking Done. State is kept on disk so it survives a
  * restart.
  */
 export class HandoffRuntime implements AiRuntime {
@@ -161,15 +162,41 @@ export class HandoffRuntime implements AiRuntime {
       ]),
       "---",
       "",
-      `When the file is complete, run: atticus handoff done ${run.runId}`,
+      HandoffRuntime.finishLine(where),
       "",
     ].join("\n");
   }
 
+  /**
+   * ADR 0189: the prompt's last line asks the assistant to write the file, and nothing else. The
+   * app notices the file once it is complete and checks it, as Done did (Done stays for a person
+   * who wants to check it at once); no line asks the person, or the assistant, to run a command.
+   */
+  static finishLine(where: string): string {
+    return `When ${where} is complete, stop there: Atticus notices the file and checks it. There is nothing to run.`;
+  }
+
   /** The prompt the person's assistant gets. It ends with the completion command. */
-  static promptFor(run: Run, changesRel = "openspec/changes", runsRel = ".runs"): string {
+  static promptFor(
+    run: Run,
+    changesRel = "openspec/changes",
+    runsRel = ".runs",
+    /** false: the prompt without its finishing lines (headless Claude Code writes its own). */
+    ending = true,
+  ): string {
     const { agent, pack, outputPath, change } = run.request;
     const where = HandoffRuntime.outputRel(run, changesRel, runsRel);
+    if (!ending)
+      return [
+        `# ${agent.id}: write ${outputPath} for change ${change}`,
+        "",
+        agent.description,
+        "",
+        `Write the result to ${where}. Change no other files.`,
+        "",
+        pack.prompt.trimEnd(),
+        "",
+      ].join("\n");
     return [
       `# ${agent.id}: write ${outputPath} for change ${change}`,
       "",
@@ -179,9 +206,15 @@ export class HandoffRuntime implements AiRuntime {
       "",
       pack.prompt.trimEnd(),
       "",
-      run.request.selfCheck
-        ? `When the file is complete, run: atticus handoff done ${run.runId}. It checks the file as the stage does: fix each problem it lists in the file and run it again, until it says the file is clean. After ${run.request.selfCheck.limit} checks the file is handed in as it is.`
-        : `When the file is complete, run: atticus handoff done ${run.runId}`,
+      // ADR 0189: an assistant that can run commands may check its file first, as the stage
+      // does; the check only reads the file, so the app's own check is still the one that counts.
+      ...(run.request.selfCheck
+        ? [
+            `Before you finish, you may check the file: ${run.request.selfCheck.command} ${where} checks it as the stage does. Fix each problem it lists and check again, until it says the file is clean (at most ${run.request.selfCheck.limit} times).`,
+            "",
+          ]
+        : []),
+      HandoffRuntime.finishLine(where),
       "",
     ].join("\n");
   }

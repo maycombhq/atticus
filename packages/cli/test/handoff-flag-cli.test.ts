@@ -69,7 +69,8 @@ describe("atticus scan survey --handoff", () => {
     // The prompt is HandoffRuntime's own, ending with the completion command.
     const prompt = await readFile(join(root, b.prompt), "utf8");
     expect(prompt).toContain(`Write the result to ${b.result}.`);
-    expect(prompt.trimEnd().endsWith(`atticus handoff done ${b.runId}`)).toBe(true);
+    expect(prompt.trimEnd().endsWith("There is nothing to run.")).toBe(true);
+    expect(prompt).not.toContain("atticus handoff done");
 
     // Resuming before the result is written says the run is still waiting, and how to finish.
     const early = await run(argvOf(b.resume));

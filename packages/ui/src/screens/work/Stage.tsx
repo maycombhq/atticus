@@ -8,7 +8,7 @@ import { Architecture } from "../architecture/Architecture.js";
 import { NeedsPanel } from "../knowledge/Needs.js";
 import { StoryFiles } from "../know/Phase.js";
 import { ChangeInputs } from "../ChangeInputs.js";
-import { StageReviewPanel } from "./StageReview.js";
+import { StageThreadPanel } from "./StageThread.js";
 import { PlacementPanel } from "./Placement.js";
 import { StageDraftsPanel } from "./StageDrafts.js";
 import {
@@ -256,9 +256,10 @@ export function StagePage(p: {
               {/* ADR 0181: the stage's drafts, drafted by AI until a person edits them, each
                   with Correct; corrections wait for the stage's next run. */}
               <StageDraftsPanel change={c.id} page={p.stage} />
-              {/* ADR 0124 addendum D-app, B10: what the critic found, with options and comments. */}
+              {/* ADR 0189: the stage as one conversation: the prompt, the answer, the critic's
+                  findings, the questions and the person's replies, in order, with the reply box. */}
               {p.stage !== "tasks" && (
-                <StageReviewPanel
+                <StageThreadPanel
                   change={c.id}
                   stage={p.stage === "feature" ? "feature" : "stories"}
                 />
@@ -448,7 +449,7 @@ export function ArchitectureReview({
   return (
     <div className="bento" style={{ marginBottom: 12 }}>
       {c ? (
-        <StageReviewPanel change={c.id} stage="architecture" />
+        <StageThreadPanel change={c.id} stage="architecture" />
       ) : (
         <Panel title={COPY.stageReview.title} span="1 / -1">
           <p className="work-say" style={{ marginTop: 0 }}>

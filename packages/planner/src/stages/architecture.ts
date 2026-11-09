@@ -78,6 +78,7 @@ import {
   type Retyped,
 } from "./contracts.js";
 import { deployIssues, renderDeploy } from "./deploy-order.js";
+import { plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
 
@@ -1358,6 +1359,7 @@ export function checkDeltas(
         );
   };
 
+  const planned = plannedComponents(deltas, e);
   const seen = new Set<string>();
   for (const d of deltas) {
     const t = d.flow;
@@ -1453,10 +1455,12 @@ export function checkDeltas(
       // ADR 0087 addendum (2026-10-25): an outside system a call fact or the estate's flows name
       // (a model provider, a vendor) is a call-out's target, as a component is.
       const outside = s.to ? outsideSystems(e).get(s.to.component) : undefined;
+      // ADR 0189: a component the change's own diagram plans is known: planned in this change.
       if (
         s.to &&
         !s.to.new &&
         !outside &&
+        !planned.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(
@@ -2289,7 +2293,11 @@ export function renderArchitecture(
   else lines.push("None.");
   lines.push("");
   // B-arch: the breaking contract changes with who they break, and the deploy order drafted.
-  lines.push(...renderBreaking(deltas, e), ...renderDeploy(deploy), ...renderRollback(deltas, e));
+  lines.push(
+    ...renderBreaking(deltas, e),
+    ...renderDeploy(deploy, plannedRepos(deltas, e)),
+    ...renderRollback(deltas, e),
+  );
   return lines.join("\n");
 }
 

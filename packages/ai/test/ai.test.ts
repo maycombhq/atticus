@@ -246,7 +246,10 @@ describe("hand-off runtime", () => {
     const dir = join(root, ".runs/add-transfer-limit", prepared.runId);
     const prompt = await readFile(join(dir, "prompt.md"), "utf8");
     expect(prompt).toContain("Write the result to openspec/changes/add-transfer-limit/stories.md");
-    expect(prompt.trimEnd().endsWith(`atticus handoff done ${prepared.runId}`)).toBe(true);
+    expect(
+      prompt.trimEnd().endsWith("Atticus notices the file and checks it. There is nothing to run."),
+    ).toBe(true);
+    expect(prompt).not.toContain("atticus handoff done");
     expect(existsSync(join(dir, "context-manifest.json"))).toBe(true);
 
     expect((await rt.run(prepared.runId)).state).toBe("waiting");

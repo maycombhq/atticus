@@ -146,26 +146,25 @@ test("a contract's citation shows its quote on focus, and its fact is marked wro
   expect(line.by).toBe("priya");
 });
 
-test("a finding on the Stories tab takes a comment, written for the stage's next run", async ({
+// ADR 0189: the finding is in the stage's thread, and a reply about it is the comment.
+test("a finding on the Stories tab takes a reply in the stage's thread, written for the stage's next run", async ({
   page,
 }) => {
   await open(page, a(), `stories?change=${CHANGE}`);
-  const panel = page.locator("section", {
-    has: page.getByRole("heading", { name: "What the critic found", level: 2 }),
-  });
+  const panel = page.getByRole("region", { name: "The stories stage, as one conversation" });
   await expect(panel).toContainText("The refusal outcome has no story of its own.");
   await expect(panel.getByRole("button", { name: "Make the fix for f-0000000a" })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Waive f-0000000a" })).toHaveCount(0);
-  await accessible(page, "the Stories tab's findings");
+  await accessible(page, "the Stories tab's thread");
+  await panel.getByRole("button", { name: "Reply about f-0000000a" }).click();
   await panel
-    .getByLabel("Your comment on f-0000000a")
+    .getByLabel("Tell the assistant about f-0000000a…")
     .fill("The refusal is s1's second criterion; keep it there.");
-  await panel.getByRole("button", { name: "Save the comment" }).click();
-  await expect(panel.getByRole("status").first()).toContainText("Written to questions/");
-  await expect(panel).toContainText(`git add questions/`);
-  await expect(panel).toContainText(`atticus plan stories ${CHANGE}`);
-  await expect(panel).toContainText("not read yet: run the stage");
-  await accessible(page, "a comment on a finding");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByText("Sent. The next round's prompt carries it.")).toBeVisible();
+  await expect(panel).toContainText("The refusal is s1's second criterion; keep it there.");
+  await expect(panel).toContainText("The next round reads it");
+  await accessible(page, "a reply about a finding");
   const loop = parse(await readFile(join(root, REL, "stage/stories.yaml"), "utf8")) as {
     questions: string[];
   };

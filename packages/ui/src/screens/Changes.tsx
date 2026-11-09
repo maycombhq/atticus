@@ -12,6 +12,7 @@ import { NeedsPanel } from "./knowledge/Needs.js";
 import { ChangeInputs } from "./ChangeInputs.js";
 import { ChangePrototypes } from "./ChangePrototypes.js";
 import { COPY } from "../copy.js";
+import { lensesWaiting, type CriticRan } from "./work/critic-ran.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
@@ -349,6 +350,7 @@ export function ArtifactEditor({
   file,
   onClose,
   onSaved,
+  line,
 }: {
   change: string;
   artifact: string;
@@ -357,6 +359,8 @@ export function ArtifactEditor({
   onClose: () => void;
   /** Eighth UX walk: told after each save, so the page's gate reads again. */
   onSaved?: () => void;
+  /** ADR 0189: the line a finding cites, selected when the file opens (Make the fix). */
+  line?: number;
 }) {
   const a = useApi<Artifact>(artifactUrl(change, artifact, file));
   const textId = `artifact-text${file ? `-${file.replace(/[^a-z0-9]+/gi, "-")}` : ""}`;
@@ -372,8 +376,18 @@ export function ArtifactEditor({
   const [saved, setSaved] = useState<{ from: string; content: string; sha256: string }>();
   const ready = a.state === "ready";
   useEffect(() => {
-    if (ready) box.current?.focus();
-  }, [ready]);
+    if (!ready) return;
+    const b = box.current;
+    b?.focus();
+    // ADR 0189: the cited line, selected and scrolled to, so the fix starts where the finding is.
+    if (b && line && line > 0) {
+      const lines = b.value.split("\n");
+      const n = Math.min(line, lines.length);
+      const start = lines.slice(0, n - 1).reduce((x, l) => x + l.length + 1, 0);
+      b.setSelectionRange(start, start + (lines[n - 1]?.length ?? 0));
+      b.scrollTop = Math.max(0, (n - 4) * 20.8);
+    }
+  }, [ready, line]);
   return (
     <Panel
       title={T.edit(file ?? artifact)}
@@ -724,10 +738,16 @@ function Detail({ id }: { id: string }) {
                         onClick={() =>
                           void critic.run(
                             () =>
-                              api(`/api/changes/${id}/critic`, { method: "POST", body: {} }).then(
-                                reloadAll,
-                              ),
-                            aiOn ? T.criticRoundStartedThe : T.theRuleChecksRan,
+                              api<CriticRan>(`/api/changes/${id}/critic`, {
+                                method: "POST",
+                                body: {},
+                              }).then((r) => {
+                                reloadAll();
+                                return r;
+                              }),
+                            // ADR 0189 (app-only audit): a lens is said to wait only when one does.
+                            (r) =>
+                              aiOn ? COPY.thread.criticRan(lensesWaiting(r)) : T.theRuleChecksRan,
                           )
                         }
                       >

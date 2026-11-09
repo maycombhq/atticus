@@ -188,7 +188,7 @@ describe("a stage's draft checks itself before it is handed in (W3a)", () => {
     selfCheck: { command: "atticus stage check add-note-tags stories", limit: 3 },
   });
 
-  it("the hand-off prompt's finishing step says handoff done checks the file, and to fix and run it again", async () => {
+  it("the hand-off prompt offers the stage's own check, and its last line runs nothing (ADR 0189)", async () => {
     const root = await adoptedRoot();
     const rt = new HandoffRuntime({ root, validate: async () => [], now: () => now });
     const p = await rt.prepare(selfChecked());
@@ -197,7 +197,11 @@ describe("a stage's draft checks itself before it is handed in (W3a)", () => {
       "utf8",
     );
     expect(prompt).toContain(
-      `When the file is complete, run: atticus handoff done ${p.runId}. It checks the file as the stage does: fix each problem it lists in the file and run it again, until it says the file is clean. After 3 checks the file is handed in as it is.`,
+      `Before you finish, you may check the file: atticus stage check add-note-tags stories .atticus/.runs/add-note-tags/${p.runId}/stories-answer.yaml checks it as the stage does. Fix each problem it lists and check again, until it says the file is clean (at most 3 times).`,
+    );
+    expect(prompt).not.toContain("atticus handoff done");
+    expect(prompt.trimEnd().split("\n").at(-1)).toBe(
+      `When .atticus/.runs/add-note-tags/${p.runId}/stories-answer.yaml is complete, stop there: Atticus notices the file and checks it. There is nothing to run.`,
     );
   });
 

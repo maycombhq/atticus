@@ -18,7 +18,9 @@ import {
 } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { writeQuarantineItems } from "@maycombhq/naysayer";
+import { changeInputSources } from "@maycombhq/intake";
 import { PlannerError } from "./errors.js";
+import { markProposalRepliesRead, threadReplies } from "./stages/thread.js";
 
 /**
  * `atticus change draft` (ADR 0070): the proposal, spec and interfaces of a change, drafted by
@@ -490,11 +492,17 @@ export async function draftChange(
   const change = await changeStore(root).read(changeId);
   const dir = changeFolder(root, change.id);
   const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
-  if (!brief.trim() || TEMPLATE_ONLY(brief))
+  // ADR 0189 (app-only audit): the files attached to the change reach the first step too, each
+  // cited by its file, as the stages after it read them (ADR 0113).
+  const rel = `${changesRelOf(root)}/${change.id}`;
+  const attached = await changeInputSources(dir, rel);
+  if ((!brief.trim() || TEMPLATE_ONLY(brief)) && !attached.length)
     throw new PlannerError(
       "refused",
-      `${change.id}'s brief.md is still the template: write the problem, outcome and scope first; the draft is made from it.`,
+      `${change.id}'s brief.md is still the template: write the problem, outcome and scope first, or attach a file the change starts from; the draft is made from them.`,
     );
+  // ADR 0189: what a person told the drafter in the proposal's thread, as their answers.
+  const replies = await threadReplies(root, change.id, "proposal");
   const ctx = await loadChangeContext(root);
   const map = relevantMap(ctx.records, brief);
   const agent = changeDrafter(ctx.orgPack.agents, ctx.orgPack.runtime.budgets.defaultTokens);
@@ -534,6 +542,29 @@ export async function draftChange(
         classification: "internal",
         priority: 90,
       },
+      ...attached.map((s): SourceInput => ({
+        id: s.id,
+        kind: "document",
+        origin: s.origin,
+        text: s.text,
+        classification: "internal",
+        priority: 94,
+      })),
+      ...(replies.length
+        ? [
+            {
+              id: "replies",
+              kind: "document" as const,
+              origin: `${rel}/stage/proposal-thread.yaml`,
+              text: [
+                "What the person told you in the proposal's thread, oldest first. Follow it where it asks for a change to the draft:",
+                ...replies.map((r) => `- ${r.by}, ${r.at.slice(0, 10)}: ${r.text}`),
+              ].join("\n"),
+              classification: "internal",
+              priority: 99,
+            },
+          ]
+        : []),
     ];
     return buildContextPack({
       change: change.id,
@@ -617,6 +648,7 @@ export async function draftChange(
       await writeFileAtomic(path, stamp + text);
       files.push(rel);
     }
+    if (replies.length) await markProposalRepliesRead(root, change.id);
     return { ...base, state: "written", files, discarded, problems: [] };
   }
   return {

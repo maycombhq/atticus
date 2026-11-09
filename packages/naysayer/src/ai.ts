@@ -33,6 +33,7 @@ import { sentence, type Hit } from "./hits.js";
 import type { RuledHit } from "./findings.js";
 import type { EffectiveRule } from "./rules.js";
 import { QUESTION_ROLES, QUESTION_TEXT, QUESTIONS, questionOfRule } from "./questions.js";
+import { plannedText } from "./planned.js";
 import {
   diffLines,
   diffText,
@@ -977,6 +978,16 @@ export async function runLenses(
         text: catalogSlice(ctx),
         classification: "internal",
         priority: 5,
+      });
+    // ADR 0189: what the change plans that isn't built yet, so a lens reads it as planned.
+    if (ctx.planned.size)
+      estate.push({
+        id: "planned-in-change",
+        kind: "catalog",
+        origin: "the change's target flows and proposal",
+        text: plannedText(ctx.planned),
+        classification: "internal",
+        priority: 6,
       });
     // What people answered for the change: part of the brief, as data (ADR 0115 addendum).
     if (ctx.answers?.length)

@@ -21,6 +21,7 @@ import {
 import type { ChangeAnswer } from "./answers.js";
 import type { RecordedFact } from "./recorded.js";
 import { readHops, type ChangeFiles, type Hop } from "./artifacts.js";
+import { plannedInChange } from "./planned.js";
 
 /** One gate from gates.yaml (C6). */
 export type GateDef = ChangeContext["orgPack"]["gates"]["gates"][number];
@@ -59,6 +60,11 @@ export interface CriticContext {
   ownerOf(system: string): string | undefined;
   /** A caller or callee the catalog (or the profile) knows. */
   isKnown(id: string): boolean;
+  /**
+   * ADR 0189: what the change itself plans that the catalog doesn't have yet (new) or takes
+   * away (retire), from its target flows and proposal. Empty when it plans none.
+   */
+  planned: Map<string, "new" | "retire">;
   /** Names people use for a component or system in prose (id, id with spaces, system name). */
   namesOf(id: string): string[];
   /** Whether a review artifact is due by this gate's phase for this change type. */
@@ -138,6 +144,11 @@ export function buildContext(o: {
     "confidential",
     "restricted",
   ];
+  const isKnown = (id: string) =>
+    get("Component", id) !== undefined ||
+    get("System", id) !== undefined ||
+    profileSystems.has(id) ||
+    endpointOwners.has(id);
   return {
     root: o.root,
     change: o.change,
@@ -160,11 +171,8 @@ export function buildContext(o: {
     outsideOf: (s) =>
       outsideKindOf(outside, s, get("System", s)?.boundary ?? profileSystems.get(s)?.boundary),
     ownerOf: (s) => profileSystems.get(s)?.owner ?? get("System", s)?.owner,
-    isKnown: (id) =>
-      get("Component", id) !== undefined ||
-      get("System", id) !== undefined ||
-      profileSystems.has(id) ||
-      endpointOwners.has(id),
+    isKnown,
+    planned: plannedInChange(o.files, isKnown),
     namesOf: (id) => {
       const names = new Set([id, id.replace(/-/g, " ")]);
       const sys = get("System", id) ?? undefined;

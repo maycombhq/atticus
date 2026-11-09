@@ -1335,10 +1335,15 @@ export async function runStageLoop<A>(
       const ok: string[] = [];
       for (const e of q.evidence) if (await lineExists(root, e)) ok.push(e);
       if (ok.length) drafted.push({ repo: change.id, q: { ...q, evidence: ok } });
-      else
+      else {
+        // ADR 0189: never silently: kept in the loop file for the stage's thread, where a
+        // person keeps it anyway, citing the nearest line of the file it named.
+        const d = await droppedQuestion(root, q.question, q.evidence, n, at);
+        loop.dropped = [...(loop.dropped ?? []).filter((x) => x.key !== d.key), d];
         notes.push(
-          `Left out the assistant's question "${q.question}": none of its evidence (${q.evidence.join(", ")}) is a line in the metarepo.`,
+          `1 question couldn't be kept: "${q.question}" cites ${q.evidence.join(", ")}, which isn't a line in the metarepo. The stage's thread shows it, to keep anyway.`,
         );
+      }
     }
     // A question an answer on file may decide, that nothing settled: handed back to the drafter
     // once, with the answer, rather than put to the person again (ADR 0117 addendum).
@@ -1938,6 +1943,43 @@ function askedAnswered(h: HeldQuestion): StageIssue {
     message: `Your question "${h.question.question.trim()}" may ask again what a person already answered: ${answers}. That answer is part of the brief: follow it and leave the question out. If it decides your question, give sameAs with verdict answered and the answer's words; if it leaves something open, ask only that, with sameAs verdict narrower.`,
     blocking: true,
     kind: "drafting",
+  };
+}
+
+/**
+ * ADR 0189: an assistant's question none of whose evidence is a line, as the loop file keeps it:
+ * with the nearest line of the first file it names that is there (its last line, when it cited
+ * past the end), or no nearest line when no file it names is there.
+ */
+export async function droppedQuestion(
+  root: string,
+  question: string,
+  evidence: string[],
+  iteration: number,
+  at: string,
+): Promise<NonNullable<StageLoop["dropped"]>[number]> {
+  let nearest: string | undefined;
+  for (const e of evidence) {
+    const cut = e.lastIndexOf(":");
+    const path = cut > 0 ? e.slice(0, cut) : e;
+    const n = cut > 0 ? Number(e.slice(cut + 1)) : 1;
+    if (!path || path.includes("..")) continue;
+    const text = await readFile(join(root, ...path.split("/")), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    const lines = text.replace(/\n$/, "").split(/\r?\n/).length;
+    nearest = `${path}:${Math.max(1, Math.min(Number.isInteger(n) ? n : 1, lines))}`;
+    break;
+  }
+  return {
+    key: createHash("sha256")
+      .update([question.trim(), ...evidence].join("\n"))
+      .digest("hex")
+      .slice(0, 12),
+    question: question.trim(),
+    evidence,
+    ...(nearest ? { nearest } : {}),
+    iteration,
+    at,
   };
 }
 
