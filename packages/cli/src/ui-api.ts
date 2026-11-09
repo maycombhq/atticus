@@ -1,3 +1,5 @@
+import { tracked } from "./ui-api-activity.js";
+import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
@@ -167,7 +169,17 @@ interface Ran {
 async function run(f: (io: Output) => Promise<number>): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await f({ out: (l) => out.push(l), err: (l) => err.push(l) });
+  // ADR 0187: inside a job, each line also goes to its Console entry as it is printed.
+  const code = await f({
+    out: (l) => {
+      out.push(l);
+      printToCurrent(l);
+    },
+    err: (l) => {
+      err.push(l);
+      printToCurrent(l);
+    },
+  });
   return { code, out, err };
 }
 
@@ -556,14 +568,18 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         `${localWhat.get(busy.id) ?? busy.progress.message} is running on this server (${busy.id}): wait for it to finish, then try again.`,
       );
     // Round 37: its own kind, so a slow Apply never reads as "an AI step is running".
-    const job = ctx.jobs.start("local", async (c) => {
-      c.progress(0, 1, what);
-      const res = await work();
-      c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
-      ctx.events.publish({ type: "file.changed", path: "." });
-      const lines = [...res.out, ...res.err];
-      return { result: { code: res.code, lines }, errors: res.code === 0 ? [] : lines };
-    });
+    const job = ctx.jobs.start(
+      "local",
+      async (c) => {
+        c.progress(0, 1, what);
+        const res = await work();
+        c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+        ctx.events.publish({ type: "file.changed", path: "." });
+        const lines = [...res.out, ...res.err];
+        return { result: { code: res.code, lines }, errors: res.code === 0 ? [] : lines };
+      },
+      { title: what },
+    );
     localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };
   };
@@ -906,59 +922,68 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           throw conflict(
             `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
           );
-        const job = ctx.jobs.start("step", async (c) => {
-          const r = await runReadyTasks(root, change, {
-            by: user,
-            only: tasks,
-            ...(view.repoOrder ? { repoOrder: view.repoOrder } : {}),
-            ...(b.level ? { level: b.level } : {}),
-            ...(b.runtime ? { mode: b.runtime } : {}),
-            // As Run with AI: runtime.yaml's level, lowered to the repo's cap, and at most draft.
-            levelFor: async (task) => {
-              const p = await previewTaskRun(root, change, task, {
-                skipGitHost: true,
-                ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
-              });
-              return p.level === "pr" ? "draft" : p.level;
-            },
-            // The task's repo gets its worktree when it has none yet, as Run with AI does.
-            before: async (task) => {
-              // Round 50: a sync of its repo running elsewhere is said, and the task waits.
-              const opened = await openTaskWorktree(root, change, task, deps.gitHost).catch(
-                (e: unknown) => {
-                  if (e instanceof HttpError) return { code: 1, out: [], err: [e.detail ?? ""] };
-                  throw e;
-                },
-              );
-              return opened && opened.code !== 0
-                ? opened.err.join(" ") || opened.out.join(" ") || "Its worktree couldn't be opened."
-                : undefined;
-            },
-            progress: (done, total, message) => c.progress(done, total, message),
-            cancelled: () => c.cancelled,
-            ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
-            ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
-            ...(deps.taskRun?.commands ? { commands: deps.taskRun.commands } : {}),
-          });
-          for (const x of r.ran)
-            ctx.events.publish({
-              type: "file.changed",
-              path: `${changesRelOf(root)}/${change}/tasks/${x.task}/task-run.yaml`,
+        const job = ctx.jobs.start(
+          "step",
+          async (c) => {
+            const r = await runReadyTasks(root, change, {
+              by: user,
+              only: tasks,
+              ...(view.repoOrder ? { repoOrder: view.repoOrder } : {}),
+              ...(b.level ? { level: b.level } : {}),
+              ...(b.runtime ? { mode: b.runtime } : {}),
+              // As Run with AI: runtime.yaml's level, lowered to the repo's cap, and at most draft.
+              levelFor: async (task) => {
+                const p = await previewTaskRun(root, change, task, {
+                  skipGitHost: true,
+                  ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+                });
+                return p.level === "pr" ? "draft" : p.level;
+              },
+              // The task's repo gets its worktree when it has none yet, as Run with AI does.
+              before: async (task) => {
+                // Round 50: a sync of its repo running elsewhere is said, and the task waits.
+                const opened = await openTaskWorktree(root, change, task, deps.gitHost).catch(
+                  (e: unknown) => {
+                    if (e instanceof HttpError) return { code: 1, out: [], err: [e.detail ?? ""] };
+                    throw e;
+                  },
+                );
+                return opened && opened.code !== 0
+                  ? opened.err.join(" ") ||
+                      opened.out.join(" ") ||
+                      "Its worktree couldn't be opened."
+                  : undefined;
+              },
+              progress: (done, total, message) => {
+                c.progress(done, total, message);
+                c.line(message);
+              },
+              cancelled: () => c.cancelled,
+              ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+              ...(deps.taskRun?.git ? { git: deps.taskRun.git } : {}),
+              ...(deps.taskRun?.commands ? { commands: deps.taskRun.commands } : {}),
             });
-          const ran = r.ran.map((x) =>
-            "record" in x
-              ? { task: x.task, repo: x.repo, state: x.record.state, branch: x.record.branch }
-              : { task: x.task, repo: x.repo || (repoOf.get(x.task) ?? ""), refused: x.refused },
-          );
-          const left = r.stopped ? r.planned.slice(r.planned.indexOf(r.stopped.task) + 1) : [];
-          return {
-            result: Api.RunReadyResult.parse({
-              ran,
-              ...(r.stopped ? { stopped: r.stopped } : {}),
-              left,
-            }),
-          };
-        });
+            for (const x of r.ran)
+              ctx.events.publish({
+                type: "file.changed",
+                path: `${changesRelOf(root)}/${change}/tasks/${x.task}/task-run.yaml`,
+              });
+            const ran = r.ran.map((x) =>
+              "record" in x
+                ? { task: x.task, repo: x.repo, state: x.record.state, branch: x.record.branch }
+                : { task: x.task, repo: x.repo || (repoOf.get(x.task) ?? ""), refused: x.refused },
+            );
+            const left = r.stopped ? r.planned.slice(r.planned.indexOf(r.stopped.task) + 1) : [];
+            return {
+              result: Api.RunReadyResult.parse({
+                ran,
+                ...(r.stopped ? { stopped: r.stopped } : {}),
+                left,
+              }),
+            };
+          },
+          { title: `Run the ready tasks of ${change}` },
+        );
         return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
       // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's
@@ -1263,12 +1288,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               io,
             ),
           );
-        let res = await once(b.gate);
-        // A change in a state with no gate of its own (define) is checked at the gate it goes to.
-        if (!b.gate && res.code === 2 && res.err.some((l) => /has no gate/.test(l))) {
-          const next = (await changeReport(root, params.changeId!)).next;
-          if (next) res = await once(next);
-        }
+        // ADR 0187: as a job, so the Console shows it while the page waits.
+        const res = await tracked(ctx, `Critic on ${params.changeId!}`, async () => {
+          let got = await once(b.gate);
+          // A change in a state with no gate of its own (define) is checked at the gate it goes to.
+          if (!b.gate && got.code === 2 && got.err.some((l) => /has no gate/.test(l))) {
+            const next = (await changeReport(root, params.changeId!)).next;
+            if (next) got = await once(next);
+          }
+          return got;
+        });
         if (res.code === 2) throw refused(res);
         ctx.events.publish({
           type: "file.changed",
@@ -1298,7 +1327,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         let res: Ran;
         try {
           // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
-          res = await run((io) => runDone(root, params.runId!, { by: user }, io, deps.taskRun));
+          // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
+          res = await tracked(
+            ctx,
+            `Done: ${params.runId!}`,
+            () => run((io) => runDone(root, params.runId!, { by: user }, io, deps.taskRun)),
+            { meta: { handoffRun: params.runId! } },
+          );
         } finally {
           doneBusy.delete(params.runId!);
         }
@@ -1456,39 +1491,44 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/scan", ({ body }) => {
         const b = parseBody(Api.ScanRequest, body);
         if (jobs.runningOf("scan")) throw conflict("A scan is already running.");
-        const job = jobs.start("scan", async (c) => {
-          c.progress(0, 1, "Scanning");
-          const res = await run((io) =>
-            scanCommand(
-              root,
-              {
-                ...(b.repos ? { repos: b.repos } : {}),
-                full: b.full,
-                json: true,
-                // ADR 0123: another branch, scanned beside the baseline.
-                ...(b.ref ? { ref: b.ref } : {}),
-              },
-              io,
-            ),
-          );
-          c.progress(1, 1, "Scanned");
-          const parsed = (() => {
-            try {
-              return JSON.parse(res.out.join("\n")) as Record<string, unknown>;
-            } catch {
-              return {};
-            }
-          })();
-          const problems = (parsed.problems as unknown[] | undefined)?.length ?? 0;
-          ctx.events.publish({
-            type: "index.rebuilt",
-            records: Number((parsed.stats as { records?: number } | undefined)?.records ?? 0),
-          });
-          return {
-            result: { stats: parsed.stats, problems },
-            errors: res.code === 2 ? res.err : [],
-          };
-        });
+        const scanTitle = b.repos?.length ? `Scan ${b.repos.join(", ")}` : "Scan";
+        const job = jobs.start(
+          "scan",
+          async (c) => {
+            c.progress(0, 1, "Scanning");
+            const res = await run((io) =>
+              scanCommand(
+                root,
+                {
+                  ...(b.repos ? { repos: b.repos } : {}),
+                  full: b.full,
+                  json: true,
+                  // ADR 0123: another branch, scanned beside the baseline.
+                  ...(b.ref ? { ref: b.ref } : {}),
+                },
+                io,
+              ),
+            );
+            c.progress(1, 1, "Scanned");
+            const parsed = (() => {
+              try {
+                return JSON.parse(res.out.join("\n")) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })();
+            const problems = (parsed.problems as unknown[] | undefined)?.length ?? 0;
+            ctx.events.publish({
+              type: "index.rebuilt",
+              records: Number((parsed.stats as { records?: number } | undefined)?.records ?? 0),
+            });
+            return {
+              result: { stats: parsed.stats, problems },
+              errors: res.code === 2 ? res.err : [],
+            };
+          },
+          { title: scanTitle },
+        );
         return { status: 202, body: { jobId: job.id } };
       })
       .add("POST", "/api/workspace/sync", ({ body }) => {
@@ -1497,12 +1537,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // a terminal's sync from running git with this one.
         const busy = jobs.runningOf("sync");
         if (busy) throw conflict(`A sync is already running (${busy.id}): wait for it to finish.`);
-        const job = jobs.start("sync", async (c) => {
-          c.progress(0, 1, "Syncing base clones");
-          const res = await run((io) => workspaceSync(root, b.repos, io));
-          c.progress(1, 1, "Synced");
-          return { result: { lines: res.out }, errors: res.code === 0 ? [] : res.err };
-        });
+        const job = jobs.start(
+          "sync",
+          async (c) => {
+            c.progress(0, 1, "Syncing base clones");
+            const res = await run((io) => workspaceSync(root, b.repos, io));
+            c.progress(1, 1, "Synced");
+            return { result: { lines: res.out }, errors: res.code === 0 ? [] : res.err };
+          },
+          { title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones" },
+        );
         return { status: 202, body: { jobId: job.id } };
       })
       .add("POST", "/api/reconcile", ({ body }) => {
@@ -1510,18 +1554,22 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const busy = jobs.runningOf("reconcile");
         if (busy)
           throw conflict(`A reconcile is already running (${busy.id}): wait for it to finish.`);
-        const job = jobs.start("reconcile", async (c) => {
-          c.progress(0, 1, `Reconciling ${b.diagram}`);
-          const res = await run((io) => reconcileCommand(root, [b.diagram], { json: true }, io));
-          c.progress(1, 1, "Reconciled");
-          let result: Record<string, unknown>;
-          try {
-            result = JSON.parse(res.out.join("\n")) as Record<string, unknown>;
-          } catch {
-            result = { lines: res.out };
-          }
-          return { result, errors: res.code === 2 ? res.err : [] };
-        });
+        const job = jobs.start(
+          "reconcile",
+          async (c) => {
+            c.progress(0, 1, `Reconciling ${b.diagram}`);
+            const res = await run((io) => reconcileCommand(root, [b.diagram], { json: true }, io));
+            c.progress(1, 1, "Reconciled");
+            let result: Record<string, unknown>;
+            try {
+              result = JSON.parse(res.out.join("\n")) as Record<string, unknown>;
+            } catch {
+              result = { lines: res.out };
+            }
+            return { result, errors: res.code === 2 ? res.err : [] };
+          },
+          { title: `Reconcile ${b.diagram}` },
+        );
         return { status: 202, body: { jobId: job.id } };
       })
   );

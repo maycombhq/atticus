@@ -8,7 +8,8 @@ import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
 import { MeProvider, useMe } from "./me.js";
-import { CopilotRunsProvider, RunConsole, RunStrip } from "./copilot-runs.js";
+import { CopilotRunsProvider } from "./copilot-runs.js";
+import { ActivityConsole, ActivityProvider, ActivityStrip } from "./activity.js";
 import { DecisionsProvider } from "./decisions.js";
 import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
@@ -237,53 +238,56 @@ export function App() {
   return (
     <MeProvider>
       <CopilotRunsProvider>
-        {/* ADR 0181: the AI's decisions, read once when a chip or page first needs them. */}
-        <DecisionsProvider>
-          <div className="shell">
-            <LoadingBar />
-            <a
-              className="skip"
-              href="#main"
-              onClick={(e) => {
-                // The address is the screen (#/...): the skip link moves focus, never the address.
-                e.preventDefault();
-                document.getElementById("main")?.focus();
-              }}
-            >
-              {T.skipToContent}
-            </a>
-            <Nav current={current} hash={hash} full={full} />
-            <CommandPalette />
-            <Tour
-              metarepo={
-                health.state === "ready"
-                  ? health.data.root
-                  : health.state === "error"
-                    ? null
-                    : undefined
-              }
-            />
-            <main id="main" className="main" tabIndex={-1}>
-              <FlashLine />
-              <TopBar health={health.state === "ready" ? health.data : undefined} />
-              <RunStrip />
-              <h1 className="sr">{current.label}</h1>
-              <SectionTabs current={current} hash={hash} full={full} />
-              {server.down && <ServerDown inPanel={!!hostBridge()} />}
-              {(() => {
-                const S = SCREEN_COMPONENTS[current.id];
-                return S ? (
-                  <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
-                    <S hash={hash} />
-                  </ScreenBoundary>
-                ) : (
-                  <NotBuilt screen={current} />
-                );
-              })()}
-            </main>
-            <RunConsole />
-          </div>
-        </DecisionsProvider>
+        {/* ADR 0187: the Console: everything running or run lately, wherever it started. */}
+        <ActivityProvider>
+          {/* ADR 0181: the AI's decisions, read once when a chip or page first needs them. */}
+          <DecisionsProvider>
+            <div className="shell">
+              <LoadingBar />
+              <a
+                className="skip"
+                href="#main"
+                onClick={(e) => {
+                  // The address is the screen (#/...): the skip link moves focus, never the address.
+                  e.preventDefault();
+                  document.getElementById("main")?.focus();
+                }}
+              >
+                {T.skipToContent}
+              </a>
+              <Nav current={current} hash={hash} full={full} />
+              <CommandPalette />
+              <Tour
+                metarepo={
+                  health.state === "ready"
+                    ? health.data.root
+                    : health.state === "error"
+                      ? null
+                      : undefined
+                }
+              />
+              <main id="main" className="main" tabIndex={-1}>
+                <FlashLine />
+                <TopBar health={health.state === "ready" ? health.data : undefined} />
+                <ActivityStrip />
+                <h1 className="sr">{current.label}</h1>
+                <SectionTabs current={current} hash={hash} full={full} />
+                {server.down && <ServerDown inPanel={!!hostBridge()} />}
+                {(() => {
+                  const S = SCREEN_COMPONENTS[current.id];
+                  return S ? (
+                    <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
+                      <S hash={hash} />
+                    </ScreenBoundary>
+                  ) : (
+                    <NotBuilt screen={current} />
+                  );
+                })()}
+              </main>
+              <ActivityConsole />
+            </div>
+          </DecisionsProvider>
+        </ActivityProvider>
       </CopilotRunsProvider>
     </MeProvider>
   );

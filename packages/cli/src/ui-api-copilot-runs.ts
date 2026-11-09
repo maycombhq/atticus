@@ -162,51 +162,55 @@ export function uiCopilotRunRoutes(
         });
         run = me;
         let lastErr: string | undefined;
-        const job = ctx.jobs.start("step", async (c) => {
-          const io: Output = {
-            out: (l) => queue(me.line(l)),
-            err: (l) => {
-              lastErr = l;
-              queue(me.line(l));
-            },
-          };
-          const onEvent = (e: MapAllEvent) => {
-            for (const n of me.event(e)) queue(n);
-            const p = me.view.progress;
-            c.progress(p.repoIndex, p.repos, p.session ?? p.repo ?? "Planning");
-            state();
-          };
-          const signal = currentSignal();
-          let code: number;
-          try {
-            code = await start(optionsOf(b.data), io, {
-              ...(signal ? { signal } : {}),
-              onEvent,
-            });
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            queue(me.finish(signal?.aborted ? "stopped" : "failed", now().toISOString(), msg));
+        const job = ctx.jobs.start(
+          "step",
+          async (c) => {
+            const io: Output = {
+              out: (l) => queue(me.line(l)),
+              err: (l) => {
+                lastErr = l;
+                queue(me.line(l));
+              },
+            };
+            const onEvent = (e: MapAllEvent) => {
+              for (const n of me.event(e)) queue(n);
+              const p = me.view.progress;
+              c.progress(p.repoIndex, p.repos, p.session ?? p.repo ?? "Planning");
+              state();
+            };
+            const signal = currentSignal();
+            let code: number;
+            try {
+              code = await start(optionsOf(b.data), io, {
+                ...(signal ? { signal } : {}),
+                onEvent,
+              });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              queue(me.finish(signal?.aborted ? "stopped" : "failed", now().toISOString(), msg));
+              flush();
+              state();
+              // Repos read before it failed were written: the pages read the facts again.
+              ctx.events.publish({ type: "file.changed", path: "facts" });
+              return { errors: [msg] };
+            }
+            const stopped = signal?.aborted === true;
+            queue(
+              me.finish(
+                stopped ? "stopped" : code === 0 ? "done" : "failed",
+                now().toISOString(),
+                stopped || code === 0
+                  ? undefined
+                  : (lastErr ?? `atticus map --all ended with ${code}`),
+              ),
+            );
             flush();
             state();
-            // Repos read before it failed were written: the pages read the facts again.
             ctx.events.publish({ type: "file.changed", path: "facts" });
-            return { errors: [msg] };
-          }
-          const stopped = signal?.aborted === true;
-          queue(
-            me.finish(
-              stopped ? "stopped" : code === 0 ? "done" : "failed",
-              now().toISOString(),
-              stopped || code === 0
-                ? undefined
-                : (lastErr ?? `atticus map --all ended with ${code}`),
-            ),
-          );
-          flush();
-          state();
-          ctx.events.publish({ type: "file.changed", path: "facts" });
-          return { result: { code, runId } };
-        });
+            return { result: { code, runId } };
+          },
+          { meta: { copilotRunId: runId } },
+        );
         me.view.jobId = job.id;
         state();
         return { status: 202, body: structuredClone(me.view) };

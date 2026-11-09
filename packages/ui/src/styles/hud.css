@@ -1615,6 +1615,74 @@ a.q-item[aria-current="true"] {
   border: 1px solid var(--line);
   padding: 6px 8px;
 }
+/* ADR 0187: the Console's list of what ran, beside the entry shown. */
+.activity {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  min-height: 0;
+}
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 32vh;
+  overflow-y: auto;
+}
+.activity-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-left: 3px solid var(--line-2);
+  background: transparent;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.activity-item[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.activity-item.running {
+  border-left-color: var(--accent);
+}
+.activity-item.failed {
+  border-left-color: var(--magenta-line);
+}
+.activity-item.done {
+  border-left-color: var(--green-line);
+}
+.activity-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.activity-kind {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.activity-title {
+  font-weight: 600;
+  word-break: break-word;
+}
+.activity-meta {
+  color: var(--text-2);
+}
+.activity-panel {
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .activity {
+    grid-template-columns: 1fr;
+  }
+  .activity-list {
+    max-height: 14vh;
+  }
+}
 .shell:has(.run-console) .main {
   padding-bottom: 64px;
 }

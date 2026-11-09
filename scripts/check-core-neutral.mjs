@@ -190,6 +190,12 @@ export const ALLOW = [
       "the same bundle test as facts-join.ts (its exported APIGEE_BUNDLE), so a route's callers are read for exactly the entries the join treats as gateway routes (ADR 0124 addendum A-callers)",
   },
   {
+    file: "packages/core/src/run-log.ts",
+    names: ["copilot"],
+    reason:
+      "a command's run log says it was started by a Copilot session, which ATTICUS_ACP_SESSION marks: the copilot-acp mode's own name (ADR 0171, ADR 0187)",
+  },
+  {
     file: "packages/core/src/schema/ai.ts",
     names: ["copilot"],
     reason:

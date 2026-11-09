@@ -1,3 +1,5 @@
+import { tracked } from "./ui-api-activity.js";
+import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -99,7 +101,17 @@ interface Ran {
 async function run(f: (io: Output) => Promise<number>): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await f({ out: (l) => out.push(l), err: (l) => err.push(l) });
+  // ADR 0187: inside a job, each line also goes to its Console entry as it is printed.
+  const code = await f({
+    out: (l) => {
+      out.push(l);
+      printToCurrent(l);
+    },
+    err: (l) => {
+      err.push(l);
+      printToCurrent(l);
+    },
+  });
   return { code, out, err };
 }
 
@@ -524,19 +536,22 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         const b = parseBody(Api.StepRunRequest, body);
         // A team's tool acts on their systems: the person's confirmation from the app (ADR 0186).
         requireConfirmation(ctx.confirmations, "step-run", params.stepId!, b.confirmation);
-        const res = await run((io) =>
-          todoRun(
-            root,
-            stepRef(params.stepId!, b.change),
-            {
-              with: b.with,
-              approve: user,
-              inputs: b.inputsSha256,
-              ...(b.fillOnly ? { fillOnly: true } : {}),
-            },
-            io,
-            // the step's sync is said apart, as `synced`, below
-            { ...deps.todo, sync: false },
+        // ADR 0187: as a job, so the Console shows what the team's tool printed.
+        const res = await tracked(ctx, `Run step ${params.stepId!}`, () =>
+          run((io) =>
+            todoRun(
+              root,
+              stepRef(params.stepId!, b.change),
+              {
+                with: b.with,
+                approve: user,
+                inputs: b.inputsSha256,
+                ...(b.fillOnly ? { fillOnly: true } : {}),
+              },
+              io,
+              // the step's sync is said apart, as `synced`, below
+              { ...deps.todo, sync: false },
+            ),
           ),
         );
         if (res.code !== 0) {

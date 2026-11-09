@@ -49,6 +49,18 @@ Start with `atticus doctor` in the metarepo: most problems are on the machine, a
 | "N entries or calls claim an HTTP method their lines don't write"                                                                      | The method a fact claims is on neither its cited line (nor the method chain it is in), the next line, a `cite.with` line nor, for a gateway's forwarding call, its route's line | A warning, not a rejection: have your assistant check the method, or cite the line that writes it in `cite.with`                                                                                                                                               |
 | "N slips of form fixed in the facts"                                                                                                   | A camelCase fact id was slugged (and every reference to it), or a flow with no cite took its entry's line                                                                       | Nothing to do: verify (or `atticus map`'s batch) wrote the fixed facts back; the Map shows the fix as a note until the next verify writes it. A collision (two ids that slug to the same one) is still refused: rename one of them                             |
 
+## Where to see what Atticus is doing
+
+Open the **Console** at the foot of the app (**Open the Console**; it is there on every page, in a browser and in the VS Code and IntelliJ panels). It lists everything Atticus is doing or did lately on this metarepo, newest first, wherever it was started:
+
+- what you started in the app: a scan, a sync, Apply, Propose, Bring in, an AI step, the critic, a wiki's sync, a team's tool, a run's Done, a Copilot run (with its tab per session);
+- the long commands run in a terminal, by VS Code or IntelliJ, or by a Copilot session: `atticus map` (and `map --all`), `verify`, `scan`, `workspace sync`, `task run`, `task run-ready`, `knowledge scan`, `upgrade`, `handoff done`, `index rebuild`, `reconcile`;
+- the hand-off runs that wait for your assistant, with where the prompt is and how to finish it, and what Done printed once it ran.
+
+Each entry says what it is, where it was started, whether it is running, done, failed, cancelled, waiting or "ended without saying" (its terminal was closed, or it crashed), and when. Pick one to see what it printed, live: follow the end, search, copy. While anything runs, a strip under the top bar says what and how far, with **Show in the Console** and **Stop** for what the app started. A command run in a terminal stops in its terminal (Ctrl+C).
+
+A command run outside the app keeps what it prints in `.atticus/logs/runs/<run>.log`, and a small record of itself (the command words, the repo, change and run ids it was given, its flag names, never their values; when it started and how it ended) in `.atticus/logs/running/<run>.json`. Each line is redacted as the log is (below). Only the last 50 runs are kept, each log to its last 2 MB or so. Quick commands (help, list, show, `next`, `--json` questions, `--check`, `--dry-run`) keep nothing. `ATTICUS_RUN_LOG=off` turns it off for a command. `.atticus/logs/` is never committed.
+
 ## The log
 
 `.atticus/logs/atticus.log` in the metarepo: one JSON object per line, newest last. Each command with its flag names, exit code and time; failed API calls; crashes with their stack. Secrets, tokens, credentials in URLs, your home folder and user name are hidden before anything is written. `ATTICUS_LOG=debug atticus <command>` records more for one run.

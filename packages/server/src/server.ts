@@ -106,6 +106,31 @@ export interface ServerContext extends Context {
   jobs: JobManager;
   /** The person's confirmations of writes to shared systems, from the app's page (ADR 0186). */
   confirmations: Confirmations;
+  /**
+   * ADR 0187: told when a command's run files change under .atticus/logs/ (the watcher follows
+   * them apart from the metarepo's files, never as file.changed). Left out by a test's context.
+   */
+  runLogs?: Signal;
+  /** Called when the server closes (a route module's timers stop). */
+  onClose?: Set<() => void>;
+}
+
+/** A nudge with no data: whoever subscribed is told something changed. */
+export class Signal {
+  private fs = new Set<() => void>();
+  subscribe(f: () => void): () => void {
+    this.fs.add(f);
+    return () => this.fs.delete(f);
+  }
+  emit(): void {
+    for (const f of this.fs) {
+      try {
+        f();
+      } catch {
+        // a listener's failure is its own
+      }
+    }
+  }
 }
 
 export interface RunningServer {
@@ -191,6 +216,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const jobs = new JobManager((e) => events.publish(e));
   const confirmations = new Confirmations();
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);
+  const runLogs = new Signal();
+  const onClose = new Set<() => void>();
   const ctx: ServerContext = {
     root: o.root,
     user: person.handle,
@@ -200,6 +227,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     events,
     jobs,
     confirmations,
+    runLogs,
+    onClose,
   };
   const router = apiRoutes(new Router(), ctx)
     // ADR 0186: the page asks for the person's confirmation of one write, on their click.
@@ -337,7 +366,11 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const watcher =
     o.watch === false
       ? undefined
-      : watchMetarepo({ root: o.root, publish: (e) => events.publish(e) });
+      : watchMetarepo({
+          root: o.root,
+          publish: (e) => events.publish(e),
+          onRunLog: () => runLogs.emit(),
+        });
   return {
     url: `http://127.0.0.1:${port}`,
     port,
@@ -353,6 +386,13 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     close: () =>
       new Promise<void>((resolve) => {
         watcher?.close();
+        for (const f of onClose) {
+          try {
+            f();
+          } catch {
+            // closing goes on
+          }
+        }
         events.closeAll();
         server.closeAllConnections?.();
         server.close(() => resolve());

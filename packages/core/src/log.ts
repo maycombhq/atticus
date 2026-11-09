@@ -168,8 +168,8 @@ export function createLog(
   };
 }
 
-/** ensureLocalIgnore, for the log's synchronous writes. */
-function ignoreLocalSync(root: string) {
+/** ensureLocalIgnore, for the log's synchronous writes (and a terminal run's, ADR 0187). */
+export function ignoreLocalSync(root: string) {
   const f = join(root, ".atticus", ".gitignore");
   const text = existsSync(f) ? readFileSync(f, "utf8") : "";
   const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));

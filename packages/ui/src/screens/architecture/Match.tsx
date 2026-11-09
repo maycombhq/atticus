@@ -4,6 +4,7 @@ import { api, ApiError, useLiveEvents } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
 import { AiChip } from "../../app/decisions.js";
+import { ShowInConsole } from "../../app/activity.js";
 
 /**
  * ADR 0178, part 2: Match with Copilot. One session reads the repo's loose call sites and
@@ -221,6 +222,8 @@ export function MatchWithCopilot(p: {
           </button>
         )}
       </div>
+      {/* ADR 0187: the session's lines as Copilot takes its steps, in the Console. */}
+      {state === "running" && m?.jobId && <ShowInConsole id={m.jobId} />}
       {state === "running" && (
         <p role="status" aria-live="polite" className="ev-say">
           {M.runningSay(p.from, p.toName)}

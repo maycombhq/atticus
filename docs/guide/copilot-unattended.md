@@ -67,9 +67,11 @@ time.
 
 While it runs, a strip under the top bar says which repo of how many, the session under way, the
 facts kept and rejected and the tokens so far, with **Stop**. The **Console** at the foot of the app
-(open and close it with its button) shows what the run prints: a tab for the run, then one per session
-with its steps as Copilot takes them and the verify after it. It follows the end unless you pick an
-older tab; search and copy work on the tab shown. A reload, or the app in VS Code or IntelliJ, picks
+(open and close it with its button) lists the run beside everything else Atticus is doing (ADR 0187;
+troubleshooting, "Where to see what Atticus is doing"). Pick the Copilot run to see what it prints: a
+tab for the run, then one per session with its steps as Copilot takes them and the verify after it. It
+follows the end unless you pick an older tab; search and copy work on the tab shown. An `atticus map
+--all` run in a terminal shows in the Console too, as its own entry with what it prints. A reload, or the app in VS Code or IntelliJ, picks
 the run up where it is. Stop cancels the session under way, as Ctrl+C does; the next run carries on.
 
 ## What a session may and may not do

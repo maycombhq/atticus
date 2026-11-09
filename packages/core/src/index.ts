@@ -59,6 +59,8 @@ export * from "./glob.js";
 export * from "./repo-files.js";
 export * from "./record-cache.js";
 export * from "./log.js";
+export * from "./run-log.js";
+export * from "./printer.js";
 export * from "./zip.js";
 export * from "./words.js";
 export * from "./zip-read.js";

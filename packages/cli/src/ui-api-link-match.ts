@@ -101,33 +101,41 @@ export function uiLinkMatchRoutes(
           return { status: 202, body: m };
         }
         let done: Api.MatchLinksViewT;
-        const job = ctx.jobs.start("step", async (c) => {
-          c.progress(0, 1, `Matching ${from} with ${view.toName}`);
-          const signal = currentSignal();
-          try {
-            done = await runMatch(ctx.root, {
-              view,
-              quotes: quotesOf(facts),
-              facts,
-              mode: "copilot-acp",
-              ...(deps.runner ? { runner: deps.runner } : {}),
-              ...(signal ? { signal } : {}),
-              onProgress: (line) => c.progress(0, 1, line.slice(0, 200)),
-            });
-          } catch (e) {
-            // The brief couldn't be written or the answer read: said as failed, not left as a hand-off.
-            const msg = e instanceof Error ? e.message : String(e);
+        const job = ctx.jobs.start(
+          "step",
+          async (c) => {
+            c.progress(0, 1, `Matching ${from} with ${view.toName}`);
+            const signal = currentSignal();
+            try {
+              done = await runMatch(ctx.root, {
+                view,
+                quotes: quotesOf(facts),
+                facts,
+                mode: "copilot-acp",
+                ...(deps.runner ? { runner: deps.runner } : {}),
+                ...(signal ? { signal } : {}),
+                onProgress: (line) => {
+                  c.progress(0, 1, line.slice(0, 200));
+                  // ADR 0187: every line, in the job's Console entry.
+                  c.line(line);
+                },
+              });
+            } catch (e) {
+              // The brief couldn't be written or the answer read: said as failed, not left as a hand-off.
+              const msg = e instanceof Error ? e.message : String(e);
+              const me = running.get(key);
+              if (me) me.error = msg;
+              return { errors: [msg] };
+            }
             const me = running.get(key);
-            if (me) me.error = msg;
-            return { errors: [msg] };
-          }
-          const me = running.get(key);
-          if (me && done.error) me.error = done.error;
-          // The page follows the job's done event (ADR 0015) and reads the match again.
-          return done.state === "failed"
-            ? { errors: [done.error ?? "The session ended without an answer."] }
-            : { result: { state: done.state } };
-        });
+            if (me && done.error) me.error = done.error;
+            // The page follows the job's done event (ADR 0015) and reads the match again.
+            return done.state === "failed"
+              ? { errors: [done.error ?? "The session ended without an answer."] }
+              : { result: { state: done.state } };
+          },
+          { title: `Match ${from} with ${view.toName}` },
+        );
         running.set(key, { jobId: job.id }); // a new run drops the last run's error
         const files = await readMatch(ctx.root, view);
         return {

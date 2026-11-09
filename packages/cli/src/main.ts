@@ -1,7 +1,13 @@
 import { parseArgs } from "node:util";
 // Only what every command needs before it knows which one runs: no schema, no workspace package
 // (test/startup.test.ts holds this). The rest loads below, when its command runs.
-import { createLog, SCHEMA_VERSION } from "@maycombhq/core/light";
+import {
+  createLog,
+  printToCurrent,
+  recordedCommand,
+  SCHEMA_VERSION,
+  startTerminalRun,
+} from "@maycombhq/core/light";
 import { basename, join, resolve } from "node:path";
 import type { Output } from "./commands.js";
 import type { AiRuntime } from "@maycombhq/ai";
@@ -855,8 +861,16 @@ function num(v: unknown): number | undefined {
  */
 export async function main(
   given: string[],
-  io: Output,
-  o: { quiet?: boolean } = {},
+  givenIo: Output,
+  o: {
+    quiet?: boolean;
+    /**
+     * ADR 0187: keep what a long command prints for the app's Console (.atticus/logs/runs/).
+     * Only the command line's own process (bin.js) asks: the app's server runs commands in
+     * itself as jobs, which the Console shows as such.
+     */
+    record?: boolean;
+  } = {},
 ): Promise<number> {
   const started = Date.now();
   // ADR 0124 addendum D-cli: `legacy <words>`, `join`, `stories` and `task <change> <task>` are
@@ -880,11 +894,30 @@ export async function main(
   );
   const log = () =>
     isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
+  // ADR 0187: the command words and ids, its flag names (never their values), what it prints.
+  const said = o.record ? recorderFor(argv, flags, root) : undefined;
+  // Run in the app's server, inside a job, each line also goes to the job's Console entry.
+  const io: Output = {
+    ...givenIo,
+    out: (l) => {
+      said?.line(l);
+      printToCurrent(l);
+      givenIo.out(l);
+    },
+    err: (l) => {
+      said?.line(l);
+      printToCurrent(l);
+      givenIo.err(l);
+    },
+  };
   try {
     const code = await dispatch(argv, io);
+    said?.end(code);
     log()?.info("command", { command: words.join(" "), flags, code, ms: Date.now() - started });
     return code;
   } catch (e) {
+    said?.line(`atticus: ${e instanceof Error ? e.message : String(e)}`);
+    said?.end(1, "crash");
     const l = log();
     l?.error("crash", e, { command: words.join(" "), flags, ms: Date.now() - started });
     if (l && e instanceof Error) (e as Error & { logFile?: string }).logFile = l.file;
@@ -921,6 +954,22 @@ function positionalsAt(argv: string[]): number[] {
     tokens: true,
   });
   return tokens.filter((t) => t.kind === "positional").map((t) => t.index);
+}
+
+/**
+ * ADR 0187: a long command's run files, when it is one (recordedCommand) at a metarepo; else
+ * nothing is written. Its positional words as the parser reads them (an option's value isn't one).
+ */
+function recorderFor(argv: string[], flags: string[], root: string) {
+  if (process.env.ATTICUS_RUN_LOG === "off") return undefined;
+  let positionals: string[];
+  try {
+    positionals = positionalsAt(argv).map((i) => argv[i]!);
+  } catch {
+    return undefined;
+  }
+  if (!recordedCommand(positionals, flags) || !isMetarepoRoot(root)) return undefined;
+  return startTerminalRun(root, { positionals, flags, hookProcess: true });
 }
 
 /** A metarepo, or a repo adopted in place: where Atticus keeps a log. */

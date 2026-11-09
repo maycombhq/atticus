@@ -143,7 +143,8 @@ export function runCli(
     try {
       child = spawn(cmd.shell ? `"${cmd.file}"` : cmd.file, argv, {
         cwd: o.cwd,
-        env: o.env ?? process.env,
+        // ADR 0187: the app's Console says this run was started from VS Code.
+        env: { ...(o.env ?? process.env), ATTICUS_STARTED_BY: "vscode" },
         shell: cmd.shell,
         windowsHide: true,
       });
