@@ -333,7 +333,8 @@ describe("PDF (golden, best effort)", () => {
     const m = readDocument("many.pdf", new Uint8Array(many));
     expect(m.text.sections).toEqual([]);
     expect(m.notes.join(" ")).toMatch(/inflate to more than 256 MB, so it isn't read\.$/);
-  }, 60_000);
+    // About 8 s alone; a full parallel check has run it past 60 s.
+  }, 180_000);
 
   it("charges a shared text stream on every page that shows it, and skips a corrupt stream", () => {
     // ~4 MB of text in one stream, shown by 30 pages: 120 MB of sections, over the 64 MB budget.
