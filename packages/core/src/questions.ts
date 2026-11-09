@@ -709,12 +709,15 @@ export async function raiseQuestions(
         related.push({ id: x.id, verdict: v === "unsure" ? "unsure" : "narrower", ...judgment });
     }
     if (same) {
-      let kept = same;
-      if (!askedByStep(same, by.step)) {
-        kept = Question.parse({
-          ...same,
+      // Review round 48: the step is added to the question as it is on file now (a person may
+      // have answered it since the list was read), and written only if it is still that text.
+      const read = await readQuestionText(root, same.id).catch(() => undefined);
+      let kept = read?.q ?? same;
+      if (read && !askedByStep(read.q, by.step)) {
+        const next = Question.parse({
+          ...read.q,
           alsoAskedBy: [
-            ...(same.alsoAskedBy ?? []),
+            ...(read.q.alsoAskedBy ?? []),
             {
               step: by.step,
               command: by.command,
@@ -724,9 +727,16 @@ export async function raiseQuestions(
             },
           ],
         });
-        await write(root, kept);
-        others = (others ?? []).map((x) => (x.id === kept.id ? kept : x));
+        try {
+          await write(root, next, read);
+          kept = next;
+        } catch (e) {
+          if (!(e instanceof FileChangedError)) throw e;
+          // Changed meanwhile: it stays as it is on file now, without this step on it.
+          kept = (await readQuestion(root, same.id).catch(() => undefined)) ?? kept;
+        }
       }
+      if (kept !== same) others = (others ?? []).map((x) => (x.id === kept.id ? kept : x));
       if (!reused.some((k) => k.id === kept.id)) reused.push(kept);
       if (!known.some((k) => k.id === kept.id)) known.push(kept);
       of[p.i] = kept;

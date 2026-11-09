@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { AgentDefinition, RunSummary } from "@maycombhq/core";
 import {
   buildContextPack,
+  CopilotAcpRuntime,
   HandoffRuntime,
   MockModelProvider,
   ModelRuntime,
@@ -94,6 +95,19 @@ describe("hand-off run ids", () => {
     const make = () => new HandoffRuntime({ root, now, validate: async () => [] });
     const runs = await Promise.all([make(), make(), make()].map((r) => r.prepare(request("p"))));
     expect(new Set(runs.map((r) => r.runId)).size).toBe(3);
+    expect((await readdir(join(root, ".runs", "forge-add-refunds"))).sort()).toEqual(
+      runs.map((r) => r.runId).sort(),
+    );
+  });
+});
+
+describe("copilot-acp run ids (review round 48)", () => {
+  it("claims the run folder, so two runtimes on one clock never share one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-runid-acp-"));
+    const now = () => NOW;
+    const make = () => new CopilotAcpRuntime({ root, command: "copilot", now });
+    const runs = await Promise.all([make(), make()].map((r) => r.prepare(request("p"))));
+    expect(new Set(runs.map((r) => r.runId)).size).toBe(2);
     expect((await readdir(join(root, ".runs", "forge-add-refunds"))).sort()).toEqual(
       runs.map((r) => r.runId).sort(),
     );

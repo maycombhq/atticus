@@ -195,7 +195,7 @@ describe("task PRs (review round 42)", () => {
   it(
     "refuses to run a task again while its PR is open, and runs it once the PR is closed",
     async () => {
-      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
       await draft(root, "1.2", LIMITS, "a");
       const host = new MockGitHost([{ repo: "forge-ledger" }]);
       const r1 = await raiseTaskPr(root, CHANGE, "1.2", {
@@ -220,8 +220,17 @@ describe("task PRs (review round 42)", () => {
       );
       const kept = await readTaskRun(root, CHANGE, "1.2");
       expect(kept).toMatchObject({ state: "pr-open", pr: r1.pr });
-      // Closed on the host: the task runs again, and says what became of the earlier PR.
+      // Closed on the host: review round 48, its branch still has the closed PR's commits, so
+      // the task is refused until the person removes them (Atticus deletes nothing).
       await host.closePullRequest("forge-ledger", r1.pr!.number, APPROVAL);
+      await expect(again()).rejects.toThrow(
+        `Task 1.2's earlier PR ${r1.pr!.url} is closed, and its branch task/${CHANGE}/1.2 still has the commits that PR carried`,
+      );
+      const clone = join(root, "workspace/forge-ledger");
+      sh(clone, "worktree", "remove", "--force", join(root, r1.worktree));
+      sh(clone, "branch", "-D", `task/${CHANGE}/1.2`);
+      sh(remotes["forge-ledger"]!, "update-ref", "-d", `refs/heads/task/${CHANGE}/1.2`);
+      // Then the task runs again, and says what became of the earlier PR.
       const r2 = await again();
       expect(r2.state).toBe("built");
       expect(r2.notes).toContain(`Its earlier PR ${r1.pr!.url} is closed.`);

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { toCanonicalYaml } from "@maycombhq/core";
@@ -291,6 +291,10 @@ describe("refusals", () => {
     let c = await changeStore(root).read(ID);
     expect(c.handoffs.at(-1)!.state).toBe("changes-requested");
 
+    // The architect answers the review (review round 48: a re-run that changes nothing asks
+    // for no other review).
+    const design = join(root, "openspec/changes", ID, "design.md");
+    await writeFile(design, `${await readFile(design, "utf8")}\nAnswered the review.\n`);
     const again = await handoff(root, ID, {
       gitHost: gh,
       repo: REPO,

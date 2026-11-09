@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  AdapterError,
   createAdapters,
   fileStepStore,
   requireApproval,
@@ -39,9 +40,10 @@ import {
   loadTask,
   openTaskWorktree,
   setTaskDone,
+  taskBranchOwnCommits,
   type TaskContext,
 } from "@maycombhq/speckit";
-import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
+import { baseClonePath, createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
 import {
   holdSignals,
@@ -448,6 +450,23 @@ async function openPr(c: Ctx): Promise<void> {
   } catch (e) {
     // A protected branch is the rule's refusal, said as it is.
     if (e instanceof TaskRunError) throw e;
+    // Review round 48: a PR the host opened without the answer reaching Atticus (a timeout on
+    // an earlier raise) is the open PR from the task branch into the change branch: recorded.
+    if (e instanceof AdapterError && e.code === "conflict") {
+      const open = (
+        await c.gitHost.listPullRequests(c.t.repo.id, { head: c.record.branch }).catch(() => [])
+      )
+        .filter((p) => p.base === base && (p.state === "open" || p.state === "draft"))
+        .at(0);
+      if (open) {
+        c.record.pr = { number: open.number, url: open.url };
+        c.record.state = "pr-open";
+        c.record.notes.push(
+          `PR #${open.number} from ${c.record.branch} into ${base} was already open on the Git host; recorded it (${open.url}).`,
+        );
+        return;
+      }
+    }
     // A push or a PR that fails (the proxy, the host, a hook) leaves the build as it stands:
     // the task stays built, so the person raises its PR again once that is fixed.
     c.record.notes.push(
@@ -574,13 +593,18 @@ async function ownTaskPr(
  * Refused while a run of this task waits on the person's assistant (and wasn't cancelled), or
  * while its PR is open: a new run would write over the record that names the PR, and its raise
  * would then collide with it. A PR the Git host says is merged or closed no longer holds the
- * task; the new run notes what became of it.
+ * task; the new run notes what became of it. Review round 48: unless the task branch still has
+ * commits neither the change branch here nor the host's has (the closed PR's work, or what a
+ * squash merge carried in another form): a new run would build on them and raise them again, so
+ * it is refused, saying what the person can do. Nothing is deleted or force-pushed. With none,
+ * the run is `settled`: the task branch starts again from the change branch as it has caught up.
  */
 async function refuseIfHeld(
   root: string,
   t: TaskContext,
   host: () => GitHost | undefined,
-): Promise<string[]> {
+  git: GitRunner,
+): Promise<{ notes: string[]; settled?: true }> {
   const before = await readTaskRun(root, t.change.id, t.task.id);
   if (before?.state === "pr-open") {
     let state: string | undefined;
@@ -592,8 +616,23 @@ async function refuseIfHeld(
     } catch (e) {
       why = e instanceof Error ? e.message : String(e);
     }
-    if (before.pr && (state === "merged" || state === "closed"))
-      return [`Its earlier PR ${before.pr.url} is ${state}.`];
+    if (before.pr && (state === "merged" || state === "closed")) {
+      const own = await taskBranchOwnCommits(root, t.change.id, t.task.id, t.repo.id, git);
+      if (own > 0) {
+        const branch = taskBranch(t.change.id, t.task.id);
+        const from = changeBranch(t.change.id);
+        const clone = baseClonePath(root, t.repo.id);
+        const carried =
+          state === "closed"
+            ? "the commits that PR carried"
+            : "commits the change branch hasn't (a squash or rebase merge took them in another form)";
+        throw new TaskRunError(
+          "refused",
+          `Task ${t.task.id}'s earlier PR ${before.pr.url} is ${state}, and its branch ${branch} still has ${carried} (${own} not in ${from}): running the task again would raise them again. Atticus doesn't delete or rewrite them. To start the task afresh, remove its worktree and branch here (git -C ${clone} worktree remove ${join(root, before.worktree)}, then git -C ${clone} branch -D ${branch}) and delete ${branch} on the Git host, then run the task again; or ask whoever looks after the workspace for a fresh start.`,
+        );
+      }
+      return { notes: [`Its earlier PR ${before.pr.url} is ${state}.`], settled: true };
+    }
     throw new TaskRunError(
       "refused",
       `Task ${t.task.id}'s PR is open (${before.pr?.url ?? "see its run"}): running the task again would start over beside it. Merge or close the PR first, then run the task again.${why ? ` (Atticus couldn't ask the Git host whether it still is: ${why}.)` : ""}`,
@@ -612,7 +651,7 @@ async function refuseIfHeld(
       "refused",
       `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with Done on its run page (Model runs) or atticus handoff done ${before.waiting}, or Cancel it there and run the task again.`,
     );
-  return [];
+  return { notes: [] };
 }
 
 /** A task PR's state on the Git host, as the Task board says it. */
@@ -744,7 +783,7 @@ export async function previewTaskRun(
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
   const level = levelOf(t, o.level);
-  await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t));
+  await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t), createGit());
   return {
     change: t.change.id,
     task: t.task.id,
@@ -853,7 +892,7 @@ async function runTaskHeld(
   const level = levelOf(t, o.level);
   // A run of this task still waits on the person's assistant: a second one would write over
   // its record, and its Done would then find nothing to build.
-  const earlier = await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t));
+  const earlier = await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t), git);
   if (level === "pr") {
     try {
       requireApproval("git-host", o.approval);
@@ -869,7 +908,7 @@ async function runTaskHeld(
   const changeDir = await changeWorktree(root, t.change.id, t.repo.id);
   const handed =
     engine === "speckit" ? `specs/${t.task.id}/plan.md` : `.atticus/tasks/${t.task.id}.md`;
-  const notes: string[] = [...earlier];
+  const notes: string[] = [...earlier.notes];
   // Seventh UX walk: a new task branch starts from the tasks already merged on the Git host.
   try {
     const caught = await catchUpChangeBranch(
@@ -879,6 +918,7 @@ async function runTaskHeld(
       t.repo.id,
       changeDir,
       git,
+      earlier.settled ? { settled: true } : {},
     );
     if (caught) notes.push(caught);
   } catch (e) {
@@ -893,7 +933,21 @@ async function runTaskHeld(
     );
     t = await loadTask(root, changeId, taskId);
   }
-  const wt = await openTaskWorktree(root, t.change.id, t.task.id, t.repo.id, git);
+  let wt: Awaited<ReturnType<typeof openTaskWorktree>>;
+  try {
+    wt = await openTaskWorktree(
+      root,
+      t.change.id,
+      t.task.id,
+      t.repo.id,
+      git,
+      earlier.settled ? { fresh: true } : {},
+    );
+  } catch (e) {
+    if (e instanceof Error && e.name === "SpecKitError")
+      throw new TaskRunError("refused", e.message);
+    throw e;
+  }
   const runtime =
     o.runtime ??
     (await createRuntime(t.ctx.orgPack, {

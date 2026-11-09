@@ -104,20 +104,138 @@ const NothingFile = z.strictObject({
       by: z.string().min(1),
     }),
   ),
+  /**
+   * Review round 48: the change branch's commit when Sync first read each release PR merged, so
+   * a merged PR stands only while the branch is there (work landed since needs a PR of its own).
+   */
+  merged: z
+    .array(
+      z.strictObject({
+        repo: z.string().min(1),
+        number: z.number().int().positive(),
+        commit: z.string().regex(/^[0-9a-f]{7,64}$/),
+        at: z.string().min(1),
+      }),
+    )
+    .optional(),
 });
 type NothingFile = z.infer<typeof NothingFile>;
+type MergedEntry = NonNullable<NothingFile["merged"]>[number];
 
-async function readNothing(root: string, id: string): Promise<NothingFile["nothingToRelease"]> {
+async function readReleaseFile(root: string, id: string): Promise<NothingFile> {
+  const empty: NothingFile = { schemaVersion: 1, nothingToRelease: [] };
   const text = await readFile(join(changeFolder(root, id), RELEASE_PRS_FILE), "utf8").catch(
     () => undefined,
   );
-  if (text === undefined) return [];
+  if (text === undefined) return empty;
   try {
     const r = NothingFile.safeParse(parse(text));
-    return r.success ? r.data.nothingToRelease : [];
+    return r.success ? r.data : empty;
   } catch {
-    return [];
+    return empty;
   }
+}
+
+async function readNothing(root: string, id: string): Promise<NothingFile["nothingToRelease"]> {
+  return (await readReleaseFile(root, id)).nothingToRelease;
+}
+
+async function writeReleaseFile(
+  root: string,
+  id: string,
+  nothing: NothingFile["nothingToRelease"],
+  merged: MergedEntry[],
+): Promise<void> {
+  const byRepo = <T extends { repo: string }>(xs: T[]) =>
+    [...xs].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
+  await writeFile(
+    join(changeFolder(root, id), RELEASE_PRS_FILE),
+    toCanonicalYaml(
+      NothingFile.parse({
+        schemaVersion: 1,
+        nothingToRelease: byRepo(nothing),
+        ...(merged.length ? { merged: byRepo(merged) } : {}),
+      }),
+    ),
+    "utf8",
+  );
+}
+
+/** The folder to read a change repo's branch in: its worktree, else its base clone. */
+function repoDir(root: string, r: ChangeRepo): string | undefined {
+  const dirs = [join(root, r.worktree)];
+  try {
+    dirs.push(baseClonePath(root, r.id));
+  } catch {
+    // not a repo id a base clone can have
+  }
+  return dirs.find((d) => existsSync(d));
+}
+
+/**
+ * Review round 48: the repos whose release PR is recorded merged while the change branch, here or
+ * on the Git host, has commits beyond the commit Sync found it at when it merged (a QA fix, a task
+ * PR merged after the release PR). Their release PR is raised again, and go/no-go waits for it. A
+ * merged PR with no commit recorded (synced before this), or no clone to look in, stands; a host
+ * that can't be reached is judged by the branch here.
+ */
+export async function staleReleasePrs(
+  root: string,
+  id: string,
+  o: { git?: GitRunner; remote?: string } = {},
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const cr = await readChangeRepos(root, id).catch(() => undefined);
+  const merged = (await readReleaseFile(root, id)).merged ?? [];
+  if (!cr || !merged.length) return out;
+  const git = o.git ?? createGit({ timeoutMs: 30_000 });
+  const remote = o.remote ?? "origin";
+  for (const r of cr.repos) {
+    if (r.pr?.state !== "merged") continue;
+    const entry = merged.find((x) => x.repo === r.id && x.number === r.pr!.number);
+    if (!entry) continue;
+    const dir = repoDir(root, r);
+    if (!dir) continue;
+    if (await movedPast(git, dir, remote, r.branch, entry.commit)) out.add(r.id);
+  }
+  return out;
+}
+
+/** Whether the branch here or on the host has commits `commit` hasn't. */
+async function movedPast(
+  git: GitRunner,
+  dir: string,
+  remote: string,
+  branch: string,
+  commit: string,
+): Promise<boolean> {
+  const ref = `refs/heads/${branch}`;
+  const known = (sha: string) =>
+    git(["cat-file", "-e", `${sha}^{commit}`], dir).then(
+      () => true,
+      () => false,
+    );
+  const here = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir).then(
+    (x) => x.stdout.trim() || undefined,
+    () => undefined,
+  );
+  const onHost = await git(["ls-remote", "--heads", remote, ref], dir).then(
+    (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
+    () => undefined,
+  );
+  if (onHost && !sameSha(onHost, commit) && !(await known(onHost)))
+    await git(["fetch", "-q", remote, `+${ref}:refs/remotes/${remote}/${branch}`], dir).catch(
+      () => undefined,
+    );
+  const ahead = async (sha: string | undefined) => {
+    if (!sha || sameSha(sha, commit)) return false;
+    if (!(await known(sha)) || !(await known(commit))) return true;
+    return git(["merge-base", "--is-ancestor", sha, commit], dir).then(
+      () => false,
+      () => true,
+    );
+  };
+  return (await ahead(here)) || (await ahead(onHost));
 }
 
 /**
@@ -146,13 +264,7 @@ export async function nothingToRelease(
   return out;
 
   async function moved(r: ChangeRepo, commit: string | undefined): Promise<boolean> {
-    const dirs = [join(root, r.worktree)];
-    try {
-      dirs.push(baseClonePath(root, r.id));
-    } catch {
-      // not a repo id a base clone can have
-    }
-    const dir = dirs.find((d) => existsSync(d));
+    const dir = repoDir(root, r);
     if (!dir) return false;
     const ref = `refs/heads/${r.branch}`;
     const here = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir).then(
@@ -222,13 +334,20 @@ export async function raiseReleasePrs(
   const rows: ReleasePrRow[] = [];
   let changed = false;
   const repos = cr.repos.map((r) => ({ ...r }));
-  const before = await readNothing(root, id);
+  const file = await readReleaseFile(root, id);
+  const before = file.nothingToRelease;
   const nothing = new Map(before.map((x) => [x.repo, x]));
+  const stale = await staleReleasePrs(root, id, { git, remote });
 
   for (const r of repos) {
+    // Review round 48: a merged release PR the change branch has moved past is raised again.
+    const movedOn =
+      r.pr?.state === "merged" && stale.has(r.id)
+        ? `Release PR #${r.pr.number} merged before ${r.branch} moved on; this one carries what landed since.`
+        : undefined;
     // Looked at again: a PR raised now takes the repo off the nothing-to-release list.
-    if (!live(r.pr)) nothing.delete(r.id);
-    if (live(r.pr)) {
+    if (!live(r.pr) || movedOn) nothing.delete(r.id);
+    if (live(r.pr) && !movedOn) {
       rows.push({
         repo: r.id,
         outcome: "kept",
@@ -278,7 +397,7 @@ export async function raiseReleasePrs(
     // The change branch reaches the host by the task PRs merged into it. Only when the host
     // hasn't got it is this worktree's copy pushed: by name, without +, so never forced, and
     // never the default branch.
-    const notes: string[] = [];
+    const notes: string[] = movedOn ? [movedOn] : [];
     const dir = join(root, r.worktree);
     if (existsSync(dir)) {
       const onHost = await git(["ls-remote", "--heads", remote, `refs/heads/${r.branch}`], dir)
@@ -377,12 +496,16 @@ export async function raiseReleasePrs(
   }
   if (changed) await writeChangeRepos(root, { ...cr, repos });
   const after = [...nothing.values()].sort((a, b) => (a.repo < b.repo ? -1 : 1));
-  if (JSON.stringify(after) !== JSON.stringify(before))
-    await writeFile(
-      join(changeFolder(root, id), RELEASE_PRS_FILE),
-      toCanonicalYaml(NothingFile.parse({ schemaVersion: 1, nothingToRelease: after })),
-      "utf8",
-    );
+  // A merged entry stands while its repo's recorded PR is the one it names.
+  const mergedBefore = file.merged ?? [];
+  const mergedAfter = mergedBefore.filter((x) =>
+    repos.some((r) => r.id === x.repo && r.pr?.number === x.number && r.pr.state === "merged"),
+  );
+  if (
+    JSON.stringify(after) !== JSON.stringify(before) ||
+    mergedAfter.length !== mergedBefore.length
+  )
+    await writeReleaseFile(root, id, after, mergedAfter);
   return { change: id, rows };
 }
 
@@ -393,7 +516,7 @@ export async function raiseReleasePrs(
 export async function syncReleasePrs(
   root: string,
   id: string,
-  o: { gitHost: GitHost; now?: string },
+  o: { gitHost: GitHost; now?: string; git?: GitRunner; remote?: string },
 ): Promise<ReleasePrsResult> {
   const cr = await readChangeRepos(root, id);
   const rows: ReleasePrRow[] = [];
@@ -401,6 +524,9 @@ export async function syncReleasePrs(
   const now = o.now ?? nowIso();
   let changed = false;
   const repos = cr.repos.map((r) => ({ ...r }));
+  const file = await readReleaseFile(root, id);
+  const merged = [...(file.merged ?? [])];
+  let mergedChanged = false;
   for (const r of repos) {
     if (!r.pr) continue;
     let pr: PullRequest;
@@ -442,6 +568,16 @@ export async function syncReleasePrs(
       r.build = { ...r.build, status: build, at: now };
       changed = true;
     }
+    // Review round 48: where the change branch was when the PR was first read merged.
+    if (pr.state === "merged" && !merged.some((x) => x.repo === r.id && x.number === pr.number)) {
+      const commit = await branchTip(root, r, o.git, o.remote ?? "origin");
+      if (commit) {
+        for (let i = merged.length - 1; i >= 0; i--)
+          if (merged[i]!.repo === r.id) merged.splice(i, 1);
+        merged.push({ repo: r.id, number: pr.number, commit, at: now });
+        mergedChanged = true;
+      }
+    }
     rows.push({
       repo: r.id,
       outcome: "kept",
@@ -450,7 +586,39 @@ export async function syncReleasePrs(
     });
   }
   if (changed) await writeChangeRepos(root, { ...cr, repos });
+  if (mergedChanged) await writeReleaseFile(root, id, file.nothingToRelease, merged);
   return { change: id, rows };
+}
+
+/**
+ * The change branch's commit on the Git host (fetched, so it can be compared later), else here;
+ * undefined with no clone to look in.
+ */
+async function branchTip(
+  root: string,
+  r: ChangeRepo,
+  g: GitRunner | undefined,
+  remote: string,
+): Promise<string | undefined> {
+  const dir = repoDir(root, r);
+  if (!dir) return undefined;
+  const git = g ?? createGit({ timeoutMs: 30_000 });
+  const ref = `refs/heads/${r.branch}`;
+  const onHost = await git(["ls-remote", "--heads", remote, ref], dir).then(
+    (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
+    () => undefined,
+  );
+  if (onHost) {
+    await git(["fetch", "-q", remote, `+${ref}:refs/remotes/${remote}/${r.branch}`], dir).catch(
+      () => undefined,
+    );
+    if (/^[0-9a-f]{7,64}$/.test(onHost)) return onHost;
+  }
+  const here = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir).then(
+    (x) => x.stdout.trim(),
+    () => "",
+  );
+  return /^[0-9a-f]{7,64}$/.test(here) ? here : undefined;
 }
 
 /** The build the host's checks on a PR say, or undefined when it reports none. */
@@ -493,9 +661,17 @@ export async function releasePrReasons(
   if (!cr?.repos.length) return [];
   const merged = await requireMergedPrs(root);
   const nothing = await nothingToRelease(root, id, o);
+  const stale = await staleReleasePrs(root, id, o);
   const out: Reason[] = [];
   for (const r of cr.repos) {
     if (!r.pr && nothing.has(r.id)) continue;
+    if (r.pr?.state === "merged" && stale.has(r.id)) {
+      out.push({
+        code: "release-pr-stale",
+        message: `${r.id}: ${r.branch} has commits since release PR #${r.pr.number} merged, so they haven't reached its default branch: raise the release PRs again (Release › Raise the release PRs, or atticus change release-prs ${id} --approve).`,
+      });
+      continue;
+    }
     if (!r.pr || r.pr.state === "closed")
       out.push({
         code: "release-pr-missing",

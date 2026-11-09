@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   AcpSignInError,
   atticusExec,
+  claimRunDir,
   keepAcpRun,
   makeRunId,
   readRootsOf,
@@ -137,7 +138,8 @@ export async function acpStepRunner(
   const exec = o.exec ?? atticusExec(process.argv[1] ?? "atticus");
   return async (s) => {
     const started = o.now?.() ?? new Date();
-    const runId = makeRunId(started);
+    // Review round 48: the folder is claimed, so two steps in one second never share a run.
+    const runId = await claimRunDir(join(runsDirOf(root), s.change), () => makeRunId(started));
     const prompt = UNATTENDED + (await expandSlashLine(root, s.line, { unattended: true }));
     let result: AcpSessionResult | undefined;
     let error: unknown;

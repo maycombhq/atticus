@@ -1,4 +1,7 @@
-import type { ManualStep } from "@maycombhq/core";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
+import { orgPackDirOf, type ManualStep } from "@maycombhq/core";
 import { AdapterError, type Approval } from "../common.js";
 import {
   mergeBlockers,
@@ -54,14 +57,63 @@ export class ManualGitHost extends ManualBase implements GitHost {
     super("git-host", "git-host", opts);
   }
 
+  /**
+   * Review round 48: the repo's own default branch, not one for every repo. A per-repo setting
+   * (`defaultBranch.<repo>`) first, then the repo's `defaultBranch` in the repos manifest (ADR
+   * 0123: the baseline the PRs build on), then the adapter's `defaultBranch` setting, else main.
+   * Its protected branches (`protectedBranches.<repo>`, else `protectedBranches`) always include
+   * the default branch.
+   */
   async getRepo(repo: string): Promise<RepoInfo> {
     this.journal.push({ method: "getRepo" });
-    const defaultBranch = this.setting("defaultBranch") ?? "main";
+    const defaultBranch =
+      this.setting(`defaultBranch.${repo}`) ??
+      (await this.manifestDefault(repo)) ??
+      this.setting("defaultBranch") ??
+      "main";
+    const listed =
+      this.settingList(`protectedBranches.${repo}`) ?? this.settingList("protectedBranches") ?? [];
     return {
       repo,
       defaultBranch,
-      protectedBranches: this.settingList("protectedBranches") ?? [defaultBranch],
+      protectedBranches: listed.includes(defaultBranch) ? listed : [...listed, defaultBranch],
     };
+  }
+
+  /** The defaultBranch a repos manifest of the metarepo's org pack gives the repo, when one does. */
+  private async manifestDefault(repo: string): Promise<string | undefined> {
+    if (!this.opts.root) return undefined;
+    const profiles = join(orgPackDirOf(this.opts.root), "profiles");
+    const names = await readdir(profiles, { withFileTypes: true }).then(
+      (d) =>
+        d
+          .filter((x) => x.isDirectory())
+          .map((x) => x.name)
+          .sort(),
+      () => [] as string[],
+    );
+    for (const name of names) {
+      const text = await readFile(join(profiles, name, "repos.manifest.yaml"), "utf8").catch(
+        () => undefined,
+      );
+      if (text === undefined) continue;
+      let doc: unknown;
+      try {
+        doc = parse(text);
+      } catch {
+        continue;
+      }
+      const repos = (doc as { repos?: unknown } | null)?.repos;
+      if (!Array.isArray(repos)) continue;
+      const entry = (repos as unknown[]).find(
+        (r) => (r as { id?: unknown } | null)?.id === repo,
+      ) as { defaultBranch?: unknown } | undefined;
+      if (!entry) continue;
+      return typeof entry.defaultBranch === "string" && entry.defaultBranch.trim()
+        ? entry.defaultBranch.trim()
+        : undefined;
+    }
+    return undefined;
   }
 
   private async prSteps(repo?: string): Promise<ManualStep[]> {

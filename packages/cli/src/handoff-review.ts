@@ -38,7 +38,8 @@ export async function handoffReview(root: string, change: string): Promise<strin
   } else lines.push("No target flows yet: the architecture stage writes them.", "");
 
   const applies = await readKnowledgeApplies(root, change).catch(() => undefined);
-  if (applies) lines.push(knowledgeAppliesMarkdown(applies).trimEnd(), "");
+  // Review round 48: ingested knowledge (a wiki page's title, a path) gets the findings' treatment.
+  if (applies) lines.push(knowledgeAppliesMarkdown(applies, { text: inlineCode }).trimEnd(), "");
 
   lines.push("### Estimate", "");
   const est = await estimateOf(root, change).catch(() => undefined);

@@ -31,7 +31,14 @@ import {
 } from "./acp.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime } from "./handoff.js";
-import { OneShotRuntime, RuntimeError, type AiRequest, type Run, type Usage } from "./runtime.js";
+import {
+  claimRunDir,
+  OneShotRuntime,
+  RuntimeError,
+  type AiRequest,
+  type Run,
+  type Usage,
+} from "./runtime.js";
 import { stepClassOf } from "./step-class.js";
 import { isPersonsFactsFile, personOnlyWhy, withoutLegacy } from "./person-only.js";
 
@@ -1102,6 +1109,11 @@ export class CopilotAcpRuntime extends OneShotRuntime {
 
   protected override modelFor(): string | undefined {
     return this.c.model;
+  }
+
+  /** Review round 48: the run's folder is claimed, as a model run's is (claimRunDir). */
+  protected override async newRunId(request: AiRequest, now: Date): Promise<string> {
+    return claimRunDir(join(runsDirOf(this.c.root), request.change), () => this.nextRunId(now));
   }
 
   protected async produce(run: Run, signal?: AbortSignal) {
