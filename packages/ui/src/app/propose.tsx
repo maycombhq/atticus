@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, useApi } from "../api/client.js";
+import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { focusIfLost } from "./ui.js";
@@ -208,10 +209,12 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
               disabled={send.busy || files.length === 0}
               onClick={() =>
                 void send.run(async () => {
+                  // ADR 0186: this Yes is the person's confirmation to push and open the PR.
                   const r = await followJob("/api/propose", {
                     scope,
                     files: files.map((f) => f.path),
                     branch: plan.branch,
+                    ...(await confirmed("propose", scope)),
                   });
                   setDone(r.lines);
                   onDone?.();

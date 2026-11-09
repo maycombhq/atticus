@@ -1,13 +1,14 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
-import { DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
+import { Api, DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
-import { HttpError, notFound, conflict, problem, Router } from "./http.js";
+import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager } from "./jobs.js";
 import { apiRoutes, type Context } from "./routes.js";
 import { appCsp, staticFile } from "./static.js";
+import { Confirmations, sameSecret } from "./confirm.js";
 import { watchMetarepo } from "./watch.js";
 import { upgrade, type Socket } from "./ws.js";
 
@@ -74,6 +75,13 @@ export interface ServerOptions {
    */
   token?: string;
   /**
+   * Review round 48 (ADR 0186): the page key, when the editor that starts the server made it
+   * (ATTICUS_UI_PAGE_KEY), so a page the editor serves itself (a VS Code panel from its own
+   * files) can ask for a person's confirmation. Taken only when strong; by default the server
+   * makes its own. It goes into the app's page only and is never printed.
+   */
+  pageKey?: string;
+  /**
    * `atticus ui --full`: the app offers every page in its menu, not only the six entries (the
    * Surfaces design). Reported by health; it changes what the app shows, never what the API does.
    */
@@ -96,6 +104,8 @@ export interface ServerOptions {
 export interface ServerContext extends Context {
   events: EventHub;
   jobs: JobManager;
+  /** The person's confirmations of writes to shared systems, from the app's page (ADR 0186). */
+  confirmations: Confirmations;
 }
 
 export interface RunningServer {
@@ -103,6 +113,12 @@ export interface RunningServer {
   port: number;
   /** New every start; every API call must send it as X-Atticus-Token. */
   token: string;
+  /**
+   * The page key (ADR 0186): in the app's page only, for POST /api/confirmations. Never printed:
+   * an assistant or a script given the session token can't confirm a write as the person.
+   */
+  pageKey: string;
+  confirmations: Confirmations;
   events: EventHub;
   jobs: JobManager;
   /** Who the app records as `by`: the Git user, or who `user` named (ADR 0073). */
@@ -114,11 +130,8 @@ export interface RunningServer {
 
 const MAX_BODY = 4 * 1024 * 1024;
 
-function sameToken(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-}
+const sameToken = sameSecret;
+const STRONG = /^[A-Za-z0-9_-]{32,}$/;
 
 async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -168,12 +181,15 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const host = o.host ?? "127.0.0.1";
   if (host !== "127.0.0.1")
     throw new Error(`Atticus only listens on 127.0.0.1 (asked for ${host}).`);
-  const token =
-    o.token && /^[A-Za-z0-9_-]{32,}$/.test(o.token)
-      ? o.token
+  const token = o.token && STRONG.test(o.token) ? o.token : randomBytes(32).toString("base64url");
+  // Never the session token: the page key is what only the page has (ADR 0186).
+  const pageKey =
+    o.pageKey && STRONG.test(o.pageKey) && o.pageKey !== token
+      ? o.pageKey
       : randomBytes(32).toString("base64url");
   const events = new EventHub();
   const jobs = new JobManager((e) => events.publish(e));
+  const confirmations = new Confirmations();
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);
   const ctx: ServerContext = {
     root: o.root,
@@ -183,8 +199,24 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     full: o.full === true,
     events,
     jobs,
+    confirmations,
   };
   const router = apiRoutes(new Router(), ctx)
+    // ADR 0186: the page asks for the person's confirmation of one write, on their click.
+    .add("POST", "/api/confirmations", ({ body }) => {
+      const b = Api.ConfirmationRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest(
+          `Say which write and what for: { write: ${Api.CONFIRMED_WRITES.join(" | ")}, target }.`,
+        );
+      if (!b.data.pageKey || !sameSecret(b.data.pageKey, pageKey))
+        throw new HttpError(
+          403,
+          "Only the Atticus app asks for a confirmation",
+          "A write to a shared system is a person's: they click it in the Atticus app, or run its command with --approve in a terminal. The session token alone (atticus ui --show-token) can't confirm one (ADR 0186).",
+        );
+      return { status: 201, body: confirmations.issue(b.data.write, b.data.target) };
+    })
     .add("GET", "/api/jobs/{jobId}", ({ params }) => {
       const j = jobs.get(params.jobId!);
       if (!j) throw notFound(`There is no job ${params.jobId}.`);
@@ -234,7 +266,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
           throw new HttpError(403, "Requests must be addressed to this server");
         if (!o.staticDir || (req.method !== "GET" && req.method !== "HEAD"))
           throw new HttpError(404, "Not found", `Nothing is served at ${url.pathname}.`);
-        const f = await staticFile(o.staticDir, url.pathname, token);
+        const f = await staticFile(o.staticDir, url.pathname, token, pageKey);
         const { "X-Frame-Options": deny, ...rest } = HARDENING;
         res.writeHead(f.status, {
           ...(o.embed ? rest : { ...rest, "X-Frame-Options": deny }),
@@ -310,6 +342,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     url: `http://127.0.0.1:${port}`,
     port,
     token,
+    pageKey,
+    confirmations,
     events,
     jobs,
     person,

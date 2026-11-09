@@ -89,12 +89,18 @@ describe("starting the app for the panel", { timeout: 60_000 }, () => {
       `console.log("Atticus is running at http://127.0.0.1:4999 (Ctrl+C stops it).");
        console.log("For assistants and scripts, the session token is tok-9");
        console.log("args " + JSON.stringify(process.argv.slice(2)));
+       console.log("page key " + (process.env.ATTICUS_UI_PAGE_KEY ?? "").length);
        setInterval(() => {}, 1000);`,
     );
     const lines: string[] = [];
     const app = await startApp({ atticusPath: bin, cwd: tmpdir(), log: (l) => lines.push(l) });
     expect(app.url).toBe("http://127.0.0.1:4999");
     expect(app.token).toBe("tok-9");
+    // ADR 0186: the page key the extension made and gave in the environment, for the panel.
+    expect(app.pageKey).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(app.pageKey).not.toBe(app.token);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(lines).toContain(`page key ${app.pageKey.length}`);
     expect(lines[0]).toBe(
       `> ${commandText(["ui", "--port", "0", "--embed", "vscode", "--root", tmpdir()])}`,
     );

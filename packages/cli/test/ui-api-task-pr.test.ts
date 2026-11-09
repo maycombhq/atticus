@@ -8,6 +8,7 @@ import { runTask } from "@maycombhq/taskrun";
 import { Api } from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
+import { asTheApp } from "./confirm-helpers.js";
 import { taskRun } from "../src/run-commands.js";
 import { CHANGE, git, speckitRoot } from "./run-helpers.js";
 
@@ -43,11 +44,11 @@ describe("a task's run on the Task board, and its PR from the app", () => {
       user: "pat",
       extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: host, taskRun: { commands, git } }),
     });
-    const call = (path: string, method = "GET") =>
+    const call = async (path: string, method = "GET") =>
       fetch(`${srv.url}${path}`, {
         method,
         headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
-        ...(method === "POST" ? { body: "{}" } : {}),
+        ...(method === "POST" ? { body: await asTheApp(srv, path) } : {}),
       });
     try {
       // Before Done, the task waits on the person's assistant, and names its run.
@@ -110,11 +111,11 @@ describe("a task's run on the Task board, and its PR from the app", () => {
       user: "pat",
       extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: host, taskRun: { git } }),
     });
-    const call = (path: string, method = "GET") =>
+    const call = async (path: string, method = "GET") =>
       fetch(`${srv.url}${path}`, {
         method,
         headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
-        ...(method === "POST" ? { body: "{}" } : {}),
+        ...(method === "POST" ? { body: await asTheApp(srv, path) } : {}),
       });
     try {
       const failed = await call(`/api/changes/${CHANGE}/tasks/1.2/pr`, "POST");
@@ -157,11 +158,11 @@ describe("a task's run on the Task board, and its PR from the app", () => {
       user: "pat",
       extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: host, taskRun: { git } }),
     });
-    const call = (path: string, method = "GET", body: unknown = {}) =>
+    const call = async (path: string, method = "GET", body: unknown = {}) =>
       fetch(`${srv.url}${path}`, {
         method,
         headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
-        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+        ...(method === "POST" ? { body: await asTheApp(srv, path, body) } : {}),
       });
     const task12 = async () =>
       z

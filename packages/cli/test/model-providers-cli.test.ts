@@ -122,7 +122,7 @@ describe("a model-provider plugin through the CLI (ADR 0121 item 4)", { timeout:
     const op = await loadOrgPack(orgPackDirOf(root));
     const sent: { url: string; headers: Record<string, string>; body: string }[] = [];
     const make = await pluginProviderFactory(op.modelProviders[0]!, {
-      env: { VERTEX_TOKEN: "test-token-NOT-real" },
+      env: { ATTICUS_VERTEX_TOKEN: "test-token-NOT-real" },
       transport: async (r) => {
         sent.push(r);
         return {
@@ -140,7 +140,7 @@ describe("a model-provider plugin through the CLI (ADR 0121 item 4)", { timeout:
       model: "claude-opus-5-5",
       project: "forge-platform",
       region: "europe-west1",
-      keyEnv: "VERTEX_TOKEN",
+      keyEnv: "ATTICUS_VERTEX_TOKEN",
     });
     expect(await p.complete({ system: "s", prompt: "Reply OK.", maxOutputTokens: 10 })).toEqual({
       text: "OK",

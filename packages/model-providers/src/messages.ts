@@ -39,6 +39,8 @@ export const copy = {
     `adapters.model.settings.keyEnv for the ${provider} model provider must be the name of an environment variable (letters, digits and _, for example ATTICUS_MODEL_KEY), not the key.`,
   keyEnvUnset: (provider: string, keyEnv: string) =>
     `The ${provider} model provider reads its key from ${keyEnv}, which is set neither in the environment nor in this machine's credential store. Keep it there with atticus secret set ${keyEnv} (or the AI tab's "Set the key on this machine"), or set the environment variable; the key never goes in runtime.yaml.`,
+  keyEnvNotRead: (provider: string, keyEnv: string) =>
+    `The ${provider} model provider's keyEnv is ${keyEnv}, which isn't read from the environment: only a variable starting ATTICUS_ (such as ATTICUS_MODEL_KEY) or a model provider's own (such as ANTHROPIC_API_KEY or OPENAI_API_KEY) is, so a runtime.yaml can't send another secret (a Git or pipeline token, cloud credentials) to the model's address. Name one of those in keyEnv, or keep the key with atticus secret set ${keyEnv}.`,
   plainHttp: (provider: string, url: string) =>
     `The ${provider} model provider only calls https:// addresses (prompts carry your organisation's material), and ${url} isn't one. Plain http:// is accepted only for this machine (localhost or 127.0.0.1).`,
   awsUnset: (missing: readonly string[]) =>

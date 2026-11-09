@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
 import { COPY } from "../copy.js";
 import { api, ApiError, isOffline, useApi, useLiveEvents } from "../api/client.js";
+import { confirmed } from "../api/confirm.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
@@ -310,7 +311,9 @@ function DigestButtons() {
     setBusy(true);
     setError(undefined);
     try {
-      setD(await api<DigestResult>("/api/me/digest", { method: "POST", body: { send } }));
+      // ADR 0186: sending posts a message as the person, so the click is their confirmation.
+      const yes = send ? await confirmed("digest-send", "me") : {};
+      setD(await api<DigestResult>("/api/me/digest", { method: "POST", body: { send, ...yes } }));
     } catch (e) {
       setError(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
     } finally {

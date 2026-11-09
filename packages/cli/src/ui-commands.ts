@@ -165,6 +165,11 @@ export async function startUi(
     full?: boolean;
     /** The session token the editor that started it made (ATTICUS_UI_TOKEN). */
     token?: string;
+    /**
+     * The page key the editor that started it made (ATTICUS_UI_PAGE_KEY, ADR 0186): a page the
+     * editor serves from its own files asks for the person's confirmations with it.
+     */
+    pageKey?: string;
     /** Start the machine checks as the server starts, for the Set up page's first load. */
     warm?: boolean;
   } = {},
@@ -176,6 +181,7 @@ export async function startUi(
     ...(o.embed ? { embed: o.embed } : {}),
     ...(o.full ? { full: true } : {}),
     ...(o.token ? { token: o.token } : {}),
+    ...(o.pageKey ? { pageKey: o.pageKey } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
@@ -296,6 +302,12 @@ export function startedLines(
       : o.showToken
         ? `For assistants and scripts, the session token is ${token}`
         : "The page has the session token; --show-token prints it for an assistant or a script.",
+    // ADR 0186: what the printed token can't do, said where it is printed.
+    ...(o.showToken && !o.embed && o.parent === undefined
+      ? [
+          "It doesn't approve a write to a shared system (a PR, a push, a merge, a message): a person confirms those in the app, or runs the command with --approve.",
+        ]
+      : []),
   ];
 }
 
@@ -323,10 +335,14 @@ export async function uiCommand(
   // The editor's token, read once and kept from the commands the app runs.
   const given = o.embed ? process.env.ATTICUS_UI_TOKEN : undefined;
   delete process.env.ATTICUS_UI_TOKEN;
+  // ADR 0186: the editor's page key too, for a panel it serves from its own files; never printed.
+  const pageKey = o.embed ? process.env.ATTICUS_UI_PAGE_KEY : undefined;
+  delete process.env.ATTICUS_UI_PAGE_KEY;
   let srv: RunningServer;
   try {
     srv = await startUi(root, {
       ...(given ? { token: given } : {}),
+      ...(pageKey ? { pageKey } : {}),
       warm: true,
       ...(o.full ? { full: true } : {}),
       ...(o.port !== undefined ? { port: o.port } : {}),

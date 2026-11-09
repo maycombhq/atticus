@@ -1,6 +1,16 @@
-import { Api } from "@maycombhq/core";
+import { Api, RecordId } from "@maycombhq/core";
 import { badRequest, HttpError, notFound, type Router } from "@maycombhq/server";
 import type { ServerContext } from "@maycombhq/server";
+
+/**
+ * Review round 48: a change id from the address, checked before it is used: a path (../..) or
+ * anything that isn't an id is a 400, never a read outside openspec/changes or a 500.
+ */
+function changeIdOf(v: string): string {
+  if (!RecordId.safeParse(v).success)
+    throw badRequest(`${JSON.stringify(v.slice(0, 120))} isn't a change id.`);
+  return v;
+}
 
 /**
  * The change cockpit (WP7.1) through the local API: one change at a glance; and the archived
@@ -9,13 +19,12 @@ import type { ServerContext } from "@maycombhq/server";
 export function uiCockpitRoutes(r: Router, ctx: ServerContext): Router {
   return r
     .add("GET", "/api/changes/{changeId}/cockpit", async ({ params }) => {
+      const id = changeIdOf(params.changeId!);
       const { cockpit } = await import("./cockpit.js");
       try {
         return {
           status: 200,
-          body: Api.ChangeCockpit.parse(
-            await cockpit(ctx.root, params.changeId!, { user: ctx.user }),
-          ),
+          body: Api.ChangeCockpit.parse(await cockpit(ctx.root, id, { user: ctx.user })),
         };
       } catch (e) {
         if (e instanceof Error && e.name === "ChangeFileError")
@@ -25,7 +34,8 @@ export function uiCockpitRoutes(r: Router, ctx: ServerContext): Router {
     })
     .add("GET", "/api/past-changes", async ({ query }) => {
       const { changeAboutText, similarChanges } = await import("./similar-changes.js");
-      const change = query.get("change");
+      const given = query.get("change");
+      const change = given ? changeIdOf(given) : undefined;
       const text = change ? await changeAboutText(ctx.root, change) : query.get("text")?.trim();
       if (change && !text) throw notFound(`There is no change ${change}.`);
       if (!text)

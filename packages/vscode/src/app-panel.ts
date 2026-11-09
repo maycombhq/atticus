@@ -101,6 +101,11 @@ export interface RunningApp {
   url: string;
   /** The session token, for the API. */
   token: string;
+  /**
+   * ADR 0186: the page key made here and given to atticus ui (ATTICUS_UI_PAGE_KEY), for the
+   * panel's page to ask for the person's confirmations. An older atticus ignores it.
+   */
+  pageKey: string;
   stop(): void;
   onExit(f: (code: number | null) => void): void;
 }
@@ -152,6 +157,9 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
   // which other processes can read), and kept out of the log.
   const given = randomBytes(32).toString("base64url");
   hideInLog(given);
+  // ADR 0186: the page key too, the same way: the panel's page asks for confirmations with it.
+  const pageKey = randomBytes(32).toString("base64url");
+  hideInLog(pageKey);
   log(`> ${commandText(args)}`);
   if (cmd.shell && args.some((a) => SHELL_UNSAFE.test(a)))
     return Promise.reject(
@@ -165,7 +173,7 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
     try {
       child = spawn(cmd.shell ? `"${cmd.file}"` : cmd.file, argv, {
         cwd: o.cwd,
-        env: { ...(o.env ?? process.env), ATTICUS_UI_TOKEN: given },
+        env: { ...(o.env ?? process.env), ATTICUS_UI_TOKEN: given, ATTICUS_UI_PAGE_KEY: pageKey },
         shell: cmd.shell,
         windowsHide: true,
       });
@@ -204,6 +212,7 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
         resolve({
           url,
           token,
+          pageKey,
           stop: () => stopChild(child),
           onExit: (f) => exits.push(f),
         });

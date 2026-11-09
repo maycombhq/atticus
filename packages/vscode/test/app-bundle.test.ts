@@ -55,6 +55,21 @@ describe("the app's page in a panel (ADR 0097)", () => {
     expect(html).not.toContain("atticus-token");
   });
 
+  it("gives the page the key it asks for the person's confirmations with (ADR 0186)", () => {
+    const keyed = bundledHtml(INDEX, {
+      base: "b/",
+      cspSource: "c",
+      nonce: "n",
+      pageKey: "k".repeat(43),
+    });
+    expect(keyed).toContain(`<meta name="atticus-page-key" content="${"k".repeat(43)}">`);
+    expect(keyed).not.toContain("atticus-token");
+    // A key that isn't one is left out, never written into the page.
+    const odd = bundledHtml(INDEX, { base: "b/", cspSource: "c", nonce: "n", pageKey: '"><x>' });
+    expect(odd).not.toContain("atticus-page-key");
+    expect(html).not.toContain("atticus-page-key");
+  });
+
   it("refuses a view that isn't one of the app's screens", () => {
     const bad = bundledHtml(INDEX, {
       base: "b/",

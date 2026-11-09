@@ -43,6 +43,7 @@ import {
   conflict,
   HttpError,
   notFound,
+  requireConfirmation,
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
@@ -485,6 +486,12 @@ async function artifactPath(
 
 export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Router {
   const { root, user, jobs } = ctx;
+  /**
+   * Review round 48 (ADR 0186): the person's confirmation of a write to a shared system, from the
+   * app's page; the session token alone is 403. Spent whether the write then works or not.
+   */
+  const confirmed = (write: Api.ConfirmedWriteT, target: string, given: unknown) =>
+    requireConfirmation(ctx.confirmations, write, target, given);
   /** ADR 0181 part 4: the ready list, in the deployment plan's order, each open PR as the host says. */
   const readyView = async (change: string): Promise<Api.ReadyTasksT> => {
     const { deployOrderOf } = await import("./run-ready-commands.js");
@@ -603,8 +610,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("POST", "/api/propose", async ({ body }) => {
         const b = parseBody(Api.ProposeRequest, body);
+        // The person's confirmation from the app is the approval to push the branch and open the
+        // PR (ADR 0183, 0186); the session token alone is 403.
+        confirmed("propose", b.scope, b.confirmation);
         const { proposeForReview } = await import("./propose.js");
-        // The person's click is the approval to push the branch and open the PR (ADR 0183).
         return asJob("Proposing for review", () =>
           run((io) =>
             proposeForReview(
@@ -916,15 +925,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         });
         return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
-      // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's click is
-      // the approval to push its branch and open the PR into the change branch (ADR 0073), as
-      // Raise hand-off's is; the AI step isn't run again.
-      .add("POST", "/api/changes/{changeId}/tasks/{taskId}/pr", async ({ params }) => {
+      // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's
+      // confirmation from the app is the approval to push its branch and open the PR into the
+      // change branch (ADR 0073, 0186), as Raise hand-off's is; the AI step isn't run again.
+      .add("POST", "/api/changes/{changeId}/tasks/{taskId}/pr", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const change = params.changeId!;
         const task = params.taskId!;
+        const b = parseBody(Api.ConfirmedRequest, body ?? {});
         if (!(await taskViews(root, change)).some((t) => t.id === task))
           throw notFound(`Change ${change} has no task ${task}.`);
+        confirmed("task-pr", `${change}/${task}`, b.confirmation);
         let raised: Awaited<ReturnType<typeof raiseTaskPr>>;
         try {
           raised = await raiseTaskPr(root, change, task, {
@@ -974,8 +985,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/changes/{changeId}/handoff", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         // The phase defaults to the change's current one; repo names the metarepo (ADR 0043).
-        // The person's click is the approval to open the PR (ADR 0073).
+        // The person's confirmation from the app is the approval to open the PR (ADR 0073,
+        // 0186); the session token alone is 403.
         const b = parseBody(Api.HandoffRequest, body);
+        confirmed("handoff", params.changeId!, b.confirmation);
         const res = await run((io) =>
           changeHandoff(
             root,
@@ -995,9 +1008,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/changes/{changeId}/release-prs", async ({ params, body }) => {
         const id = params.changeId!;
         await readChange(root, id);
-        parseBody(Api.ReleasePrsRequest, body);
-        // ADR 0184: the person's click is the approval to push the change branch where the host
-        // lacks it (never forced, never the default branch) and to open the release PRs.
+        const b = parseBody(Api.ReleasePrsRequest, body);
+        // ADR 0184: the person's confirmation from the app (ADR 0186) is the approval to push the
+        // change branch where the host lacks it (never forced, never the default branch) and to
+        // open the release PRs.
+        confirmed("release-prs", id, b.confirmation);
         const res = await run((io) =>
           changeReleasePrs(root, id, { by: user, approve: true }, io, changeDeps),
         );
@@ -1008,12 +1023,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/changes/{changeId}/sync", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.SyncRequest, body);
-        // Sync and merge: the person's click is the approval to merge a PR that is ready.
+        // Sync and merge: the person's confirmation from the app is the approval to merge a PR
+        // that is ready (ADR 0186). Without one, sync only reads the PRs and says what is ready.
+        const approve = b.confirmation !== undefined;
+        if (approve) confirmed("merge", params.changeId!, b.confirmation);
         const res = await run((io) =>
           changeSync(
             root,
             params.changeId!,
-            { by: user, approve: true, ...(b.repo ? { repo: b.repo } : {}) },
+            { by: user, approve, ...(b.repo ? { repo: b.repo } : {}) },
             io,
             changeDeps,
           ),
@@ -1430,6 +1448,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("POST", "/api/workspace/sync", ({ body }) => {
         const b = parseBody(Api.ScanRequest.pick({ repos: true }), body);
+        // Review round 48: one sync at a time here (as a scan); the base clones' own lock keeps
+        // a terminal's sync from running git with this one.
+        const busy = jobs.runningOf("sync");
+        if (busy) throw conflict(`A sync is already running (${busy.id}): wait for it to finish.`);
         const job = jobs.start("sync", async (c) => {
           c.progress(0, 1, "Syncing base clones");
           const res = await run((io) => workspaceSync(root, b.repos, io));
@@ -1440,6 +1462,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       })
       .add("POST", "/api/reconcile", ({ body }) => {
         const b = parseBody(Api.ReconcileRequest, body);
+        const busy = jobs.runningOf("reconcile");
+        if (busy)
+          throw conflict(`A reconcile is already running (${busy.id}): wait for it to finish.`);
         const job = jobs.start("reconcile", async (c) => {
           c.progress(0, 1, `Reconciling ${b.diagram}`);
           const res = await run((io) => reconcileCommand(root, [b.diagram], { json: true }, io));

@@ -11,6 +11,7 @@ import { personOnlyWhy } from "@maycombhq/ai";
 import { startServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
 import { uiRunRoutes } from "../src/ui-api-run.js";
+import { confirmFor } from "./confirm-helpers.js";
 
 /** ADR 0184: atticus change release-prs, and change sync reading the release PRs back. */
 
@@ -164,7 +165,12 @@ describe("atticus change release-prs", () => {
         "release-pr-missing",
       );
       expect((await call(`/api/changes/${ID}/release-prs`, "POST", { x: 1 })).status).toBe(400);
-      const raised = await call(`/api/changes/${ID}/release-prs`, "POST", {});
+      // ADR 0186: the session token alone raises nothing; the page's confirmation does.
+      expect((await call(`/api/changes/${ID}/release-prs`, "POST", {})).status).toBe(403);
+      expect(await gh.listPullRequests("forge-ledger", {})).toHaveLength(0);
+      const yes = () =>
+        confirmFor(srv, "release-prs", ID).then((confirmation) => ({ confirmation }));
+      const raised = await call(`/api/changes/${ID}/release-prs`, "POST", await yes());
       expect(raised.status).toBe(201);
       expect(raised.body.lines[0]).toMatch(/^forge-ledger: release PR #1 from change\//);
       d = await call(`/api/release/${ID}`);
@@ -173,7 +179,7 @@ describe("atticus change release-prs", () => {
         "release-pr-not-merged",
       );
       // Raised again: nothing new to open, still 201.
-      expect((await call(`/api/changes/${ID}/release-prs`, "POST", {})).status).toBe(201);
+      expect((await call(`/api/changes/${ID}/release-prs`, "POST", await yes())).status).toBe(201);
       expect(await gh.listPullRequests("forge-ledger", {})).toHaveLength(1);
     } finally {
       await srv.close();

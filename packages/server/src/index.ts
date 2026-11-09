@@ -5,3 +5,4 @@ export * from "./jobs.js";
 export * from "./ws.js";
 export * from "./static.js";
 export * from "./watch.js";
+export * from "./confirm.js";

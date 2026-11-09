@@ -15,7 +15,7 @@ import {
  */
 
 const KEY = "test-key-NOT-real-7f3a9c";
-const env = { NW_KEY: KEY };
+const env = { ATTICUS_NW_KEY: KEY };
 
 const manifest = {
   id: "northwind-gateway",
@@ -65,7 +65,7 @@ const input = {
   maxOutputTokens: 400,
 };
 const answer = { output: "Forge Pay calls Northwind Pay.", stop: "end", usage: { in: 12, out: 6 } };
-const settings = { model: "nw-large", keyEnv: "NW_KEY", region: "eu-west" };
+const settings = { model: "nw-large", keyEnv: "ATTICUS_NW_KEY", region: "eu-west" };
 
 describe("a model provider from a plugin (ADR 0121)", () => {
   it("sends what the plugin builds, with the key added by Atticus, and reads the answer through it", async () => {
@@ -92,7 +92,7 @@ describe("a model provider from a plugin (ADR 0121)", () => {
     });
     // The plugin never sees the key, or the name of its variable.
     expect(JSON.stringify(seen)).not.toContain(KEY);
-    expect(JSON.stringify(seen)).not.toContain("NW_KEY");
+    expect(JSON.stringify(seen)).not.toContain("ATTICUS_NW_KEY");
   });
 
   it("refuses a request to a host the manifest doesn't name, over http, or with its own key header", async () => {
@@ -138,8 +138,8 @@ describe("a model provider from a plugin (ADR 0121)", () => {
       });
     expect(() => make({ ...settings, colour: "blue" })).toThrow(ModelProviderConfigError);
     expect(() => make({ ...settings, region: "evil.example/x" })).toThrow(/region/);
-    expect(() => make({ model: "nw-large", keyEnv: "NW_KEY" })).toThrow(/region/);
-    expect(() => make(settings, {})).toThrow(/NW_KEY/);
+    expect(() => make({ model: "nw-large", keyEnv: "ATTICUS_NW_KEY" })).toThrow(/region/);
+    expect(() => make(settings, {})).toThrow(/ATTICUS_NW_KEY/);
   });
 
   it("sends no key with auth none, and the named header with header:<name>", async () => {

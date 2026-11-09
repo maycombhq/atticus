@@ -11,6 +11,7 @@ import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiAcrossRoutes } from "../src/ui-api-across.js";
 import { uiMeRoutes } from "../src/ui-api-me.js";
 import { digestCommand } from "../src/digest-commands.js";
+import { confirmFor } from "./confirm-helpers.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 const CHANGE = "add-transfer-limit";
@@ -225,8 +226,20 @@ describe("the digest (ADR 0048, 0073)", () => {
     expect(seen.body.sent).toBeUndefined();
     expect(notifier.sent).toHaveLength(0);
 
-    const sent = await call("POST", "/api/me/digest", { send: true });
+    // ADR 0186: the session token alone posts nothing, nor a confirmation for something else.
+    expect((await call("POST", "/api/me/digest", { send: true })).status).toBe(403);
+    const other = await confirmFor(srv, "handoff", "me");
+    expect((await call("POST", "/api/me/digest", { send: true, confirmation: other })).status).toBe(
+      403,
+    );
+    expect(notifier.sent).toHaveLength(0);
+    const yes = await confirmFor(srv, "digest-send", "me");
+    const sent = await call("POST", "/api/me/digest", { send: true, confirmation: yes });
     expect(sent.body.sent).toEqual({ id: "msg-1", channel: "#dana-updates" });
+    // Used once.
+    expect((await call("POST", "/api/me/digest", { send: true, confirmation: yes })).status).toBe(
+      403,
+    );
     expect(notifier.sent[0]).toMatchObject({ channel: "#dana-updates", mentions: ["dana"] });
     expect(notifier.sent[0]!.body).toMatch(/pull\/3/);
     expect(notifier.journal.at(-1)?.approval).toMatchObject({ by: "dana", ref: "digest:dana" });

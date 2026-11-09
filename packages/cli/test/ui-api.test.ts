@@ -10,6 +10,7 @@ import { Api, Finding, parseRecord, recordPath, serializeRecord } from "@maycomb
 import { MockGitHost } from "@maycombhq/adapters";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
+import { confirmFor } from "./confirm-helpers.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORGE = join(HERE, "../../../fixtures/forge");
@@ -125,9 +126,10 @@ describe("the write side of the local API runs the CLI's own commands", () => {
   });
 
   it("refuses a hand-off that isn't ready with the CLI's reasons (422), then opens it (201)", async () => {
+    // ADR 0186: each click is the person's confirmation, from the app's page.
     const early = await call(`/api/changes/${ID}/handoff`, {
       method: "POST",
-      body: { repo: REPO },
+      body: { repo: REPO, confirmation: await confirmFor(srv, "handoff", ID) },
     });
     expect(early.status).toBe(422);
     expect(Api.Problem.parse(early.body).detail).toMatch(
@@ -136,7 +138,10 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     await cp(join(CHANGE_FIXTURES, "define"), join(root, "openspec/changes", ID), {
       recursive: true,
     });
-    const ok = await call(`/api/changes/${ID}/handoff`, { method: "POST", body: { repo: REPO } });
+    const ok = await call(`/api/changes/${ID}/handoff`, {
+      method: "POST",
+      body: { repo: REPO, confirmation: await confirmFor(srv, "handoff", ID) },
+    });
     expect(ok.status).toBe(201);
     expect(Api.ChangeDetail.parse(ok.body).handoff).toMatchObject({
       phase: "define",

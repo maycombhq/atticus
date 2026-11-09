@@ -338,8 +338,9 @@ async function hopsFromTargetFlows(
         rows: names.map((name, i) => ({
           line: i + 1,
           source: name,
-          target: as[name] ?? name,
-          rule: derived[name] ?? "",
+          // Review round 48: a field named toString or constructor is a field, not the prototype's.
+          target: (Object.hasOwn(as, name) ? as[name] : undefined) ?? name,
+          rule: (Object.hasOwn(derived, name) ? derived[name] : undefined) ?? "",
           whenMissing: "",
         })),
         asIs: asIsFor(mappings, ifIds),

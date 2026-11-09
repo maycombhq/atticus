@@ -325,8 +325,24 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   as last applied. GET /api/settings/ai gives `decide` and `schemaVersion`, and PUT takes
  *   `decide` (lifting a version 3 file to 4). GET /api/upgrade lists the pending upgrade steps and
  *   POST /api/upgrade runs `atticus upgrade` as a local job on the person's click. Additive only.
+ * 3.0.0 (ADR 0186, review round 48: writes to shared systems need a person's confirmation). Not
+ *   additive: the session token, which `--show-token` prints for assistants and scripts, is no
+ *   longer a person's yes. POST /api/confirmations gives the app's page a confirmation for one
+ *   write and target (single use, two minutes), and only with the page key the server puts in the
+ *   page (<meta name="atticus-page-key">, or ATTICUS_UI_PAGE_KEY from the editor that starts it)
+ *   and never prints. These take it as `confirmation` and answer 403 without a valid one: POST
+ *   /api/changes/{changeId}/handoff (`handoff`), .../release-prs (`release-prs`),
+ *   .../tasks/{taskId}/pr (`task-pr`, `<change>/<task>`), POST /api/propose (`propose`, the
+ *   scope), POST /api/todo/{stepId}/run (`step-run`), POST /api/me/digest with send (`digest-send`,
+ *   `me`), PUT /api/settings/ai when it changes the provider, keyEnv or an address (`ai-model`,
+ *   `model`) and POST /api/settings/ai/test when the model settings differ from HEAD's (`ai-test`,
+ *   `model`). POST .../sync merges a ready PR only with one (`merge`); without one it only reads.
+ *   keyEnv must be a variable starting ATTICUS_, a model provider's own key variable or a name in
+ *   the credential store (422). POST /api/workspace/sync and /api/reconcile answer 409 while one of
+ *   their kind runs; GET /api/past-changes?change= and /api/changes/{changeId}/cockpit answer 400
+ *   for a change id that isn't one, and /api/view/{name} 404 for a name that isn't a view.
  */
-export const API_VERSION = "2.84.0";
+export const API_VERSION = "3.0.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2633,6 +2649,47 @@ export const ProposePlanView = z.object({
    */
   applyFirst: z.array(z.string()).optional(),
 });
+
+/**
+ * 3.0.0 (ADR 0186, review round 48): the writes to shared systems a person confirms in the app.
+ * The session token drives the API and is printed for assistants and scripts (`--show-token`),
+ * so it isn't a person's yes: the app's page asks for a confirmation (POST /api/confirmations,
+ * with the page key only the page is given) when the person clicks, and the write sends it once.
+ * `merge` is Sync's merge of a ready PR; `ai-model` a change of where runtime.yaml sends the
+ * model's key (its provider, keyEnv or an address); `ai-test` a Test of settings not committed.
+ */
+export const CONFIRMED_WRITES = [
+  "handoff",
+  "release-prs",
+  "merge",
+  "task-pr",
+  "digest-send",
+  "propose",
+  "step-run",
+  "ai-model",
+  "ai-test",
+] as const;
+export const ConfirmedWrite = z.enum(CONFIRMED_WRITES);
+/** A confirmation the server gave the page: single use, for one write and target, two minutes. */
+export const Confirmation = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/, "a confirmation");
+export const ConfirmationRequest = z.strictObject({
+  write: ConfirmedWrite,
+  /** What the write is for: the change, `<change>/<task>`, the step, the scope, `me` or `model`. */
+  target: z.string().min(1).max(400),
+  /** The page's own key, from its <meta name="atticus-page-key">; never printed. */
+  pageKey: z.string().max(200).optional(),
+});
+export const ConfirmationView = z.object({
+  confirmation: Confirmation,
+  write: ConfirmedWrite,
+  target: z.string(),
+  expiresAt: z.string(),
+});
+/** The body of a write that takes nothing but the person's confirmation. */
+export const ConfirmedRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export type ConfirmedWriteT = z.infer<typeof ConfirmedWrite>;
+export type ConfirmationViewT = z.infer<typeof ConfirmationView>;
+
 export const ProposeRequest = z.strictObject({
   scope: ProposeScope,
   /** Exactly the files the person saw listed; one that changed back since is left out. */
@@ -2640,6 +2697,8 @@ export const ProposeRequest = z.strictObject({
   title: z.string().max(200).optional(),
   /** The branch GET's plan showed, so the PR is on the branch the person saw. */
   branch: z.string().max(200).optional(),
+  /** 3.0.0 (ADR 0186): the person's confirmation from the app (`propose`, the scope). */
+  confirmation: Confirmation.optional(),
 });
 export const LinesView = z.object({
   code: z.number().int().optional(),
@@ -2944,13 +3003,21 @@ export const OpenWorkspaceRequest = z.strictObject({ repos: z.array(RecordId).mi
 export const HandoffRequest = z.strictObject({
   phase: Phase.optional(),
   repo: z.string().optional(),
+  /** 3.0.0 (ADR 0186): the person's confirmation from the app (`handoff`, the change). */
+  confirmation: Confirmation.optional(),
 });
 
-/** ADR 0043: refresh a change from its hand-off PR. */
-export const SyncRequest = z.strictObject({ repo: z.string().optional() });
+/**
+ * ADR 0043: refresh a change from its hand-off PR. 3.0.0 (ADR 0186): with a confirmation
+ * (`merge`, the change) it merges a ready PR as the person; without one it only reads.
+ */
+export const SyncRequest = z.strictObject({
+  repo: z.string().optional(),
+  confirmation: Confirmation.optional(),
+});
 
 /** ADR 0184: raise the release PRs, change/<id> into each code repo's default branch. */
-export const ReleasePrsRequest = z.strictObject({});
+export const ReleasePrsRequest = z.strictObject({ confirmation: Confirmation.optional() });
 /** 2.75.0 (seventh UX walk): tick (done) or untick a task in the change's tasks.md. */
 export const TaskDoneRequest = z.strictObject({ done: z.boolean() });
 /**
@@ -3039,6 +3106,8 @@ export const StepRunRequest = z.strictObject({
   inputsSha256: z.string().regex(/^[0-9a-f]{64}$/, "the sha-256 the preview showed"),
   fillOnly: z.boolean().optional(),
   change: z.string().optional(),
+  /** 3.0.0 (ADR 0186): the person's confirmation from the app (`step-run`, the step). */
+  confirmation: Confirmation.optional(),
 });
 export const ArchiveRequest = z.strictObject({ rescan: z.boolean().optional() });
 export const DraftRequestsRequest = z.strictObject({ force: z.boolean().optional() });
@@ -3093,7 +3162,11 @@ export const SaveNotifyRequest = z.strictObject({
 });
 
 /** ADR 0048: show the digest, or send it through the notify adapter (the click is the approval). */
-export const SendDigestRequest = z.strictObject({ send: z.boolean().default(false) });
+/** 3.0.0 (ADR 0186): send needs the person's confirmation from the app (`digest-send`, `me`). */
+export const SendDigestRequest = z.strictObject({
+  send: z.boolean().default(false),
+  confirmation: Confirmation.optional(),
+});
 
 /** ADR 0043: choose one of a triage item's numbered options; it writes a curated decision. */
 export const TriageDecideRequest = z.strictObject({
@@ -4409,6 +4482,17 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "Health", description: "OK" },
     },
   },
+  "/api/confirmations": {
+    post: {
+      id: "confirmWrite",
+      summary:
+        "3.0.0 (ADR 0186): the app's page asks, on the person's click, for a confirmation of one write to a shared system (a hand-off, the release PRs, a merge, a task's PR, sending the digest, Propose for review, a step run with a team's tool, where the model's key goes, a Test of uncommitted model settings). It needs the page key the server puts in the page and never prints, so the session token alone gets 403; the confirmation is for that write and target, used once, and expires after two minutes",
+      tag: "system",
+      body: ConfirmationRequest,
+      ok: { status: 201, schema: "ConfirmationView", description: "The confirmation" },
+      errors: [400, 403],
+    },
+  },
   "/api/me": {
     get: {
       id: "getMe",
@@ -4447,7 +4531,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "sendDigest",
       summary:
-        "What waits on the person; with send, posted through the notify adapter as their approval",
+        "What waits on the person; with send, posted through the notify adapter as their approval. 3.0.0 (ADR 0186): send needs the person's confirmation (`digest-send`, `me`), else 403",
       tag: "system",
       body: SendDigestRequest,
       ok: {
@@ -4455,7 +4539,7 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: { type: "object", required: ["title", "body", "lines"] },
         description: "The digest, with sent or notSent",
       },
-      errors: [400],
+      errors: [400, 403],
     },
   },
   "/api/across": {
@@ -5303,10 +5387,12 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
-      summary: "Clone or update base clones",
+      summary:
+        "Clone or update base clones. 3.0.0 (review round 48): 409 while a sync runs on this server",
       tag: "workspace",
       body: ScanRequest.pick({ repos: true }),
       ok: { status: 202, schema: "JobAccepted", description: "Job started" },
+      errors: [409],
     },
   },
   "/api/scan": {
@@ -5322,11 +5408,12 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/reconcile": {
     post: {
       id: "startReconcile",
-      summary: "Check a diagram against the catalog",
+      summary:
+        "Check a diagram against the catalog. 3.0.0 (review round 48): 409 while a reconcile runs on this server",
       tag: "scans",
       body: ReconcileRequest,
       ok: { status: 202, schema: "JobAccepted", description: "Job started" },
-      errors: [404],
+      errors: [404, 409],
     },
   },
   "/api/jobs/{jobId}": {
@@ -5401,7 +5488,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "proposeForReview",
       summary:
-        "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges",
+        "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges. 3.0.0 (ADR 0186): needs the person's confirmation (`propose`, the scope), else 403",
       tag: "workspace",
       body: ProposeRequest,
       ok: {
@@ -5410,7 +5497,7 @@ const OPS: Record<string, Record<string, Op>> = {
         description: "Started: its job's result is the code and the lines",
       },
       // 2.68.0: 409 while another local step (Apply, Propose, Bring in) runs.
-      errors: [400, 409],
+      errors: [400, 403, 409],
     },
   },
   "/api/owner-questions": {
@@ -5497,7 +5584,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "raiseReleasePrs",
       summary:
-        "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184)",
+        "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184). 3.0.0 (ADR 0186): needs the person's confirmation (`release-prs`, the change), else 403",
       tag: "changes",
       params: [p("changeId")],
       body: ReleasePrsRequest,
@@ -5506,18 +5593,19 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: "LinesView",
         description: "Raised: what each repo's release PR said",
       },
-      errors: [400, 404, 422],
+      errors: [400, 403, 404, 422],
     },
   },
   "/api/changes/{changeId}/sync": {
     post: {
       id: "syncChange",
-      summary: "Refresh the change from its hand-off PR and advance it when merged (ADR 0043)",
+      summary:
+        "Refresh the change from its hand-off PR and advance it when merged (ADR 0043). 3.0.0 (ADR 0186): merges a ready PR only with the person's confirmation (`merge`, the change); without one it only reads, and a confirmation that isn't valid is 403",
       tag: "changes",
       params: [p("changeId")],
       body: SyncRequest,
       ok: { status: 200, schema: "ChangeDetail", description: "OK" },
-      errors: [400, 404, 422],
+      errors: [400, 403, 404, 422],
     },
   },
   "/api/changes/{changeId}/artifacts/{artifact}": {
@@ -5569,9 +5657,10 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "raiseTaskPr",
       summary:
-        "2.69.0 (sixth UX walk): on the person's yes, push a drafted task's branch and open its PR into the change branch",
+        "2.69.0 (sixth UX walk): on the person's yes, push a drafted task's branch and open its PR into the change branch. 3.0.0 (ADR 0186): needs the person's confirmation (`task-pr`, `<change>/<task>`), else 403",
       tag: "changes",
       params: [p("changeId"), p("taskId")],
+      body: ConfirmedRequest,
       ok: { status: 201, schema: "Task", description: "The task, its PR raised" },
       errors: [403, 404, 409, 422],
     },
@@ -5625,7 +5714,8 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/changes/{changeId}/handoff": {
     post: {
       id: "handOff",
-      summary: "Open the phase's hand-off PR after its gate passes",
+      summary:
+        "Open the phase's hand-off PR after its gate passes. 3.0.0 (ADR 0186): needs the person's confirmation (`handoff`, the change), else 403",
       tag: "changes",
       params: [p("changeId")],
       body: HandoffRequest,
@@ -6158,12 +6248,13 @@ const OPS: Record<string, Record<string, Op>> = {
     },
     post: {
       id: "runStep",
-      summary: "Run a step with a team's own tool; the shown inputs' sha-256 is the approval",
+      summary:
+        "Run a step with a team's own tool on the shown inputs (their sha-256). 3.0.0 (ADR 0186): needs the person's confirmation (`step-run`, the step), else 403",
       tag: "release",
       params: [p("stepId")],
       body: StepRunRequest,
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
-      errors: [400, 404, 422],
+      errors: [400, 403, 404, 422],
     },
   },
   "/api/release": {
@@ -6330,11 +6421,11 @@ const OPS: Record<string, Record<string, Op>> = {
     put: {
       id: "putAiSettings",
       summary:
-        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4",
+        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key. 2.84.0: takes decide (ADR 0181: links, questions, minPrecision), lifting a version 3 file to 4. 3.0.0 (ADR 0186): keyEnv is a variable starting ATTICUS_, a model provider's own (ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY and the like) or a name kept in this machine's credential store (422 otherwise); a change of the provider, keyEnv or an address needs the person's confirmation (`ai-model`, `model`) as `confirmation`, else 403",
       tag: "run",
       body: z.record(z.string(), z.unknown()),
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
-      errors: [409, 422],
+      errors: [403, 409, 422],
     },
   },
   "/api/component-types": {
@@ -6361,10 +6452,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "testAiProvider",
       summary:
-        "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered",
+        "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered. 3.0.0 (ADR 0186): when runtime.yaml's model settings differ from the committed ones (HEAD), it needs the person's confirmation (`ai-test`, `model`), else 403",
       tag: "run",
+      body: ConfirmedRequest,
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
-      errors: [409],
+      errors: [403, 409],
     },
   },
   "/api/settings/executors/check": {
@@ -6866,6 +6958,7 @@ export function openApiDocument(): Record<string, unknown> {
     PreparedStepView,
     RunDoneView,
     ProposeRequest,
+    ConfirmationView,
     LinesView,
     InitiativeSavedView,
     ChangeDetail,

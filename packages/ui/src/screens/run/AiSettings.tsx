@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Propose } from "../../app/propose.js";
 import { api, useApi, useReloadOnFiles } from "../../api/client.js";
+import { confirmed } from "../../api/confirm.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "./shared.js";
@@ -200,7 +201,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
         e.preventDefault();
         const asSent = JSON.stringify(f);
         void save.run(async () => {
-          await api("/api/settings/ai", { method: "PUT", body: toSave(f, p.data) });
+          const body = toSave(f, p.data);
+          // ADR 0186: Save is the person's confirmation of where the model's key goes (its
+          // provider, keyEnv or address); the server takes it only when one of those changes.
+          const yes = body.model ? await confirmed("ai-model", "model") : {};
+          await api("/api/settings/ai", { method: "PUT", body: { ...body, ...yes } });
           // Only a save that went through takes the file as the server stored it.
           sent.current = asSent;
           p.onSaved?.();
@@ -493,10 +498,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
             disabled={test.busy}
             onClick={() =>
               void test.run(
-                () =>
+                // ADR 0186: Test sends the key; settings not yet committed need this click's yes.
+                async () =>
                   api<{ ok: boolean; model?: string; ms?: number; error?: string }>(
                     "/api/settings/ai/test",
-                    { method: "POST", body: {} },
+                    { method: "POST", body: await confirmed("ai-test", "model") },
                   ).then((r) => {
                     if (!r.ok) throw new Error(T.notAnswered(r.error ?? ""));
                     return r;
