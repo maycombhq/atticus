@@ -1,13 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, readdir } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { changeStore } from "@maycombhq/changes";
+import { createOpenSpec } from "@maycombhq/openspec-adapter";
 import type { GitRunner } from "@maycombhq/workspace";
 import { changeArchive } from "../src/change-commands.js";
+import { changeSteps, readNextState } from "../src/next-commands.js";
 
 /**
  * Archive rescans: the change's repos are brought up to date where their base clones are
@@ -46,10 +48,11 @@ const offlineGit: GitRunner = async (args) => ({
   stderr: "",
 });
 
-async function released(o: { clones: boolean }): Promise<string> {
+async function released(o: { clones: boolean; openspec?: boolean }): Promise<string> {
   const top = await mkdtemp(join(tmpdir(), "atticus-archive-rescan-"));
   await cp(join(FIXTURES, "forge"), top, { recursive: true });
   const root = join(top, "metarepo");
+  if (o.openspec) await createOpenSpec({ root }).init();
   if (o.clones)
     for (const id of await readdir(join(top, "repos"))) {
       const dir = join(root, "workspace", id);
@@ -64,6 +67,11 @@ async function released(o: { clones: boolean }): Promise<string> {
     join(root, "openspec/changes", CHANGE),
     { recursive: true },
   );
+  if (o.openspec) {
+    // every task built: OpenSpec archives only a change whose tasks.md is ticked
+    const tasks = join(root, "openspec/changes", CHANGE, "tasks.md");
+    await writeFile(tasks, (await readFile(tasks, "utf8")).replaceAll("- [ ]", "- [x]"));
+  }
   const store = changeStore(root);
   const c = await store.read(CHANGE);
   await store.write({
@@ -115,6 +123,42 @@ describe("atticus change archive and the catalog", () => {
       const q = capture();
       expect(await changeArchive(quiet, CHANGE, { by: "dana", rescan: false }, q.io)).toBe(0);
       expect(q.out).toEqual([`Archived ${CHANGE}.`]);
+    },
+    T,
+  );
+
+  // Round 49: OpenSpec moves the change's folder to openspec/changes/archive/<date>-<id>/, so
+  // the rescan works out the change's repos before archiving rather than reading it after.
+  it(
+    "rescans after OpenSpec has moved the change into its archive",
+    async () => {
+      const root = await released({ clones: true, openspec: true });
+      const c = capture();
+      const code = await changeArchive(root, CHANGE, { by: "dana" }, c.io, {
+        now: "2026-10-21T10:00:00Z",
+        git: offlineGit,
+      });
+      expect(c.err).toEqual([]);
+      expect(code).toBe(0);
+      expect(c.out[0]).toBe(`Archived ${CHANGE}.`);
+      expect(existsSync(join(root, "openspec/changes", CHANGE))).toBe(false);
+      expect(c.out[1]).toMatch(new RegExp(`^Rescanning for ${CHANGE}'s repos: .*forge-ledger`));
+      expect(existsSync(join(root, "catalog/generated/component/ledger-api.yaml"))).toBe(true);
+    },
+    T,
+  );
+
+  // Round 49: next mapped released to done and never offered the archive.
+  it(
+    "next offers the archive of a released change, from its archive gate",
+    async () => {
+      const root = await released({ clones: false });
+      const c = (await readNextState(root)).changes.find((x) => x.id === CHANGE)!;
+      expect(c.released).toEqual({ blockers: [] });
+      expect(changeSteps(c)[0]).toMatchObject({
+        step: "archive",
+        command: `atticus change archive ${CHANGE}`,
+      });
     },
     T,
   );

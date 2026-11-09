@@ -438,6 +438,8 @@ describe("nextSteps (pure)", () => {
       ["atticus change architecture move-ledger", "/atticus-architecture move-ledger"],
       // ADR 0113: /atticus-task loads the task's context in the metarepo.
       ["atticus task run split-fees 1.2", "/atticus-task split-fees 1.2"],
+      // Round 49: a released change is archived next (it was skipped as done).
+      ["atticus change archive old-one", null],
     ]);
     expect(steps[2]!.where).toBe("metarepo");
     expect(steps[2]!.repo).toBe("forge-ledger");
@@ -784,6 +786,123 @@ describe("the next step follows the change's state and gate (seventh UX walk)", 
     expect(s!.why).not.toContain("approved design");
   });
 
+  // Round 49: a released change isn't done until it is archived: its released repos are read
+  // again where the archive gate says their facts aren't of the merged commit, then archive.
+  it("released: read the released repos again where the archive gate says so, then archive", () => {
+    const [a] = changeSteps(at({ state: "released", released: { blockers: [] } }));
+    expect(a).toMatchObject({
+      step: "archive",
+      command: "atticus change archive show-status",
+      person: true,
+      change: "show-status",
+    });
+    expect(a!.why).toBe(
+      "show-status is released and the archive gate passes: a person archives it (its spec deltas merge into openspec/specs/ and the estate is scanned again, so the catalog says what shipped).",
+    );
+    const reading = changeSteps(
+      at({
+        state: "released",
+        released: {
+          blockers: [
+            {
+              code: "needs-reading",
+              message:
+                "forge-ledger: its facts were read at aaaaaaaaaaaa, not at bbbbbbbbbbbb, the commit its release merged into main: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+            },
+            {
+              code: "catalog-stale",
+              message:
+                "forge-portal-bff: its facts are of the merged commit cccccccccccc, but 2 catalog records still cite another commit: write them into the catalog (atticus verify forge-portal-bff --write, or Apply on the Map).",
+            },
+          ],
+        },
+      }),
+    );
+    expect(reading.map((x) => [x.step, x.command, x.repo])).toEqual([
+      ["reread", "atticus map forge-ledger", "forge-ledger"],
+      ["verify", "atticus verify forge-portal-bff --write", "forge-portal-bff"],
+      ["archive", "atticus change archive show-status", undefined],
+    ]);
+    expect(reading[0]!.why).toContain("forge-ledger: its facts were read at aaaaaaaaaaaa");
+    expect(reading[2]!.why).toBe(
+      "Then a person archives show-status (its spec deltas merge into openspec/specs/ and the estate is scanned again).",
+    );
+    const [held] = changeSteps(
+      at({
+        state: "released",
+        released: {
+          blockers: [
+            {
+              code: "pr-open",
+              message:
+                "forge-ledger: release PR #7 is open; a person merges it on the Git host before archiving.",
+            },
+          ],
+        },
+      }),
+    );
+    expect(held).toMatchObject({
+      step: "archive-gate",
+      command: "atticus ci archive-gate show-status",
+    });
+    expect(held!.why).toBe(
+      "show-status is released, but the archive gate doesn't pass yet: forge-ledger: release PR #7 is open; a person merges it on the Git host before archiving.",
+    );
+  });
+
+  // Round 49: the hand-off would refuse while its gate has a blocking finding or an open gap,
+  // so the finding (or the owner question a gap waits on) is the step, as handoff checks it.
+  it("with the stage done but its gate blocked: the finding or gap, never the hand-off", () => {
+    const done = { state: "design", stagesDone: ["feature", "architecture"] };
+    const [f] = changeSteps(
+      at({
+        ...done,
+        gate: [
+          {
+            code: "blocking-finding",
+            finding: "f-3",
+            message:
+              "Blocking finding f-3 on the design gate (round 1): The ledger's limit has no owner.",
+          },
+          { code: "open-gap", finding: "g-1", message: "Knowledge gap g-1 needs an answer" },
+        ],
+      }),
+    );
+    expect(f).toMatchObject({
+      step: "finding",
+      command: "atticus finding show-status f-3 edit-and-apply",
+      person: true,
+      change: "show-status",
+    });
+    expect(f!.why).toBe(
+      "show-status's architecture stage is done, but the design gate is blocked, so its hand-off would be refused: Blocking finding f-3 on the design gate (round 1): The ledger's limit has no owner. Fix it (atticus finding show-status f-3 edit-and-apply), or record why it doesn't apply (not-relevant --reason, or waive); 1 more after it.",
+    );
+    const [g] = changeSteps(
+      at({
+        ...done,
+        gate: [{ code: "open-gap", finding: "g-1", message: "Knowledge gap g-1 needs an answer" }],
+      }),
+    );
+    expect(g).toMatchObject({ step: "finding", command: "atticus finding show-status g-1 ask" });
+    expect(g!.why).toContain(
+      "Ask its owner (atticus finding show-status g-1 ask --asked-of <who>)",
+    );
+    const [q] = changeSteps(
+      at({
+        ...done,
+        gate: [
+          {
+            code: "open-gap",
+            finding: "g-2",
+            message:
+              "Knowledge gap g-2 on the design gate (round 1) was asked of ops and waits for the answer (owner question q-abcdefabcdef, in Questions, Owner questions): Who runs it?",
+          },
+        ],
+      }),
+    );
+    expect(q).toMatchObject({ step: "answer", command: "atticus questions answer q-abcdefabcdef" });
+  });
+
   it("with the hand-off raised and not merged: the merge, whatever ran ahead or is asked", () => {
     const steps = changeSteps(
       at({
@@ -819,6 +938,30 @@ describe("the next step follows the change's state and gate (seventh UX walk)", 
       "show-status's plan hand-off PR isn't open yet: your Git host is manual, so opening it is a step waiting on you (atticus todo, or Home › Manual steps in the app). Open it on the Git host as its step says, record its link, then sync; merging it approves the plan gate.",
     );
     expect(s!.why).not.toContain("manual://");
+  });
+
+  // Round 49: once its PR's steps are recorded, sync is the step (it reads them back), named
+  // with the metarepo when runtime.yaml doesn't say which repo it is.
+  it("on a manual Git host with the PR's steps recorded, the step is the sync", () => {
+    const at4 = (recorded: { repo?: string }) =>
+      changeSteps(
+        at({
+          state: "plan",
+          stagesDone: ["feature", "architecture", "stories"],
+          handoff: { phase: "plan", number: 4, url: MANUAL, state: "open", recorded },
+        }),
+      )[0]!;
+    expect(at4({ repo: "forge/forge-metarepo" })).toMatchObject({
+      step: "merge",
+      command: "atticus change sync show-status --repo forge/forge-metarepo",
+      person: true,
+    });
+    const s = at4({});
+    expect(s.command).toBe("atticus change sync show-status");
+    expect(s.why).toBe(
+      "show-status's plan hand-off PR is recorded on its manual steps: syncing reads what was recorded and moves the change on; once its merge is recorded, that approves the plan gate.",
+    );
+    expect(s.why).not.toContain("isn't open yet");
   });
 
   it("with changes requested on the hand-off: update the work, then hand off again", () => {

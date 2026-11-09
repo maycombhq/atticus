@@ -62,6 +62,7 @@ import {
   ruledTargets,
   splitTargetGroups,
   staleTargetQuestions,
+  staleTopicQuestions,
   targetQuestionFor,
   targetsFromAnswers,
   TARGETS_STEP,
@@ -712,7 +713,8 @@ export async function writeFactsIntoCatalog(
       );
     // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
     // of the profile names: who owns it (a system or a team, from the picker).
-    for (const t of topicQuestionDrafts(repo, result.records)) {
+    const topicDrafts = topicQuestionDrafts(repo, result.records);
+    for (const t of topicDrafts) {
       const r = await raiseQuestions(root, [t.draft], {
         step: TOPICS_STEP_ID,
         repo,
@@ -726,6 +728,20 @@ export async function writeFactsIntoCatalog(
           `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's topics in the profile, for review), then ${rerun}.`,
         );
       }
+    }
+    // Round 49: an open topic question whose topic is no longer a loose end (the other side is
+    // read and joined, or the profile names its owner) retires the same way, saying why.
+    for (const s of staleTopicQuestions({
+      repo,
+      open: (await listQuestions(root, { step: TOPICS_STEP_ID, state: "open", repo })).questions,
+      drafted: topicDrafts,
+    })) {
+      await retireQuestion(root, s.id, {
+        why: s.why,
+        at,
+        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+      });
+      lines.push(`Retired ${s.id}: ${s.why}.`);
     }
     // J6: an open question the code now answers (the call names its target, or the manifest's
     // hosts and base paths join it) retires, saying how; one asked another way now (Q1) names

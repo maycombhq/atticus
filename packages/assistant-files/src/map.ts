@@ -336,7 +336,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["gateway"],
-      text: "An Apigee proxy (`apiproxy/`): each conditional `<Flow>` is a `rest` entry, `method` from `request.verb` (`ANY` without one), `path` the `<BasePath>` and the `proxy.pathsuffix` pattern joined, each `*` a parameter (`/forge/v1/accounts/{id}`), `handler` `<proxy>/<flow>`, cited on the `<Condition>` with the `<BasePath>` line in `cite.with`; a proxy with no conditional flow is one `ANY` entry at `<BasePath>/**`.",
+      text: "An Apigee proxy (`apiproxy/`): each conditional `<Flow>` is a `rest` entry, `method` from `request.verb` (`ANY` without one), `path` the `<BasePath>` and the `proxy.pathsuffix` pattern joined, each `*` a parameter (`/forge/v1/accounts/{id}`), `handler` `<proxy>/<flow>`, cited on the `<Condition>` with the `<BasePath>` line in `cite.with`; a proxy with no conditional flow is one `ANY` entry at `<BasePath>/**` cited on the `<BasePath>` line, its forwarding call's `path` `/**` (the target's `<Path>` or `<URL>` path before it, if it has one) cited on the target's `<URL>` line or the `<RouteRule>` line, the `<Server>` line in `cite.with`.",
     },
     {
       when: ["gateway"],
@@ -409,7 +409,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["backend", "frontend", "deploy", "config"],
-      text: "A config fact's `key` is written as it appears on its line (the last part of a YAML path, a `:` or `__` key, or a flag is enough: `path` for `livenessProbe.httpGet.path`).",
+      text: "A config fact's `key` is the setting's full name: a YAML or properties key's whole dotted path (`gateway.url`, `livenessProbe.httpGet.path`, not `url` or `path`), a `:` or `__` key as written, or a flag; two settings in one file never share a key.",
     },
     {
       when: ["deploy", "config"],

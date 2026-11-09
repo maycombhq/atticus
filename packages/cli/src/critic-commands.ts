@@ -94,7 +94,7 @@ export function statusLine(s: GateStatus, change = "<change>"): string {
   if (owner) return owner;
   if (s.humanDecides)
     return `The ${s.gate} gate is closed (${counts}) and ${roundsUsed(s)}: a person decides now. Once a person acts on round ${s.round}'s findings, ${checkRoundRule(s.round)}.`;
-  return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action>.`;
+  return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding ${change} <id> <action>.`;
 }
 
 /**
@@ -258,7 +258,7 @@ export async function critic(
     io.out(
       `Discarded ${r.discarded.length} AI finding${r.discarded.length > 1 ? "s" : ""} without valid evidence.`,
     );
-  io.out(statusLine(s));
+  io.out(statusLine(s, r.change));
   return s.mayProceed ? 0 : 1;
 }
 
@@ -276,7 +276,7 @@ function printCompleted(c: CompletedLens, io: Output): boolean {
     io.out(
       `${plural(c.waiting.length, "AI lens", "AI lenses")} ${c.waiting.length === 1 ? "is" : "are"} still with your assistant: ${c.waiting.map((w) => `${w.lens} (atticus handoff done ${w.runId})`).join(", ")}.`,
     );
-  else io.out(statusLine(c.status));
+  else io.out(statusLine(c.status, c.change));
   return c.waiting.length === 0;
 }
 
@@ -341,7 +341,7 @@ export async function completeCriticBatch(
       io.out(
         `${plural(last.waiting.length, "AI lens", "AI lenses")} ${last.waiting.length === 1 ? "is" : "are"} still with your assistant: ${last.waiting.map((w) => w.lens).join(", ")}.`,
       );
-    else io.out(statusLine(last.status));
+    else io.out(statusLine(last.status, last.change));
   }
   return batch.state === "validated" && read.every((c) => c.lens.state === "ran") ? 0 : 1;
 }
@@ -398,7 +398,7 @@ async function resumeLenses(
     let mayProceed = false;
     for (const gate of gates) {
       const s = await gateStatus(root, changeId, gate);
-      if (!statusPrinted && (any || s.round !== undefined)) io.out(statusLine(s));
+      if (!statusPrinted && (any || s.round !== undefined)) io.out(statusLine(s, changeId));
       mayProceed = s.mayProceed && s.round !== undefined;
     }
     return mayProceed ? 0 : 1;
@@ -471,7 +471,7 @@ export async function findings(
       ]),
     ))
       io.out(`  ${line}`);
-    io.out(statusLine(s));
+    io.out(statusLine(s, changeId));
   }
   return 0;
 }

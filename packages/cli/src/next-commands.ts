@@ -22,6 +22,7 @@ import {
   ScanVerifyProposal,
   stepModelsOf,
 } from "@maycombhq/core";
+import { fileStepStore } from "@maycombhq/adapters";
 import { stepClassOfNextStep } from "@maycombhq/ai";
 import {
   assess,
@@ -235,7 +236,29 @@ export interface NextState {
      * Seventh UX walk: its hand-off PR, raised and not merged yet (not for a returned change): the
      * change waits on it, so merging it is the step, never a later stage.
      */
-    handoff?: { phase: string; number: number; url: string; state: "open" | "changes-requested" };
+    handoff?: {
+      phase: string;
+      number: number;
+      url: string;
+      state: "open" | "changes-requested";
+      /**
+       * Round 49: on a manual Git host, its PR's open-pull-request step is recorded (its link,
+       * and maybe its reviews and merge on the next step), so syncing reads them back; `repo` is
+       * the metarepo on the Git host when runtime.yaml doesn't name it (sync then needs --repo).
+       */
+      recorded?: { repo?: string };
+    };
+    /**
+     * Round 49: what stops its gate's hand-off, as handoff checks it (the gate's blocking
+     * findings and open knowledge gaps), once the state's own drafting stage is done and no
+     * hand-off is raised: the hand-off would be refused, so the finding is the step.
+     */
+    gate?: { code: "blocking-finding" | "open-gap"; finding?: string; message: string }[];
+    /**
+     * Round 49: a released change's archive gate (`atticus ci archive-gate`): what stops its
+     * archive (the released repos' facts not of the merged commit, an open release PR), or none.
+     */
+    released?: { blockers: { code: string; message: string }[] };
     /**
      * ADR 0156: flows its spec files add as new that a repo's open seed adds too: archiving both
      * would fail, so a person accepts the seed and the stories stage runs again.
@@ -501,6 +524,11 @@ export async function readNextState(root: string): Promise<NextState> {
           : { draft: false, brief: false };
       const blocking =
         stageOf(c.state) === "tasks" ? await blockingOf(changeContext, c).catch(() => 0) : 0;
+      // Round 49: a drafting stage done with no hand-off raised: what its gate's hand-off checks.
+      const gate =
+        draftingAt(own) >= 0 && !live && (stagesDone.includes(own) || c.state === "returned")
+          ? await gateFindingsOf(changeContext, c).catch(() => [])
+          : [];
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
         active = { id: c.id, at: busy };
       changes.push({
@@ -519,6 +547,8 @@ export async function readNextState(root: string): Promise<NextState> {
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(missing.draft ? { undrafted: true } : {}),
         ...(blocking ? { blocking } : {}),
+        ...(gate.length ? { gate } : {}),
+        ...(c.state === "released" ? await releasedOf(root, c.id) : {}),
         ...(stageOf(c.state) === "release" ? await releasePrsOf(root, c.id) : {}),
         ...(missing.brief ? { brief: `${changesRelOf(root)}/${c.id}/brief.md` } : {}),
         ...(questions.length ? { questions } : {}),
@@ -532,6 +562,9 @@ export async function readNextState(root: string): Promise<NextState> {
                 number: live.pr.number,
                 url: live.pr.url,
                 state: live.state as "open" | "changes-requested",
+                ...(isManualPr(live.pr.url)
+                  ? await manualPrRecorded(root, c.id, live.branch, orgPack)
+                  : {}),
               },
             }
           : {}),
@@ -681,6 +714,152 @@ async function blockingOf(ctx: () => Promise<ChangeContext>, c: ChangeLifecycle)
   return a.blockers.filter((b) => b.code === "blocking-finding" || b.code === "open-gap").length;
 }
 
+/** Round 49: the gate's blocking findings and open gaps, as the hand-off's check lists them. */
+async function gateFindingsOf(
+  ctx: () => Promise<ChangeContext>,
+  c: ChangeLifecycle,
+): Promise<NonNullable<NextState["changes"][number]["gate"]>> {
+  const a = await assess(await ctx(), c);
+  return a.blockers.flatMap((b) =>
+    b.code === "blocking-finding" || b.code === "open-gap"
+      ? [{ code: b.code, ...(b.finding ? { finding: b.finding } : {}), message: b.message }]
+      : [],
+  );
+}
+
+/**
+ * Round 49: the step for a gate its hand-off would refuse: the first blocking finding or open
+ * gap, with the command that acts on it (a gap asked of its owner waits on the owner question).
+ */
+function gateBlockedStep(
+  c: NextState["changes"][number],
+  stage: string,
+  gate: string,
+): NextStep | undefined {
+  const first = c.gate?.[0];
+  if (!first) return undefined;
+  const id = c.id;
+  const more = c.gate!.length - 1;
+  const head = `${id}'s ${stage} stage is done, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
+  const tail = more ? `; ${more} more after it.` : ".";
+  const asked = /\(owner question (q-[0-9a-f]+)[,)]/.exec(first.message)?.[1];
+  if (asked)
+    return {
+      step: "answer",
+      command: `atticus questions answer ${asked}`,
+      where: METAREPO,
+      why: `${head} Its owner answers ${asked} (Questions, Owner questions), and the answer closes the gap${tail}`,
+      person: true,
+      change: id,
+    };
+  const f = first.finding ?? "<id>";
+  if (first.code === "open-gap")
+    return {
+      step: "finding",
+      command: `atticus finding ${id} ${f} ask`,
+      where: METAREPO,
+      why: `${head} Ask its owner (atticus finding ${id} ${f} ask --asked-of <who>), or fill it in (atticus finding ${id} ${f} edit-and-apply)${tail}`,
+      person: true,
+      change: id,
+    };
+  return {
+    step: "finding",
+    command: `atticus finding ${id} ${f} edit-and-apply`,
+    where: METAREPO,
+    why: `${head} Fix it (atticus finding ${id} ${f} edit-and-apply), or record why it doesn't apply (not-relevant --reason, or waive)${tail}`,
+    person: true,
+    change: id,
+  };
+}
+
+/**
+ * Round 49: a released change's archive gate, read as `atticus ci archive-gate` reads it (the
+ * same checks: the release PRs, the builds, the released repos' facts at the merged commit).
+ * Nothing when the gate can't be read: the archive step is offered and says what it finds.
+ */
+async function releasedOf(
+  root: string,
+  id: string,
+): Promise<{ released?: { blockers: { code: string; message: string }[] } }> {
+  try {
+    const { archiveGate } = await import("@maycombhq/ci");
+    const g = await archiveGate(root, id);
+    return {
+      released: { blockers: g.blockers.map((b) => ({ code: b.code, message: b.message })) },
+    };
+  } catch {
+    return { released: { blockers: [] } };
+  }
+}
+
+/** Round 49: a released change's steps: its repos read again where the gate says, then archive. */
+function releasedSteps(c: NextState["changes"][number]): NextStep[] {
+  const id = c.id;
+  const blockers = c.released?.blockers ?? [];
+  const repoOf = (m: string) => /^([A-Za-z0-9][\w.-]*): /.exec(m)?.[1];
+  const reads: NextStep[] = [];
+  for (const b of blockers) {
+    const repo = repoOf(b.message);
+    if (!repo) continue;
+    if (b.code === "needs-reading")
+      reads.push({
+        step: "reread",
+        command: `atticus map ${repo}`,
+        slash: `/atticus-map ${repo}`,
+        where: METAREPO,
+        why: `${id} is released, and the archive gate needs what shipped read: ${b.message}`,
+        repo,
+        change: id,
+      });
+    else if (b.code === "catalog-stale")
+      reads.push({
+        step: "verify",
+        command: `atticus verify ${repo} --write`,
+        where: METAREPO,
+        why: `${id} is released, and the archive gate needs the catalog written from what shipped: ${b.message}`,
+        repo,
+        change: id,
+      });
+    else if (b.code === "not-synced")
+      reads.push({
+        step: "sync",
+        command: `atticus workspace sync --repos ${repo}`,
+        where: METAREPO,
+        why: `${id} is released, and the archive gate needs ${repo}'s clone at what merged: ${b.message}`,
+        repo,
+        change: id,
+      });
+  }
+  const others = blockers.filter(
+    (b) => !repoOf(b.message) || !["needs-reading", "catalog-stale", "not-synced"].includes(b.code),
+  );
+  if (others.length)
+    return [
+      ...reads,
+      {
+        step: "archive-gate",
+        command: `atticus ci archive-gate ${id}`,
+        where: METAREPO,
+        why: `${id} is released, but the archive gate doesn't pass yet: ${others.map((b) => b.message).join(" ")}`,
+        change: id,
+        person: true,
+      },
+    ];
+  return [
+    ...reads,
+    {
+      step: "archive",
+      command: `atticus change archive ${id}`,
+      where: METAREPO,
+      why: reads.length
+        ? `Then a person archives ${id} (its spec deltas merge into openspec/specs/ and the estate is scanned again).`
+        : `${id} is released and the archive gate passes: a person archives it (its spec deltas merge into openspec/specs/ and the estate is scanned again, so the catalog says what shipped).`,
+      change: id,
+      person: true,
+    },
+  ];
+}
+
 /** ADR 0184: what the release PRs still need, for a change on its way to release. */
 async function releasePrsOf(root: string, id: string): Promise<{ releasePrs?: "raise" | "merge" }> {
   const reasons = await releasePrReasons(root, id).catch(() => []);
@@ -717,6 +896,8 @@ function stageOf(
 
 /** One change's steps, in order (the cockpit shows the first). */
 export function changeSteps(c: NextState["changes"][number]): NextStep[] {
+  // Round 49: released isn't done: what shipped is read, then the change is archived.
+  if (c.state === "released") return releasedSteps(c);
   const stage = stageSteps(c);
   const id = c.id;
   // ADR 0101: once the feature is placed, what the change needs from the organisation, early,
@@ -779,6 +960,30 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
     : [...asked, ...seeds, ...stage, ...find, ...raise];
 }
 
+/**
+ * Round 49: whether a manual Git host's hand-off PR step is recorded (its link given), so the
+ * change waits on a sync, not on the step; with the metarepo the sync needs, when runtime.yaml's
+ * gitHost settings don't name it.
+ */
+async function manualPrRecorded(
+  root: string,
+  change: string,
+  branch: string,
+  orgPack: Awaited<ReturnType<typeof loadOrgPack>> | Error,
+): Promise<{ recorded?: { repo?: string } }> {
+  const steps = await fileStepStore(root)
+    .list({ change, system: "git-host" })
+    .catch(() => []);
+  const open = steps.find(
+    (x) => x.action === "open-pull-request" && x.inputs.head === branch && x.state !== "open",
+  );
+  if (!open) return {};
+  const named =
+    orgPack instanceof Error ? undefined : orgPack.runtime.adapters.gitHost?.settings.metarepo;
+  const repo = typeof open.inputs.repo === "string" ? open.inputs.repo : undefined;
+  return { recorded: typeof named === "string" || !repo ? {} : { repo } };
+}
+
 /** Seventh UX walk: the hand-off PR raised and not merged, which the change waits on. */
 function handoffWait(c: NextState["changes"][number]): NextStep[] {
   const h = c.handoff;
@@ -794,6 +999,18 @@ function handoffWait(c: NextState["changes"][number]): NextStep[] {
         change: id,
         person: true,
         ...(isManualPr(h.url) ? {} : { pr: h.url }),
+      },
+    ];
+  // Round 49: its PR's steps are recorded, so syncing reads them back and moves the change on.
+  if (isManualPr(h.url) && h.recorded)
+    return [
+      {
+        step: "merge",
+        command: `atticus change sync ${id}${h.recorded.repo ? ` --repo ${h.recorded.repo}` : ""}`,
+        where: METAREPO,
+        why: `${id}'s ${h.phase} hand-off PR is recorded on its manual steps: syncing reads what was recorded and moves the change on; once its merge is recorded, that approves the ${h.phase} gate.`,
+        change: id,
+        person: true,
       },
     ];
   if (isManualPr(h.url))
@@ -913,6 +1130,9 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           change: id,
         },
       ];
+    // Round 49: the gate's own check first: a hand-off it would refuse isn't offered.
+    const blocked = gateBlockedStep(c, stage, gate);
+    if (blocked) return [blocked];
     return [
       {
         step: "handoff",
@@ -1341,7 +1561,8 @@ export function nextSteps(s: NextState): NextStep[] {
       why: `${plural(s.unverifiedNeeds, "open need")} of changes ${s.unverifiedNeeds === 1 ? "comes" : "come"} from knowledge items no person has verified: check each against its page (atticus knowledge verify, correct or reject).`,
       person: true,
     });
-  const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done");
+  // Round 49: a released change is in flight until it is archived.
+  const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done" || c.state === "released");
   for (const c of inFlight)
     if (c !== inHand) out.push(...changeAnswer(c, byChange[c.id] ?? []), ...changeSteps(c));
   if (!inFlight.length)

@@ -13,6 +13,7 @@ import {
   handoffBranch,
   loadOrgPack,
   orgPackDirOf,
+  type ManualStep,
 } from "@maycombhq/core";
 import {
   ChangeError,
@@ -71,6 +72,52 @@ export interface ChangeDeps {
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+/**
+ * The open-pull-request step of a change's live hand-off on a manual Git host: the step named, or
+ * the one it depends on (its reviews step), when its branch is the hand-off's. Undefined for any
+ * other step (a task's PR, another system's step) or when no hand-off is open.
+ */
+export async function handoffPrStep(
+  root: string,
+  s: ManualStep,
+): Promise<{ open: ManualStep; repo?: string } | undefined> {
+  if (s.system !== "git-host" || !s.change) return undefined;
+  const c = await changeStore(root)
+    .tryRead(s.change)
+    .catch(() => undefined);
+  const live = c && c.state !== "returned" ? liveHandoff(c) : undefined;
+  if (!live) return undefined;
+  const steps = await fileStepStore(root).list({ change: s.change, system: "git-host" });
+  const open =
+    s.action === "open-pull-request"
+      ? s
+      : steps.find((x) => x.action === "open-pull-request" && s.dependsOn.includes(x.id));
+  if (!open || open.inputs.head !== live.branch) return undefined;
+  const repo = typeof open.inputs.repo === "string" ? open.inputs.repo : undefined;
+  return { open, ...(repo ? { repo } : {}) };
+}
+
+/**
+ * Seventh UX walk (the app), round 49 (the CLI): a Git host step marked done (a hand-off PR's
+ * link, its reviews, its merge) syncs the change's open hand-off, as `atticus change sync` does,
+ * so the gate moves on without a second command. Read-only: without the person's approval, sync
+ * never merges, it only records what the Git host (here, what was recorded) says. False when
+ * there was nothing to sync.
+ */
+export async function syncAfterManualStep(
+  root: string,
+  s: ManualStep,
+  by: string,
+  io: Output,
+  deps: ChangeDeps = {},
+): Promise<boolean> {
+  if (s.state === "open") return false;
+  const pr = await handoffPrStep(root, s);
+  if (!pr) return false;
+  await changeSync(root, s.change!, { by, ...(pr.repo ? { repo: pr.repo } : {}) }, io, deps);
+  return true;
+}
+
 function printReasons(io: Output, reasons: Reason[]) {
   for (const r of reasons) io.err(`  - ${r.message}`);
 }
@@ -102,8 +149,18 @@ async function gitHostFor(
     {},
     { store: fileStepStore(root), root, procedures: op.procedures },
   ).gitHost;
-  if (!gh) io.err("No Git host is configured. Set adapters.gitHost in org-pack/runtime.yaml.");
-  return gh;
+  if (gh) return gh;
+  // Round 49: a runtime.yaml that doesn't validate is read as the defaults (no Git host), so
+  // what doesn't validate is said, not that no Git host is configured.
+  const bad = op.problems.filter((p) => p.file === "runtime.yaml");
+  if (bad.length)
+    io.err(
+      `org-pack/runtime.yaml doesn't validate, so no Git host could be set up: ${bad
+        .map((p) => `${p.path ? `${p.path}: ` : ""}${p.message.replace(/\.$/, "")}`)
+        .join("; ")}. Fix it (atticus orgpack validate says every problem).`,
+    );
+  else io.err("No Git host is configured. Set adapters.gitHost in org-pack/runtime.yaml.");
+  return undefined;
 }
 
 const approvalOf = (by: string, at: string, ref: string): Approval => ({ by, at, ref });
@@ -721,19 +778,12 @@ export async function changeReturn(
   }
 }
 
-/** atticus change archive <id> [--by <you>]: archive a released change. */
 /**
- * After archive, the released code is the truth: the change's repos are brought up to date
- * where their base clones are here (in-place repos are already current) and the estate is
- * rescanned, so the catalog shows what was built. When none of them is here, the exact
- * commands to run are printed instead. Exit 1 only when the rescan itself had problems.
+ * The change's repos the rescan needs, worked out before archiving: OpenSpec's archive moves
+ * the change's folder to openspec/changes/archive/<date>-<id>/, so its change.yaml can't be
+ * read at its old path afterwards (round 49).
  */
-async function rescanAfterArchive(
-  root: string,
-  id: string,
-  io: Output,
-  deps: ChangeDeps,
-): Promise<number> {
+async function archiveRescanPlan(root: string, id: string) {
   const ctx = await loadChangeContext(root);
   const change = await changeStore(root).read(id);
   const fp = await changeFootprint(ctx, change);
@@ -753,6 +803,23 @@ async function rescanAfterArchive(
         .map((r) => r.id),
     ]),
   ].sort();
+  return { wanted, manifest };
+}
+
+/**
+ * After archive, the released code is the truth: the change's repos are brought up to date
+ * where their base clones are here (in-place repos are already current) and the estate is
+ * rescanned, so the catalog shows what was built. When none of them is here, the exact
+ * commands to run are printed instead. Exit 1 only when the rescan itself had problems.
+ */
+async function rescanAfterArchive(
+  root: string,
+  id: string,
+  plan: Awaited<ReturnType<typeof archiveRescanPlan>>,
+  io: Output,
+  deps: ChangeDeps,
+): Promise<number> {
+  const { wanted, manifest } = plan;
   const here = wanted.filter((r) => {
     const m = manifest.get(r);
     return !!m && (isInPlace(m.url) || existsSync(baseClonePath(root, r)));
@@ -785,6 +852,7 @@ async function rescanAfterArchive(
   return code;
 }
 
+/** atticus change archive <id> [--by <you>]: archive a released change. */
 export async function changeArchive(
   root: string,
   id: string,
@@ -800,14 +868,15 @@ export async function changeArchive(
     // ADR 0006 addendum: in a metarepo set up with OpenSpec, `openspec validate --strict` then
     // `openspec archive`, which merges the change's spec deltas into openspec/specs/.
     const os = metarepoOpenSpec(root);
+    const plan = o.rescan === false ? undefined : await archiveRescanPlan(root, id);
     await archiveChange(root, id, {
       by: o.by,
       ...(deps.now ? { now: deps.now } : {}),
       ...(os ? { openspec: os } : {}),
     });
     io.out(`Archived ${id}.`);
-    if (o.rescan === false) return 0;
-    return await rescanAfterArchive(root, id, io, deps);
+    if (!plan) return 0;
+    return await rescanAfterArchive(root, id, plan, io, deps);
   } catch (e) {
     if (e instanceof Error && e.name === "ChangeFileError") {
       io.err(e.message);

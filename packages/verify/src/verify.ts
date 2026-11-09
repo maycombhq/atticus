@@ -28,7 +28,7 @@ import {
   type FactCorrection,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
-import { authChecks, authPolicyMismatch } from "./apigee-policy.js";
+import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-policy.js";
 import { lineOfValue, securityLineKind } from "./call-security-lines.js";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
@@ -697,6 +697,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     label: string,
     /** Say that a claim built from other lines cites them in `cite.with` (not for an authCite). */
     withHint = true,
+    /** A rule of the cited file's own that names the claim (an Apigee pass-through path). */
+    alsoHolds?: (lines: readonly string[], line: number) => boolean,
   ): Problem | undefined => {
     const where = `${cite.file}:${cite.line}`;
     if (!insideRepo(cite.file))
@@ -783,7 +785,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 parts.map((p) => p.value),
                 near(lines, cite.line),
               )))) ||
-      (o.derivedNames !== false && derivedHolds(c, derivedHere(), partLines, partsNamePath));
+      (o.derivedNames !== false && derivedHolds(c, derivedHere(), partLines, partsNamePath)) ||
+      (alsoHolds !== undefined && alsoHolds(lines, cite.line));
     if (claims && !claims.some(holds))
       return {
         code: "claim-not-on-line",
@@ -867,7 +870,25 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         );
       continue;
     }
-    add(f, checkCite(f.cite, claimsOf(f), label));
+    add(
+      f,
+      checkCite(
+        f.cite,
+        claimsOf(f),
+        label,
+        true,
+        f.kind === "entry" || f.kind === "call"
+          ? (ls, n) =>
+              apigeePassThrough(
+                { kind: f.kind as "entry" | "call", forwards: f.kind === "call" && !!f.from },
+                f.cite.file,
+                ls,
+                n,
+                f.path,
+              )
+          : undefined,
+      ),
+    );
     // A-read, problem 4: an entry's auth rests on the line that sets it, checked as a part is.
     if (f.kind === "entry" && f.authCite)
       add(

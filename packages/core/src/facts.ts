@@ -684,14 +684,39 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
         settingBase(f),
         (settingShapes.get(settingBase(f)) ?? new Set()).add(`${f.env ?? ""}\u0000${f.key}`),
       );
+  // Round 49: two facts of one key and env that say different things (`url` read from both
+  // `gateway.url` and `audit.url` of one file) are two settings, not one the merge would join:
+  // each gets a short hash of its file and line after it too, and the clash is reported.
+  const settingSaid = (f: FactOf<"config">) =>
+    JSON.stringify([f.settingKind, f.value ?? null, f.source ?? null, f.target ?? null]);
+  const settingClaims = new Map<string, { said: Set<string>; by: string[] }>();
+  const shapeOf = (f: FactOf<"config">) => `${settingBase(f)}\u0000${f.env ?? ""}\u0000${f.key}`;
+  for (const f of facts)
+    if (f.kind === "config") {
+      const c = settingClaims.get(shapeOf(f)) ?? { said: new Set<string>(), by: [] };
+      c.said.add(settingSaid(f));
+      c.by.push(f.id);
+      settingClaims.set(shapeOf(f), c);
+    }
+  for (const [shape, c] of settingClaims)
+    if (c.said.size > 1)
+      issues.push({
+        factId: c.by[0]!,
+        code: "duplicate-record",
+        message: `Setting ${shape.slice(0, shape.indexOf("\u0000"))} is made by ${c.by.join(", ")}, which say different things; each keeps a Setting of its own, its id given its line's hash: write each key's full path to tell them apart`,
+      });
   for (const f of facts) {
     if (f.kind !== "config") continue;
     const component = componentOf(f);
     const base = settingBase(f);
-    const id =
+    const keyed =
       (settingShapes.get(base)?.size ?? 0) > 1
         ? `${base}-${shortHash(`${f.env ?? ""}\u0000${f.key}`)}`
         : base;
+    const id =
+      (settingClaims.get(shapeOf(f))?.said.size ?? 0) > 1
+        ? `${keyed}-${shortHash(`${f.cite.file}\u0000${f.cite.line}`)}`
+        : keyed;
     catalogIdOf.set(f.id, id);
     out.push({
       kind: "Setting",

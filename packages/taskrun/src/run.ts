@@ -339,6 +339,17 @@ async function commit(c: Ctx, runId: string): Promise<boolean> {
   await c.git(["add", "-A", "--", "."], c.worktree);
   const staged = (await c.git(["diff", "--cached", "--name-only"], c.worktree)).stdout.trim();
   if (!staged) {
+    // Round 49: a task drafted at the draft level, run again at the pr level, writes what is
+    // already committed. Its branch, ahead of the change branch with this task's commit, is
+    // what was just built: that commit is the one checked and raised.
+    const own = await ownTaskCommit(c);
+    if (own) {
+      c.record.commit = own;
+      c.record.notes.push(
+        `Nothing new to commit: ${c.record.branch} already has this task's commit ${own.slice(0, 12)}, ahead of ${changeBranch(c.t.change.id)}, so it is the one built and raised.`,
+      );
+      return true;
+    }
     c.record.state = "needs-person";
     c.record.notes.push(
       `The AI's answer changed nothing in ${c.record.branch}, so there is nothing to commit: run the task again, or do it by hand in ${c.record.worktree}.`,
@@ -360,11 +371,31 @@ async function commit(c: Ctx, runId: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * The task branch's head when it is ahead of the change branch and holds a commit of this task
+ * (its Atticus-Change and Atticus-Task trailers): an earlier run's draft. Undefined otherwise.
+ */
+async function ownTaskCommit(c: Ctx): Promise<string | undefined> {
+  const base = changeBranch(c.t.change.id);
+  const log = await c
+    .git(["log", "--format=%B%x00", `refs/heads/${base}..HEAD`], c.worktree)
+    .catch(() => ({ stdout: "" }));
+  const mine = log.stdout.split("\u0000").some((m) => {
+    const lines = m.split("\n").map((l) => l.trim());
+    return (
+      lines.includes(`Atticus-Change: ${c.t.change.id}`) &&
+      lines.includes(`Atticus-Task: ${c.t.task.id}`)
+    );
+  });
+  if (!mine) return undefined;
+  return (await c.git(["rev-parse", "HEAD"], c.worktree)).stdout.trim() || undefined;
+}
+
 async function openPr(c: Ctx): Promise<void> {
   if (c.record.state !== "built") {
     c.record.notes.push(
       c.record.state === "unverified"
-        ? "No PR: a pull request needs a passing build, and this repo has no build command."
+        ? `No PR: a pull request needs a passing build, and ${c.t.repo.id} has no build command: set a build command for ${c.t.repo.id} (build: under its entry in repos.manifest.yaml), then run task ${c.t.task.id} again.`
         : "No PR: the build doesn't pass.",
     );
     if (c.record.state === "unverified") c.record.state = "needs-person";

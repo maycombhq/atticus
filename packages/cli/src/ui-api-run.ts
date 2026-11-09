@@ -26,13 +26,7 @@ import {
   writeFileIfUnchanged,
 } from "@maycombhq/core";
 import { archiveGate } from "@maycombhq/ci";
-import {
-  changeFolder,
-  changeReport,
-  changeStore,
-  detectConflicts,
-  liveHandoff,
-} from "@maycombhq/changes";
+import { changeFolder, changeReport, changeStore, detectConflicts } from "@maycombhq/changes";
 import { listReports, readQuality } from "@maycombhq/evals";
 import { inputsSha256, loadExecutors } from "@maycombhq/executors";
 import { readServiceRequestExports, readWorkItemExports } from "@maycombhq/intake";
@@ -61,7 +55,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import type { Output } from "./commands.js";
-import { changeArchive, changeSync } from "./change-commands.js";
+import { changeArchive, syncAfterManualStep } from "./change-commands.js";
 import { criticStats } from "./critic-commands.js";
 import { defencesScan, evalRun } from "./eval-commands.js";
 import { learnCheck, learnStart, sandboxCreate } from "./learn-commands.js";
@@ -390,25 +384,15 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
    * can't say is said in its own words, never a failed step.
    */
   const syncAfterStep = async (s: ManualStep): Promise<string[] | undefined> => {
-    if (s.system !== "git-host" || !s.change || s.state === "open") return undefined;
-    const c = await changeStore(root)
-      .tryRead(s.change)
-      .catch(() => undefined);
-    const live = c && c.state !== "returned" ? liveHandoff(c) : undefined;
-    // Only a step of the hand-off's own PR (its branch, in the metarepo the step names).
-    const steps = await fileStepStore(root).list({ change: s.change, system: "git-host" });
-    const open =
-      s.action === "open-pull-request"
-        ? s
-        : steps.find((x) => x.action === "open-pull-request" && s.dependsOn.includes(x.id));
-    if (!live || !open || open.inputs.head !== live.branch) return undefined;
-    const repo = typeof open.inputs.repo === "string" ? open.inputs.repo : undefined;
-    const res = await run((io) =>
-      changeSync(root, s.change!, { by: user, ...(repo ? { repo } : {}) }, io, {
+    let synced = false;
+    const res = await run(async (io) => {
+      synced = await syncAfterManualStep(root, s, user, io, {
         ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
         ...(deps.now ? { now: deps.now } : {}),
-      }),
-    );
+      });
+      return 0;
+    });
+    if (!synced) return undefined;
     ctx.events.publish({ type: "file.changed", path: `${changesRelOf(root)}/${s.change}` });
     return [...res.out, ...res.err];
   };
@@ -502,7 +486,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               ...(b.note ? { note: b.note } : {}),
             },
             io,
-            deps.todo ?? {},
+            // the step's sync is said apart, as `synced`, below
+            { ...deps.todo, sync: false },
           ),
         );
         if (res.code !== 0) {
@@ -550,7 +535,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               ...(b.fillOnly ? { fillOnly: true } : {}),
             },
             io,
-            deps.todo ?? {},
+            // the step's sync is said apart, as `synced`, below
+            { ...deps.todo, sync: false },
           ),
         );
         if (res.code !== 0) {

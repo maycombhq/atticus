@@ -97,3 +97,44 @@ export function authPolicyMismatch(
 
 /** "an OAuth token", "an API key" …; the scheme's own name when there is no plainer phrase. */
 export const authChecks = (auth: string) => CHECKS[auth] ?? auth;
+
+/** A path with the trailing slashes dropped (`/forge/v1/` and `/` read as `/forge/v1` and ``). */
+const bare = (p: string) => p.trim().replace(/\/+$/, "");
+
+/**
+ * Whether a pass-through path is written on the cited Apigee line (review round 49). A proxy with
+ * no conditional flow passes everything under its base path to its target, so the map prompt asks
+ * for one `ANY` entry at `<BasePath>/**`, cited on the `<BasePath>` line, and a forwarding call
+ * whose path is what the target receives: `/**` (or `/`) after the target's own path, cited on
+ * the target's `<URL>` or `<Path>` line or the proxy's `<RouteRule>` line. Neither `/**` is
+ * written on those lines, so the route check can't find it; this reads the element instead.
+ * Only inside a bundle (`apiproxy/`), and the entry and the call each only on their own lines.
+ */
+export function apigeePassThrough(
+  o: { kind: "entry" | "call"; forwards: boolean },
+  file: string,
+  lines: readonly string[],
+  line: number,
+  path: string,
+): boolean {
+  if (!bundleRootOf(file)) return false;
+  const p = path.trim();
+  const under = p.endsWith("/**") ? bare(p.slice(0, -3)) : undefined;
+  const near = lines.slice(Math.max(0, line - 2), line + 1);
+  const element = (tag: string) =>
+    near.flatMap((l) => {
+      const m = new RegExp(`<${tag}>\\s*([^<]*?)\\s*</${tag}>`).exec(l);
+      return m ? [m[1]!] : [];
+    });
+  if (o.kind === "entry")
+    return under !== undefined && element("BasePath").some((b) => bare(b) === under);
+  if (!o.forwards) return false;
+  // what the target receives: everything (`/**`), or the target's path itself (`/`)
+  const target = under ?? bare(p);
+  const urlPath = (u: string) => bare(u.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, ""));
+  return (
+    element("URL").some((u) => urlPath(u) === target) ||
+    element("Path").some((t) => bare(t) === target) ||
+    (target === "" && near.some((l) => /<RouteRule[\s>]/.test(l)))
+  );
+}

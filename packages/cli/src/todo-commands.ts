@@ -13,6 +13,7 @@ import {
   runStep,
   type ExecutorClient,
 } from "@maycombhq/executors";
+import type { ChangeDeps } from "./change-commands.js";
 import type { Output } from "./commands.js";
 import { table } from "./table.js";
 
@@ -26,6 +27,11 @@ export interface TodoDeps {
   now?: () => Date;
   executors?: ExecutorConfig[];
   client?: ExecutorClient;
+  /**
+   * Round 49: what a Git host step marked done syncs its change's hand-off with (the Git host,
+   * the time), or false not to sync (the app syncs after the step itself).
+   */
+  sync?: ChangeDeps | false;
 }
 
 const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -205,6 +211,12 @@ export async function todoDone(
               : ""
           }.`,
     );
+    // Round 49: as the app does, a hand-off PR's step marked done syncs the change, so the
+    // gate moves on (merged=yes on its reviews step approves it) without atticus change sync.
+    if (deps.sync !== false) {
+      const { syncAfterManualStep } = await import("./change-commands.js");
+      await syncAfterManualStep(root, done, o.by, io, deps.sync ?? {});
+    }
     return 0;
   } catch (e) {
     return fail(io, e);
