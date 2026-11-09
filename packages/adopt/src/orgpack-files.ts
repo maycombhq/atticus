@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { stringify } from "yaml";
+import { Document, isMap, stringify } from "yaml";
 import {
   DEFAULT_CHANGE_TYPES,
   DEFAULT_GATES,
@@ -33,6 +33,11 @@ export interface StartingPack {
   /** Write the default change types, gates, runtime, test strategy and the starter review (ADR 0120) as files (roles.yaml is deprecated, ADR 0073). */
   defaults: boolean;
   platformName?: string;
+  /**
+   * ADR 0190: runtime.yaml's Git host as `manual`, with the metarepo's id on the host when known
+   * (init only), so Propose for review and the first hand-off work with no YAML edit.
+   */
+  gitHost?: { metarepo?: string };
 }
 
 /** checklists/README.md as Atticus wrote it before the starter review (ADR 0120). */
@@ -62,6 +67,22 @@ const FOLDER_READMES: [string, string][] = [
     "# Service-desk templates\n\nOne YAML file per request template. `atticus templates draft` proposes them from wikis and past tickets.\n",
   ],
 ];
+
+/**
+ * The default runtime.yaml, at the current version (ADR 0190). With a Git host, `gitHost: manual`
+ * (the type alone, review round 49), or with the metarepo's id as its one setting.
+ */
+function runtimeText(gitHost: StartingPack["gitHost"]): string {
+  if (!gitHost) return yaml(DEFAULT_RUNTIME, DEFAULT_HEADER);
+  const doc = new Document(DEFAULT_RUNTIME);
+  const host = gitHost.metarepo
+    ? doc.createNode({ type: "manual", settings: { metarepo: gitHost.metarepo } })
+    : doc.createNode("manual");
+  doc.setIn(["adapters", "gitHost"], host);
+  const adapters = doc.get("adapters");
+  if (isMap(adapters)) adapters.flow = false;
+  return `# ${DEFAULT_HEADER}\n${doc.toString({ lineWidth: 0 })}`;
+}
 
 /** Write the starting org pack into `dir`; existing files are kept. Returns the files written. */
 export async function writeStartingPack(dir: string, p: StartingPack): Promise<string[]> {
@@ -93,7 +114,7 @@ export async function writeStartingPack(dir: string, p: StartingPack): Promise<s
       [STARTER_REVIEW_PATH, await starterReviewText()],
       ["change-types.yaml", yaml(DEFAULT_CHANGE_TYPES, DEFAULT_HEADER)],
       ["gates.yaml", yaml(DEFAULT_GATES, DEFAULT_HEADER)],
-      ["runtime.yaml", yaml(DEFAULT_RUNTIME, DEFAULT_HEADER)],
+      ["runtime.yaml", runtimeText(p.gitHost)],
       ["test-strategy.yaml", yaml(DEFAULT_TEST_STRATEGY, DEFAULT_HEADER)],
     );
   const written: string[] = [];

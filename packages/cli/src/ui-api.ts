@@ -162,6 +162,8 @@ export interface UiDeps {
   doctor?: (root: string) => Promise<import("./doctor.js").DoctorCheck[]>;
   /** ADR 0189: how the app checks an answer once its file is complete (tests: quick, or off). */
   autoDone?: AutoDoneOptions;
+  /** Tests: Open another folder's app (ADR 0190; otherwise a second server in this process). */
+  openFolder?: import("./ui-api-setup.js").SetupDeps["openFolder"];
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */

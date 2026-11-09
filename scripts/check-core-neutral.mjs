@@ -324,6 +324,8 @@ export const ALLOW = [
       "built-in default runtime and assistant adapter types, and the snow artifact in default change types",
   },
   { file: "packages/core/src/orgpack-load.ts", names: ["snow"], reason: SNOW_ARTIFACT },
+  // ADR 0190: the raw editor checks a file in that folder with the schema orgpack-load reads it by.
+  { file: "packages/core/src/setup-edit.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/core/src/json-schema.ts", names: ["github"], reason: OWN_HOST },
   { file: "packages/core/src/schema/executors.ts", names: ["github"], reason: OWN_HOST },
   // --- the service-desk artifact, named after one product (debt, see SNOW_ARTIFACT)

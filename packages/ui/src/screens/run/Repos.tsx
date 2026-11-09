@@ -5,6 +5,8 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "../know/common.js";
 import { useActivity } from "../../app/activity.js";
+import { AddRepos } from "../setup/AddRepos.js";
+import { RepoType } from "../setup/RepoType.js";
 
 /**
  * Set up › Repos (ADR 0123): each repo's branches. The default branch the catalog is read from
@@ -330,6 +332,7 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
         </span>
       </div>
       <About r={r} onChanged={onChanged} />
+      <RepoType repo={r.id} type={r.type} {...(onChanged ? { onChanged } : {})} />
       <dl className="run-facts" style={{ margin: "8px 0" }}>
         <dt>{R.url}</dt>
         <dd className="mono" style={{ wordBreak: "break-all" }}>
@@ -481,19 +484,23 @@ export function Repos() {
   const list = useApi<Api.RepoBranchesListT>("/api/repos/branches");
   useReloadOnFiles(list);
   return (
-    <Panel title={R.title}>
-      <p className="muted" style={{ margin: "0 0 8px", maxWidth: "70ch" }}>
-        {R.intro}
-      </p>
-      <View of={list} empty={(d) => d.repos.length === 0} emptyText={R.empty}>
-        {(d) => (
-          <div className="stack" style={{ gap: 8 }}>
-            {d.repos.map((r) => (
-              <RepoRow key={r.id} r={r} onChanged={list.reload} />
-            ))}
-          </div>
-        )}
-      </View>
-    </Panel>
+    <div className="stack" style={{ gap: 12 }}>
+      {/* ADR 0190: repos are added in the app, the manifest written and proposed for review. */}
+      <AddRepos onAdded={list.reload} />
+      <Panel title={R.title}>
+        <p className="muted" style={{ margin: "0 0 8px", maxWidth: "70ch" }}>
+          {R.intro}
+        </p>
+        <View of={list} empty={(d) => d.repos.length === 0} emptyText={R.empty}>
+          {(d) => (
+            <div className="stack" style={{ gap: 8 }}>
+              {d.repos.map((r) => (
+                <RepoRow key={r.id} r={r} onChanged={list.reload} />
+              ))}
+            </div>
+          )}
+        </View>
+      </Panel>
+    </div>
   );
 }

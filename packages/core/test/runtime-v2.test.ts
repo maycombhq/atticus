@@ -47,8 +47,9 @@ describe("runtime.yaml version 2", () => {
     ).toBe(false);
   });
 
-  it("is what atticus init writes", () => {
-    expect(DEFAULT_RUNTIME.schemaVersion).toBe(2);
+  it("is what atticus init writes, at the current version since ADR 0190", () => {
+    // Version 4 reads a file with no step models exactly as version 2 does.
+    expect(DEFAULT_RUNTIME.schemaVersion).toBe(4);
     expect(stepModelsOf(DEFAULT_RUNTIME)).toEqual({});
   });
 

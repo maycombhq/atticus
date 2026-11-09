@@ -6,6 +6,7 @@ import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
+import { CreateMetarepo } from "../screens/setup/CreateMetarepo.js";
 import { ScreenBoundary } from "./boundary.js";
 import { MeProvider, useMe } from "./me.js";
 import { CopilotRunsProvider } from "./copilot-runs.js";
@@ -26,6 +27,8 @@ interface Health {
   user: string;
   /** `atticus ui --full`: every page a tab of its section, and More pages open. */
   full?: boolean;
+  /** ADR 0190: false in a folder that isn't a metarepo yet: the app offers to create one. */
+  metarepo?: boolean;
 }
 
 function useHash(): string {
@@ -220,6 +223,8 @@ export function App() {
   // The server says whether it was started with --full (every page a tab, More pages open).
   const full = health.state === "ready" && health.data.full === true;
   const server = useServer();
+  // ADR 0190: a folder that isn't a metarepo yet shows Create the metarepo here, nothing else.
+  const bare = health.state === "ready" && health.data.metarepo === false;
   const reloadHealth = health.reload;
   useEffect(() => {
     if (server.epoch) reloadHealth();
@@ -257,32 +262,44 @@ export function App() {
               </a>
               <Nav current={current} hash={hash} full={full} />
               <CommandPalette />
-              <Tour
-                metarepo={
-                  health.state === "ready"
-                    ? health.data.root
-                    : health.state === "error"
-                      ? null
-                      : undefined
-                }
-              />
+              {!bare && (
+                <Tour
+                  metarepo={
+                    health.state === "ready"
+                      ? health.data.root
+                      : health.state === "error"
+                        ? null
+                        : undefined
+                  }
+                />
+              )}
               <main id="main" className="main" tabIndex={-1}>
                 <FlashLine />
                 <TopBar health={health.state === "ready" ? health.data : undefined} />
                 <ActivityStrip />
-                <h1 className="sr">{current.label}</h1>
-                <SectionTabs current={current} hash={hash} full={full} />
+                <h1 className="sr">{bare ? COPY.setup.title : current.label}</h1>
+                {!bare && <SectionTabs current={current} hash={hash} full={full} />}
                 {server.down && <ServerDown inPanel={!!hostBridge()} />}
-                {(() => {
-                  const S = SCREEN_COMPONENTS[current.id];
-                  return S ? (
-                    <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
-                      <S hash={hash} />
-                    </ScreenBoundary>
-                  ) : (
-                    <NotBuilt screen={current} />
-                  );
-                })()}
+                {bare ? (
+                  <CreateMetarepo
+                    onCreated={() => {
+                      // Home continues with Onboarding.
+                      location.hash = "#/home";
+                      reloadHealth();
+                    }}
+                  />
+                ) : (
+                  (() => {
+                    const S = SCREEN_COMPONENTS[current.id];
+                    return S ? (
+                      <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
+                        <S hash={hash} />
+                      </ScreenBoundary>
+                    ) : (
+                      <NotBuilt screen={current} />
+                    );
+                  })()
+                )}
               </main>
               <ActivityConsole />
             </div>

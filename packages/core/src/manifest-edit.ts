@@ -121,18 +121,37 @@ export async function setManifestDescription(
 export async function addManifestRepo(
   root: string,
   platform: string,
-  entry: {
-    id: string;
-    url: string;
-    type: string;
-    owner: string;
-    /** The branch to read, when known (a clone's current branch); the manifest's default is main. */
-    defaultBranch?: string;
-    system?: string;
-    component?: string;
-    description?: RepoDescription;
-  },
+  entry: NewManifestRepo,
 ): Promise<ManifestFile> {
+  return (await addManifestRepos(root, platform, [entry])).file;
+}
+
+/** One repo to add to a manifest: the fields that are set, and no more. */
+export interface NewManifestRepo {
+  id: string;
+  url: string;
+  type: string;
+  owner: string;
+  /** The branch to read, when known (a clone's current branch); the manifest's default is main. */
+  defaultBranch?: string;
+  system?: string;
+  component?: string;
+  description?: RepoDescription;
+}
+
+/**
+ * ADR 0190: many repos into a platform's manifest at once (the app's paste of ~40 clone URLs),
+ * as addManifestRepo adds one: appended in order, comments and order kept, the file's own line
+ * endings, the whole manifest checked before anything is written. An id another manifest (or
+ * an earlier entry of the batch) lists is refused, naming it. With `preview`, nothing is
+ * written: the lines it would change come back, for the app's diff before the write.
+ */
+export async function addManifestRepos(
+  root: string,
+  platform: string,
+  entries: readonly NewManifestRepo[],
+  o: { preview?: boolean } = {},
+): Promise<{ file: ManifestFile; changes: LineChange[]; written: boolean }> {
   const file = (await manifestFiles(root)).find((f) => f.platform === platform);
   if (!file)
     throw new ManifestEditError(
@@ -141,49 +160,71 @@ export async function addManifestRepo(
     );
   const text = await readFile(file.path, "utf8").catch(() => undefined);
   if (text === undefined) throw new ManifestEditError("not-found", `${file.rel} isn't there yet.`);
-  const doc = parseDocument(text);
+  const doc = parseDocument(lfOnly(text));
   const list = doc.get("repos");
   if (!isSeq(list))
     throw new ManifestEditError("invalid", `${file.rel} has no repos: list to add to.`);
   // Repo ids are unique across every profile (ADR 0009), so every manifest is checked.
+  const listed = new Map<string, string>();
   for (const other of await manifestFiles(root)) {
     const t = await readFile(other.path, "utf8").catch(() => undefined);
     if (t === undefined) continue;
     const repos = parseDocument(t).get("repos");
-    if (isSeq(repos) && repos.items.some((x) => isMap(x) && x.get("id") === entry.id))
+    if (!isSeq(repos)) continue;
+    for (const x of repos.items) {
+      const id = isMap(x) ? x.get("id") : undefined;
+      if (typeof id === "string" && !listed.has(id)) listed.set(id, other.rel);
+    }
+  }
+  for (const entry of entries) {
+    const there = listed.get(entry.id);
+    if (there)
       throw new ManifestEditError(
         "invalid",
-        `${other.rel} already lists ${entry.id}; repo ids are unique across every profile. Give another with --id.`,
+        `${there} already lists ${entry.id}; repo ids are unique across every profile. Give another with --id.`,
       );
+    listed.set(entry.id, file.rel);
   }
-  const d = entry.description ? RepoDescription.parse(entry.description) : undefined;
   // Round 50: the `repos: []` init writes is a flow list; the first entry turns it into a block
   // list, so each add is a few new lines and never rewrites the whole list on one line.
-  if (!list.items.length) list.flow = false;
-  list.add(
-    doc.createNode({
-      id: entry.id,
-      url: entry.url,
-      ...(entry.defaultBranch ? { defaultBranch: entry.defaultBranch } : {}),
-      type: entry.type,
-      owner: entry.owner,
-      ...(entry.component ? { component: entry.component } : {}),
-      ...(entry.system ? { system: entry.system } : {}),
-      ...(d
-        ? {
-            description: {
-              text: d.text,
-              trust: d.trust,
-              ...(d.by ? { by: d.by } : {}),
-              ...(d.at ? { at: d.at } : {}),
-              ...(d.cites.length ? { cites: d.cites } : {}),
-            },
-          }
-        : {}),
-    }),
-  );
-  await save(file.path, doc, text);
-  return file;
+  if (!list.items.length && entries.length) list.flow = false;
+  for (const entry of entries) {
+    const d = entry.description ? RepoDescription.parse(entry.description) : undefined;
+    list.add(
+      doc.createNode({
+        id: entry.id,
+        url: entry.url,
+        ...(entry.defaultBranch ? { defaultBranch: entry.defaultBranch } : {}),
+        type: entry.type,
+        owner: entry.owner,
+        ...(entry.component ? { component: entry.component } : {}),
+        ...(entry.system ? { system: entry.system } : {}),
+        ...(d
+          ? {
+              description: {
+                text: d.text,
+                trust: d.trust,
+                ...(d.by ? { by: d.by } : {}),
+                ...(d.at ? { at: d.at } : {}),
+                ...(d.cites.length ? { cites: d.cites } : {}),
+              },
+            }
+          : {}),
+      }),
+    );
+  }
+  const check = RepoManifest.safeParse(doc.toJS());
+  if (!check.success)
+    throw new ManifestEditError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const changes = changedLines(lfOnly(text), after);
+  if (o.preview || !entries.length) return { file, changes, written: false };
+  // In the file's own line endings (a Windows checkout's CRLF), onto the file as read.
+  await writeFileIfUnchanged(file.path, text, inEol(after, eolOf(text)));
+  return { file, changes, written: true };
 }
 
 /**
@@ -324,7 +365,8 @@ export function changedLines(before: string, after: string): LineChange[] {
 export async function setManifestField(
   root: string,
   repo: string,
-  field: "owner" | "system",
+  /** ADR 0190: `type` too, from the app's Detect the type (atticus repo-type detect). */
+  field: "owner" | "system" | "type",
   value: string,
   o: { preview?: boolean } = {},
 ): Promise<{ file: ManifestFile; changes: LineChange[]; written: boolean }> {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -198,6 +199,9 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         openspec: layoutOf(root).openspec.replace(/\/+$/, ""),
         user: ctx.user,
         full: ctx.full === true,
+        // ADR 0190: in a folder that isn't a metarepo yet, the app offers to create one.
+        metarepo:
+          existsSync(join(root, "org-pack")) || existsSync(join(root, ".atticus", "org-pack")),
       },
     }))
     .add("GET", "/api/catalog/kinds", async () => ({

@@ -78,6 +78,7 @@ export * from "./question-roles.js";
 export * from "./question-proposals.js";
 export * from "./repo-description.js";
 export * from "./manifest-edit.js";
+export * from "./setup-edit.js";
 export * from "./schema/spec.js";
 export * from "./specs.js";
 export * from "./cancel.js";

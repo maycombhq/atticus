@@ -397,8 +397,21 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   dropped question anyway (`keep`). The server checks a waiting hand-off's answer once its file
  *   is complete, as Done does (Done stays), and says so in the thread. A sketch stroke may be
  *   `retire` (a component taken away). Additive only.
+ * 3.7.0 (ADR 0190, set up from the app: "Edit, then Propose"). GET /api/health gains `metarepo`.
+ *   GET/POST /api/setup/metarepo create the metarepo in the app's folder with init's code (the
+ *   Git host manual, with the metarepo's id when known), POST /api/setup/open starts the app for
+ *   another folder. POST /api/setup/repos/plan reads pasted clone URLs or a folder of clones
+ *   (repos discover's code) into the repos to add, and POST /api/setup/repos writes them to the
+ *   manifest. POST /api/repos/{repoId}/type/detect and PUT /api/repos/{repoId}/type detect and set
+ *   a repo's type. GET /api/setup/adapters and PUT /api/setup/adapters/{kind} set runtime.yaml's
+ *   outside systems; GET/PUT /api/setup/file is the raw editor of an org-pack file; POST
+ *   /api/setup/patterns and /api/setup/sources add an integration pattern and a wiki. Every write
+ *   takes `preview` (the lines it would change, nothing written) and answers a FileEditView; the
+ *   files are then proposed for review as before. PUT /api/settings/ai's `decide` lifts a
+ *   runtime.yaml of any older version to 4 (upgrade's runtime-v4 step), not only a version 3
+ *   one. Additive only.
  */
-export const API_VERSION = "3.6.0";
+export const API_VERSION = "3.7.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2678,6 +2691,11 @@ export const Health = z.object({
   user: z.string(),
   /** 2.22.0: started with `atticus ui --full`, so the app offers every page, not only the six. */
   full: z.boolean().optional(),
+  /**
+   * 3.5.0 (ADR 0190): whether the folder the app runs in is a metarepo (org-pack/, or
+   * .atticus/org-pack/). When it isn't, the app offers Create the metarepo here.
+   */
+  metarepo: z.boolean().optional(),
 });
 
 // ------------------------------------------------------------------ request bodies
@@ -4320,6 +4338,183 @@ export const UpgradeView = z.object({
   stamp: z.string().optional(),
   pending: z.array(z.object({ id: z.string(), summary: z.string(), files: z.array(z.string()) })),
 });
+// ------------------------------------------------------------------ set up from the app (ADR 0190)
+
+/**
+ * 3.5.0: what a setup edit changed, or with `preview: true` would change: the file
+ * (metarepo-relative), its lines (what each was, none when added; what it is now, none when
+ * removed), whether it was written, and what to do next (Propose).
+ */
+export const FileEditView = z.object({
+  path: z.string(),
+  changes: z.array(z.object({ was: z.string().optional(), now: z.string().optional() })),
+  written: z.boolean(),
+  note: z.string(),
+  /** The raw editor's runtime.yaml edit moves where the model's key goes: the write needs `ai-model`. */
+  confirm: z.literal("ai-model").optional(),
+});
+/** GET /api/setup/metarepo: whether this folder is a metarepo, and what Create would use. */
+export const SetupMetarepoView = z.object({
+  metarepo: z.boolean(),
+  root: z.string(),
+  folder: z.string(),
+  suggested: z.object({ name: z.string(), platform: z.string() }),
+  /** The folder's origin, when it is a clone (without credentials). */
+  origin: z.string().optional(),
+  /** The metarepo's id on the Git host, read from origin. */
+  metarepoId: z.string().optional(),
+});
+export const CreateMetarepoRequest = z.strictObject({
+  name: RecordId,
+  platform: RecordId,
+  owner: z.string().trim().min(1).max(100).optional(),
+  /** The metarepo's repo on the Git host, written under runtime.yaml's manual Git host. */
+  metarepo: z.string().trim().min(1).max(300).optional(),
+});
+export const OpenFolderRequest = z.strictObject({ path: z.string().min(1).max(4096) });
+export const OpenFolderView = z.object({
+  url: z.string(),
+  root: z.string(),
+  metarepo: z.boolean(),
+});
+/** Repos to add: pasted clone URLs (one a line), or a folder of clones (repos discover's code). */
+export const ReposPlanRequest = z
+  .strictObject({
+    urls: z.string().max(200_000).optional(),
+    dir: z.string().min(1).max(4096).optional(),
+    platform: RecordId.optional(),
+  })
+  .refine((b) => !!b.urls?.trim() !== !!b.dir, "send urls or dir, one of them");
+export const PlannedRepoView = z.object({
+  id: z.string(),
+  url: z.string(),
+  /** What the person gave, when the URL was normalised from it. */
+  given: z.string().optional(),
+  type: z.string(),
+  defaultBranch: z.string().optional(),
+  /** The id it would have had, and why it got another (`-2`). */
+  renamed: z.object({ from: z.string(), why: z.string() }).optional(),
+  detected: z.object({ signals: z.array(z.string()), confidence: z.string() }).optional(),
+});
+export const ReposPlanView = z.object({
+  platform: z.string().optional(),
+  platforms: z.array(z.string()),
+  repos: z.array(PlannedRepoView),
+  /** Given, but a manifest lists that clone URL already: left out. */
+  listed: z.array(z.object({ url: z.string(), id: z.string() })),
+  refused: z.array(z.object({ given: z.string(), why: z.string() })),
+  /** Folders repos discover looked at that aren't repos. */
+  skipped: z.array(z.object({ path: z.string(), reason: z.string() })),
+});
+export const AddReposRequest = z.strictObject({
+  platform: RecordId.optional(),
+  repos: z
+    .array(
+      z.strictObject({
+        id: RecordId,
+        url: z.string().min(1).max(2000),
+        type: z.string().max(100).optional(),
+        owner: z.string().max(100).optional(),
+        defaultBranch: z.string().max(250).optional(),
+        /** What it is, in the person's words (ADR 0128); optional. */
+        description: z.string().max(300).optional(),
+      }),
+    )
+    .min(1)
+    .max(500),
+  preview: z.boolean().optional(),
+});
+export const RepoTypeDetectView = z.object({
+  repo: z.string(),
+  /** The org pack's repo types (atticus repo-type detect), or the files as repo add reads them. */
+  from: z.enum(["repo-types", "files"]),
+  verdict: z.string(),
+  /** The type to write, when the match settles one. */
+  type: z.string().optional(),
+  signals: z.array(z.string()).optional(),
+  confidence: z.string().optional(),
+  matches: z.array(z.object({ type: z.string(), name: z.string(), score: z.number() })),
+});
+export const RepoTypeRequest = z.strictObject({
+  type: z.string().trim().min(1).max(100),
+  preview: z.boolean().optional(),
+});
+const AdapterSettingValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]);
+export const AdaptersView = z.object({
+  /** runtime.yaml, metarepo-relative. */
+  path: z.string(),
+  kinds: z.array(
+    z.object({
+      kind: z.string(),
+      types: z.array(z.string()),
+      /** The settings Atticus reads for this kind; a plugin may read more. */
+      fields: z.array(z.object({ name: z.string(), list: z.boolean() })),
+      current: z
+        .object({ type: z.string(), settings: z.record(z.string(), AdapterSettingValue) })
+        .nullable(),
+    }),
+  ),
+  problems: z.array(z.string()),
+});
+export const AdapterRequest = z.strictObject({
+  /** The adapter, or null to take it out of runtime.yaml. */
+  value: z
+    .strictObject({
+      type: z.string().min(1).max(100),
+      settings: z.record(z.string().max(100), AdapterSettingValue).optional(),
+    })
+    .nullable(),
+  preview: z.boolean().optional(),
+});
+export const OrgPackFileView = z.object({
+  path: z.string(),
+  /** Relative to the org pack folder. */
+  rel: z.string(),
+  content: z.string(),
+  sha256: z.string(),
+  exists: z.boolean(),
+  /** Checked with its schema before it is written (a YAML file Atticus reads). */
+  checked: z.boolean(),
+});
+export const OrgPackFileRequest = z.strictObject({
+  path: z.string().min(1).max(500),
+  content: z.string().max(2_000_000),
+  /** The file's sha256 as opened (GET's), so an edit made meanwhile is refused. */
+  baseSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  preview: z.boolean().optional(),
+  confirmation: Confirmation.optional(),
+});
+export const PatternRequest = z.strictObject({
+  code: z.string().min(1).max(60),
+  name: z.string().min(1).max(200),
+  definition: z.string().min(1).max(2000),
+  interaction: z.string(),
+  route: z.string(),
+  targetType: z.string(),
+  controls: z.array(z.string().max(200)).max(50).optional(),
+  source: z.string().min(1).max(500),
+  version: z.string().max(40).optional(),
+  status: z.string().optional(),
+  preview: z.boolean().optional(),
+});
+export const SourceRequest = z.strictObject({
+  type: z.string().min(1).max(40),
+  location: z.string().min(1).max(2000),
+  id: RecordId.optional(),
+  /** A git wiki's folder of pages, and its branch or tag. */
+  path: z.string().max(500).optional(),
+  ref: z.string().max(250).optional(),
+  preview: z.boolean().optional(),
+});
+export type FileEditViewT = z.infer<typeof FileEditView>;
+export type SetupMetarepoViewT = z.infer<typeof SetupMetarepoView>;
+export type ReposPlanViewT = z.infer<typeof ReposPlanView>;
+export type PlannedRepoViewT = z.infer<typeof PlannedRepoView>;
+export type RepoTypeDetectViewT = z.infer<typeof RepoTypeDetectView>;
+export type AdaptersViewT = z.infer<typeof AdaptersView>;
+export type OrgPackFileViewT = z.infer<typeof OrgPackFileView>;
+export type OpenFolderViewT = z.infer<typeof OpenFolderView>;
+
 export const ConnectLinksRequest = z.object({
   from: z.string().min(1),
   to: LinkBox,
@@ -6351,6 +6546,144 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [409],
     },
   },
+  // ADR 0190: settings and setup in the app, "Edit, then Propose".
+  "/api/setup/metarepo": {
+    get: {
+      id: "getSetupMetarepo",
+      summary:
+        "3.5.0 (ADR 0190): whether the folder the app runs in is a metarepo, and what Create the metarepo here would use (a name and platform from the folder's name, the metarepo's id on the Git host from its origin)",
+      tag: "run",
+      ok: { status: 200, schema: "SetupMetarepoView", description: "OK" },
+    },
+    post: {
+      id: "createMetarepo",
+      summary:
+        "Create the metarepo in this folder with atticus init's own code (name, platform, owner; the Git host manual, with the metarepo's id when given or read from origin), brought up to date as init does. Local files only: nothing is pushed. 409 when it is a metarepo already",
+      tag: "run",
+      body: CreateMetarepoRequest,
+      ok: { status: 201, schema: "LinesView", description: "Created" },
+      errors: [400, 409, 422],
+    },
+  },
+  "/api/setup/open": {
+    post: {
+      id: "openFolder",
+      summary:
+        "Open another folder: start the app for that folder (a full path on this machine) on a free port, for the same person, and give its address; a folder that isn't a metarepo offers Create there",
+      tag: "run",
+      body: OpenFolderRequest,
+      ok: { status: 200, schema: "OpenFolderView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/setup/repos/plan": {
+    post: {
+      id: "planRepos",
+      summary:
+        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. Writes nothing",
+      tag: "run",
+      body: ReposPlanRequest,
+      ok: { status: 200, schema: "ReposPlanView", description: "OK" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/setup/repos": {
+    post: {
+      id: "addRepos",
+      summary:
+        "Add the repos the person ticked to the platform's repos.manifest.yaml (core's addManifestRepos: comments, order and line endings kept, the manifest checked first); a description is the person's own (verified). With preview: the lines it would change, nothing written. Propose for review then opens the PR",
+      tag: "run",
+      body: AddReposRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/repos/{repoId}/type/detect": {
+    post: {
+      id: "detectRepoType",
+      summary:
+        "Detect a cloned repo's type: the org pack's repo types (atticus repo-type detect) when it has any, else the type repo add reads from the files. Writes nothing; 409 when the repo isn't cloned here",
+      tag: "run",
+      params: [p("repoId")],
+      ok: { status: 200, schema: "RepoTypeDetectView", description: "OK" },
+      errors: [404, 409, 422],
+    },
+  },
+  "/api/repos/{repoId}/type": {
+    put: {
+      id: "setRepoType",
+      summary:
+        "Set a repo's type in the manifest that lists it (comments and order kept); with preview, the line it would change",
+      tag: "run",
+      params: [p("repoId")],
+      body: RepoTypeRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/setup/adapters": {
+    get: {
+      id: "getAdapters",
+      summary:
+        "The outside systems runtime.yaml names (Git host, work tracker, service desk, notifications, wiki, design tool): the types its schema takes for each, the settings Atticus reads, and what is set now. No secret is ever in them",
+      tag: "run",
+      ok: { status: 200, schema: "AdaptersView", description: "OK" },
+    },
+  },
+  "/api/setup/adapters/{kind}": {
+    put: {
+      id: "setAdapter",
+      summary:
+        "Set (or with null, take out) one outside system in runtime.yaml, checked with the Runtime schema first (a type it doesn't take, a setting named like a secret or a value that looks like a token is refused, 422); comments and line endings kept. With preview, the lines it would change. A token is kept in the credential store from the terminal (atticus secret set), never through this API",
+      tag: "run",
+      params: [p("kind")],
+      body: AdapterRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/setup/file": {
+    get: {
+      id: "getOrgPackFile",
+      summary:
+        "One org-pack file for the raw editor (a path inside org-pack/ ending .yaml, .md, .txt or .json): its text, its sha256 and whether it is checked with a schema",
+      tag: "run",
+      params: [q("path")],
+      ok: { status: 200, schema: "OrgPackFileView", description: "OK" },
+      errors: [404, 422],
+    },
+    put: {
+      id: "putOrgPackFile",
+      summary:
+        "The raw editor's write, the fallback for a setting with no form: the file's whole text, checked with its schema (YAML that doesn't parse, or doesn't read, is 422), onto the file as opened (another edit meanwhile is 409). With preview, the lines it would change. A runtime.yaml edit that moves where the model's key goes needs the person's confirmation (`ai-model`, `model`), else 403; a value that looks like a key is refused",
+      tag: "run",
+      body: OrgPackFileRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 403, 409, 422],
+    },
+  },
+  "/api/setup/patterns": {
+    post: {
+      id: "addPattern",
+      summary:
+        "A new integration pattern from the app's form, as its own org-pack/patterns/<code>.yaml, checked with the pattern schema; a code that is there already is 409 (edit it in the raw editor). With preview, the lines it would write",
+      tag: "run",
+      body: PatternRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 409, 422],
+    },
+  },
+  "/api/setup/sources": {
+    post: {
+      id: "addSource",
+      summary:
+        "A wiki added to sources.yaml with atticus sources add's own code (its checks, its id, the path written relative to the org pack); comments and line endings kept. With preview, the entry it would add",
+      tag: "run",
+      body: SourceRequest,
+      ok: { status: 200, schema: "FileEditView", description: "OK" },
+      errors: [400, 409, 422],
+    },
+  },
   "/api/decisions": {
     get: {
       id: "getDecisions",
@@ -7517,6 +7850,13 @@ export function openApiDocument(): Record<string, unknown> {
     UpgradeView,
     TaskContextView,
     HistoryRecordingView,
+    FileEditView,
+    SetupMetarepoView,
+    OpenFolderView,
+    ReposPlanView,
+    RepoTypeDetectView,
+    AdaptersView,
+    OrgPackFileView,
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,

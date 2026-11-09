@@ -54,6 +54,7 @@ import { uiStageRoutes } from "./ui-api-stages.js";
 import { asTheApp, servingTheApp } from "./model-address.js";
 import { uiActivityRoutes } from "./ui-api-activity.js";
 import { uiThreadRoutes } from "./ui-api-thread.js";
+import { uiSetupRoutes } from "./ui-api-setup.js";
 
 /**
  * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
@@ -167,8 +168,13 @@ export function extendUiRoutes(
     ctx,
   );
   // ADR 0187: the Console's list of everything running or run lately, wherever it started.
-  // ADR 0189: a stage of a change as one conversation, and a person's reply in it.
-  return uiThreadRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx);
+  // ADR 0189: a stage of a change as one conversation, and a person's reply in it. ADR 0190:
+  // settings and setup in the app, Edit then Propose.
+  return uiSetupRoutes(
+    uiThreadRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx),
+    ctx,
+    deps.openFolder ? { openFolder: deps.openFolder } : {},
+  );
 }
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */

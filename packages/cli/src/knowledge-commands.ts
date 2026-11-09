@@ -1,7 +1,10 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
+  eolOf,
   fileJudgments,
+  inEol,
+  lfOnly,
   inputsDirOf,
   loadOrgPack,
   Sources,
@@ -194,15 +197,18 @@ export async function sourcesAdd(
   }
   if (o.save) {
     const file = join(orgPackDir, "sources.yaml");
-    const doc = parseDocument(
-      await readFile(file, "utf8").catch(
-        () => "# Where things are and what Atticus reads.\nschemaVersion: 1\n",
-      ),
+    const text = await readFile(file, "utf8").catch(
+      () => "# Where things are and what Atticus reads.\nschemaVersion: 1\n",
     );
+    const doc = parseDocument(lfOnly(text));
     const wikis = doc.get("wikis");
-    if (isSeq(wikis)) wikis.add(doc.createNode(entry));
-    else doc.set("wikis", doc.createNode([entry]));
-    await writeFile(file, doc.toString(), "utf8");
+    // ADR 0190 (the app's Add a wiki): the `wikis: []` init writes becomes a block list, and the
+    // file keeps its own line endings.
+    if (isSeq(wikis)) {
+      if (!wikis.items.length) wikis.flow = false;
+      wikis.add(doc.createNode(entry));
+    } else doc.set("wikis", doc.createNode([entry]));
+    await writeFile(file, inEol(doc.toString(), eolOf(text)), "utf8");
     io.out(
       `Added ${entry.id} (${type}) to org-pack/sources.yaml: commit it through a pull request.`,
     );
