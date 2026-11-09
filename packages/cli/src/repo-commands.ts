@@ -114,7 +114,7 @@ async function declaredFrameworks(
  * its own files, and only where they say nothing, from what the person wrote about it (ADR 0128).
  * Nothing for a URL there is no clone of yet; the type is then `unknown`, which is a question.
  */
-async function typeOf(
+export async function typeOf(
   url: string,
   description: string | undefined,
   /**
@@ -152,7 +152,7 @@ async function typeOf(
  * that branch, as repos discover does, so the base clone is the repo's and later syncs fetch
  * from the server; a folder path in the manifest would be cloned from that folder instead.
  */
-async function cloneAt(
+export async function cloneAt(
   url: string,
 ): Promise<{ dir: string; origin?: string; branch?: string } | undefined> {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^[^/\\]+@/.test(url)) return undefined;

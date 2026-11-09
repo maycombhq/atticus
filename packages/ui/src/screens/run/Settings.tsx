@@ -4,6 +4,8 @@ import { useMe } from "../../app/me.js";
 import { CheckAgain, LoadError, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Facts, Note, useAction } from "./shared.js";
+import { AdaptersPanel } from "../setup/Adapters.js";
+import { EditInApp } from "../setup/RawFile.js";
 
 const T = COPY.settings;
 
@@ -257,7 +259,7 @@ export function Settings() {
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {T.settings}
         </p>
-        <span className="hud">{T.readOnlySetBy}</span>
+        <span className="hud">{COPY.setup.settingsEdit}</span>
       </div>
 
       <div className="bento">
@@ -329,6 +331,11 @@ export function Settings() {
                     [T.telemetry, d.runtime.telemetry.enabled ? "on" : "off"],
                   ]}
                 />
+                {/* ADR 0190: edited in the app, then proposed for review. */}
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  {COPY.setup.runtimeOnAi} <a href="#/ai">{COPY.setup.openAi}</a>
+                </p>
+                <EditInApp path="runtime.yaml" />
               </div>
             )}
           </View>
@@ -375,6 +382,8 @@ export function Settings() {
           </View>
         </Panel>
 
+        <AdaptersPanel />
+
         <ExecutorsPanel s={s} check={check} />
 
         <Panel title={T.orgPack} span="span 5">
@@ -420,6 +429,7 @@ export function Settings() {
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                   {T.theCriticRunsAt}
                 </p>
+                <EditInApp path="gates.yaml" />
                 <table className="run-table">
                   <thead>
                     <tr>

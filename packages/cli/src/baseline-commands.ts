@@ -143,7 +143,7 @@ export async function setupSteps(
             .sort()
             .join(", ")}`
         : "empty: the critic can't check a hop's pattern until it has some",
-      fix: "Add one YAML file per integration pattern your organisation approves under org-pack/patterns/ (its code, status confirmed, its route and controls; the starter pack's patterns show the shape), run atticus orgpack validate, and propose it for review. The app has no editor for patterns yet.",
+      fix: "Add one YAML file per integration pattern your organisation approves under org-pack/patterns/ (its code, status confirmed, its route and controls; the starter pack's patterns show the shape), run atticus orgpack validate, and propose it for review; or add one on Set up › Org pack in the app (Add an integration pattern).",
       optional: true,
     },
     {

@@ -5,6 +5,8 @@ import { confirmed } from "../../api/confirm.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "./shared.js";
+import { UpgradeOffer } from "../../app/upgrade.js";
+import { AdaptersPanel } from "../setup/Adapters.js";
 
 const T = COPY.aiSettings;
 
@@ -21,7 +23,7 @@ export interface AiSettings {
   budgets: { defaultTokens: number; perAgent: Record<string, number> };
   /** Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it. */
   decide?: Decide;
-  /** runtime.yaml's own version (decide needs 4; a version 3 file is lifted on save). */
+  /** runtime.yaml's own version (decide needs 4; an older file is lifted on save, ADR 0190). */
   schemaVersion?: number;
   path: string;
 }
@@ -399,11 +401,6 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
           <p id="ai-decide-hint" className="muted" style={{ margin: 0, maxWidth: "70ch" }}>
             {T.decideHint}
           </p>
-          {(p.data.schemaVersion ?? 4) < 3 && (
-            <p className="state" role="note" style={{ margin: 0 }}>
-              {T.decideNeedsUpgrade(p.data.schemaVersion ?? 1)}
-            </p>
-          )}
           {(["links", "questions"] as const).map((k) => (
             <label key={k} className="row" style={{ gap: 8 }}>
               <span style={{ minWidth: 220 }}>
@@ -533,9 +530,14 @@ export function AiSettings() {
   useReloadOnFiles(s);
   return (
     <div className="bento">
+      {/* ADR 0190: an upgrade step runtime.yaml waits on, run here; the same check as upgrade's. */}
+      <div style={{ gridColumn: "1 / -1" }}>
+        <UpgradeOffer only="runtime-" />
+      </div>
       <Panel title={T.title} span="1 / -1">
         <View of={s}>{(d) => <AiSettingsForm data={d} onSaved={s.reload} />}</View>
       </Panel>
+      <AdaptersPanel span="1 / -1" />
     </div>
   );
 }

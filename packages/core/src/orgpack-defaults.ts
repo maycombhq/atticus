@@ -3,6 +3,7 @@ import {
   Gates,
   Roles,
   Runtime,
+  RUNTIME_SCHEMA_VERSION,
   Sources,
   TestStrategy,
   type ChangeType,
@@ -175,10 +176,11 @@ export const DEFAULT_ROLES = Roles.parse({
   ],
 });
 
-// Written at runtime.yaml's current version (2, ADR 0121 addendum): it names no model per kind
-// of step, so every step runs on the one model until an organisation names some.
+// Written at runtime.yaml's current version (ADR 0190: was 2, so a fresh metarepo couldn't turn
+// on AI decides without an upgrade step that `atticus upgrade --check` never listed). It names no
+// model per kind of step, so every step runs on the one model until an organisation names some.
 export const DEFAULT_RUNTIME = Runtime.parse({
-  schemaVersion: 2,
+  schemaVersion: RUNTIME_SCHEMA_VERSION,
   assistants: { allowed: ["copilot", "claude-code"], default: "copilot" },
 });
 

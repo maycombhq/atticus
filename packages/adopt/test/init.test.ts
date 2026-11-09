@@ -213,7 +213,8 @@ describe("init makes the metarepo a git repository", () => {
       git,
     });
     expect(r.git).toBe("inside");
-    expect(calls).toEqual([]);
+    // Nothing is run on the repository; only its origin is read (ADR 0190: the metarepo's id).
+    expect(calls).toEqual([["config", "--get", "remote.origin.url"]]);
     expect(await exists(join(outer, "meta", ".git"))).toBe(false);
   });
 

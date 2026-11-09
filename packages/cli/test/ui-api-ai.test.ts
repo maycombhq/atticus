@@ -161,7 +161,7 @@ describe("the AI tab's API (ADR 0121)", () => {
     }
   });
 
-  it("writes decide (ADR 0181, ninth UX walk): lifts a version 3 file to 4, keeps CRLF, and says an older file needs atticus upgrade", async () => {
+  it("writes decide (ADR 0181, ninth UX walk): lifts a version 3 file to 4, keeps CRLF, and lifts an older one the way atticus upgrade's step does (ADR 0190)", async () => {
     const rt = join(root, "org-pack", "runtime.yaml");
     const before = await readFile(rt, "utf8");
     const decide = { links: "auto", questions: "propose", minPrecision: 0.9 };
@@ -187,14 +187,20 @@ describe("the AI tab's API (ADR 0121)", () => {
       expect(((await call("GET", "/api/settings/ai")).body as { decide: unknown }).decide).toEqual(
         decide,
       );
-      // A version 1 file needs the upgrade first: said, nothing written.
-      await writeFile(rt, before.replace(/^schemaVersion: \d+/m, "schemaVersion: 1"));
-      const old = await call("PUT", "/api/settings/ai", { decide });
-      expect(old.status).toBe(422);
-      expect(JSON.stringify(old.body)).toMatch(/atticus upgrade/);
-      expect(await readFile(rt, "utf8")).toBe(
-        before.replace(/^schemaVersion: \d+/m, "schemaVersion: 1"),
-      );
+      // ADR 0190: a version 1 or 2 file (a fresh metarepo's was 2) is lifted too, the number
+      // only, as runtime-v4 lifts a file that sets decide; `upgrade --check` had nothing to say
+      // before the save, and has nothing after it.
+      for (const v of [1, 2]) {
+        const was = before.replace(/^schemaVersion: \d+/m, `schemaVersion: ${v}`);
+        await writeFile(rt, was);
+        const old = await call("PUT", "/api/settings/ai", { decide });
+        expect(old.status, JSON.stringify(old.body)).toBe(200);
+        const now = await readFile(rt, "utf8");
+        expect(now).toContain("# the autonomy caps are the platform team's");
+        expect(parse(now)).toMatchObject({ schemaVersion: 4, decide });
+        const { migrateRuntimeV4Text } = await import("@maycombhq/core");
+        expect(migrateRuntimeV4Text(now).changed).toBe(false);
+      }
     } finally {
       await writeFile(rt, before);
     }

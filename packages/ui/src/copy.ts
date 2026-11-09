@@ -1682,7 +1682,7 @@ export const COPY = {
     atCommit: (c: string) => `at ${c.slice(0, 7)}`,
     sources: "Knowledge sources",
     sourcesMissing: (path: string) =>
-      `${path} isn't there. Add a wiki with atticus sources add <type> <location>; it prints the entry to paste.`,
+      `${path} isn't there. Add a wiki on Set up › Org pack (Add a wiki), or with atticus sources add <type> <location>.`,
     sourcesNone: (path: string) => `${path} lists no wikis or absorbed repos yet.`,
     sourcesFile: "File",
     wikiCol: "Wiki",
@@ -2217,7 +2217,7 @@ export const COPY = {
       "Reads the prototype's verified facts, compares each call with the estate, attaches the comparison to this change and adds what it touches. The same as atticus change attach --prototype.",
     prototypeCompared: (repo: string) => `Compared ${repo} and attached it.`,
     prototypeNoCandidates:
-      "No repo in the manifests is typed prototype. Type one prototype in its repos.manifest.yaml (the Repos page), read it, then compare it here.",
+      "No repo in the manifests is typed prototype. Set one repo's type to prototype on Set up › Repos, read it, then compare it here.",
     prototypeMarker: "Prototype",
     prototypeUnconfirmed: "a draft nobody has confirmed",
     prototypeNoAbout: "Nothing says what it is yet.",
@@ -2786,7 +2786,7 @@ export const COPY = {
     noSystemNamed: "no system named",
     quarantined: "QUARANTINED",
     nothingInInputsYet:
-      "Nothing in inputs/ yet. Drop diagrams, documents, API specs and exports there (or run atticus intake add <file>).",
+      "Nothing in inputs/ yet. Drop diagrams, documents, API specs and exports there (Add files on Knowledge › Documents, or atticus intake add <file>).",
     intake: "Intake",
     inputs: "inputs/",
     eachChoiceIsSaved:
@@ -3740,7 +3740,7 @@ export const COPY = {
     intro:
       "The catalog is read from each repo's default branch: that is the baseline, the one the hand-off PRs build on. Other branches people work on can be scanned beside it and compared with it, never merged into it.",
     empty:
-      "No repo is listed yet: run atticus repos discover <folder>, or add one to a repos.manifest.yaml.",
+      "No repo is listed yet. Add them above: paste their clone URLs, or discover a folder of clones.",
     typeOwner: (type: string, owner: string) => `${type} · ${owner}`,
     // ADR 0128: what a repo is, in a person's words.
     about: "What it is",
@@ -3875,8 +3875,6 @@ export const COPY = {
     minPrecisionHint:
       "When the sample audit puts the AI's decisions below it, deciding pauses back to propose and Home says why.",
     badMinPrecision: "The precision is a whole number of percent from 0 to 100, such as 95.",
-    decideNeedsUpgrade: (v: number) =>
-      `runtime.yaml is at version ${v}; decide needs version 4. Run the upgrade on Home first (atticus upgrade).`,
   },
   /** Ninth UX walk: Home offers the upgrade the metarepo waits on, run here on the person's click. */
   upgrade: {
@@ -5620,5 +5618,197 @@ export const COPY = {
     /** Why is this linked?: a link the AI decided. */
     whyLinked:
       "The AI paired this call with this entry, from a run Atticus started. No person has confirmed it, so it is inferred until someone does.",
+  },
+  /** ADR 0190: settings and setup in the app, "Edit, then Propose". */
+  setup: {
+    // Create the metarepo here, or open another folder.
+    title: "Set up Atticus here",
+    intro: (root: string) =>
+      `${root} isn't a metarepo yet. Create one here, or open the folder of one you have.`,
+    loading: "Looking at this folder…",
+    createTitle: "Create the metarepo here",
+    createWhat:
+      "Atticus writes the org pack, openspec/ and the catalog folders here, makes the folder a Git repository if it isn't one, and pushes nothing. Propose it for review once your repos are in.",
+    name: "Name",
+    nameHint: "A lowercase slug, such as forge-payments: the org pack's name.",
+    platform: "Platform",
+    platformHint: "What its repos make up, as a slug, such as forge.",
+    owner: "Owner (optional)",
+    ownerHint:
+      "Who looks after the org pack, normally the platform lead. Left out, it is a question for later.",
+    metarepoId: "The metarepo on your Git host (optional)",
+    metarepoIdHint:
+      "Its repo there, such as forge-payments-metarepo. Read from this folder's origin when it is a clone. Propose for review and hand-offs open their PRs on it.",
+    badSlug: "A lowercase slug: letters, digits and - only, such as forge-payments.",
+    create: "Create the metarepo",
+    creating: "Creating…",
+    created: "The metarepo is made. Next: add your repos.",
+    openTitle: "Open another folder",
+    path: "Folder",
+    pathHint: "Its full path on this machine, such as C:\\work\\forge-metarepo.",
+    open: "Open it",
+    opening: "Opening…",
+    openedAt: (url: string) => `Opening it at ${url}…`,
+    terminal: "Or in a terminal",
+    // The diff before a write, then Propose.
+    preview: "Preview the change",
+    previewing: "Looking…",
+    willChange: (path: string) => `${path} will change:`,
+    diffLabel: (path: string) => `Lines that change in ${path}`,
+    removed: "removed",
+    added: "added",
+    nothingChanges: "Nothing would change.",
+    write: "Write it",
+    writing: "Writing…",
+    cancel: "Cancel",
+    written: (path: string) => `${path} is written.`,
+    thenPropose: "Propose it for review: a person merges the PR on the Git host.",
+    confirmAddress:
+      "This moves where the model's key goes: Write it is your confirmation (as Save is in the AI settings).",
+    // Add repos.
+    reposTitle: "Add repos",
+    reposIntro:
+      "Paste clone URLs, one a line (up to 500 at once), or discover a folder of clones on this machine. You see the list before anything is written; then the manifest is proposed for review.",
+    pasteMode: "Paste clone URLs",
+    folderMode: "Discover a folder of clones",
+    modeLabel: "How",
+    urls: "Clone URLs",
+    urlsHint:
+      "As your Git host shows them, such as https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-ledger. Credentials and a browser link's ?path= are taken out.",
+    dir: "Folder of clones",
+    dirHint:
+      "Its full path. Every repo in it is read from its files, as atticus repos discover does.",
+    read: "Read the list",
+    reading: "Reading…",
+    platformLabel: "Platform",
+    toAdd: (n: number) => `${n} repo${n === 1 ? "" : "s"} to add`,
+    colAdd: "Add",
+    colId: "Id",
+    colUrl: "Clone URL",
+    colType: "Type",
+    colAbout: "What it is (optional)",
+    addFor: (id: string) => `Add ${id}`,
+    aboutFor: (id: string) => `What ${id} is`,
+    normalised: (given: string) => `From: ${given}`,
+    renamed: (from: string, why: string) =>
+      `${from} is taken (${why}), so this one is the id shown.`,
+    listed: (url: string, id: string) => `${url} is listed already, as ${id}: left out.`,
+    refused: (given: string, why: string) => `${given}: ${why}.`,
+    skipped: (n: number) => `${n} folder${n === 1 ? "" : "s"} looked at aren't repos.`,
+    nothingNew: "Nothing new to add: the manifest lists all of them already.",
+    noneTicked: "Tick at least one repo to add.",
+    // A repo's type.
+    detect: "Detect the type",
+    detecting: "Reading its files…",
+    detectFor: (id: string) => `Detect the type of ${id}`,
+    detected: (type: string) => `Its files say ${type}.`,
+    detectedTypes: (verdict: string, type?: string) =>
+      type
+        ? `The org pack's repo types: a ${verdict} match for ${type}.`
+        : `The org pack's repo types: ${verdict}.`,
+    noType: "Nothing in its files settles a type: set one here.",
+    type: "Type",
+    typeFor: (id: string) => `Type of ${id}`,
+    setType: "Set the type",
+    typeHint:
+      "Type it prototype for a prototype repo: Change › Prototypes compares it with the estate.",
+    // The outside systems.
+    adaptersTitle: "Outside systems",
+    adaptersIntro:
+      "Where Atticus opens PRs, files work items and requests, and sends notifications. Manual: Atticus writes each step for a person with every field ready to copy, and records the result (the way to go when your Git host, ADO or ServiceNow has no API access from here). Each change is written to runtime.yaml, then proposed for review.",
+    kinds: {
+      gitHost: "Git host",
+      workTracker: "Work tracker",
+      serviceDesk: "Service desk",
+      notify: "Notifications",
+      wiki: "Wiki",
+      design: "Design tool",
+    } as Record<string, string>,
+    types: {
+      manual: "Manual: a step for a person",
+      github: "GitHub",
+      "azure-repos": "Azure DevOps (Azure Repos)",
+      gitlab: "GitLab",
+      bitbucket: "Bitbucket",
+      "azure-devops": "Azure DevOps Boards",
+      jira: "Jira",
+      servicenow: "ServiceNow",
+      "jira-service-management": "Jira Service Management",
+      teams: "Microsoft Teams",
+      slack: "Slack",
+      email: "Email",
+      confluence: "Confluence",
+      "ado-wiki": "Azure DevOps wiki",
+      sharepoint: "SharePoint",
+      figma: "Figma",
+      mock: "Mock (for tests)",
+    } as Record<string, string>,
+    notSet: "Not set",
+    typeOf: (kind: string) => `${kind}: how it is reached`,
+    fields: {
+      metarepo: "The metarepo's repo on the Git host",
+      protectedBranches: "Protected branches (one a line)",
+      defaultBranch: "Default branch, when a repo doesn't say",
+      project: "Project",
+      idPattern: "Work item id pattern",
+      numberPattern: "Request number pattern",
+      exportDir: "Exported to (a folder of this metarepo)",
+    } as Record<string, string>,
+    fieldHints: {
+      metarepo:
+        "Its id there, such as forge-payments-metarepo (Azure Repos) or forge/forge-metarepo (GitHub). Propose for review and hand-offs open their PRs on it.",
+      protectedBranches:
+        "AI never pushes to these; the default branch always is one. Such as main and release.",
+    } as Record<string, string>,
+    more: "Other settings the adapter's plugin reads (name: value, one a line)",
+    moreHint: "Never a token or key: Atticus refuses one.",
+    badLine: (line: string) => `"${line}" doesn't read as name: value.`,
+    live: (type: string) =>
+      `${type} is a live adapter: its plugin goes in the org pack. Until it can be reached, its steps fall back to manual ones.`,
+    secretTitle: "Tokens and keys",
+    secretWhy:
+      "A token never goes in runtime.yaml or through the app. Keep it in this machine's credential store from your terminal, under the name the adapter's plugin reads:",
+    secretCommand: "atticus secret set <NAME>",
+    takeOut: "Take it out",
+    kindFor: (kind: string) => `${kind}'s settings`,
+    // The raw editor, the fallback.
+    editInApp: "Edit in app",
+    editFile: (path: string) => `Edit ${path} in the app`,
+    rawTitle: (path: string) => `Edit ${path}`,
+    rawHint:
+      "The whole file. It is checked with its schema before it is written, and only onto the file as you opened it.",
+    rawUnchecked: "No schema checks this file; YAML still has to parse.",
+    rawNew: "This file isn't there yet: Write it creates it.",
+    rawText: (path: string) => `The text of ${path}`,
+    close: "Close",
+    noForm: "No form for this yet: edit the file in the app, then propose it.",
+    rawPickTitle: "Edit a file of the org pack",
+    rawPick: "File",
+    rawPickHint: "A path inside org-pack/, such as gates.yaml or patterns/S.GW.SOR.yaml.",
+    // Patterns and wikis.
+    patternTitle: "Add an integration pattern",
+    code: "Code",
+    codeHint: "Such as S.GW.NWP: a capital letter, then parts after dots.",
+    patternName: "Name",
+    definition: "What it is",
+    interaction: "Interaction",
+    route: "Route",
+    targetType: "Target",
+    controls: "Controls (comma-separated)",
+    source: "Where it is written down",
+    sourceHint: "A wiki page or a file, such as inputs/wiki/integration-patterns.md.",
+    status: "Status",
+    wikiTitle: "Add a wiki",
+    wikiType: "Type",
+    location: "Where it is",
+    locationHint: "A folder of this metarepo, a Git repository's URL or a wiki's https:// address.",
+    wikiPath: "Pages folder (git only)",
+    wikiRef: "Branch or tag (git only)",
+    // The AI page and Settings.
+    aiAdapters: "Outside systems are set on Set up › Settings, and here:",
+    settingsEdit: "Edit, then Propose: each change is a file you propose for review",
+    runtimeOnAi: "The modes, assistants, models and AI decides are edited on Set up › AI.",
+    openAi: "Open Set up › AI",
+    addReposLink: "Add repos in the app (Set up › Repos)",
   },
 } as const;

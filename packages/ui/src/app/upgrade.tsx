@@ -81,12 +81,18 @@ export function UpgradeOfferView(p: {
   );
 }
 
-/** Home: the upgrade offer, read from GET /api/upgrade. */
-export function UpgradeOffer() {
+/**
+ * Home: the upgrade offer, read from GET /api/upgrade. ADR 0190: `only` (a step id's start, such
+ * as `runtime-`) offers it where those steps matter (the AI page, for runtime.yaml), and only
+ * when one of them waits; the check is upgrade's own, so the page and `--check` always agree.
+ */
+export function UpgradeOffer({ only }: { only?: string } = {}) {
   const u = useApi<Api.UpgradeViewT>("/api/upgrade");
   useReloadOnFiles(u);
   const [run, setRun] = useState<UpgradeRun>({ state: "idle" });
   if (u.state !== "ready") return null;
+  if (only && run.state === "idle" && !u.data.pending.some((s) => s.id.startsWith(only)))
+    return null;
   return (
     <UpgradeOfferView
       view={u.data}

@@ -51,6 +51,16 @@ On Windows, once: `git config --global core.longpaths true`. If Git doesn't know
 
 ## Minute 5: a metarepo and the machine check
 
+**In the app (ADR 0190).** Make the metarepo's repo on your Git host (with a README, so it has a `main`), clone it, and run `atticus ui` in the clone (or in any new folder). The app sees the folder isn't a metarepo yet and offers **Create the metarepo here**: a name, the platform, the owner, and the metarepo's repo on the Git host (read from the clone's origin). It runs `atticus init`'s own code and pushes nothing; Home then continues with Onboarding. **Open another folder** starts the app for a metarepo you already have.
+
+Then, still in the app:
+
+1. **Set up › Repos › Add repos**: paste your repos' clone URLs, one a line (forty at once is fine), or give a folder of clones on this machine. You see each URL as the manifest will keep it, the id each gets (a clash becomes `-2`, saying why) and what is listed already; tick, add a line saying what each is if you like, **Preview the change**, **Write it**.
+2. **Set up › AI › Outside systems**: the Git host (manual, unless your organisation installed a live adapter's plugin), the metarepo's repo on it and its protected branches; the work tracker and the service desk, manual by default. A token never goes through the app: `atticus secret set <NAME>` keeps it in this machine's credential store.
+3. **Propose for review** after each write: the files go on a branch and the PR opens on the Git host (with a manual Git host, a step on Home says how). A person merges it.
+
+Every setting the app has a form for is edited the same way; anything else has **Edit in app**, the file's text checked with its schema. The commands below do the same from a terminal.
+
 ```bash
 atticus init forge-meta --platform forge --owner <you>   # an estate of repos: one metarepo for the team
 cd forge-meta

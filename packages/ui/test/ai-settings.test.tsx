@@ -51,9 +51,11 @@ describe("AI decides first, set on the AI tab (ADR 0181, ninth UX walk)", () => 
     expect(out).toContain('id="ai-decide-questions"');
     expect(out).toContain('id="ai-decide-precision"');
     expect(out).toContain('value="95"');
-    expect(out).not.toContain(T.decideNeedsUpgrade(2));
+    // ADR 0190: an older runtime.yaml is lifted by the save itself (upgrade's runtime-v4 step),
+    // so the form never sends the person to an upgrade `atticus upgrade --check` doesn't list.
     const old = html(<AiSettingsForm data={{ ...DATA, decide, schemaVersion: 2 }} />);
-    expect(old).toContain(T.decideNeedsUpgrade(2));
+    expect(old).toContain('id="ai-decide-links"');
+    expect(old).not.toContain("atticus upgrade");
   });
 
   it("sends decide only when it changed, so another save never lifts the file", () => {

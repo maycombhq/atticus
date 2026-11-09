@@ -11,7 +11,9 @@ import {
   DEFAULT_RUNTIME,
   loadOrgPack,
   orgPackDirOf,
+  migrateRuntimeV4Text,
   Runtime,
+  RUNTIME_SCHEMA_VERSION,
   eolOf,
   inEol,
   writeFileIfUnchanged,
@@ -216,10 +218,15 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         };
         const lifted = names(b.modes) && raw.schemaVersion === 2;
         if (lifted) raw.schemaVersion = 3;
-        // Ninth UX walk: decide on a version 3 file lifts it to 4, which only adds decide
-        // (ADR 0181, runtime-v4). Older files need atticus upgrade first (the message says).
-        const liftedDecide = b.decide !== undefined && raw.schemaVersion === 3;
-        if (liftedDecide) raw.schemaVersion = 4;
+        // Ninth UX walk: decide lifts the file to 4, which only adds decide (ADR 0181).
+        // ADR 0190: from any version, as atticus upgrade's own step (runtime-v4) does once a
+        // file sets decide: before, only a version 3 file was lifted, so a fresh metarepo
+        // (version 2) was told to upgrade while `upgrade --check` had nothing to do.
+        const liftedDecide =
+          b.decide !== undefined &&
+          typeof raw.schemaVersion === "number" &&
+          raw.schemaVersion < RUNTIME_SCHEMA_VERSION;
+        if (liftedDecide) raw.schemaVersion = RUNTIME_SCHEMA_VERSION;
         const checked = Runtime.safeParse(raw);
         if (!checked.success)
           throw unprocessable(
@@ -234,8 +241,10 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           const doc = parseDocument(text);
           for (const f of FIELDS) if (b[f] !== undefined) doc.set(f, raw[f]);
           if (b.model !== undefined) doc.set("adapters", raw.adapters);
-          if (lifted || liftedDecide) doc.set("schemaVersion", raw.schemaVersion);
-          return doc.toString({ lineWidth: 0 });
+          if (lifted) doc.set("schemaVersion", 3);
+          const written = doc.toString({ lineWidth: 0 });
+          // The number only, every other line as the person wrote it: upgrade's own step.
+          return liftedDecide ? migrateRuntimeV4Text(written).text : written;
         })();
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
         // line endings.

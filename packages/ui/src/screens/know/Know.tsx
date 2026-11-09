@@ -7,6 +7,7 @@ import { COPY } from "../../copy.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 import { AiChip } from "../../app/decisions.js";
 import { ShowInConsole } from "../../app/activity.js";
+import { OrgPackEditors } from "../setup/OrgPackForms.js";
 
 const T = COPY.know;
 
@@ -1019,6 +1020,8 @@ export function OrgPackScreen() {
           )}
         </View>
       </Panel>
+      {/* ADR 0190: a pattern, a wiki or any org-pack file, edited here and proposed for review. */}
+      <OrgPackEditors />
     </div>
   );
 }

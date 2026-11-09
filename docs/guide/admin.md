@@ -4,7 +4,9 @@ This guide is for the person who sets Atticus up for a team and keeps it healthy
 
 ## The setup checklist
 
-Home shows it until the catalog is accepted; `atticus setup` prints it. Each step says what to do next:
+Home shows it until the catalog is accepted; `atticus setup` prints it. Each step says what to do next.
+
+Each step is done in the app first (ADR 0190, "Edit, then Propose"): `atticus ui` in an empty folder offers Create the metarepo here; Set up › Repos › Add repos takes pasted clone URLs or a folder of clones, with Detect the type on each repo; Set up › AI and Settings set the outside systems; Set up › Org pack adds an integration pattern or a wiki, and edits any org-pack file in the raw editor. Each edit shows the lines it changes, writes the file through its schema, and is then proposed for review. The commands named below are the same steps from a terminal.
 
 1. **This machine has what Atticus needs** (`atticus doctor`).
 2. **The org pack is valid** (`atticus orgpack validate`).
@@ -264,6 +266,8 @@ retrieval:
 - **The rerank** orders the candidates when they don't fit the room. It is built but not measured, so it is off.
 
 ### Outside systems
+
+In the app: Set up › AI (or Settings) › Outside systems. Pick each system's type from those runtime.yaml's schema takes, fill the settings Atticus reads (for the Git host, the metarepo's repo on it and its protected branches; for the work tracker, its project), preview, write and propose. `atticus init` writes the Git host as `manual`, with the metarepo's repo when it is known, so the first Propose for review and hand-off work as they are. The panel refuses a setting named like a secret and a value that looks like a token; keep a token with `atticus secret set <NAME>` in a terminal, under the name the adapter's plugin reads.
 
 `runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. Write one as `gitHost: { type: github, settings: { metarepo: forge/forge-metarepo } }`, or, with no settings, by its type alone: `gitHost: manual` is short for `gitHost: { type: manual }`. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
 

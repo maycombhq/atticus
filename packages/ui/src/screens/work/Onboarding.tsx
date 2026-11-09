@@ -42,6 +42,10 @@ export function OnboardingSteps({
             <code className="mono">{m.path}</code>
           </p>
         ))}
+        {/* ADR 0190: in the app first; the commands stay for a terminal. */}
+        <p>
+          <a href="#/repos">{COPY.setup.addReposLink}</a>
+        </p>
         <Command text="atticus repos discover <folder>" label={COPY.runNext.copy} />
         {/* ADR 0128: one repo at a time, with what it is in the person's own words. */}
         <p className="work-say">{W.stepAddOne}</p>

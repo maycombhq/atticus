@@ -67,6 +67,8 @@ export async function initCommand(
     json?: boolean;
     /** Also make it an OpenSpec store (beta, ADR 0126). */
     openspecStore?: boolean;
+    /** ADR 0190: the metarepo's id on its host (the app's Create the metarepo here). */
+    metarepo?: string;
   },
   io: Output,
 ): Promise<number> {
@@ -81,6 +83,7 @@ export async function initCommand(
       ...(o.packFrom ? { packFrom: resolve(o.packFrom) } : {}),
       ...(o.owner ? { owner: o.owner } : {}),
       ...(o.openspecStore ? { openspecStore: true } : {}),
+      ...(o.metarepo ? { metarepo: o.metarepo } : {}),
     });
     // A new metarepo starts up to date: every file at the current version of its schema, and
     // the Atticus that made it recorded (ADR 0051), so its first doctor has nothing to upgrade.

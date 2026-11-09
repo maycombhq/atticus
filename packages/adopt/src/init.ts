@@ -55,6 +55,36 @@ export interface InitOptions {
    * with the org pack's name as its id, so a developer can `openspec store register` a clone.
    */
   openspecStore?: boolean;
+  /**
+   * ADR 0190: the metarepo's repo id on the Git host, written as `metarepo` under runtime.yaml's
+   * manual Git host. Left out: read from the folder's origin when it is a clone; else none yet
+   * (the Adapters panel in the app sets it).
+   */
+  metarepo?: string;
+}
+
+/**
+ * ADR 0190: the metarepo's id on the Git host from its clone URL: the repo after `_git/` (Azure
+ * Repos), `owner/name` for a host URL (GitHub, GitLab, Bitbucket), the folder's name for a path.
+ * Query, fragment, `.git` and credentials are not part of it.
+ */
+export function metarepoIdFromUrl(url: string): string | undefined {
+  const u = url
+    .trim()
+    .replace(/^([a-z][a-z0-9+.-]*:\/\/[^?#]*)[?#].*$/i, "$1")
+    .replace(/[/\\]+$/, "")
+    .replace(/\.git$/i, "");
+  if (!u) return undefined;
+  const underGit = /\/_git\/([^/]+)/.exec(u);
+  if (underGit) return decodeURIComponent(underGit[1]!);
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\/[^/]+\/(.+)$/i.exec(u);
+  const scp = /^[^/\\@\s]+@[^:/\\]+:(.+)$/.exec(u);
+  const path = scheme?.[1] ?? scp?.[1];
+  if (path) {
+    const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+    return parts.slice(-2).join("/") || undefined;
+  }
+  return u.split(/[/\\]/).pop() || undefined;
 }
 
 export interface InitResult {
@@ -169,12 +199,24 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
       defaults: false,
     });
   } else {
+    // ADR 0190: the Git host is manual from the start, named by its id on the host when known
+    // (given, else the origin of the clone it is made in, asked of Git: local, no network; a
+    // repository init just made has none).
+    const origin =
+      o.metarepo ??
+      (gitState !== "inside"
+        ? undefined
+        : await (o.git ?? createGit())(["config", "--get", "remote.origin.url"], dir).then(
+            (r) => metarepoIdFromUrl(r.stdout),
+            () => undefined,
+          ));
     await writeStartingPack(orgPack, {
       name: o.name,
       platform: o.platform,
       owner,
       sources: { schemaVersion: SOURCES_SCHEMA_VERSION },
       defaults: true,
+      gitHost: origin ? { metarepo: origin } : {},
     });
   }
 

@@ -177,6 +177,8 @@ describe("the local server (ADR 0015)", () => {
       openspec: "openspec",
       user: "priya",
       full: false,
+      // ADR 0190: the Forge fixture has an org pack, so the app shows the metarepo.
+      metarepo: true,
     });
   });
 
