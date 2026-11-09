@@ -245,3 +245,45 @@ it("lists the pending upgrade steps and runs atticus upgrade as a local job", as
     await s.close();
   }
 }, 60_000);
+
+/**
+ * Final review: Apply took the repo from the path as it came, so an encoded ../ read a facts
+ * file outside the metarepo. A repo that isn't a repo name is refused, one the workspace
+ * doesn't list isn't found, and no job starts for either.
+ */
+it("refuses Apply for a repo that isn't a repo name or isn't in the workspace", async () => {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { dirname, join } = await import("node:path");
+  const { factsDirOf } = await import("@maycombhq/core");
+  const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+  // A facts file where ../../outside/evil from the facts folder would land.
+  const evil = join(factsDirOf(root), "..", "..", "outside", "evil.jsonl");
+  await mkdir(dirname(evil), { recursive: true });
+  await writeFile(evil, "");
+  let ctxOf!: ServerContext;
+  const s = await startServer({
+    root,
+    port: 0,
+    user: "pat",
+    extend: (r, ctx) => {
+      ctxOf = ctx;
+      return uiRoutes(r, ctx);
+    },
+  });
+  try {
+    const h = { "X-Atticus-Token": s.token, "Content-Type": "application/json" };
+    const post = (repo: string) =>
+      fetch(`${s.url}/api/facts/${repo}/apply`, { method: "POST", headers: h, body: "{}" });
+    for (const repo of ["..%2F..%2Foutside%2Fevil", "..%5C..%5Coutside%5Cevil"]) {
+      const r = await post(repo);
+      expect(r.status).toBe(400);
+      expect(ctxOf.jobs.runningOf("local")).toBeUndefined();
+    }
+    const unknown = await post("forge-nowhere");
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { detail?: string }).detail).toContain("forge-nowhere");
+    expect(ctxOf.jobs.runningOf("local")).toBeUndefined();
+  } finally {
+    await s.close();
+  }
+}, 60_000);

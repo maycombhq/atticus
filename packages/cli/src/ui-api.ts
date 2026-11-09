@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
-import { baseClonePath } from "@maycombhq/workspace";
+import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import {
   Api,
   ChangeArtifact,
@@ -73,6 +73,9 @@ import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
  * terminal does, so the screen and `atticus …` can never disagree: exit 0 is success, 1 is a
  * refusal (422 with the command's own words), 2 a bad request (400).
  */
+
+/** A repo name, as the other /api/facts/{repo} routes take it (ui-api-facts.ts). */
+const FACTS_REPO = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
 
 /** Opens the task's repo's worktree when the change has none for it; undefined when it has. */
 async function openTaskWorktree(
@@ -536,10 +539,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
       .add("POST", "/api/facts/{repo}/apply", async ({ params }) => {
         const { verifyCommand } = await import("./verify-commands.js");
-        return asJob(`Applying to ${params.repo}`, () =>
-          run((io) =>
-            verifyCommand(root, params.repo!, { write: true, verbose: false, json: false }, io),
-          ),
+        // Final review: the router decodes %2F and %5C, so the repo is checked as every other
+        // /api/facts/{repo} route checks it, and must be one the workspace lists, before any
+        // file is read under its name.
+        const repo = params.repo!;
+        if (!FACTS_REPO.test(repo)) throw badRequest(`${JSON.stringify(repo)} isn't a repo name.`);
+        if (!(await loadRepos(root)).some((x) => x.id === repo))
+          throw notFound(`There is no repo ${repo} in this workspace.`);
+        return asJob(`Applying to ${repo}`, () =>
+          run((io) => verifyCommand(root, repo, { write: true, verbose: false, json: false }, io)),
         );
       })
       // Ninth UX walk: the upgrade steps this metarepo waits on (runtime.yaml at an older schema,

@@ -406,3 +406,71 @@ describe("joinRecords through a gateway: a hop the AI decided makes the whole li
     for (const r of links) expect(r.flags ?? []).not.toContain("joined-by-ai");
   });
 });
+
+describe("joinRecords through a gateway: a hop that guessed makes the whole link a guess (final review)", () => {
+  // A hop's forwarding call joined by path, by a host's first label or by a person's pairing
+  // was dropped: the walked link came out verified, flagged joined-by-host.
+  type Link = { confidence: string; flags?: string[]; evidence: Record<string, unknown>[] };
+  const walkedLinks = (rs: readonly unknown[]) =>
+    (rs as (Link & { kind: string; from?: string; to?: string })[]).filter(
+      (r) => r.kind === "Interface" && r.from === "portal-api" && r.to === "accounts-api",
+    );
+
+  it("a hop joined by path: the walked link is inferred and flagged joined-by-path", () => {
+    const repos = swap(estate(), "forge-gateway", (fs) =>
+      fs.map((f) => {
+        if (f.kind !== "call") return f;
+        const { base: _b, host: _h, ...rest } = f as Fact & { base?: string; host?: string };
+        return rest as Fact;
+      }),
+    );
+    const out = joinFacts({ repos });
+    const hop = out.joins.find((j) => j.call.fact === "call.post.transfers")!;
+    expect(hop).toMatchObject({ how: "path", inferred: { within: "estate" } });
+    const post = out.joins.find((j) => j.call.fact === PORTAL_POST)!;
+    expect(post.gateway).toHaveLength(1);
+    expect(post.inferred).toEqual({ within: "estate" });
+    const links = walkedLinks(joinRecords(out, repos));
+    expect(links).toHaveLength(2);
+    for (const r of links) {
+      expect(r.confidence).toBe("inferred");
+      expect(r.flags?.[0]).toBe("joined-by-path");
+      expect(r.flags ?? []).not.toContain("joined-by-host");
+    }
+  });
+
+  it("a hop a person paired: the walked link is that person's pairing, citing the hop's call", () => {
+    const repos = estate();
+    const out = joinFacts({
+      repos,
+      pairs: {
+        "forge-gateway": {
+          "call.post.transfers": {
+            repo: "forge-accounts",
+            entry: "entry.post.transfers",
+            path: "/transfers",
+            by: "dana.okafor",
+          },
+        },
+      },
+    });
+    const post = out.joins.find((j) => j.call.fact === PORTAL_POST)!;
+    expect(post.gateway).toHaveLength(1);
+    expect(post.paired).toMatchObject({ by: "dana.okafor" });
+    const iface = joinRecords(out, repos).find((r) => r.id === post.interface) as unknown as Link;
+    expect(iface.confidence).toBe("inferred");
+    expect(iface.flags).toEqual(["joined-by-person"]);
+    expect(iface.evidence).toContainEqual(
+      expect.objectContaining({
+        source: "manual",
+        repo: "forge-gateway",
+        path: "proxies/forge-accounts-v1/apiproxy/policies/AM-RewriteTransfers.xml",
+        line: 8,
+        by: "dana.okafor",
+      }),
+    );
+    // The GET's hop nobody paired stays as the code says.
+    const get = out.joins.find((j) => j.call.fact === PORTAL_GET)!;
+    expect(get.paired).toBeUndefined();
+  });
+});

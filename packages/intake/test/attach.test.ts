@@ -238,6 +238,34 @@ describe("attaching files to a change", () => {
       "It is empty.",
     ]);
   });
+
+  it("never gives two files names that differ only in case, nor index.yaml's or read/'s (final review)", async () => {
+    // NTFS doesn't tell SPEC.pdf from spec.pdf: the second copy overwrote the first on Windows.
+    const dir = await changeDir();
+    const bytes = (s: string) => new Uint8Array(Buffer.from(s));
+    const at = { by: "pat", at: AT };
+    await attachToChange(dir, [{ name: "spec.pdf", bytes: bytes("%PDF-1.4 one\n") }], at);
+    const r = await attachToChange(
+      dir,
+      [
+        { name: "SPEC.pdf", bytes: bytes("%PDF-1.4 two\n") },
+        { name: "Spec.PDF", bytes: bytes("%PDF-1.4 three\n") },
+        { name: "INDEX.yaml", bytes: bytes("not: the index\n") },
+        { name: "READ", bytes: bytes("not the read folder\n") },
+      ],
+      at,
+    );
+    expect(r.refused).toEqual([]);
+    expect(r.added.map((a) => a.path)).toEqual([
+      "inputs/SPEC-2.pdf",
+      "inputs/Spec-3.PDF",
+      "inputs/INDEX-2.yaml",
+      "inputs/READ-2",
+    ]);
+    const lower = (await readChangeInputs(dir)).files.map((f) => f.path.toLowerCase());
+    expect(new Set(lower).size).toBe(lower.length);
+    expect(parse(await readFile(join(dir, "inputs/index.yaml"), "utf8")).schemaVersion).toBe(1);
+  });
 });
 
 function r0Sha(): string {
