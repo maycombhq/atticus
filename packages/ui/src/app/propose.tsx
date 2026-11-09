@@ -75,6 +75,8 @@ export function ApplyAndPropose(p: {
 }) {
   const apply = useAction();
   const [applied, setApplied] = useState<string[]>();
+  // Every run the app starts shows in the Console: this one's entry, linked while it runs.
+  const [jobId, setJobId] = useState<string | undefined>();
   return (
     <div className="stack" style={{ gap: 8 }}>
       {p.repo && (
@@ -90,6 +92,8 @@ export function ApplyAndPropose(p: {
                     const r = await followJob(
                       `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
                       {},
+                      undefined,
+                      setJobId,
                     );
                     setApplied(r.lines);
                     // A correction's Apply can take its panel away (the fact it was on goes):
@@ -115,6 +119,7 @@ export function ApplyAndPropose(p: {
             >
               {apply.busy ? P.applying : P.apply(p.repo)}
             </button>
+            {apply.busy && <ShowInConsole id={jobId} />}
           </div>
           <Note note={apply.note} />
           {applied && applied.length > 0 && (
@@ -308,6 +313,47 @@ export function BringIn() {
   );
 }
 
+/** `atticus verify --all --write`, then Propose for review. */
+export function ApplyAll({ noPropose }: { noPropose?: boolean }) {
+  const act = useAction();
+  const [lines, setLines] = useState<string[]>();
+  const [jobId, setJobId] = useState<string | undefined>();
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="row" style={{ gap: 6, alignItems: "center" }}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={act.busy}
+          onClick={() =>
+            void act.run(async () => {
+              try {
+                const r = await followJob("/api/facts/apply-all", {}, undefined, setJobId);
+                setLines(r.lines);
+              } catch (e) {
+                setLines([(e as Error).message]);
+                throw e;
+              } finally {
+                workChanged();
+              }
+            }, COPY.appStep.appliedAll)
+          }
+        >
+          {act.busy ? COPY.appStep.applyingAll : COPY.appStep.applyAll}
+        </button>
+        {act.busy && <ShowInConsole id={jobId} />}
+      </div>
+      <Note note={act.note} />
+      {lines && lines.length > 0 && (
+        <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
+          {lines.join("\n")}
+        </pre>
+      )}
+      {!noPropose && <Propose scope="work" />}
+    </div>
+  );
+}
+
 /**
  * UX re-walk: what the app's work changed and nobody has proposed yet (an answer, a correction,
  * an audit after the page that made it is gone), with Propose for review, where a person comes
@@ -352,6 +398,8 @@ export function PendingProposals() {
           <p className="work-say" style={{ margin: 0 }}>
             {P.applyFirst}
           </p>
+          {/* Several repos corrected (lines drawn on the map join two): one Apply for them all. */}
+          {repos.length > 1 && <ApplyAll noPropose />}
           {repos.map((r) => (
             <ApplyAndPropose key={r} scope="corrections" repo={r} noPropose />
           ))}

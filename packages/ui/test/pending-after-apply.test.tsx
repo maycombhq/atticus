@@ -31,7 +31,8 @@ vi.mock("../src/api/client.js", async () => ({
   }),
 }));
 const { COPY } = await import("../src/copy.js");
-const { ApplyAndPropose, PendingProposals, Propose } = await import("../src/app/propose.js");
+const { ApplyAll, ApplyAndPropose, PendingProposals, Propose } =
+  await import("../src/app/propose.js");
 const P = COPY.propose;
 
 it("offers no Apply once Apply ran after the corrections", () => {
@@ -47,6 +48,24 @@ it("offers Apply for a repo whose corrections are newer than its last Apply", ()
   const m = mount(PendingProposals as never, {} as never);
   expect(text(m.tree)).toContain(P.applyFirst);
   expect(all(m.tree).find((e) => e.type === ApplyAndPropose)?.props.repo).toBe("forge-card-vault");
+});
+
+it("one repo corrected: its own Apply, and no Apply to every repo's map", () => {
+  applyFirst = ["forge-card-vault"];
+  const m = mount(PendingProposals as never, {} as never);
+  expect(all(m.tree).some((e) => e.type === ApplyAll)).toBe(false);
+});
+
+it("a line drawn on the map corrects two repos: one Apply for them all, beside each repo's", () => {
+  applyFirst = ["forge-card-vault", "forge-ledger"];
+  const m = mount(PendingProposals as never, {} as never);
+  const one = all(m.tree).find((e) => e.type === ApplyAll);
+  expect(one?.props.noPropose).toBe(true);
+  expect(
+    all(m.tree)
+      .filter((e) => e.type === ApplyAndPropose)
+      .map((e) => e.props.repo),
+  ).toEqual(["forge-card-vault", "forge-ledger"]);
 });
 
 it("an older server without applyFirst still asks for Apply on a corrections file", () => {

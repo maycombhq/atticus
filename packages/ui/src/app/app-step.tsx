@@ -2,7 +2,9 @@ import { useState } from "react";
 import { api } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "../screens/know/common.js";
-import { ApplyAndPropose, followJob, Propose, workChanged } from "./propose.js";
+import { ApplyAll, ApplyAndPropose, followJob, workChanged } from "./propose.js";
+// Home's pending list offers it too; it lives beside Apply and Propose.
+export { ApplyAll };
 import { RunStep, stepArgs } from "./runstep.js";
 import { RunWithCopilot, useCopilotRuns, type StartAsk } from "./copilot-runs.js";
 import { CopyButton } from "../screens/run/shared.js";
@@ -154,45 +156,6 @@ export function AppStepFor({
 }) {
   const step = appStep(command);
   return step ? <AppStep step={step} {...(scope ? { scope } : {})} /> : null;
-}
-
-/** `atticus verify --all --write`, then Propose for review. */
-export function ApplyAll({ noPropose }: { noPropose?: boolean }) {
-  const act = useAction();
-  const [lines, setLines] = useState<string[]>();
-  return (
-    <div className="stack" style={{ gap: 8 }}>
-      <div className="row" style={{ gap: 6 }}>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={act.busy}
-          onClick={() =>
-            void act.run(async () => {
-              try {
-                const r = await followJob("/api/facts/apply-all", {});
-                setLines(r.lines);
-              } catch (e) {
-                setLines([(e as Error).message]);
-                throw e;
-              } finally {
-                workChanged();
-              }
-            }, T.appliedAll)
-          }
-        >
-          {act.busy ? T.applyingAll : T.applyAll}
-        </button>
-      </div>
-      <Note note={act.note} />
-      {lines && lines.length > 0 && (
-        <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
-          {lines.join("\n")}
-        </pre>
-      )}
-      {!noPropose && <Propose scope="work" />}
-    </div>
-  );
 }
 
 /** A local step: the server's job followed to its end (or its answer), and what it printed. */

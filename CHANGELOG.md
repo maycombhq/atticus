@@ -6,6 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **After correcting the map, one Apply for every repo you corrected**: Home's list of what waits for review offers Apply to every repo's map when more than one repo has corrections (a line drawn between two boxes corrects both), beside each repo's own Apply. Every Apply links its Console entry while it runs.
 - **Set up's "Choose how AI runs here" is open again on a new metarepo**: `atticus init` now writes the manual git host into runtime.yaml, and the step read that as a choice made. Adapters aren't how AI runs, so the step ignores them.
 - An Apigee proxy links to the backend endpoint it forwards to:
   - **The route's path suffix is added to the target's path.** A forwarding call recorded with the target `<URL>`'s path only (`/forge-fees/1.0/fees`) was matched as it is, so the proxy's link reached the service with "No line cited at this end". The join now adds each of the proxy's routes' suffix (the part after its `<BasePath>`), as Apigee does, and links each route to the entry that answers it, citing the route's line, the target's `<URL>` line and the entry's; a `<BasePath>/**` pass-through links to every entry under the target's path (at most 50), each by the entry's own method. A forwarding call already written with the suffix keeps it, and `target.copy.pathsuffix` set false keeps the target's path as it is (and is cited).
