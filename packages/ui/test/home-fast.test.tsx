@@ -32,6 +32,7 @@ vi.mock("../src/api/client.js", async () => ({
     reload: () => reloads++,
   }),
   useLiveEvents: () => undefined,
+  useFileChanges: () => undefined,
 }));
 const { COPY } = await import("../src/copy.js");
 const { SetupChecklist } = await import("../src/screens/CommandCenter.js");
@@ -66,4 +67,11 @@ it("reloads the catalog's panels only for a burst that can change the catalog", 
   expect(catalogMayHaveChanged([f("kb")])).toBe(true);
   expect(catalogMayHaveChanged([f()])).toBe(true);
   expect(catalogMayHaveChanged([{ type: "index.rebuilt", records: 3 }])).toBe(true);
+});
+
+it("follows the layout the server names: a file it tags `catalog` is the catalog's", () => {
+  const f = (path: string, catalog: boolean) => ({ type: "file.changed", path, catalog });
+  expect(catalogMayHaveChanged([f("estate/records/generated/Service/pay.yaml", true)])).toBe(true);
+  expect(catalogMayHaveChanged([f("catalog/generated/Service/pay.yaml", false)])).toBe(false);
+  expect(catalogMayHaveChanged([f("questions/q-1.yaml", false), f("estate", true)])).toBe(true);
 });

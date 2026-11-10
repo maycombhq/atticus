@@ -7,6 +7,7 @@ import {
   api,
   ApiError,
   catalogMayHaveChanged,
+  FILE_QUIET_MS,
   isOffline,
   useApi,
   useFileChanges,
@@ -238,11 +239,72 @@ const SETUP_FIX: Record<string, string> = {
   clones: COPY.appStep.setupClones,
   scan: COPY.appStep.setupRead,
   baseline: COPY.appStep.setupBaseline,
+  // Beta.23 review: the machine's checks are on Settings › This machine, with Check again.
+  machine: COPY.appStep.setupMachine,
 };
+
+/** A setup step's fix in the app's words; the server's own while the machine is checked. */
+const setupFix = (x: Setup["steps"][number]) => (x.checking ? x.fix : (SETUP_FIX[x.id] ?? x.fix));
+
+/** The machine's step is failing (its checks ran): the person's own install needs fixing. */
+const machineFailing = (x: Setup["steps"][number]) => x.id === "machine" && !x.done && !x.checking;
+
+/** The link to the page that has the machine's checks, each with its fix, and Check again. */
+function OpenMachine() {
+  return (
+    <span>
+      <a className="btn" href="#/settings">
+        {COPY.appStep.openMachine}
+      </a>
+    </span>
+  );
+}
+
+/**
+ * Beta.23 review: what a folded Home (a product owner's, a business analyst's) still shows
+ * outside the fold, since it is about the person's own install: a failing machine step, and the
+ * alert that a newer Atticus upgraded this metarepo. The rest of setting up stays folded.
+ */
+export function OwnInstall() {
+  const setup = useApi<Setup>("/api/setup");
+  useFileChanges(() => setup.reload(), FILE_QUIET_MS, { jobs: true });
+  const machine =
+    setup.state === "ready" && !setup.data.baselined
+      ? setup.data.steps.find(machineFailing)
+      : undefined;
+  return (
+    <>
+      {machine && (
+        <section
+          className="state error stack"
+          role="alert"
+          aria-label={COPY.appStep.ownInstall}
+          style={{ gap: 6 }}
+        >
+          <span style={{ fontSize: 13 }}>
+            {machine.label}
+            <span className="muted" style={{ fontSize: 12 }}>
+              {" "}
+              · {machine.detail}
+            </span>
+          </span>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {setupFix(machine)}
+          </span>
+          <OpenMachine />
+        </section>
+      )}
+      <UpgradeOffer part="newer" />
+    </>
+  );
+}
 
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
 export function SetupChecklist() {
   const setup = useApi<Setup>("/api/setup");
+  // Beta.23 review: read again when files change or a step's job ends (a Sync clones into
+  // workspace/, which no event names), so a step done in the app is ticked here.
+  useFileChanges(() => setup.reload(), FILE_QUIET_MS, { jobs: true });
   const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
   // UX review (2026-11-08): the checklist hides once baselined, but the note and Propose for
   // review of catalog/baseline.yaml stay after this page's accept (ADR 0183).
@@ -301,9 +363,10 @@ export function SetupChecklist() {
                 </span>
                 {!x.done && x.fix && (
                   <span className="muted" style={{ fontSize: 12 }}>
-                    {SETUP_FIX[x.id] ?? x.fix}
+                    {setupFix(x)}
                   </span>
                 )}
+                {machineFailing(x) && <OpenMachine />}
                 {/* ADR 0188: the daily steps of setup are buttons here, the commands folded. */}
                 {!x.done && x.id === "clones" && (
                   <Command text="atticus workspace sync" label={COPY.runNext.copy} />
@@ -808,28 +871,34 @@ export function CommandCenter() {
   );
   // beta.23: a burst of file events is read once, and the catalog's panels (the counts, the
   // graph, the map) only when the burst can change the catalog.
-  useFileChanges((events) => {
-    const files = events.some((e) => e.type === "file.changed");
-    if (catalogMayHaveChanged(events)) {
-      kinds.reload();
-      graph.reload();
-      map.reload();
-    }
-    if (files || events.some((e) => e.type === "index.rebuilt")) {
-      changes.reload();
-      findings.reload();
-    }
-    if (files) {
-      onboarding.reload();
-      trust.reload();
-      needs.reload();
-      todo.reload();
-      qs.reload();
-      asked.reload();
-      knowledge.reload();
-    }
-    if (!files && events.some((e) => e.type === "run.changed")) findings.reload();
-  });
+  // Beta.23 review: a step's job that ended is heard too (a Sync clones into workspace/, which
+  // isn't watched), and Home reads what it shows again as for files.
+  useFileChanges(
+    (events) => {
+      const files = events.some((e) => e.type === "file.changed" || e.type === "job.done");
+      if (catalogMayHaveChanged(events)) {
+        kinds.reload();
+        graph.reload();
+        map.reload();
+      }
+      if (files || events.some((e) => e.type === "index.rebuilt")) {
+        changes.reload();
+        findings.reload();
+      }
+      if (files) {
+        onboarding.reload();
+        trust.reload();
+        needs.reload();
+        todo.reload();
+        qs.reload();
+        asked.reload();
+        knowledge.reload();
+      }
+      if (!files && events.some((e) => e.type === "run.changed")) findings.reload();
+    },
+    FILE_QUIET_MS,
+    { jobs: true },
+  );
 
   const inFlight = changes.state === "ready" ? changes.data.filter((c) => ACTIVE.has(c.state)) : [];
   const open = findings.state === "ready" ? findings.data : [];
@@ -874,13 +943,17 @@ export function CommandCenter() {
       </div>
       {/* ADR 0191: for a product owner or business analyst, set-up is folded away. */}
       {/* One fold for all of it (it was three, one of them empty with no upgrade waiting). */}
+      {/* Beta.23 review: what the person's own install needs is never folded away. */}
       {fold ? (
-        <AdminFold fold>
-          <HowStepsRun />
-          <SetupChecklist />
-          <UpgradeOffer />
-          <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
-        </AdminFold>
+        <>
+          <OwnInstall />
+          <AdminFold fold>
+            <HowStepsRun />
+            <SetupChecklist />
+            <UpgradeOffer part="pending" />
+            <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
+          </AdminFold>
+        </>
       ) : (
         <>
           <HowStepsRun />

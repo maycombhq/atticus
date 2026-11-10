@@ -86,11 +86,24 @@ export function UpgradeOfferView(p: {
  * as `runtime-`) offers it where those steps matter (the AI page, for runtime.yaml), and only
  * when one of them waits; the check is upgrade's own, so the page and `--check` always agree.
  */
-export function UpgradeOffer({ only }: { only?: string } = {}) {
+export function UpgradeOffer({
+  only,
+  part,
+}: {
+  only?: string;
+  /**
+   * Beta.23 review: a folded Home shows the alert that a newer Atticus upgraded the metarepo
+   * (`newer`: it is about the person's own install) outside the fold, and the steps that wait
+   * (`pending`) in it. Left out, both.
+   */
+  part?: "newer" | "pending";
+} = {}) {
   const u = useApi<Api.UpgradeViewT>("/api/upgrade");
   useReloadOnFiles(u);
   const [run, setRun] = useState<UpgradeRun>({ state: "idle" });
   if (u.state !== "ready") return null;
+  const newer = !!(u.data.newer && u.data.stamp);
+  if ((part === "newer" && !newer) || (part === "pending" && newer)) return null;
   if (only && run.state === "idle" && !u.data.pending.some((s) => s.id.startsWith(only)))
     return null;
   return (

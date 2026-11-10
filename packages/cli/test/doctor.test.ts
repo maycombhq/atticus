@@ -583,6 +583,24 @@ describe("atticus doctor", () => {
     expect(bad.steps[0]).toMatchObject({ id: "machine", done: false });
     expect(bad.steps[0]!.fix).toMatch(/Node 22\.13\.0 or later/);
   });
+
+  it("sends the machine's step to the page that has its checks, the app first", async () => {
+    const { MACHINE_CHECKING } = await import("../src/baseline-commands.js");
+    const bad = await setupSteps(root, {
+      doctor: await doctorChecks(root, healthy({ nodeVersion: "18.0.0" })),
+    });
+    const ok = await setupSteps(root, { doctor: await doctorChecks(root, healthy()) });
+    const checking = await setupSteps(root, { doctor: MACHINE_CHECKING });
+    for (const s of [bad, ok, checking]) {
+      const fix = s.steps[0]!.fix!;
+      expect(fix).not.toMatch(/Set up › Doctor/);
+      expect(fix).toMatch(/^.*Settings › This machine/);
+      expect(fix.indexOf("Settings › This machine")).toBeLessThan(
+        fix.includes("atticus doctor") ? fix.indexOf("atticus doctor") : Infinity,
+      );
+    }
+    expect(bad.steps[0]!.fix).toMatch(/Check again/);
+  });
 });
 
 describe("facts read (ADR 0124: Atticus 2 reads a repo with the assistant, not a scan)", () => {

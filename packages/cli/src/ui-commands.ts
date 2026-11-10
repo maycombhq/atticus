@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 import {
   catalogDirOf,
+  catalogMayHaveChangedAt,
   createLog,
   DEFAULT_PORT,
   keptFilesMayHaveChanged,
-  orgPackDirOf,
   trustKeptFiles,
 } from "@maycombhq/core";
 import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
@@ -65,14 +65,7 @@ import { uiRolesRoutes } from "./ui-api-roles.js";
  * question) leaves it kept: reading every record again for it made the app's screens slow.
  */
 export function catalogMayHaveChanged(root: string, path: string): boolean {
-  const p = path.replace(/^\.\/?/, "").replace(/\/+$/, "");
-  const near = (dir: string) => {
-    const rel = relative(root, dir).split(sep).join("/");
-    // A folder outside the root isn't followed: any change may be the one.
-    if (rel.startsWith("..") || isAbsolute(rel)) return true;
-    return p === "" || p === rel || p.startsWith(rel + "/") || rel.startsWith(p + "/");
-  };
-  return near(catalogDirOf(root)) || near(orgPackDirOf(root));
+  return catalogMayHaveChangedAt(root, path);
 }
 
 /** Every route of the app's local API, on the server's base routes (one place, so a test can check the API doc against it). */

@@ -238,15 +238,23 @@ function ChangeRoleQuestions(p: {
   );
 }
 
-/** States a change is no longer in flight in. */
-const LANDED = new Set(["released", "archived", "post-release-review"]);
+/**
+ * States a change is no longer in flight in. Beta.23 review: a change in its post-release review
+ * is still in flight (Home's Your changes lists it), so its roles are reported too.
+ */
+const LANDED = new Set(["released", "archived"]);
+
+/** Most changes whose questions Home shows. */
+const SHOWN = 5;
 
 /**
  * Home's "Your role's questions": for each change in flight (up to five), the open questions of
- * the person's role, and the picker when no change names them.
+ * the person's role, and the picker when no change names them. The person's roles are told for
+ * every change in flight (beta.23 review): from the changes list's `yourRoles` (the owners,
+ * else the role picked), else from the change's question panel.
  */
 export function YourRoleQuestions(p: {
-  changes: readonly { id: string; state: string }[];
+  changes: readonly { id: string; state: string; yourRoles?: readonly string[] | undefined }[];
   /** ADR 0191: the person's roles on each change in flight, for Home to show by role. */
   onRoles?: (byChange: Readonly<Record<string, Role[]>>) => void;
 }) {
@@ -266,12 +274,20 @@ export function YourRoleQuestions(p: {
       ),
   );
   const { onRoles } = p;
+  const inFlight = p.changes.filter((c) => !LANDED.has(c.state));
+  const told: Record<string, Role[]> = {};
+  for (const c of inFlight) {
+    const roles = c.yourRoles ? yourRole(c.yourRoles, picked).roles : byChange[c.id];
+    if (roles) told[c.id] = roles;
+  }
+  // One key for what is told, so Home hears it again only when it changes.
+  const key = JSON.stringify(Object.entries(told));
   useEffect(() => {
-    onRoles?.(byChange);
-  }, [byChange, onRoles]);
-  const live = p.changes.filter((c) => !LANDED.has(c.state)).slice(0, 5);
+    onRoles?.(Object.fromEntries(JSON.parse(key) as [string, Role[]][]));
+  }, [key, onRoles]);
+  const live = inFlight.slice(0, SHOWN);
   if (!live.length) return null;
-  const picker = pickerFor(live.map((c) => named[c.id]));
+  const picker = pickerFor(live.map((c) => (c.yourRoles ? c.yourRoles.some(isRole) : named[c.id])));
   return (
     <section className="panel stack" aria-labelledby="your-role-questions" style={{ gap: 8 }}>
       <p id="your-role-questions" className="hud" style={{ margin: 0 }}>

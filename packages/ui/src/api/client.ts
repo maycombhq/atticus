@@ -275,7 +275,18 @@ export const FILE_QUIET_MS = 250;
  * screen that read everything again for each sent the server hundreds of requests. `on` gets the
  * burst's events after a quiet moment (and at least every two seconds while they keep coming).
  */
-export function useFileChanges(on: (events: LiveEvent[]) => void, quietMs = FILE_QUIET_MS): void {
+export function useFileChanges(
+  on: (events: LiveEvent[]) => void,
+  quietMs = FILE_QUIET_MS,
+  o: {
+    /**
+     * Beta.23 review: a job's end (`job.done`) is heard too. A job may write where no page
+     * follows files (a Sync clones into workspace/, which isn't watched), and the page that
+     * shows its result must read it again.
+     */
+    jobs?: boolean;
+  } = {},
+): void {
   const handler = useRef(on);
   handler.current = on;
   const burst = useRef<{
@@ -289,8 +300,9 @@ export function useFileChanges(on: (events: LiveEvent[]) => void, quietMs = FILE
     },
     [],
   );
+  const jobs = !!o.jobs;
   useLiveEvents((e) => {
-    if (!isFileChange(e)) return;
+    if (!isFileChange(e) && !(jobs && e.type === "job.done")) return;
     const b = burst.current;
     const now = Date.now();
     if (!b.events.length) b.first = now;
@@ -309,12 +321,15 @@ export function useFileChanges(on: (events: LiveEvent[]) => void, quietMs = FILE
 /**
  * Whether a burst can change what the catalog says (its records, so the counts, the graph and
  * the map): a file under a catalog folder or the org pack, a top folder (the watcher names top
- * folders when many files change), the index rebuilt, or an event that names no path.
+ * folders when many files change), the index rebuilt, or an event that names no path. The
+ * server says which (`catalog` on each file.changed, local API 3.9.0), by the folders the org
+ * pack's layout names; the folder names are only the guess for a server that doesn't.
  */
 export const catalogMayHaveChanged = (events: LiveEvent[]): boolean =>
   events.some((e) => {
     if (e.type === "index.rebuilt") return true;
     if (e.type !== "file.changed") return false;
+    if (typeof e.catalog === "boolean") return e.catalog;
     const p = typeof e.path === "string" ? e.path.replace(/^\.\//, "") : "";
     return !p || !p.includes("/") || /(^|\/)(catalog|org-pack)(\/|$)/.test(p);
   });

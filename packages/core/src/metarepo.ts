@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { Sources } from "./schema/orgpack.js";
 
@@ -253,6 +253,24 @@ export function layoutOf(root: string): { catalog: string; openspec: string } {
 /** The catalog folder (holding generated/ and curated/). */
 export function catalogDirOf(root: string): string {
   return join(root, ...layoutOf(root).catalog.split("/"));
+}
+
+/**
+ * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
+ * change the catalog: a file in the catalog folder the layout names, that folder or one above it
+ * (the watcher names top folders when many files change), or the org pack, whose sources.yaml
+ * says where the catalog is. The server reads the catalog again only then, and tags each
+ * `file.changed` event with it (`catalog`), so a page follows the layout too.
+ */
+export function catalogMayHaveChangedAt(root: string, path: string): boolean {
+  const p = path.replace(/^\.\/?/, "").replace(/\/+$/, "");
+  const near = (dir: string) => {
+    const rel = relative(root, dir).split(sep).join("/");
+    // A folder outside the root isn't followed: any change may be the one.
+    if (rel.startsWith("..") || isAbsolute(rel)) return true;
+    return p === "" || p === rel || p.startsWith(rel + "/") || rel.startsWith(p + "/");
+  };
+  return near(catalogDirOf(root)) || near(orgPackDirOf(root));
 }
 
 /**

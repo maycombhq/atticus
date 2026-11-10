@@ -4320,6 +4320,10 @@ export const COPY = {
     openMap: "Open the map",
     readOnMap: (repo: string) => `${repo} is read and on the map.`,
     setupClones: "Sync the repos: it clones what's missing into the workspace.",
+    setupMachine:
+      "Open Settings › This machine: each check says how to fix it, and Check again reads them again.",
+    openMachine: "Open Settings › This machine",
+    ownInstall: "Your install",
     setupRead:
       "Read each repo with your assistant on Map › Trust; Done checks every fact against the line it cites and puts it on the map.",
     setupBaseline:
