@@ -22,7 +22,9 @@ permissions:
 # A newer push cancels the run for an older one.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # On main a push waits for the run before it, so every commit's Windows result comes back
+  # (the runs there are long, and pushes kept cancelling them); elsewhere the newest wins.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
