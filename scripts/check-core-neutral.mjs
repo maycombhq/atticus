@@ -173,9 +173,9 @@ export const ALLOW = [
   },
   {
     file: "packages/core/src/facts-join.ts",
-    names: ["apigee"],
+    names: ["apigee", "bank"],
     reason:
-      "a gateway bundle's folder names (apiproxy/, sharedflowbundle/) say an entry is a gateway route whatever the repo's type says, so the join follows the hop (ADR 0124 addenda A-gateway and A-gateway2); the reading rules and the policy kinds stay in the assistant's protocol and the verifier",
+      "`bank` is one of the public top-level domains (PUBLIC_TLDS) the outside rule places a host by, a name ending, never an industry the join assumes; a gateway bundle's folder names (apiproxy/, sharedflowbundle/) say an entry is a gateway route whatever the repo's type says, so the join follows the hop (ADR 0124 addenda A-gateway and A-gateway2); the reading rules and the policy kinds stay in the assistant's protocol and the verifier",
   },
   {
     file: "packages/core/src/facts-join-vendor.ts",

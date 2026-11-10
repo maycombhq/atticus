@@ -582,6 +582,9 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
     term: 0,
     // ADR 0180: what a component is.
     component: 0,
+    // ADR 0192: what a component's build publishes, and what it builds on.
+    artifact: 0,
+    dependency: 0,
   };
   for (const f of facts) byKind[f.kind]++;
   return {

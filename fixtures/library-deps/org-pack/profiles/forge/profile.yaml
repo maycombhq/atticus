@@ -1,0 +1,26 @@
+# Invented: the Forge estate's systems, and the vendor (Northwind, invented) the library calls.
+schemaVersion: 1
+platform: forge
+name: Forge
+systems:
+  - id: payments
+    name: Payments
+    boundary: product
+    owner: team-payments
+    aliases: []
+  - id: ledger
+    name: Ledger
+    boundary: product
+    owner: team-ledger
+    aliases: []
+  - id: wallets
+    name: Wallets
+    boundary: product
+    owner: team-wallets
+    aliases: []
+  - id: northwind-fx
+    name: Northwind FX
+    boundary: vendor
+    owner: team-payments
+    aliases: [fx.northwind.example]
+environments: [dev]

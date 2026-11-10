@@ -23,6 +23,9 @@ export const FACT_KINDS = [
   "flow",
   "term",
   "component",
+  // ADR 0192: what a component's build publishes, and what it builds on.
+  "artifact",
+  "dependency",
 ] as const;
 export type FactKind = (typeof FACT_KINDS)[number];
 
@@ -291,8 +294,10 @@ export const DeployFact = z.strictObject({
  * 1: the shapes of ADR 0124 and its addenda. 2: a deploy fact's `host`, `basePath` and `exposes`.
  * 3 (ADR 0163): the `term` kind, and a call's `auth`, `authCite`, `tls` and `tlsCite`.
  * 4 (ADR 0180): the `component` kind, what a component is.
+ * 5 (ADR 0192): the `artifact` and `dependency` kinds, a component's build coordinates and what
+ * it builds on. A version-4 file reads unchanged: both are new kinds, nothing else moved.
  */
-export const FACTS_SCHEMA_VERSION = 4 as const;
+export const FACTS_SCHEMA_VERSION = 5 as const;
 
 export const SETTING_KINDS = [
   "timeout",
@@ -512,6 +517,63 @@ export const ComponentFact = z.strictObject({
   why: z.string().max(300).optional(),
 });
 
+/**
+ * A Maven `groupId` or Gradle `group`, and an `artifactId` or project name, as a build file
+ * writes them: letters, digits, `.`, `_` and `-`, never a placeholder (`${project.groupId}`): a
+ * coordinate set from a property is cited where the property writes it, in `cite.with`.
+ */
+const Coordinate = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9_][A-Za-z0-9._-]*$/, "a coordinate as the build file writes it, resolved");
+
+/**
+ * What a component's build publishes (ADR 0192): its own coordinates, `group` and `name` (a
+ * pom's project `<groupId>` and `<artifactId>`, a Gradle project's `group` and name). `cite` is the
+ * line that writes the name (the project's own `<artifactId>`, `rootProject.name`); the line that
+ * writes the group, when it is another (the project's `<groupId>`, the `<parent>`'s when the
+ * project inherits it, `group = '...'` in build.gradle), goes in `cite.with`, as does the
+ * version's. The verifier reads the build file to check each is what that line says, and that
+ * the name is the project's own, never a dependency's or a parent's.
+ *
+ * Nothing is projected into catalog C1 from it, as with a framework fact: the views read it, and
+ * the estate's dependency join (`joinDependencies`) pairs it with the `dependency` facts that name
+ * the same coordinates.
+ */
+export const ArtifactFact = z.strictObject({
+  kind: z.literal("artifact"),
+  ...common,
+  group: Coordinate,
+  name: Coordinate,
+  version: z.string().min(1).max(100).optional(),
+});
+
+/** A dependency's scope (ADR 0192): Maven's, or what a Gradle configuration means. */
+export const DEPENDENCY_SCOPES = ["compile", "runtime", "provided", "test", "import"] as const;
+export type DependencyScope = (typeof DEPENDENCY_SCOPES)[number];
+
+/**
+ * A build dependency a component declares (ADR 0192): the `group` and `name` of what it builds
+ * on, as the build file declares it in its dependencies (not a dependency-management block, a
+ * plugin or an exclusion). `cite` is the line that writes the name (the dependency's
+ * `<artifactId>`, a Gradle `implementation 'g:a:v'` line); the dependency's `<groupId>` line, when
+ * it is another, goes in `cite.with`. `scope` is the declared scope, left out for the default
+ * (compile). The dependency belongs to the component whose build file cites it: a module's pom
+ * is its module's.
+ *
+ * Every dependency is recorded, the organisation's own or not: which one is the estate's own is
+ * the dependency join's to say, from the coordinates the estate's `artifact` facts publish.
+ */
+export const DependencyFact = z.strictObject({
+  kind: z.literal("dependency"),
+  ...common,
+  group: Coordinate,
+  name: Coordinate,
+  version: z.string().min(1).max(100).optional(),
+  scope: z.enum(DEPENDENCY_SCOPES).optional(),
+});
+
 export const Fact = z.discriminatedUnion("kind", [
   EntryFact,
   CallFact,
@@ -523,6 +585,8 @@ export const Fact = z.discriminatedUnion("kind", [
   FlowFact,
   TermFact,
   ComponentFact,
+  ArtifactFact,
+  DependencyFact,
 ]);
 export type Fact = z.infer<typeof Fact>;
 export type FactOf<K extends FactKind> = Extract<Fact, { kind: K }>;

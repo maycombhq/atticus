@@ -48,6 +48,7 @@ import {
   openAt,
   outlineRows,
   viewKey,
+  linkTypeWord,
   type Views,
 } from "./model.js";
 import { WORDS } from "./words.js";
@@ -580,20 +581,22 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         return `/api/graph/edge-calls?node=${encodeURIComponent(v.node.id)}&lens=${lens}&edge=${e}`;
     return undefined;
   };
-  const above = (l: Api.HierEdgeT) => (
-    <ArrowWrong
-      link={l}
-      known={known}
-      labelOf={(id) => find(id)?.label ?? id}
-      {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
-      onSaved={(calls) =>
-        setWatched((w) => ({
-          calls: [...new Set([...(w?.calls ?? []), ...calls])],
-          before: w?.before ?? loaded,
-        }))
-      }
-    />
-  );
+  // ADR 0192: a build dependency has no calls to correct at once: each is corrected under it.
+  const above = (l: Api.HierEdgeT) =>
+    l.type === "depends-on" ? null : (
+      <ArrowWrong
+        link={l}
+        known={known}
+        labelOf={(id) => find(id)?.label ?? id}
+        {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+        onSaved={(calls) =>
+          setWatched((w) => ({
+            calls: [...new Set([...(w?.calls ?? []), ...calls])],
+            before: w?.before ?? loaded,
+          }))
+        }
+      />
+    );
   const crumbs = view ? [...view.path, view.node] : [];
 
   return (
@@ -1205,14 +1208,16 @@ export function Inspector({
         <ul>
           {links.map((l) => (
             <li key={l.id}>
-              {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type)}
+              {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type))}
               {l.gaps.length > 0 &&
                 ` · ${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
               {l.joins?.length ? (
                 // ADR 0135, C1: each call on the link, how it was joined and its lines.
                 <details>
                   <summary>
-                    {COPY.why.openOf(COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type))}
+                    {COPY.why.openOf(
+                      COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type)),
+                    )}
                   </summary>
                   <WhyLinked
                     link={l}

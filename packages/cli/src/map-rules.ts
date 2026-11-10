@@ -32,6 +32,7 @@ import {
 } from "@maycombhq/core";
 import {
   fileKinds,
+  isBuildFile,
   kindsOf,
   lineRangeOf,
   planBatches,
@@ -79,7 +80,13 @@ const has = (a: readonly string[], b: readonly string[]) => a.some((x) => b.incl
  */
 function applies(
   set: RuleSet,
-  f: { kinds: readonly string[]; rank: number; code: boolean; cited: ReadonlySet<string> },
+  f: {
+    path: string;
+    kinds: readonly string[];
+    rank: number;
+    code: boolean;
+    cited: ReadonlySet<string>;
+  },
 ): boolean {
   switch (set) {
     case "field-types":
@@ -105,6 +112,9 @@ function applies(
       return f.code
         ? f.rank === 1 || f.rank === 3 || f.cited.has("call")
         : has(f.kinds, ["config", "gateway"]);
+    case "build-coordinates":
+      // ADR 0192: the build files that write a project's coordinates and its dependencies.
+      return isBuildFile(f.path);
   }
 }
 
@@ -144,6 +154,7 @@ export function topUpFiles(o: {
     if (rank === 5) continue;
     const kinds = fileKinds(path);
     const of = {
+      path,
       kinds,
       rank,
       code: kinds.includes("backend") || kinds.includes("frontend"),

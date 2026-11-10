@@ -21,7 +21,7 @@ describe("the rule sets a read records (ADR 0167)", () => {
     expect(FACT_RULES_HASH).toBe(createHash("sha256").update(FACT_RULES).digest("hex"));
     // The same pin as map.test.ts: tagging the parts changed no word of the rules.
     expect(FACT_RULES_HASH).toBe(
-      "1959a897fec4a7fc4264c987aad7cbcabd4a3be74e36d0fd246bbd0a0fbf1c57",
+      "667960efb7051306fead9ecca9c599cc637b4bb74f551aaaccbbf548fc483aaf",
     );
     expect(ruleSetsNow()).toEqual([...RULE_SETS]);
     expect(rulesNow()).toEqual({ hash: FACT_RULES_HASH, sets: [...RULE_SETS] });
@@ -35,10 +35,13 @@ describe("the rule sets a read records (ADR 0167)", () => {
       "message-types",
       "terms",
       "call-auth",
+      "build-coordinates",
     ]);
     expect(rulesLacking({ hash: "older", sets: ["field-types", "mappings", "terms"] })).toEqual([
       "message-types",
       "call-auth",
+      // ADR 0192: a read before the build coordinates rule is topped up with it.
+      "build-coordinates",
     ]);
     // A change of words alone lacks no set.
     expect(rulesLacking({ hash: "older", sets: [...RULE_SETS] })).toEqual([]);
@@ -49,6 +52,8 @@ describe("the rule sets a read records (ADR 0167)", () => {
     expect(ruleSetKinds("terms")).toEqual(["data", "deploy", "config", "gateway"]);
     expect(ruleSetKinds("field-types")).toEqual(["frontend", "backend", "protocols"]);
     expect(ruleSetKinds("call-auth")).toEqual(["frontend", "backend", "config", "gateway"]);
+    // ADR 0192: the build files (pom.xml, build.gradle, settings.gradle are deploy files).
+    expect(ruleSetKinds("build-coordinates")).toEqual(["deploy"]);
   });
 
   it("a top-up's rules are the core and its sets' parts only", () => {

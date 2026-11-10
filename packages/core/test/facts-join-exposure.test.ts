@@ -158,7 +158,7 @@ const joinOf = (out: ReturnType<typeof joinFacts>, id: string) =>
 
 describe("J1: exposure facts, the facts schema", () => {
   it("is version 3 (ADR 0163; 2 since ADR 0143), and a deploy fact written before (no host, base path or exposes) parses unchanged", () => {
-    expect(FACTS_SCHEMA_VERSION).toBe(4);
+    expect(FACTS_SCHEMA_VERSION).toBe(5);
     const old = {
       kind: "deploy",
       id: "d-old",

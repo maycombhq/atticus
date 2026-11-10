@@ -267,8 +267,8 @@ const quote = (s: string) => s.replace(/"/g, "#quot;");
  * How an exported link is stroked: a person's word dashed, the AI's (ADR 0181) dotted, so the two
  * differ in shape; each also says so in its label (◆ and the words), never by colour alone.
  */
-const strokeOf = (l: CanvasLink): "ai" | "word" | undefined =>
-  l.declared || l.paired ? "word" : l.ai ? "ai" : undefined;
+const strokeOf = (l: CanvasLink): "ai" | "word" | "dep" | undefined =>
+  l.declared || l.paired ? "word" : l.ai ? "ai" : l.dependency ? "dep" : undefined;
 
 /** The picture as a Mermaid flowchart, labels intact; a person's word and the AI's drawn dotted. */
 export function toMermaid(g: CanvasGraph, dir: "LR" | "TB" = "LR"): string {
@@ -293,10 +293,17 @@ export interface Placed {
   height: number;
 }
 
-const DRAWIO_STROKE = { word: "dashed=1;", ai: "dashed=1;dashPattern=1 4;", none: "" } as const;
+// ADR 0192: a build dependency dash-dot, as on the canvas; its label says "depends on".
+const DRAWIO_STROKE = {
+  word: "dashed=1;",
+  ai: "dashed=1;dashPattern=1 4;",
+  dep: "dashed=1;dashPattern=8 3 2 3;",
+  none: "",
+} as const;
 const SVG_STROKE = {
   word: ' stroke-dasharray="6 4"',
   ai: ' stroke-dasharray="1 4" stroke-linecap="round"',
+  dep: ' stroke-dasharray="8 3 2 3"',
   none: "",
 } as const;
 

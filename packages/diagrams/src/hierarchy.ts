@@ -8,8 +8,10 @@ import {
   JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
   SHARED_MAP_EVIDENCE,
+  dependencyLinkId,
   type Api,
   type CatalogRecord,
+  type DependencyLink,
   type EvidenceT,
   type RecordOf,
 } from "@maycombhq/core";
@@ -133,9 +135,28 @@ const LENS_KINDS: Record<Lens, ReadonlySet<Kind>> = {
   infrastructure: new Set(["estate", "system", "repo", "component", "deployment", "environment"]),
 };
 
+// ADR 0192: a build dependency on a library of the estate's own is architecture, not
+// integration: it is drawn where the parts of the estate are, never with the calls and events.
 const LENS_EDGES: Record<Lens, ReadonlySet<EdgeType>> = {
-  architecture: new Set(["calls", "publishes", "subscribes", "uses", "reads", "writes"]),
-  repo: new Set(["calls", "publishes", "subscribes", "uses", "reads", "writes", "references"]),
+  architecture: new Set([
+    "calls",
+    "publishes",
+    "subscribes",
+    "uses",
+    "depends-on",
+    "reads",
+    "writes",
+  ]),
+  repo: new Set([
+    "calls",
+    "publishes",
+    "subscribes",
+    "uses",
+    "depends-on",
+    "reads",
+    "writes",
+    "references",
+  ]),
   data: new Set(["reads", "writes", "references"]),
   integration: new Set(["calls", "publishes", "subscribes"]),
   infrastructure: new Set(["deployed-to"]),
@@ -342,8 +363,44 @@ const all = <K extends CatalogRecord["kind"]>(rs: CatalogRecord[], k: K) =>
     .filter((r): r is RecordOf<K> => r.kind === k)
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
+/** What the estate is built from besides the catalog: the facts' own joins that C1 doesn't hold. */
+export interface BuildEstateOptions {
+  /**
+   * ADR 0192: the estate's dependency join (`joinDependencies` over the facts on file): each a
+   * `depends-on` edge from the depending component to the library's, its join citing the
+   * dependency's lines and the publishing lines. A link whose either end is no component of the
+   * catalog (a repo not written yet) is left out, never drawn to a box of its own.
+   */
+  dependsOn?: readonly DependencyLink[];
+}
+
+/** A `depends-on` edge's join (ADR 0192): how, the coordinates, and the lines at both ends. */
+export function dependencyJoin(l: DependencyLink): Join {
+  const lines = (end: DependencyLink["from"]): Evidence[] =>
+    end.lines.map((at) => ({ source: "code", repo: end.repo, at }));
+  return {
+    interface: dependencyLinkId(l),
+    from: l.from.component,
+    to: l.to.component,
+    how: "coordinates",
+    gateway: false,
+    // code at both ends, each claim checked on its line, and nobody had to guess
+    verified: true,
+    caller: lines(l.from),
+    callee: lines(l.to),
+    hops: [],
+    other: [],
+    dependency: {
+      group: l.group,
+      name: l.name,
+      ...(l.version ? { version: l.version } : {}),
+      ...(l.scope ? { scope: l.scope } : {}),
+    },
+  };
+}
+
 /** Build the hierarchy and its atomic edges from the catalog. */
-export function buildEstate(records: CatalogRecord[]): Estate {
+export function buildEstate(records: CatalogRecord[], o: BuildEstateOptions = {}): Estate {
   const nodes = new Map<string, Raw>();
   const atoms: Atom[] = [];
   const add = (n: Raw) => {
@@ -742,6 +799,22 @@ export function buildEstate(records: CatalogRecord[]): Estate {
         evidence: evidenceOf(c.evidence),
         gaps: recordGaps(c),
       });
+
+  // ADR 0192: a component that builds on a library another repo of the estate publishes. Its own
+  // type, so it is never merged into the calls or counted with them; the library's own calls stay
+  // its own atoms above.
+  for (const l of o.dependsOn ?? []) {
+    if (!components.has(l.from.component) || !components.has(l.to.component)) continue;
+    const join = dependencyJoin(l);
+    atoms.push({
+      from: `component:${l.from.component}`,
+      to: `component:${l.to.component}`,
+      type: "depends-on",
+      evidence: mergeEvidence(join.caller.slice(0, 1), join.callee.slice(0, 1)),
+      gaps: [],
+      join,
+    });
+  }
 
   for (const t of tables) {
     const ev = evidenceOf(t.evidence);

@@ -1,0 +1,34 @@
+# Invented Forge repos: a library of the organisation's own (forge-payments-common) that three
+# services build on, and a vendor SDK (Northwind, invented) that two of them build on too.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge-payments-common
+    url: https://git.forge.example/forge/forge-payments-common.git
+    type: library
+    owner: team-payments
+    component: payments-common
+    system: payments
+  - id: forge-ledger
+    url: https://git.forge.example/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-api
+    system: ledger
+  - id: forge-wallets
+    url: https://git.forge.example/forge/forge-wallets.git
+    type: spring-boot
+    owner: team-wallets
+    component: wallets-api
+    system: wallets
+    modules:
+      - path: wallets-api
+        component: wallets-api
+      - path: wallets-batch
+        component: wallets-batch
+  - id: forge-statements
+    url: https://git.forge.example/forge/forge-statements.git
+    type: java
+    owner: team-ledger
+    component: statements-api
+    system: ledger

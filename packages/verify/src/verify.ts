@@ -29,6 +29,12 @@ import {
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-policy.js";
+import {
+  buildCoordinatesProblem,
+  buildUnrecorded,
+  isBuildFile,
+  type BuildUnrecorded,
+} from "./build-coords.js";
 import { lineOfValue, securityLineKind } from "./call-security-lines.js";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
@@ -141,7 +147,14 @@ export type RejectCode =
    * A component fact whose type is none of the organisation's component types (ADR 0180), or a
    * second component fact for the same component: one says what a component is.
    */
-  | "component-type";
+  | "component-type"
+  /**
+   * An artifact or dependency fact the build file it cites doesn't bear out (ADR 0192): the line
+   * isn't the project's own coordinates (an artifact) or a dependency's (a dependency, never a
+   * dependency-management entry or a plugin's), the group's line isn't cited or says another, or
+   * the scope isn't the one declared.
+   */
+  | "build-coordinates";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -288,6 +301,12 @@ export interface VerifyReport {
    * it is a question for a person. In fact-id order.
    */
   frameworkGaps: FrameworkGap[];
+  /**
+   * A note, not a rejection (ADR 0192, the cross-check): the project coordinates and dependencies
+   * the build files a kept fact cites write that no artifact or dependency fact records. Left out
+   * when there are none.
+   */
+  buildUnrecorded?: BuildUnrecorded[];
 }
 
 /** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
@@ -560,6 +579,14 @@ function claimsOf(f: Fact): Claim[] {
     // ADR 0180: the signal the type rests on, as written on its line.
     case "component":
       return [{ kind: "word", value: f.cite.value }];
+    // ADR 0192: the coordinates as the build file writes them on the line (the name, or a
+    // Gradle line's whole `group:name:version`); `buildCoordinatesProblem` reads the rest.
+    case "artifact":
+    case "dependency":
+      return [
+        { kind: "word", value: f.cite.value },
+        { kind: "word", value: f.name },
+      ];
   }
 }
 
@@ -1136,6 +1163,14 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (f.version !== undefined)
         add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
     }
+    // ADR 0192: the coordinates are the project's own (an artifact) or a dependency's on the
+    // cited line, the group's line is cited too, and a version is written where it says.
+    if ((f.kind === "artifact" || f.kind === "dependency") && !found.has(f.id)) {
+      const bad = buildCoordinatesProblem(f, linesOf);
+      if (bad) problem(f, "build-coordinates", bad);
+      else if (f.version !== undefined)
+        add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
+    }
     if (f.kind === "flow") {
       f.steps.forEach((s, i) =>
         add(f, checkCite(s.cite, stepClaims(s.kind, s.cite.value), `${label} step ${i + 1}`)),
@@ -1443,6 +1478,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     return held.length ? [reviewedHoldsOf(entry, held)] : [];
   });
 
+  // ADR 0192, the cross-check: what the build files read write that no kept fact records.
+  const unrecorded = buildUnrecorded(
+    [...touched].filter((p) => isBuildFile(p) && insideRepo(p) && !isSecretPath(p)),
+    (p) => linesOf(p),
+    accepted,
+  );
+
   return {
     accepted,
     // a rejected fact goes back as it was read, at its own commit, even one that was carried
@@ -1478,5 +1520,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     reviewedHolds,
     specOpsUncovered,
     frameworkGaps: frameworkGaps(accepted, rules.frameworks),
+    ...(unrecorded.length ? { buildUnrecorded: unrecorded } : {}),
   };
 }
