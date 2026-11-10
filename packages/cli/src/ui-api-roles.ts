@@ -1,3 +1,4 @@
+import { answerAsJob } from "./ui-api-activity.js";
 import { fileStepStore, manualAdapter, type Notifier, type WorkTracker } from "@maycombhq/adapters";
 import { changeFolder } from "@maycombhq/changes";
 import { Api, changesRelOf, loadOrgPack, orgPackDirOf, readTeams, RecordId } from "@maycombhq/core";
@@ -170,7 +171,7 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
         if (t.kind === "live")
           requireConfirmation(ctx.confirmations, "work-items", id, b.data.confirmation);
         const at = stamp(now());
-        try {
+        const sync = async () => {
           const res = await syncWorkItems(root, id, {
             workTracker: t.wt,
             approve: (w) => ({ by: ctx.user.replace(/^@/, ""), at, ref: w.key }),
@@ -189,19 +190,23 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
             ),
             ...res.skipped.map((s) => `Skipped ${s.key}: ${s.reason}.`),
           ];
-          return {
-            status: 200,
-            body: Api.WorkItemSyncResult.parse({
-              plan: planOf(id, t.kind, plan),
-              lines,
-              done: res.done,
-              failed: res.failed,
-            }),
-          };
-        } catch (e) {
-          if (e instanceof HttpError) throw e;
-          throw new HttpError(422, "Atticus refused", (e as Error).message);
-        }
+          return Api.WorkItemSyncResult.parse({
+            plan: planOf(id, t.kind, plan),
+            lines,
+            done: res.done,
+            failed: res.failed,
+          });
+        };
+        const answer = () =>
+          sync().catch((e: unknown) => {
+            if (e instanceof HttpError) throw e;
+            throw new HttpError(422, "Atticus refused", (e as Error).message);
+          });
+        // Review of beta.23: a live tracker is called per item, longer than an editor panel
+        // waits for one answer; with `job: true` the sync is a job the Console shows, and the
+        // job's result is this answer.
+        if (b.data.job) return answerAsJob(ctx, `Putting work items in the tracker: ${id}`, answer);
+        return { status: 200, body: await answer() };
       })
 
       // ------------------------------------------------------------ the BA shapes the stories

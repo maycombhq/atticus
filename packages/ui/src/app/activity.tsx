@@ -30,7 +30,10 @@ type Entry = Api.ActivityEntryT;
 export interface Lines {
   from: number;
   lines: string[];
-  /** The entry's start, so a server's restart (job-1 again) never mixes two entries. */
+  /**
+   * The entry's start, so a server's restart (job-1 again) never mixes two entries, with the
+   * version of its lines when it has one (linesKey).
+   */
   startedAt: string;
   /** Lines the server no longer had, between what was held and these (its log kept its last). */
   dropped?: number;
@@ -104,6 +107,43 @@ export function withActivityLines(
   const fresh = lines.slice(end - at);
   return fresh.length ? cap({ ...have, lines: [...have.lines, ...fresh] }) : have;
 }
+
+/**
+ * What the lines held of an entry are kept under: its start (a server's restart, job-1 again,
+ * never mixes two entries) and, review of beta.23, the version of its lines (`rev`): a hand-off
+ * run's are rewritten once Done ran, so lines held of the old version go rather than being
+ * added to (the entry said "Waiting for your assistant" after Done).
+ */
+export const linesKey = (e: Pick<Entry, "startedAt" | "rev">): string =>
+  e.rev ? `${e.startedAt}#${e.rev}` : e.startedAt;
+
+/**
+ * How often the Console's list is asked for. Review of beta.23: a page no one sees (a panel in a
+ * background tab, a window minimised) asks seldom, as each ask in an editor panel goes through
+ * the extension, and it reads at once when shown again.
+ */
+export function activityPollMs(o: {
+  running: boolean;
+  open: boolean;
+  bridge: boolean;
+  hidden: boolean;
+}): number {
+  if (o.hidden) return 60_000;
+  return o.running || o.open ? (o.bridge ? 1500 : 3000) : o.bridge ? 5000 : 15000;
+}
+
+/** Whether the page is hidden now (document.visibilityState), heard as it changes. */
+function usePageHidden(): boolean {
+  const [hidden, setHidden] = useState(() => pageHidden());
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+    const f = () => setHidden(pageHidden());
+    document.addEventListener("visibilitychange", f);
+    return () => document.removeEventListener("visibilitychange", f);
+  }, []);
+  return hidden;
+}
+const pageHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
 /** A Copilot run the page knows of, as an entry, when the list hasn't brought it yet. */
 function copilotEntry(run: Api.CopilotRunViewT): Entry {
@@ -183,12 +223,18 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
 
   // Polled as well as heard: a VS Code panel gets no live events, and a missed one is caught.
   const running = entries.some((e) => e.state === "running");
+  const hidden = usePageHidden();
   useEffect(() => {
-    const bridge = !!hostBridge();
-    const ms = running || open ? (bridge ? 1500 : 3000) : bridge ? 5000 : 15000;
+    const ms = activityPollMs({ running, open, bridge: !!hostBridge(), hidden });
     const t = setInterval(() => void refresh(), ms);
     return () => clearInterval(t);
-  }, [running, open, refresh]);
+  }, [running, open, hidden, refresh]);
+  // Shown again: read at once rather than at the slow pace's next tick.
+  const wasHidden = useRef(hidden);
+  useEffect(() => {
+    if (wasHidden.current && !hidden) void refresh();
+    wasHidden.current = hidden;
+  }, [hidden, refresh]);
 
   const soon = useRef<ReturnType<typeof setTimeout>>(undefined);
   const refreshSoon = useCallback(() => {
@@ -220,7 +266,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       if (entry && linesNow.current[id]) {
         setLines((old) => ({
           ...old,
-          [id]: withActivityLines(old[id], Number(e.at), got, entry.startedAt),
+          [id]: withActivityLines(old[id], Number(e.at), got, linesKey(entry)),
         }));
         if (id === selected && open) announce(T.newLines(got.length, titleOf(entry)));
       }
@@ -253,7 +299,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const shownId = shown?.id;
   const shownKind = shown?.kind;
   const shownTotal = shown?.lines ?? 0;
-  const shownStart = shown?.startedAt;
+  const shownStart = shown ? linesKey(shown) : undefined;
   // Where the lines held end: an answer short of the total (past a read's cap) asks on.
   const heldLines = shownId ? lines[shownId] : undefined;
   const heldEnd =
@@ -323,7 +369,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       (l) =>
         setLines((old) => ({
           ...old,
-          [id]: withActivityLines(old[id], l.from, l.lines, e.startedAt),
+          [id]: withActivityLines(old[id], l.from, l.lines, linesKey(e)),
         })),
       () => undefined,
     );
@@ -710,7 +756,7 @@ export function ActivityConsole() {
                       <LogView
                         key={`${shown.id}:${shown.startedAt}`}
                         entry={shown}
-                        {...(a.lines[shown.id]?.startedAt === shown.startedAt
+                        {...(a.lines[shown.id]?.startedAt === linesKey(shown)
                           ? { lines: a.lines[shown.id]! }
                           : {})}
                         {...(a.linesState[shown.id] ? { state: a.linesState[shown.id]! } : {})}

@@ -1,6 +1,13 @@
 import { useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi, useLiveEvents, useReloadOnFiles } from "../../api/client.js";
+import {
+  api,
+  ApiError,
+  useApi,
+  useJobPoll,
+  useLiveEvents,
+  useReloadOnFiles,
+} from "../../api/client.js";
 import { useAiOn } from "../../app/me.js";
 import { COPY } from "../../copy.js";
 import { Note } from "./common.js";
@@ -108,6 +115,13 @@ export function RunReadyTasks({ change }: { change: string }) {
     if (e.type === "job.progress" && e.jobId === job)
       setNote({ ok: true, working: true, text: T.progress(String(e.message ?? "")) });
     if (e.type === "job.done" && e.jobId === job) void end(job);
+  });
+  // Review of beta.23: an editor panel hears none of those events; the job is also asked after.
+  useJobPoll(job, (j) => {
+    if (j.state === "running" || j.state === "queued") {
+      if (j.progress.message)
+        setNote({ ok: true, working: true, text: T.progress(j.progress.message) });
+    } else void end(j.id);
   });
   if (!aiOn) return null;
   const run = async () => {

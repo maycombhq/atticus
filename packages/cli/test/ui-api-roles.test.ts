@@ -264,6 +264,20 @@ describe("the plan's work items in the work tracker", () => {
     );
     expect(again.done).toEqual([]);
   });
+
+  it("runs the sync as a job when asked, so an editor panel's request returns at once", async () => {
+    const started = await call(`/api/changes/${CHANGE}/work-items`, "POST", { job: true });
+    expect(started.status, JSON.stringify(started.body)).toBe(202);
+    let j: Record<string, unknown> = {};
+    for (let i = 0; i < 200; i++) {
+      j = (await call(`/api/jobs/${String(started.body.jobId)}`)).body;
+      if (j.state !== "running" && j.state !== "queued") break;
+      await new Promise((x) => setTimeout(x, 20));
+    }
+    expect(j.state, JSON.stringify(j)).toBe("done");
+    const r = Api.WorkItemSyncResult.parse((j.result as { answer: unknown }).answer);
+    expect(r.done).toEqual([]);
+  });
 });
 
 describe("the business analyst shapes the stories", () => {

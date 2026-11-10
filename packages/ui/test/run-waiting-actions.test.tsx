@@ -15,6 +15,11 @@ vi.mock("../src/api/client.js", async () => ({
     posted.push(path);
     return nextAnswer;
   },
+  // Review of beta.23: Done runs as a job (call-as-job.test.ts follows one).
+  callAsJob: async (path: string) => {
+    posted.push(path);
+    return nextAnswer;
+  },
 }));
 const flashed: unknown[] = [];
 vi.mock("../src/app/flash.js", () => ({ flash: (f: unknown) => void flashed.push(f) }));

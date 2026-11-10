@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { linkFollower, makeBridge } from "../src/api/bridge.js";
+import {
+  BRIDGE_TIMEOUT_MS,
+  BRIDGE_WRITE_TIMEOUT_MS,
+  linkFollower,
+  makeBridge,
+} from "../src/api/bridge.js";
 import { usableWorkerUrl } from "../src/app/layout/worker-url.js";
 
 /**
@@ -35,6 +40,21 @@ describe("the app's calls through the extension (ADR 0097)", () => {
     const r = await b.call("/api/specs", { method: "GET" });
     expect(r.status).toBe(504);
     h.deliver({ type: "api-reply", id: 1, status: 200, body: {} });
+  });
+
+  it("waits far longer for a write's answer than for a read's (review of beta.23)", async () => {
+    const h = host();
+    const b = makeBridge(h.post, h.on, 5, 400);
+    let wrote: { status: number } | undefined;
+    const w = b.call("/api/runs/r/done", { method: "POST", body: {} }).then((r) => (wrote = r));
+    const r = await b.call("/api/specs", { method: "GET" });
+    expect(r.status).toBe(504);
+    await new Promise((x) => setTimeout(x, 30));
+    expect(wrote).toBeUndefined();
+    h.deliver({ type: "api-reply", id: 1, status: 200, body: {} });
+    await w;
+    expect(wrote?.status).toBe(200);
+    expect(BRIDGE_WRITE_TIMEOUT_MS).toBeGreaterThan(BRIDGE_TIMEOUT_MS);
   });
 
   it("carries a body, and keeps answers apart by id", async () => {

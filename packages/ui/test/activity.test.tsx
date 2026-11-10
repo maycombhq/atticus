@@ -9,6 +9,8 @@ import {
   ShowInConsole,
   titleOf,
   upsert,
+  activityPollMs,
+  linesKey,
   withActivityLines,
   type ActivityCtx,
 } from "../src/app/activity.js";
@@ -217,6 +219,29 @@ describe("the Console's lines", () => {
     });
     // Another entry by the same id (a server's restart) starts again.
     expect(withActivityLines(b, 0, ["x"], "2026-11-10T00:00:00.000Z").lines).toEqual(["x"]);
+  });
+
+  it("asks seldom while the page is hidden, and as before while it is seen (review of beta.23)", () => {
+    const seen = { running: true, open: false, bridge: true, hidden: false };
+    expect(activityPollMs(seen)).toBe(1500);
+    expect(activityPollMs({ ...seen, running: false })).toBe(5000);
+    expect(activityPollMs({ ...seen, bridge: false })).toBe(3000);
+    expect(activityPollMs({ ...seen, hidden: true })).toBeGreaterThanOrEqual(60_000);
+    expect(activityPollMs({ ...seen, open: true, hidden: true })).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it("reads an entry's lines again when the server rewrote them (review of beta.23)", () => {
+    const e = { startedAt: at } as Api.ActivityEntryT;
+    // An entry with no revision keeps its start as the key, as before.
+    expect(linesKey(e)).toBe(at);
+    const waiting = linesKey({ ...e, rev: "aaaa1111" });
+    const done = linesKey({ ...e, rev: "bbbb2222" });
+    expect(waiting).not.toBe(done);
+    const held = withActivityLines(undefined, 0, ["Waiting for your assistant", "b", "c"], waiting);
+    // The Done rewrote the hand-off's first lines: held under the old key, they all go.
+    expect(withActivityLines(held, 0, ["c1: run-1 validated."], done).lines).toEqual([
+      "c1: run-1 validated.",
+    ]);
   });
 
   it("takes the server's answer past a gap (lines it dropped), says so, and goes on", () => {

@@ -27,6 +27,12 @@ export function orgModelsOf(root: string): Partial<Record<StepClass, string>> {
 }
 
 /**
+ * Review of beta.23: after `atticus ui` failed to start, how long calls wait before one starts it
+ * again by itself; Open the app starts it again at once.
+ */
+export const APP_START_BACKOFF_MS = 5 * 60_000;
+
+/**
  * What every part of the extension shares (ADR 0090): the metarepo, the `atticus` command line
  * from the settings, the "Atticus" output channel (every command run and its exit code), and
  * running an AI step. Nothing here sends anything anywhere: the only network use is the Copilot
@@ -110,20 +116,46 @@ export class Service {
    * the sidebar (ADR 0091, 0093), and again if it stops. Review round 46: and again when
    * atticus.path or the metarepo changed since it started, the old one stopped.
    */
-  runningApp(root: string): Promise<RunningApp> {
+  runningApp(root: string, o: { retry?: boolean } = {}): Promise<RunningApp> {
     if (this.appStale(root)) this.restartApp();
     if (!this.app) {
+      // Review of beta.23: a start that failed isn't tried again by every call (the Console
+      // polls every few seconds, each one relaunching atticus ui into the output channel): only
+      // when the person asks (Open the app) or after a while.
+      const key = this.keyOf(root);
+      const f = this.startFailed;
+      if (f && f.key === key && !o.retry && this.now() - f.at < APP_START_BACKOFF_MS)
+        return Promise.reject(f.error);
       const full = vscode.workspace.getConfiguration("atticus").get<boolean>(FULL_UI, false);
       const started = startApp(this.cliOptions(root), { full });
       this.app = started;
-      this.appKey = this.keyOf(root);
+      this.appKey = key;
       const drop = () => {
         if (this.app === started) this.app = undefined;
       };
-      started.then((a) => a.onExit(drop), drop);
+      started.then(
+        (a) => {
+          this.startFailed = undefined;
+          a.onExit(drop);
+        },
+        (e: unknown) => {
+          if (this.app === started)
+            this.startFailed = {
+              key,
+              at: this.now(),
+              error: e instanceof Error ? e : new Error(String(e)),
+            };
+          drop();
+        },
+      );
     }
     return this.app;
   }
+
+  /** The last start of the app that failed, for which metarepo and atticus, and when. */
+  private startFailed: { key: string; at: number; error: Error } | undefined;
+  /** The clock (a test sets it). */
+  now: () => number = () => Date.now();
 
   /**
    * Stop the app, so the next call starts it again: the setting atticus.fullUi changed, and
@@ -139,8 +171,8 @@ export class Service {
   }
 
   /** The app's API, starting the app if it isn't running. */
-  async api(root: string): Promise<AtticusApi> {
-    const a = await this.runningApp(root);
+  async api(root: string, o: { retry?: boolean } = {}): Promise<AtticusApi> {
+    const a = await this.runningApp(root, o);
     return new AtticusApi(a.url, a.token);
   }
 

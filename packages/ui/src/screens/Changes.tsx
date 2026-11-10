@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { api, ApiError, callAsJob, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
 import { BringIn } from "../app/propose.js";
@@ -959,10 +959,7 @@ function Detail({ id }: { id: string }) {
                         disabled={runAct.busy}
                         onClick={() =>
                           void runAct.run(
-                            () =>
-                              api(`/api/runs/${r.runId}/done`, { method: "POST", body: {} }).then(
-                                reloadAll,
-                              ),
+                            () => callAsJob(`/api/runs/${r.runId}/done`).then(reloadAll),
                             T.checkedTheAnswer,
                           )
                         }

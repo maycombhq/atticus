@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
@@ -14,7 +15,9 @@ import {
 } from "@maycombhq/core";
 import {
   badRequest,
+  HttpError,
   notFound,
+  problem,
   type Job,
   type JobControl,
   type JobKind,
@@ -67,6 +70,42 @@ export function tracked<T>(
   if (!jobs || typeof jobs.track !== "function") return work();
   const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
   return ctx.jobs.track(o.kind ?? "work", (c) => work(c), opts);
+}
+
+/**
+ * Review of beta.23 (Windows, an editor panel): a write whose work outlasts one request (a task
+ * run's Done builds, fixes and commits; a live work-tracker sync calls the tracker per item) runs
+ * as a job when the page asks (`job: true`). The answer is 202 and the job's id at once; the
+ * Console shows the work; the job's result is the answer the route would have given (`answer`)
+ * or, refused, its problem (`problem`), with `lines` for whoever only reads those.
+ */
+export function answerAsJob(
+  ctx: Pick<ServerContext, "jobs">,
+  title: string,
+  work: () => Promise<Record<string, unknown>>,
+  o: { kind?: JobKind; meta?: Record<string, string> } = {},
+): { status: 202; body: { jobId: string } } {
+  const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
+  const job = ctx.jobs.start(
+    o.kind ?? "work",
+    async () => {
+      try {
+        const answer = await work();
+        const lines = Array.isArray(answer.lines) ? answer.lines.map(String) : [];
+        return { result: { answer, lines } };
+      } catch (e) {
+        if (!(e instanceof HttpError)) throw e;
+        const p = problem(e);
+        const lines = Array.isArray(p.lines) ? p.lines.map(String) : [];
+        return {
+          result: { problem: p, lines },
+          errors: lines.length ? lines : [e.detail ?? e.title],
+        };
+      }
+    },
+    opts,
+  );
+  return { status: 202, body: { jobId: job.id } };
 }
 
 const jobState = (j: Job): Api.ActivityStateT =>
@@ -373,7 +412,12 @@ export function uiActivityRoutes(
   };
   const handoffEntry = (h: HandoffRun): Entry => {
     const lines = handoffLines(h);
+    // Review of beta.23: these lines are made again each time (the "waiting" words go once Done
+    // ran, and an app's Done comes before a terminal's), so they aren't only added to: their
+    // version tells the page to read them again rather than add past what it holds.
+    const rev = createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 16);
     return {
+      rev,
       id: h.runId,
       kind: "handoff",
       title: h.agent ? `${h.change}: ${h.agent}` : h.change,
