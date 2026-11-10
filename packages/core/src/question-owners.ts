@@ -42,8 +42,8 @@ export async function readTeams(root: string): Promise<{
   return { teams: r.data.teams, ...(r.data.defaults ? { defaults: r.data.defaults } : {}) };
 }
 
-/** A handle as compared: no leading @, lower case. */
-const handleKey = (h: string) => h.trim().replace(/^@/, "").toLowerCase();
+/** A handle as compared: no leading @, lower case (Git hosts' handles are case-insensitive). */
+export const handleKey = (h: string) => h.trim().replace(/^@/, "").toLowerCase();
 
 /** The teams a person is on, by their Git handle. */
 export function teamsOfPerson(handle: string, teams: readonly Team[]): Team[] {

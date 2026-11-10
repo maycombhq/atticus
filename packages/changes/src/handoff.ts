@@ -10,6 +10,7 @@ import {
 } from "@maycombhq/adapters";
 import {
   changesRelOf,
+  handleKey,
   handoffBranch,
   listQuestions,
   nextOwnersOf,
@@ -43,6 +44,8 @@ import type { Artifact, PhaseId } from "./types.js";
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const strip = (h: string) => (h.startsWith("@") ? h.slice(1) : h);
+/** Whether two handles are one person's (handleKey: any case, with or without @). */
+const sameHandle = (a: string, b: string) => handleKey(a) === handleKey(b);
 
 interface HostOptions {
   gitHost: GitHost;
@@ -155,7 +158,14 @@ async function handoffFiles(
       () => false,
     );
   // Review round 50: the stories' and tasks' numbers too, so every clone numbers them alike.
-  for (const own of ["stage/corrections.yaml", "stage/drafted.yaml", "stage/stories-numbers.yaml"])
+  // ADR 0191 review: and the business analyst's shaping of the stories, which the numbers of a
+  // split or added story stand on, so every clone shapes them alike after the plan PR merges.
+  for (const own of [
+    "stage/corrections.yaml",
+    "stage/drafted.yaml",
+    "stage/stories-numbers.yaml",
+    "stage/stories-shape.yaml",
+  ])
     if (await present(own)) files.add(own);
   if (phase === "build") {
     for (const extra of ["tasks.md", "repos.yaml"]) if (await present(extra)) files.add(extra);
@@ -334,7 +344,8 @@ export async function handoff(
       ...(nextOwnersOf(phase, change.owners)?.people ?? []),
     ]),
   ]
-    .filter((p) => p !== by)
+    // ADR 0191 review: the raiser is never their own reviewer, as handles compare (any case, @).
+    .filter((p) => sameHandle(p, by) === false)
     .sort();
 
   const live = change.state === "returned" ? undefined : liveHandoff(change);
