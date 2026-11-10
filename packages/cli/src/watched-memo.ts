@@ -59,18 +59,50 @@ export function answersMayHaveChanged(): void {
  * `stamp`, when given, says the state of files the server doesn't follow that the answer reads
  * too (a base clone's Git files): a different stamp works the answer out again.
  */
+/**
+ * Why each answer was worked out again rather than kept, by key, since the last call to
+ * `whyWorkedOut()`: for the speed test, so a slow load on one machine says why.
+ */
+const misses: string[] = [];
+export function whyWorkedOut(): string[] {
+  return misses.splice(0);
+}
+const miss = (key: string, why: string) => {
+  if (misses.length < 200) misses.push(`${key}: ${why}`);
+};
+
 export async function keptAnswer<T>(
   root: string,
   key: string,
   work: () => Promise<T>,
   stamp?: () => Promise<string>,
 ): Promise<T> {
-  if (!watched || watched.root !== resolve(root) || !watched.following()) return work();
+  if (!watched || watched.root !== resolve(root) || !watched.following()) {
+    miss(
+      key,
+      !watched
+        ? "no server follows the files"
+        : watched.root !== resolve(root)
+          ? `another root (${watched.root} is followed)`
+          : "the server follows no folder",
+    );
+    return work();
+  }
   const at = generation;
   const s = stamp ? await stamp() : "";
   const hit = kept.get(key);
   if (hit && hit.generation === generation && hit.stamp === s && Date.now() - hit.at < MAX_AGE_MS)
     return hit.value as Promise<T>;
+  miss(
+    key,
+    !hit
+      ? "not asked before"
+      : hit.generation !== generation
+        ? "a change was heard"
+        : hit.stamp !== s
+          ? "a checkout moved"
+          : "kept a minute already",
+  );
   // A change heard while the stamp was read: work it out from the files as they are now.
   if (at !== generation) return work();
   const value = work();

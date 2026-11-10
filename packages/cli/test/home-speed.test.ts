@@ -6,6 +6,7 @@ import { changesDirOf } from "@maycombhq/core";
 import type { RunningServer } from "@maycombhq/server";
 import type { DoctorCheck } from "../src/doctor.js";
 import { startUi } from "../src/ui-commands.js";
+import { whyWorkedOut } from "../src/watched-memo.js";
 import { HOME_REQUESTS, homeChangeRequests, homeReloads, makeHomeEstate } from "./home-estate.js";
 
 /**
@@ -112,10 +113,13 @@ describe("Home on a 40-repo estate (beta.23)", () => {
     const changes: string[] = [];
     const stop = srv.events.listen((e) => {
       if (e.type === "file.changed") changes.push(String(e.path));
+      else console.log(`home-speed warm: heard ${e.type}`);
     });
+    whyWorkedOut();
     const again = await home();
     stop();
     say("warm", again);
+    console.log(`home-speed warm: worked out again: ${whyWorkedOut().join("; ") || "none"}`);
     console.log(
       `home-speed warm: ${changes.length} file changes heard ${changes.slice(0, 5).join(", ")}`,
     );
