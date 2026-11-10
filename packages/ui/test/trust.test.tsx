@@ -85,6 +85,34 @@ describe("Map › Trust (ADR 0124)", () => {
     expect(out).toContain('aria-labelledby="trust-forge-ledger"');
   });
 
+  // Beta.24: a live-looking secret in a config file, said by its file and line, never its value.
+  it("warns of a secret that sits in a config file, by file, line and key", () => {
+    const out = renderToStaticMarkup(
+      <TrustRow
+        r={{
+          ...LEDGER,
+          verify: {
+            ...LEDGER.verify,
+            report: {
+              ...LEDGER.verify.report!,
+              secrets: [
+                { file: "src/main/resources/application.yml", line: 10, key: "client_secret" },
+              ],
+            },
+          },
+        }}
+      />,
+    );
+    expect(out).toContain('role="alert"');
+    expect(out).toContain(esc(T.secrets.title(1)));
+    expect(out).toContain(
+      esc(T.secrets.at("src/main/resources/application.yml", 10, "client_secret")),
+    );
+    expect(out).toContain(esc(T.secrets.fix));
+    // None on file: no warning.
+    expect(renderToStaticMarkup(<TrustRow r={LEDGER} />)).not.toContain(esc(T.secrets.fix));
+  });
+
   // ADR 0124 addendum A-framework: what each repo is built on, across the estate.
   it("says what a repo is built on, with the module and where, and the patterns it shows none of", () => {
     const out = renderToStaticMarkup(

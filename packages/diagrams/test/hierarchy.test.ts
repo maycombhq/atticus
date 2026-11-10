@@ -651,6 +651,37 @@ describe("why is this linked: each link's joins, how each was made and both ends
     );
   });
 
+  it("never shows a link verified beside a guess's words: a verified record whose first flag is a guess is inferred (beta.24)", () => {
+    // A shared link is verified when one of its calls is (ADR 0135 section 5) and lists that
+    // call's how first; one whose first flag is still a guess merged no call to show verified.
+    const rs = records().map((r) =>
+      r.id === PATH ? ({ ...r, confidence: "verified" } as typeof r) : r,
+    );
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    const j = link.joins!.find((x) => x.interface === PATH)!;
+    expect([j.how, j.verified]).toEqual(["path", false]);
+    // A verified link whose how comes first keeps it, whatever guesses its other calls carry.
+    const mixed = records().map((r) =>
+      r.id === HOST ? ({ ...r, flags: ["joined-by-host", "joined-by-path"] } as typeof r) : r,
+    );
+    const m = nodeView(buildEstate(mixed), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([m.how, m.verified]).toEqual(["host", true]);
+  });
+
+  it("says a call joined by a proxy's BasePath was found so (beta.24)", () => {
+    const rs = records().map((r) =>
+      r.id === HOST ? ({ ...r, flags: ["joined-by-base-path"] } as typeof r) : r,
+    );
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    const j = link.joins!.find((x) => x.interface === HOST)!;
+    expect([j.how, j.verified]).toEqual(["base-path", true]);
+    expect(link.gaps).not.toContain("joined-by-base-path");
+  });
+
   it("counts a guess as a gap, and how a link was made as none", () => {
     const v = nodeView(buildEstate(records()), "estate", { lens: "architecture" });
     const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;

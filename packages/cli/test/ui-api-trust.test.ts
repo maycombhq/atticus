@@ -348,3 +348,24 @@ describe("GET /api/trust (ADR 0124)", () => {
     expect(v).toEqual({ factsDir: "facts", repos: [], problems: [] });
   });
 });
+
+describe("a live-looking secret in a config file (beta.24)", () => {
+  it("is on the repo's trust by file, line and key from its verify report, never its value", async () => {
+    const file = join(root, "facts/forge-ledger.verify.yaml");
+    const was = await readFile(file, "utf8");
+    try {
+      await writeFile(
+        file,
+        `${was.trimEnd()}\nsecrets:\n  - file: src/main/resources/application.yml\n    line: 10\n    key: client_secret\n  - { file: bad }\n`,
+      );
+      const ledger = (await view(srv)).repos.find((r) => r.repo === "forge-ledger")!;
+      expect(ledger.verify.report?.secrets).toEqual([
+        { file: "src/main/resources/application.yml", line: 10, key: "client_secret" },
+      ]);
+    } finally {
+      await writeFile(file, was);
+    }
+    const ledger = (await view(srv)).repos.find((r) => r.repo === "forge-ledger")!;
+    expect(ledger.verify.report?.secrets).toBeUndefined();
+  });
+});

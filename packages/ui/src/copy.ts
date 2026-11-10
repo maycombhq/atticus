@@ -997,6 +997,15 @@ export const COPY = {
     kept: "Facts kept",
     rejected: "Rejected",
     redacted: (n: number) => `${n} quote${n === 1 ? "" : "s"} redacted`,
+    /** Beta.24: a live-looking secret in a config file, by file and line, never its value. */
+    secrets: {
+      title: (n: number) =>
+        n === 1
+          ? "A secret seems to sit in a config file"
+          : `${n} secrets seem to sit in config files`,
+      at: (file: string, line: number, key: string) => `A secret sits in ${file}:${line} (${key})`,
+      fix: "Move it to where your secrets live (a vault, an environment variable, a Secret) and read it from there; then rotate it, as it has been in the repo. Atticus never copies its value into a map.",
+    },
     coverage: "Coverage",
     coverageOf: (ratio: number, read: number, unknown: number, excluded: number) =>
       `${Math.round(ratio * 100)}%: ${read} file${read === 1 ? "" : "s"} read, ${unknown} not read, ${excluded} excluded`,
@@ -5174,6 +5183,8 @@ export const COPY = {
       named: "The call names the component it goes to.",
       repo: "The call names the repo it goes to.",
       host: "The call's host is one the manifest lists for that repo.",
+      "base-path":
+        "Nothing says the call's host, but its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path.",
       declared: "A person declared who calls this gateway route.",
       topic: "It publishes a topic the other side listens to.",
       path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
@@ -5252,6 +5263,31 @@ export const COPY = {
         `The call is dropped from the catalog: ${from} → ${was} loses it, and goes if it was the link's only call.`,
     },
     saved: (file: string) => `Written to ${file}.`,
+    // Beta.24: this whole arrow is wrong, one correction for every call on it.
+    arrow: {
+      open: "All calls on this arrow are wrong…",
+      openOf: (link: string) => `Say every call on ${link} is wrong`,
+      title: (n: number) => `What is wrong with the ${n} call${n === 1 ? "" : "s"} on this arrow?`,
+      intro:
+        "One answer for every call on the arrow: Atticus writes a correction for each to its caller's repo's corrections file, one write per repo. Your word outranks every join rule. Nothing changes until you apply them (Corrections to apply, at the top of the map) and the change is reviewed in a pull request.",
+      choice: {
+        estate: "They all go to another box (a repo or component of the estate)",
+        outside: "They all go to an outside system",
+        "not-a-call": "None of these is a call",
+      } as Record<string, string>,
+      target: "The box they all go to",
+      outsideTarget: "The outside system they all go to",
+      save: (n: number) => `Correct all ${n} call${n === 1 ? "" : "s"}`,
+      saving: "Writing the corrections…",
+      noCalls:
+        "No call fact is cited on these calls' lines, so there is nothing to correct here. Read the callers' repos again, or correct each call from its citation.",
+      missing: (n: number) =>
+        `${n} call${n === 1 ? " has" : "s have"} no call fact on its line and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}.`,
+      saved: (n: number, files: string) =>
+        `Written ${n} correction${n === 1 ? "" : "s"} to ${files}.`,
+      apply:
+        "Next: Apply them from Corrections to apply, at the top of the map, then propose the change for review.",
+    },
     moved: "What moved when the estate was joined again",
     movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
     movedOff: (what: string, was: string) =>

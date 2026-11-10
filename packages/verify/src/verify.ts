@@ -36,6 +36,7 @@ import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./framew
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
+import { liveSecretsIn, type SecretLine } from "./secrets.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
@@ -223,6 +224,11 @@ export interface VerifyReport {
   coverage: Coverage;
   /** Quotes stored with a secret value redacted. */
   redacted: number;
+  /**
+   * A note, not a rejection (beta.24): the config files' lines among the repo's sources that hold
+   * what looks like a live secret, by file and line, each with its key; never its value.
+   */
+  secrets: SecretLine[];
   /**
    * Quotes left off a kept fact because the file's line can't be quoted and the quote doesn't
    * match it: a minified bundle, a notebook, a binary or a line over 1,000 characters
@@ -1266,6 +1272,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const excludeRes = (o.exclude ?? []).map(globToRegExp);
   const sources: string[] = [];
   const excluded: string[] = [];
+  const secrets: SecretLine[] = [];
   for (const p of o.source.list()) {
     o.room?.();
     // Review round 49: by its path and size first, so a binary, a lock file or a file too big
@@ -1276,7 +1283,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     const ls = readLines(p) ?? [""];
     if (!isSourceFile(p, ls[0] ?? "", ls, rules)) continue;
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
-    else sources.push(p);
+    else {
+      sources.push(p);
+      secrets.push(...liveSecretsIn(p, ls));
+    }
   }
   // A file is read when a kept fact cites it (its cite and parts, an entry's authCite, a flow's
   // steps and error paths: A-read, problem 1, as `citedFiles` lists them for the carry), or the
@@ -1413,6 +1423,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       ratio,
     },
     redacted,
+    secrets: secrets.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line)),
     quotesDropped,
     carried: accepted.flatMap((f) =>
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],

@@ -34,7 +34,7 @@ import {
 } from "./canvas-tools.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
-import { LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { ArrowWrong, LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
@@ -569,6 +569,19 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       }
     />
   );
+  // Beta.24: one correction for every call on the arrow, above its calls.
+  const above = (l: Api.HierEdgeT) => (
+    <ArrowWrong
+      link={l}
+      known={known}
+      onSaved={(calls) =>
+        setWatched((w) => ({
+          calls: [...new Set([...(w?.calls ?? []), ...calls])],
+          before: w?.before ?? loaded,
+        }))
+      }
+    />
+  );
   const crumbs = view ? [...view.path, view.node] : [];
 
   return (
@@ -844,6 +857,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         link={pickedEdge}
                         labelOf={(id) => find(id)?.label ?? id}
                         under={under}
+                        above={above}
                         contracts={findings}
                         autoFocus={pickedLink.keyboard}
                         onClose={() => setPickedLink(undefined)}
@@ -866,6 +880,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         )}
                         labelOf={(id) => find(id)?.label ?? id}
                         under={under}
+                        above={above}
                         contracts={findings}
                         {...(boxOf(sel)?.repo
                           ? {
@@ -1054,11 +1069,14 @@ export function Inspector({
   links = [],
   labelOf = (id) => id,
   under,
+  above,
   contracts,
   onConnect,
   onOwner,
   onDeclare,
 }: {
+  /** Beta.24: what to show above a link's calls (All calls on this arrow are wrong). */
+  above?: (link: Api.HierEdgeT) => ReactNode;
   /** G3 (ADR 0174): declare a link of this system the code can't show. */
   onDeclare?: () => void;
   /** G1 (ADR 0174): connect this box to another, call by call. */
@@ -1187,6 +1205,7 @@ export function Inspector({
                   <WhyLinked
                     link={l}
                     {...(under ? { under } : {})}
+                    {...(above ? { above } : {})}
                     {...(contracts ? { contracts } : {})}
                   />
                 </details>

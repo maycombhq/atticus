@@ -80,12 +80,25 @@ const text = (p: string) => readFile(p, "utf8").catch(() => undefined);
 /** The commit a checkout is at, from its `.git` files (core, ADR 0140). */
 export { headFromFiles };
 
+/** Beta.24: the report's live-looking secrets, each a file, a line and a key (never a value). */
+function secretsOf(raw: unknown): Pick<Report, "secrets"> {
+  if (!Array.isArray(raw)) return {};
+  const secrets = raw.flatMap((x) => {
+    const s = x as { file?: unknown; line?: unknown; key?: unknown } | null;
+    return s && typeof s.file === "string" && typeof s.key === "string" && Number.isInteger(s.line)
+      ? [{ file: s.file, line: s.line as number, key: s.key }]
+      : [];
+  });
+  return secrets.length ? { secrets } : {};
+}
+
 /** The verifier's report (`<repo>.verify.yaml`, `writeVerifyFiles`), or why it can't be read. */
 function reportOf(raw: unknown): Report | string {
   const r = raw as {
     accepted?: unknown;
     rejected?: unknown;
     redacted?: unknown;
+    secrets?: unknown;
     commit?: unknown;
     coverage?: { ratio?: unknown; read?: unknown; unknown?: unknown; excluded?: unknown };
   } | null;
@@ -104,6 +117,7 @@ function reportOf(raw: unknown): Report | string {
       excluded: list(r.coverage?.excluded).length,
     },
     unknownFiles: unknown.slice(0, UNKNOWN_SHOWN),
+    ...secretsOf(r.secrets),
     ...(typeof r.commit === "string" && SHA.test(r.commit) ? { commit: r.commit } : {}),
   };
 }

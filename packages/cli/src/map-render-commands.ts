@@ -156,6 +156,7 @@ const HOW_WORDS: Record<JoinHow, string> = {
   named: "name",
   repo: "the repo's name",
   host: "host",
+  "base-path": "the proxy's base path",
   path: "path",
   topic: "topic",
 };

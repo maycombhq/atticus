@@ -323,3 +323,86 @@ describe("a person's correction from the Map", () => {
     });
   });
 });
+
+/**
+ * This whole arrow is wrong (beta.24): one confirmation corrects every call on an arrow, in one
+ * write of each caller repo's corrections file, whichever repos the calls come from.
+ */
+describe("every call on an arrow at once", () => {
+  beforeAll(async () => {
+    await writeFile(
+      join(root, "facts/forge-teller.jsonl"),
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8"),
+    );
+  });
+  const lines = async (repo: string) =>
+    (await readFile(join(root, `facts/${repo}.corrections.jsonl`), "utf8").catch(() => ""))
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+
+  it("writes one line per call, each repo's in one write, and gives every file's commands", async () => {
+    const ledgerBefore = (await lines("forge-ledger")).length;
+    const r = await call("POST", "/api/links/corrections", {
+      items: [
+        { repo: "forge-ledger", fact: "c-notify", action: "edit", set: { to: "forge-mailer" } },
+        { repo: "forge-ledger", fact: "c-fx-rate", action: "edit", set: { to: "forge-mailer" } },
+        { repo: "forge-teller", fact: "c-notify", action: "edit", set: { to: "forge-mailer" } },
+      ],
+      reason: "They all go to the mailer",
+    });
+    expect(r.status).toBe(200);
+    const res = Api.LinkCorrectionsResult.parse(r.body);
+    expect(res.files.map((f) => [f.repo, f.file, f.lines.length])).toEqual([
+      ["forge-ledger", "facts/forge-ledger.corrections.jsonl", 2],
+      ["forge-teller", "facts/forge-teller.corrections.jsonl", 1],
+    ]);
+    expect(res.commit).toBe(
+      'git add facts/forge-ledger.corrections.jsonl facts/forge-teller.corrections.jsonl\ngit commit -m "A person\'s correction of 3 calls on one link"',
+    );
+    expect(res.verify).toEqual(["atticus verify forge-ledger", "atticus verify forge-teller"]);
+    const ledger = (await lines("forge-ledger")).slice(ledgerBefore).map((l) => JSON.parse(l));
+    expect(ledger.map((c) => [c.fact, c.action, c.set, c.reason, c.by])).toEqual([
+      ["c-notify", "edit", { to: "forge-mailer" }, "They all go to the mailer", PERSON],
+      ["c-fx-rate", "edit", { to: "forge-mailer" }, "They all go to the mailer", PERSON],
+    ]);
+    expect((await lines("forge-teller")).map((l) => JSON.parse(l).fact)).toEqual(["c-notify"]);
+  });
+
+  it("marks them all no call, with why", async () => {
+    const r = await call("POST", "/api/links/corrections", {
+      items: [{ repo: "forge-teller", fact: "c-fx-rate", action: "wrong" }],
+      reason: "A health probe, not a call",
+    });
+    expect(r.status).toBe(200);
+    expect(JSON.parse((await lines("forge-teller")).at(-1)!)).toMatchObject({
+      fact: "c-fx-rate",
+      action: "wrong",
+      reason: "A health probe, not a call",
+    });
+  });
+
+  it("writes nothing when any one of them can't be recorded", async () => {
+    const before = (await lines("forge-ledger")).length;
+    const missing = await call("POST", "/api/links/corrections", {
+      items: [
+        { repo: "forge-ledger", fact: "c-notify", action: "edit", set: { to: "forge-audit" } },
+        { repo: "forge-ledger", fact: "nope", action: "edit", set: { to: "forge-audit" } },
+      ],
+    });
+    expect(missing.status).toBe(404);
+    const noWhy = await call("POST", "/api/links/corrections", {
+      items: [{ repo: "forge-ledger", fact: "c-notify", action: "wrong" }],
+    });
+    expect(noWhy.status).toBe(422);
+    expect((await call("POST", "/api/links/corrections", { items: [] })).status).toBe(400);
+    expect(
+      (
+        await call("POST", "/api/links/corrections", {
+          items: [{ repo: "../secrets", fact: "c-notify", action: "wrong", reason: "x" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect((await lines("forge-ledger")).length).toBe(before);
+  });
+});

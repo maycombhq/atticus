@@ -167,6 +167,11 @@ export interface VerifySummary {
   rejected: number;
   redacted: number;
   /**
+   * Beta.24: the config files' lines that hold what looks like a live secret, by file and line,
+   * each with its key, never its value. Left out when none.
+   */
+  secrets?: VerifyReport["secrets"];
+  /**
    * Quotes left off a kept fact, the cited line being one a quote can't be checked against (ADR
    * 0124 addendum A-uncited). Left out when none, so reports with no such quote are as they were.
    */
@@ -357,6 +362,7 @@ export async function writeVerifyFiles(
     accepted: report.accepted.length,
     rejected: report.rejected.length,
     redacted: report.redacted,
+    ...(report.secrets.length ? { secrets: report.secrets } : {}),
     ...(report.quotesDropped ? { quotesDropped: report.quotesDropped } : {}),
     coverage: {
       ratio: report.coverage.ratio,

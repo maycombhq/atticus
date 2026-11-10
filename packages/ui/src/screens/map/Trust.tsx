@@ -162,6 +162,26 @@ export function TrustRow({ r }: { r: Repo }) {
       <p className="work-why" style={{ margin: "6px 0" }}>
         {trustWhy(r)}
       </p>
+      {report?.secrets?.length ? (
+        <div role="alert" className="stack" style={{ gap: 4, margin: "6px 0" }}>
+          <p style={{ margin: 0 }}>
+            <span className="chip warn">
+              <span aria-hidden="true">⚠ </span>
+              {T.secrets.title(report.secrets.length)}
+            </span>
+          </p>
+          <ul className="ev-list" style={{ margin: "4px 0" }}>
+            {report.secrets.map((x) => (
+              <li key={`${x.file}:${x.line}`}>
+                <code className="mono">{T.secrets.at(x.file, x.line, x.key)}</code>
+              </li>
+            ))}
+          </ul>
+          <p className="work-say" style={{ margin: 0 }}>
+            {T.secrets.fix}
+          </p>
+        </div>
+      ) : null}
       <dl className="run-facts" style={{ margin: "8px 0" }}>
         <dt>{T.kept}</dt>
         <dd>

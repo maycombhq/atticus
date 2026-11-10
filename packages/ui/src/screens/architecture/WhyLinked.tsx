@@ -10,8 +10,12 @@ import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
 import { AiMark, linkDecisionAt, readyView, useDecisions } from "../../app/decisions.js";
 import { aiJoins } from "./model.js";
 import {
+  arrowCorrections,
   callerLine,
   callFactsOf,
+  callFactsOn,
+  correctionLines,
+  correctionTarget,
   linkCorrection,
   predict,
   type Join,
@@ -182,6 +186,8 @@ export function WhyLinked(p: {
   link: Api.HierEdgeT;
   /** What to show under each call (This link is wrong, C2). */
   under?: (join: Api.HierJoinT) => ReactNode;
+  /** Beta.24: what to show above the calls (All calls on this arrow are wrong). */
+  above?: (link: Api.HierEdgeT) => ReactNode;
   /** ADR 0164: the contract check's findings, of which each call's are shown under it. */
   contracts?: readonly Api.ContractMismatchViewT[];
   /** ADR 0181: a correction of one of its AI pairings saved. */
@@ -194,6 +200,7 @@ export function WhyLinked(p: {
       <p className="ev-say" style={{ margin: 0 }}>
         {W.intro}
       </p>
+      {p.above?.(p.link)}
       {joins.map((j) => (
         <JoinView
           key={j.interface}
@@ -225,6 +232,7 @@ export function LinkInspector(p: {
   labelOf: (id: string) => string;
   onClose: () => void;
   under?: (join: Api.HierJoinT) => ReactNode;
+  above?: (link: Api.HierEdgeT) => ReactNode;
   contracts?: readonly Api.ContractMismatchViewT[];
   onCorrected?: (r: Api.CorrectDecisionResultT) => void;
   /** Move the focus to the heading when it opens (picked from the keyboard). */
@@ -270,6 +278,7 @@ export function LinkInspector(p: {
           <WhyLinked
             link={p.link}
             {...(p.under ? { under: p.under } : {})}
+            {...(p.above ? { above: p.above } : {})}
             {...(p.contracts ? { contracts: p.contracts } : {})}
             {...(p.onCorrected ? { onCorrected: p.onCorrected } : {})}
           />
@@ -308,6 +317,11 @@ export function willSay(w: Prediction): string[] {
  */
 export function LinkWrongForm(p: {
   join: Join;
+  /**
+   * Beta.24: the line the correction rests on, when it isn't the caller's own (a link a
+   * gateway's routing made: the forwarding call's line at the hop).
+   */
+  at?: { repo: string; at: string };
   facts: Loaded<FactsView> | undefined;
   known: readonly string[];
   saving?: LinkSaving;
@@ -315,8 +329,9 @@ export function LinkWrongForm(p: {
   onClose: () => void;
 }) {
   const id = useId();
-  const line = callerLine(p.join);
-  const calls = callFactsOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  const line = p.at ?? callerLine(p.join);
+  const ready = p.facts?.state === "ready" ? p.facts.data : undefined;
+  const calls = p.at ? callFactsOn(p.at, ready) : callFactsOf(p.join, ready);
   const [pick, setPick] = useState<string | undefined>();
   const [choice, setChoice] = useState<(typeof CHOICES)[number]>("estate");
   const [target, setTarget] = useState("");
@@ -466,11 +481,19 @@ export function LinkWrong(p: {
   onSaved?: (call: string) => void;
 }) {
   const ev = useEvidence();
-  const line = callerLine(p.join);
-  const repo = line?.repo;
+  // The caller's own line; else (a link a gateway's routing made) the first line at the hops or
+  // at neither end whose facts hold a call: the forwarding call's (beta.24).
+  const lines = correctionLines(p.join);
+  const own = callerLine(p.join);
+  const repos = [...new Set(lines.map((l) => l.repo))].join("\u0000");
   useEffect(() => {
-    if (repo) ev?.need(repo);
-  }, [repo, ev]);
+    for (const r of repos.split("\u0000")) if (r) ev?.need(r);
+  }, [repos, ev]);
+  const ready = (r: string) => {
+    const v = ev?.of(r);
+    return v?.state === "ready" ? v.data : undefined;
+  };
+  const line = own ?? correctionTarget(p.join, ready)?.line ?? lines[0];
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<LinkSaving>({ state: "idle" });
   const what = [p.join.method, p.join.path].filter(Boolean).join(" ");
@@ -503,6 +526,7 @@ export function LinkWrong(p: {
       {open && (
         <LinkWrongForm
           join={p.join}
+          {...(own ? {} : { at: line })}
           facts={ev?.of(line.repo)}
           known={p.known}
           saving={saving}
@@ -511,6 +535,225 @@ export function LinkWrong(p: {
         />
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ this whole arrow is wrong
+
+export type ArrowSaving =
+  | { state: "idle" }
+  | { state: "working" }
+  | { state: "done"; result: Api.LinkCorrectionsResultT }
+  | { state: "error"; text: string };
+
+/**
+ * All calls on this arrow are wrong (beta.24): one button above an arrow's calls, and one small
+ * form, from its state so tests can render each one: they all go to another box, to an outside
+ * system, or none is a call. Its one submit is the confirmation; the page writes every call's
+ * correction in one request, and Corrections to apply takes it from there.
+ */
+export function ArrowWrongForm(p: {
+  link: Api.HierEdgeT;
+  /** A caller repo's facts once read; undefined while they load. */
+  viewOf: (repo: string) => FactsView | undefined;
+  known: readonly string[];
+  /** A repo's facts couldn't be read: why. */
+  failed?: string;
+  startOpen?: boolean;
+  saving?: ArrowSaving;
+  onSave?: (body: Api.LinkCorrectionsRequestT) => void;
+}) {
+  const id = useId();
+  const A = W.arrow;
+  const joins = p.link.joins ?? [];
+  const [open, setOpen] = useState(!!p.startOpen);
+  const [choice, setChoice] = useState<(typeof CHOICES)[number]>("estate");
+  const [target, setTarget] = useState("");
+  const [reason, setReason] = useState("");
+  const [problem, setProblem] = useState<string | undefined>();
+  const saving = p.saving ?? { state: "idle" };
+  const repos = [...new Set(joins.flatMap((j) => correctionLines(j).map((l) => l.repo)))];
+  const loading = repos.some((r) => !p.viewOf(r));
+  const n = joins.length;
+  const fix = (): LinkFix =>
+    choice === "not-a-call" ? { kind: choice, reason } : { kind: choice, target, reason };
+  const planned = loading ? undefined : arrowCorrections(joins, p.viewOf, fix());
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const b = arrowCorrections(joins, p.viewOf, fix());
+    if ("error" in b) return setProblem(b.error === "noCalls" ? A.noCalls : W[b.error]);
+    setProblem(undefined);
+    p.onSave?.(b.body);
+  };
+  const label = W.call(p.link.from, p.link.to, "");
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <div>
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={open}
+          aria-label={A.openOf(label)}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {A.open}
+        </button>
+      </div>
+      {open &&
+        (p.failed ? (
+          <p role="alert" className="state error">
+            {W.factsFailed(p.failed)}
+          </p>
+        ) : loading ? (
+          <p role="status" aria-busy="true" className="ev-say">
+            {W.loadingFacts}
+          </p>
+        ) : (
+          <form
+            className="ev-correct stack"
+            onSubmit={submit}
+            onKeyDown={escapeCloses(() => setOpen(false))}
+            aria-labelledby={`${id}-t`}
+          >
+            <h4 id={`${id}-t`} className="h" style={{ fontSize: 14 }}>
+              {A.title(n)}
+            </h4>
+            <p className="ev-say">{A.intro}</p>
+            <fieldset className="ev-choice">
+              <legend className="sr">{A.title(n)}</legend>
+              {CHOICES.map((c) => (
+                <label key={c} className="row" style={{ gap: 6 }}>
+                  <input
+                    type="radio"
+                    name={`${id}-choice`}
+                    value={c}
+                    checked={choice === c}
+                    onChange={() => setChoice(c)}
+                  />
+                  {A.choice[c]}
+                </label>
+              ))}
+            </fieldset>
+            {choice !== "not-a-call" && (
+              <label className="stack" style={{ gap: 2 }}>
+                <span className="hud">{choice === "estate" ? A.target : A.outsideTarget}</span>
+                <input
+                  value={target}
+                  list={choice === "estate" ? `${id}-known` : undefined}
+                  aria-describedby={`${id}-hint`}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
+                <span id={`${id}-hint`} className="ev-say">
+                  {choice === "estate" ? W.targetHint : W.outsideHint}
+                </span>
+                {choice === "estate" && (
+                  <datalist id={`${id}-known`}>
+                    {p.known.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                )}
+              </label>
+            )}
+            <label className="stack" style={{ gap: 2 }}>
+              <span className="hud">{choice === "not-a-call" ? W.reason : W.reasonOptional}</span>
+              <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+            </label>
+            {planned && "missing" in planned && planned.missing.length > 0 && (
+              <p className="ev-say" style={{ margin: 0 }}>
+                {A.missing(planned.missing.length)}
+              </p>
+            )}
+            <div className="row" style={{ gap: 6 }}>
+              <button type="submit" className="btn primary" disabled={saving.state === "working"}>
+                {saving.state === "working" ? A.saving : A.save(n)}
+              </button>
+              <button type="button" className="btn" onClick={() => setOpen(false)}>
+                {COPY.evidence.close}
+              </button>
+            </div>
+            {problem && (
+              <p role="alert" className="state error" style={{ margin: 0 }}>
+                {problem}
+              </p>
+            )}
+            {saving.state === "working" && (
+              <p role="status" aria-busy="true" className="ev-say">
+                {A.saving}
+              </p>
+            )}
+            {saving.state === "error" && (
+              <p role="alert" className="state error" style={{ margin: 0 }}>
+                {saving.text}
+              </p>
+            )}
+            {saving.state === "done" && (
+              <div role="status" className="stack" style={{ gap: 4 }}>
+                <p className="ev-say" style={{ margin: 0 }}>
+                  {A.saved(
+                    saving.result.files.reduce((k, f) => k + f.lines.length, 0),
+                    saving.result.files.map((f) => f.file).join(", "),
+                  )}
+                </p>
+                <p className="ev-say" style={{ margin: 0 }}>
+                  {A.apply}
+                </p>
+              </div>
+            )}
+          </form>
+        ))}
+    </div>
+  );
+}
+
+/** All calls on this arrow are wrong: the callers' facts read, the one POST, the facts read again. */
+export function ArrowWrong(p: {
+  link: Api.HierEdgeT;
+  known: readonly string[];
+  /** Each corrected call's line: watch it move when the estate is joined again. */
+  onSaved?: (calls: readonly string[]) => void;
+}) {
+  const ev = useEvidence();
+  const joins = p.link.joins ?? [];
+  const repos = [...new Set(joins.flatMap((j) => correctionLines(j).map((l) => l.repo)))];
+  const key = repos.join("\u0000");
+  useEffect(() => {
+    for (const r of key.split("\u0000")) if (r) ev?.need(r);
+  }, [key, ev]);
+  const [saving, setSaving] = useState<ArrowSaving>({ state: "idle" });
+  if (!joins.length) return null;
+  const viewOf = (r: string) => {
+    const v = ev?.of(r);
+    return v?.state === "ready" ? v.data : undefined;
+  };
+  const failed = repos
+    .map((r) => ev?.of(r))
+    .find((v): v is { state: "error"; error: string } => v?.state === "error")?.error;
+  const onSave = (body: Api.LinkCorrectionsRequestT) => {
+    setSaving({ state: "working" });
+    api<Api.LinkCorrectionsResultT>("/api/links/corrections", { method: "POST", body }).then(
+      (result) => {
+        setSaving({ state: "done", result });
+        for (const f of result.files) ev?.reload(f.repo);
+        p.onSaved?.(
+          joins.flatMap((j) => {
+            const t = correctionTarget(j, viewOf);
+            return t ? [`${t.line.repo}:${t.line.at}`] : [];
+          }),
+        );
+      },
+      (e: unknown) => setSaving({ state: "error", text: message(e) }),
+    );
+  };
+  return (
+    <ArrowWrongForm
+      link={p.link}
+      viewOf={viewOf}
+      known={p.known}
+      saving={saving}
+      onSave={onSave}
+      {...(failed ? { failed } : {})}
+    />
   );
 }
 

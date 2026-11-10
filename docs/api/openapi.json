@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.9.0",
+    "version": "3.10.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4855,6 +4855,134 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FactCorrectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/corrections": {
+      "post": {
+        "operationId": "correctLinkCalls",
+        "summary": "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+        "tags": [
+          "workspace"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fact": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "wrong",
+                            "edit"
+                          ]
+                        },
+                        "set": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "fact",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCorrectionsResult"
                 }
               }
             }
@@ -26628,6 +26756,7 @@
               "named",
               "repo",
               "host",
+              "base-path",
               "declared",
               "topic",
               "path",
@@ -43190,6 +43319,31 @@
                             },
                             "commit": {
                               "type": "string"
+                            },
+                            "secrets": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "file": {
+                                    "type": "string"
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "file",
+                                  "line",
+                                  "key"
+                                ],
+                                "additionalProperties": false
+                              }
                             }
                           },
                           "required": [
@@ -44957,6 +45111,253 @@
         "required": [
           "correction",
           "file",
+          "commit",
+          "verify"
+        ],
+        "additionalProperties": false
+      },
+      "LinkCorrectionsResult": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "corrections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "schemaVersion": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "const": 1
+                          },
+                          {
+                            "type": "number",
+                            "const": 2
+                          }
+                        ]
+                      },
+                      "fact": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "entry",
+                              "call",
+                              "store",
+                              "field",
+                              "deploy",
+                              "config",
+                              "framework",
+                              "flow",
+                              "term",
+                              "component"
+                            ]
+                          },
+                          "file": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "line": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "file",
+                          "line",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "wrong",
+                          "edit",
+                          "link",
+                          "unlink"
+                        ]
+                      },
+                      "link": {
+                        "type": "object",
+                        "properties": {
+                          "repo": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "system": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "entry": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                          },
+                          "method": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "set": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "line": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "by": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "ai": {
+                        "type": "object",
+                        "properties": {
+                          "runtime": {
+                            "type": "string",
+                            "enum": [
+                              "copilot-acp",
+                              "hand-off"
+                            ]
+                          },
+                          "run": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "bar": {
+                            "type": "string",
+                            "enum": [
+                              "confident",
+                              "agrees-with-shapes",
+                              "person-rule"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "runtime",
+                          "run"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "batch": {
+                        "type": "string",
+                        "pattern": "^b-\\d{8}-\\d{6}-[0-9a-f]{6}$"
+                      },
+                      "rule": {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "match": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "match"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "match": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "fact",
+                      "target",
+                      "action",
+                      "by",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "repo",
+                "file",
+                "lines",
+                "corrections"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "commit": {
+            "type": "string"
+          },
+          "verify": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "files",
           "commit",
           "verify"
         ],

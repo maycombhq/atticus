@@ -102,6 +102,7 @@ describe("atticus verify --write and the audit write whole files", () => {
     skipped: [],
     reviewedHolds: [],
     specOpsUncovered: [],
+    secrets: [],
     frameworkGaps: [],
   } as unknown as VerifyReport;
 

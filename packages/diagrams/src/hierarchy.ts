@@ -1,6 +1,8 @@
 import {
   DECLARED_TOPIC,
+  JOIN_GUESS_FLAGS,
   JOIN_HOW_FLAGS,
+  JOINED_BY_BASE_PATH,
   JOINED_BY_AI,
   JOINED_BY_PERSON,
   JOINED_TO_SHARED_MAP,
@@ -213,6 +215,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-name": "named",
   "joined-by-repo": "repo",
   "joined-by-host": "host",
+  // beta.24: a call whose host nothing resolves, by the one proxy BasePath its path starts with.
+  [JOINED_BY_BASE_PATH]: "base-path",
   "declared-caller": "declared",
   // ADR 0162 §6 (F8): a topic or queue the profile names as an outside system's: a person's word.
   [DECLARED_TOPIC]: "declared",
@@ -227,6 +231,11 @@ export function joinHow(i: RecordOf<"Interface">): Join["how"] {
   return "unknown";
 }
 
+/** The hows that are guesses: a link whose call was found so is inferred, whatever it merged. */
+const GUESS_HOWS: ReadonlySet<Join["how"]> = new Set(
+  JOIN_GUESS_FLAGS.map((f) => HOW_OF_FLAG[f]!).filter(Boolean),
+);
+
 function joinOf(i: RecordOf<"Interface">): Join {
   const side = (s: string | undefined) => evidenceOf(i.evidence.filter((e) => e.side === s));
   const sided = new Set(["caller", "callee", "gateway"]);
@@ -236,7 +245,10 @@ function joinOf(i: RecordOf<"Interface">): Join {
     to: i.to,
     how: joinHow(i),
     gateway: i.via === "gateway",
-    verified: i.confidence === "verified",
+    // A link is verified when one of its calls is (ADR 0135 section 5), and its first flag says
+    // how that call was found; one whose first flag is a guess has no call that wasn't guessed to
+    // show, so it is never shown verified beside the guess's words (beta.24).
+    verified: i.confidence === "verified" && !GUESS_HOWS.has(joinHow(i)),
     ...(i.method ? { method: i.method } : {}),
     ...(i.normalizedPath ? { path: i.normalizedPath } : {}),
     caller: side("caller"),

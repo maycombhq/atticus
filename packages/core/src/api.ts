@@ -457,8 +457,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/runs for `map <repo>` runs `verify <repo> --write` after a read that kept every fact
  *   (`applied`), as a read's Done does. A Done's resume runs as a local job (one local step at a
  *   time). Propose for review fails when its branch wasn't pushed. Additive only.
+ * 3.10.0 (beta.24, a proxy to a system outside the estate): POST /api/links/corrections, This
+ *   whole arrow is wrong: one correction of every call on a link, each in its caller repo's
+ *   corrections file (several lines in one write per repo, every item checked before any is
+ *   written), with every file, one git command and a verify command per repo. A graph join's
+ *   `how` may be `base-path` (a call whose host nothing resolves, joined by the one proxy
+ *   BasePath its whole path starts with, `joined-by-base-path`). A link whose first flag is a
+ *   guess is never `verified` in its join. Repo trust (GET /api/trust) gains `secrets`: a config
+ *   file's line that holds what looks like a live secret, its file and line, never its value.
+ *   Additive only.
  */
-export const API_VERSION = "3.9.0";
+export const API_VERSION = "3.10.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -610,6 +619,9 @@ export const LINK_HOWS = [
   "named",
   "repo",
   "host",
+  // 3.10.0 (beta.24): a call whose host nothing resolves, by the one proxy BasePath its path
+  // starts with (`joined-by-base-path`): code at both ends, not a guess.
+  "base-path",
   "declared",
   "topic",
   "path",
@@ -1265,6 +1277,13 @@ export const TrustRepo = z.object({
         /** The first files no fact cites (at most 50). */
         unknownFiles: z.array(z.string()),
         commit: z.string().optional(),
+        /**
+         * 3.10.0 (beta.24): the config files' lines that hold what looks like a live secret, each
+         * with its key; never its value.
+         */
+        secrets: z
+          .array(z.object({ file: z.string(), line: z.number().int(), key: z.string() }))
+          .optional(),
       })
       .nullable(),
   }),
@@ -1631,6 +1650,42 @@ export const FactCorrectionResult = z.object({
   line: z.string().optional(),
 });
 /**
+ * 3.10.0 (beta.24): one correction of every call on an arrow between two boxes ("This whole arrow
+ * is wrong"): each call's fact in its caller's repo, the same action for all, and the person's
+ * why for every one (an item's own `reason` first). Every item is checked before any is written;
+ * then each repo's corrections file takes its lines in one write.
+ */
+export const LinkCorrectionsRequest = z.strictObject({
+  items: z
+    .array(
+      z.strictObject({
+        repo: z.string().min(1),
+        fact: z.string().min(1),
+        action: z.enum(["wrong", "edit"]),
+        set: z.record(z.string().min(1), z.string()).optional(),
+        reason: z.string().trim().min(1).max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+export const LinkCorrectionsResult = z.object({
+  /** Each repo's corrections file, from the metarepo's root, and the lines appended to it. */
+  files: z.array(
+    z.object({
+      repo: z.string(),
+      file: z.string(),
+      lines: z.array(z.string()),
+      corrections: z.array(FactCorrection),
+    }),
+  ),
+  /** The git command that commits every file (the app runs no git). */
+  commit: z.string(),
+  /** The commands that apply them, one per repo. */
+  verify: z.array(z.string()),
+});
+/**
  * 2.42.0 (ADR 0149, C4): after a correction the app writes, the commands a person runs (the app
  * runs none) and what the next `atticus verify <repo> --write` will change, computed in-process
  * by the same functions that command uses, writing nothing.
@@ -1972,6 +2027,9 @@ export type OutsideViewT = z.infer<typeof OutsideView>;
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
+export type FactCorrectionRequestT = z.infer<typeof FactCorrectionRequest>;
+export type LinkCorrectionsRequestT = z.infer<typeof LinkCorrectionsRequest>;
+export type LinkCorrectionsResultT = z.infer<typeof LinkCorrectionsResult>;
 
 /**
  * 2.23.0 (ADR 0124 addendum D-app, B10): a stage tab's critic findings (the latest round of the
@@ -6186,6 +6244,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/links/corrections": {
+    post: {
+      id: "correctLinkCalls",
+      summary:
+        "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+      tag: "workspace",
+      body: LinkCorrectionsRequest,
+      ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/facts/{repo}/preview": {
     get: {
       id: "previewVerifyWrite",
@@ -8315,6 +8384,7 @@ export function openApiDocument(): Record<string, unknown> {
     SetChangeKnowledgeResult,
     RepoFactsView,
     FactCorrectionResult,
+    LinkCorrectionsResult,
     VerifyPreviewView,
     AuditSampleView,
     AuditAnswerResult,

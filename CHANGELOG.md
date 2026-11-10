@@ -2,6 +2,22 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.24 (unreleased)
+
+### Fixed
+
+- **A gateway proxy that fronts a system outside the estate goes there, never back to the services that serve its paths.** A forwarding call whose target `<URL>` is a build token (`@name@`) is resolved from the deploy tool's per-environment tokens (the Apigee config plugin's `config.json`, read as one setting per token: its XPath, value, target file and environment); hosts that are no repo's and in no domain of the estate's go outside, named by the profile's outside system that lists one of them, else by the host. A forwarding call whose host nothing resolves is asked about, and one naming none is left: neither is joined by its path any more (beta.23 joined such a proxy to whichever service served the same path, backwards). A host in the estate's own domain is still asked about.
+- **Services that call a proxy through the gateway join its flows, in that direction.** The verifier keeps a call whose path is a setting's placeholder a helper puts together (a `@ConfigurationProperties` prefix, a map of named paths and the name a lookup passes), each part of the key cited; such calls were rejected, so only an AI pairing found them. A call whose host nothing resolves joins the one proxy whose BasePath starts its whole path (`joined-by-base-path`, verified); two flows under it are a question.
+- **A link is never shown "✓ Verified" beside a guess's words**: a link whose first flag is a guess (by path, a host's label…) is inferred in Why is this linked?, whatever it merged.
+- **A link a gateway's routing made can be corrected**: when its caller side cites no call's line, "This link is wrong" rests on the forwarding call's line at the hop (the flow's or the TargetEndpoint's), where it said "No line cited at this end" and offered nothing.
+- A value written `{{name}}` is resolved through the setting of that name, as `${name}`, `env:name` and `@name@` are; a host still written as a token is no host.
+
+### Added
+
+- **All calls on this arrow are wrong…**: one button above an arrow's calls in its Details, and one small form: they all go to another box, to an outside system, or none is a call. One submit writes every call's correction, each repo's lines in one write of its corrections file (calls from several caller repos write each repo's), then Corrections to apply takes over. The per-call "This link is wrong" is unchanged. Local API 3.10.0: POST /api/links/corrections.
+- **Map › Trust warns of a secret in a config file**: verify notes each config file's line that holds what looks like a live secret (`api_key`, `client_secret`, `password`, `token`… with a value that is no placeholder or reference), by file, line and key, never its value; Trust shows "A secret sits in <file>:<line>".
+- The `fixtures/gateway-facts/vendor-proxy/` fixture: an Apigee proxy to an invented vendor, and two services calling it through the gateway with their settings laid out two ways.
+
 ## 2.0.0-beta.23 (2026-11-10)
 
 ### Fixed

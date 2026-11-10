@@ -27,6 +27,98 @@ export function callFactsOf(j: Join, v: FactsView | undefined): FactCite[] {
   return [...seen.values()];
 }
 
+/**
+ * The lines a correction of a link's call may rest on (beta.24): the caller's own line; else, for
+ * a link a gateway's routing made (the gateway's own route, a built-in reader's record), each line
+ * cited at the hops or at neither end, where the forwarding call's fact is cited.
+ */
+export function correctionLines(j: Join): { repo: string; at: string }[] {
+  const own = callerLine(j);
+  if (own) return [own];
+  const seen = new Set<string>();
+  const out: { repo: string; at: string }[] = [];
+  for (const e of [...j.hops, ...j.other]) {
+    if (!e.repo || !splitAt(e.at)) continue;
+    const k = `${e.repo}\u0000${e.at}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ repo: e.repo, at: e.at });
+  }
+  return out;
+}
+
+/** The call facts cited on one line of a repo's facts. */
+export function callFactsOn(line: { at: string }, v: FactsView | undefined): FactCite[] {
+  const at = splitAt(line.at);
+  if (!v || !at) return [];
+  const seen = new Map<string, FactCite>();
+  for (const h of hitsAt(v, at.file, at.line))
+    if (h.fact.kind === "call" && !h.step) seen.set(h.fact.id, h.fact);
+  return [...seen.values()];
+}
+
+/** The line a link's correction rests on and the call facts on it: the first line that has any. */
+export function correctionTarget(
+  j: Join,
+  viewOf: (repo: string) => FactsView | undefined,
+): { line: { repo: string; at: string }; calls: FactCite[] } | undefined {
+  for (const line of correctionLines(j)) {
+    const calls = callFactsOn(line, viewOf(line.repo));
+    if (calls.length) return { line, calls };
+  }
+  return undefined;
+}
+
+/**
+ * This whole arrow is wrong (beta.24): the POST /api/links/corrections body that gives every call
+ * on the arrow the same correction, each in its caller's repo. A line holding several calls gives
+ * the ones of the link's method (all, when none says one). `missing` names the links whose call
+ * no loaded fact is cited for; none at all is an error, as is a fix missing its target or why.
+ */
+export function arrowCorrections(
+  joins: readonly Join[],
+  viewOf: (repo: string) => FactsView | undefined,
+  fix: LinkFix,
+):
+  | { body: Api.LinkCorrectionsRequestT; missing: string[] }
+  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" } {
+  const reason = fix.reason.trim();
+  if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
+  const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
+  if (fix.kind !== "not-a-call" && !target) return { error: "needTarget" };
+  const items: Api.LinkCorrectionsRequestT["items"] = [];
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  let already = 0;
+  for (const j of joins) {
+    const t = correctionTarget(j, viewOf);
+    if (!t) {
+      missing.push(j.interface);
+      continue;
+    }
+    const m = (x: string | undefined) => (x ?? "").toUpperCase();
+    const ofMethod = t.calls.filter(
+      (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
+    );
+    for (const c of ofMethod.length ? ofMethod : t.calls) {
+      const k = `${t.line.repo}\u0000${c.id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (fix.kind !== "not-a-call" && (c.claim.to ?? "").trim() === target) {
+        already++;
+        continue;
+      }
+      items.push(
+        fix.kind === "not-a-call"
+          ? { repo: t.line.repo, fact: c.id, action: "wrong" }
+          : { repo: t.line.repo, fact: c.id, action: "edit", set: { to: target } },
+      );
+    }
+  }
+  if (!items.length) return { error: already ? "sameTarget" : "noCalls" };
+  return { body: { items, ...(reason ? { reason } : {}) }, missing };
+}
+
 /** What a person says about a link: it goes elsewhere in the estate, outside it, or isn't a call. */
 export type LinkFix =
   | { kind: "estate"; target: string; reason: string }
