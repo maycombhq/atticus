@@ -15,6 +15,8 @@ import {
   type Question,
   type QuestionDraft,
   type SpecTemplate,
+  ignoredAnswer,
+  ESTATE_TARGETS_STEP_ID,
 } from "@maycombhq/core";
 import {
   estateFlow as followFlow,
@@ -55,7 +57,7 @@ const REASON: Record<string, string> = {
  * The step that asks which component answers a call-out whose step names a target the catalog
  * doesn't have, when two or more components serve its method and path (ADR 0124 addendum C-join).
  */
-export const ESTATE_TARGETS_STEP = "estate-targets";
+export const ESTATE_TARGETS_STEP = ESTATE_TARGETS_STEP_ID;
 
 /** The last option of an estate targets question: none of the components answers it. */
 export const ESTATE_TARGETS_NONE = "None of these";
@@ -172,7 +174,8 @@ export async function estateJoin(
     if (q?.state !== "answered" || !q.answer) continue;
     const label =
       q.answer.option !== undefined ? q.options[q.answer.option - 1]?.label : q.answer.text;
-    if (label && label !== ESTATE_TARGETS_NONE)
+    // Beta.24 review: Ignore names nothing, as "None of these" doesn't.
+    if (label && label !== ESTATE_TARGETS_NONE && !ignoredAnswer(q))
       targets[estateStepKey(a.from.flow, a.from.step)] = slugify(label);
   }
   const r = Object.keys(targets).length

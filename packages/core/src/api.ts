@@ -471,6 +471,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   naming the repos written, `written`), and skips an item whose newest correction on file says
  *   the same (`skipped`), so asked again it writes nothing twice. GET /api/graph/edge-calls gives
  *   every call merged into one edge of a view, not only the 20 the view lists. Additive only.
+ *   Review of beta.24 (an answer's words made into boxes): POST /api/questions/{id}/answer takes
+ *   `ignore: true` (with an optional `reason`) for a question about where calls go (hosts,
+ *   targets, topics, the estate's call-outs): the calls aren't real (CI/CD, a test, a template),
+ *   so the join leaves them; words that name no repo, component or system are refused (400) as
+ *   such an answer, and a new outside system's name is a short name, never a sentence. GET
+ *   /api/trust gains `answerBoxes`, the boxes made from an answer's words, and POST
+ *   /api/trust/answer-boxes/ignore and /rename put one right (preview first). Additive only.
  */
 export const API_VERSION = "3.10.0";
 export const DEFAULT_PORT = 4321;
@@ -1415,16 +1422,65 @@ export const ContractCounts = z.object({
   /** 2.50.0 (ADR 0172): the calls no link starts at, whose payload can't be checked yet. */
   unlinked: z.number().int().optional(),
 });
+/**
+ * 3.10.0 (beta.24 review): a box on the map made from an answer's words, not a system's name (an
+ * id of five or more words, or with a sentence's words in it, or a long name with spaces): a
+ * system of a profile, the answers to questions about where calls go that name it, or both.
+ */
+export const AnswerBox = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The profile that has it as a system, relative to the metarepo; none when only answers name it. */
+  profile: z.string().optional(),
+  /** The answered questions whose words name it. */
+  questions: z.array(z.object({ id: z.string(), repo: z.string(), question: z.string() })),
+});
+export type AnswerBoxT = z.infer<typeof AnswerBox>;
+
 export const TrustView = z.object({
   /** Where the facts files are, relative to the metarepo. */
   factsDir: z.string(),
   repos: z.array(TrustRepo),
+  /** 3.10.0 (beta.24 review): the boxes made from an answer's words, for Map › Trust. */
+  answerBoxes: z.array(AnswerBox).optional(),
   /** 2.47.0 (ADR 0164): the contract check's counts over the estate (the Mismatches page). */
   contracts: ContractCounts.optional(),
   /** Files that couldn't be read: a manifest, a facts file, a report or a catalog file. */
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
 export type TrustViewT = z.infer<typeof TrustView>;
+
+/**
+ * 3.10.0 (beta.24 review): POST /api/trust/answer-boxes/ignore and /rename: put right a box an
+ * answer's words made. Ignore turns each answer that names it into Ignore and takes the system out
+ * of its profile; rename names it (a repo or system Atticus knows, or a new outside system's short
+ * name) and points the answers at it. `preview` writes nothing. Local writes in the metarepo, for
+ * review in the pull request (Propose for review), as the setup forms' are.
+ */
+export const AnswerBoxRequest = z.strictObject({
+  id: z.string().trim().min(1).max(200),
+  /** For rename: the repo or system it is, or a new outside system's name. */
+  name: z.string().trim().min(1).max(200).optional(),
+  preview: z.literal(true).optional(),
+});
+export const AnswerBoxResult = z.object({
+  id: z.string(),
+  written: z.boolean(),
+  /** Each answer that names it: what it was, and what it is (or would be) now. */
+  answers: z.array(
+    z.object({ id: z.string(), repo: z.string(), was: z.string(), now: z.string() }),
+  ),
+  /** The profile's lines it changes, when it is a system of one. */
+  profile: z
+    .object({
+      path: z.string(),
+      changes: z.array(z.object({ was: z.string().optional(), now: z.string().optional() })),
+    })
+    .optional(),
+  /** The repos whose answers changed: Apply (verify --write) puts them on the map. */
+  repos: z.array(z.string()),
+});
+export type AnswerBoxResultT = z.infer<typeof AnswerBoxResult>;
 
 /**
  * 2.34.0 (ADR 0141, plan item P5): which repos' clones have moved past their facts' commit, and
@@ -3795,6 +3851,13 @@ export const AnswerQuestionRequest = z.strictObject({
   addSystem: z.enum(["vendor", "internal"]).optional(),
   /** The new system's name, with `addSystem`; the target's words when left out. */
   name: z.string().trim().min(1).optional(),
+  /**
+   * 3.10.0 (beta.24 review): Ignore, for a question about where calls go: they aren't real calls
+   * (CI/CD, a test, a template), so the join leaves them and draws no box. In place of option,
+   * text and target; `reason` is kept as the answer's words (`Ignore: <reason>`).
+   */
+  ignore: z.literal(true).optional(),
+  reason: z.string().trim().min(1).max(300).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */
@@ -6258,6 +6321,28 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "TrustView", description: "OK" },
     },
   },
+  "/api/trust/answer-boxes/ignore": {
+    post: {
+      id: "ignoreAnswerBox",
+      summary:
+        "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write is local, for Propose for review",
+      tag: "workspace",
+      body: AnswerBoxRequest,
+      ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/trust/answer-boxes/rename": {
+    post: {
+      id: "renameAnswerBox",
+      summary:
+        "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write is local, for Propose for review",
+      tag: "workspace",
+      body: AnswerBoxRequest,
+      ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/trust/fresh": {
     get: {
       id: "getTrustFresh",
@@ -8426,6 +8511,7 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeNeedsView,
     MarkedNeed,
     TrustView,
+    AnswerBoxResult,
     FreshView,
     ChangeKnowledgeView,
     KnowledgeConflictView,

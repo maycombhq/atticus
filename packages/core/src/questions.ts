@@ -9,7 +9,14 @@ import {
   hostOfQuestion,
   HOSTS_NONE,
   HOSTS_STEP,
+  ignoredAnswer,
+  ignoreOption,
+  ignoreText,
+  JOIN_IGNORE_LABEL,
+  JOIN_STEPS,
+  namesKnownTarget,
   outsideBoundaryOf,
+  wordsNameNothing,
   PICKER_LABELS,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
@@ -1058,6 +1065,18 @@ export interface AnswerInput {
   batch?: string;
   /** ADR 0181: a person's rule applies it, from their correction. */
   rule?: AppliedRule;
+  /**
+   * Beta.24 review: Ignore, for a question about where calls go: they aren't real calls (CI/CD, a
+   * test, a template), so the join leaves them. In place of option and text; the reason, when
+   * given, is the answer's words (`Ignore: <reason>`), else the Ignore option is picked (added to
+   * the question's options when it was asked before Ignore was offered).
+   */
+  ignore?: { reason?: string };
+  /**
+   * Beta.24 review: the id of the system `beforeWrite` adds to the profile, which the answer's
+   * words name, so they aren't refused as naming nothing.
+   */
+  adds?: string;
 }
 
 /**
@@ -1068,6 +1087,9 @@ export function hostRuleCovers(pattern: string, asked: string): boolean {
   const [name, port] = asked.split(/:(?=\d+$)/);
   return hostMatches(pattern, name!, port ? Number(port) : undefined);
 }
+
+/** Ignore's option, or words that start `Ignore:` (beta.24 review). */
+const isIgnoreWords = (label: string) => label.trim().toLowerCase().startsWith("ignore:");
 
 /** Why a rule can't ride on this answer, or undefined when it can. */
 function ruleProblem(q: Question, match: string, label: string | undefined): string | undefined {
@@ -1081,7 +1103,7 @@ function ruleProblem(q: Question, match: string, label: string | undefined): str
   if (q.askedBy.step !== HOSTS_STEP)
     return "Only a question about where calls go (a target or a host) takes a rule: answer it without --match.";
   const host = hostOfQuestion(q);
-  if (!label || label === HOSTS_NONE || outsideBoundaryOf(label))
+  if (!label || label === HOSTS_NONE || isIgnoreWords(label) || outsideBoundaryOf(label))
     return "A rule on a host question names the repo that answers: pick a repo, or answer without --match.";
   if (!isPathMatch(match) && host && !hostRuleCovers(match, host))
     return `${match} doesn't cover ${host}, the host this question asks about: give a pattern that does.`;
@@ -1121,9 +1143,34 @@ export async function answerQuestion(
 }> {
   const read = await readQuestionText(root, id);
   if (!read) throw new QuestionError("not-found", `There is no question ${id}.`);
-  const q = read.q;
+  let q = read.q;
   if (q.state === "retired")
     throw new QuestionError("retired", `Question ${id} is retired; nothing reads its answer.`);
+  // Beta.24 review: Ignore, for a question about where calls go, as an option or its words.
+  if (a.ignore) {
+    if (!JOIN_STEPS.has(q.askedBy.step))
+      throw new QuestionError(
+        "bad-answer",
+        "Ignore is for a question about where calls go (a host, a target or a topic): answer this one with an option or your own words.",
+      );
+    if (a.option !== undefined || a.text?.trim())
+      throw new QuestionError("bad-answer", "Give Ignore alone, not with an option or words.");
+    if (isAiBy(a.by))
+      throw new QuestionError(
+        "bad-answer",
+        "The AI doesn't ignore calls: a person says they aren't real.",
+      );
+    const reason = a.ignore.reason?.trim();
+    if (reason) a = { ...a, text: ignoreText(reason) };
+    else {
+      let at = q.options.findIndex((o) => o.label === JOIN_IGNORE_LABEL);
+      if (at < 0) {
+        q = { ...q, options: [...q.options, ignoreOption()] };
+        at = q.options.length - 1;
+      }
+      a = { ...a, option: at + 1 };
+    }
+  }
   const text = a.text?.trim() || undefined;
   if ((a.option === undefined) === (text === undefined))
     throw new QuestionError("bad-answer", "Give an option or your own words, one of the two.");
@@ -1155,6 +1202,16 @@ export async function answerQuestion(
         `The AI doesn't decide ${id} wider than its repo, or by a rule: a person does.`,
       );
   }
+  // Beta.24 review: words that name nothing are never made into a system: a question about
+  // where calls go takes words that name a repo, component or system, or Ignore's.
+  if (
+    text &&
+    JOIN_STEPS.has(q.askedBy.step) &&
+    text !== a.adds &&
+    !ignoredAnswer({ options: q.options, answer: { text, by: a.by } }) &&
+    !(await namesKnownTarget(root, text))
+  )
+    throw new QuestionError("bad-answer", wordsNameNothing(text));
   const level = a.scope ?? q.scope.level;
   let scopeId: string;
   if (level === "repo") scopeId = q.repo;
@@ -1213,7 +1270,7 @@ export async function answerQuestion(
       if (e instanceof FileChangedError) throw e;
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
-  } else if (host && label && label !== HOSTS_NONE) {
+  } else if (host && label && label !== HOSTS_NONE && label !== JOIN_IGNORE_LABEL) {
     // ADR 0153 (Q2): a host pattern goes under hosts in place of the host; a path prefix is the
     // repo's basePath on the host. Either way the manifest's own matching answers every call.
     const listed = match && !isPathMatch(match) ? match : host;

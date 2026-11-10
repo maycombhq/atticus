@@ -327,8 +327,13 @@ export function questionRoute(hash: string): string | undefined {
 }
 
 export interface AnswerForm {
-  /** An option number, or "words" for the person's own words; undefined until picked. */
-  pick: number | "words" | undefined;
+  /**
+   * An option number, "words" for the person's own words, or (beta.24 review) "ignore" for
+   * Ignore; undefined until picked.
+   */
+  pick: number | "words" | "ignore" | undefined;
+  /** Beta.24 review: why the calls aren't real, with Ignore (optional). */
+  reason?: string;
   text: string;
   scope: "repo" | "repo-type";
   repoType: string;
@@ -353,12 +358,52 @@ export const PICKER_OPTIONS: Readonly<Record<string, string>> = {
   "facts-topics": TOPIC_OUTSIDE,
 };
 
+/**
+ * Beta.24 review: the questions about where calls go (hosts, targets, topics, the estate's
+ * call-outs), each of which takes Ignore, as the core's JOIN_STEPS.
+ */
+export const JOIN_STEP_IDS: ReadonlySet<string> = new Set([
+  "scan-hosts",
+  "facts-targets",
+  "facts-topics",
+  "estate-targets",
+]);
+/** The Ignore option, as the core's JOIN_IGNORE_LABEL. */
+export const IGNORE_LABEL = "Ignore: not a real call (e.g. CI/CD, a test, a template)";
+
+/** Whether an answer is Ignore (its option, or words that start `Ignore:`), and its reason. */
+export function ignoredOf(q: {
+  options: readonly { label: string }[];
+  answer?: { option?: number; text?: string } | undefined;
+}): { reason?: string } | undefined {
+  const a = q.answer;
+  if (!a) return undefined;
+  if (a.option !== undefined)
+    return q.options[a.option - 1]?.label === IGNORE_LABEL ? {} : undefined;
+  const t = a.text?.trim() ?? "";
+  if (!/^ignore:/i.test(t)) return undefined;
+  const reason = t === IGNORE_LABEL ? "" : t.slice("Ignore:".length).trim();
+  return reason ? { reason } : {};
+}
+
 /** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
 export const RULE_STEPS: ReadonlySet<string> = new Set(["facts-targets", "scan-hosts"]);
 
 /** The POST body for the form, or what is missing in words. */
 export function answerBody(f: AnswerForm): { body: Record<string, unknown> } | { error: string } {
   if (f.pick === undefined) return { error: C.pickOne };
+  const rule0 = f.match?.trim() ? { match: f.match.trim() } : {};
+  // Beta.24 review: Ignore, with its reason when one is given.
+  if (f.pick === "ignore") {
+    const why = f.reason?.trim() ? { reason: f.reason.trim() } : {};
+    if (f.scope === "repo-type") {
+      if (!f.repoType.trim()) return { error: C.needType };
+      return {
+        body: { ignore: true, ...why, scope: "repo-type", repoType: f.repoType.trim(), ...rule0 },
+      };
+    }
+    return { body: { ignore: true, ...why, scope: "repo", ...rule0 } };
+  }
   if (f.another) {
     if (!f.target?.trim()) return { error: C.another.pickOne };
     if (f.needsSystem && !f.addSystem) return { error: C.another.needAdd };
@@ -720,9 +765,12 @@ export function QuestionDetail(p: {
   const q = p.question;
   const forRole = roleWords(p.role ?? q.role);
   const offer = q.state === "open" ? p.rule : undefined;
+  const ignored = ignoredOf(q);
+  const joinStep = JOIN_STEP_IDS.has(q.askedBy.step);
   const [form, setForm] = useState<AnswerForm>({
-    pick: q.answer?.option ?? (q.answer?.text ? "words" : undefined),
-    text: q.answer?.text ?? "",
+    pick: ignored ? "ignore" : (q.answer?.option ?? (q.answer?.text ? "words" : undefined)),
+    text: ignored ? "" : (q.answer?.text ?? ""),
+    ...(ignored?.reason ? { reason: ignored.reason } : {}),
     scope: q.answer?.scope.level ?? q.scope.level,
     repoType: q.scope.level === "repo-type" ? q.scope.id : "",
     match: q.answer?.match ?? offer?.match ?? "",
@@ -808,10 +856,16 @@ export function QuestionDetail(p: {
         <div className="stack" style={{ gap: 4 }}>
           <p style={{ margin: 0 }}>
             {/* ADR 0181: an AI answer is the AI's, never a person's: said so, with its chip. */}
-            {isAiBy(q.answer.by)
-              ? COPY.decisions.answeredByAi(day(q.answer.at))
-              : C.answered(q.answer.by, day(q.answer.at))}
-            : {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
+            {ignored && !isAiBy(q.answer.by) ? (
+              C.ignore.answered(q.answer.by, day(q.answer.at), ignored.reason)
+            ) : (
+              <>
+                {isAiBy(q.answer.by)
+                  ? COPY.decisions.answeredByAi(day(q.answer.at))
+                  : C.answered(q.answer.by, day(q.answer.at))}
+                : {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
+              </>
+            )}
             {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
           </p>
           {(isAiBy(q.answer.by) || correcting) && (
@@ -880,6 +934,8 @@ export function QuestionDetail(p: {
             </legend>
             {q.options.map((o, i) => {
               const id = `${name}-o${i + 1}`;
+              // Beta.24 review: Ignore is offered below, with its reason, for every join question.
+              if (joinStep && o.label === IGNORE_LABEL) return null;
               return (
                 <div key={id} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
                   <input
@@ -907,6 +963,38 @@ export function QuestionDetail(p: {
               );
             })}
             {form.another && <TargetPicker id={q.id} form={form} set={set} />}
+            {joinStep && (
+              <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                <input
+                  type="radio"
+                  id={`${name}-ignore`}
+                  name={`${name}-pick`}
+                  checked={form.pick === "ignore"}
+                  onChange={() => set({ pick: "ignore", another: false })}
+                  aria-describedby={`${name}-ignore-d`}
+                />
+                <label htmlFor={`${name}-ignore`} className="stack" style={{ gap: 2 }}>
+                  <span>{IGNORE_LABEL}</span>
+                  <span id={`${name}-ignore-d`} className="muted" style={{ fontSize: 12 }}>
+                    {C.ignore.means}
+                  </span>
+                </label>
+              </div>
+            )}
+            {form.pick === "ignore" && (
+              <div className="stack" style={{ gap: 4, marginLeft: 24 }}>
+                <label htmlFor={`${name}-reason`} className="hud" style={{ fontSize: 10 }}>
+                  {C.ignore.reason}
+                </label>
+                <input
+                  id={`${name}-reason`}
+                  className="field"
+                  maxLength={300}
+                  value={form.reason ?? ""}
+                  onChange={(e) => set({ reason: e.target.value })}
+                />
+              </div>
+            )}
             <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
               <input
                 type="radio"
@@ -927,8 +1015,14 @@ export function QuestionDetail(p: {
                   className="field"
                   rows={3}
                   value={form.text}
+                  {...(joinStep ? { "aria-describedby": `${name}-text-d` } : {})}
                   onChange={(e) => set({ text: e.target.value })}
                 />
+                {joinStep && (
+                  <span id={`${name}-text-d`} className="muted" style={{ fontSize: 12 }}>
+                    {C.ownWordsJoin}
+                  </span>
+                )}
               </div>
             )}
           </fieldset>

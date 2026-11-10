@@ -27,6 +27,7 @@ import {
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
   TOPICS_STEP_ID,
+  ignoredAnswer,
   topicOfQuestion,
   urlHostPort,
   type CallersResult,
@@ -587,9 +588,16 @@ const repo0 = (members: readonly TargetAsk[]) => members[0]!.f.repo;
 
 const byLine = (a: string, b: string) => cmpNatural(a, b);
 
-/** The answer's option label, or the person's words. */
+/**
+ * The answer's option label, or the person's words. Beta.24 review: Ignore (its option, or words
+ * that start `Ignore:`) reads as "None of these": the join leaves the calls, never a box.
+ */
 const answerLabel = (q: Question): string | undefined =>
-  q.answer?.option !== undefined ? q.options[q.answer.option - 1]?.label : q.answer?.text;
+  ignoredAnswer(q)
+    ? TARGETS_NONE
+    : q.answer?.option !== undefined
+      ? q.options[q.answer.option - 1]?.label
+      : q.answer?.text;
 
 /** The groups a person said don't all go to one place: their questions' words. */
 export function splitTargetGroups(questions: readonly Question[]): Set<string> {

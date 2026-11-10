@@ -3,6 +3,7 @@ import type { AuditTally } from "./audit.js";
 import {
   HOSTS_NONE,
   HOSTS_STEP,
+  JOIN_IGNORE_LABEL,
   PICKER_LABELS,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
@@ -85,6 +86,7 @@ export function questionAiProblem(q: Question, option: number | undefined): stri
   if (label === TARGETS_SPLIT_LABEL)
     return `"${label}" says the calls go to more than one place: a person says so`;
   if (label === HOSTS_NONE) return `"${label}" says none answers: a person says so`;
+  if (label === JOIN_IGNORE_LABEL) return `"${label}" says the calls aren't real: a person says so`;
   return undefined;
 }
 

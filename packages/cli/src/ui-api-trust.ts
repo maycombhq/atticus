@@ -14,13 +14,22 @@ import {
   listQuestions,
   parseAuditFile,
   parseFacts,
-  type Api,
+  Api,
+  FileChangedError,
+  QuestionError,
   type Fact,
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
-import type { Router, ServerContext } from "@maycombhq/server";
+import {
+  badRequest,
+  conflict,
+  HttpError,
+  notFound,
+  type Router,
+  type ServerContext,
+} from "@maycombhq/server";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import { contractCheckOf } from "./contract-check-files.js";
 import { keptAnswer, stampOfFiles } from "./watched-memo.js";
@@ -374,7 +383,16 @@ export async function trustView(root: string): Promise<View> {
     (c) => (c.result.counts.compared ? c.result.counts : undefined),
     () => undefined,
   );
-  return { factsDir: factsRel, repos, problems, ...(contracts ? { contracts } : {}) };
+  // Beta.24 review: the boxes an answer's words made, so a person can put each right.
+  const { answerBoxesOf } = await import("./answer-boxes.js");
+  const answerBoxes = await answerBoxesOf(root).catch(() => []);
+  return {
+    factsDir: factsRel,
+    repos,
+    problems,
+    ...(contracts ? { contracts } : {}),
+    ...(answerBoxes.length ? { answerBoxes } : {}),
+  };
 }
 
 /**
@@ -469,6 +487,10 @@ export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
           () => checkoutsStamp(ctx.root),
         ),
       }))
+      // Beta.24 review: put right a box an answer's words made: Ignore, or a real system's name.
+      // Local writes in the metarepo, previewed first, for Propose for review.
+      .add("POST", "/api/trust/answer-boxes/ignore", ({ body }) => answerBoxRoute(ctx, body, false))
+      .add("POST", "/api/trust/answer-boxes/rename", ({ body }) => answerBoxRoute(ctx, body, true))
       // ADR 0141 (P5): the estate's freshness. It runs read-only local git in the clones
       // (`git diff --name-status` between two commits they have); nothing fetched or written.
       .add("GET", "/api/trust/fresh", async () => {
@@ -488,4 +510,40 @@ export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
         return { status: 200, body };
       })
   );
+}
+
+/** POST /api/trust/answer-boxes/ignore and /rename (beta.24 review). */
+async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean) {
+  const b = Api.AnswerBoxRequest.safeParse(body ?? {});
+  if (!b.success || (rename && !b.data.name))
+    throw badRequest(
+      rename
+        ? "Say which box and its real name: { id, name, preview }."
+        : "Say which box: { id, preview }.",
+    );
+  const { AnswerBoxError, ignoreAnswerBox, renameAnswerBox } = await import("./answer-boxes.js");
+  const o = {
+    by: ctx.user,
+    at: new Date().toISOString(),
+    ...(b.data.preview ? { preview: true } : {}),
+  };
+  try {
+    const r = rename
+      ? await renameAnswerBox(ctx.root, b.data.id, b.data.name!, o)
+      : await ignoreAnswerBox(ctx.root, b.data.id, o);
+    if (r.written) {
+      for (const a of r.answers)
+        ctx.events.publish({ type: "file.changed", path: `questions/${a.id}.yaml` });
+      if (r.profile) ctx.events.publish({ type: "file.changed", path: r.profile.path });
+    }
+    return { status: 200, body: r };
+  } catch (e) {
+    if (e instanceof AnswerBoxError)
+      throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+    if (e instanceof FileChangedError) throw conflict(e.message);
+    if (e instanceof QuestionError) throw new HttpError(422, "Atticus can't do that", e.message);
+    if (e instanceof Error && / would not be valid: /.test(e.message))
+      throw new HttpError(422, "Atticus can't do that", e.message.split("\n")[0]!);
+    throw e;
+  }
 }
