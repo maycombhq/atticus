@@ -6,6 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **Propose for review fails when its branch wasn't pushed**: on a manual Git host it said the PR was a step for you on Home, for a branch the Git host didn't have. Now nothing is proposed, the job fails with the push's reason, and no step is added.
 - **A reply sent while a stage's prompt waits is read by the next round**: it wasn't in the prompt the assistant answered, yet reading that answer in marked it read, so no round ever saw it. Only the answers the prompt carried are marked read now (the loop file keeps them as `carried`), for the proposal's thread too.
 - **One answer is never read in twice**: Done and the app's own check at once, a second Done, or the command line's `--resume` and then the app's could each resume the same run. A stage refuses a resume of a run it isn't waiting on, Done stays busy until its resume has run, and the command line's own `--resume` forgets the resume the app kept.
 - **A reply or a kept question during a long run stays**: the run wrote its loop file whole and dropped a reply posted meanwhile, or brought back a question a person kept; the thread and the run now take the file's lock, and the run keeps what the thread added.
