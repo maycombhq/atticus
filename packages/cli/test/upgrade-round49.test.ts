@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { QUESTION_SCHEMA_VERSION } from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
 import { doctorChecks } from "../src/doctor.js";
 import { main } from "../src/main.js";
@@ -175,7 +176,8 @@ describe("question files upgrade leaves as they are (round 49)", () => {
     const root = await metarepo();
     await mkdir(join(root, "questions"), { recursive: true });
     const v1 = await readFile(join(FIXTURES, "context/questions/q-0f1e2d3c4b5a.yaml"), "utf8");
-    const live = v1.replace("schemaVersion: 1", "schemaVersion: 5");
+    // The live copy at the version questions are now (6 since ADR 0191): nothing to upgrade.
+    const live = v1.replace("schemaVersion: 1", `schemaVersion: ${QUESTION_SCHEMA_VERSION}`);
     await writeFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), live);
     await writeFile(join(root, "questions/q-0f1e2d3c4b5a copy.yaml"), v1);
     const check = io();
