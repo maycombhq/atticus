@@ -1,0 +1,32 @@
+# Invented Forge repos (see fixtures/gateway-facts/join-questions/README.md): an Apigee proxy
+# fronting a vendor whose target URL is a build token no file here sets; two proxies that share
+# one BasePath; and a teller service that calls through the gateway and an in-cluster cache.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: northwind_rates_1-0
+    url: https://git.forge.example/forge/northwind_rates_1-0.git
+    type: gateway
+    owner: team-platform
+    component: northwind-rates-proxy
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-fx-v1
+    url: https://git.forge.example/forge/forge-fx-v1.git
+    type: gateway
+    owner: team-platform
+    component: fx-v1-proxy
+    system: platform
+  - id: forge-fx-v1-canary
+    url: https://git.forge.example/forge/forge-fx-v1-canary.git
+    type: gateway
+    owner: team-platform
+    component: fx-v1-canary-proxy
+    system: platform
+  - id: forge-teller
+    url: https://git.forge.example/forge/forge-teller.git
+    type: spring-boot
+    owner: team-branch
+    component: teller-api
+    system: branch
+    hosts: [teller.forge.internal]

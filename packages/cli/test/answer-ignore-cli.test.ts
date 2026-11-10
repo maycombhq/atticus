@@ -158,7 +158,10 @@ describe("an answer's words never become a box (beta.24 review)", () => {
   });
 
   it("takes the Ignore option with no reason, and adds it to a question asked before it", async () => {
-    const { root, q } = await asked();
+    const { root, q: asNow } = await asked();
+    // As asked before Ignore was offered (new questions offer it from the start).
+    const q = { ...asNow, options: asNow.options.filter((o) => o.label !== JOIN_IGNORE_LABEL) };
+    await writeQuestion(root, q);
     expect(q.options.some((o) => o.label === JOIN_IGNORE_LABEL)).toBe(false);
     const r = await questions(root, ["answer", q.id, "--ignore", "--by", "pat"]);
     expect(r.code, r.err.join("\n")).toBe(0);

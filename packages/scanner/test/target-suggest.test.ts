@@ -198,16 +198,20 @@ describe("the targets question with the suggestions (F8)", () => {
       (x) => x.factId === "call.get.limits-id",
     )!;
     const labels = d.draft.options.map((o) => o.label);
-    expect(labels.length).toBeLessThanOrEqual(TARGETS_MAX_SUGGESTED + 2);
+    expect(labels.length).toBeLessThanOrEqual(TARGETS_MAX_SUGGESTED + 3);
     expect(labels[0]).toBe("forge-cards");
-    expect(labels.slice(-2)).toEqual([TARGETS_ANOTHER, "None of these"]);
+    expect(labels.slice(-3)).toEqual([
+      TARGETS_ANOTHER,
+      "None of these",
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
+    ]);
     expect(d.draft.options[0]!.means).toMatch(
       /^forge-cards \(not read yet\): its basePath \/forge-svc\/cards matches: /,
     );
     expect(d.draft.options[0]!.changes).toContain(
       "once forge-cards is read and verified (/atticus-map forge-cards)",
     );
-    expect(d.draft.options.at(-2)!.means).toContain("the manifest's 10 repos (read or not)");
+    expect(d.draft.options.at(-3)!.means).toContain("the manifest's 10 repos (read or not)");
   });
 });
 

@@ -261,6 +261,7 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
       "northwind-fx",
       "Another repo…",
       "None of these",
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
     expect(targetQuestionFor(noHost().find((f) => f.id === "c-notify")!)?.question).toBe(
       d.draft.question,
@@ -301,6 +302,10 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
         "A repo, system or team not listed here: the manifest's 2 repos (read or not), the profiles' 4 systems and the 0 teams in roles.yaml",
       ],
       ["None of these", "Nothing in the estate or the org pack's systems answers it"],
+      [
+        "Ignore: not a real call (e.g. CI/CD, a test, a template)",
+        "These aren't real calls: a CI/CD job, a test or a template, not code that runs",
+      ],
     ]);
   });
 

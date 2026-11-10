@@ -23,6 +23,10 @@ options:
   - label: None of these
     means: Neither a repo of this estate nor a system to add to the org pack answers on localhost:9966
     changes: Nothing is added to the manifest or the profile; the calls stay loose ends, and this isn't asked again
+  # Beta.24 review: every join question offers Ignore from the start.
+  - label: "Ignore: not a real call (e.g. CI/CD, a test, a template)"
+    means: "These aren't real calls: a CI/CD job, a test or a template, not code that runs"
+    changes: The join leaves these calls (ignored by you), no box is drawn for them, and this isn't asked again
 evidence:
   - src/app/owners/owner.service.ts:10
   - src/app/owners/owner.service.ts:14

@@ -6,7 +6,10 @@ import { FileChangedError, writeFileAtomic, writeFileIfUnchanged } from "./fs.js
 import {
   addManifestHost,
   addOutsideSystem,
+  addProfileSystem,
   hostOfQuestion,
+  joinHostOfQuestion,
+  outsideSystemOfJoinHost,
   HOSTS_NONE,
   HOSTS_STEP,
   ignoredAnswer,
@@ -1263,7 +1266,20 @@ export async function answerQuestion(
     | { id: string; host: string; boundary: "internal" | "vendor"; profile: string; added: boolean }
     | undefined;
   const boundary = outsideBoundaryOf(label);
-  if (host && label && boundary) {
+  // Beta.24 review: a targets question the join raised for a host nothing resolves (a gateway's
+  // token target URL) answered with a new outside system: the system goes into the profile, named
+  // by the host, and the calls the question cites go to it (targetsFromAnswers names them).
+  const joinHost = q.askedBy.step === TARGETS_STEP_ID ? joinHostOfQuestion(q) : undefined;
+  if (joinHost && label && boundary) {
+    try {
+      const s = outsideSystemOfJoinHost(joinHost);
+      const r = await addProfileSystem(root, q.repo, { ...s, boundary });
+      system = { id: r.id, host: joinHost, boundary, profile: r.profile, added: r.added };
+    } catch (e) {
+      if (e instanceof FileChangedError) throw e;
+      throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
+    }
+  } else if (host && label && boundary) {
     try {
       system = { host, boundary, ...(await addOutsideSystem(root, q.repo, host, boundary)) };
     } catch (e) {

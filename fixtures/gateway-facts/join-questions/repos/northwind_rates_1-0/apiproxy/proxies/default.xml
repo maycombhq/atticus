@@ -1,0 +1,13 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetQuote">
+      <Condition>(proxy.pathsuffix MatchesPath "/quotes/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/northwind-rates/1.0</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="vendor">
+    <TargetEndpoint>TE-Vendor</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

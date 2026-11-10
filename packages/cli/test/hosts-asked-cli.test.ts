@@ -148,10 +148,12 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     const root = await metarepo();
     expect(await scanCommand(root, { noDrift: true }, io().io)).toBe(0);
     const [q] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
-    // As written before beta.10: no outside-system options.
+    // As written before beta.10: no outside-system options (nor beta.24's Ignore).
     const old = {
       ...q!,
-      options: q!.options.filter((o) => !o.label.startsWith("An outside system")),
+      options: q!.options.filter(
+        (o) => !o.label.startsWith("An outside system") && !o.label.startsWith("Ignore:"),
+      ),
     };
     expect(old.options.map((o) => o.label)).toEqual(["forge-customers", HOSTS_NONE]);
     await writeQuestion(root, old);

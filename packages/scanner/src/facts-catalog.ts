@@ -27,7 +27,9 @@ import {
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
   TOPICS_STEP_ID,
+  HOSTS_STEP,
   ignoredAnswer,
+  ignoreOption,
   topicOfQuestion,
   urlHostPort,
   type CallersResult,
@@ -64,6 +66,8 @@ import {
   cmpText,
 } from "@maycombhq/core";
 import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
+import { callHostLabel } from "./hosts-asked.js";
+import { hostsIgnoreCovers, isJoinHostQuestion, joinHostTarget } from "./join-host-questions.js";
 import {
   offeredSuggestions,
   targetSuggestions,
@@ -426,16 +430,19 @@ function offered(
 ): TargetSuggestion[] {
   const merged = new Map<string, TargetSuggestion>();
   for (const m of members) {
-    const ambiguous = asks?.some(
+    const ambiguous = asks?.find(
       (a) => a.reason === "ambiguous" && a.call.repo === m.f.repo && a.call.fact === m.f.id,
     );
+    // Beta.24 review: each candidate's option cites the lines of its entries that serve the call.
+    const onlyAt: Record<string, string[]> = {};
+    for (const c of ambiguous?.candidates ?? []) (onlyAt[c.component] ??= []).push(c.at);
     for (const s of targetSuggestions(m.f, {
       op,
       records,
       facts,
       ...(ctx.estate ? { estate: ctx.estate } : {}),
       ...(ctx.questions ? { questions: ctx.questions } : {}),
-      ...(ambiguous ? { only: m.servers } : {}),
+      ...(ambiguous ? { only: m.servers, onlyAt } : {}),
     })) {
       const x = merged.get(s.label);
       if (!x) merged.set(s.label, { ...s, why: [...s.why], serves: [...(s.serves ?? [])] });
@@ -488,6 +495,8 @@ export function targetQuestionDrafts(
           means: "Nothing in the estate or the org pack's systems answers it",
           changes: "The call stays a loose end, and this isn't asked again",
         },
+        // Beta.24 review: every join question offers Ignore from the start.
+        ignoreOption(),
       ],
       evidence: q.evidence,
       scope: "repo",
@@ -675,6 +684,7 @@ export function groupedTargetDrafts(
           means: "Nothing in the estate or the org pack's systems answers any of them",
           changes: "The calls stay loose ends, and this isn't asked again",
         },
+        ignoreOption(),
       ],
       evidence,
       scope: "repo",
@@ -868,6 +878,15 @@ export function targetsFromAnswers(
     .sort((a, b) => cmpText(a.answer!.at, b.answer!.at) || cmpText(a.id, b.id)))
     groups.set(q.question.trim(), q);
   const ruled = ruledTargets(repo, facts, questions, o);
+  // Beta.24 review: the join's host questions, answered: a targets question about a host nothing
+  // resolves names the target of every call it cites; a hosts question answered Ignore leaves the
+  // calls on its host. Read after a call's own question and its group's, before a rule.
+  const joinHosts = questions
+    .filter((x) => x.repo === repo && isJoinHostQuestion(x) && x.state === "answered")
+    .sort((a, b) => cmpText(b.answer!.at, a.answer!.at) || cmpText(a.id, b.id));
+  const ignoredHosts = questions.filter(
+    (x) => x.askedBy?.step === HOSTS_STEP && x.state === "answered" && !!ignoredAnswer(x),
+  );
   const out: Record<string, string> = {};
   for (const f of [...facts].sort((a, b) => cmpText(a.id, b.id))) {
     // A call that names a target is asked only when the estate has no such target and two or
@@ -885,6 +904,21 @@ export function targetsFromAnswers(
     let label =
       asked && asked.state === "answered" && asked.answer ? answerLabel(asked) : undefined;
     let byAi = label && asked?.answer && isAiBy(asked.answer.by) ? asked.answer.by : undefined;
+    const at = q.evidence[0]!;
+    if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
+      const jh = joinHosts.find((x) => x.evidence.includes(at) && !!joinHostTarget(x));
+      if (jh) {
+        label = joinHostTarget(jh);
+        byAi = jh.answer && isAiBy(jh.answer.by) ? jh.answer.by : undefined;
+      } else if (ignoredHosts.length) {
+        const url = urlOf(f, facts);
+        const hostLabel = url ? callHostLabel(url) : undefined;
+        if (ignoredHosts.some((x) => hostsIgnoreCovers(x, { repo, at, hostLabel }))) {
+          label = TARGETS_NONE;
+          byAi = undefined;
+        }
+      }
+    }
     if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
       label = ruled.get(f.id)?.label;
       byAi = undefined;

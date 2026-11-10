@@ -30,6 +30,8 @@ import {
   specFileHash,
   specRelOf,
   flowFiles,
+  HOSTS_STEP,
+  hostOfQuestion,
   writeFileAtomic,
   writeFlow,
   writeSpecHeader,
@@ -58,6 +60,9 @@ import {
   isPrototypeRepo,
   prototypeLeftOut,
   groupedTargetDrafts,
+  isJoinHostQuestion,
+  joinHostQuestionDrafts,
+  staleJoinHostQuestions,
   readCatalog,
   ruledTargets,
   splitTargetGroups,
@@ -489,7 +494,12 @@ export async function projectFactsIntoCatalog(
   const targetsOpts = repoType ? { repoType } : {};
   // ADR 0181: the calls an AI answer named, so their links are the AI's, never a person's.
   const aiTargets: Record<string, { runtime: string; run: string }> = {};
-  const targets = targetsFromAnswers(repo, facts, everyTarget, { ...targetsOpts, ai: aiTargets });
+  // Beta.24 review: the hosts questions too, whose Ignore leaves the calls on their host.
+  const hostsAsked = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+  const targets = targetsFromAnswers(repo, facts, [...everyTarget, ...hostsAsked], {
+    ...targetsOpts,
+    ai: aiTargets,
+  });
   const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
   // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
   // join the entries that serve them and their calls into this repo are joined again.
@@ -704,9 +714,58 @@ export async function writeFactsIntoCatalog(
             ? `${t.factIds.length} calls go the same way and name no target the estate has: asked once, ${q.id}: ${q.question} One answer names the target of all of them. Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
             : named.has(t.factId)
               ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
-              : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+              : ambiguous.has(t.factId)
+                ? `More than one entry of the estate could answer a call: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+                : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
         );
       }
+    }
+    // Beta.24 review: the join's questions about a host nothing resolves, raised as files so the
+    // app shows them (they were only counted): a gateway's token target URL as a targets question
+    // in the join's words (read the repo again, or name the target); any other host as a hosts
+    // question, when none asks about it yet. A call asked another way already isn't asked again.
+    const hostsNow = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    const hostDrafts = joinHostQuestionDrafts({
+      repo,
+      facts,
+      asks: result.join?.asks ?? [],
+      records: result.records,
+      repos: await loadRepos(root).catch(() => []),
+      skip: new Set([...drafted.flatMap((t) => t.factIds), ...Object.keys(targets)]),
+      hostsAsked: new Set(hostsNow.flatMap((q) => hostOfQuestion(q) ?? [])),
+    });
+    const joinHostAsked: { id: string; host: string }[] = [];
+    for (const d of hostDrafts) {
+      const r = await raiseQuestions(
+        root,
+        [d.draft],
+        { step: d.step, repo, command: o.command, rerun, at },
+        { refresh: d.step === TARGETS_STEP },
+      );
+      refreshed.push(...r.refreshed);
+      const q = r.of[0];
+      if (q) joinHostAsked.push({ id: q.id, host: d.host });
+      for (const x of r.raised) {
+        raised.push(x);
+        lines.push(
+          d.step === TARGETS_STEP
+            ? `${d.factIds.length === 1 ? "A call goes" : `${d.factIds.length} calls go`} to ${d.host}, a token no fact sets: asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n>, then ${rerun}.`
+            : `Calls to ${d.host} join no repo: no repo lists it under hosts. Asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n> (1 is ${x.options[0]!.label}), then ${rerun}.`,
+        );
+      }
+    }
+    for (const s of staleJoinHostQuestions({
+      repo,
+      open: everyTarget.filter((q) => q.state === "open" && isJoinHostQuestion(q)),
+      drafted: joinHostAsked,
+      ...(result.join ? { join: result.join } : {}),
+    })) {
+      await retireQuestion(root, s.id, {
+        why: s.why,
+        at,
+        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+      });
+      lines.push(`Retired ${s.id}: ${s.why}.`);
     }
     if (refreshed.length)
       lines.push(

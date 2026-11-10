@@ -114,6 +114,8 @@ describe("which repo answers on a host the calls name (ADR 0088)", () => {
       "An outside system (new): another team's",
       "An outside system (new): a vendor",
       "None of these",
+      // Beta.24 review: Ignore, from the start.
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
   });
 

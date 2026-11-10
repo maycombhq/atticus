@@ -228,6 +228,7 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
       "northwind-risk",
       "Another repo…",
       "None of these",
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
   });
 });
@@ -342,10 +343,14 @@ describe("a targets answer of None of these (F3)", () => {
       id: q.id,
       state: "answered",
       options: q.draft.options,
-      answer: { option: q.draft.options.length },
+      answer: { option: q.draft.options.length - 1 },
       askedBy: { step: TARGETS_STEP },
     } as unknown as Question;
-    expect(q.draft.options.at(-1)!.label).toBe("None of these");
+    // Beta.24 review: Ignore comes last, after "None of these".
+    expect(q.draft.options.at(-2)!.label).toBe("None of these");
+    expect(q.draft.options.at(-1)!.label).toBe(
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
+    );
     const targets = targetsFromAnswers("forge-notes", notes(), [none]);
     expect(targets).toEqual({ "c-archive": NO_TARGET });
     const again = catalogWithFacts({

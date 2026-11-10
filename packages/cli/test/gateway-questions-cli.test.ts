@@ -91,7 +91,13 @@ const byWords = async (root: string, words: string) =>
   (await listQuestions(root)).questions.find((x) => x.question === words);
 const suggested = (x: Question) =>
   x.options.filter(
-    (o) => !["Another repo…", "Not all to one place", "None of these"].includes(o.label),
+    (o) =>
+      ![
+        "Another repo…",
+        "Not all to one place",
+        "None of these",
+        "Ignore: not a real call (e.g. CI/CD, a test, a template)",
+      ].includes(o.label),
   );
 
 describe("old-shape target questions on a gateway estate (beta.12, ADR 0168)", () => {
@@ -141,10 +147,12 @@ describe("old-shape target questions on a gateway estate (beta.12, ADR 0168)", (
       /^ledger-core, built in forge-ledger-core: serves GET \/accounts\/\{id\} and 2 more under \/accounts; /,
     );
     expect(suggested(group).length).toBeLessThanOrEqual(5);
-    expect(group.options.slice(-3).map((o) => o.label)).toEqual([
+    // Beta.24 review: and Ignore, offered from the start.
+    expect(group.options.slice(-4).map((o) => o.label)).toEqual([
       "Another repo…",
       "Not all to one place",
       "None of these",
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
     // No option claims a repo answers the calls; one with no evidence says so.
     for (const o of suggested(group)) expect(o.means).not.toMatch(/\banswers\b/);

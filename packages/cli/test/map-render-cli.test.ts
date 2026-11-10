@@ -645,6 +645,7 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       "northwind-fx",
       "Another repo…",
       "None of these",
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
     const md = readFileSync(join(root, "map", "forge-ledger", "map.md"), "utf8");
     expect(md).toContain(`(../../questions/${q.id}.yaml)`);

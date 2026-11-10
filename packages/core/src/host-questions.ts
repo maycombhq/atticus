@@ -244,6 +244,36 @@ export function hostOfQuestion(q: { question: string }): string | undefined {
   return /^Which repo answers on (\S+)\?$/.exec(q.question.trim())?.[1];
 }
 
+/**
+ * Beta.24 review: the host a targets question the join raised for a host nothing resolves asks
+ * about (a gateway's forwarding call whose target URL is a token, `@targetUrl@`): its words start
+ * as a hosts question's do, and may go on to say what to do next (`forwardHostQuestion`). A
+ * targets question asked of a call (`Which repo or system answers ...`) has none.
+ */
+export function joinHostOfQuestion(q: { question: string }): string | undefined {
+  return /^Which repo answers on (\S+)\?(?:\s|$)/.exec(q.question.trim())?.[1];
+}
+
+/** A host still written as a whole token: `@targetUrl@`, `{{host}}`, `${HOST}` (its name). */
+const WHOLE_TOKEN = [
+  /^@([A-Za-z_][A-Za-z0-9_.-]*)@$/,
+  /^\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}$/,
+  /^\$\{([A-Za-z_][A-Za-z0-9_.-]*)(?::[^}]*)?\}$/,
+];
+
+/**
+ * The outside system an answer to a join host question adds (beta.24 review): named by the host,
+ * or for a host still written as a token, by the token's name (`@targetVendorUrl@` →
+ * `targetVendorUrl`), never with the token's marks in its id.
+ */
+export function outsideSystemOfJoinHost(host: string): { id: string; name: string } {
+  for (const re of WHOLE_TOKEN) {
+    const m = re.exec(host.trim());
+    if (m) return { id: slugify(m[1]!), name: m[1]! };
+  }
+  return outsideSystemOf(host);
+}
+
 /** The profiles folder of the org pack, its platforms sorted. */
 async function platformsOf(root: string): Promise<{ dir: string; platform: string }[]> {
   const profiles = join(orgPackDirOf(root), "profiles");

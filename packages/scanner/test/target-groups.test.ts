@@ -153,6 +153,7 @@ describe("groupedTargetDrafts: one question for the calls that go the same way (
       TARGETS_ANOTHER,
       TARGETS_SPLIT,
       TARGETS_NONE,
+      "Ignore: not a real call (e.g. CI/CD, a test, a template)",
     ]);
     // Why it is suggested, never that it answers the calls (beta.12).
     expect(d.draft.options[0]!.means).toBe(

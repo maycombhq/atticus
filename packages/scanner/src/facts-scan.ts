@@ -5,7 +5,6 @@ import {
   effectiveComponentTypes,
   factsDirOf,
   factsRelOf,
-  listQuestions,
   normalizePath,
   pairsFromCorrections,
   parseCorrections,
@@ -20,13 +19,9 @@ import {
 } from "@maycombhq/core";
 import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
-import {
-  componentRenames,
-  factsRecords,
-  targetsFromAnswers,
-  TARGETS_STEP,
-} from "./facts-catalog.js";
+import { componentRenames, factsRecords, targetsFromAnswers } from "./facts-catalog.js";
 import { estateRepos, productionRepos } from "./merge-input.js";
+import { joinAnswerQuestions } from "./join-host-questions.js";
 
 /**
  * What a repo's records at a commit rest on (eighth UX walk, rule 4): the assistant's verified
@@ -130,9 +125,8 @@ export async function factsForScan(
   }
   // ADR 0153 (Q2): every repo's targets questions, since an answer's rule reaches the repos its
   // scope allows.
-  const questions = (
-    await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
-  ).questions;
+  // Beta.24 review: the hosts questions too, whose Ignore leaves the calls on their host.
+  const questions = await joinAnswerQuestions(root);
   const targets = targetsFromAnswers(repo, facts, questions, {
     repoType: estateRepos(op).find((r) => r.id === repo)?.type,
   });
@@ -220,9 +214,8 @@ export async function estateFacts(
   const pairs: Record<string, Record<string, PersonPair>> = {};
   const notes: string[] = [];
   const unverified: string[] = [];
-  const questions = (
-    await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
-  ).questions;
+  // Beta.24 review: the hosts questions too, whose Ignore leaves the calls on their host.
+  const questions = await joinAnswerQuestions(root);
   // A prototype's facts are never part of the estate join (ADR 0133).
   for (const r of productionRepos(op)) {
     if (r.id === except) continue;

@@ -71,6 +71,11 @@ export interface SuggestContext {
   questions?: readonly Question[];
   /** The join's candidates for an ambiguous call: only these components are offered as repos. */
   only?: readonly string[];
+  /**
+   * Beta.24 review: of `only`, the lines of each component's entries the join found serving the
+   * call, so each candidate's option cites where it serves it.
+   */
+  onlyAt?: Readonly<Record<string, readonly string[]>>;
 }
 
 const STOP = new Set(
@@ -355,7 +360,13 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
       s.score += n;
       s.why.push(why);
     };
-    if (only?.has(c.s.label)) add(6, "the join found an entry of it that serves the call");
+    if (only?.has(c.s.label)) {
+      const at = ctx.onlyAt?.[c.s.label] ?? [];
+      add(
+        6,
+        `the join found an entry of it that serves the call${at.length ? ` (${at.join(", ")})` : ""}`,
+      );
+    }
     const hit = c.entries.find(
       (e) =>
         (!method || !e.method || e.method === method || e.method === "ANY") &&

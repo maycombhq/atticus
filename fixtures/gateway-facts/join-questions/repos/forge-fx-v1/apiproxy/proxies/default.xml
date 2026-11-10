@@ -1,0 +1,11 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetRates">
+      <Condition>(proxy.pathsuffix MatchesPath "/rates") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/fx/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="mock"/>
+</ProxyEndpoint>

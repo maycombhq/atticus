@@ -1,0 +1,7 @@
+schemaVersion: 1
+platform: forge
+name: Forge's join questions (invented)
+systems:
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: branch, name: Branch, boundary: product, owner: team-branch, aliases: [] }
+environments: [prod]

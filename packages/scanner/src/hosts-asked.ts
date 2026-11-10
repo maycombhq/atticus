@@ -2,6 +2,8 @@ import {
   hostMatches,
   hostQuestionText,
   HOSTS_NONE,
+  ignoreOption,
+  placeholderIn,
   HOSTS_OUTSIDE_INTERNAL,
   HOSTS_OUTSIDE_VENDOR,
   outsideSystemOf,
@@ -107,6 +109,9 @@ export function lineSetsPort(line: string, port: number): boolean {
 /** The host and explicit port of a call's URL, as the question names it. */
 function callHost(url: string): { label: string; host: string; port?: number } | undefined {
   if (url.includes("${")) return undefined;
+  // Beta.24 review: a host still written as a token (`@targetUrl@`, `{{host}}`) names no host:
+  // the join asks about its calls instead (`joinHostQuestionDrafts`), never "targeturl@".
+  if (tokenHost(url)) return undefined;
   const hp = urlHostPort(url);
   if (!hp || !hp.host) return undefined;
   const explicit = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@?#]*@)?[^/:?#]+:(\d+)/i.exec(url);
@@ -116,6 +121,15 @@ function callHost(url: string): { label: string; host: string; port?: number } |
     ...(hp.port !== undefined ? { port: hp.port } : {}),
   };
 }
+
+/** Whether a URL's host is still written as a token, as a build or deploy step replaces it. */
+export function tokenHost(url: string): boolean {
+  const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(url)?.[1] ?? url;
+  return !!placeholderIn(authority);
+}
+
+/** The host and explicit port a call's URL names, as a hosts question names it (`rates-cache:8080`). */
+export const callHostLabel = (url: string): string | undefined => callHost(url)?.label;
 
 /** The hosts the estate's loose calls name that no repo lists, each with what to ask. */
 export async function unknownHosts(o: {
@@ -310,6 +324,8 @@ export function hostQuestionDrafts(
             changes:
               "Nothing is added to the manifest or the profile; the calls stay loose ends, and this isn't asked again",
           },
+          // Beta.24 review: every join question offers Ignore from the start.
+          ignoreOption(),
         ],
         evidence: a.calls
           .filter((c) => c.repo === repo)

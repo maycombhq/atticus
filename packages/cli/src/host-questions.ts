@@ -116,6 +116,15 @@ export async function askHosts(
   for (const q of before) {
     const host = hostOfQuestion(q);
     if (q.state !== "open" || !host || hosts.has(host)) continue;
+    // Beta.24 review: a "host" read out of a build token (`@targetUrl@` read as `targeturl@`) is
+    // none: the join asks about the token's calls instead, and an answer here would write it into
+    // the manifest.
+    if (/[@{}$]/.test(host)) {
+      const why = `${host} was read from a token in a call's URL (a build or deploy step sets it), not a host: the join asks about those calls now`;
+      await retireQuestion(root, q.id, { why, at });
+      lines.push(`Retired ${q.id} (${q.question}): ${why}.`);
+      continue;
+    }
     const [name, port] = host.split(/:(?=\d+$)/);
     const listing = repos
       .filter((r) =>
