@@ -132,9 +132,11 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
         )),
     // ADR 0184: go/no-go is decided over the release PRs, each repo's change branch into its
     // default branch, merged (unless the org pack's ci.yaml says archive.requireMergedPrs: false).
-    ...(phase === "release" ? await releasePrReasons(ctx.root, change.id) : []),
+    // Both read refs here only (the host's branches as last fetched): an assessment runs on every
+    // page load (Home's cockpit), which never reaches the Git host; Sync and the release steps do.
+    ...(phase === "release" ? await releasePrReasons(ctx.root, change.id, { offline: true }) : []),
     // App-only audit: Build ready waits for every task's work to be in the change branch.
-    ...(phase === "build" ? await taskBranchReasons(ctx.root, change.id) : []),
+    ...(phase === "build" ? await taskBranchReasons(ctx.root, change.id, { offline: true }) : []),
   ];
   const next = change.state === "returned" ? phaseState(phase) : nextState(type, phase);
   const live = change.state === "returned" ? undefined : liveHandoff(change);
