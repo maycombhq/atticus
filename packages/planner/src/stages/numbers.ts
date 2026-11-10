@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { writeFileAtomic } from "@maycombhq/changes";
+import { withSharedFileLock } from "@maycombhq/core";
 import type { DeltaStep, FlowDelta } from "./schema.js";
 
 /**
@@ -99,3 +100,46 @@ export async function writeStoryNumbers(dir: string, n: StoryNumbers): Promise<v
 /** The highest number used: a story's (`s<n>-`), a step's within a repo, a task's within a story. */
 export const storyNumber = (id: string) => Number(/^s(\d+)-/.exec(id)?.[1] ?? 0);
 export const lastPart = (id: string) => Number(/\.(\d+)$/.exec(id)?.[1] ?? 0);
+
+/**
+ * ADR 0191 review: one writer at a time of a change's numbers and its stories' shaping (the
+ * stories stage, and the business analyst's shaping through the app or the CLI, may write them
+ * together), across processes: `<numbers file>.lock` (core's withSharedFileLock). Never nested.
+ */
+export function withStoriesLock<T>(dir: string, work: () => Promise<T>): Promise<T> {
+  return withSharedFileLock(join(dir, ...NUMBERS_FILE.split("/")), work, {
+    what: "write of the stories' numbers and shaping",
+  });
+}
+
+/**
+ * ADR 0191 review: the numbers a run worked out, over the ones on file now. A story or task
+ * number on file that the run didn't know (one the business analyst reserved while the run
+ * drafted) is kept, so it is never given again.
+ */
+export function mergeStoryNumbers(now: StoryNumbers | undefined, mine: StoryNumbers): StoryNumbers {
+  if (!now) return mine;
+  const ids = new Set(mine.stories.map((s) => s.id));
+  return {
+    schemaVersion: 1,
+    repos: { ...now.repos, ...mine.repos },
+    steps: { ...now.steps, ...mine.steps },
+    stories: [
+      ...mine.stories.map((s) => {
+        const was = now.stories.find((x) => x.id === s.id);
+        if (!was) return s;
+        const have = new Set(s.tasks.map((t) => t.label));
+        const gone = was.tasks.filter((t) => !have.has(t.label));
+        return gone.length ? { ...s, tasks: [...s.tasks, ...gone] } : s;
+      }),
+      ...now.stories.filter((x) => !ids.has(x.id)),
+    ].sort((a, b) => storyNumber(a.id) - storyNumber(b.id)),
+  };
+}
+
+/** Write a run's numbers, merged with the ones on file at the time (`mergeStoryNumbers`). */
+export async function keepStoryNumbers(dir: string, mine: StoryNumbers): Promise<void> {
+  await withStoriesLock(dir, async () =>
+    writeStoryNumbers(dir, mergeStoryNumbers(await readStoryNumbers(dir), mine)),
+  );
+}

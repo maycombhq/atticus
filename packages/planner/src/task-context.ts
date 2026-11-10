@@ -30,7 +30,7 @@ import {
   taskLabel,
   partsOf,
   readStoriesAnswer,
-  storiesFromDeltas,
+  numberedStories,
   taskKnowledgeInput,
   taskPrompt,
   type DeltaStory,
@@ -262,11 +262,12 @@ export async function taskContext(
   const estate = await loadEstate(root, ctx.records);
   const deltas = (await readDeltas(dir)).deltas.filter((d) => !isEmptyDelta(d));
   // Review round 50: numbered as the stories stage numbered them (stage/stories-numbers.yaml).
-  const stories: DeltaStory[] = deltas.length
-    ? applyShape(
-        storiesFromDeltas(deltas, estate, await readStoryNumbers(dir)),
-        await readShape(dir),
-      ).stories
+  // ADR 0191 review: shaped with every number the change used, as the stories stage shapes them.
+  const numbered = deltas.length
+    ? numberedStories(deltas, estate, await readStoryNumbers(dir))
+    : undefined;
+  const stories: DeltaStory[] = numbered
+    ? applyShape(numbered.stories, await readShape(dir), undefined, numbered.numbers).stories
     : [];
   // B-short: tasks.md numbers tasks per story (1.1, 1.2, 2.1); the task's id (its first step's)
   // stays the key of the answer and the judgments, and still names it here.
