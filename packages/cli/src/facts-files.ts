@@ -244,6 +244,11 @@ export interface VerifySummary {
    * the facts show, which is usually a missed read. Left out when there are none.
    */
   frameworkGaps?: VerifyReport["frameworkGaps"];
+  /**
+   * A note, not a rejection (ADR 0192): the coordinates and dependencies a read build file writes
+   * that no artifact or dependency fact records. Left out when there are none.
+   */
+  buildUnrecorded?: VerifyReport["buildUnrecorded"];
 }
 
 /**
@@ -424,6 +429,7 @@ export async function writeVerifyFiles(
       ...(f.component ? { component: f.component } : {}),
     }));
   if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
+  if (report.buildUnrecorded?.length) summary.buildUnrecorded = report.buildUnrecorded;
   await writeFileAtomic(join(dir, `${repo}.verify.yaml`), stringify(summary));
   return summary;
 }

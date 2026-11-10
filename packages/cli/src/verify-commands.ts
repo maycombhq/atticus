@@ -585,6 +585,17 @@ export async function verifyCommand(
       `(frameworkGaps in ${verifyYaml})`,
     );
   }
+  // ADR 0192: what the build files read write that no artifact or dependency fact records.
+  const unrecorded = report.buildUnrecorded ?? [];
+  if (unrecorded.length) {
+    io.out(
+      `${unrecorded.length} ${unrecorded.length === 1 ? "coordinate or dependency" : "coordinates and dependencies"} a build file read writes ${unrecorded.length === 1 ? "has" : "have"} no fact (a note, not a rejection; under buildUnrecorded in ${verifyYaml}): record each as an artifact or dependency fact, so a library of the estate's own is drawn as what its services build on:`,
+    );
+    show(
+      unrecorded.map((u) => `${u.kind} ${u.coordinates} (${u.cite})`),
+      `(buildUnrecorded in ${verifyYaml})`,
+    );
+  }
   // G4: with the framework models off, nothing is offered to learn.
   const learn = off.has("framework-models")
     ? []

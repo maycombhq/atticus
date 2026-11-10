@@ -478,6 +478,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   such an answer, and a new outside system's name is a short name, never a sentence. GET
  *   /api/trust gains `answerBoxes`, the boxes made from an answer's words, and POST
  *   /api/trust/answer-boxes/ignore and /rename put one right (preview first). Additive only.
+ *   A library of the estate's own (ADR 0192): a graph edge may be `depends-on`, a component that
+ *   builds on coordinates another repo's build publishes (facts v5's `dependency` and `artifact`),
+ *   drawn in the architecture and repo lenses, never merged into calls or their counts; its join's
+ *   `how` is `coordinates` and it carries `dependency` (group, name, version, scope), with the
+ *   dependency's lines as `caller` and the publishing lines as `callee`. Additive only.
  */
 export const API_VERSION = "3.10.0";
 export const DEFAULT_PORT = 4321;
@@ -610,6 +615,8 @@ export const HIER_EDGE_TYPES = [
   "writes",
   "references",
   "deployed-to",
+  // 3.10.0 (ADR 0192): a component builds on a library another repo of the estate publishes.
+  "depends-on",
 ] as const;
 
 /**
@@ -645,6 +652,9 @@ export const LINK_HOWS = [
   "shared",
   // 2.82.0 (ADR 0181): the AI paired the call, applied by Atticus from its run (`joined-by-ai`).
   "ai",
+  // 3.10.0 (ADR 0192): a `depends-on` edge's dependency, joined by the coordinates (group and
+  // name) another component's build publishes: code at both ends, never a call.
+  "coordinates",
   "unknown",
 ] as const;
 export const HierJoin = z.object({
@@ -690,6 +700,21 @@ export const HierJoin = z.object({
    * call's `source: ai` evidence; what the "Detected by AI" chip links to.
    */
   run: z.string().optional(),
+  /**
+   * 3.10.0 (ADR 0192): on a `depends-on` edge's join (`how: coordinates`), the coordinates the
+   * dependency names and the library publishes, and its scope when not compile. `interface` is
+   * then the link's own id (`depends-on:<repo>/<component>><repo>/<component>`, no Interface
+   * record), `caller` the dependency's lines in the depending build file, `callee` the lines that
+   * publish the coordinates. Left out on a call's join.
+   */
+  dependency: z
+    .object({
+      group: z.string(),
+      name: z.string(),
+      version: z.string().optional(),
+      scope: z.string().optional(),
+    })
+    .optional(),
 });
 
 /** Parallel edges between the same two nodes of the same type are one edge with a count. */

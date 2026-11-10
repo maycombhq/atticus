@@ -394,6 +394,11 @@ function claimOf(f: Fact): string {
       return `${f.term} ${f.value} (${f.role})`;
     case "component":
       return `${f.component ?? f.repo} is a ${f.type}`;
+    // ADR 0192: what a component's build publishes, and what it builds on.
+    case "artifact":
+      return `publishes ${f.group}:${f.name}`;
+    case "dependency":
+      return `builds on ${f.group}:${f.name}`;
   }
 }
 

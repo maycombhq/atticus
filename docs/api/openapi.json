@@ -26988,7 +26988,8 @@
               "reads",
               "writes",
               "references",
-              "deployed-to"
+              "deployed-to",
+              "depends-on"
             ]
           },
           "sync": {
@@ -27094,6 +27095,7 @@
               "service-name",
               "shared",
               "ai",
+              "coordinates",
               "unknown"
             ]
           },
@@ -27124,6 +27126,7 @@
                 "service-name",
                 "shared",
                 "ai",
+                "coordinates",
                 "unknown"
               ]
             }
@@ -27247,6 +27250,28 @@
           },
           "run": {
             "type": "string"
+          },
+          "dependency": {
+            "type": "object",
+            "properties": {
+              "group": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "group",
+              "name"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -45137,7 +45162,9 @@
                             "framework",
                             "flow",
                             "term",
-                            "component"
+                            "component",
+                            "artifact",
+                            "dependency"
                           ]
                         },
                         "file": {
@@ -45436,7 +45463,9 @@
                       "framework",
                       "flow",
                       "term",
-                      "component"
+                      "component",
+                      "artifact",
+                      "dependency"
                     ]
                   },
                   "file": {
@@ -45676,7 +45705,9 @@
                               "framework",
                               "flow",
                               "term",
-                              "component"
+                              "component",
+                              "artifact",
+                              "dependency"
                             ]
                           },
                           "file": {

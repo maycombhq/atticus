@@ -201,7 +201,9 @@
       "framework": 0,
       "flow": 1,
       "term": 0,
-      "component": 0
+      "component": 0,
+      "artifact": 0,
+      "dependency": 0
     },
     "left": {
       "screens": 1,

@@ -77,6 +77,11 @@ export function factLabel(f: Fact): string {
     // ADR 0180: what a component is.
     case "component":
       return `${f.component ?? f.repo} is a ${f.type}`;
+    // ADR 0192: what a component's build publishes, and what it builds on.
+    case "artifact":
+      return `publishes ${f.group}:${f.name}${f.version ? `:${f.version}` : ""}`;
+    case "dependency":
+      return `builds on ${f.group}:${f.name}${f.version ? `:${f.version}` : ""}${f.scope && f.scope !== "compile" ? ` (${f.scope})` : ""}`;
   }
 }
 

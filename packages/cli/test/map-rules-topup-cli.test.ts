@@ -40,7 +40,15 @@ const VERIFY = join(__dirname, "..", "..", "verify", "test", "fixtures");
 const SHA = (c: string) => c.repeat(40).slice(0, 40);
 const LIMIT = 100_000;
 const T = 120_000;
-const BETA11 = ["field-types", "mappings", "message-types", "terms", "call-auth"];
+// What a read with no record of its rules lacks: the beta.11 sets, and every set since (ADR 0192).
+const UNRECORDED = [
+  "field-types",
+  "mappings",
+  "message-types",
+  "terms",
+  "call-auth",
+  "build-coordinates",
+];
 
 const temps: string[] = [];
 const temp = (name: string) => {
@@ -350,14 +358,14 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
       expect(v.repos[0]).toMatchObject({
         repo: "forge-ledger",
         state: "rules-changed",
-        rulesLacking: BETA11,
+        rulesLacking: UNRECORDED,
         command: "atticus map forge-ledger --rules",
         slash: "/atticus-map forge-ledger --rules",
       });
       const o = io();
       await estateFresh(root, {}, o.io);
       expect(o.text()).toContain(
-        "  forge-ledger: Its facts are of the clone's commit, but it was read before these reading rules: field-types, mappings, message-types, terms, call-auth. A top-up reads only the files they apply to.",
+        "  forge-ledger: Its facts are of the clone's commit, but it was read before these reading rules: field-types, mappings, message-types, terms, call-auth, build-coordinates. A top-up reads only the files they apply to.",
       );
       expect(o.text()).toMatch(/forge-ledger +rules-changed .* atticus map forge-ledger --rules/);
       const c = await doctorCounts(root);
@@ -382,7 +390,7 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
         0,
       );
       expect(o.text()).toMatch(
-        /^Top-up of forge-ledger for the reading rules added since it was read \(field-types, mappings, message-types, terms, call-auth\): \d+ files?, about [\d,]+ tokens, in 1 session/m,
+        /^Top-up of forge-ledger for the reading rules added since it was read \(field-types, mappings, message-types, terms, call-auth, build-coordinates\): \d+ files?, about [\d,]+ tokens, in 1 session/m,
       );
       const prompt = readFileSync(join(root, "facts", "forge-ledger.rules.md"), "utf8");
       expect(prompt).toContain(`# Top-up of forge-ledger at ${head}`);

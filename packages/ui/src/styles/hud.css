@@ -1733,6 +1733,18 @@ html:has(.run-console.open) {
   color: var(--violet-text);
   border-color: var(--violet-line);
 }
+/*
+ * ADR 0192: a build dependency on a library of the estate's own, never a call: dash-dot (a shape
+ * apart from a person's dashes and the AI's dots), and its label says "depends on" in words and
+ * in italics (WCAG 1.4.1: never the line's pattern alone).
+ */
+.react-flow__edge-path.arch-link.dep,
+.arch-link.dep {
+  stroke-dasharray: 8 3 2 3;
+}
+.arch-link-label.dep {
+  font-style: italic;
+}
 /* The link picked: thicker, and its label outlined (with the inspector open beside it). */
 .react-flow__edge-path.arch-link.picked,
 .arch-link.picked {

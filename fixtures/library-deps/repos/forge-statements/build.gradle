@@ -1,0 +1,11 @@
+plugins {
+    id 'java'
+}
+
+group = 'forge.statements'
+version = '0.9.0'
+
+dependencies {
+    implementation 'forge.payments:forge-payments-common:1.4.0'
+    implementation("com.northwind.sdk:northwind-pay-client:2.1.0")
+}

@@ -11,6 +11,7 @@ export * from "./facts-join-prototype.js";
 export * from "./facts-carry.js";
 export * from "./facts-callers.js";
 export * from "./facts-terms.js";
+export * from "./facts-deps.js";
 export * from "./org-notes.js";
 export * from "./link-evidence.js";
 export * from "./shared-maps.js";

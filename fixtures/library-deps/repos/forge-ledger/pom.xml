@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>forge.ledger</groupId>
+  <artifactId>forge-ledger</artifactId>
+  <version>2.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>forge.payments</groupId>
+      <artifactId>forge-payments-common</artifactId>
+      <version>1.4.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.northwind.sdk</groupId>
+      <artifactId>northwind-pay-client</artifactId>
+      <version>2.1.0</version>
+    </dependency>
+  </dependencies>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>forge.payments</groupId>
+        <artifactId>forge-payments-common</artifactId>
+        <version>1.4.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
