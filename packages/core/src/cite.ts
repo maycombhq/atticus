@@ -222,6 +222,17 @@ const TOKEN_SHAPES = [
   /\bAIza[0-9A-Za-z_-]{35}/g,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
 ];
+/**
+ * Whether a text holds a secret by its shape alone, whatever names it (beta.24 review): a URL's
+ * password (`jdbc:postgresql://user:pass@host`), a bearer token or one of the well-known token
+ * shapes `redactSecrets` takes out. A reference (`${X}`, `env:X`) in the password's place is none.
+ */
+export function hasSecretShape(text: string): boolean {
+  for (const m of text.matchAll(URL_CREDENTIALS)) if (!refersOnly(m[2]!)) return true;
+  if (new RegExp(BEARER.source).test(text)) return true;
+  return TOKEN_SHAPES.some((re) => new RegExp(re.source).test(text));
+}
+
 /** A value that only refers to a secret: `${X}`, `{{ x }}`, `env:X`, `vault:...`, `<...>`. */
 const placeholder = (v: string) => PLACEHOLDER.test(v.trim().replace(/^["'`]/, ""));
 const refersOnly = (v: string) => placeholder(v) || /^[$%{]/.test(v);
@@ -307,14 +318,16 @@ function defaultActionAt(lines: readonly string[], path: string): boolean {
   );
 }
 
-const WORD_SEP = "[:._\\-/#\\s]";
+// Beta.24 review: `-` joins a word (`forge-remote`), so no piece of it comes from another line.
+const WORD_SEP = "[:._/#\\s]";
 
 /**
  * Whether a word claim is put together from `cite.with` parts (ADR 0124 addendum A-derived): a
  * rake task's `namespace:task`, a key a helper prefixes (`${prefix}_conferenceCache`). Each part's
  * value must be in the claim as a whole piece (bounded by the claim's start or end, a separator
- * `: . _ - / #`, or another part), and whatever is left between the parts, separators aside, must
- * be written on the cited lines. The parts' own lines are checked by the caller.
+ * `: . _ / #`, or another part; `-` joins a word), and whatever is left between the parts,
+ * separators aside, must be written on the cited lines: at least one piece, so the cited lines
+ * name some of the word. The parts' own lines are checked by the caller.
  */
 export function partsBuildWord(
   claim: string,
@@ -333,11 +346,12 @@ export function partsBuildWord(
     s = s.replace(re, "\u0000");
   }
   const edge = new RegExp(`^${WORD_SEP}+|${WORD_SEP}+$`, "g");
-  return s
+  const rest = s
     .split("\u0000")
     .map((p) => p.replace(edge, ""))
-    .filter(Boolean)
-    .every((p) => lines.some((l) => lineNamesWord(l, p)));
+    .filter(Boolean);
+  // Beta.24 review: parts that are the whole word leave the cited lines naming nothing of it.
+  return rest.length > 0 && rest.every((p) => lines.some((l) => lineNamesWord(l, p)));
 }
 
 export function partsNamePath(lines: readonly string[], path: string): boolean {
