@@ -207,6 +207,39 @@ export function linkCorrection(
   };
 }
 
+/**
+ * ADR 0192: the dependency facts on a `depends-on` join's first line (the depending build file's
+ * dependency line): what "This link is wrong" corrects there.
+ */
+export function dependencyFactsOf(j: Join, v: FactsView | undefined): FactCite[] {
+  const line = callerLine(j);
+  const at = line ? splitAt(line.at) : undefined;
+  if (!v || !at || !j.dependency) return [];
+  const seen = new Map<string, FactCite>();
+  for (const h of hitsAt(v, at.file, at.line))
+    if (h.fact.kind === "dependency" && !h.step) seen.set(h.fact.id, h.fact);
+  return [...seen.values()];
+}
+
+/**
+ * ADR 0192: the POST /api/facts/{repo}/corrections body that says a dependency is wrong (with
+ * why, which is required): verify then leaves the fact out, and its `depends-on` link goes.
+ */
+export function dependencyCorrection(
+  fact: FactCite,
+  reason: string,
+): { body: Record<string, unknown> } | { error: "needReason" } {
+  const why = reason.trim();
+  if (!why) return { error: "needReason" };
+  return { body: { fact: fact.id, action: "wrong", reason: why } };
+}
+
+/** A join's coordinates in words (`group:name`), or its method and path for a call. */
+export const joinWhat = (j: Join): string =>
+  j.dependency
+    ? `${j.dependency.group}:${j.dependency.name}`
+    : [j.method, j.path].filter(Boolean).join(" ");
+
 /** The ids a person can name as a call's target, from the views loaded: repos and components. */
 export function knownTargets(views: Views, repos: readonly string[] = []): string[] {
   const out = new Set(repos);
@@ -253,7 +286,7 @@ function callsIn(views: Views): Map<string, { link: string; what: string }> {
         for (const line of callerLines(j))
           out.set(`${line.repo}:${line.at}`, {
             link: `${j.from} → ${j.to}`,
-            what: [j.method, j.path].filter(Boolean).join(" "),
+            what: joinWhat(j),
           });
   return out;
 }

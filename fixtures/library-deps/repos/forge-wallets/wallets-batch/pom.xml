@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>forge.wallets</groupId>
+    <artifactId>forge-wallets-parent</artifactId>
+    <version>3.1.0</version>
+  </parent>
+  <artifactId>wallets-batch</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>forge.payments</groupId>
+      <artifactId>forge-payments-common</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

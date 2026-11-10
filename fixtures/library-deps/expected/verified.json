@@ -1,0 +1,39 @@
+{
+  "forge-ledger": {
+    "accepted": [
+      "artifact.forge-ledger",
+      "dependency.forge-payments-common",
+      "dependency.northwind-pay-client"
+    ],
+    "rejected": [],
+    "buildUnrecorded": []
+  },
+  "forge-payments-common": {
+    "accepted": [
+      "artifact.forge-payments-common",
+      "call.get.rates",
+      "dependency.spring-boot-starter-web"
+    ],
+    "rejected": [],
+    "buildUnrecorded": []
+  },
+  "forge-statements": {
+    "accepted": [
+      "artifact.forge-statements",
+      "dependency.forge-payments-common",
+      "dependency.northwind-pay-client"
+    ],
+    "rejected": [],
+    "buildUnrecorded": []
+  },
+  "forge-wallets": {
+    "accepted": [
+      "artifact.wallets-api",
+      "artifact.wallets-batch",
+      "dependency.wallets-api.forge-payments-common",
+      "dependency.wallets-batch.forge-payments-common"
+    ],
+    "rejected": [],
+    "buildUnrecorded": []
+  }
+}

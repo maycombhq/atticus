@@ -44,11 +44,25 @@ function fields(s: JsonSchema, skip: ReadonlySet<string> = new Set()): string[] 
 }
 
 /**
- * Every field of every kind, from the zod schema (through its JSON Schema): the fields all kinds
- * share on one line, then one line per kind with its own.
+ * ADR 0192: the fact kinds only one kind of file holds, so a batch of none of those files is
+ * given no line for them (a small model's room is mostly its instructions: ADR 0124 addendum
+ * A-lean). The build coordinates are in build files, which are `deploy` files.
  */
-export function factsReference(): string {
-  const kinds = (factsJsonSchemas().Fact as JsonSchema).oneOf ?? [];
+const REFERENCE_TOPICS: Readonly<Record<string, readonly RuleTopic[]>> = {
+  artifact: ["deploy"],
+  dependency: ["deploy"],
+};
+
+/**
+ * Every field of every kind, from the zod schema (through its JSON Schema): the fields all kinds
+ * share on one line, then one line per kind with its own. Given a batch's kinds of file, a kind
+ * only other files hold (`REFERENCE_TOPICS`) is left out; given none, every kind is there.
+ */
+export function factsReference(batchKinds?: readonly RuleTopic[]): string {
+  const kinds = ((factsJsonSchemas().Fact as JsonSchema).oneOf ?? []).filter((k) => {
+    const only = REFERENCE_TOPICS[String(k.properties?.kind?.const)];
+    return !batchKinds || !only || only.some((t) => batchKinds.includes(t));
+  });
   const keys = kinds.map((k) => new Set(Object.keys(k.properties ?? {})));
   const common = new Set(
     [...(keys[0] ?? [])].filter((k) => k !== "kind" && keys.every((s) => s.has(k))),
@@ -148,6 +162,8 @@ export interface RulePart {
  * - `message-types`: the message type a publish or listener names (ADR 0164).
  * - `terms`: the organisation's identifiers a file writes, with the repo type's notes (ADR 0163).
  * - `call-auth`: the token, key or certificate a call presents and its TLS, cited (ADR 0163).
+ * - `build-coordinates`: the coordinates a build publishes and the dependencies it declares
+ *   (ADR 0192), so a library of the estate's own is drawn as what its dependants build on.
  */
 export const RULE_SETS = [
   "field-types",
@@ -155,6 +171,7 @@ export const RULE_SETS = [
   "message-types",
   "terms",
   "call-auth",
+  "build-coordinates",
 ] as const;
 export type RuleSet = (typeof RULE_SETS)[number];
 
@@ -242,6 +259,11 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     {
       when: ["deploy"],
       text: "A `framework` fact is what the repo, or one of its modules, is built on: one per framework its build file declares. `name` is the framework (spring-boot, spring, quarkus, asp.net, entity-framework, express, nest, angular, react, vue, next, django, celery, rails, sidekiq, laravel), or, for one of the organisation's own starters or platform libraries, the artifact or package as the file writes it; `cite.value` is the declaration as the line writes it (`spring-boot-starter-parent`, `Microsoft.NET.Sdk.Web`, `express`, `gem \"rails\"`); `version` is the version as declared, and where that isn't written on the cited line (a `<properties>` entry, a parent pom's version, a `<TargetFramework>`, a dependency-management block) that line goes in `cite.with`; `component` is the module when a module declares its own. A library the code merely calls is not a framework: record what the repo is built on. Nor is an Apigee proxy (`<APIProxy>`) or shared flow (`<SharedFlowBundle>`): those are the gateway's routes, read by the gateway parts, never a framework fact.",
+    },
+    {
+      when: ["deploy"],
+      set: "build-coordinates",
+      text: "An `artifact` fact is the coordinates a build publishes (a pom's own `<artifactId>` and `<groupId>`, else its `<parent>`'s; Gradle's `group` and `rootProject.name`); a `dependency` fact, each dependency it declares in its dependencies (not `<dependencyManagement>`, a plugin's, an exclusion or a BOM). Cite the name's line (`cite.value` as written, a Gradle line's `g:a:v`), the group's and the version's lines in `cite.with`; `scope` when not compile; `component` the module whose build file it is. Record every dependency: which are the estate's own is read from what its repos publish. A library it builds on is a dependency, never a call; the library's own calls are read in its repo.",
     },
   ],
   [
@@ -526,7 +548,7 @@ export function ruleSetsNow(): RuleSet[] {
  * ADR 0167: what a read recorded nothing for lacked: it was made before reads recorded their
  * rules (2.0.0-beta.12), so it lacks every set added in 2.0.0-beta.11 (the field types and
  * required, the mappings and envelopes, the message types, the terms, a call's auth and TLS),
- * which are all the sets there are so far.
+ * and every set added since (the build coordinates, ADR 0192): all the sets there are so far.
  */
 export const UNRECORDED_LACKS: readonly RuleSet[] = [
   "field-types",
@@ -534,6 +556,7 @@ export const UNRECORDED_LACKS: readonly RuleSet[] = [
   "message-types",
   "terms",
   "call-auth",
+  "build-coordinates",
 ];
 
 /** The rules a read was given, as its read plan records them (ADR 0167). */
@@ -717,7 +740,7 @@ export function mapBatchInstructions(o: {
     "",
     "Answer with JSON lines only, no code fence. Each fact has this shape:",
     "",
-    factsReference(),
+    factsReference(o.kinds),
     "",
     factRulesFor(o.kinds, o.frameworks, o.sets),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",

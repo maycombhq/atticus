@@ -8,7 +8,7 @@ import { message } from "../run/shared.js";
 import { CorrectionNext } from "../../app/correction-next.js";
 import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
 import { AiMark, linkDecisionAt, readyView, useDecisions } from "../../app/decisions.js";
-import { aiJoins } from "./model.js";
+import { aiJoins, linkTypeWord } from "./model.js";
 import { CorrectionsList } from "./Declare.js";
 import {
   arrowCalls,
@@ -16,6 +16,9 @@ import {
   callerLine,
   callerRepos,
   callFactsOf,
+  dependencyCorrection,
+  dependencyFactsOf,
+  joinWhat,
   linkCorrection,
   predict,
   type Join,
@@ -74,6 +77,49 @@ function Lines({ title, list }: { title: string; list: readonly Api.HierEvidence
   );
 }
 
+/**
+ * Beta.24 review: on a verified link, the guesses its other merged calls rest on (`also`), said
+ * apart from how the link itself was made. Nothing when there are none.
+ */
+export function AlsoLine({ also }: { also: readonly string[] | undefined }) {
+  if (!also?.length) return null;
+  const words = also.map((h) => W.alsoHow[h] ?? h).join(", ");
+  return (
+    <p className="ev-say" style={{ margin: 0 }}>
+      {W.also(words)}
+    </p>
+  );
+}
+
+/**
+ * ADR 0192: one build dependency on the link: the coordinates, the line that declares them in
+ * the depending build file and the lines that publish them in the library's.
+ */
+export function DependencyView({ join, children }: { join: Api.HierJoinT; children?: ReactNode }) {
+  const D = W.dependency;
+  const what = joinWhat(join);
+  const title = D.title(join.from, join.to, what);
+  return (
+    <article className="stack" style={{ gap: 4 }} aria-label={title}>
+      <p style={{ margin: 0 }}>
+        <code className="mono">{title}</code>
+        {join.dependency?.scope && <> {D.scope(join.dependency.scope)}</>}{" "}
+        <span className={`chip ${join.verified ? "done" : "warn"}`}>
+          {join.verified ? W.verified : W.inferred}
+        </span>
+      </p>
+      <p className="ev-say" style={{ margin: 0 }}>
+        {W.how.coordinates}
+      </p>
+      <dl className="stack" style={{ gap: 2, margin: 0 }}>
+        <Lines title={D.caller} list={join.caller} />
+        <Lines title={D.callee} list={join.callee} />
+      </dl>
+      {children}
+    </article>
+  );
+}
+
 /** One call on the link: how it was joined, verified or inferred, and its lines. */
 export function JoinView({
   join,
@@ -100,6 +146,7 @@ export function JoinView({
     aiLine ?? (join.how === "ai" ? (callerLine(join) ?? { at: "" }) : undefined);
   const decisions = useDecisions();
   const decision = ai ? linkDecisionAt(readyView(decisions), ai.repo, ai.at) : undefined;
+  if (join.dependency) return <DependencyView join={join}>{children}</DependencyView>;
   return (
     <article className="stack" style={{ gap: 4 }} aria-label={W.call(join.from, join.to, what)}>
       <p style={{ margin: 0 }}>
@@ -121,6 +168,7 @@ export function JoinView({
         {join.gateway && ` ${W.gateway}`}
         {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
       </p>
+      {join.verified && <AlsoLine also={join.also} />}
       {ai && (
         <AiMark
           item={decision?.item}
@@ -198,7 +246,7 @@ export function WhyLinked(p: {
   return (
     <div className="stack" style={{ gap: 8 }}>
       <p className="ev-say" style={{ margin: 0 }}>
-        {W.intro}
+        {p.link.type === "depends-on" ? W.dependency.intro : W.intro}
       </p>
       {p.above?.(p.link)}
       {joins.map((j) => (
@@ -252,7 +300,9 @@ export function LinkInspector(p: {
   return (
     <section className="stack link-inspector" aria-labelledby={`${id}-h`} style={{ gap: 6 }}>
       <h3 id={`${id}-h`} className="h" tabIndex={-1} ref={head}>
-        {p.link ? A.linkTitle(p.labelOf(p.link.from), p.labelOf(p.link.to), p.link.type) : A.link}
+        {p.link
+          ? A.linkTitle(p.labelOf(p.link.from), p.labelOf(p.link.to), linkTypeWord(p.link.type))
+          : A.link}
       </h3>
       {!p.link ? (
         <p className="state" role="status">
@@ -468,6 +518,104 @@ export function LinkWrongForm(p: {
 }
 
 /**
+ * ADR 0192: This link is wrong, on a build dependency: the dependency fact on the depending build
+ * file's line, marked wrong with why (required), so verify leaves it out and the link goes. From
+ * its state, so tests can render each one.
+ */
+export function DependencyWrongForm(p: {
+  join: Join;
+  facts: Loaded<FactsView> | undefined;
+  saving?: LinkSaving;
+  onSave?: (repo: string, body: Record<string, unknown>, will: Prediction) => void;
+  onClose: () => void;
+}) {
+  const D = W.dependency;
+  const id = useId();
+  const line = callerLine(p.join);
+  const deps = dependencyFactsOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  const [reason, setReason] = useState("");
+  const [problem, setProblem] = useState<string | undefined>();
+  const saving = p.saving ?? { state: "idle" };
+  const label = D.title(p.join.from, p.join.to, joinWhat(p.join));
+
+  if (!line) return <p className="ev-say">{W.noLine}</p>;
+  if (!p.facts || p.facts.state === "loading")
+    return (
+      <p role="status" aria-busy="true" className="ev-say">
+        {D.loadingFacts}
+      </p>
+    );
+  if (p.facts.state === "error")
+    return (
+      <p role="alert" className="state error">
+        {D.factsFailed(p.facts.error)}
+      </p>
+    );
+  const fact = deps[0];
+  if (!fact) return <p className="ev-say">{D.noFact(line.repo)}</p>;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const b = dependencyCorrection(fact, reason);
+    if ("error" in b) return setProblem(D.needReason);
+    setProblem(undefined);
+    p.onSave?.(line.repo, b.body, { kind: "dropped", from: p.join.from, was: p.join.to });
+  };
+  return (
+    <form
+      className="ev-correct stack"
+      onSubmit={submit}
+      onKeyDown={escapeCloses(p.onClose)}
+      aria-labelledby={`${id}-t`}
+    >
+      <h4 id={`${id}-t`} className="h" style={{ fontSize: 14 }}>
+        {D.wrongTitle(label)}
+      </h4>
+      <p className="ev-say">{D.wrongIntro}</p>
+      <p className="ev-say" style={{ margin: 0 }}>
+        <code className="mono">{fact.label}</code>
+      </p>
+      <label className="stack" style={{ gap: 2 }}>
+        <span className="hud">{D.reason}</span>
+        <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </label>
+      <div className="row" style={{ gap: 6 }}>
+        <button type="submit" className="btn primary" disabled={saving.state === "working"}>
+          {saving.state === "working" ? W.saving : W.save}
+        </button>
+        <button type="button" className="btn" onClick={p.onClose}>
+          {COPY.evidence.close}
+        </button>
+      </div>
+      {problem && (
+        <p role="alert" className="state error" style={{ margin: 0 }}>
+          {problem}
+        </p>
+      )}
+      {saving.state === "working" && (
+        <p role="status" aria-busy="true" className="ev-say">
+          {W.saving}
+        </p>
+      )}
+      {saving.state === "error" && (
+        <p role="alert" className="state error" style={{ margin: 0 }}>
+          {saving.text}
+        </p>
+      )}
+      {saving.state === "done" && (
+        <div role="status" className="stack" style={{ gap: 4 }}>
+          <p className="ev-say" style={{ margin: 0 }}>
+            {D.will(p.join.from, p.join.to)}
+          </p>
+          <p className="ev-say">{W.saved(saving.result.file)}</p>
+          <CorrectionNext repo={line.repo} result={saving.result} />
+        </div>
+      )}
+    </form>
+  );
+}
+
+/**
  * Review of beta.24: a link a person declared has no call in code to correct: what undoes it is
  * withdrawing the declaration (POST /api/declared-links/undo, from the declaring system's
  * declarations), or, written by hand in the profile, changing it there. From its state, so tests
@@ -532,7 +680,8 @@ export function LinkWrong(p: {
   }, [repo, ev]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<LinkSaving>({ state: "idle" });
-  const what = [p.join.method, p.join.path].filter(Boolean).join(" ");
+  const what = joinWhat(p.join);
+  const dependency = !!p.join.dependency;
   const onSave = (repo: string, body: Record<string, unknown>, will: Prediction) => {
     if (!line) return;
     setSaving({ state: "working" });
@@ -554,7 +703,11 @@ export function LinkWrong(p: {
         type="button"
         className="btn"
         aria-expanded={open}
-        aria-label={W.wrongOf(W.call(p.join.from, p.join.to, what))}
+        aria-label={
+          dependency
+            ? W.dependency.wrongOf(W.dependency.title(p.join.from, p.join.to, what))
+            : W.wrongOf(W.call(p.join.from, p.join.to, what))
+        }
         onClick={() => setOpen((o) => !o)}
       >
         {W.wrong}
@@ -562,6 +715,14 @@ export function LinkWrong(p: {
       {open &&
         (declared ? (
           <DeclaredLinkWrong join={p.join} />
+        ) : dependency ? (
+          <DependencyWrongForm
+            join={p.join}
+            facts={line ? ev?.of(line.repo) : undefined}
+            saving={saving}
+            onSave={onSave}
+            onClose={() => setOpen(false)}
+          />
         ) : !line ? (
           <p className="ev-say">{W.routingLink}</p>
         ) : (

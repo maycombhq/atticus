@@ -131,7 +131,16 @@ export interface CanvasLink {
   ai?: number;
   /** ADR 0181: the run that paired its first AI call, for the chip's link. */
   run?: string;
+  /**
+   * ADR 0192: a build dependency on a library of the estate's own ("depends on"), never a call:
+   * drawn dash-dot, its label in words.
+   */
+  dependency?: boolean;
 }
+
+/** What a link of this type is called, in words: the edge type, or the copy's for one that has it. */
+export const linkTypeWord = (type: string): string =>
+  type === "depends-on" ? COPY.why.dependency.edge : type;
 
 /** Who made a link (ADR 0181 part 1, counts split three ways): from code, a person, or the AI. */
 export type LinkBy = "code" | "person" | "ai";
@@ -330,7 +339,8 @@ export function canvasGraph(
     const paired = !!e.joins?.length && e.joins.every((j) => j.how === "person");
     // ADR 0181: a link resting on the AI's pairing says so in its label (◆ and words).
     const ai = aiJoins(e);
-    const base = linkLabel(e.count, listens ? COPY.topics.listens : e.type);
+    const dependency = e.type === "depends-on";
+    const base = linkLabel(e.count, listens ? COPY.topics.listens : linkTypeWord(e.type));
     const label = ai.n ? `${base} · ${COPY.canvasAi.mark(ai.n, e.joins!.length)}` : base;
     links.push({
       id: e.id,
@@ -349,6 +359,7 @@ export function canvasGraph(
       ...(paired ? { paired: true } : {}),
       ...(ai.n ? { ai: ai.n } : {}),
       ...(ai.run ? { run: ai.run } : {}),
+      ...(dependency ? { dependency: true } : {}),
     });
   }
   // A gap every part inside has (two or more parts) is said once, not on every box.

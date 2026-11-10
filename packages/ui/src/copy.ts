@@ -4546,6 +4546,9 @@ export const COPY = {
     legendCode: "Solid line: read from code",
     legendPerson: "Dashed line: a person's word (declared or paired)",
     legendAi: "Dotted line with ◆: detected by AI",
+    // ADR 0192: a build dependency on a library of the estate's own, never a call.
+    legendDependency: (n: number) =>
+      `Dash-dot line, "depends on": a build dependency on a library of the estate's own, not a call (${n} on this picture)`,
     linkTitle: (from: string, to: string, type: string) => `${from} → ${to} (${type})`,
     link: "Link",
     close: "Close the link",
@@ -5201,6 +5204,9 @@ export const COPY = {
       shared:
         "It calls another team's system, and the map that team shares has the entry that answers it.",
       ai: "The AI paired this call with the entry, as itself, from a run Atticus started. No person has confirmed it; correct it if it is wrong.",
+      // ADR 0192: a build dependency on a library of the estate's own.
+      coordinates:
+        "Its build file declares a dependency on the coordinates the other repo's build publishes: a library of the estate's own, both lines checked. It is a build dependency, not a call.",
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,
@@ -5225,6 +5231,40 @@ export const COPY = {
     more: (n: number) =>
       `${n} more call${n === 1 ? "" : "s"} on this link. Open either end to see its calls one by one, or list the Interface records with atticus query "kind:interface".`,
     none: "This link isn't a call, so there is no join to explain: its lines are listed under it.",
+    // Beta.24 review: on a verified link, the guesses its other merged calls rest on.
+    also: (how: string) =>
+      `Also: other calls merged into this link were joined by ${how}, a guess; open either end to see them one by one.`,
+    alsoHow: {
+      path: "their path alone",
+      label: "their host's first part",
+      "platform-setting": "a platform-wide setting",
+      "folder-name": "the folder a setting is in",
+      conflict: "a host the manifest disagrees with",
+      "service-name": "a Service's short name",
+    } as Record<string, string>,
+    // ADR 0192: a build dependency on a library another repo of the estate publishes.
+    dependency: {
+      edge: "depends on",
+      intro:
+        "Each build dependency on this link: the component's build file declares the coordinates the library's build publishes. It isn't a call, so it is never counted with the calls; the library's own calls stay the library's.",
+      title: (from: string, to: string, coordinates: string) =>
+        `${from} depends on ${to}: ${coordinates}`,
+      scope: (scope: string) => `(${scope} scope)`,
+      caller: "Declared in its build file",
+      callee: "Published by",
+      wrongOf: (link: string) => `Say the dependency ${link} is wrong`,
+      wrongTitle: (link: string) => `What is wrong with ${link}?`,
+      wrongIntro:
+        "Say why it is no dependency on the estate's library (a test helper, a stale line, a fork). Atticus writes it to the depending repo's corrections file through the local API; atticus verify leaves the dependency out every time it runs, and the link goes. Nothing changes until you run the command below and the change is reviewed in a pull request.",
+      reason: "Why (required)",
+      needReason: "Say why the dependency is wrong first.",
+      noFact: (repo: string) =>
+        `No dependency fact of ${repo} is on this line, so there is nothing to correct here. Read the repo again (/atticus-map ${repo}) or correct the line's facts from its citation.`,
+      loadingFacts: "Reading the depending repo's facts…",
+      factsFailed: (why: string) => `Couldn't read the depending repo's facts: ${why}`,
+      will: (from: string, to: string) =>
+        `The dependency is left out: ${from} no longer depends on ${to} once atticus verify runs with --write, unless another line of its build declares it.`,
+    },
     // C2: this link is wrong
     wrong: "This link is wrong",
     wrongOf: (call: string) => `Say the call ${call} is wrong`,

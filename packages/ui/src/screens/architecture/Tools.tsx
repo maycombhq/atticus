@@ -575,9 +575,14 @@ function LineSample({ by }: { by: LinkBy }) {
 export function LinkKinds({ links }: { links: readonly CanvasLink[] }) {
   if (!links.length) return null;
   const A = COPY.canvasAi;
+  // ADR 0192: a build dependency is no call, so it is said apart, never counted with them.
+  const deps = links.filter((l) => l.dependency).length;
+  const calls = links.filter((l) => !l.dependency);
   return (
     <div className="stack" style={{ gap: 2, margin: "4px 0" }}>
-      <SplitCounts counts={linkCounts(links)} what={COPY.decisions.counts.links} />
+      {calls.length > 0 && (
+        <SplitCounts counts={linkCounts(calls)} what={COPY.decisions.counts.links} />
+      )}
       <ul
         className="row link-legend"
         aria-label={A.legend}
@@ -599,6 +604,22 @@ export function LinkKinds({ links }: { links: readonly CanvasLink[] }) {
             {words}
           </li>
         ))}
+        {deps > 0 && (
+          <li className="row work-say" style={{ gap: 4 }}>
+            <svg width="28" height="10" viewBox="0 0 28 10" aria-hidden="true" focusable="false">
+              <line
+                x1="1"
+                y1="5"
+                x2="27"
+                y2="5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeDasharray="8 3 2 3"
+              />
+            </svg>
+            {A.legendDependency(deps)}
+          </li>
+        )}
       </ul>
     </div>
   );

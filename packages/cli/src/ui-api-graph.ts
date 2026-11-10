@@ -11,8 +11,15 @@ import {
   ViewKey,
   writeFileAtomic,
   diagramsRelOf,
+  factsDirOf,
   isAdopted,
+  joinDependencies,
+  loadOrgPack,
+  orgPackDirOf,
+  type CatalogRecord,
+  type DependencyLink,
 } from "@maycombhq/core";
+import { componentRenames, estateFacts, joinReposOf } from "@maycombhq/scanner";
 import {
   buildEstate,
   focusView,
@@ -72,22 +79,50 @@ export function vscodeFileLink(path: string, line: number): string {
   return `vscode://file/${segs.join("/")}:${line}`;
 }
 
+/**
+ * ADR 0192: the estate's build dependencies on its own libraries, joined from the verified facts
+ * on file (each repo's `dependency` facts to the coordinates another's `artifact` facts publish),
+ * with the components named as the catalog names them. No org pack, or no facts: none, and the
+ * picture is the catalog's as before.
+ */
+export async function estateDependencies(
+  root: string,
+  records: readonly CatalogRecord[] = [],
+): Promise<DependencyLink[]> {
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  if (!op) return [];
+  const estate = await estateFacts(root, op, "");
+  if (!estate.repos.some((r) => r.facts.some((f) => f.kind === "dependency"))) return [];
+  const known = records.flatMap((r) =>
+    r.kind === "Component" && r.repo ? [{ id: r.id, repo: r.repo }] : [],
+  );
+  const repos = joinReposOf(op, estate.repos, componentRenames(estate.repos, op, known));
+  return joinDependencies({ repos }).links;
+}
+
 export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
   // beta.21: the estate is built once per catalog state, not on every box opened. The files are
-  // checked at most once a second, and at once when the app sees a catalog file change.
+  // checked at most once a second, and at once when the app sees a catalog file change. ADR
+  // 0192: and the facts', which the dependency edges are joined from.
   const memoKey = `estate:${ctx.root}`;
   ctx.events.listen((e) => {
     if (
       e.type === "file.changed" &&
       typeof e.path === "string" &&
-      /^(\.atticus[\\/])?catalog[\\/]/.test(e.path)
+      /^(\.atticus[\\/])?(catalog|facts)[\\/]/.test(e.path)
     )
       recheckNow(memoKey);
   });
   const estate = async (): Promise<Estate> =>
-    memoByFiles(memoKey, () => filesUnder(catalogDirOf(ctx.root)), buildFromCatalog, {
-      recheckAfterMs: 1000,
-    });
+    memoByFiles(
+      memoKey,
+      async () => [
+        ...(await filesUnder(catalogDirOf(ctx.root))),
+        ...(await filesUnder(factsDirOf(ctx.root))),
+      ],
+      buildFromCatalog,
+      { recheckAfterMs: 1000 },
+    );
   const buildFromCatalog = async (): Promise<Estate> => {
     const records = await catalogRecords(ctx.root);
     if (!records.length)
@@ -97,7 +132,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
         { notYet: true },
       );
-    return buildEstate(records);
+    return buildEstate(records, { dependsOn: await estateDependencies(ctx.root, records) });
   };
   // Built while the app opens, so the first canvas doesn't wait on reading every record.
   setTimeout(() => void estate().catch(() => undefined), 0).unref?.();

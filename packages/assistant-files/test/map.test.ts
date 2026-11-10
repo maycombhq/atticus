@@ -180,9 +180,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // put on, `target.copy.pathsuffix` became a setting and a context path's setting was named
     // with the servlet and WebFlux base paths (the path suffix), and when a target `<URL>`'s build
     // token and the deploy tool's file that replaces it per environment were told apart (beta.24),
-    // and when only a token setting a URL, a host or a path was told to be recorded (beta.24 review).
+    // and when only a token setting a URL, a host or a path was told to be recorded (beta.24 review),
+    // and when the artifact and dependency facts were added, a build's coordinates and what it
+    // builds on (ADR 0192).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "1959a897fec4a7fc4264c987aad7cbcabd4a3be74e36d0fd246bbd0a0fbf1c57",
+      "667960efb7051306fead9ecca9c599cc637b4bb74f551aaaccbbf548fc483aaf",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -219,7 +221,15 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     expect(batch([])).toMatch(/one JSON object per line/i);
     expect(batch([])).toContain("env:NAME");
     expect(batch([])).toContain('"question"');
-    expect(batch([])).toContain(factsReference());
+    expect(batch([])).toContain(factsReference([]));
+    // ADR 0192: the build coordinates are in build files: a batch of none has no line for them,
+    // a deploy batch and a batch told nothing of its files do.
+    expect(batch([])).not.toContain("- artifact:");
+    expect(batch(["backend", "routes"])).not.toContain("- dependency:");
+    expect(batch(["deploy"])).toContain("- artifact: group: text, name: text");
+    expect(batch(["deploy"])).toContain("- dependency: group: text, name: text");
+    expect(batch()).toContain(factsReference());
+    expect(factsReference()).toContain("- dependency:");
   });
 
   it("gives a back-end, a front-end and an infrastructure batch only their topics", () => {
