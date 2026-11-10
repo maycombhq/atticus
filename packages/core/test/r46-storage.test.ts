@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   migrateCorrections,
   parseFacts,
+  QUICK_WRITE_LOCK,
   repoReadOf,
   sharedLockFileOf,
   withSharedFileLock,
@@ -81,6 +82,23 @@ describe("withSharedFileLock: one process at a time", () => {
       withSharedFileLock(file, async () => "taken", { staleMs: 1_000, waitMs: 300 }),
     ).rejects.toThrow(new RegExp(`process ${process.ppid}`));
     expect(existsSync(sharedLockFileOf(file))).toBe(true);
+    await rm(sharedLockFileOf(file));
+  });
+
+  it("takes over a quick write's lock past its most age, though its process id is alive (review of beta.23)", async () => {
+    const dir = await temp();
+    const file = join(dir, "stage/feature.yaml");
+    await mkdir(join(dir, "stage"), { recursive: true });
+    // Left by a crash whose process id Windows gave another program: alive, and an hour old.
+    await holdAs(file, process.ppid, new Date(Date.now() - 60 * 60_000).toISOString());
+    expect(
+      await withSharedFileLock(file, async () => "taken", { ...QUICK_WRITE_LOCK, waitMs: 2_000 }),
+    ).toBe("taken");
+    // Held a moment ago by that live process: still waited for.
+    await holdAs(file, process.ppid);
+    await expect(
+      withSharedFileLock(file, async () => "taken", { ...QUICK_WRITE_LOCK, waitMs: 300 }),
+    ).rejects.toThrow(new RegExp(`process ${process.ppid}`));
     await rm(sharedLockFileOf(file));
   });
 

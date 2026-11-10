@@ -207,6 +207,12 @@ const sharing = new Map<string, Promise<unknown>>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Review of beta.23: the options of a lock that guards only a quick write (a stage's loop file,
+ * its thread, the stories' numbers): older than two minutes, it is stale whoever holds it.
+ */
+export const QUICK_WRITE_LOCK = { maxAgeMs: 120_000 } as const;
+
+/**
  * Review round 46: run `work` holding a file that another process may append to or rewrite at
  * the same time (a repo's corrections: the app server appends, a CLI command rewrites it), so a
  * read, change and write never loses what the other wrote meanwhile. In this process the writers
@@ -219,7 +225,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function withSharedFileLock<T>(
   path: string,
   work: () => Promise<T>,
-  o: { staleMs?: number; waitMs?: number; what?: string } = {},
+  o: { staleMs?: number; waitMs?: number; what?: string; maxAgeMs?: number } = {},
 ): Promise<T> {
   const key = resolve(path);
   const prev = sharing.get(key) ?? Promise.resolve();
@@ -242,7 +248,7 @@ export function withSharedFileLock<T>(
 
 async function takeSharedLock(
   path: string,
-  o: { staleMs?: number; waitMs?: number; what?: string },
+  o: { staleMs?: number; waitMs?: number; what?: string; maxAgeMs?: number },
 ): Promise<() => Promise<void>> {
   const file = sharedLockFileOf(path);
   const staleMs = o.staleMs ?? 10_000;
@@ -272,7 +278,7 @@ async function takeSharedLock(
       // Let go meanwhile: try again at once.
       if (seen === undefined) continue;
       held = parseLockInfo(seen);
-      if (await isStaleShared(file, held, staleMs)) {
+      if (await isStaleShared(file, held, staleMs, o.maxAgeMs)) {
         await takeOver(file, seen, info.token);
         continue;
       }
@@ -307,7 +313,15 @@ async function isStaleShared(
   file: string,
   held: LockInfo | undefined,
   staleMs: number,
+  maxAgeMs?: number,
 ): Promise<boolean> {
+  // Review of beta.23: a lock that guards only a quick write (a stage's loop file, a thread, the
+  // stories' numbers) is stale once older than `maxAgeMs` whoever holds it: a crash's lock whose
+  // process id Windows has given to another program would otherwise block those files for good.
+  if (held && maxAgeMs !== undefined) {
+    const since = Date.parse(held.startedAt);
+    if (Number.isFinite(since) && Date.now() - since > maxAgeMs) return true;
+  }
   // Another process on this machine: by whether it is alive, never by age. Its process is gone (a
   // crash, a closed terminal): taken over at once. Review round 50: alive, it is still working
   // (a clone of a big repo outlasts any stale time), so it is waited for.

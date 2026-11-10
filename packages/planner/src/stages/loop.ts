@@ -15,6 +15,7 @@ import {
   runsDirOf,
   runsRelOf,
   toCanonicalYaml,
+  QUICK_WRITE_LOCK,
   withSharedFileLock,
   type HeldQuestion,
   type Question,
@@ -364,12 +365,16 @@ export async function updateStageLoop<T>(
   stage: Stage,
   edit: (loop: StageLoop, file: string) => T | Promise<T>,
 ): Promise<T> {
-  return withSharedFileLock(join(dir, loopRel(stage)), async () => {
-    const loop = await readLoopFile(dir, change, stage);
-    const out = await edit(loop, loopRel(stage));
-    await writeLoopFile(dir, loop);
-    return out;
-  });
+  return withSharedFileLock(
+    join(dir, loopRel(stage)),
+    async () => {
+      const loop = await readLoopFile(dir, change, stage);
+      const out = await edit(loop, loopRel(stage));
+      await writeLoopFile(dir, loop);
+      return out;
+    },
+    QUICK_WRITE_LOCK,
+  );
 }
 
 // The questions the stages hold back, and the command that runs a stage again, live in their
@@ -389,11 +394,15 @@ async function writeLoopFile(dir: string, l: StageLoop): Promise<void> {
  * the run last read or wrote it (a reply posted during a long run, a dropped question kept).
  */
 async function writeLoop(dir: string, l: StageLoop): Promise<void> {
-  await withSharedFileLock(join(dir, loopRel(l.stage)), async () => {
-    mergeLoop(l, bases.get(l), await readLoopFile(dir, l.change, l.stage));
-    await writeLoopFile(dir, l);
-    bases.set(l, baseOf(l));
-  });
+  await withSharedFileLock(
+    join(dir, loopRel(l.stage)),
+    async () => {
+      mergeLoop(l, bases.get(l), await readLoopFile(dir, l.change, l.stage));
+      await writeLoopFile(dir, l);
+      bases.set(l, baseOf(l));
+    },
+    QUICK_WRITE_LOCK,
+  );
 }
 
 /**

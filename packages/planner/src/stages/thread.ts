@@ -12,6 +12,7 @@ import {
   questionsRelOf,
   readQuestion,
   toCanonicalYaml,
+  QUICK_WRITE_LOCK,
   withSharedFileLock,
   writeFileAtomic,
   writeQuestion,
@@ -146,12 +147,16 @@ export async function markProposalRepliesRead(
   change: string,
   carried: readonly string[],
 ): Promise<void> {
-  await withSharedFileLock(proposalThreadFile(root, change), async () => {
-    const t = await readProposalThread(root, change);
-    const unread = t.replies.filter((r) => carried.includes(r) && !t.read.includes(r));
-    if (!unread.length) return;
-    await writeProposalThread(root, { ...t, read: [...t.read, ...unread].sort() });
-  });
+  await withSharedFileLock(
+    proposalThreadFile(root, change),
+    async () => {
+      const t = await readProposalThread(root, change);
+      const unread = t.replies.filter((r) => carried.includes(r) && !t.read.includes(r));
+      if (!unread.length) return;
+      await writeProposalThread(root, { ...t, read: [...t.read, ...unread].sort() });
+    },
+    QUICK_WRITE_LOCK,
+  );
 }
 
 /** A reply sent again this soon, by the same person in the same words and still unread, is the same reply. */
@@ -212,17 +217,21 @@ export async function replyInStage(
     return { q, fresh: true };
   };
   if (o.stage === "proposal") {
-    const q = await withSharedFileLock(proposalThreadFile(root, o.change), async () => {
-      const r = await write();
-      if (r.fresh) {
-        const t = await readProposalThread(root, o.change);
-        await writeProposalThread(root, {
-          ...t,
-          replies: [...new Set([...t.replies, r.q.id])].sort(),
-        });
-      }
-      return r.q;
-    });
+    const q = await withSharedFileLock(
+      proposalThreadFile(root, o.change),
+      async () => {
+        const r = await write();
+        if (r.fresh) {
+          const t = await readProposalThread(root, o.change);
+          await writeProposalThread(root, {
+            ...t,
+            replies: [...new Set([...t.replies, r.q.id])].sort(),
+          });
+        }
+        return r.q;
+      },
+      QUICK_WRITE_LOCK,
+    );
     return { question: q, files: files(q.id) };
   }
   const q = await updateStageLoop(dir, o.change, o.stage, async (loop) => {

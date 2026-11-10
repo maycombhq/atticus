@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { writeFileAtomic } from "@maycombhq/changes";
-import { withSharedFileLock } from "@maycombhq/core";
+import { QUICK_WRITE_LOCK, withSharedFileLock } from "@maycombhq/core";
 import type { DeltaStep, FlowDelta } from "./schema.js";
 
 /**
@@ -108,6 +108,7 @@ export const lastPart = (id: string) => Number(/\.(\d+)$/.exec(id)?.[1] ?? 0);
  */
 export function withStoriesLock<T>(dir: string, work: () => Promise<T>): Promise<T> {
   return withSharedFileLock(join(dir, ...NUMBERS_FILE.split("/")), work, {
+    ...QUICK_WRITE_LOCK,
     what: "write of the stories' numbers and shaping",
   });
 }

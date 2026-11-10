@@ -104,6 +104,16 @@ describe("Propose for review", () => {
     expect(g(root, "branch", "--show-current").trim()).toBe("main");
   });
 
+  it("never lists a write's lock a crash left (review of beta.23)", async () => {
+    const { root } = await metarepo();
+    await mkdir(join(root, "questions"), { recursive: true });
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 1\n");
+    await writeFile(join(root, "questions/q1.yaml.lock"), "{}\n");
+    await writeFile(join(root, "questions/q1.yaml.lock.abc123.stale"), "{}\n");
+    const plan = await proposePlan(root, "answers", { by: "pat" });
+    expect(plan.files).toEqual([{ path: "questions/q1.yaml", status: "??" }]);
+  });
+
   it("says so when nothing listed has a change", async () => {
     const { root } = await metarepo();
     const said: string[] = [];

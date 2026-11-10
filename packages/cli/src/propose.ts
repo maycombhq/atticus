@@ -156,6 +156,9 @@ async function readProposed(root: string): Promise<Proposed> {
   }
 }
 
+/** A shared lock's file, or one moved aside as stale (core's withSharedFileLock). */
+const LOCK_FILE = /\.lock(\.[^/]+\.stale)?$/;
+
 /** What Propose for review would commit: the changed files under the scope's folders. */
 export async function proposePlan(
   root: string,
@@ -187,7 +190,9 @@ export async function proposePlan(
     const status = e.slice(0, 2).trim() || "M";
     // A rename's old path follows it (with -z): kept as `from`, so its removal goes too.
     if (status.startsWith("R")) files.push({ path: e.slice(3), status, from: parts[++i]! });
-    else files.push({ path: e.slice(3), status });
+    // Review of beta.23: a write's lock left by a crash (`<file>.lock`, `<file>.lock.<id>.stale`)
+    // is this machine's, never a file to propose.
+    else if (!LOCK_FILE.test(e.slice(3))) files.push({ path: e.slice(3), status });
   }
   const was = await readProposed(root);
   // beta.23: one git call per proposal branch and one for every file's content, not two per

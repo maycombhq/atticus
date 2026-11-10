@@ -6,6 +6,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **A lock left by a crash never blocks a stage, its thread or the stories for good**: the lock of a quick write is stale after two minutes whoever holds it (on Windows a crashed process's id is soon another program's), and Propose for review never lists a lock file.
+- **A story the business analyst adds while the stories are drafted never shares a number with one the draft gives**: the draft's numbers are reserved before the model is asked.
+- **The Console doesn't blank a hand-off's log while its Done prints**: lines a running Done adds are added to what is shown, and the old lines stay until a new version is read.
 - **A product owner's or business analyst's Home still says what their own install needs.** The alert that a newer Atticus upgraded this metarepo and a failing "This machine has what Atticus needs" step were inside the closed "Setting up Atticus" fold; both are shown above it now, the step with a link to Settings › This machine. The rest of setting up stays folded.
 - **Home and the setup checklist read again when a step's job ends.** After Sync cloned the repos into the workspace (which no file event names), Home and the checklist kept showing the step to do until the page was reloaded; they now read again when a job ends, and the checklist when files change too.
 - **The machine's setup step points at the page that has its checks.** It said "Set up › Doctor", which isn't a page; it now leads with Settings › This machine and Check again (the terminal's `atticus doctor` after), and the checklist links to it.
