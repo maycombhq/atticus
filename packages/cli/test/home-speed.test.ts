@@ -55,6 +55,8 @@ afterAll(async () => {
 });
 
 let changes: string[] = [];
+let between: (() => void) | undefined;
+const heardSince: string[] = [];
 
 /** Home's requests, six at a time as a browser sends them; each one's time, and the whole. */
 const home = async (paths?: string[]) => {
@@ -98,6 +100,11 @@ describe("Home on a 40-repo estate (beta.23)", () => {
   it("loads first, cold, inside the budget, and never waits for the machine's checks", async () => {
     const first = await home();
     say("cold", first);
+    // Everything heard from here until the warm load (a change heard then also throws away the
+    // answers kept), said by the warm load.
+    between = srv.events.listen((e) =>
+      heardSince.push(e.type === "file.changed" ? `file.changed ${String(e.path)}` : e.type),
+    );
     for (const x of first.out) expect(x.status, `${x.path}: ${JSON.stringify(x.body)}`).toBe(200);
     expect(first.ms).toBeLessThan(COLD_MS);
     const setup = first.out.find((x) => x.path === "/api/setup")!;
@@ -115,6 +122,10 @@ describe("Home on a 40-repo estate (beta.23)", () => {
       if (e.type === "file.changed") changes.push(String(e.path));
       else console.log(`home-speed warm: heard ${e.type}`);
     });
+    between?.();
+    console.log(
+      `home-speed between cold and warm: heard ${heardSince.length}: ${heardSince.slice(0, 8).join(", ")}`,
+    );
     whyWorkedOut();
     const again = await home();
     stop();
