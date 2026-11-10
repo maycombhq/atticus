@@ -24,6 +24,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { checkoutsStamp } from "./ui-api-trust.js";
 import { keptAnswer } from "./watched-memo.js";
 
 /**
@@ -126,10 +127,14 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
   return (
     r
       // beta.23: kept while the server follows the files, until a change is heard (Home asks it
-      // on every load, and once per change in flight).
+      // on every load, and once per change in flight) or a base clone moves: the checked
+      // proposals read the code they cite there, which the server doesn't follow.
       .add("GET", "/api/questions", async ({ query }) =>
-        keptAnswer(ctx.root, `questions?${query.toString()}&by=${ctx.user}`, () =>
-          questionsAnswer(query),
+        keptAnswer(
+          ctx.root,
+          `questions?${query.toString()}&by=${ctx.user}`,
+          () => questionsAnswer(query),
+          () => checkoutsStamp(ctx.root),
         ),
       )
       // UX review (2026-11-08): the knowledge gaps' owner questions, answered on the Questions

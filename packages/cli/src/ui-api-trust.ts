@@ -369,7 +369,10 @@ export async function trustView(root: string): Promise<View> {
  * removes files in .git as it reads (index.lock), so a folder's time moved on every load and
  * Home worked Map › Trust and each cockpit out again each time (beta.23, Windows: 1.3 s for a
  * reload with nothing changed). What is checked out is HEAD, the branch HEAD names, its reflog
- * (written on every commit, pull and checkout) and packed-refs.
+ * (written on every commit, pull and checkout) and packed-refs; and the branches the cockpit reads,
+ * committed to in worktrees of the clone: every `task/...` and `change/...` branch's ref, here and
+ * as last fetched from each remote, and each worktree's HEAD and reflog (files listed, each one
+ * stamped by name, size and time).
  */
 export async function checkoutsStamp(root: string): Promise<string> {
   const dirs = isAdopted(root)
@@ -386,11 +389,30 @@ export async function checkoutsStamp(root: string): Promise<string> {
       const git = join(d, ".git");
       const head = await readFile(join(git, "HEAD"), "utf8").catch(() => "");
       const branch = /^ref: (refs\/\S+)/.exec(head)?.[1];
+      const remotes = await readdir(join(git, "refs", "remotes")).catch(() => [] as string[]);
+      const worktrees = await readdir(join(git, "worktrees")).catch(() => [] as string[]);
+      const branches = await Promise.all(
+        [
+          join(git, "refs", "heads", "task"),
+          join(git, "refs", "heads", "change"),
+          ...remotes.flatMap((r) => [
+            join(git, "refs", "remotes", r, "task"),
+            join(git, "refs", "remotes", r, "change"),
+          ]),
+        ].map(refFiles),
+      );
       return [
         join(git, "HEAD"),
         join(git, "packed-refs"),
         join(git, "logs", "HEAD"),
         ...(branch ? [join(git, ...branch.split("/"))] : []),
+        ...branches.flat(),
+        ...worktrees
+          .sort()
+          .flatMap((w) => [
+            join(git, "worktrees", w, "HEAD"),
+            join(git, "worktrees", w, "logs", "HEAD"),
+          ]),
       ];
     }),
   );
@@ -398,7 +420,26 @@ export async function checkoutsStamp(root: string): Promise<string> {
   const heads = await Promise.all(
     dirs.map((d) => readFile(join(d, ".git", "HEAD"), "utf8").catch(() => "-")),
   );
-  return `${heads.join("|")}#${await stampOfFiles(files.flat())}`;
+  // The files' names too: a branch made or deleted changes the list, not only a file's time.
+  const all = files.flat();
+  const names = all.map((f) => relative(root, f)).join(",");
+  return `${heads.join("|")}#${names}#${await stampOfFiles(all)}`;
+}
+
+/** Every ref file under a refs folder, sorted (ref names have slashes; lock files are left out). */
+async function refFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (d: string, depth: number) => {
+    if (depth > 8) return;
+    const es = await readdir(d, { withFileTypes: true }).catch(() => []);
+    for (const e of es) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) await walk(p, depth + 1);
+      else if (e.isFile() && !e.name.endsWith(".lock")) out.push(p);
+    }
+  };
+  await walk(dir, 0);
+  return out.sort();
 }
 
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
