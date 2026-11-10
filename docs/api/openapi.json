@@ -2137,6 +2137,112 @@
         }
       }
     },
+    "/api/graph/edge-calls": {
+      "get": {
+        "operationId": "getGraphEdgeCalls",
+        "summary": "Every call merged into one edge of a view (a node's, or a focus), not only the first 20 the view lists (review of beta.24)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "edge",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The edge's id, as the view gives it (required)",
+            "required": false
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node whose view has the edge (or focus)",
+            "required": false
+          },
+          {
+            "name": "focus",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node whose focus view has the edge (or node)",
+            "required": false
+          },
+          {
+            "name": "lens",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "architecture",
+                "repo",
+                "data",
+                "integration",
+                "infrastructure"
+              ]
+            },
+            "description": "The view's lens",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphEdgeCallsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/graph/layout/{viewKey}": {
       "get": {
         "operationId": "getViewLayout",
@@ -5019,6 +5125,16 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Written only in part: the problem names exactly what was written",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27036,6 +27152,31 @@
         ],
         "additionalProperties": false
       },
+      "GraphEdgeCallsView": {
+        "type": "object",
+        "properties": {
+          "edge": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "joins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierJoin"
+            }
+          }
+        },
+        "required": [
+          "edge",
+          "count",
+          "joins"
+        ],
+        "additionalProperties": false
+      },
       "ViewLayoutResult": {
         "type": "object",
         "properties": {
@@ -45353,6 +45494,25 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "fact": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "fact"
+              ],
+              "additionalProperties": false
             }
           }
         },

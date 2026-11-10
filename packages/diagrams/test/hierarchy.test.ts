@@ -671,6 +671,26 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect([m.how, m.verified]).toEqual(["host", true]);
   });
 
+  it("lists at most 20 calls on an edge, and every one when asked (review of beta.24)", () => {
+    const host = records().find((r) => r.id === HOST)!;
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      ...host,
+      id: interfaceId("web-app", "customers-api", "POST", `/api/many/${i}`),
+      normalizedPath: `/api/many/${i}`,
+    }));
+    const est = buildEstate([...records(), ...many] as Parameters<typeof buildEstate>[0]);
+    const of = (v: { edges: { from: string; to: string; joins?: unknown[]; count: number }[] }) =>
+      v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    const capped = of(nodeView(est, "estate", { lens: "architecture" }));
+    expect(capped.joins).toHaveLength(20);
+    const all = of(nodeView(est, "estate", { lens: "architecture", everyJoin: true }));
+    expect(all.joins).toHaveLength(all.count);
+    expect(all.count).toBeGreaterThanOrEqual(25);
+    const focus = focusView(est, "system:web", { lens: "architecture", everyJoin: true }).edges[0]!;
+    expect(focus.joins).toHaveLength(focus.count);
+    expect(focus.count).toBeGreaterThan(20);
+  });
+
   it("says a call joined by a proxy's BasePath was found so (beta.24)", () => {
     const rs = records().map((r) =>
       r.id === HOST ? ({ ...r, flags: ["joined-by-base-path"] } as typeof r) : r,

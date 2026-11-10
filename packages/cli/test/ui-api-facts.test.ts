@@ -406,3 +406,115 @@ describe("every call on an arrow at once", () => {
     expect((await lines("forge-ledger")).length).toBe(before);
   });
 });
+
+/**
+ * Review of beta.24: the arrow's corrections are written all or none, and asked again they write
+ * nothing twice. Every involved file is held for the whole batch; each is written whole and
+ * renamed into place; a failure puts back what was written, or says exactly which repos were.
+ */
+describe("every call on an arrow, all or none", () => {
+  let r2: string;
+  let s2: RunningServer;
+  let failOn: (file: string, n: number) => boolean = () => false;
+  let writes = 0;
+  const call2 = async (body: unknown) => {
+    const r = await fetch(s2.url + "/api/links/corrections", {
+      method: "POST",
+      headers: { "X-Atticus-Token": s2.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+  };
+  const text = (repo: string) =>
+    readFile(join(r2, `facts/${repo}.corrections.jsonl`), "utf8").catch(() => undefined);
+  const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8");
+  beforeAll(async () => {
+    r2 = await mkdtemp(join(tmpdir(), "atticus-ui-arrow-"));
+    await mkdir(join(r2, "facts"), { recursive: true });
+    for (const repo of ["forge-ledger", "forge-teller"])
+      await writeFile(join(r2, `facts/${repo}.jsonl`), facts);
+    const { writeFileAtomic } = await import("@maycombhq/core");
+    s2 = await startServer({
+      root: r2,
+      port: 0,
+      user: PERSON,
+      extend: (r, ctx) =>
+        uiFactsRoutes(r, ctx, {
+          now: () => NOW,
+          write: async (file, data) => {
+            writes++;
+            if (failOn(file, writes)) throw new Error(`disk full writing ${file}`);
+            await writeFileAtomic(file, data);
+          },
+        }),
+    });
+  });
+  afterAll(() => s2?.close());
+  const items = [
+    { repo: "forge-ledger", fact: "c-notify", action: "edit", set: { to: "forge-mailer" } },
+    { repo: "forge-teller", fact: "c-notify", action: "edit", set: { to: "forge-mailer" } },
+  ];
+
+  it("puts back what it wrote when a later repo's write fails, and says so", async () => {
+    await writeFile(join(r2, "facts/forge-ledger.corrections.jsonl"), "");
+    const before = await text("forge-ledger");
+    failOn = (f) => f.endsWith("forge-teller.corrections.jsonl");
+    const r = await call2({ items, reason: "The mailer" });
+    failOn = () => false;
+    expect(r.status).toBe(500);
+    expect(r.body).toMatchObject({ written: [] });
+    expect(String(r.body.detail)).toContain("forge-teller");
+    expect(await text("forge-ledger")).toBe(before);
+    expect(await text("forge-teller")).toBeUndefined();
+  });
+
+  it("writes none when a repo's corrections file can't be read", async () => {
+    await writeFile(join(r2, "facts/forge-ledger.corrections.jsonl"), "");
+    // A folder stands where forge-teller's corrections file goes.
+    await mkdir(join(r2, "facts/forge-teller.corrections.jsonl"));
+    const r = await call2({ items, reason: "The mailer" });
+    expect(r.status).toBe(500);
+    expect(r.body).toMatchObject({ written: [] });
+    expect(String(r.body.detail)).toContain("facts/forge-teller.corrections.jsonl");
+    expect(await text("forge-ledger")).toBe("");
+    const { rm } = await import("node:fs/promises");
+    await rm(join(r2, "facts/forge-teller.corrections.jsonl"), { recursive: true });
+  });
+
+  it("names exactly the repos written when what it wrote can't be put back", async () => {
+    await writeFile(join(r2, "facts/forge-ledger.corrections.jsonl"), "");
+    writes = 0;
+    // The first write (forge-ledger's) goes; forge-teller's fails; putting forge-ledger back fails.
+    failOn = (_f, n) => n >= 2;
+    const r = await call2({ items, reason: "The mailer" });
+    failOn = () => false;
+    expect(r.status).toBe(500);
+    expect(r.body).toMatchObject({
+      written: [{ repo: "forge-ledger", file: "facts/forge-ledger.corrections.jsonl" }],
+    });
+    expect(String(r.body.detail)).toContain("forge-ledger");
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(1);
+  });
+
+  it("writes nothing twice: asked again, a correction already on file is skipped", async () => {
+    await writeFile(join(r2, "facts/forge-ledger.corrections.jsonl"), "");
+    await writeFile(join(r2, "facts/forge-teller.corrections.jsonl"), "");
+    const first = await call2({ items: [...items, items[0]], reason: "The mailer" });
+    expect(first.status).toBe(200);
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(1);
+    const again = await call2({ items, reason: "The mailer" });
+    expect(again.status).toBe(200);
+    const res = Api.LinkCorrectionsResult.parse(again.body);
+    expect(res.files).toEqual([]);
+    expect(res.skipped).toEqual([
+      { repo: "forge-ledger", fact: "c-notify" },
+      { repo: "forge-teller", fact: "c-notify" },
+    ]);
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(1);
+    expect((await text("forge-teller"))!.trim().split("\n")).toHaveLength(1);
+    // Something else said of the same call is written: the newest line is what counts.
+    const other = await call2({ items: [items[0]], reason: "The mailer, really" });
+    expect(Api.LinkCorrectionsResult.parse(other.body).files).toHaveLength(1);
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(2);
+  });
+});

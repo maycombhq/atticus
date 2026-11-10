@@ -96,6 +96,21 @@ describe("GET /api/graph/node/{id}: the estate, one level at a time (ADR 0081)",
   });
 });
 
+describe("GET /api/graph/edge-calls: every call on one edge (review of beta.24)", () => {
+  it("gives the edge's calls as its view merged them, every one, and refuses what isn't there", async () => {
+    const v = Api.GraphNodeView.parse((await get("/api/graph/node/estate")).body);
+    const e = v.edges.find((x) => x.from === "system:portal" && x.to === "system:ledger")!;
+    const r = await get(`/api/graph/edge-calls?node=estate&edge=${encodeURIComponent(e.id)}`);
+    expect(r.status).toBe(200);
+    const c = Api.GraphEdgeCallsView.parse(r.body);
+    expect(c.edge).toBe(e.id);
+    expect(c.count).toBe(e.count);
+    expect(c.joins.map((j) => j.interface)).toEqual((e.joins ?? []).map((j) => j.interface));
+    expect((await get(`/api/graph/edge-calls?node=estate&edge=calls:nope>nope`)).status).toBe(404);
+    expect((await get(`/api/graph/edge-calls?edge=${encodeURIComponent(e.id)}`)).status).toBe(400);
+  });
+});
+
 describe("GET /api/graph/focus/{id}: a node and its neighbours", () => {
   it("opens a table in focus in the data lens by default", async () => {
     const r = await get("/api/graph/focus/table:ledger-db.entry");

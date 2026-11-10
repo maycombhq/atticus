@@ -28,16 +28,18 @@ export function callFactsOf(j: Join, v: FactsView | undefined): FactCite[] {
 }
 
 /**
- * The lines a correction of a link's call may rest on (beta.24): the caller's own line; else, for
- * a link a gateway's routing made (the gateway's own route, a built-in reader's record), each line
- * cited at the hops or at neither end, where the forwarding call's fact is cited.
+ * Every line of the caller's that names its repo (review of beta.24): an Interface merges every
+ * call of its method and path (the join unions their evidence), so each call's line is here, the
+ * code's first, then the config that ties them to the host.
  */
-export function correctionLines(j: Join): { repo: string; at: string }[] {
-  const own = callerLine(j);
-  if (own) return [own];
+export function callerLines(j: Join): { repo: string; at: string }[] {
   const seen = new Set<string>();
   const out: { repo: string; at: string }[] = [];
-  for (const e of [...j.hops, ...j.other]) {
+  const sorted = [
+    ...j.caller.filter((e) => e.source === "code"),
+    ...j.caller.filter((e) => e.source !== "code"),
+  ];
+  for (const e of sorted) {
     if (!e.repo || !splitAt(e.at)) continue;
     const k = `${e.repo}\u0000${e.at}`;
     if (seen.has(k)) continue;
@@ -57,66 +59,128 @@ export function callFactsOn(line: { at: string }, v: FactsView | undefined): Fac
   return [...seen.values()];
 }
 
-/** The line a link's correction rests on and the call facts on it: the first line that has any. */
-export function correctionTarget(
-  j: Join,
-  viewOf: (repo: string) => FactsView | undefined,
-): { line: { repo: string; at: string }; calls: FactCite[] } | undefined {
-  for (const line of correctionLines(j)) {
-    const calls = callFactsOn(line, viewOf(line.repo));
-    if (calls.length) return { line, calls };
+/** One call a correction is written for: its repo, the line it is cited on, and its fact. */
+export interface CallToCorrect {
+  repo: string;
+  at: string;
+  fact: FactCite;
+}
+
+/**
+ * What a correction of one link rests on (review of beta.24): every call fact on every line of
+ * the caller's (of the link's method, when a line holds several), each the caller's own. A link a
+ * person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
+ * with no line of a caller's (`routing`, a gateway proxy's routing) has none of its own: its
+ * proxy's forwarding call is shared by every caller of the route, so it is never corrected from
+ * here. `none`: the caller's lines hold no call fact loaded.
+ */
+export type LinkBasis =
+  | { kind: "calls"; calls: CallToCorrect[] }
+  | { kind: "declared" }
+  | { kind: "routing" }
+  | { kind: "none" };
+
+export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefined): LinkBasis {
+  if (j.how === "declared") return { kind: "declared" };
+  const lines = callerLines(j);
+  if (!lines.length) return { kind: "routing" };
+  const m = (x: string | undefined) => (x ?? "").toUpperCase();
+  const calls: CallToCorrect[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const all = callFactsOn(line, viewOf(line.repo));
+    const ofMethod = all.filter(
+      (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
+    );
+    for (const c of ofMethod.length ? ofMethod : all) {
+      const k = `${line.repo}\u0000${c.id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      calls.push({ repo: line.repo, at: line.at, fact: c });
+    }
   }
-  return undefined;
+  return calls.length ? { kind: "calls", calls } : { kind: "none" };
+}
+
+/** The repos whose facts a link's correction reads: its caller's. */
+export const callerRepos = (joins: readonly Join[]): string[] => [
+  ...new Set(joins.flatMap((j) => (j.how === "declared" ? [] : callerLines(j).map((l) => l.repo)))),
+];
+
+/** Every call on an arrow a correction is written for, and the links it leaves alone, by kind. */
+export function arrowCalls(
+  joins: readonly Join[],
+  viewOf: (repo: string) => FactsView | undefined,
+): { calls: CallToCorrect[]; missing: string[]; declared: string[]; routing: string[] } {
+  const calls: CallToCorrect[] = [];
+  const missing: string[] = [];
+  const declared: string[] = [];
+  const routing: string[] = [];
+  const seen = new Set<string>();
+  for (const j of joins) {
+    const b = linkBasis(j, viewOf);
+    if (b.kind === "declared") declared.push(j.interface);
+    else if (b.kind === "routing") routing.push(j.interface);
+    else if (b.kind === "none") missing.push(j.interface);
+    else
+      for (const c of b.calls) {
+        const k = `${c.repo}\u0000${c.fact.id}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        calls.push(c);
+      }
+  }
+  return { calls, missing, declared, routing };
 }
 
 /**
  * This whole arrow is wrong (beta.24): the POST /api/links/corrections body that gives every call
- * on the arrow the same correction, each in its caller's repo. A line holding several calls gives
- * the ones of the link's method (all, when none says one). `missing` names the links whose call
- * no loaded fact is cited for; none at all is an error, as is a fix missing its target or why.
+ * on the arrow the same correction, each in its caller's repo, and the lines corrected (`lines`,
+ * `repo:path:line`, to watch them move). `missing`, `declared` and `routing` name the links it
+ * leaves alone (see `linkBasis`); none to correct at all is an error, as is a fix missing its
+ * target or why.
  */
 export function arrowCorrections(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
   fix: LinkFix,
 ):
-  | { body: Api.LinkCorrectionsRequestT; missing: string[] }
+  | {
+      body: Api.LinkCorrectionsRequestT;
+      lines: string[];
+      missing: string[];
+      declared: string[];
+      routing: string[];
+    }
   | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" } {
   const reason = fix.reason.trim();
   if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
   const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
   if (fix.kind !== "not-a-call" && !target) return { error: "needTarget" };
+  const { calls, missing, declared, routing } = arrowCalls(joins, viewOf);
   const items: Api.LinkCorrectionsRequestT["items"] = [];
-  const missing: string[] = [];
-  const seen = new Set<string>();
+  const lines = new Set<string>();
   let already = 0;
-  for (const j of joins) {
-    const t = correctionTarget(j, viewOf);
-    if (!t) {
-      missing.push(j.interface);
+  for (const c of calls) {
+    if (fix.kind !== "not-a-call" && (c.fact.claim.to ?? "").trim() === target) {
+      already++;
       continue;
     }
-    const m = (x: string | undefined) => (x ?? "").toUpperCase();
-    const ofMethod = t.calls.filter(
-      (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
+    lines.add(`${c.repo}:${c.at}`);
+    items.push(
+      fix.kind === "not-a-call"
+        ? { repo: c.repo, fact: c.fact.id, action: "wrong" }
+        : { repo: c.repo, fact: c.fact.id, action: "edit", set: { to: target } },
     );
-    for (const c of ofMethod.length ? ofMethod : t.calls) {
-      const k = `${t.line.repo}\u0000${c.id}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      if (fix.kind !== "not-a-call" && (c.claim.to ?? "").trim() === target) {
-        already++;
-        continue;
-      }
-      items.push(
-        fix.kind === "not-a-call"
-          ? { repo: t.line.repo, fact: c.id, action: "wrong" }
-          : { repo: t.line.repo, fact: c.id, action: "edit", set: { to: target } },
-      );
-    }
   }
   if (!items.length) return { error: already ? "sameTarget" : "noCalls" };
-  return { body: { items, ...(reason ? { reason } : {}) }, missing };
+  return {
+    body: { items, ...(reason ? { reason } : {}) },
+    lines: [...lines],
+    missing,
+    declared,
+    routing,
+  };
 }
 
 /** What a person says about a link: it goes elsewhere in the estate, outside it, or isn't a call. */
@@ -184,14 +248,13 @@ function callsIn(views: Views): Map<string, { link: string; what: string }> {
   const out = new Map<string, { link: string; what: string }>();
   for (const v of views.values())
     for (const e of v.edges)
-      for (const j of e.joins ?? []) {
-        const line = callerLine(j);
-        if (!line) continue;
-        out.set(`${line.repo}:${line.at}`, {
-          link: `${j.from} → ${j.to}`,
-          what: [j.method, j.path].filter(Boolean).join(" "),
-        });
-      }
+      // Review of beta.24: by every line of the caller's, as a correction may rest on any.
+      for (const j of e.joins ?? [])
+        for (const line of callerLines(j))
+          out.set(`${line.repo}:${line.at}`, {
+            link: `${j.from} → ${j.to}`,
+            what: [j.method, j.path].filter(Boolean).join(" "),
+          });
   return out;
 }
 

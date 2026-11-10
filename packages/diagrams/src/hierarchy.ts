@@ -70,6 +70,11 @@ export interface NodeViewOptions {
   depth?: number;
   /** Every "uses" edge instead of the transitive reduction. */
   all?: boolean;
+  /**
+   * Review of beta.24: every call an edge merged, not only the first MAX_JOINS (GET
+   * /api/graph/edge-calls, so "All calls on this arrow are wrong" means all).
+   */
+  everyJoin?: boolean;
 }
 
 /** A refusal for a node the estate (or the lens) doesn't have. */
@@ -284,12 +289,12 @@ function sharedOf(i: RecordOf<"Interface">): Pick<Join, "shared"> {
   };
 }
 
-function mergeJoins(a: Join[], b: Join[]): Join[] {
+function mergeJoins(a: Join[], b: Join[], cap = MAX_JOINS): Join[] {
   const by = new Map(a.map((j) => [j.interface, j]));
   for (const j of b) if (!by.has(j.interface)) by.set(j.interface, j);
   return [...by.values()]
     .sort((x, y) => (x.interface < y.interface ? -1 : x.interface > y.interface ? 1 : 0))
-    .slice(0, MAX_JOINS);
+    .slice(0, cap);
 }
 
 const props = (o: Record<string, unknown>): HierNode["properties"] => {
@@ -867,7 +872,10 @@ function need(est: Estate, lens: Lens, id: string) {
 }
 
 /** Merge atoms (already mapped to view nodes) into edges: one per type and pair, with a count. */
-function merge(mapped: { from: string; to: string; atom: Atom }[]): HierEdge[] {
+function merge(
+  mapped: { from: string; to: string; atom: Atom }[],
+  cap: number = MAX_JOINS,
+): HierEdge[] {
   const by = new Map<string, HierEdge>();
   for (const { from, to, atom } of mapped) {
     const id = `${atom.type}:${from}>${to}`;
@@ -888,7 +896,7 @@ function merge(mapped: { from: string; to: string; atom: Atom }[]): HierEdge[] {
       });
       continue;
     }
-    if (atom.join) e.joins = mergeJoins(e.joins ?? [], [atom.join]);
+    if (atom.join) e.joins = mergeJoins(e.joins ?? [], [atom.join], cap);
     e.count++;
     if (atom.sync && e.sync !== atom.sync) e.sync = "mixed";
     if (atom.via && e.via !== atom.via) e.via = "mixed";
@@ -972,7 +980,7 @@ export function nodeView(est: Estate, id: string, o: NodeViewOptions): Api.Graph
     if (from === to) continue;
     mapped.push({ from, to, atom });
   }
-  let edges = merge(mapped);
+  let edges = merge(mapped, o.everyJoin ? Infinity : MAX_JOINS);
   let hidden = 0;
   if (!o.all) ({ edges, hidden } = reduceUses(edges));
   const ends = [...new Set(edges.flatMap((e) => [e.from, e.to]))].filter(
@@ -1003,7 +1011,11 @@ export function nodeView(est: Estate, id: string, o: NodeViewOptions): Api.Graph
 }
 
 /** A node and its direct neighbours in the lens, with every edge between them. */
-export function focusView(est: Estate, id: string, o: { lens: Lens }): Api.GraphFocusViewT {
+export function focusView(
+  est: Estate,
+  id: string,
+  o: { lens: Lens; everyJoin?: boolean },
+): Api.GraphFocusViewT {
   const { lens } = o;
   need(est, lens, id);
   const inside = (x: string) => x === id || ancestors(est, x).includes(id);
@@ -1027,6 +1039,9 @@ export function focusView(est: Estate, id: string, o: { lens: Lens }): Api.Graph
     node: toNode(est, lens, id),
     path: ancestors(est, id).map((n) => toNode(est, lens, n)),
     neighbours: [...near].sort().map((n) => toNode(est, lens, n)),
-    edges: merge(ends.filter((e) => set.has(e.from) && set.has(e.to))),
+    edges: merge(
+      ends.filter((e) => set.has(e.from) && set.has(e.to)),
+      o.everyJoin ? Infinity : MAX_JOINS,
+    ),
   };
 }

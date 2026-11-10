@@ -465,7 +465,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   BasePath its whole path starts with, `joined-by-base-path`). A link whose first flag is a
  *   guess is never `verified` in its join. Repo trust (GET /api/trust) gains `secrets`: a config
  *   file's line that holds what looks like a live secret, its file and line, never its value.
- *   Additive only.
+ *   Review of beta.24: POST /api/links/corrections writes all or none (every file held for the
+ *   batch, each written whole and renamed; a failure puts back what was written, or answers 500
+ *   naming the repos written, `written`), and skips an item whose newest correction on file says
+ *   the same (`skipped`), so asked again it writes nothing twice. GET /api/graph/edge-calls gives
+ *   every call merged into one edge of a view, not only the 20 the view lists. Additive only.
  */
 export const API_VERSION = "3.10.0";
 export const DEFAULT_PORT = 4321;
@@ -724,6 +728,19 @@ export const GraphFocusView = z.object({
   edges: z.array(HierEdge),
 });
 
+/**
+ * 3.10.0 (review of beta.24): GET /api/graph/edge-calls: every call merged into one edge of a
+ * view, not only the first 20 the view lists, so "All calls on this arrow are wrong" means all.
+ */
+export const GraphEdgeCallsView = z.object({
+  /** The edge's id, as the view gives it. */
+  edge: z.string(),
+  /** How many it merged in all, as the view's edge says. */
+  count: z.number().int().positive(),
+  /** Every call merged into the edge, by Interface id. */
+  joins: z.array(HierJoin),
+});
+
 export const LayoutPosition = z.object({ x: z.number().finite(), y: z.number().finite() });
 
 /** PUT /api/graph/layout/{viewKey}: keep this arrangement. */
@@ -748,6 +765,7 @@ export type HierJoinT = z.infer<typeof HierJoin>;
 export type HierEvidenceT = z.infer<typeof HierEvidence>;
 export type GraphNodeViewT = z.infer<typeof GraphNodeView>;
 export type GraphFocusViewT = z.infer<typeof GraphFocusView>;
+export type GraphEdgeCallsViewT = z.infer<typeof GraphEdgeCallsView>;
 
 export const Impact = z.object({
   root: RecordId,
@@ -1684,6 +1702,11 @@ export const LinkCorrectionsResult = z.object({
   commit: z.string(),
   /** The commands that apply them, one per repo. */
   verify: z.array(z.string()),
+  /**
+   * Review of beta.24: the items left out because the newest correction on file for that fact
+   * says the same already (asked again, nothing is written twice).
+   */
+  skipped: z.array(z.object({ repo: z.string(), fact: z.string() })).optional(),
 });
 /**
  * 2.42.0 (ADR 0149, C4): after a correction the app writes, the commands a person runs (the app
@@ -5785,6 +5808,22 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/graph/edge-calls": {
+    get: {
+      id: "getGraphEdgeCalls",
+      summary:
+        "Every call merged into one edge of a view (a node's, or a focus), not only the first 20 the view lists (review of beta.24)",
+      tag: "views",
+      params: [
+        q("edge", str, "The edge's id, as the view gives it (required)"),
+        q("node", str, "The node whose view has the edge (or focus)"),
+        q("focus", str, "The node whose focus view has the edge (or node)"),
+        q("lens", { type: "string", enum: [...GRAPH_LENSES] }, "The view's lens"),
+      ],
+      ok: { status: 200, schema: "GraphEdgeCallsView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/graph/layout/{viewKey}": {
     get: {
       id: "getViewLayout",
@@ -6252,7 +6291,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       body: LinkCorrectionsRequest,
       ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },
-      errors: [400, 404, 422],
+      errors: [400, 404, 422, 500],
     },
   },
   "/api/facts/{repo}/preview": {
@@ -8240,6 +8279,7 @@ const ERROR_TEXT: Record<number, string> = {
   409: "Conflict: the file changed since you read it, or the state doesn't allow this",
   413: "Too large: the upload is over the limit the problem names",
   422: "Atticus refused: the problem carries the command's own words (ADR 0043)",
+  500: "Written only in part: the problem names exactly what was written",
 };
 
 /** Build the OpenAPI 3.1 document from the zod schemas. */
@@ -8256,6 +8296,7 @@ export function openApiDocument(): Record<string, unknown> {
     HierJoin,
     GraphNodeView,
     GraphFocusView,
+    GraphEdgeCallsView,
     ViewLayoutResult,
     Impact,
     Coverage,

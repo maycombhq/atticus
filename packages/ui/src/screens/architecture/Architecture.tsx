@@ -570,10 +570,22 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     />
   );
   // Beta.24: one correction for every call on the arrow, above its calls.
+  // Review of beta.24: every call on it, from the view the edge is drawn from (a view lists 20).
+  const callsPath = (l: Api.HierEdgeT): string | undefined => {
+    const e = encodeURIComponent(l.id);
+    if (focus?.edges.some((x) => x.id === l.id))
+      return `/api/graph/edge-calls?focus=${encodeURIComponent(focus.node.id)}&lens=${lens}&edge=${e}`;
+    for (const v of views.values())
+      if (v.edges.some((x) => x.id === l.id))
+        return `/api/graph/edge-calls?node=${encodeURIComponent(v.node.id)}&lens=${lens}&edge=${e}`;
+    return undefined;
+  };
   const above = (l: Api.HierEdgeT) => (
     <ArrowWrong
       link={l}
       known={known}
+      labelOf={(id) => find(id)?.label ?? id}
+      {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
       onSaved={(calls) =>
         setWatched((w) => ({
           calls: [...new Set([...(w?.calls ?? []), ...calls])],

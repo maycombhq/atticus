@@ -6,11 +6,17 @@ import { COPY } from "../src/copy.js";
 import type { FactsView } from "../src/app/evidence.js";
 import {
   arrowCorrections,
-  callFactsOn,
   callerLine,
-  correctionLines,
+  callerLines,
+  linkBasis,
+  whatMoved,
 } from "../src/screens/architecture/links.js";
-import { ArrowWrongForm, LinkWrongForm, WhyLinked } from "../src/screens/architecture/WhyLinked.js";
+import type { Views } from "../src/screens/architecture/model.js";
+import {
+  ArrowWrongForm,
+  DeclaredLinkWrongView,
+  WhyLinked,
+} from "../src/screens/architecture/WhyLinked.js";
 
 /**
  * Beta.24: a link a gateway's routing made can be corrected at its forwarding call, and "This
@@ -91,7 +97,6 @@ const HOP_JOIN: Api.HierJoinT = {
   hops: [{ source: "gateway", repo: "forge-wallets-proxy", at: "apiproxy/proxies/default.xml:4" }],
   callee: [{ source: "code", repo: "forge-accounts", at: "src/Accounts.java:12" }],
 };
-const HOP_AT = { repo: "forge-wallets-proxy", at: "apiproxy/proxies/default.xml:4" };
 const FORWARD: Api.FactCiteViewT = {
   id: "call.get.accounts-id",
   kind: "call",
@@ -108,27 +113,61 @@ const PROXY_FACTS: FactsView = {
   facts: [{ ...FORWARD, id: "entry.get.accounts-id", kind: "entry" }, FORWARD],
 };
 
-describe("a link a gateway's routing made", () => {
-  it("rests the correction on the forwarding call at the hop when the caller cites no line", () => {
+/**
+ * Review of beta.24: a link with no line of a caller's has no call of its own. A declared caller's
+ * link is undone by withdrawing the declaration; any other (a gateway proxy's routing) says where
+ * the proxy's forwarding is corrected, as that changes the route for every caller. Neither
+ * corrects the route's shared forwarding call from here.
+ */
+const DECLARED: Api.HierJoinT = {
+  ...HOP_JOIN,
+  interface: "if-declared",
+  from: "harbor-desk",
+  how: "declared",
+  other: [{ source: "manual", at: "profiles/forge/profile.yaml" }],
+};
+
+describe("a link with no line of a caller's", () => {
+  const viewOf = (r: string) => (r === "forge-wallets-proxy" ? PROXY_FACTS : undefined);
+
+  it("never rests a correction on the route's forwarding call", () => {
     expect(callerLine(HOP_JOIN)).toBeUndefined();
-    expect(correctionLines(HOP_JOIN)).toEqual([HOP_AT]);
-    // The caller's own line, when there is one, is the only line, as before.
-    expect(correctionLines(JOIN)).toEqual([callerLine(JOIN)]);
-    expect(callFactsOn(HOP_AT, PROXY_FACTS).map((f) => f.id)).toEqual(["call.get.accounts-id"]);
+    expect(linkBasis(HOP_JOIN, viewOf)).toEqual({ kind: "routing" });
+    expect(linkBasis(DECLARED, viewOf)).toEqual({ kind: "declared" });
+    expect(
+      arrowCorrections([DECLARED, HOP_JOIN], viewOf, { kind: "not-a-call", reason: "x" }),
+    ).toEqual({ error: "noCalls" });
   });
 
-  it("offers the correction on that line: it goes outside, elsewhere, or isn't a call", () => {
+  it("offers to withdraw a declared link's declaration, by the declared-links undo", () => {
     const page = html(
-      <LinkWrongForm
-        join={HOP_JOIN}
-        at={HOP_AT}
-        facts={{ state: "ready", data: PROXY_FACTS }}
-        known={["forge-accounts"]}
-        onClose={() => undefined}
+      <DeclaredLinkWrongView
+        join={DECLARED}
+        of={{
+          state: "ready",
+          data: {
+            items: [
+              {
+                kind: "call",
+                says: "calls GET /accounts/{id}",
+                by: "Priya Nair",
+                at: "2026-11-01",
+                file: "profiles/forge/profile.yaml",
+                undo: { kind: "call", system: "harbor-desk", value: "GET /accounts/{id}" },
+              },
+            ],
+          },
+        }}
       />,
     );
-    expect(page).not.toContain(esc(W.noLine));
-    for (const c of ["estate", "outside", "not-a-call"]) expect(page).toContain(esc(W.choice[c]!));
+    expect(page).toContain(esc(W.declaredLink.say("profiles/forge/profile.yaml")));
+    expect(page).toContain(esc("calls GET /accounts/{id}"));
+    expect(page).toContain(esc(COPY.corrections.undo));
+    // Written by hand in the profile: no Undo here, where to change it instead.
+    const hand = html(
+      <DeclaredLinkWrongView join={DECLARED} of={{ state: "ready", data: { items: [] } }} />,
+    );
+    expect(hand).toContain(esc(W.declaredLink.byHand("profiles/forge/profile.yaml")));
   });
 });
 
@@ -161,7 +200,7 @@ describe("this whole arrow is wrong", () => {
 
   it("gives every call on the arrow the same correction, each in its caller's repo", () => {
     expect(
-      arrowCorrections([JOIN, TELLER, HOP_JOIN], viewOf, {
+      arrowCorrections([JOIN, TELLER, HOP_JOIN, DECLARED], viewOf, {
         kind: "outside",
         target: "Northwind",
         reason: "",
@@ -181,15 +220,13 @@ describe("this whole arrow is wrong", () => {
             action: "edit",
             set: { to: "Northwind" },
           },
-          {
-            repo: "forge-wallets-proxy",
-            fact: "call.get.accounts-id",
-            action: "edit",
-            set: { to: "Northwind" },
-          },
         ],
       },
+      lines: ["forge-web:src/customer.service.ts:21", "forge-teller:src/Teller.java:9"],
       missing: [],
+      // The proxy's forwarding is shared by every caller of the route: never corrected here.
+      declared: ["if-declared"],
+      routing: ["if-hop"],
     });
     expect(
       arrowCorrections([JOIN, TELLER], viewOf, { kind: "not-a-call", reason: "health probes" }),
@@ -201,7 +238,10 @@ describe("this whole arrow is wrong", () => {
         ],
         reason: "health probes",
       },
+      lines: ["forge-web:src/customer.service.ts:21", "forge-teller:src/Teller.java:9"],
       missing: [],
+      declared: [],
+      routing: [],
     });
   });
 
@@ -296,6 +336,160 @@ describe("this whole arrow is wrong", () => {
       />,
     );
     expect(page).toContain("no such fact");
+  });
+
+  it("corrects every call an Interface merged, each on its own line", () => {
+    const second: Api.FactCiteViewT = {
+      ...CALL,
+      id: "c-create-customer-2",
+      cite: { file: "src/signup.service.ts", line: 7, value: "/api/customers" },
+    };
+    const merged: Api.HierJoinT = {
+      ...JOIN,
+      caller: [
+        ...JOIN.caller,
+        { source: "code", repo: "forge-web", at: "src/signup.service.ts:7" },
+      ],
+    };
+    const both = (r: string) =>
+      r === "forge-web" ? { ...FACTS, facts: [CALL, second] } : undefined;
+    expect(callerLines(merged).map((l) => l.at)).toEqual([
+      "src/customer.service.ts:21",
+      "src/signup.service.ts:7",
+      "src/environment.ts:4",
+    ]);
+    const r = arrowCorrections([merged], both, { kind: "not-a-call", reason: "probes" });
+    expect(r).toMatchObject({
+      body: {
+        items: [
+          { repo: "forge-web", fact: "c-create-customer", action: "wrong" },
+          { repo: "forge-web", fact: "c-create-customer-2", action: "wrong" },
+        ],
+      },
+      lines: ["forge-web:src/customer.service.ts:21", "forge-web:src/signup.service.ts:7"],
+    });
+    expect(
+      html(<ArrowWrongForm link={edge([merged])} viewOf={both} known={[]} startOpen />),
+    ).toContain(esc(W.arrow.save(2)));
+    // What moved is told by the line corrected, the second call's too.
+    const view = (joins: Api.HierJoinT[]): Views =>
+      new Map([["estate", { edges: [edge(joins)] } as unknown as Api.GraphNodeViewT]]);
+    expect(
+      whatMoved(view([merged]), view([]), ["forge-web:src/signup.service.ts:7"]).map((m) => m.call),
+    ).toEqual(["forge-web:src/signup.service.ts:7"]);
+  });
+
+  it("means every call when the view lists only 20 of an arrow's 25", () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      join: {
+        ...JOIN,
+        interface: `if-${String(i).padStart(2, "0")}`,
+        path: `/api/many/${i}`,
+        caller: [{ source: "code", repo: "forge-web", at: `src/many.ts:${i + 1}` }],
+      } satisfies Api.HierJoinT,
+      fact: {
+        ...CALL,
+        id: `c-many-${i}`,
+        cite: { file: "src/many.ts", line: i + 1, value: "/api/customers" },
+      } satisfies Api.FactCiteViewT,
+    }));
+    const facts = { ...FACTS, facts: many.map((m) => m.fact) };
+    const link = { ...edge(many.slice(0, 20).map((m) => m.join)), count: 25 };
+    // While every call is read, it says so and offers no count it can't keep.
+    const reading = html(<ArrowWrongForm link={link} viewOf={() => facts} known={[]} startOpen />);
+    expect(reading).toContain(esc(W.arrow.loadingCalls));
+    expect(reading).not.toContain(esc(W.arrow.save(20)));
+    const all = html(
+      <ArrowWrongForm
+        link={link}
+        joins={many.map((m) => m.join)}
+        viewOf={() => facts}
+        known={[]}
+        startOpen
+      />,
+    );
+    expect(all).toContain(esc(W.arrow.save(25)));
+    expect(all).not.toContain(esc(W.arrow.save(20)));
+    expect(
+      html(
+        <ArrowWrongForm link={link} callsFailed="gone" viewOf={() => facts} known={[]} startOpen />,
+      ),
+    ).toContain(esc(W.arrow.callsFailed("gone")));
+  });
+
+  it("once written, offers no second submit until it is opened again", () => {
+    const done = html(
+      <ArrowWrongForm
+        link={edge([JOIN])}
+        viewOf={viewOf}
+        known={[]}
+        startOpen
+        saving={{
+          state: "done",
+          result: {
+            files: [
+              {
+                repo: "forge-web",
+                file: "facts/forge-web.corrections.jsonl",
+                lines: ["{}"],
+                corrections: [],
+              },
+            ],
+            commit: "commit it",
+            verify: ["atticus verify forge-web"],
+          },
+        }}
+      />,
+    );
+    expect(done).not.toContain('type="submit"');
+    expect(done).not.toContain(esc(W.arrow.save(1)));
+    // Asked again, every one was on file already: said, nothing new written.
+    const again = html(
+      <ArrowWrongForm
+        link={edge([JOIN])}
+        viewOf={viewOf}
+        known={[]}
+        startOpen
+        saving={{
+          state: "done",
+          result: {
+            files: [],
+            commit: "",
+            verify: [],
+            skipped: [{ repo: "forge-web", fact: "c-create-customer" }],
+          },
+        }}
+      />,
+    );
+    expect(again).toContain(esc(W.arrow.already));
+    expect(again).not.toContain('type="submit"');
+  });
+
+  it("says what it leaves alone: a declared link, a proxy's routing", () => {
+    const page = html(
+      <ArrowWrongForm
+        link={edge([JOIN, DECLARED, HOP_JOIN])}
+        viewOf={viewOf}
+        known={[]}
+        startOpen
+      />,
+    );
+    expect(page).toContain(esc(W.arrow.declared(1)));
+    expect(page).toContain(esc(W.arrow.routing(1)));
+    expect(page).toContain(esc(W.arrow.save(1)));
+  });
+
+  it("names the arrow by its boxes' names, not their ids", () => {
+    const page = html(
+      <ArrowWrongForm
+        link={edge([JOIN])}
+        viewOf={viewOf}
+        known={[]}
+        labelOf={(id) => (id === "system:web" ? "Web" : "Customers")}
+      />,
+    );
+    expect(page).toContain(`aria-label="${esc(W.arrow.openOf(W.call("Web", "Customers", "")))}"`);
+    expect(page).not.toContain("system:web");
   });
 
   it("is shown above the calls in Why is this linked when the page gives it", () => {

@@ -147,6 +147,33 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         const est = await estate();
         return { status: 200, body: guard(() => focusView(est, id, { lens })) };
       })
+      // Review of beta.24: every call merged into one edge of a view (a node's or a focus), not
+      // only the first 20 the view lists, worked out by the view's own function.
+      .add("GET", "/api/graph/edge-calls", async ({ query }) => {
+        const edge = query.get("edge");
+        const node = query.get("node");
+        const focus = query.get("focus");
+        if (!edge || !node === !focus)
+          throw badRequest("Say edge=<edge id> and node=<id> or focus=<id>.");
+        const id = idOf((node ?? focus)!);
+        const lens = lensOf(query.get("lens"), node ? "architecture" : "data");
+        const est = await estate();
+        const v = guard(() =>
+          node
+            ? nodeView(est, id, { lens, everyJoin: true })
+            : focusView(est, id, { lens, everyJoin: true }),
+        );
+        const e = v.edges.find((x) => x.id === edge);
+        if (!e) throw notFound(`The ${lens} view of ${id} has no edge ${edge}.`);
+        return {
+          status: 200,
+          body: {
+            edge: e.id,
+            count: e.count,
+            joins: e.joins ?? [],
+          } satisfies Api.GraphEdgeCallsViewT,
+        };
+      })
       // G6 (ADR 0175): a canvas's named filters and layers, kept in the metarepo for review.
       .add("GET", "/api/graph/views", async () => {
         const dir = join(ctx.root, ...viewsRel.split("/"));

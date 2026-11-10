@@ -5287,7 +5287,30 @@ export const COPY = {
         `Written ${n} correction${n === 1 ? "" : "s"} to ${files}.`,
       apply:
         "Next: Apply them from Corrections to apply, at the top of the map, then propose the change for review.",
+      // Review of beta.24: what the arrow's correction leaves alone, and a second ask.
+      loadingCalls: "Reading every call on this arrow…",
+      callsFailed: (why: string) => `Couldn't read every call on this arrow: ${why}`,
+      declared: (n: number) =>
+        `${n} of these link${n === 1 ? " is" : "s are"} a person's declaration, not a call in code, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: withdraw a declaration from This link is wrong under its call.`,
+      routing: (n: number) =>
+        `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: correct the proxy's forwarding on the proxy's own box, which changes that route for every caller.`,
+      already:
+        "Every one of these corrections is on file already, so nothing new was written. Apply them from Corrections to apply, at the top of the map.",
+      skipped: (n: number) =>
+        `${n} ${n === 1 ? "was" : "were"} on file already and ${n === 1 ? "was" : "were"} left as ${n === 1 ? "it was" : "they were"}.`,
     },
+    // Review of beta.24: a link with no line of a caller's has nothing of its own to correct.
+    declaredLink: {
+      profile: "the profile",
+      say: (file: string) =>
+        `A person declared this link in ${file}: no call in code makes it, so there is no call to correct. Withdraw the declaration and the link goes at the next join.`,
+      sayNoFile:
+        "A person declared this link in the profile: no call in code makes it, so there is no call to correct. Withdraw the declaration and the link goes at the next join.",
+      byHand: (file: string) =>
+        `It wasn't declared from the canvas, so there is no Undo for it here: remove it from ${file} and propose that for review.`,
+    },
+    routingLink:
+      "No line of a caller's cites this call: the link comes from a gateway proxy's routing, and correcting the proxy's forwarding changes the route for every caller, not this link alone. To do that, open the proxy's own box and correct its forwarding there (Correct this at its line).",
     moved: "What moved when the estate was joined again",
     movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
     movedOff: (what: string, was: string) =>
