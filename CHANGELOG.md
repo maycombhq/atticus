@@ -6,6 +6,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **A Console log no longer freezes when the server dropped lines**: when the server answers from a later line than asked (a long run's log keeps only its last lines), the Console says how many earlier lines were dropped and goes on from the server's lines, asking on until it has caught up.
+- **A Copilot ACP step's progress shows in the Console**: its "copilot: …" lines go to the command's run log and the app job's lines as well as the terminal, so a long Copilot step no longer looks idle.
+- **A burst of output past 5,000 lines reaches the Console, to its end summary**: a command's log is tailed from where it was read, a few thousand lines at a time and on at the next look, instead of jumping to the file's end.
+- **A long run stays in the Console while fifty quick ones run beside it**: a run still running (its process there) is never pruned from `.atticus/logs/`, and the Console's list always keeps what runs, so the strip doesn't vanish behind a hundred newer entries.
+- **A chatty command no longer makes the app's server busy**: the watcher tells the Console about a command's run files at most every 200 ms (and once after the last write), and the logs are read only from where they were last read.
+- **A run whose process id was reused is shown ended**: on Linux the run keeps when its process started and a different process with the same id no longer counts; elsewhere a running command writes its record every 30 seconds and one silent for over five minutes is shown as ended without saying.
 - **Home reloads fast on Windows too**: Map › Trust and each change's cockpit are kept until a base clone's checkout moves, and that was judged by the times of `.git` folders, which git moves as it reads (its lock files). On Windows every reload worked them out again (1.3 s with nothing changed, against 0.3 s on Linux); now only the files that say what is checked out are read (HEAD, its branch, the reflog, packed-refs).
 - **`atticus skills import` names a file it kept with forward slashes on Windows too**, as every other line it prints does.
 - **Nothing scrolled to hides behind the Console bar**: a Tab to a button or a link to a heading stops clear of the bar fixed at the foot of the app (or of the open Console), not under it.

@@ -32,6 +32,8 @@ export interface Lines {
   lines: string[];
   /** The entry's start, so a server's restart (job-1 again) never mixes two entries. */
   startedAt: string;
+  /** Lines the server no longer had, between what was held and these (its log kept its last). */
+  dropped?: number;
 }
 
 export interface ActivityCtx {
@@ -76,18 +78,24 @@ const cap = (l: Lines): Lines =>
     : l;
 
 /**
- * New lines at `at` put after the ones held: only those not held yet; a gap (lines missed) is
- * left for the next fetch, and lines before the held ones are put in front.
+ * New lines at `at` put after the ones held: only those not held yet; lines before the held
+ * ones are put in front. A gap in a live event (lines missed) is left for the next fetch; a gap
+ * in a fetch's answer (`gap`: the server answered from a later line than asked, as it dropped
+ * the ones between) is taken: its lines are held from there on, saying how many were dropped.
  */
 export function withActivityLines(
   have: Lines | undefined,
   at: number,
   lines: string[],
   startedAt: string,
+  o: { gap?: boolean } = {},
 ): Lines {
   if (!have || have.startedAt !== startedAt) return cap({ from: at, lines, startedAt });
   const end = have.from + have.lines.length;
-  if (at > end) return have;
+  if (at > end) {
+    if (!o.gap) return have;
+    return cap({ from: at, lines, startedAt, dropped: at - end });
+  }
   if (at < have.from) {
     const before = lines.slice(0, have.from - at);
     const after = lines.slice(have.from - at + have.lines.length);
@@ -246,6 +254,12 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const shownKind = shown?.kind;
   const shownTotal = shown?.lines ?? 0;
   const shownStart = shown?.startedAt;
+  // Where the lines held end: an answer short of the total (past a read's cap) asks on.
+  const heldLines = shownId ? lines[shownId] : undefined;
+  const heldEnd =
+    heldLines && heldLines.startedAt === shownStart
+      ? heldLines.from + heldLines.lines.length
+      : undefined;
   useEffect(() => {
     if (!open || !shownId || !shownStart || shownKind === "copilot") return;
     const have = linesNow.current[shownId];
@@ -260,6 +274,8 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     ).then(
       (l) => {
         if (gone) return;
+        // The server answers from the first line it still has: an answer from a later line
+        // than asked is lines it dropped, taken as a gap (else the log froze, asking again).
         setLines((old) => ({
           ...old,
           [shownId]: withActivityLines(
@@ -267,6 +283,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
             l.from,
             l.lines,
             shownStart,
+            { gap: true },
           ),
         }));
         setLinesState((s) => ({ ...s, [shownId]: undefined }));
@@ -279,7 +296,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     return () => {
       gone = true;
     };
-  }, [open, shownId, shownKind, shownTotal, shownStart]);
+  }, [open, shownId, shownKind, shownTotal, shownStart, heldEnd]);
 
   const stop = useCallback(
     async (e: Entry) => {
@@ -523,6 +540,7 @@ export function LogView(p: {
           )}
         </p>
       )}
+      {p.lines?.dropped ? <p className="work-say">{T.dropped(p.lines.dropped)}</p> : null}
       {p.state === "error" && !p.lines ? (
         <p className="state error" role="alert">
           {T.linesFailed}

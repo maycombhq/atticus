@@ -4879,6 +4879,8 @@ export const COPY = {
     noMatch: (q: string) => `No line has “${q}”.`,
     earlier: (n: number) => `${n.toLocaleString()} earlier lines not shown.`,
     loadEarlier: "Show earlier lines",
+    dropped: (n: number) =>
+      `${n.toLocaleString()} earlier ${n === 1 ? "line was" : "lines were"} dropped before these: the log keeps only its last lines.`,
     newLines: (n: number, title: string) =>
       n === 1 ? `1 new line in ${title}` : `${n} new lines in ${title}`,
     changed: (title: string, state: string) => `${title}: ${state}`,

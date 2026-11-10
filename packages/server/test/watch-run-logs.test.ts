@@ -53,4 +53,36 @@ describe("following a command's run files", () => {
       w.close();
     }
   });
+
+  it("nudges at most once a while for a burst of writes, and once after the last", async () => {
+    const r = await mkdtemp(join(tmpdir(), "atticus-watch-burst-"));
+    await mkdir(join(r, "org-pack"), { recursive: true });
+    await mkdir(join(r, ".atticus", "logs", "running"), { recursive: true });
+    await mkdir(join(r, ".atticus", "logs", "runs"), { recursive: true });
+    const at: number[] = [];
+    const w = watchMetarepo({
+      root: r,
+      publish: () => undefined,
+      onRunLog: () => at.push(Date.now()),
+      runLogDelayMs: 100,
+    });
+    try {
+      await new Promise((x) => setTimeout(x, 100));
+      const log = join(r, ".atticus", "logs", "runs", "20261109-101530-1-abcd.log");
+      const started = Date.now();
+      for (let i = 0; i < 300; i++) {
+        await appendFile(log, `line ${i}\n`);
+        if (i % 30 === 0) await new Promise((x) => setTimeout(x, 5));
+      }
+      const last = Date.now();
+      await until(() => at.some((t) => t >= last));
+      await new Promise((x) => setTimeout(x, 250));
+      // Hundreds of events: a nudge per 100 ms of them at most, and one after the last write.
+      expect(at.length).toBeLessThanOrEqual(Math.ceil((last - started) / 100) + 2);
+      for (let i = 1; i < at.length; i++) expect(at[i]! - at[i - 1]!).toBeGreaterThanOrEqual(90);
+    } finally {
+      w.close();
+      await rm(r, { recursive: true, force: true });
+    }
+  });
 });

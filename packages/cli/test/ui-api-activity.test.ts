@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { Api, runsDirOf, startTerminalRun } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { tracked, uiActivityRoutes } from "../src/ui-api-activity.js";
+import { newestKeepingRunning, tracked, uiActivityRoutes } from "../src/ui-api-activity.js";
 import { main } from "../src/main.js";
 
 /**
@@ -255,5 +255,62 @@ describe("a command run from the command line (ADR 0187)", () => {
     const r2 = await metarepo();
     await main(["verify", "forge-nothing", "--root", r2], io);
     expect(readTerminalRuns(r2)).toEqual([]);
+  });
+});
+
+describe("a long or chatty command (review of ADR 0187)", () => {
+  it("sends a burst past the read cap, to its end summary, and its count", async () => {
+    const r = await metarepo();
+    const s = await startServer({
+      root: r,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (x, ctx) => uiActivityRoutes(x, ctx, { alive: () => true, tickMs: 50 }),
+    });
+    try {
+      const live: string[] = [];
+      s.events.listen((e) => {
+        if (e.type === "activity.lines") live.push(...(e.lines as string[]));
+      });
+      const rec = startTerminalRun(r, { positionals: ["map", "forge-ledger"], flags: [], pid: 4 })!;
+      rec.line("first");
+      await new Promise((x) => setTimeout(x, 150));
+      for (let i = 0; i < 12000; i++) rec.line(`line ${i}`);
+      rec.line("FINAL SUMMARY");
+      await until(() => live.includes("FINAL SUMMARY"));
+      expect(live.length).toBe(12001);
+      expect(live[0]).toBe("line 0");
+      const l = Api.ActivityList.parse(
+        await (
+          await fetch(s.url + "/api/activity", { headers: { "X-Atticus-Token": s.token } })
+        ).json(),
+      );
+      expect(l.entries.find((x) => x.kind === "command")!.lines).toBe(12002);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("always lists what runs, however many newer entries there are", () => {
+    const e = (id: string, startedAt: string, state: Api.ActivityStateT) =>
+      ({
+        id,
+        kind: "scan",
+        where: "app",
+        state,
+        startedAt,
+        lines: 0,
+        from: 0,
+      }) as Api.ActivityEntryT;
+    const old = e("term-long", "2026-01-01T00:00:00.000Z", "running");
+    const many = Array.from({ length: 120 }, (_, i) =>
+      e(`job-${i}`, new Date(Date.UTC(2026, 10, 9, 10, 0, i)).toISOString(), "done"),
+    );
+    const got = newestKeepingRunning([...many, old], 100);
+    expect(got.length).toBe(100);
+    expect(got.at(-1)!.id).toBe("term-long");
+    expect(got[0]!.id).toBe("job-119");
+    expect(got.filter((x) => x.state === "running").length).toBe(1);
   });
 });
