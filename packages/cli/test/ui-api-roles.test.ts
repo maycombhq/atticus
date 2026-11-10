@@ -198,6 +198,38 @@ describe("owners and who a change waits on", () => {
     });
   });
 
+  it("names the people an alias, another case or a custom role of the phase's role names", () => {
+    // The words people write in change.yaml, which Your changes already reads as the role.
+    const aliased = { "Product-Owner": ["@Pat"], "tech-lead": ["@tia"], "lead-architect": ["ari"] };
+    const custom = [{ id: "lead-architect", basedOn: "architect" }];
+    expect(waitsOnOf({ state: "build", owners: aliased, handoffs: [] }, true)?.people).toEqual([
+      "tia",
+    ]);
+    expect(waitsOnOf({ state: "define", owners: aliased, handoffs: [] }, false)?.people).toEqual([
+      "Pat",
+    ]);
+    expect(
+      waitsOnOf({ state: "design", owners: aliased, handoffs: [] }, false, custom)?.people,
+    ).toEqual(["ari"]);
+    const handoff = {
+      phase: "plan" as const,
+      branch: "handoff/x/plan",
+      pr: { number: 2, url: "https://git.example.com/pr/2" },
+      state: "open" as const,
+      by: "bao",
+      openedAt: NOW,
+      reviewers: ["@tia"],
+      approvals: [],
+      artifacts: [],
+    };
+    expect(waitsOnOf({ state: "plan", owners: aliased, handoffs: [handoff] }, true)).toEqual({
+      role: "team-lead",
+      people: ["tia"],
+      because: "handoff",
+      phase: "plan",
+    });
+  });
+
   it("gives At a glance its waitsOn", async () => {
     const c = Api.ChangeCockpit.parse((await call(`/api/changes/${CHANGE}/cockpit`)).body);
     expect(c.waitsOn?.role).toBeDefined();

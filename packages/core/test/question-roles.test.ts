@@ -6,6 +6,7 @@ import { parse as parseYaml, stringify } from "yaml";
 import {
   listQuestions,
   migrateQuestions,
+  nextOwnersOf,
   Question,
   QUESTION_ROLES,
   QUESTION_SCHEMA_VERSION,
@@ -34,6 +35,24 @@ const by = (step: string, rerun = `atticus change feature add-holds`) => ({
   command: rerun,
   rerun,
   at: AT,
+});
+
+describe("the next role's owners", () => {
+  it("reads the owner keys rolesOfPerson reads: aliases, any case and custom roles", () => {
+    expect(nextOwnersOf("plan", { "tech-lead": ["@tia"], developer: ["dev"] })).toEqual({
+      role: "team-lead",
+      people: ["tia", "dev"],
+    });
+    expect(nextOwnersOf("design", { "Business-Analyst": ["bao", "@BAO"] })?.people).toEqual([
+      "bao",
+    ]);
+    expect(
+      nextOwnersOf("define", { "lead-architect": ["ari"], architect: ["ana"] }, [
+        { id: "lead-architect", basedOn: "architect" },
+      ])?.people,
+    ).toEqual(["ana", "ari"]);
+    expect(nextOwnersOf("define", { "lead-architect": ["ari"] })?.people).toEqual([]);
+  });
 });
 
 describe("the role of a stage", () => {

@@ -155,7 +155,8 @@ export async function notifyHandoffReviewers(
   approval: Approval,
   given?: Notifier,
 ): Promise<string[]> {
-  const next = nextOwnersOf(h.phase, c.owners);
+  const { customRoles } = await import("./change-roles.js");
+  const next = nextOwnersOf(h.phase, c.owners, await customRoles(root));
   // ADR 0191 review: an owner is a reviewer as handles compare (any case, with or without @).
   const reviewing = new Set(h.reviewers.map(handleKey));
   const people = (next?.people ?? []).filter((p) => reviewing.has(handleKey(p))).map(handle);

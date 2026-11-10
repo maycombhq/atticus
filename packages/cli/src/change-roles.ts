@@ -88,7 +88,7 @@ export function isChangeQuestion(
 }
 
 /** The custom roles roles.yaml names, each with the built-in role it is based on; none when it doesn't read. */
-async function customRoles(root: string): Promise<CustomRole[]> {
+export async function customRoles(root: string): Promise<CustomRole[]> {
   const y = (await yamlOf(join(orgPackDirOf(root), "roles.yaml"))) as { custom?: unknown } | null;
   if (!Array.isArray(y?.custom)) return [];
   return y.custom.flatMap((c: unknown) => {
