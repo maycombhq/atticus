@@ -165,8 +165,17 @@ describe("the proxy's forwarding calls: the target URL a build token sets", () =
     });
     const out = joinFacts({ repos });
     expect(forwarding(out)).toEqual([]);
+    // The services wrapping the vendor serve the same whole paths (/wallets, /accounts/{id}), so
+    // the host, though in no domain of the estate's, may be theirs: asked, never joined by path
+    // and never silently outside (review of beta.24).
+    expect(out.asks.filter((a) => a.call.repo === PROXY).map((a) => a.host)).toEqual(
+      Array(6).fill("ledger.partner.example"),
+    );
+    // The profile listing it as an outside system's says where they go.
+    const listed = joinFacts({ repos, outside: ["ledger.partner.example"] });
+    expect(forwarding(listed)).toEqual([]);
     expect(
-      new Set((out.outside ?? []).filter((o) => o.call.repo === PROXY).map((o) => o.target)),
+      new Set((listed.outside ?? []).filter((o) => o.call.repo === PROXY).map((o) => o.target)),
     ).toEqual(new Set(["ledger.partner.example"]));
   });
 });
