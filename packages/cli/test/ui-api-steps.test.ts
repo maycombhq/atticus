@@ -245,6 +245,127 @@ describe("Draft the stories again", () => {
   });
 });
 
+/**
+ * Review of beta.23 (ADR 0188): the app's steps say why they failed in the app's words, and a
+ * step that needs a base clone this machine doesn't have offers Sync the repos.
+ */
+describe("a step the app runs says why, and what to press next", () => {
+  type Ended = {
+    state: string;
+    errors: string[];
+    progress: { message: string };
+    result?: { code: number; lines: string[]; next?: unknown };
+  };
+  it("a sync that failed says why, with its code, and never Synced", async () => {
+    const j = (await job("/api/workspace/sync", { repos: ["nope"] })) as unknown as Ended;
+    expect(j.state).toBe("failed");
+    expect(j.result?.code).not.toBe(0);
+    expect(j.result?.lines.join(" ")).toContain("Not in any repos.manifest.yaml: nope");
+    expect(j.errors.join(" ")).toContain("Not in any repos.manifest.yaml: nope");
+    expect(j.progress.message).not.toBe("Synced");
+  });
+
+  it("a local step's lines are in the app's words, not the commands to type", async () => {
+    const all = (await job("/api/facts/apply-all")) as unknown as Ended;
+    expect(all.result?.lines.join(" ")).toMatch(/No repo has facts yet/);
+    expect(all.result?.lines.join(" ")).not.toContain("/atticus-map");
+    const join = (await job("/api/estate/join")) as unknown as Ended;
+    expect(join.result?.lines.join(" ")).toMatch(/There are no repo specs/);
+    expect(join.result?.lines.join(" ")).not.toContain("atticus spec draft");
+  });
+
+  it("Apply with no base clone offers Sync the repos for it", async () => {
+    const { factsDirOf } = await import("@maycombhq/core");
+    await mkdir(factsDirOf(root), { recursive: true });
+    await cp(
+      join(HERE, "../../../fixtures/estate-facts/facts/forge-ledger.jsonl"),
+      join(factsDirOf(root), "forge-ledger.jsonl"),
+    );
+    try {
+      for (const path of ["/api/facts/forge-ledger/apply", "/api/facts/apply-all"]) {
+        const j = (await job(path)) as unknown as Ended;
+        expect(j.state, path).toBe("failed");
+        expect(j.result?.next, path).toEqual({ step: "sync", repos: ["forge-ledger"] });
+        const said = j.result?.lines.join(" ") ?? "";
+        expect(said, path).toContain("No checkout of forge-ledger");
+        expect(said, path).not.toContain("atticus workspace sync");
+        expect(said, path).not.toContain("--dir");
+      }
+      // The read of a repo with no clone: the 422 carries the same next step.
+      const r = await call("/api/runs/handoff", "POST", { args: ["map", "forge-gateway"] });
+      expect(r.status).toBe(422);
+      expect(r.body.next).toEqual({ step: "sync", repos: ["forge-gateway"] });
+      expect(String(r.body.detail)).not.toContain("atticus workspace sync");
+    } finally {
+      await rm(join(factsDirOf(root), "forge-ledger.jsonl"), { force: true });
+    }
+  });
+
+  it("a read run with the server's model is put on the map: verify --write after it", async () => {
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-steps-model-"));
+    await cp(join(FORGE, "org-pack"), join(r2, "org-pack"), { recursive: true });
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      join(r2, "org-pack", "runtime.yaml"),
+      "schemaVersion: 1\nadapters:\n  model: { type: anthropic }\n",
+    );
+    const asked: string[][] = [];
+    const s = await startServer({
+      root: r2,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) =>
+        uiModelRunRoutes(r, ctx, {
+          runStep: async (args) => {
+            asked.push(args);
+            if (args[0] === "verify")
+              return { code: 0, out: ["Wrote the catalog for forge-ledger."], err: [] };
+            if (args[1] === "forge-bad")
+              return { code: 1, out: ["Read forge-bad: 1 still rejected."], err: [] };
+            return { code: 0, out: ["Read forge-ledger in 1 batch: 4 facts kept."], err: [] };
+          },
+        }),
+    });
+    const follow = async (args: string[]) => {
+      const p = await fetch(s.url + "/api/runs", {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ args }),
+      });
+      expect(p.status).toBe(202);
+      const id = String(((await p.json()) as { jobId: string }).jobId);
+      return s.jobs.settle(id);
+    };
+    try {
+      const j = await follow(["map", "forge-ledger"]);
+      expect(asked).toEqual([
+        ["map", "forge-ledger", "--mode", "model"],
+        ["verify", "forge-ledger", "--write"],
+      ]);
+      expect(j.result).toMatchObject({
+        code: 0,
+        applied: "forge-ledger",
+        lines: [
+          "Read forge-ledger in 1 batch: 4 facts kept.",
+          "Wrote the catalog for forge-ledger.",
+        ],
+      });
+      // A read that kept a rejected fact writes nothing to the catalog.
+      asked.length = 0;
+      await follow(["map", "forge-bad"]);
+      expect(asked).toEqual([["map", "forge-bad", "--mode", "model"]]);
+      // Any other step is only run.
+      asked.length = 0;
+      await follow(["scan", "survey", "forge-ledger"]);
+      expect(asked).toEqual([["scan", "survey", "forge-ledger", "--mode", "model"]]);
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("what the app's work proposes", () => {
   it("includes a change's drawn target flows and its knowledge list", () => {
     const dirs = scopeDirs("/m", "work");

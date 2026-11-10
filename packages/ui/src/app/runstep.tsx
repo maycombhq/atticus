@@ -3,6 +3,8 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError } from "../api/client.js";
 import { hostBridge, type StepEnd } from "../api/bridge.js";
 import { COPY } from "../copy.js";
+import { nextAfter, nextStepOf } from "./job.js";
+import { SyncFirst } from "./sync-first.js";
 import "../screens/runs/runs.css";
 
 /**
@@ -177,7 +179,12 @@ export async function runOnServer(
     if (said && said !== last) o.onLine(said);
     last = said;
     if (ENDED.has(job.state)) {
-      const result = (job.result ?? {}) as { code?: unknown; lines?: unknown; runId?: unknown };
+      const result = (job.result ?? {}) as {
+        code?: unknown;
+        lines?: unknown;
+        runId?: unknown;
+        applied?: unknown;
+      };
       const lines = Array.isArray(result.lines)
         ? result.lines.filter((l): l is string => typeof l === "string")
         : job.errors;
@@ -196,7 +203,16 @@ export async function runOnServer(
               .call<Api.RunList>("/api/runs?limit=1")
               .then((r) => r.runs.find((x) => x.startedAt >= job.startedAt)?.runId)
               .catch(() => undefined);
-      return { state, lines, ...(runId ? { runId } : {}) };
+      // Review of beta.23: a read with no base clone here offers Sync the repos; a read put on
+      // the map says which repo.
+      const next = nextStepOf(result);
+      return {
+        state,
+        lines,
+        ...(runId ? { runId } : {}),
+        ...(next ? { next } : {}),
+        ...(typeof result.applied === "string" ? { applied: result.applied } : {}),
+      };
     }
     await o.wait(700);
   }
@@ -298,6 +314,7 @@ export function RunStepView(p: {
                 {s.end.runId ? T.openRun : T.openRuns}
               </a>
             )}
+            {s.end.next && <SyncFirst repos={s.end.next.repos} />}
           </div>
         )}
       </div>
@@ -421,7 +438,7 @@ export function HandoffStep({ args }: { args: string[] }) {
     | { s: "working" }
     | { s: "ready"; runId: string; still?: boolean }
     | { s: "said"; lines: string[] }
-    | { s: "error"; why: string; runId?: string }
+    | { s: "error"; why: string; runId?: string; sync?: string[] }
   >({ s: "idle" });
   const id = useId();
   if (state.s === "said")
@@ -464,7 +481,14 @@ export function HandoffStep({ args }: { args: string[] }) {
                 // UX re-walk: a step that still waits on a run names it; offer that run.
                 const w = why(e);
                 const waiting = /\b(run-[0-9a-z-]+)\b/.exec(w)?.[1];
-                set({ s: "error", why: w, ...(waiting ? { runId: waiting } : {}) });
+                // Review of beta.23: no clone of the repo here: Sync the repos, then again.
+                const next = nextAfter(e);
+                set({
+                  s: "error",
+                  why: w,
+                  ...(waiting ? { runId: waiting } : {}),
+                  ...(next ? { sync: next.repos } : {}),
+                });
               });
           }}
         >
@@ -487,6 +511,9 @@ export function HandoffStep({ args }: { args: string[] }) {
             <a href={`#/runs?run=${encodeURIComponent(state.runId)}`}>{T.handoffOpenWaiting}</a>
           )}
         </p>
+      )}
+      {state.s === "error" && state.sync && (
+        <SyncFirst repos={state.sync} onSynced={() => set({ s: "idle" })} />
       )}
       {state.s === "error" && forceAgain(args, state.why) && (
         <HandoffStep args={forceAgain(args, state.why)!} />

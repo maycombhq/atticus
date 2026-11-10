@@ -17,6 +17,10 @@ export interface StepEnd {
   state: string;
   lines: string[];
   runId?: string;
+  /** API 3.9.0: Sync the repos with no base clone here, when the step needed one. */
+  next?: { step: "sync"; repos: string[] };
+  /** API 3.9.0: the repo a read put on the map (`verify <repo> --write` after it). */
+  applied?: string;
 }
 
 export interface Bridge {

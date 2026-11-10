@@ -17,6 +17,8 @@ export interface Problem {
   needs?: { role: string; names: string[] };
   /** Nothing to show until a step is done (a scan, say); the detail says which. Not a failure. */
   notYet?: boolean;
+  /** API 3.9.0 (ADR 0188): what the app offers next, Sync the repos with no base clone here. */
+  next?: { step: "sync"; repos: string[] };
 }
 
 export class ApiError extends Error {

@@ -81,6 +81,24 @@ export function appLines(lines: string[], o: { next?: boolean } = {}): string[] 
         /^Open the stage's pull request for a person to approve: .*$/,
         "Raise the stage's hand-off on the change page for a person to approve.",
       )
+      // Review of beta.23 (ADR 0188): the local steps' refusals name the app's buttons. A repo
+      // with no base clone is offered Sync the repos beside these words (sync-next.ts).
+      .replace(
+        /^No checkout of (\S+): clone it \(atticus workspace sync\) or give its folder with --dir\.$/,
+        "No checkout of $1 on this machine: Sync the repos to clone it, then try again.",
+      )
+      .replace(
+        /^(No repo has facts yet \([^)]*\))\. Read one first: \/atticus-map <repo> in your assistant\.$/,
+        "$1. Read one first on Map › Trust.",
+      )
+      .replace(
+        /^(No facts for (\S+) at \S+)\. Run \/atticus-map \S+ in your assistant first \(or atticus map \S+ to read it in batches\); it writes that file\.$/,
+        "$1. Read $2 first on Map › Trust; the read writes that file.",
+      )
+      .replace(
+        /^(There are no repo specs in \S+ yet)\. Draft them first: atticus spec draft <repo>\.$/,
+        "$1: read a repo on Map › Trust and apply it, which writes its spec.",
+      )
       .trimStart(),
   );
 }

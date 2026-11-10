@@ -6,6 +6,8 @@ import { flash } from "./flash.js";
 import { focusIfLost } from "./ui.js";
 import { Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
+import { followJob, nextAfter, type NextStep } from "./job.js";
+import { SyncFirst } from "./sync-first.js";
 
 const P = COPY.propose;
 
@@ -19,34 +21,8 @@ export const onWorkChanged = (f: () => void): (() => void) => {
   return () => work.removeEventListener(WORK_CHANGED, f);
 };
 
-/**
- * Windows review: Apply, Propose and Bring in run as server jobs (an editor panel waits 30 s for
- * one answer). Starts one and follows it to the end: its lines, or an error with them.
- */
-export async function followJob(
-  path: string,
-  body: unknown,
-  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
-  /** App-only audit: hears the job's id at once, so the page can link its Console entry. */
-  onJob?: (jobId: string) => void,
-): Promise<{ code: number; lines: string[] }> {
-  const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
-  onJob?.(jobId);
-  for (;;) {
-    const j = await api<{
-      state: string;
-      errors: string[];
-      result?: { code?: number; lines?: string[] };
-    }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
-    if (j.state !== "running" && j.state !== "queued") {
-      const lines = j.result?.lines ?? j.errors;
-      const code = j.result?.code ?? (j.state === "done" ? 0 : 1);
-      if (j.state !== "done" || code !== 0) throw new Error(lines.join(" ") || j.state);
-      return { code, lines };
-    }
-    await wait(700);
-  }
-}
+// Review of beta.23: followJob lives in job.ts (SyncFirst follows the sync with it too).
+export { followJob };
 type Scope =
   | "answers"
   | "corrections"
@@ -80,6 +56,8 @@ export function ApplyAndPropose(p: {
 }) {
   const apply = useAction();
   const [applied, setApplied] = useState<string[]>();
+  // Review of beta.23: no clone of the repo here: Sync the repos, not a command to type.
+  const [next, setNext] = useState<NextStep | undefined>();
   // Every run the app starts shows in the Console: this one's entry, linked while it runs.
   const [jobId, setJobId] = useState<string | undefined>();
   return (
@@ -93,6 +71,7 @@ export function ApplyAndPropose(p: {
               disabled={apply.busy}
               onClick={() =>
                 void apply.run(async () => {
+                  setNext(undefined);
                   try {
                     const r = await followJob(
                       `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
@@ -114,6 +93,7 @@ export function ApplyAndPropose(p: {
                       throw new Error(said, { cause: e });
                     }
                     setApplied([(e as Error).message]);
+                    setNext(nextAfter(e));
                     // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
                     if (p.scope === "corrections")
                       flash({ text: `${P.applyFailed} ${(e as Error).message}`.slice(0, 400) });
@@ -136,6 +116,7 @@ export function ApplyAndPropose(p: {
               {applied.join("\n")}
             </pre>
           )}
+          {next && <SyncFirst repos={next.repos} />}
         </div>
       )}
       {!p.noPropose && <Propose scope={p.scope} />}
@@ -326,6 +307,8 @@ export function BringIn() {
 export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: () => void }) {
   const act = useAction();
   const [lines, setLines] = useState<string[]>();
+  // Review of beta.23: a repo with no clone here: Sync the repos, not a command to type.
+  const [next, setNext] = useState<NextStep | undefined>();
   const [jobId, setJobId] = useState<string | undefined>();
   return (
     <div className="stack" style={{ gap: 8 }}>
@@ -336,11 +319,13 @@ export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: 
           disabled={act.busy}
           onClick={() =>
             void act.run(async () => {
+              setNext(undefined);
               try {
                 const r = await followJob("/api/facts/apply-all", {}, undefined, setJobId);
                 setLines(r.lines);
               } catch (e) {
                 setLines([(e as Error).message]);
+                setNext(nextAfter(e));
                 throw e;
               } finally {
                 workChanged();
@@ -359,6 +344,7 @@ export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: 
           {lines.join("\n")}
         </pre>
       )}
+      {next && <SyncFirst repos={next.repos} />}
       {!noPropose && <Propose scope="work" />}
     </div>
   );

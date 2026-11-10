@@ -12,9 +12,11 @@ import {
 import { parse } from "yaml";
 import { orgPackDirOf } from "@maycombhq/core";
 import { isHandoffStep } from "./handoff-flag.js";
-import { FORCE_STEPS } from "./handoff-resume.js";
+import { appLines, FORCE_STEPS, mapRepoOf } from "./handoff-resume.js";
+import { trackedLocal } from "./ui-api-activity.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { listRuns, runTranscript } from "./runs-view.js";
+import { syncNextOf } from "./sync-next.js";
 
 /**
  * ADR 0106: the model runs, read from .runs/ only. What each run was asked (its prompt), what came
@@ -96,12 +98,17 @@ export function uiModelRunRoutes(
         ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
         // A step with nothing left to hand off (its stage is done) ran and made no run: what it
         // said is the answer. A run that still waits is named, to open (fourth UX walk).
-        if (!prepared.runId && code !== 0)
+        // Review of beta.23 (ADR 0188): a read of a repo with no base clone here carries the
+        // app's next step, Sync the repos for it.
+        if (!prepared.runId && code !== 0) {
+          const next = syncNextOf(prepared.lines);
           throw new HttpError(
             422,
             "The step wasn't prepared",
             prepared.lines.join("\n") || "The step prepared no run.",
+            next ? { next } : {},
           );
+        }
         return { status: 201, body: prepared };
       })
       .add("POST", "/api/runs", async ({ body }) => {
@@ -136,15 +143,39 @@ export function uiModelRunRoutes(
             const made = (await listRuns(root, { limit: 100000 })).find(
               (x) => !before.has(x.runId),
             );
-            c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+            let code = res.code;
+            const raw = [...res.out, ...res.err];
+            const errs = [...res.err];
+            // Review of beta.23 (ADR 0188 §4): a read of a repo that kept every fact is put on
+            // the map, as its Done does after a hand-off: verify --write, as a local job (the
+            // Console shows it; Apply, Propose and Bring in wait). A read that kept a rejected
+            // fact ended non-zero and writes nothing to the catalog.
+            const repo = mapRepoOf(words);
+            let applied: string | undefined;
+            if (code === 0 && repo) {
+              c.progress(0, 1, `Applying to ${repo}`);
+              const v = await trackedLocal(ctx, `Applying to ${repo}`, () =>
+                runStep(["verify", repo, "--write"]),
+              );
+              raw.push(...v.out, ...v.err);
+              errs.push(...v.err);
+              code = v.code;
+              if (v.code === 0) applied = repo;
+              ctx.events.publish({ type: "file.changed", path: "." });
+            }
+            c.progress(1, 1, code === 0 ? "Done" : "Stopped");
             ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+            const lines = appLines(raw);
+            const next = code === 0 ? undefined : syncNextOf(raw);
             return {
               result: {
-                code: res.code,
-                lines: [...res.out, ...res.err],
+                code,
+                lines,
                 ...(made ? { runId: made.runId } : {}),
+                ...(applied ? { applied } : {}),
+                ...(next ? { next } : {}),
               },
-              errors: res.code === 0 ? [] : res.err,
+              errors: code === 0 ? [] : errs.length ? appLines(errs) : [],
             };
           },
           { title: `atticus ${words.join(" ")}` },

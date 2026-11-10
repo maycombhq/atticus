@@ -22,6 +22,8 @@ vi.mock("../src/api/client.js", async () => ({
         branch: "propose/answers/2026-11-08-pat",
         title: "Answers to the map's questions",
       };
+    // An Apply with no clone here: the job's next is Sync the repos (review of beta.23).
+    if (path === "/api/facts/forge-noclone/apply") return { jobId: "job-5" };
     // Round 41: one local step at a time; the server refuses a second with a 409 problem.
     if (path === "/api/facts/forge-busy/apply") {
       const { ApiError } =
@@ -40,6 +42,24 @@ vi.mock("../src/api/client.js", async () => ({
     // ADR 0186: the Yes asks for the person's confirmation first.
     if (path === "/api/confirmations") return { confirmation: "c".repeat(43) };
     if (path === "/api/propose/bring-in") return { jobId: "job-3" };
+    // Review of beta.23: a sync that failed says why in its errors, its lines empty.
+    if (path === "/api/workspace/sync") return { jobId: "job-4" };
+    if (path === "/api/jobs/job-4")
+      return {
+        state: "failed",
+        errors: ["Not in any repos.manifest.yaml: nope"],
+        result: { code: 2, lines: [] },
+      };
+    if (path === "/api/jobs/job-5")
+      return {
+        state: "failed",
+        errors: ["No checkout of forge-noclone on this machine: Sync the repos to clone it."],
+        result: {
+          code: 2,
+          lines: ["No checkout of forge-noclone on this machine: Sync the repos to clone it."],
+          next: { step: "sync", repos: ["forge-noclone"] },
+        },
+      };
     if (path === "/api/jobs/job-3")
       return {
         state: "failed",
@@ -149,4 +169,39 @@ it("a job that stopped is an error with its lines", async () => {
   );
   expect(err).toBeInstanceOf(Error);
   expect((err as Error).message).toBe("What merged also changes files you edited: other.md");
+});
+
+it("a sync that failed says why: its errors, when its lines say nothing", async () => {
+  const { followJob } = await import("../src/app/propose.js");
+  const err = await followJob("/api/workspace/sync", { repos: ["nope"] }, async () => undefined)
+    .then(() => undefined)
+    .catch((e: Error) => e);
+  expect(err?.message).toBe("Not in any repos.manifest.yaml: nope");
+});
+
+it("an Apply with no clone here offers Sync the repos for it", async () => {
+  const { SyncFirst } = await import("../src/app/sync-first.js");
+  const m = mount(ApplyAndPropose as never, { scope: "answers", repo: "forge-noclone" } as never);
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-noclone"),
+  )!;
+  (btn.props.onClick as () => void)();
+  for (let i = 0; i < 5; i++) await tick();
+  m.render();
+  const sync = all(m.tree).find((e) => e.type === SyncFirst);
+  expect(sync?.props.repos).toEqual(["forge-noclone"]);
+});
+
+it("Sync the repos syncs exactly the repos with no clone", async () => {
+  const { SyncFirst } = await import("../src/app/sync-first.js");
+  const m = mount(SyncFirst as never, { repos: ["forge-ok"] } as never);
+  expect(text(m.tree)).toContain(COPY.appStep.syncFirstSay("forge-ok"));
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === COPY.appStep.sync,
+  )!;
+  calls.length = 0;
+  (btn.props.onClick as () => void)();
+  for (let i = 0; i < 5; i++) await tick();
+  m.render();
+  expect(calls[0]).toEqual({ path: "/api/workspace/sync", body: { repos: ["forge-ok"] } });
 });

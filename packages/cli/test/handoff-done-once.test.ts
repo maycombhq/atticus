@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { parseRecord, printToCurrent, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { AUTO_CHECKED } from "../src/handoff-autodone.js";
 import {
@@ -172,6 +172,8 @@ describe("Done and the app's own check of one run", () => {
           runStep: async (args) => {
             asked.push(args);
             await new Promise((x) => setTimeout(x, 80));
+            // As main does: each line it prints also goes to the job it runs in.
+            printToCurrent("Wrote feature.yaml.");
             return { code: 0, out: ["Wrote feature.yaml."], err: [] };
           },
         }),
@@ -190,6 +192,45 @@ describe("Done and the app's own check of one run", () => {
     expect(asked).toHaveLength(1);
     expect(all.filter((x) => x.status === 200)).toHaveLength(1);
     expect(all.filter((x) => x.status === 409)).toHaveLength(2);
+  });
+
+  it("runs the resume as a local job in the Console, so no other local step runs beside it", async () => {
+    const id = "run-20261109090000-0006";
+    await handedOff(root, id, { state: "validated" });
+    await keepResume(root, CHANGE, id, resumeOf(id));
+    const done = call(`/api/runs/${id}/done`, "POST");
+    for (let i = 0; i < 100 && !asked.length; i++) await new Promise((x) => setTimeout(x, 5));
+    const local = srv.jobs.runningOf("local");
+    expect(local?.title).toBe(`Finishing the step: ${id}`);
+    expect(srv.jobs.metaOf(local!.id)).toEqual({ handoffRun: id });
+    // Apply waits its turn: 409, naming what runs.
+    const r = await fetch(srv.url + "/api/facts/apply-all", {
+      method: "POST",
+      headers: { "X-Atticus-Token": srv.token },
+    });
+    expect(r.status).toBe(409);
+    expect(await r.text()).toContain(`Finishing the step: ${id}`);
+    expect((await done).status).toBe(200);
+    const ended = srv.jobs.get(local!.id)!;
+    expect(ended.state).toBe("done");
+    expect(srv.jobs.linesOf(local!.id)?.lines.join("\n")).toContain("Wrote feature.yaml.");
+  });
+
+  it("waits for a local step that runs before it resumes, never beside it", async () => {
+    const id = "run-20261109090000-0007";
+    await handedOff(root, id, { state: "validated" });
+    await keepResume(root, CHANGE, id, resumeOf(id));
+    let release!: () => void;
+    const busy = srv.jobs.start("local", () => new Promise<void>((x) => (release = x)), {
+      title: "Applying to forge-ledger",
+    });
+    const done = call(`/api/runs/${id}/done`, "POST");
+    await new Promise((x) => setTimeout(x, 300));
+    expect(asked).toEqual([]);
+    release();
+    await srv.jobs.settle(busy.id);
+    expect((await done).status).toBe(200);
+    expect(asked).toHaveLength(1);
   });
 
   it("a person's Done takes the app's mark of an earlier check off", async () => {

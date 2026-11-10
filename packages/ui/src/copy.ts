@@ -4284,6 +4284,10 @@ export const COPY = {
     sync: "Sync the repos",
     syncing: "Syncing…",
     synced: "Synced the repos' clones.",
+    // Review of beta.23 (ADR 0188): a step that needs a clone this machine doesn't have.
+    syncFirstSay: (repos: string) =>
+      `This machine has no clone of ${repos} yet. Sync it, then try the step again.`,
+    syncFirstDone: (repos: string) => `Synced ${repos}: try the step again.`,
     sourcesSync: "Sync all wikis",
     sourcesSyncing: "Syncing the wikis…",
     sourcesSynced: "Synced every wiki into a dated snapshot.",

@@ -6,6 +6,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **Sync the repos says why it failed**: the app showed only "failed", or the repos it synced, and its progress said Synced either way. Its result now gives the code and the errors, the app shows them, and a failed sync says Stopped.
+- **No clone of a repo here ends at Sync the repos, not a command**: Apply, Apply to every repo, the map's corrections bar and Read with my assistant ended at "clone it (atticus workspace sync) or give its folder with --dir". In the app they now offer Sync the repos for those repos (API 3.9.0 `next`); the terminal keeps its words.
+- **What a Done resumes shows in the Console and runs alone**: the next batch's prompt, or a read's `verify <repo> --write`, ran after Done's Console entry had finished, beside Apply, Propose or Bring in. It now runs as its own local job, its lines live, and the other local steps wait for it.
+- **A read run with the server's model is put on the map**: Run with the server's model on `map <repo>` wrote the facts but never ran `verify <repo> --write`, so the map didn't change. It now does after a read that kept every fact, as a hand-off's Done does.
+- **The local steps' buttons say what to press, not what to type**: Apply to every repo, Join the estate's flows and the other local steps showed "atticus spec draft <repo>" or "/atticus-map <repo>"; they now name the app's pages and buttons.
 - **Propose for review fails when its branch wasn't pushed**: on a manual Git host it said the PR was a step for you on Home, for a branch the Git host didn't have. Now nothing is proposed, the job fails with the push's reason, and no step is added.
 - **A reply sent while a stage's prompt waits is read by the next round**: it wasn't in the prompt the assistant answered, yet reading that answer in marked it read, so no round ever saw it. Only the answers the prompt carried are marked read now (the loop file keeps them as `carried`), for the proposal's thread too.
 - **One answer is never read in twice**: Done and the app's own check at once, a second Done, or the command line's `--resume` and then the app's could each resume the same run. A stage refuses a resume of a run it isn't waiting on, Done stays busy until its resume has run, and the command line's own `--resume` forgets the resume the app kept.
