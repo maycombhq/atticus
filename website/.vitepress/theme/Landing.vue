@@ -55,8 +55,20 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.22";
+const release = "2.0.0-beta.23";
 const news = [
+  {
+    body: "Everything from the app: every daily step is a button (Apply, Sync the repos, Run it, Propose for review), and one Console shows everything Atticus runs, wherever it was started, live.",
+    link: "/guide/commands.html",
+  },
+  {
+    body: "A line dropped anywhere on another box connects them, and Apply to every repo's map is right on the map; an Apigee proxy links to its backend endpoint by the whole URL.",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "Roles from product owner to tech lead: each stage is one conversation, questions go to the role they ask, the business analyst shapes the stories, and Home loads in seconds on a 40-repo estate.",
+    link: "/guide/roles.html",
+  },
   {
     body: "A person approves every shared write, from the app too: hand-off, release PRs, merging and task PRs need the page's own confirmation, so an assistant holding the API token can't push or merge; AI model keys come only from ATTICUS_* or the providers' own names.",
     link: "/guide/admin.html",
