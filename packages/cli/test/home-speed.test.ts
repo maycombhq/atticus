@@ -107,8 +107,19 @@ describe("Home on a 40-repo estate (beta.23)", () => {
   }, 120_000);
 
   it("loads again, with nothing changed, inside a second", async () => {
+    // Nothing changes here, so the server hears no file change; one it hears (a file only read,
+    // on Windows) would throw away every answer kept. Said, so a slow run says why.
+    const changes: string[] = [];
+    const stop = srv.events.listen((e) => {
+      if (e.type === "file.changed") changes.push(String(e.path));
+    });
     const again = await home();
+    stop();
     say("warm", again);
+    console.log(
+      `home-speed warm: ${changes.length} file changes heard ${changes.slice(0, 5).join(", ")}`,
+    );
+    expect(changes, "a file only read was heard as changed").toEqual([]);
     for (const x of again.out) expect(x.status).toBe(200);
     expect(again.ms).toBeLessThan(WARM_MS);
   }, 60_000);

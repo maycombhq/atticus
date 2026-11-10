@@ -56,6 +56,26 @@ const TEMP = /(~|\.swp|\.swx|\.tmp|\.crdownload|\.part|(^|\/)\.doctor-\d+)$/i;
 
 const posix = (p: string) => p.split(sep).join("/");
 
+/** How long ago a write still counts as the one a "change" event reports. */
+const RECENT_MS = 5_000;
+
+/**
+ * Whether a "change" event is only a read: Windows reports a file's last-access time changing as
+ * a change (Node asks it for that too), and NTFS can stamp a file read. Home reads thousands of
+ * files, so each load "changed" them all, and every answer kept was worked out again (beta.23:
+ * a reload with nothing changed took 1.4 s on Windows, 0.3 s on Linux). A write or an attribute
+ * change moves the file's modified or changed time; neither near now means it was only read.
+ * A file that is gone, or can't be read, is a change.
+ */
+export function onlyRead(abs: string, now = Date.now()): boolean {
+  try {
+    const s = statSync(abs);
+    return Math.max(s.mtimeMs, s.ctimeMs) < now - RECENT_MS;
+  } catch {
+    return false;
+  }
+}
+
 const isDir = (p: string) => {
   try {
     return statSync(p).isDirectory();
@@ -136,7 +156,7 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   const follow = (dir: string, recursive: boolean) => {
     if (closed || watchers.has(dir) || !isDir(dir)) return;
     try {
-      const w = watch(dir, { recursive }, (_event, name) => {
+      const w = watch(dir, { recursive }, (event, name) => {
         // A command's run files: only the nudge (a new folder under logs/ may be one of them).
         if (dir === logsDir) return attach();
         if (runLogDirs.includes(dir)) return o.onRunLog?.();
@@ -146,7 +166,10 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
           // A folder already followed reports its own files.
           if (watchers.has(join(dir, String(name)))) return;
         }
-        note(name ? join(dir, String(name)) : dir);
+        const abs = name ? join(dir, String(name)) : dir;
+        // Windows: a file only read is no change (see onlyRead). A rename is always one.
+        if (event === "change" && process.platform === "win32" && onlyRead(abs)) return;
+        note(abs);
       });
       w.on("error", (e) => {
         w.close();
