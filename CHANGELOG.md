@@ -6,6 +6,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **"This link is wrong, it goes to X" sticks**: a person's edit of where a call goes was ignored whenever the call had a pairing, even the AI's. It now stands over any AI pairing and over an older pairing of a person's, and AI matching (Match with Copilot, a correction's spread) skips the calls a person said go elsewhere.
+- **A line dropped on a box on the estate view opens Connect with that box picked**: a system holding one repo means that repo, and Connect to… now holds it (and the boxes outside the opened one), so the drop never opens with nothing chosen.
+- **A line to or from a system with several repos says what to do**: it was swapped into an outside system and the panel said "No outside system of the profile is …"; it now says to open the system and draw from one of its repos, and Connect to… lists such a system by none of its repos.
+- **A system box names every repo drawn in it**: one whose System record lists fewer repos than it holds no longer reads as one repo, so a line drawn on it never silently means only that repo.
+- **A line dropped on the inspector, the Connect panel or the minimap connects nothing**: it connected to the box hidden beneath.
+- **A line drawn from a box's incoming dot means the other box calls it**, as a drop on a dot always did, also when dropped on the box's body.
+- **Undo after "rule for all" says what it didn't undo**: the pair lines are removed, and the panel now says the target question's answer stays and how to take it back.
 - **A reply sent while a stage's prompt waits is read by the next round**: it wasn't in the prompt the assistant answered, yet reading that answer in marked it read, so no round ever saw it. Only the answers the prompt carried are marked read now (the loop file keeps them as `carried`), for the proposal's thread too.
 - **One answer is never read in twice**: Done and the app's own check at once, a second Done, or the command line's `--resume` and then the app's could each resume the same run. A stage refuses a resume of a run it isn't waiting on, Done stays busy until its resume has run, and the command line's own `--resume` forgets the resume the app kept.
 - **A reply or a kept question during a long run stays**: the run wrote its loop file whole and dropped a reply posted meanwhile, or brought back a question a person kept; the thread and the run now take the file's lock, and the run keeps what the thread added.

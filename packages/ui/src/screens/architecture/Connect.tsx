@@ -65,15 +65,27 @@ export function initialPicks(v: Api.LinkCandidatesViewT): {
   return { picked, ticked };
 }
 
+/**
+ * The boxes Connect to… lists: the views' boxes, and the box a line was dropped on when the
+ * views loaded don't hold it (review round 2, beta.23: a repo inside a system box on the estate
+ * view), so the drop always opens with it picked.
+ */
+export function boxesWith(boxes: readonly BoxChoice[], initial?: BoxChoice): BoxChoice[] {
+  if (!initial || boxes.some((b) => key(b.box) === key(initial.box))) return [...boxes];
+  return [...boxes, initial].sort((x, y) => (x.label < y.label ? -1 : 1));
+}
+
 export function ConnectPanel(p: {
   from: string;
   boxes: BoxChoice[];
-  initial?: Api.LinkBoxT;
+  /** The box a line was dropped on, picked when the panel opens. */
+  initial?: BoxChoice;
   onClose(): void;
 }) {
   const id = useId();
-  const [to, setTo] = useState<string>(p.initial ? key(p.initial) : "");
-  const box = p.boxes.find((b) => key(b.box) === to)?.box;
+  const [to, setTo] = useState<string>(p.initial ? key(p.initial.box) : "");
+  const boxes = boxesWith(p.boxes, p.initial);
+  const box = boxes.find((b) => key(b.box) === to)?.box;
   const cands = useApi<Api.LinkCandidatesViewT>(box ? candidatesPath(p.from, box) : undefined);
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
@@ -91,7 +103,7 @@ export function ConnectPanel(p: {
       </label>
       <select id={`${id}-to`} className="field" value={to} onChange={(e) => setTo(e.target.value)}>
         <option value="">{C.pickBoxNone}</option>
-        {p.boxes.map((b) => (
+        {boxes.map((b) => (
           <option key={key(b.box)} value={key(b.box)}>
             {b.label}
           </option>
@@ -128,6 +140,15 @@ export function AiPairedBetween(p: { from: string; box: Api.LinkBoxT }) {
   );
 }
 
+/**
+ * What Undo did, in words. Review round 2 (beta.23): it removes the pair lines only; when the
+ * rule for all was written too, its answer to the target question stays, said with where to
+ * take it back.
+ */
+export function undoneWords(w: Pick<Api.ConnectLinksResultT, "rule">): string {
+  return w.rule ? C.undoneRuleStays(w.rule.question, w.rule.target) : C.undone;
+}
+
 /** The pairing table and its actions, from the candidates as loaded (tests render each state). */
 export function Pairing(p: {
   from: string;
@@ -145,7 +166,7 @@ export function Pairing(p: {
   const [error, setError] = useState<string | undefined>();
   const [preview, setPreview] = useState<Api.ConnectLinksResultT | undefined>();
   const [written, setWritten] = useState<Api.ConnectLinksResultT | undefined>();
-  const [undone, setUndone] = useState(false);
+  const [undone, setUndone] = useState<Api.ConnectLinksResultT | undefined>();
   useEffect(() => {
     if (!v) return;
     const i = initialPicks(v);
@@ -203,6 +224,7 @@ export function Pairing(p: {
         setPreviewed(sentAsked);
       } else {
         setWritten(r);
+        setUndone(undefined);
         setPreview(undefined);
         p.cands.reload?.();
       }
@@ -226,7 +248,7 @@ export function Pairing(p: {
         // Each line undone is off the list, so trying again undoes only the rest.
         left = left.filter((l) => l !== line);
       }
-      setUndone(true);
+      setUndone(written);
       setWritten(undefined);
       p.cands.reload?.();
     } catch (e) {
@@ -484,7 +506,7 @@ export function Pairing(p: {
       )}
       {undone && (
         <p role="status" className="ev-say">
-          {C.undone}
+          {undoneWords(undone)}
         </p>
       )}
     </div>

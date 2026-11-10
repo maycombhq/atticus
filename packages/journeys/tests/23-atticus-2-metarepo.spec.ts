@@ -201,4 +201,26 @@ test("a line dragged from a repo and dropped anywhere on another box opens Conne
   await expect(
     page.getByRole("heading", { name: /Connect forge-studio to another box/ }),
   ).toBeVisible();
+  // The box it was dropped on is picked: the panel never opens with nothing chosen.
+  await expect(page.getByLabel("The other box")).toHaveValue("system:llm");
+});
+
+test("a line dropped on the inspector connects to no box hidden beneath it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 2000 });
+  await open(page, app(), "canvas");
+  const from = page.locator(
+    '.react-flow__node[data-id="system:studio"] .react-flow__handle.source',
+  );
+  await expect(from).toBeVisible();
+  const aside = page.locator(".viewer-aside");
+  await expect(aside).toBeVisible();
+  const a = (await from.boundingBox())!;
+  const b = (await aside.boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + Math.min(b.height / 2, 80), { steps: 12 });
+  await page.mouse.up();
+  await expect(
+    page.getByRole("heading", { name: /Connect forge-studio to another box/ }),
+  ).toHaveCount(0);
 });
