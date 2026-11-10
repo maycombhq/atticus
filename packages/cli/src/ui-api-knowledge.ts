@@ -591,7 +591,7 @@ export function uiKnowledgeRoutes(
         const ids = await snapshotSources(root);
         // ADR 0191: inputs/ is searched as it is when it has no snapshot yet (its files were
         // suggested on a change, and search said no source had a snapshot).
-        const { inputsPassagePages } = await import("./roles-work.js");
+        const { inputsPassagePages, pastableArg } = await import("./roles-work.js");
         const live =
           !ids.includes(INPUTS_SOURCE_ID) && (!source || source === INPUTS_SOURCE_ID)
             ? await inputsPassagePages(root)
@@ -618,7 +618,7 @@ export function uiKnowledgeRoutes(
           sources: snapshots.length,
           matches,
           pages: [...new Set(matches.map((m) => `${m.source}/${m.page}`))],
-          command: `atticus knowledge find ${JSON.stringify(phrase)}${source ? ` --source ${source}` : ""}`,
+          command: `atticus knowledge find ${pastableArg(phrase)}${source ? ` --source ${source}` : ""}`,
           slash: `/atticus-find ${phrase}`,
         };
         return { status: 200, body };

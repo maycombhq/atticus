@@ -15,6 +15,7 @@ import {
   readSnapshot,
   sectionOf,
   snapshotSources,
+  syncSources,
   type Passage,
   type PassagePage,
 } from "@maycombhq/knowledge";
@@ -200,21 +201,47 @@ export async function knowledgePages(root: string): Promise<PassagePage[]> {
   return out;
 }
 
-/** inputs/ as a knowledge source, read as it is now (no snapshot taken yet). */
+/**
+ * inputs/ as a knowledge source, read as it is now (no snapshot taken yet). Each file is checked
+ * as `atticus sources sync` checks it (ADR 0122): a page above the classification limit, under
+ * view restrictions or with front matter that doesn't read is listed by a sync, never read here.
+ */
 export async function inputsPassagePages(root: string): Promise<PassagePage[]> {
   try {
-    const { inputsPages, INPUTS_SOURCE_ID } = await import("./inputs-knowledge.js");
+    const { inputsPages, INPUTS_SOURCE, INPUTS_SOURCE_ID } = await import("./inputs-knowledge.js");
     const op = await loadOrgPack(orgPackDirOf(root));
     const { pages } = await inputsPages(root, op);
-    return pages.map((p) => ({
-      source: INPUTS_SOURCE_ID,
-      page: p.pagePath,
-      path: p.path,
-      text: p.content,
-    }));
+    const sync = await syncSources({
+      root,
+      orgPack: { ...op, sources: { ...op.sources, wikis: [INPUTS_SOURCE] } },
+      orgPackDir: orgPackDirOf(root),
+      adaptersById: { [INPUTS_SOURCE_ID]: { pages: async () => pages } },
+    });
+    const content = new Map(pages.map((p) => [`${p.path}\0${p.pagePath}`, p.content]));
+    return sync.pages
+      .filter((p) => p.source === INPUTS_SOURCE_ID)
+      .map((p) => ({
+        source: INPUTS_SOURCE_ID,
+        page: p.pagePath,
+        path: p.path,
+        text: p.text ?? content.get(`${p.path}\0${p.pagePath}`) ?? "",
+      }));
   } catch {
     return [];
   }
+}
+
+/**
+ * A question or phrase as one argument a person can paste into bash, zsh, PowerShell or cmd.
+ * The text may come from a link (#/explore?ask=...), so only letters, digits, spaces and plain
+ * punctuation are kept inside double quotes: nothing in it can expand, run or end the quote.
+ */
+export function pastableArg(text: string): string {
+  const safe = text
+    .replace(/[^\p{L}\p{N} .,?:/@#+=_-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `"${safe}"`;
 }
 
 /** ADR 0191: what the organisation's knowledge says to an Ask, cited (no AI). */
@@ -223,7 +250,7 @@ export async function knowledgeAnswerOf(root: string, question: string) {
   const found = knowledgeAnswer(question, { items: k.items, pages: await knowledgePages(root) });
   return {
     ...found,
-    command: `atticus knowledge ask ${JSON.stringify(question)}`,
+    command: `atticus knowledge ask ${pastableArg(question)}`,
   };
 }
 
