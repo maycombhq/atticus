@@ -18,7 +18,8 @@ import { changeFolder, writeFileAtomic } from "./store.js";
  *
  * Reads only: refs here, `ls-remote` and a fetch of the change branch into its remote-tracking ref
  * when the host's commit isn't known here. A host that can't be reached is judged by the branch
- * here.
+ * here. `offline` (every page load and gate assessment) reads refs here only, the host's change
+ * branch as last fetched (`refs/remotes/<remote>/...`) included: no network.
  */
 
 export const TASK_DECISION_FILE = "decision.yaml";
@@ -55,6 +56,8 @@ interface TaskRef {
   pr?: { number: number; url: string };
   /** Atticus saw its PR merged on the Git host (a squash merge leaves its commits apart). */
   ticked?: boolean;
+  /** The task branch's commit its run built and raised: what its PR merged, once ticked. */
+  commit?: string;
 }
 
 /** The task runs of a change, read loosely (the task-run.yaml schema is the taskrun package's). */
@@ -87,6 +90,9 @@ async function taskRefs(root: string, id: string): Promise<TaskRef[]> {
         ? { pr: { number: pr.number, url: pr.url } }
         : {}),
       ...(y?.ticked ? { ticked: true } : {}),
+      ...(typeof y?.commit === "string" && /^[0-9a-f]{7,64}$/.test(y.commit)
+        ? { commit: y.commit }
+        : {}),
     });
   }
   return out;
@@ -158,12 +164,14 @@ export async function unmergedTaskBranches(
           .filter(Boolean),
       () => [] as string[],
     );
+    // Branch names are the same in every repo: a record is this repo's only when it names this
+    // repo (or none); a branch here with no record of this repo is still work to hold.
     const branches = new Map<string, TaskRef>();
-    for (const b of listed)
-      branches.set(
-        b,
-        records.find((x) => x.branch === b) ?? { task: b.split("/").at(-1)!, branch: b },
-      );
+    for (const b of listed) {
+      const mine = records.find((x) => x.branch === b && (!x.repo || x.repo === r.id));
+      const other = records.find((x) => x.branch === b);
+      branches.set(b, mine ?? { task: other?.task ?? b.split("/").at(-1)!, branch: b });
+    }
     for (const x of records)
       if (x.repo === r.id && !branches.has(x.branch)) branches.set(x.branch, x);
     const refs = [...branches.values()].filter(
@@ -186,13 +194,22 @@ export async function unmergedTaskBranches(
     } else if (await sha(dir, `refs/remotes/${remote}/${from}`))
       not.push(`refs/remotes/${remote}/${from}`);
     for (const x of refs) {
-      if (x.ticked) continue;
       const tip = await sha(dir, `refs/heads/${x.branch}`);
       if (!tip) continue;
+      // A merged (ticked) PR: what it merged is the commit its run raised (a squash merge leaves
+      // that commit's history apart from the change branch), so only commits after it count. A
+      // tick with no commit known here can't be checked: its PR's merge is taken as the answer.
+      const merged = x.ticked && x.commit ? await sha(dir, x.commit) : undefined;
+      if (x.ticked && !merged) continue;
       const decided = await readTaskDecision(root, id, x.task);
       if (decided && decided.branch === x.branch && sameSha(decided.commit, tip)) continue;
       const commits = await git(
-        ["rev-list", "--count", `refs/heads/${x.branch}`, ...(not.length ? ["--not", ...not] : [])],
+        [
+          "rev-list",
+          "--count",
+          `refs/heads/${x.branch}`,
+          ...(not.length || merged ? ["--not", ...not, ...(merged ? [merged] : [])] : []),
+        ],
         dir,
       ).then(
         (y) => Number(y.stdout.trim()) || 0,
@@ -231,7 +248,7 @@ export function unmergedTaskWords(id: string, u: UnmergedTask): string {
 export async function taskBranchReasons(
   root: string,
   id: string,
-  o: { git?: GitRunner; remote?: string } = {},
+  o: { git?: GitRunner; remote?: string; offline?: boolean } = {},
 ): Promise<Reason[]> {
   return (await unmergedTaskBranches(root, id, o)).map((u) => ({
     code: "task-not-merged" as const,

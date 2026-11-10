@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockGitHost } from "@maycombhq/adapters";
-import { writeChangeRepos } from "@maycombhq/workspace";
+import { writeChangeRepos, type GitRunner } from "@maycombhq/workspace";
 import {
   changeReport,
   raiseReleasePrs,
@@ -179,4 +181,116 @@ describe("task branches not merged into the change branch (app-only audit)", () 
     git(dir, "checkout", "-q", BRANCH);
     expect((await unmergedTaskBranches(root, ID)).map((x) => x.commits)).toEqual([2]);
   }, 120_000);
+
+  it("holds a task branch in a second repo, though the task's record names the first", async () => {
+    // Branch names are the same in every repo: forge-wallet's task/<id>/1.1 is its own work.
+    const root = await mkdtemp(join(tmpdir(), "atticus-tb-"));
+    const mk = (id: string) => ({
+      id,
+      branch: BRANCH,
+      base: "main",
+      worktree: `workspace/.worktrees/${ID}/${id}`,
+      build: { status: "not-run" as const },
+    });
+    for (const r of ["forge-ledger", "forge-wallet"])
+      await mkdir(join(root, `workspace/.worktrees/${ID}/${r}`), { recursive: true });
+    await writeChangeRepos(root, {
+      schemaVersion: 3,
+      change: ID,
+      repos: [mk("forge-ledger"), mk("forge-wallet")],
+    });
+    const t = join(root, "openspec/changes", ID, "tasks", "1.1");
+    await mkdir(t, { recursive: true });
+    await writeFile(
+      join(t, "task-run.yaml"),
+      `task: "1.1"\nrepo: forge-ledger\nbranch: ${TASK}\nstate: pr-open\n`,
+    );
+    const runner = (async (args: string[]) => {
+      if (args[0] === "for-each-ref") return { stdout: `refs/heads/${TASK}\n`, stderr: "" };
+      if (args[0] === "rev-parse") return { stdout: `${"a".repeat(40)}\n`, stderr: "" };
+      if (args[0] === "rev-list") return { stdout: "2\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    }) as unknown as GitRunner;
+    const un = await unmergedTaskBranches(root, ID, { git: runner, offline: true });
+    expect(un.map((u) => [u.repo, u.task, u.commits, u.state])).toEqual([
+      ["forge-ledger", "1.1", 2, "pr-open"],
+      ["forge-wallet", "1.1", 2, undefined],
+    ]);
+  });
+
+  it("counts a commit on the task branch after its PR merged (ticked), not what merged", async () => {
+    const { root, dir } = await setup("qa");
+    const tip = git(dir, "rev-parse", TASK);
+    // Squash-merged on the Git host: the change branch has the task's work, not its commit.
+    git(dir, "merge", "-q", "--squash", TASK);
+    git(dir, "commit", "-q", "-m", "Limit (task 1.1) (#7)");
+    const run = join(root, "openspec/changes", ID, "tasks", "1.1", "task-run.yaml");
+    await writeFile(
+      run,
+      (await readFile(run, "utf8"))
+        .replace("state: unverified", "state: pr-open")
+        .concat(`commit: ${tip}\nticked: 2026-11-09T09:30:00Z\n`),
+    );
+    expect(await unmergedTaskBranches(root, ID)).toEqual([]);
+    // A fix pushed to the task branch after the merge never reached the change branch.
+    git(dir, "checkout", "-q", TASK);
+    await writeFile(join(dir, "Fix.java"), "class Fix {}\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "fix after merge");
+    git(dir, "checkout", "-q", BRANCH);
+    expect((await unmergedTaskBranches(root, ID)).map((x) => [x.task, x.commits, x.state])).toEqual(
+      [["1.1", 1, "pr-open"]],
+    );
+  }, 120_000);
+});
+
+describe("a page load never reaches the Git host (assess reads refs here only)", () => {
+  /** Every ls-remote or fetch from the host runs its upload-pack: this one leaves a mark. */
+  const watchHost = async (dir: string) => {
+    const bin = await mkdtemp(join(tmpdir(), "atticus-up-"));
+    const mark = join(bin, "reached");
+    const script = join(bin, "upload-pack.sh");
+    await writeFile(script, `#!/bin/sh\necho x >> "${mark}"\nexec git-upload-pack "$@"\n`);
+    await chmod(script, 0o755);
+    git(dir, "config", "remote.origin.uploadpack", script);
+    return { reached: () => existsSync(mark), reset: () => rm(mark, { force: true }) };
+  };
+
+  it.skipIf(process.platform === "win32")(
+    "assesses a build-phase change by the change branch here and the host's as last fetched",
+    async () => {
+      const { root, dir } = await setup("build");
+      const host = await watchHost(dir);
+      // The mark works: an ls-remote reaches the host.
+      git(dir, "ls-remote", "origin");
+      expect(host.reached()).toBe(true);
+      await host.reset();
+      // The task's work merged on the Git host only: not known here until a fetch.
+      git(dir, "push", "-q", "origin", `${TASK}:${BRANCH}`);
+      git(dir, "update-ref", "-d", `refs/remotes/origin/${BRANCH}`);
+      await host.reset();
+      const rep = await changeReport(root, ID);
+      expect(host.reached()).toBe(false);
+      expect(rep.blockers.map((b) => b.code)).toContain("task-not-merged");
+      // Once fetched (the person's Sync), the host's change branch as last fetched lets it go.
+      git(dir, "fetch", "-q", "origin", `+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}`);
+      await host.reset();
+      const after = await changeReport(root, ID);
+      expect(host.reached()).toBe(false);
+      expect(after.blockers.map((b) => b.code)).not.toContain("task-not-merged");
+    },
+    120_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "gives go/no-go's release PR reasons offline without reaching the host",
+    async () => {
+      const { root, dir } = await setup("qa");
+      const host = await watchHost(dir);
+      const reasons = await releasePrReasons(root, ID, { offline: true });
+      expect(host.reached()).toBe(false);
+      expect(reasons.map((r) => r.code)).toContain("task-not-merged");
+    },
+    120_000,
+  );
 });

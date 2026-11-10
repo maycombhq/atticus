@@ -862,7 +862,8 @@ function releasedSteps(c: NextState["changes"][number]): NextStep[] {
 
 /** ADR 0184: what the release PRs still need, for a change on its way to release. */
 async function releasePrsOf(root: string, id: string): Promise<{ releasePrs?: "raise" | "merge" }> {
-  const reasons = await releasePrReasons(root, id).catch(() => []);
+  // Refs here only: the cockpit reads this on every page load, which never reaches the Git host.
+  const reasons = await releasePrReasons(root, id, { offline: true }).catch(() => []);
   // Review round 48: the change branch moved past a merged release PR: it is raised again.
   if (reasons.some((r) => r.code === "release-pr-missing" || r.code === "release-pr-stale"))
     return { releasePrs: "raise" };

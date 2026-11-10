@@ -304,6 +304,118 @@ describe("the service's base path: from code or the manifest verified, else a gu
     for (const j of got) expect(j.base?.from).toBe("overlap");
   });
 
+  it("never matches by URL past a context path the service sets that doesn't fit: at most a guess", () => {
+    const repos = swap(estate(), "forge-fees", (fs) =>
+      fs.map((f) =>
+        f.id === "config.context-path" ? ({ ...f, value: "/other-root" } as Fact) : f,
+      ),
+    );
+    const got = joinsOf(joinFacts({ repos }), "forge-fees-proxy", "call.fees.target");
+    for (const j of got) expect(j.base?.from).not.toBe("url");
+    for (const l of links(repos, "fees-proxy", "fees-api")) {
+      expect(l.confidence).not.toBe("verified");
+      expect(l.flags).toContain(JOINED_BY_PATH_OVERLAP);
+    }
+  });
+
+  it("never matches by URL past a manifest basePath that doesn't fit: at most a guess", () => {
+    const repos = swap(estate(), "forge-fees", (fs) =>
+      fs.filter((f) => f.id !== "config.context-path"),
+    ).map((r) => (r.repo === "forge-fees" ? { ...r, basePath: "/other-root" } : r));
+    const got = joinsOf(joinFacts({ repos }), "forge-fees-proxy", "call.fees.target");
+    for (const j of got) expect(j.base?.from).not.toBe("url");
+    for (const l of links(repos, "fees-proxy", "fees-api"))
+      expect(l.confidence).not.toBe("verified");
+  });
+
+  it("gives one service one base by URL: two that disagree verify neither", () => {
+    const repos = swap(estate(), "forge-fees", (fs) =>
+      fs
+        .filter((f) => f.id !== "config.context-path")
+        .map((f) =>
+          f.id === "entry.post.fees-quote" ? ({ ...f, path: "/1.0/fees/quote" } as Fact) : f,
+        ),
+    );
+    const got = joinsOf(joinFacts({ repos }), "forge-fees-proxy", "call.fees.target");
+    expect(got.map((j) => [j.entry.fact, j.base?.from, j.base?.path])).toEqual([
+      ["entry.get.fees-retrieve", "overlap", "/forge-fees/1.0"],
+      ["entry.post.fees-quote", "overlap", "/forge-fees"],
+    ]);
+    for (const l of links(repos, "fees-proxy", "fees-api"))
+      expect(l.confidence).not.toBe("verified");
+  });
+});
+
+/**
+ * The reviewer's case: a proxy flow GET /ping whose forwarding call already carries the suffix
+ * (`<URL>…/forge-fees/1.0/fees/ping</URL>`). The service serves /fees/... under /forge-fees/1.0
+ * and /ping at its root, so .../fees/ping is no path it serves; cutting the base down to
+ * /forge-fees/1.0/fees would match the suffix alone and give the service a second base.
+ */
+describe("a forwarding call that carries the suffix never matches by the suffix alone", () => {
+  const withPing = (repos: JoinRepo[]): JoinRepo[] =>
+    swap(repos, "forge-fees-proxy", (fs) => {
+      const flow = fs.find((f) => f.id === "entry.get.forge-fees-v1-retrieve") as Fact & {
+        kind: "entry";
+      };
+      const target = fs.find((f) => f.id === "call.fees.target") as Fact & { kind: "call" };
+      const ping = {
+        ...flow,
+        id: "entry.get.forge-fees-v1-ping",
+        path: "/forge/fees/v1/ping",
+        handler: "forge-fees-v1/Ping",
+        cite: {
+          ...flow.cite,
+          line: 10,
+          value: "/ping",
+          quote: (flow.cite.quote ?? "").replace("/retrieve", "/ping"),
+        },
+      } as Fact;
+      const call = {
+        ...target,
+        id: "call.fees.ping",
+        method: "GET",
+        path: "/forge-fees/1.0/fees/ping",
+        from: "entry.get.forge-fees-v1-ping",
+        cite: {
+          ...target.cite,
+          line: 4,
+          value: "/forge-fees/1.0/fees/ping",
+          quote: (target.cite.quote ?? "").replace("/fees<", "/fees/ping<"),
+        },
+      } as Fact;
+      return [...fs, ping, call];
+    });
+  const noContext = (repos: JoinRepo[]) =>
+    swap(repos, "forge-fees", (fs) => fs.filter((f) => f.id !== "config.context-path"));
+
+  for (const [name, repos] of [
+    ["with the context path set", () => withPing(estate())],
+    ["with nothing naming the base", () => withPing(noContext(estate()))],
+  ] as const)
+    it(`doesn't join .../fees/ping to the service's /ping (${name})`, () => {
+      const rs = repos();
+      const out = joinFacts({ repos: rs });
+      expect(joinsOf(out, "forge-fees-proxy", "call.fees.ping")).toEqual([]);
+      expect(out.joins.some((j) => j.entry.fact === "entry.get.ping")).toBe(false);
+      // The flows that fit keep their one base, and their verified links.
+      const fees = joinsOf(out, "forge-fees-proxy", "call.fees.target");
+      expect(fees.map((j) => [j.entry.fact, j.base?.path])).toEqual([
+        ["entry.get.fees-retrieve", "/forge-fees/1.0"],
+        ["entry.post.fees-quote", "/forge-fees/1.0"],
+      ]);
+      expect(
+        links(rs, "fees-proxy", "fees-api")
+          .map((l) => [l.method, l.normalizedPath, l.confidence])
+          .sort(),
+      ).toEqual([
+        ["GET", "/fees/retrieve", "verified"],
+        ["POST", "/fees/quote", "verified"],
+      ]);
+    });
+});
+
+describe("the service's base path, continued", () => {
   it("takes the context path and the servlet path together", () => {
     const repos = swap(estate(), "forge-fees", (fs) => [
       ...fs.map((f) =>

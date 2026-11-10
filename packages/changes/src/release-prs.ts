@@ -178,12 +178,13 @@ function repoDir(root: string, r: ChangeRepo): string | undefined {
  * on the Git host, has commits beyond the commit Sync found it at when it merged (a QA fix, a task
  * PR merged after the release PR). Their release PR is raised again, and go/no-go waits for it. A
  * merged PR with no commit recorded (synced before this), or no clone to look in, stands; a host
- * that can't be reached is judged by the branch here.
+ * that can't be reached is judged by the branch here. `offline` takes the host's branch as last
+ * fetched (`refs/remotes/<remote>/<branch>`), with no network.
  */
 export async function staleReleasePrs(
   root: string,
   id: string,
-  o: { git?: GitRunner; remote?: string } = {},
+  o: { git?: GitRunner; remote?: string; offline?: boolean } = {},
 ): Promise<Set<string>> {
   const out = new Set<string>();
   const cr = await readChangeRepos(root, id).catch(() => undefined);
@@ -197,10 +198,17 @@ export async function staleReleasePrs(
     if (!entry) continue;
     const dir = repoDir(root, r);
     if (!dir) continue;
-    if (await movedPast(git, dir, remote, r.branch, entry.commit)) out.add(r.id);
+    if (await movedPast(git, dir, remote, r.branch, entry.commit, o.offline)) out.add(r.id);
   }
   return out;
 }
+
+/** The commit a branch is at on the host as last fetched here, with no network. */
+const lastFetched = (git: GitRunner, dir: string, remote: string, branch: string) =>
+  git(["rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${branch}^{commit}`], dir).then(
+    (x) => x.stdout.trim() || undefined,
+    () => undefined,
+  );
 
 /** Whether the branch here or on the host has commits `commit` hasn't. */
 async function movedPast(
@@ -209,6 +217,7 @@ async function movedPast(
   remote: string,
   branch: string,
   commit: string,
+  offline?: boolean,
 ): Promise<boolean> {
   const ref = `refs/heads/${branch}`;
   const known = (sha: string) =>
@@ -220,11 +229,13 @@ async function movedPast(
     (x) => x.stdout.trim() || undefined,
     () => undefined,
   );
-  const onHost = await git(["ls-remote", "--heads", remote, ref], dir).then(
-    (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
-    () => undefined,
-  );
-  if (onHost && !sameSha(onHost, commit) && !(await known(onHost)))
+  const onHost = offline
+    ? await lastFetched(git, dir, remote, branch)
+    : await git(["ls-remote", "--heads", remote, ref], dir).then(
+        (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
+        () => undefined,
+      );
+  if (!offline && onHost && !sameSha(onHost, commit) && !(await known(onHost)))
     await git(["fetch", "-q", remote, `+${ref}:refs/remotes/${remote}/${branch}`], dir).catch(
       () => undefined,
     );
@@ -244,12 +255,13 @@ async function movedPast(
  * tasks): an entry holds only while the change branch is where the raise found it. Once the
  * branch here or on the Git host is at another commit (work landed since), the entry is void and
  * go/no-go and the archive wait for that repo's release PR again. A repo with no clone here to
- * look in keeps its entry; a host that can't be reached is judged by the branch here.
+ * look in keeps its entry; a host that can't be reached is judged by the branch here. `offline`
+ * takes the host's branch as last fetched, with no network.
  */
 export async function nothingToRelease(
   root: string,
   id: string,
-  o: { git?: GitRunner; remote?: string } = {},
+  o: { git?: GitRunner; remote?: string; offline?: boolean } = {},
 ): Promise<Set<string>> {
   const entries = await readNothing(root, id);
   const out = new Set<string>();
@@ -272,10 +284,24 @@ export async function nothingToRelease(
       (x) => x.stdout.trim() || undefined,
       () => undefined,
     );
-    const onHost = await git(["ls-remote", "--heads", remote, ref], dir).then(
-      (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
-      () => undefined,
-    );
+    // Offline, the host's branch as last fetched: one fetched before the raise found it (behind
+    // its commit) says nothing about work landed since.
+    const fetched = o.offline ? await lastFetched(git, dir, remote, r.branch) : undefined;
+    const behind =
+      !!fetched &&
+      !!commit &&
+      (await git(["merge-base", "--is-ancestor", fetched, commit], dir).then(
+        () => true,
+        () => false,
+      ));
+    const onHost = o.offline
+      ? behind
+        ? undefined
+        : fetched
+      : await git(["ls-remote", "--heads", remote, ref], dir).then(
+          (x) => x.stdout.trim().split(/\s+/)[0] || undefined,
+          () => undefined,
+        );
     const at = (sha: string | undefined) =>
       sha !== undefined && (commit === undefined || !sameSha(sha, commit));
     return at(here) || at(onHost);
@@ -663,12 +689,13 @@ export async function requireMergedPrs(root: string): Promise<boolean> {
 /**
  * What stops go/no-go on the release PRs: each repo the change touched needs its release PR, and
  * (unless the org pack says `archive.requireMergedPrs: false`) merged, so go/no-go is over what
- * reached the default branch. No repos.yaml: no code repo, nothing to stop.
+ * reached the default branch. No repos.yaml: no code repo, nothing to stop. `offline` (a gate's
+ * assessment, a page load) reads refs here only, the host's branches as last fetched.
  */
 export async function releasePrReasons(
   root: string,
   id: string,
-  o: { git?: GitRunner } = {},
+  o: { git?: GitRunner; offline?: boolean } = {},
 ): Promise<Reason[]> {
   const cr = await readChangeRepos(root, id).catch(() => undefined);
   if (!cr?.repos.length) return [];
