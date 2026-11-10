@@ -6463,6 +6463,16 @@
               }
             }
           },
+          "202": {
+            "description": "Started as a job (`job: true`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -12765,7 +12775,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -12787,6 +12797,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RunDoneView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job: true`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }

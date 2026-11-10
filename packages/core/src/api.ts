@@ -5289,7 +5289,11 @@ type Op = {
     description?: string;
   }[];
   body?: z.ZodType;
+  /** The body may be left out (an empty body reads as `{}`). */
+  bodyOptional?: boolean;
   ok: { status: 200 | 201 | 202 | 204; schema?: string | object; description: string };
+  /** Another answer it can give on success (3.9.0: 202 JobAccepted when asked `job: true`). */
+  alsoOk?: { status: 200 | 201 | 202 | 204; schema?: string | object; description: string };
   errors?: number[];
 };
 
@@ -6447,6 +6451,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       body: WorkItemSyncRequest,
       ok: { status: 200, schema: "WorkItemSyncResult", description: "Synced" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job: true`)" },
       errors: [400, 403, 404, 422],
     },
   },
@@ -7336,7 +7341,9 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "ai",
       params: [p("runId")],
       body: RunDoneRequest,
+      bodyOptional: true,
       ok: { status: 200, schema: "RunDoneView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job: true`)" },
       errors: [404, 409, 422],
     },
   },
@@ -8348,6 +8355,13 @@ export function openApiDocument(): Record<string, unknown> {
         [op.ok.status]: op.ok.schema
           ? { description: op.ok.description, content: content(op.ok.schema) }
           : { description: op.ok.description },
+        ...(op.alsoOk
+          ? {
+              [op.alsoOk.status]: op.alsoOk.schema
+                ? { description: op.alsoOk.description, content: content(op.alsoOk.schema) }
+                : { description: op.alsoOk.description },
+            }
+          : {}),
         401: {
           description: ERROR_TEXT[401],
           content: { "application/problem+json": { schema: ref("Problem") } },
@@ -8373,7 +8387,7 @@ export function openApiDocument(): Record<string, unknown> {
         ...(op.body
           ? {
               requestBody: {
-                required: true,
+                required: !op.bodyOptional,
                 content: {
                   "application/json": {
                     schema: stripMeta(
