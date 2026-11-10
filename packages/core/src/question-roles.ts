@@ -230,8 +230,9 @@ const OWNER_ROLE: Readonly<Record<string, QuestionRole>> = {
 /** The words people write in change.yaml for a built-in role's owner key. */
 const OWNER_ALIAS: Readonly<Record<string, string>> = {
   "tech-lead": "team-lead",
-  developer: "team-lead",
-  "delivery-lead": "team-lead",
+  // Not `developer` or `delivery-lead`: they answer delivery questions, but they aren't the tech
+  // lead (the default org pack has the delivery lead approve releases, the team lead the plan), so
+  // they never review the plan hand-off or are who a change waits on in its place.
 };
 
 /** The built-in owner key an owner key stands for: itself, an alias's, or a custom role's base. */

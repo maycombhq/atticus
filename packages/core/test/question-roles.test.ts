@@ -39,10 +39,15 @@ const by = (step: string, rerun = `atticus change feature add-holds`) => ({
 
 describe("the next role's owners", () => {
   it("reads the owner keys rolesOfPerson reads: aliases, any case and custom roles", () => {
-    expect(nextOwnersOf("plan", { "tech-lead": ["@tia"], developer: ["dev"] })).toEqual({
+    expect(nextOwnersOf("plan", { "Tech-Lead": ["@tia"], "team-lead": ["tom"] })).toEqual({
       role: "team-lead",
-      people: ["tia", "dev"],
+      people: ["tom", "tia"],
     });
+    // Developers and the delivery lead aren't the tech lead: they never review the plan hand-off.
+    expect(
+      nextOwnersOf("plan", { "team-lead": ["tia"], developer: ["dev"], "delivery-lead": ["dana"] })
+        ?.people,
+    ).toEqual(["tia"]);
     expect(nextOwnersOf("design", { "Business-Analyst": ["bao", "@BAO"] })?.people).toEqual([
       "bao",
     ]);
