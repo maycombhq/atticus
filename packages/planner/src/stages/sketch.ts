@@ -3,7 +3,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify } from "yaml";
 import { z } from "zod";
-import { writeFileAtomic } from "@maycombhq/core";
+import { writeFileAtomic, type FlowRecord } from "@maycombhq/core";
 import {
   DEPLOY_FILE,
   READS_FILE,
@@ -33,6 +33,16 @@ const Id = z
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
 const text = () => z.string().trim().min(1).max(500);
 
+/** A component the catalog doesn't have yet: where it runs (ADR 0132), drawn as a new box. */
+const RunsOn = z.object({
+  system: Id.optional(),
+  platform: z.string().trim().min(1).optional(),
+  cloud: z.string().trim().min(1).optional(),
+  framework: z.string().trim().min(1).optional(),
+  /** What the new box is (ADR 0180): one of the organisation's component types. */
+  type: Id.optional(),
+});
+
 /** Where a stroke starts: a flow of the change (modify), or a new one of a component. */
 const From = z.object({
   component: Id,
@@ -48,17 +58,7 @@ const From = z.object({
         what: text(),
         entry: z.string().trim().min(1).optional(),
       }),
-      /** A component the catalog doesn't have yet: where it runs (ADR 0132), drawn as a new box. */
-      runsOn: z
-        .object({
-          system: Id.optional(),
-          platform: z.string().trim().min(1).optional(),
-          cloud: z.string().trim().min(1).optional(),
-          framework: z.string().trim().min(1).optional(),
-          /** What the new box is (ADR 0180): one of the organisation's component types. */
-          type: Id.optional(),
-        })
-        .optional(),
+      runsOn: RunsOn.optional(),
     })
     .optional(),
 });
@@ -113,6 +113,18 @@ export const Stroke = z.discriminatedUnion("kind", [
    * remove delta per flow, each carrying the stroke's mark, so Undo takes them all back).
    */
   z.object({ kind: z.literal("retire"), component: Id, why: text() }),
+  /**
+   * ADR 0193: a component absorbed into another (new or existing): each flow of it today moves
+   * to the other with the same trigger, entry and steps, its own flows are removed, and every
+   * step of today's map that calls it calls the other at the same entry, so callers' contracts
+   * don't change. One stroke: every part carries its mark, so one Undo takes it all back.
+   */
+  z.object({
+    kind: z.literal("absorb"),
+    component: Id,
+    into: z.object({ component: Id, runsOn: RunsOn.optional() }),
+    why: text(),
+  }),
 ]);
 export type Stroke = z.infer<typeof Stroke>;
 
@@ -416,15 +428,27 @@ export function applyStroke(
       ];
       return { deltas: all, changed: flows.map((f) => f.flow.id) };
     }
+    case "absorb":
+      return absorbStroke(before, stroke, estate, by, why);
     case "undo": {
-      // ADR 0189: a retired component's flows go back together.
-      const retired = before.find((x) => x.flow === stroke.flow && x.change === "remove");
-      const rid = retired ? strokeIdOf(retired) : undefined;
+      // ADR 0189 and 0193: a stroke whose mark is on a whole delta (a retired component's
+      // removals, an absorbed component's moved and removed flows) goes back together, with
+      // every step it drew on other flows; a delta drawn here with nothing left goes too.
+      const marked = before.find((x) => x.flow === stroke.flow && strokeIdOf(x) !== undefined);
+      const rid = marked
+        ? strokeIdOf(marked)
+        : before
+            .find((x) => x.flow === stroke.flow)
+            ?.steps.map((s) => strokeIdOf(s))
+            .find((id) => id !== undefined && before.some((x) => strokeIdOf(x) === id));
       if (rid)
         return {
-          deltas: before.filter((x) => !(x.change === "remove" && strokeIdOf(x) === rid)),
+          deltas: before
+            .filter((x) => strokeIdOf(x) !== rid)
+            .map((x) => ({ ...x, steps: x.steps.filter((y) => strokeIdOf(y) !== rid) }))
+            .filter((x) => !(x.steps.length === 0 && isDrawnDelta(x))),
           changed: before
-            .filter((x) => x.change === "remove" && strokeIdOf(x) === rid)
+            .filter((x) => strokeIdOf(x) === rid || x.steps.some((y) => strokeIdOf(y) === rid))
             .map((x) => x.flow),
         };
       const d = before.find((x) => x.flow === stroke.flow);
@@ -451,6 +475,194 @@ export function applyStroke(
   }
 }
 
+/** A why that keeps its mark whole: the reason is cut, never the mark, to fit 500 characters. */
+const markedWhy = (why: (reason?: string) => string, reason: string) => {
+  const room = 500 - why("").length;
+  return why(reason.length > room ? `${reason.slice(0, Math.max(0, room - 1))}…` : reason);
+};
+
+/** "METHOD /path" (or the topic) of a flow's trigger, from its endpoint in the catalog. */
+function entryOf(flow: FlowRecord, estate: StrokeEstate): string | undefined {
+  const ref = flow.trigger.ref;
+  if (!ref) return undefined;
+  const r = estate.byId?.get(ref) as
+    { kind?: string; method?: unknown; pathOrTopic?: unknown } | undefined;
+  if (r?.kind === "Endpoint" && typeof r.pathOrTopic === "string")
+    return typeof r.method === "string" && r.method
+      ? `${r.method} ${r.pathOrTopic}`
+      : r.pathOrTopic;
+  return ref;
+}
+
+/** ADR 0193: the absorb stroke. Pure, like every stroke; `why` marks each part with the stroke. */
+function absorbStroke(
+  before: FlowDelta[],
+  stroke: Extract<Stroke, { kind: "absorb" }>,
+  estate: StrokeEstate,
+  by: string,
+  why: (reason?: string) => string,
+): SketchResult {
+  const a = stroke.component;
+  const b = stroke.into.component;
+  const fail = (problem: string): SketchResult => ({ deltas: before, changed: [], problem });
+  if (a === b) return fail(`${a} can't be absorbed into itself.`);
+  const flows = estate.flows.filter((f) => f.flow.component === a);
+  const callers = estate.flows.flatMap((f) =>
+    f.flow.component === a
+      ? []
+      : f.flow.steps.flatMap((s, i) => (s.to?.component === a ? [{ f, step: i + 1, s }] : [])),
+  );
+  if (!flows.length && !callers.length)
+    return fail(
+      estate.ids.has(a)
+        ? `${a} has no flow and no caller on today's map, so there is nothing of it to absorb yet.`
+        : `${a} isn't a component of today's map.`,
+    );
+  const removed = flows.filter((f) =>
+    before.some((d) => d.flow === f.flow.id && d.change === "remove"),
+  );
+  if (removed.length)
+    return fail(
+      `${removed.map((f) => f.flow.id).join(", ")} ${removed.length === 1 ? "is" : "are"} changed in this change already: take that back first, then absorb ${a}.`,
+    );
+  // The entries the target serves today and in this change: a moved flow can't take one twice.
+  const key = (e: string) => e.replace(/\s+/g, " ").trim().toLowerCase();
+  const served = new Set<string>();
+  for (const f of estate.flows)
+    if (f.flow.component === b) {
+      const e = entryOf(f.flow, estate);
+      if (e) served.add(key(e));
+    }
+  for (const d of before)
+    if (
+      d.change === "new" &&
+      d.trigger?.entry &&
+      (d.runsOn?.component === b || d.flow.startsWith(`${b}.`))
+    )
+      served.add(key(d.trigger.entry));
+  for (const f of flows) {
+    const e = entryOf(f.flow, estate);
+    if (e && served.has(key(e)))
+      return fail(
+        `${b} has a flow at ${e} already: a second flow can't take the same entry. Take that one back, or absorb ${a} into another component.`,
+      );
+    if (e) served.add(key(e));
+  }
+  const busy = flows.filter((f) => before.some((d) => d.flow === f.flow.id));
+  if (busy.length)
+    return fail(
+      `${busy.map((f) => f.flow.id).join(", ")} ${busy.length === 1 ? "is" : "are"} changed in this change already: take that back first, then absorb ${a}.`,
+    );
+  const known = estate.ids.has(b) || estate.flows.some((f) => f.flow.component === b);
+  const repo = repoOf(estate, b) ?? b;
+  const taken = new Set([
+    ...estate.ids,
+    ...estate.flows.map((f) => f.flow.id),
+    ...before.map((d) => d.flow),
+  ]);
+  const idFor = (flow: string) => {
+    const local = flow.startsWith(`${a}.`) ? flow.slice(a.length + 1) : slug(flow);
+    let id = `${b}.${local}`;
+    for (let n = 2; taken.has(id); n++) id = `${b}.${local}-${n}`;
+    taken.add(id);
+    return id;
+  };
+  let all: FlowDelta[] = [...before];
+  const changed: string[] = [];
+  for (const f of flows) {
+    const entry = entryOf(f.flow, estate);
+    const id = idFor(f.flow.id);
+    all.push({
+      schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+      flow: id,
+      repo,
+      change: "new",
+      name: f.flow.name,
+      trigger: {
+        kind: f.flow.trigger.kind,
+        what: f.flow.trigger.what,
+        ...(entry ? { entry } : {}),
+      },
+      why: markedWhy(why, `Absorbs ${a} into ${b} (flow ${f.flow.id}): ${stroke.why}`),
+      ...(!known || stroke.into.runsOn
+        ? { runsOn: { component: b, ...(stroke.into.runsOn ?? {}) } }
+        : {}),
+      steps: f.flow.steps.map((s): DeltaStep => ({
+        op: "add",
+        kind: s.kind,
+        what: s.what,
+        ...(s.to
+          ? {
+              to: {
+                component: s.to.component === a ? b : s.to.component,
+                entry: s.to.entry,
+                new: false,
+              },
+            }
+          : {}),
+        ...(s.store
+          ? { store: { table: s.store.table, columns: [...s.store.columns], new: false } }
+          : {}),
+        ...(s.data ? { fields: s.data } : {}),
+        ...(s.repeats ? { repeats: s.repeats } : {}),
+        why: why(),
+      })),
+    });
+    all.push({
+      schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+      flow: f.flow.id,
+      repo: f.repo,
+      change: "remove",
+      why: markedWhy(why, `Absorbs ${a} into ${b}: ${stroke.why}`),
+      steps: [],
+    });
+    changed.push(id, f.flow.id);
+  }
+  // Every call to the absorbed component now goes to the other, at the same entry.
+  for (const c of callers) {
+    let d = all.find((x) => x.flow === c.f.flow.id);
+    if (d?.change === "remove") continue;
+    if (d?.steps.some((s) => s.op !== "add" && s.step === c.step))
+      return fail(
+        `Step ${c.step} of ${c.f.flow.id} is changed already in this change: take that back first, then absorb ${a}.`,
+      );
+    if (!d) {
+      d = {
+        schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+        flow: c.f.flow.id,
+        repo: c.f.repo,
+        change: "modify",
+        why: deltaWhy(by),
+        steps: [],
+      };
+      all = [...all, d];
+    }
+    const flow = d.flow;
+    const reason = `${a} is absorbed into ${b}`;
+    all = all.map((x) =>
+      x.flow === flow
+        ? {
+            ...x,
+            steps: [
+              ...x.steps,
+              { op: "remove", step: c.step, why: why(reason) },
+              {
+                op: "add",
+                after: c.step,
+                kind: c.s.kind,
+                what: c.s.what,
+                to: { component: b, entry: c.s.to!.entry, new: false },
+                why: why(reason),
+              },
+            ],
+          }
+        : x,
+    );
+    changed.push(flow);
+  }
+  return { deltas: all, changed: [...new Set(changed)] };
+}
+
 /** The strokes drawn so far, for Undo: one entry per stroke, with the first step's place. */
 export function drawnStrokes(
   deltas: readonly FlowDelta[],
@@ -458,16 +670,19 @@ export function drawnStrokes(
   const out: { flow: string; index: number; what: string; by?: string }[] = [];
   const seen = new Set<string>();
   for (const d of deltas) {
-    // ADR 0189: a retire stroke, once, at its first flow.
-    const rid = d.change === "remove" ? strokeIdOf(d) : undefined;
+    // ADR 0189 and 0193: a retire or absorb stroke, once, at its first flow.
+    const rid = strokeIdOf(d);
     if (rid && !seen.has(rid)) {
       seen.add(rid);
       const by = drawnBy(d);
+      const absorbed = /^Absorbs (\S+) into (\S+?)[: ]/.exec(d.why);
       const component = /^Retires (\S+?):/.exec(d.why)?.[1];
       out.push({
         flow: d.flow,
         index: 0,
-        what: `retired ${component ?? d.flow}`,
+        what: absorbed
+          ? `absorbed ${absorbed[1]} into ${absorbed[2]}`
+          : `retired ${component ?? d.flow}`,
         ...(by ? { by } : {}),
       });
     }
