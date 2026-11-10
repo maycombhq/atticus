@@ -5,7 +5,9 @@ import {
   loadOrgPack,
   orgPackDirOf,
   slugify,
+  systemNameProblem,
   TARGETS_STEP_ID,
+  wordsNameNothing,
   topicOfQuestion,
   TOPICS_STEP_ID,
   type Question,
@@ -38,6 +40,8 @@ export type TargetAnswer =
       /** The words the answer records: a repo's or system's id. */
       text: string;
       pick: TargetPick | undefined;
+      /** Beta.24 review: the id of the system `write` adds, which `text` names. */
+      adds?: string;
       /**
        * The profile change the answer brings, when it brings one: made by the caller only once
        * the answer is accepted (`answerQuestion`'s `beforeWrite`, review item 14), so a refused
@@ -97,6 +101,7 @@ export async function targetAnswerOf(
   const add = (s: { id: string; name: string; boundary: AddSystem; owner?: string }) => ({
     text: s.id,
     pick,
+    adds: s.id,
     write: async (): Promise<TargetSystem> => {
       // A topics answer puts the topic under the system's topics (ADR 0162, amended).
       const r = await addProfileSystem(root, q.repo, {
@@ -140,6 +145,9 @@ export async function targetAnswerOf(
     }
     if (theirs.length) return { text: theirs[0]!, pick };
     const adds = pick.adds!;
+    // Beta.24 review: a name given for the team's new system is a system's name, not words.
+    const named = o.name?.trim() ? systemNameProblem(o.name) : undefined;
+    if (named) return { problem: `${wordsNameNothing(o.name!.trim())} (${named})` };
     if (o.addSystem) return add({ ...adds, ...(o.name ? { name: o.name } : {}) });
     return {
       problem: `${pick.id} has no system in the profile yet.`,
@@ -148,6 +156,10 @@ export async function targetAnswerOf(
   }
   const id = slugify(target);
   if (!id) return { problem: `"${target}" names nothing: give a repo, system or team id.` };
+  // Beta.24 review: words that name nothing are never made into a system: a new outside system
+  // takes a short name (letters, digits, spaces, dashes, at most 40), never a sentence.
+  const named = systemNameProblem(o.name?.trim() || target);
+  if (named) return { problem: `${wordsNameNothing(o.name?.trim() || target.trim())} (${named})` };
   if (o.addSystem) return add({ id, name: o.name?.trim() || target.trim(), boundary: o.addSystem });
   return {
     problem: `${target} isn't a repo of the manifest, a system of the profile or a team in roles.yaml.`,

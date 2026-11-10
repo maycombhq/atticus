@@ -321,6 +321,16 @@ export const COPY = {
     notProposed: "This answer is in the map, not proposed for review yet:",
     ownWords: "In my own words",
     ownWordsLabel: "Your answer, in your own words",
+    // Beta.24 review: a question about where calls go takes words that name a repo or system.
+    ownWordsJoin:
+      "Name a repo, component or system Atticus knows. Words that name none are refused, never drawn as a box: for a new outside system, choose it from the list above; if these aren't real calls, choose Ignore.",
+    ignore: {
+      means:
+        "These aren't real calls: a CI/CD job, a test or a template, not code that runs. The join leaves them, no box is drawn for them, and this isn't asked again.",
+      reason: "Why (optional)",
+      answered: (by: string, day: string, reason?: string) =>
+        `Ignored by ${by} on ${day}: not a real call${reason ? ` (${reason})` : ""}`,
+    },
     scope: "Who the answer is for",
     scopeRepo: (repo: string) => `This repo only (${repo})`,
     scopeChange: (change: string) => `This change only (${change})`,
@@ -388,10 +398,10 @@ export const COPY = {
       teams: "Teams in roles.yaml",
       notRead: "not read yet",
       noSystem: "no system yet",
-      newVendor: "Not listed: a vendor's name",
+      newVendor: "An outside system (new): its name",
       newVendorHint:
-        "Leave the list on “Choose one” and type a vendor's name to add it to the profile.",
-      pickOne: "Choose a repo, system or team, or type a vendor's name.",
+        "Leave the list on “Choose one” and type the system's name to add it to the profile: a short name (letters, digits, spaces and dashes, up to 40 characters), not a sentence. If these aren't real calls, choose Ignore instead.",
+      pickOne: "Choose a repo, system or team, or type a new outside system's name.",
       addTeam: (team: string, system: string) =>
         `${team} has no system yet: add ${system} (another team's, owner ${team}) to the profile, as a file change for review in the pull request`,
       addVendor: (name: string) =>
@@ -998,6 +1008,38 @@ export const COPY = {
     rejected: "Rejected",
     redacted: (n: number) => `${n} quote${n === 1 ? "" : "s"} redacted`,
     /** Beta.24: a live-looking secret in a config file, by file and line, never its value. */
+    // Beta.24 review: a box an answer's words made, not a system's name, and the two ways to fix it.
+    answerBoxes: {
+      title: (n: number) =>
+        n === 1 ? "A box made from an answer's words" : `${n} boxes made from answers' words`,
+      intro:
+        "An answer to a question about where calls go was taken as a system's name, so the map drew a box with arrows to it. Say what it was: Ignore leaves its calls off the map; a rename points them at a real system. Both are written here first, then proposed for review.",
+      box: (name: string) => `A box made from an answer's words: ${name}`,
+      inProfile: (path: string) => `A system in ${path}`,
+      answeredIn: (n: number) => `Named by ${n} answer${n === 1 ? "" : "s"}:`,
+      ignore: "It was 'ignore this'",
+      ignoreOf: (name: string) => `It was 'ignore this': ${name}`,
+      rename: "Rename to a real system",
+      renameOf: (name: string) => `Rename to a real system: ${name}`,
+      nameLabel: "The repo or system it is, or a new outside system's name",
+      nameHint:
+        "A repo or system Atticus knows, or a short name: letters, digits, spaces and dashes, up to 40 characters, not a sentence.",
+      needName: "Type the repo or system it is, or a new system's name.",
+      preview: "Preview the change",
+      previewing: "Working out the change…",
+      willIgnore: (n: number) =>
+        `${n} answer${n === 1 ? "" : "s"} become${n === 1 ? "s" : ""} Ignore, and the box leaves the map after Apply:`,
+      willRename: (n: number, to: string) =>
+        `${n} answer${n === 1 ? "" : "s"} name${n === 1 ? "s" : ""} ${to} instead, after Apply:`,
+      answerChange: (id: string, was: string, now: string) => `${id}: “${was}” becomes “${now}”`,
+      profileChange: (path: string) => `The lines it changes in ${path}:`,
+      confirmIgnore: "Yes, ignore it",
+      confirmRename: "Yes, rename it",
+      cancel: "Cancel",
+      writing: "Writing…",
+      written: (repos: string) =>
+        `Written here. Apply puts it on the map${repos ? ` (${repos})` : ""}, then propose it for review:`,
+    },
     secrets: {
       title: (n: number) =>
         n === 1

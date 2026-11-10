@@ -227,7 +227,11 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           });
         try {
           // ADR 0144 (Q5): the person accepts the assistant's proposal; it becomes their answer.
-          const { acceptProposal, target, addSystem, name, ...given } = b.data;
+          const { acceptProposal, target, addSystem, name, ignore, reason, ...given } = b.data;
+          // Beta.24 review: Ignore: the calls aren't real, so the join leaves them.
+          if (ignore && (acceptProposal || target || given.option !== undefined || given.text))
+            throw badRequest("Give ignore alone (with a reason, if any), not with an answer.");
+          let adds: string | undefined;
           // ADR 0162 (F8): a target from the picker, a new system written for review if asked.
           let writeSystem: (() => Promise<import("./target-answer.js").TargetSystem>) | undefined;
           let system: import("./target-answer.js").TargetSystem | undefined;
@@ -248,6 +252,7 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               );
             given.text = t.text;
             writeSystem = t.write;
+            adds = t.adds;
           }
           const r = acceptProposal
             ? await acceptProposalOf(ctx.root, params.id!, {
@@ -259,6 +264,8 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               })
             : await answerQuestion(ctx.root, params.id!, {
                 ...given,
+                ...(ignore ? { ignore: reason?.trim() ? { reason } : {} } : {}),
+                ...(adds ? { adds } : {}),
                 // Review item 14: the profile is written only once the answer is accepted.
                 ...(writeSystem
                   ? {

@@ -9,6 +9,7 @@ import { COPY } from "../../copy.js";
 import { Command, Problems } from "../work/RunNext.js";
 import "../work/work.css";
 import { AuditAnswer } from "./AuditAnswer.js";
+import { AnswerBoxes } from "./AnswerBoxes.js";
 import { DropFact } from "./drop-fact.js";
 import { mismatchesHash } from "../../app/contracts.js";
 import { DecidePaused, useDecisions } from "../../app/decisions.js";
@@ -604,7 +605,11 @@ export function TrustPage({
           <RunWithCopilot ask={{ kind: "all" }} label={COPY.copilotRuns.start.all} />
           <RunWithCopilot ask={{ kind: "gaps" }} label={COPY.copilotRuns.start.gaps} />
         </p>
-        <View of={of} empty={(v) => v.repos.length === 0 && !v.problems.length} emptyText={T.empty}>
+        <View
+          of={of}
+          empty={(v) => v.repos.length === 0 && !v.problems.length && !v.answerBoxes?.length}
+          emptyText={T.empty}
+        >
           {(v) => (
             <>
               <Problems list={v.problems} />
@@ -621,6 +626,8 @@ export function TrustPage({
                   <a href={mismatchesHash}>{T.contractsOpen}</a>
                 </p>
               )}
+              {/* Beta.24 review: the boxes an answer's words made, each with its fixes. */}
+              <AnswerBoxes boxes={v.answerBoxes} />
               <div className="stack" style={{ gap: 12 }}>
                 {v.repos.map((r) => (
                   <TrustRow key={r.repo} r={r} />

@@ -194,6 +194,8 @@ export async function questionsFiles(
       target: { type: "string" },
       "add-system": { type: "string" },
       name: { type: "string" },
+      ignore: { type: "boolean" },
+      reason: { type: "string" },
     },
   });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -429,6 +431,18 @@ export async function questionsFiles(
     }
     let added: string | undefined;
     let beforeWrite: (() => Promise<void>) | undefined;
+    let adds: string | undefined;
+    // Beta.24 review: --ignore says the calls aren't real (CI/CD, a test, a template).
+    const ignore = values.ignore === true;
+    const reason = str(values.reason)?.trim() || undefined;
+    if (reason && !ignore) {
+      io.err("--reason goes with --ignore.");
+      return 2;
+    }
+    if (ignore && (opt !== undefined || text !== undefined || accept || target)) {
+      io.err("--ignore is the answer: give it alone (with --reason), not with another answer.");
+      return 2;
+    }
     if (target) {
       if (opt !== undefined || text !== undefined || accept) {
         io.err(
@@ -458,6 +472,7 @@ export async function questionsFiles(
         return 2;
       }
       text = r.text;
+      adds = r.adds;
       // Review item 14: the profile is written only once the answer is accepted.
       if (r.write) {
         const writeSystem = r.write;
@@ -477,7 +492,7 @@ export async function questionsFiles(
       );
       return 2;
     }
-    if (!accept && (opt === undefined) === (text === undefined)) {
+    if (!accept && !ignore && (opt === undefined) === (text === undefined)) {
       io.err(
         'Answer with --option <n> or --text "your own words" (--target <repo, system or team id> for where a call goes): one of them.',
       );
@@ -511,6 +526,8 @@ export async function questionsFiles(
             ...(text !== undefined ? { text } : {}),
             ...scoped,
             ...(beforeWrite ? { beforeWrite } : {}),
+            ...(adds ? { adds } : {}),
+            ...(ignore ? { ignore: reason ? { reason } : {} } : {}),
             by,
             at,
           });
@@ -565,7 +582,7 @@ export async function questionsFiles(
     `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed, propose, answer or sheet (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --target <id> [--add-system vendor|internal] [--name "..."] | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',
+    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --target <id> [--add-system vendor|internal] [--name "..."] | --ignore [--reason "..."] | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',
   );
   return 2;
 }

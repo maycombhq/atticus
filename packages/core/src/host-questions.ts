@@ -4,7 +4,7 @@ import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { slugify, cmpText } from "./identity.js";
-import { isAdopted, orgPackDirOf } from "./metarepo.js";
+import { factsDirOf, isAdopted, orgPackDirOf } from "./metarepo.js";
 import { migrateProfileText } from "./profile-migrate.js";
 import { Profile } from "./schema/orgpack.js";
 import { RepoManifest } from "./schema/workspace.js";
@@ -57,6 +57,163 @@ export const PICKER_LABELS: ReadonlySet<string> = new Set([
 
 /** The last option of a hosts question: no repo of the estate answers on it. */
 export const HOSTS_NONE = "None of these";
+
+/**
+ * The step `atticus estate join` asks which component a spec step's call-out reaches by (named
+ * here so the answer's rules below are checked where it is written; the CLI raises it).
+ */
+export const ESTATE_TARGETS_STEP_ID = "estate-targets";
+
+/**
+ * Beta.24 review (answers made into boxes): the questions about where calls go, whose answer the
+ * join reads: hosts, targets (an ambiguous call or an unknown host's), topics and the estate's
+ * call-outs. Each takes Ignore, and none takes words that name nothing as a system.
+ */
+export const JOIN_STEPS: ReadonlySet<string> = new Set([
+  HOSTS_STEP,
+  TARGETS_STEP_ID,
+  TOPICS_STEP_ID,
+  ESTATE_TARGETS_STEP_ID,
+]);
+
+/**
+ * The option every join question has (beta.24 review): the calls it asks about aren't real calls
+ * (CI/CD, a test, a template), so the join leaves them, the same as "None of these", and never
+ * draws a box for them. Its words with a reason are `Ignore: <reason>`.
+ */
+export const JOIN_IGNORE_LABEL = "Ignore: not a real call (e.g. CI/CD, a test, a template)";
+/** How an Ignore answer with a reason starts (the person's words follow it). */
+export const IGNORE_PREFIX = "Ignore:";
+
+/** The Ignore option, as a question file holds it. */
+export const ignoreOption = (): { label: string; means: string; changes: string } => ({
+  label: JOIN_IGNORE_LABEL,
+  means: "These aren't real calls: a CI/CD job, a test or a template, not code that runs",
+  changes:
+    "The join leaves these calls (ignored by you), no box is drawn for them, and this isn't asked again",
+});
+
+/** An Ignore answer's words: `Ignore: <reason>`. */
+export const ignoreText = (reason: string) => `${IGNORE_PREFIX} ${reason.trim()}`;
+
+/**
+ * Whether a question's answer is Ignore (beta.24 review), and its reason when one was given: the
+ * Ignore option, or words that start `Ignore:`. Undefined for any other answer, or none.
+ */
+export function ignoredAnswer(q: {
+  options: readonly { label: string }[];
+  answer?: { option?: number; text?: string; by: unknown } | undefined;
+}): { reason?: string } | undefined {
+  const a = q.answer;
+  if (!a) return undefined;
+  if (a.option !== undefined)
+    return q.options[a.option - 1]?.label === JOIN_IGNORE_LABEL ? {} : undefined;
+  const t = a.text?.trim() ?? "";
+  if (t === JOIN_IGNORE_LABEL) return {};
+  if (!t.toLowerCase().startsWith(IGNORE_PREFIX.toLowerCase())) return undefined;
+  const reason = t.slice(IGNORE_PREFIX.length).trim();
+  return reason ? { reason } : {};
+}
+
+/** The longest name an outside system an answer adds may have. */
+export const SYSTEM_NAME_MAX = 40;
+
+/** Words that make a phrase a sentence, never a system's name (beta.24 review). */
+const SENTENCE_WORDS = new Set([
+  "ignore",
+  "this",
+  "is",
+  "a",
+  "to",
+  "the",
+  "related",
+  "not",
+  "its",
+  "it",
+]);
+
+/**
+ * Why words can't be a new outside system's name (beta.24 review), or undefined when they can: a
+ * short name of letters, digits, spaces and dashes, at most 40 characters, not a sentence (four
+ * words at most, none of "ignore", "this", "is", "a", "to", "the", "related", "not", "it").
+ */
+export function systemNameProblem(name: string): string | undefined {
+  const n = name.trim();
+  if (!n) return "a system's name can't be empty";
+  if (n.length > SYSTEM_NAME_MAX)
+    return `a system's name is at most ${SYSTEM_NAME_MAX} characters (this is ${n.length})`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9 -]*$/.test(n))
+    return "a system's name is letters, digits, spaces and dashes only";
+  const words = n
+    .toLowerCase()
+    .split(/[\s-]+/)
+    .filter(Boolean);
+  if (words.length > 4 || words.some((w) => SENTENCE_WORDS.has(w)))
+    return "that reads as a sentence, not a system's name";
+  return undefined;
+}
+
+/**
+ * Beta.24 review: whether a system (its id, and its name when it has one) looks made from an
+ * answer's words rather than named: an id of five or more dash-separated words, or with a word
+ * of a sentence in it, or a name with spaces longer than 40 characters.
+ */
+export function madeFromWords(id: string, name?: string): boolean {
+  const words = id
+    .toLowerCase()
+    .split(/[-_.]+/)
+    .filter(Boolean);
+  if (words.length >= 5) return true;
+  if (words.some((w) => SENTENCE_WORDS.has(w))) return true;
+  const n = name?.trim() ?? "";
+  return /\s/.test(n) && n.length > SYSTEM_NAME_MAX;
+}
+
+/**
+ * Beta.24 review: whether words name a repo, component, system or team Atticus knows, as an
+ * answer about where calls go may: a repo of the manifests (its id, component or a module's
+ * component), a system of the profiles (its id, name, an alias or a topic), a team of roles.yaml,
+ * or a component a repo's facts name. Case and spacing aside, or by the id the words slug to.
+ */
+export async function namesKnownTarget(root: string, words: string): Promise<boolean> {
+  const { loadOrgPack } = await import("./orgpack-load.js");
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const names = new Set<string>();
+  const add = (n: string | undefined) => {
+    if (!n?.trim()) return;
+    names.add(n.trim().toLowerCase());
+    names.add(slugify(n));
+  };
+  for (const p of op?.profiles ?? []) {
+    for (const r of p.repos?.repos ?? []) {
+      add(r.id);
+      add(r.component);
+      for (const m of r.modules ?? []) add(m.component);
+    }
+    for (const s of p.profile?.systems ?? [])
+      for (const n of [s.id, s.name, ...s.aliases, ...(s.topics ?? [])]) add(n);
+  }
+  for (const t of op?.roles?.teams ?? []) add(t.id);
+  const want = words.trim().toLowerCase();
+  if (names.has(want) || names.has(slugify(words))) return true;
+  // The components the repos' facts name (a module the manifest doesn't list).
+  const dir = factsDirOf(root);
+  for (const f of await readdir(dir).catch(() => [] as string[])) {
+    if (!/^[^.][^/]*\.jsonl$/.test(f) || /\.(corrections|reviewed|rejected)\.jsonl$/.test(f))
+      continue;
+    const text = await readFile(join(dir, f), "utf8").catch(() => "");
+    for (const m of text.matchAll(/"component"\s*:\s*"([^"]+)"/g)) add(m[1]);
+    if (names.has(want) || names.has(slugify(words))) return true;
+  }
+  return false;
+}
+
+/**
+ * Beta.24 review: the refusal of words that name no repo, component or system as the answer of a
+ * question about where calls go, in a person's words: what to do instead.
+ */
+export const wordsNameNothing = (words: string) =>
+  `"${words.length > 60 ? `${words.slice(0, 57)}...` : words}" names no repo, component or system Atticus knows, so it isn't made into a box on the map. Pick a repo or system; or choose "An outside system (new)" and type its name (a short name: letters, digits, spaces and dashes, up to ${SYSTEM_NAME_MAX} characters, not a sentence); or choose "${JOIN_IGNORE_LABEL}" if these aren't real calls.`;
 
 /**
  * The options of a hosts question that say an outside system answers on the host (O1): another
@@ -270,6 +427,49 @@ export async function addProfileSystem(
     return { id: s.id, profile: relOf(platform), added: true, changes };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
+}
+
+/**
+ * Beta.24 review: take a system out of the profile that has it, or (with `rename`) give it another
+ * id and name, keeping its other fields, the file's comments and its order. For a system an
+ * answer's words made (`madeFromWords`), from Map › Trust: written as a file change in the
+ * metarepo, for review in the pull request. `preview` writes nothing. Undefined when no profile
+ * has the system. Throws when the profile would not be valid (the new id another system has).
+ */
+export async function editProfileSystem(
+  root: string,
+  id: string,
+  o: { rename?: { id: string; name: string }; preview?: boolean } = {},
+): Promise<{ profile: string; changes: LineChange[]; written: boolean } | undefined> {
+  for (const { dir, platform } of await platformsOf(root)) {
+    const file = join(dir, "profile.yaml");
+    const raw = await readFile(file, "utf8").catch(() => undefined);
+    if (raw === undefined) continue;
+    const doc = parseDocument(lfOnly(raw));
+    const seq = doc.get("systems");
+    if (!isSeq(seq)) continue;
+    const at = seq.items.findIndex((x) => isMap(x) && x.get("id") === id);
+    if (at < 0) continue;
+    const rel = `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
+    if (o.rename) {
+      const node = seq.items[at];
+      if (isMap(node)) {
+        node.set("id", o.rename.id);
+        node.set("name", o.rename.name);
+      }
+    } else seq.items.splice(at, 1);
+    const checked = Profile.safeParse(doc.toJS());
+    if (!checked.success)
+      throw new Error(
+        `${rel} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      );
+    const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+    const changes = changedLines(lfOnly(raw), after);
+    if (o.preview) return { profile: rel, changes, written: false };
+    await writeFileIfUnchanged(file, raw, inEol(after, eolOf(raw)));
+    return { profile: rel, changes, written: true };
+  }
+  return undefined;
 }
 
 /**

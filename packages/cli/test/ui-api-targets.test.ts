@@ -107,4 +107,29 @@ describe("GET /api/questions/{id}/targets and a target answer (ADR 0162)", () =>
       "team-ledger-ops",
     );
   });
+
+  it("refuses an answer's words as a new system, and takes Ignore with a reason (beta.24 review)", async () => {
+    const file = join(root, "org-pack", "profiles", "forge", "profile.yaml");
+    const before = await readFile(file, "utf8");
+    for (const body of [
+      { target: "ignore this, its cicd related", addSystem: "vendor" },
+      { text: "this is a proxy to send outbound webhook to merchants" },
+    ]) {
+      const r = await call("POST", `/api/questions/${id}/answer`, body);
+      expect(r.status).toBe(400);
+      expect(JSON.stringify(r.body)).toContain("names no repo, component or system");
+    }
+    expect(await readFile(file, "utf8")).toBe(before);
+    const mixed = await call("POST", `/api/questions/${id}/answer`, { ignore: true, option: 1 });
+    expect(mixed.status).toBe(400);
+    const r = await call("POST", `/api/questions/${id}/answer`, {
+      ignore: true,
+      reason: "its cicd related",
+    });
+    expect(r.status).toBe(200);
+    expect(Api.AnsweredQuestion.parse(r.body).question.answer?.text).toBe(
+      "Ignore: its cicd related",
+    );
+    expect(await readFile(file, "utf8")).toBe(before);
+  });
 });

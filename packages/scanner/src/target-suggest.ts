@@ -5,6 +5,7 @@ import {
   topicQuestionText,
   TOPICS_OUTSIDE_LABEL,
   TOPICS_STEP_ID,
+  ignoredAnswer,
   TARGETS_ANOTHER_LABEL,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
@@ -151,7 +152,12 @@ function hostOf(f: FactOf<"call">, facts: readonly Fact[]): string | undefined {
 }
 
 const answerLabel = (q: Question): string | undefined =>
-  q.answer?.option !== undefined ? q.options[q.answer.option - 1]?.label : q.answer?.text;
+  // Beta.24 review: Ignore names no target, so it is never suggested again.
+  ignoredAnswer(q)
+    ? undefined
+    : q.answer?.option !== undefined
+      ? q.options[q.answer.option - 1]?.label
+      : q.answer?.text;
 
 const NOT_A_TARGET = new Set(["None of these", TARGETS_SPLIT_LABEL, TARGETS_ANOTHER_LABEL]);
 
