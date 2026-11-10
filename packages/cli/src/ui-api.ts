@@ -1,4 +1,4 @@
-import { tracked } from "./ui-api-activity.js";
+import { answerAsJob, tracked } from "./ui-api-activity.js";
 import { uiStepRoutes } from "./ui-api-steps.js";
 import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
@@ -649,6 +649,35 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
    * assistant ran atticus handoff done) is only resumed. One at a time per run, never twice.
    */
   const doneRun = async (runId: string, by: "person" | "app") => {
+    const { before, onlyResume } = await doneMayStart(runId);
+    try {
+      return await doneOnce(runId, by, before, onlyResume);
+    } finally {
+      doneBusy.delete(runId);
+    }
+  };
+  /**
+   * Review of beta.23: a person's Done as a job (`job: true`): what refuses it at once still
+   * does (409); the build, fix and commit then run in the job, whose result is Done's answer, so
+   * an editor panel's request never waits on them (and never reads a slow build as "app down").
+   */
+  const doneAsJob = async (runId: string) => {
+    const { before, onlyResume } = await doneMayStart(runId);
+    try {
+      return answerAsJob(
+        ctx,
+        `Done: ${runId}`,
+        () =>
+          doneOnce(runId, "person", before, onlyResume, true).finally(() => doneBusy.delete(runId)),
+        { meta: { handoffRun: runId } },
+      );
+    } catch (e) {
+      doneBusy.delete(runId);
+      throw e;
+    }
+  };
+  /** Whether a Done of the run may start now; when it may, the run is marked busy. */
+  const doneMayStart = async (runId: string) => {
     const before = await findRun(root, runId);
     const { hasKeptResume } = await import("./handoff-resume.js");
     const onlyResume = before.state === "validated" && (await hasKeptResume(root, runId));
@@ -660,17 +689,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     if (doneBusy.has(runId))
       throw conflict(`Done for ${runId} is already running; wait for it to finish.`);
     doneBusy.add(runId);
-    try {
-      return await doneOnce(runId, by, before, onlyResume);
-    } finally {
-      doneBusy.delete(runId);
-    }
+    return { before, onlyResume };
   };
   const doneOnce = async (
     runId: string,
     by: "person" | "app",
     before: Awaited<ReturnType<typeof findRun>>,
     onlyResume: boolean,
+    /** Already in a job of its own (doneAsJob): the check runs in it, not in a second one. */
+    inJob = false,
   ) => {
     let res: Ran;
     if (onlyResume) res = { code: 0, out: [], err: [] };
@@ -679,12 +706,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       await unmarkCheckedByApp(root, before.change, runId).catch(() => undefined);
       // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
       // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
-      res = await tracked(
-        ctx,
-        by === "app" ? `Checked the answer: ${runId}` : `Done: ${runId}`,
-        () => run((io) => runDone(root, runId, { by: user }, io, deps.taskRun)),
-        { meta: { handoffRun: runId } },
-      );
+      const check = () => run((io) => runDone(root, runId, { by: user }, io, deps.taskRun));
+      res = inJob
+        ? await check()
+        : await tracked(
+            ctx,
+            by === "app" ? `Checked the answer: ${runId}` : `Done: ${runId}`,
+            check,
+            { meta: { handoffRun: runId } },
+          );
       // Only a check the app ran is the app's: a run the command line validated, only resumed
       // here, keeps saying a person checked it.
       if (by === "app") await markCheckedByApp(root, before.change, runId).catch(() => undefined);
@@ -1588,10 +1618,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         status: 200,
         body: await findRun(root, params.runId!),
       }))
-      .add("POST", "/api/runs/{runId}/done", async ({ params }) => ({
-        status: 200,
-        body: await doneRun(params.runId!, "person"),
-      }))
+      .add("POST", "/api/runs/{runId}/done", async ({ params, body }) => {
+        // 3.9.0: `job: true` runs it as a job (an editor panel's request returns at once).
+        if (parseBody(Api.RunDoneRequest, body).job) return doneAsJob(params.runId!);
+        return { status: 200, body: await doneRun(params.runId!, "person") };
+      })
       .add("POST", "/api/runs/{runId}/retry", async ({ params }) => {
         const v = await findRun(root, params.runId!);
         if (v.state !== "failed")

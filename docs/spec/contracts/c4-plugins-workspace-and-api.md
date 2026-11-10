@@ -11,7 +11,7 @@ Specification version 0.1.0.
 | Workspace files   | 3     |
 | Change state file | 1     |
 | Executor protocol | 1     |
-| Local API         | 3.8.0 |
+| Local API         | 3.9.0 |
 
 ## Plugins
 
@@ -55,7 +55,7 @@ Adapters connect Atticus to external systems by type: work tracker, service desk
 
 ## Local API
 
-The local API (version 3.8.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
+The local API (version 3.9.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
 
 ## RepoManifest
 

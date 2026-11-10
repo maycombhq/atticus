@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { api, useApi, useJobPoll, useLiveEvents, type Loaded } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -1304,6 +1304,16 @@ export function Scans() {
         repos.reload();
         kinds.reload();
       }
+    }
+  });
+  // Review of beta.23: an editor panel hears none of those events, so the job is also asked
+  // after while it runs; its end reads the repos and the kinds again, as job.done does.
+  const running = job && (job.state === "running" || job.state === "queued") ? job.id : undefined;
+  useJobPoll(running, (j) => {
+    setJob(j);
+    if (j.state !== "running" && j.state !== "queued") {
+      repos.reload();
+      kinds.reload();
     }
   });
   const [stopping, setStopping] = useState(false);

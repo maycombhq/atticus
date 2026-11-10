@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.8.0",
+    "version": "3.9.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -6418,7 +6418,7 @@
       },
       "post": {
         "operationId": "syncWorkItems",
-        "summary": "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates",
+        "summary": "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates. 3.9.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is the result, or `problem` when refused",
         "tags": [
           "changes"
         ],
@@ -6442,6 +6442,9 @@
                   "confirmation": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  },
+                  "job": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -12743,7 +12746,7 @@
     "/api/runs/{runId}/done": {
       "post": {
         "operationId": "markRunDone",
-        "summary": "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`",
+        "summary": "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`. 3.9.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is this view, or `problem` when refused",
         "tags": [
           "ai"
         ],
@@ -12757,6 +12760,22 @@
             "required": true
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -37071,6 +37090,9 @@
                     "minimum": 0,
                     "maximum": 9007199254740991
                   },
+                  "rev": {
+                    "type": "string"
+                  },
                   "stop": {
                     "type": "string"
                   },
@@ -37455,6 +37477,9 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
+                },
+                "rev": {
+                  "type": "string"
                 },
                 "stop": {
                   "type": "string"

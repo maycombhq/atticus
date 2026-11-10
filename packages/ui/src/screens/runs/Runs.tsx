@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { api, callAsJob, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { message, Note, useAction } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
 import { flash } from "../../app/flash.js";
@@ -206,13 +206,17 @@ export function WaitingActions(p: {
   const [next, setNext] = useState<{ lines: string[]; next?: string }>();
   // Fourth UX walk: the page reloads after Done either way (a second failure shows its own
   // problems), and says what the step did next: its files written, or its next prompt.
-  const go = (path: string, ok: string) =>
+  // Review of beta.23: Done runs as a job (a task run's builds and commits), followed to its end.
+  const go = (path: string, ok: string, asJob = false) =>
     void act.run(
       () =>
-        api<{ lines?: string[]; next?: string; applied?: string }>(path, {
-          method: "POST",
-          body: {},
-        })
+        (asJob
+          ? callAsJob<{ lines?: string[]; next?: string; applied?: string }>(path)
+          : api<{ lines?: string[]; next?: string; applied?: string }>(path, {
+              method: "POST",
+              body: {},
+            })
+        )
           .catch((e: unknown) => {
             throw new Error(p.failed ? notListed(message(e), p.failed) : message(e));
           })
@@ -252,7 +256,7 @@ export function WaitingActions(p: {
           type="button"
           className="btn primary"
           disabled={act.busy}
-          onClick={() => go(`/api/runs/${p.runId}/done`, R.doneOk)}
+          onClick={() => go(`/api/runs/${p.runId}/done`, R.doneOk, true)}
         >
           {R.done}
         </button>

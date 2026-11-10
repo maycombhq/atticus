@@ -14,6 +14,10 @@ export const WORDS = {
   cliOld: (found: string, needed: string) =>
     `Atticus ${found} is installed, and this extension needs ${needed} or newer: some pages and commands will fail until it is updated (npm install -g @maycombhq/atticus@latest, from your npm mirror or the offline bundle).`,
   showOutput: "Show the output",
+  /** Review of beta.23: the running app took a call and hasn't answered it yet. */
+  appSlow: "The Atticus app is still working on it",
+  appSlowDetail: (path: string, s: number) =>
+    `No answer to ${path} within ${s} s, though the app is running: it may still finish. The Console says what it is doing; check again in a moment.`,
   lensesFailed: (why: string) =>
     `Atticus couldn't read which flows cite this file, so it shows no lenses for now: ${why}`,
   healthFailed: (why: string) => `Atticus couldn't check this machine and the metarepo: ${why}`,

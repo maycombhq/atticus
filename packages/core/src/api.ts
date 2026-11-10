@@ -427,8 +427,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `passage`. GET, POST /api/changes/{changeId}/stories/shape and POST
  *   .../stories/shape/{entryId}/remove are the business analyst's shaping of the stories.
  *   Additive only.
+ * 3.9.0 (review of beta.23, an editor panel on Windows): POST /api/runs/{runId}/done takes
+ *   `{ job: true }` and POST /api/changes/{changeId}/work-items takes `job: true`: the work runs
+ *   as a job (ADR 0187, so the Console shows it), the answer is 202 JobAccepted at once, and the
+ *   job's result carries the answer the call gives without it (`answer`) or its problem
+ *   (`problem`). The refusals a request can know at once (409, 400, a missing confirmation) still
+ *   come as the answer. Without `job` nothing changes. GET /api/activity's entries gain `rev`,
+ *   the version of an entry's lines when they are rewritten rather than added to (a hand-off
+ *   run's, once Done ran): the page reads them again when it changes. Additive only.
  */
-export const API_VERSION = "3.8.0";
+export const API_VERSION = "3.9.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -935,6 +943,12 @@ export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
 export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
 /** 2.67.0: what Done did: the run, what it printed, and the step's next run when it offers one. */
+/**
+ * 3.9.0 (review of beta.23): Done's body. `job: true` runs it as a job: 202 and the job's id at
+ * once, the job's result `answer` the RunDoneView (or `problem`, refused), so a panel's request
+ * never outlasts the build and commit a task run's Done makes.
+ */
+export const RunDoneRequest = z.strictObject({ job: z.boolean().optional() });
 export const RunDoneView = RunView.extend({
   lines: z.array(z.string()).optional(),
   next: z.string().optional(),
@@ -4935,6 +4949,12 @@ export const ActivityEntry = z.object({
   lines: z.number().int().min(0),
   /** The first line still kept (older ones are dropped past the cap). */
   from: z.number().int().min(0),
+  /**
+   * 3.9.0 (review of beta.23): which version of its lines these are, for an entry whose lines
+   * are rewritten rather than only added to (a hand-off run's say what to do, then what Done
+   * did). When it changes, the page reads its lines again from the start instead of adding.
+   */
+  rev: z.string().optional(),
   /** The route that stops it (POST), when the app can; a command stops in its terminal. */
   stop: z.string().optional(),
   jobId: z.string().optional(),
@@ -5080,7 +5100,11 @@ export const WorkItemPlan = z.object({
   command: z.string(),
 });
 export type WorkItemPlanT = z.infer<typeof WorkItemPlan>;
-export const WorkItemSyncRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export const WorkItemSyncRequest = z.strictObject({
+  confirmation: Confirmation.optional(),
+  /** 3.9.0: run the sync as a job (202 and its id; the job's result `answer` is the result). */
+  job: z.boolean().optional(),
+});
 export const WorkItemSyncResult = z.object({
   plan: WorkItemPlan,
   lines: z.array(z.string()),
@@ -6367,7 +6391,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "syncWorkItems",
       summary:
-        "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates",
+        "3.6.0 (ADR 0191): put them in the work tracker as the signed-in person: with a manual tracker a step each (the fields to copy, the id to record); with a live one, on the person's `work-items` confirmation. sync.yaml keeps each id, so a later sync updates rather than duplicates. 3.9.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is the result, or `problem` when refused",
       tag: "changes",
       params: [p("changeId")],
       body: WorkItemSyncRequest,
@@ -7257,9 +7281,10 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "markRunDone",
       summary:
-        "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`",
+        "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt. 3.5.0 (ADR 0188): a read of a repo's last batch is put on the map (verify --write), named in `applied`. 3.9.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is this view, or `problem` when refused",
       tag: "ai",
       params: [p("runId")],
+      body: RunDoneRequest,
       ok: { status: 200, schema: "RunDoneView", description: "OK" },
       errors: [404, 409, 422],
     },

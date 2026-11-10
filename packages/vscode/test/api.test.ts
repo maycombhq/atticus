@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AtticusApi, ApiFailed } from "../src/api";
+import { AtticusApi, ApiFailed, ApiTimedOut, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS } from "../src/api";
 import { appTokenFrom } from "../src/app-panel";
 
 let srv: Server;
@@ -72,6 +72,32 @@ describe("the app's API, as the sidebar reads it (ADR 0093)", () => {
       status: 200,
       body: { got: { a: 1 }, type: "application/json" },
     });
+  });
+
+  it("tells a live app that is slow from one that is down, and gives a write far longer (review of beta.23)", async () => {
+    const slow = createServer((req, res) => {
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ method: req.method }));
+      }, 120);
+    });
+    await new Promise<void>((r) => slow.listen(0, "127.0.0.1", () => r()));
+    const at = `http://127.0.0.1:${(slow.address() as AddressInfo).port}`;
+    try {
+      const api = new AtticusApi(at, "tok-1", { readMs: 30, writeMs: 2_000 });
+      const e = await api.request("GET", "/api/specs").catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(ApiTimedOut);
+      expect(e).toBeInstanceOf(ApiFailed);
+      // A write waits for its answer: the app finishes it, and says so.
+      expect(await api.request("POST", "/api/runs/r/done", {})).toEqual({
+        status: 200,
+        body: { method: "POST" },
+      });
+    } finally {
+      await new Promise<void>((r) => slow.close(() => r()));
+    }
+    expect(WRITE_TIMEOUT_MS).toBeGreaterThanOrEqual(10 * 60_000);
+    expect(READ_TIMEOUT_MS).toBeLessThan(WRITE_TIMEOUT_MS);
   });
 
   it("says so when nothing answers", async () => {

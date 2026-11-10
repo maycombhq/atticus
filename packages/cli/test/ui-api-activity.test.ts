@@ -203,7 +203,10 @@ describe("the Console's list (ADR 0187)", () => {
     const said = Api.ActivityLines.parse((await call("/api/activity/run-abc1/lines")).body);
     expect(said.lines.join("\n")).toContain("atticus handoff done run-abc1");
     expect(said.lines.join("\n")).toContain("prompt.md");
-    // Done in a terminal: its output is in the same entry.
+    // Review of beta.23: its lines are rewritten (not only added to) as it ends, so the entry
+    // says which version of them it is; the page reads them again when that changes.
+    expect(e.rev).toMatch(/^[0-9a-f]{8,}$/);
+    expect((await list()).entries.find((x) => x.id === "run-abc1")!.rev).toBe(e.rev);
     const done = startTerminalRun(root, {
       positionals: ["handoff", "done", "run-abc1"],
       flags: [],
@@ -216,6 +219,10 @@ describe("the Console's list (ADR 0187)", () => {
     const after = Api.ActivityLines.parse((await call("/api/activity/run-abc1/lines")).body);
     expect(after.state).toBe("done");
     expect(after.lines).toContain("critic.md: 2 findings, no problems");
+    expect(after.lines.join("\n")).not.toContain("Waiting for your assistant");
+    const ended = (await list()).entries.find((x) => x.id === "run-abc1")!;
+    expect(ended.rev).toBeDefined();
+    expect(ended.rev).not.toBe(e.rev);
     // Done in the app: its job's lines too.
     await tracked({ jobs: srv.jobs }, "Done: run-abc1", async (c) => c?.line("Validated."), {
       meta: { handoffRun: "run-abc1" },

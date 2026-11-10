@@ -122,6 +122,47 @@ export async function api<T>(
   return r;
 }
 
+/**
+ * Review of beta.23 (API 3.9.0): a write whose work outlasts one request (a task run's Done
+ * builds and commits; a live work-tracker sync), asked of the server as a job (`job: true`). The
+ * server answers at once with the job's id; this follows the job, so an editor panel, which
+ * hears no live events, still learns when it ended, and the Console shows the work meanwhile.
+ * Resolves with the answer the call gives without `job`; a refusal throws its problem as before.
+ * A server that answers the call itself (an older one) is answered as it is.
+ */
+export async function callAsJob<T>(
+  path: string,
+  body: Record<string, unknown> = {},
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
+  const r = await api<unknown>(path, { method: "POST", body: { ...body, job: true } });
+  const jobId = r && typeof r === "object" ? (r as { jobId?: unknown }).jobId : undefined;
+  if (typeof jobId !== "string") return r as T;
+  for (;;) {
+    const j = await api<{
+      state: string;
+      errors?: string[];
+      result?: { answer?: unknown; problem?: Problem; lines?: string[] };
+    }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+    if (j.state !== "running" && j.state !== "queued") {
+      if (j.state === "done" && j.result && "answer" in j.result) {
+        wrote.dispatchEvent(new Event(WROTE));
+        return j.result.answer as T;
+      }
+      const p = j.result?.problem;
+      if (p) throw new ApiError(problemOf(p, typeof p.status === "number" ? p.status : 422, ""));
+      const words = (j.result?.lines?.length ? j.result.lines : (j.errors ?? [])).join(" ");
+      throw new ApiError({
+        type: "about:blank",
+        title: COPY.app.jobEnded(j.state, ""),
+        status: 500,
+        detail: COPY.app.jobEnded(j.state, words),
+      });
+    }
+    await wait(700);
+  }
+}
+
 async function counted<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean },
@@ -318,6 +359,75 @@ export const catalogMayHaveChanged = (events: LiveEvent[]): boolean =>
     const p = typeof e.path === "string" ? e.path.replace(/^\.\//, "") : "";
     return !p || !p.includes("/") || /(^|\/)(catalog|org-pack)(\/|$)/.test(p);
   });
+
+/** A job as GET /api/jobs/{jobId} gives it. */
+export interface JobView {
+  id: string;
+  state: string;
+  progress: { done: number; total: number; message: string };
+  errors: string[];
+  result?: Record<string, unknown>;
+}
+
+/** How often a job a page started is asked after (review of beta.23). */
+export const JOB_POLL_MS = 1500;
+
+/**
+ * Review of beta.23: a job a page started, followed by asking, not only by its job.progress and
+ * job.done events: an editor panel hears none of them, so a page that waited on job.done stayed
+ * "working" for good. `onJob` hears the job each time; the asking stops once it has ended, on
+ * stop(), or after an ask that failed (`onError` hears why).
+ */
+export function pollJob(
+  jobId: string,
+  onJob: (j: JobView) => void,
+  o: {
+    wait?: (ms: number) => Promise<void>;
+    everyMs?: number;
+    onError?: (e: unknown) => void;
+  } = {},
+): { stop(): void; finished: Promise<void> } {
+  const wait = o.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let stopped = false;
+  const finished = (async () => {
+    while (!stopped) {
+      let j: JobView;
+      try {
+        j = await api<JobView>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+      } catch (e) {
+        if (!stopped) o.onError?.(e);
+        return;
+      }
+      if (stopped) return;
+      onJob(j);
+      if (j.state !== "running" && j.state !== "queued") return;
+      await wait(o.everyMs ?? JOB_POLL_MS);
+    }
+  })();
+  return {
+    stop: () => {
+      stopped = true;
+    },
+    finished,
+  };
+}
+
+/** pollJob while the page shows a job: `jobId` undefined stops it. */
+export function useJobPoll(
+  jobId: string | undefined,
+  onJob: (j: JobView) => void,
+  onError?: (e: unknown) => void,
+): void {
+  const handler = useRef({ onJob, onError });
+  handler.current = { onJob, onError };
+  useEffect(() => {
+    if (!jobId) return;
+    const p = pollJob(jobId, (j) => handler.current.onJob(j), {
+      onError: (e) => handler.current.onError?.(e),
+    });
+    return () => p.stop();
+  }, [jobId]);
+}
 
 /** Live events on /api/events; reconnects with a backoff while the page is open. */
 export function useLiveEvents(onEvent: (e: LiveEvent) => void): void {

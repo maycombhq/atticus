@@ -5,7 +5,9 @@
  * container. The page's API calls come to the extension as messages; it answers them from the
  * local API, which keeps the session token. No `vscode` here, so it is tested outside the editor.
  */
+import { ApiTimedOut } from "./api";
 import { APP_HOME } from "./surface";
+import { WORDS } from "./words";
 
 /** Only the app's own screens: #/<screen>[/<id>][?query]. */
 const SCREEN_HASH = /^#\/[a-z][a-z0-9-]*(\/[^?\s"<>]*)?(\?[^\s"<>]*)?$/;
@@ -102,6 +104,15 @@ export async function answerApp(
     const r = await call(method, path, body);
     return { type: "api-reply", id, status: r.status, body: r.body };
   } catch (e) {
+    // Review of beta.23: a running app that is slow to answer isn't down: the page says it is
+    // still working (504), never the page-wide "the app isn't answering" note (503).
+    if (e instanceof ApiTimedOut)
+      return {
+        type: "api-reply",
+        id,
+        status: 504,
+        body: { type: "about:blank", title: WORDS.appSlow, status: 504, detail: e.message },
+      };
     return {
       type: "api-reply",
       id,

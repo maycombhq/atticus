@@ -32,6 +32,13 @@ export const COPY = {
       "The Atticus server the extension started isn't answering. Run Atticus: Open the app from the Command Palette to start it again, then press Try again.",
     offlineShort: "the server isn't answering (the note at the top says how to fix it)",
     online: "The server is answering again.",
+    /** Review of beta.23: a write run as a job ended without its answer (stopped, or it broke). */
+    jobEnded: (state: string, words: string) =>
+      words
+        ? `It ${state === "cancelled" ? "was stopped" : "failed"}: ${words}`
+        : state === "cancelled"
+          ? "It was stopped before it finished."
+          : "It failed; the Console has what it printed.",
     working: "Working on it…",
     ccReading: "Reading your metarepo…",
     ccCantRead: "Couldn't read what needs attention: each panel below says why.",

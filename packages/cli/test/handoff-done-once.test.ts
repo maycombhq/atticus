@@ -203,6 +203,87 @@ describe("Done and the app's own check of one run", () => {
   });
 });
 
+describe("Done as a job (review of beta.23: an editor panel waits for one answer)", () => {
+  let root: string;
+  let srv: RunningServer;
+  const call = async (path: string, method: string, body?: unknown) => {
+    const r = await fetch(srv.url + path, {
+      method,
+      headers: {
+        "X-Atticus-Token": srv.token,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    const text = await r.text();
+    return { status: r.status, body: text ? (JSON.parse(text) as Record<string, unknown>) : {} };
+  };
+  const settled = async (jobId: string) => {
+    for (let i = 0; i < 200; i++) {
+      const j = await call(`/api/jobs/${jobId}`, "GET");
+      if (j.body.state !== "running" && j.body.state !== "queued") return j.body;
+      await new Promise((x) => setTimeout(x, 20));
+    }
+    throw new Error(`job ${jobId} didn't end`);
+  };
+
+  beforeAll(async () => {
+    root = await forgeRoot();
+    srv = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (r, ctx) =>
+        extendUiRoutes(r, ctx, {
+          autoDone: { off: true },
+          runStep: async () => {
+            await new Promise((x) => setTimeout(x, 150));
+            return { code: 0, out: ["Wrote feature.yaml."], err: [] };
+          },
+        }),
+    });
+  });
+  afterAll(() => srv?.close());
+
+  it("answers 202 at once, and the job's result is the answer Done gives", async () => {
+    const id = "run-20261109090000-0006";
+    await handedOff(root, id, { state: "waiting", change: "knowledge-scan" });
+    const started = await call(`/api/runs/${id}/done`, "POST", { job: true });
+    expect(started.status, JSON.stringify(started.body)).toBe(202);
+    const jobId = String(started.body.jobId);
+    const j = await settled(jobId);
+    expect(j.state, JSON.stringify(j)).toBe("done");
+    const answer = (j.result as { answer: Record<string, unknown> }).answer;
+    expect(answer.state).toBe("validated");
+    expect(answer.runId).toBe(id);
+    // The Console names the hand-off run the job is the Done of.
+    const act = await call("/api/activity", "GET");
+    const entries = (act.body.entries ?? []) as { id: string; handoffRun?: string }[];
+    expect(JSON.stringify(entries)).toContain(id);
+  });
+
+  it("refuses a second Done while the first one's job runs, and one of a finished run, at once", async () => {
+    const id = "run-20261109090000-0007";
+    await handedOff(root, id, { state: "validated" });
+    await keepResume(root, CHANGE, id, resumeOf(id));
+    const first = await call(`/api/runs/${id}/done`, "POST", { job: true });
+    expect(first.status).toBe(202);
+    const second = await call(`/api/runs/${id}/done`, "POST", { job: true });
+    expect(second.status).toBe(409);
+    expect((await settled(String(first.body.jobId))).state).toBe("done");
+    const cancelled = "run-20261109090000-0008";
+    await handedOff(root, cancelled, { state: "cancelled" });
+    expect((await call(`/api/runs/${cancelled}/done`, "POST", { job: true })).status).toBe(409);
+  });
+
+  it("refuses a body it doesn't know", async () => {
+    const id = "run-20261109090000-0009";
+    await handedOff(root, id, { state: "waiting", change: "knowledge-scan" });
+    expect((await call(`/api/runs/${id}/done`, "POST", { jobb: true })).status).toBe(400);
+  });
+});
+
 describe("the app's own check of a run the command line validated", () => {
   let root: string;
   let srv: RunningServer;

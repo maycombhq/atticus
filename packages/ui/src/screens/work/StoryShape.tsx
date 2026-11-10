@@ -1,6 +1,6 @@
 import { useId, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, useApi, useReloadOnFiles } from "../../api/client.js";
+import { api, callAsJob, useApi, useReloadOnFiles } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -375,9 +375,10 @@ export function WorkItemsPanel({ change }: { change: string }) {
                         async () => {
                           const c =
                             p.tracker === "live" ? await confirmed("work-items", change) : {};
-                          const r = await api<Api.WorkItemSyncResultT>(
+                          // Review of beta.23: a live tracker is called per item: a job.
+                          const r = await callAsJob<Api.WorkItemSyncResultT>(
                             `/api/changes/${encodeURIComponent(change)}/work-items`,
-                            { method: "POST", body: c },
+                            c,
                           );
                           plan.reload();
                           return r;

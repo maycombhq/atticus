@@ -1507,7 +1507,8 @@ ${view.next.why}`
     try {
       a = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Starting the Atticus app..." },
-        () => svc.runningApp(root),
+        // Review of beta.23: Open the app is the person's retry: it starts a failed app again.
+        () => svc.runningApp(root, { retry: true }),
       );
     } catch (e) {
       const pick = await vscode.window.showErrorMessage(

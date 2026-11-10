@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApplyAndPropose } from "../app/propose.js";
 import { RunStep, stepArgs } from "../app/runstep.js";
 import type { Api, Question } from "@maycombhq/core";
-import { api, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
+import { api, callAsJob, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
@@ -1395,7 +1395,7 @@ export function AskAiToPropose({ open }: { open: number }) {
         if (!run) return;
         setBusy("done");
         setNote(undefined);
-        api<{ lines?: string[] }>(`/api/runs/${encodeURIComponent(run)}/done`, { method: "POST" })
+        callAsJob<{ lines?: string[] }>(`/api/runs/${encodeURIComponent(run)}/done`)
           .then(
             (r) => {
               setNote({ ok: true, lines: r.lines ?? [] });

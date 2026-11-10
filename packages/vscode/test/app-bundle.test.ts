@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { ApiTimedOut } from "../src/api";
 import { answerApp, bundledHtml, saveFromApp } from "../src/app-bundle";
+import { WORDS } from "../src/words";
 
 /**
  * ADR 0097: the app's own files, shipped in the extension, loaded straight into a VS Code panel:
@@ -166,6 +168,20 @@ describe("answering the app's calls", () => {
     );
     expect(calls.at(-1)).toEqual(["POST", "/api/me/digest", { pageKey: oldKey }]);
     expect(calls.length).toBe(before + 3);
+  });
+
+  it("never says a slow answer of a running app is the app being down (review of beta.23)", async () => {
+    const r = await answerApp(
+      { type: "api", id: 5, method: "POST", path: "/api/runs/r/done" },
+      async () => {
+        throw new ApiTimedOut("/api/runs/r/done", 600_000);
+      },
+    );
+    expect(r).toMatchObject({ type: "api-reply", id: 5, status: 504 });
+    const body = (r as { body: { title: string; detail: string } }).body;
+    expect(body.title).not.toBe("The Atticus app isn't answering");
+    expect(body.title).toBe(WORDS.appSlow);
+    expect(body.detail).toContain("/api/runs/r/done");
   });
 
   it("says so when the local API doesn't answer", async () => {

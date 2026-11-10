@@ -47,6 +47,11 @@ const isMsg = (m: unknown): m is Msg => typeof m === "object" && m !== null;
 
 /** How long a call waits for the extension's reply before it is given up (the page says so). */
 export const BRIDGE_TIMEOUT_MS = 60_000;
+/**
+ * Review of beta.23: a write waits longer (a task run's Done builds and commits; the extension
+ * gives the app 10 minutes for one), so the page never gives up on a write that still goes through.
+ */
+export const BRIDGE_WRITE_TIMEOUT_MS = 11 * 60_000;
 /** A step the extension says nothing about for this long is given up. */
 const STEP_SILENT_MS = 60 * 60_000;
 /** How long an export waits for the Save dialog's answer. */
@@ -56,6 +61,7 @@ export function makeBridge(
   post: (m: Msg) => void,
   on: (f: (m: unknown) => void) => void,
   timeoutMs = BRIDGE_TIMEOUT_MS,
+  writeTimeoutMs = BRIDGE_WRITE_TIMEOUT_MS,
 ): Bridge {
   let next = 0;
   const waiting = new Map<number, (r: BridgeReply) => void>();
@@ -94,6 +100,7 @@ export function makeBridge(
   return {
     call(path, o) {
       const id = ++next;
+      const ms = !o.method || o.method === "GET" ? timeoutMs : writeTimeoutMs;
       return new Promise((resolve) => {
         // The extension answers every call (503 when the app doesn't); a reply lost to a reload
         // of the extension would leave the page waiting, with its loading bar on, for good.
@@ -105,10 +112,10 @@ export function makeBridge(
               type: "about:blank",
               title: COPY.bridge.noAnswer,
               status: 504,
-              detail: COPY.bridge.noAnswerTo(path, Math.round(timeoutMs / 1000)),
+              detail: COPY.bridge.noAnswerTo(path, Math.round(ms / 1000)),
             },
           });
-        }, timeoutMs);
+        }, ms);
         waiting.set(id, (r) => {
           clearTimeout(timer);
           resolve(r);
