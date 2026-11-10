@@ -250,6 +250,35 @@ export function correctionLine(c: FactCorrection): string {
 
 type CallLike = { kind: string; id: string; cite: { file: string; line: number; value: string } };
 
+/** Whether `a` was written after `b`: by time, else by its place in the file. */
+function newer(a: FactCorrection, b: FactCorrection, all: readonly FactCorrection[]): boolean {
+  return a.at > b.at || (a.at === b.at && all.indexOf(a) > all.indexOf(b));
+}
+
+/**
+ * Review round 2 (beta.23): a person's newest edit of where a call goes (an `edit` setting `to`,
+ * not the AI's), or none.
+ */
+export function personEditOfTo(
+  f: CallLike,
+  corrections: readonly FactCorrection[],
+): FactCorrection | undefined {
+  if (f.kind !== "call") return undefined;
+  let best: FactCorrection | undefined;
+  for (const c of corrections)
+    if (
+      c.action === "edit" &&
+      !c.ai &&
+      c.set?.to !== undefined &&
+      c.fact === f.id &&
+      c.target.kind === "call" &&
+      c.target.file === f.cite.file &&
+      (!best || newer(c, best, corrections))
+    )
+      best = c;
+  return best;
+}
+
 /**
  * G1 (ADR 0174): every pairing (`link`) that meets a call, newest first: on its cited line by its
  * id or by what it cites, or by its id where an edit of the same fact moved it to the line it is
@@ -299,6 +328,11 @@ export function pairsFromCorrections(
   const out: Record<string, PairOnFile> = {};
   for (const f of facts) {
     const c = linksFor(f, corrections)[0];
+    // Review round 2 (beta.23): a person's edit of where the call goes (`set: { to }`, "This link
+    // is wrong") is a person's word too: it stands over any AI pairing, and over a person's older
+    // one (the newest person word wins). The call then goes where its fact's `to` says.
+    const edit = c ? personEditOfTo(f, corrections) : undefined;
+    if (edit && (c!.ai || newer(edit, c!, corrections))) continue;
     if (c?.action === "link" && c.link)
       out[f.id] = { ...c.link, by: c.by, ...(c.ai ? { ai: { ...c.ai } } : {}) };
     else if (o.declined && c?.action === "unlink" && !c.ai)

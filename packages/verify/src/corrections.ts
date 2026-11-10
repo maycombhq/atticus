@@ -95,7 +95,8 @@ export function applyCorrections(
   const withPairing = (f: Fact, as: Fact, over?: FactCorrection): Fact => {
     const p = outsidePairingFor(as, corrections);
     if (!p) return f;
-    if (over && over.at > p.at && over.set?.to !== undefined) return f;
+    // Review round 2 (beta.23): a person's word stands over the AI's, whenever it was written.
+    if (over && over.set?.to !== undefined && (over.at > p.at || (!!p.ai && !over.ai))) return f;
     const fixed = correctedFact(f, { ...p, action: "edit", set: { to: p.link!.system! } });
     if (typeof fixed === "string") {
       stale.push({

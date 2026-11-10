@@ -688,6 +688,26 @@ describe("a person's word stands over the AI's (round 45)", () => {
     const pairs = pairsFromCorrections(await billingFacts(), await corrections());
     expect(pairs["call.post.capture-charge"]).toMatchObject({ by: "pat", entry: REFUNDS });
   });
+
+  it("never pairs a call a person said goes elsewhere (This link is wrong: an edit of `to`)", async () => {
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    await writeFile(
+      join(root, "facts/forge-billing.corrections.jsonl"),
+      JSON.stringify({
+        schemaVersion: 1,
+        fact: "call.post.capture-charge",
+        target: { kind: "call", file: FILE, line: 31, value: "captureChargePath" },
+        action: "edit",
+        set: { to: "forge-ledger" },
+        by: "pat",
+        at: "2026-11-08T10:00:00.000Z",
+      }) + "\n",
+    );
+    const d = await decideLinks(root, { view, facts, run: "r1", now: AT, proposals: propose });
+    expect(d?.applied).toEqual([]);
+    expect(d?.kept[0]?.why).toMatch(/a person has said where this call goes/);
+    expect((await corrections()).filter((c) => c.ai)).toEqual([]);
+  });
 });
 
 describe("AI decides in hand-off mode too (ADR 0181, ninth UX walk)", () => {
