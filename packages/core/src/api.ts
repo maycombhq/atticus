@@ -463,7 +463,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   written), with every file, one git command and a verify command per repo. A graph join's
  *   `how` may be `base-path` (a call whose host nothing resolves, joined by the one proxy
  *   BasePath its whole path starts with, `joined-by-base-path`). A link whose first flag is a
- *   guess is never `verified` in its join. Repo trust (GET /api/trust) gains `secrets`: a config
+ *   guess is never `verified` in its join; a verified link's `how` is its verified call's, and
+ *   the guesses other calls it merged rest on are its join's `also`. Repo trust (GET /api/trust) gains `secrets`: a config
  *   file's line that holds what looks like a live secret, its file and line, never its value.
  *   Additive only.
  */
@@ -645,6 +646,12 @@ export const HierJoin = z.object({
   gateway: z.boolean(),
   /** The Interface is verified: both ends declared, and nobody had to guess the callee. */
   verified: z.boolean(),
+  /**
+   * 3.10.0 (beta.24 review): on a verified link, the guesses other calls it merged rest on (by
+   * path, a platform-wide setting…), to show as "also", never as how the link was made: `how`
+   * is the verified call's. Left out when there are none, and on a link that isn't verified.
+   */
+  also: z.array(z.enum(LINK_HOWS)).optional(),
   method: z.string().optional(),
   path: z.string().optional(),
   /** The caller's lines: the call, and the config that ties it to the host. */

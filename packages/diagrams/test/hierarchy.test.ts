@@ -671,6 +671,75 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect([m.how, m.verified]).toEqual(["host", true]);
   });
 
+  it("a verified link keeps its verified how; a guess it merged is an also, never the reason (review of beta.24)", () => {
+    // A host join and a call another caller's path gave, merged: verified by the host join.
+    const mixed = records().map((r) =>
+      r.id === HOST ? ({ ...r, flags: ["joined-by-host", "joined-by-path"] } as typeof r) : r,
+    );
+    const m = nodeView(buildEstate(mixed), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([m.how, m.verified, m.also]).toEqual(["host", true, ["path"]]);
+    // The same flags on an inferred link: the guess is the reason, and nothing more to add.
+    const guessed = records().map((r) =>
+      r.id === HOST
+        ? ({
+            ...r,
+            confidence: "inferred",
+            flags: ["joined-by-path", "joined-by-host"],
+          } as typeof r)
+        : r,
+    );
+    const g = nodeView(buildEstate(guessed), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([g.how, g.verified, g.also]).toEqual(["path", false, undefined]);
+  });
+
+  it("a verified topic link that merged a literal publish and a platform setting's stays verified, the guess an also", () => {
+    const comp = (id: string, system: string) => ({
+      kind: "Component",
+      id,
+      confidence: "verified",
+      system,
+      repo: id,
+      type: "service",
+      evidence: [cite(id, "src/a.ts", 1, "caller")],
+    });
+    const TOPIC_LINK = interfaceId("forge-pub", "forge-lis", undefined, "forge.payments.settled");
+    const rs = [
+      comp("forge-pub", "payments"),
+      comp("forge-lis", "ledger"),
+      {
+        kind: "Interface",
+        id: TOPIC_LINK,
+        confidence: "verified",
+        flags: ["joined-by-platform-setting"],
+        from: "forge-pub",
+        to: "forge-lis",
+        via: "event-bus",
+        normalizedPath: "forge.payments.settled",
+        sync: "async",
+        direction: "outbound",
+        conflicts: [],
+        evidence: [
+          cite("forge-pub", "src/Publisher.java", 5, "caller"),
+          cite("forge-pub", "src/Other.java", 9, "caller"),
+          cite("forge-lis", "src/Listener.java", 2, "callee"),
+        ],
+      },
+    ].map((r) => {
+      const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
+      if (!p.ok) throw new Error(`${r.id}: ${JSON.stringify(p.issues)}`);
+      return p.record;
+    });
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const joins = v.edges.flatMap((e) => e.joins ?? []).filter((j) => j.interface === TOPIC_LINK);
+    expect(joins.length).toBeGreaterThan(0);
+    for (const j of joins)
+      expect([j.how, j.verified, j.also]).toEqual(["topic", true, ["platform-setting"]]);
+  });
+
   it("says a call joined by a proxy's BasePath was found so (beta.24)", () => {
     const rs = records().map((r) =>
       r.id === HOST ? ({ ...r, flags: ["joined-by-base-path"] } as typeof r) : r,
