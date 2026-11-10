@@ -36,7 +36,8 @@ import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./framew
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
-import { liveSecretsIn, type SecretLine } from "./secrets.js";
+import { isConfigFile, liveSecretsIn, type SecretLine } from "./secrets.js";
+import { configLineProblem, helperBuildsKey } from "./settings-path.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
@@ -508,24 +509,20 @@ export const repoModule = (exposes: string): { repo: string; module: string } | 
   return m ? { repo: m[1]!, module: m[2]! } : undefined;
 };
 
+/** A path that is one setting's placeholder, whole: `${forge-remote.uris.createWallet}`. */
+const PLACEHOLDER_KEY = /^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$/;
+
 const routeOrWord = (v: string): Claim =>
   v.includes("/") ? { kind: "route", value: v } : { kind: "word", value: v };
 
 /** What a fact claims, as the line check looks for it; alternatives are tried in order. */
 function claimsOf(f: Fact): Claim[] {
   switch (f.kind) {
+    // A call whose path is a setting's placeholder a helper puts together is checked apart
+    // (`helperBuildsKey`): its bare key is never a claim, or a settings line would be a call.
     case "entry":
+    case "call":
       return [routeOrWord(f.path)];
-    case "call": {
-      // A path written as a setting's placeholder (`${forge-remote.uris.refund}`, ADR 0172) that
-      // no line writes whole: a helper puts the key together (a `@ConfigurationProperties`
-      // prefix, a map field, the name passed to a lookup), so each part of the key is written on
-      // the cited line or one of its parts, as any word built from parts is.
-      const whole = /^\$\{([A-Za-z_][A-Za-z0-9_.[\]-]*)\}$/.exec(f.path.trim());
-      return whole
-        ? [routeOrWord(f.path), { kind: "word", value: whole[1]! }]
-        : [routeOrWord(f.path)];
-    }
     case "store":
       return [
         { kind: "word", value: f.name },
@@ -808,6 +805,18 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length || !withHint ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
     // A claim written only in a comment (a commented-out example, a scaffold note) isn't code.
+    // Beta.24 review: with parts, the cited line itself is the code the claim rests on, so a
+    // cited line that is all comment is no code either.
+    if (
+      claims &&
+      parts.length &&
+      isCommentLine(lines[cite.line - 1] ?? "") &&
+      !/(^|\/)_redirects$/.test(cite.file)
+    )
+      return {
+        code: "claim-in-comment",
+        message: `${label} cites ${where}, which is a comment; cite the code that does it`,
+      };
     if (claims && !parts.length) {
       const naming = [cite.line - 1, cite.line, cite.line + 1]
         .map((n) => lines[n - 1])
@@ -900,10 +909,24 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 ls,
                 n,
                 f.path,
-              )
+              ) ||
+              // A path written as a setting's placeholder that no line writes whole (ADR 0172,
+              // beta.24): a helper puts the key together (a `@ConfigurationProperties` prefix, a
+              // map field, the name passed to a lookup). The cited line is code naming the key's
+              // last segment, and one file among the parts proves the rest of the key nests so.
+              (f.kind === "call" &&
+                PLACEHOLDER_KEY.test(f.path.trim()) &&
+                helperBuildsKey(PLACEHOLDER_KEY.exec(f.path.trim())![1]!, f.cite, linesOf))
           : undefined,
       ),
     );
+    // Beta.24 review: a config fact's value is what its line sets, and its key sits where the
+    // line does (its YAML parents, its properties key, its token object); the join puts the
+    // value into the catalog.
+    if (f.kind === "config" && !found.has(f.id)) {
+      const bad = configLineProblem(f, linesOf, listed);
+      if (bad) problem(f, "claim-not-on-line", `${label}: ${bad}`);
+    }
     // A-read, problem 4: an entry's auth rests on the line that sets it, checked as a part is.
     if (f.kind === "entry" && f.authCite)
       add(
@@ -1275,6 +1298,22 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const secrets: SecretLine[] = [];
   for (const p of o.source.list()) {
     o.room?.();
+    // Beta.24 review: an env, secrets or credentials file is the commonest place a secret is
+    // left, so it is scanned for the report too, by key and line. Its lines are read only into
+    // this check and dropped; it stays no source, and no fact may cite it.
+    if (isSecretPath(p)) {
+      if (
+        insideRepo(p) &&
+        isConfigFile(p) &&
+        !rules.notProduct.test(p) &&
+        !tooBigToRead(o.source, p)
+      ) {
+        const text = o.source.read(p);
+        const ls = text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n");
+        if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
+      }
+      continue;
+    }
     // Review round 49: by its path and size first, so a binary, a lock file or a file too big
     // to be source is never read just to be passed over.
     if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) continue;

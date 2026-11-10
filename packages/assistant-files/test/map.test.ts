@@ -179,9 +179,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when a forwarding call was told the target's path is its path when the suffix can't be
     // put on, `target.copy.pathsuffix` became a setting and a context path's setting was named
     // with the servlet and WebFlux base paths (the path suffix), and when a target `<URL>`'s build
-    // token and the deploy tool's file that replaces it per environment were told apart (beta.24).
+    // token and the deploy tool's file that replaces it per environment were told apart (beta.24),
+    // and when only a token setting a URL, a host or a path was told to be recorded (beta.24 review).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "ba4073345c9db7c24fd1a68c41dd7efb5d57ea7671a21b46ec2b84eeec589770",
+      "1959a897fec4a7fc4264c987aad7cbcabd4a3be74e36d0fd246bbd0a0fbf1c57",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -390,6 +391,16 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
       "whether or not the entries' paths include it",
     ])
       expect(spring, words).toContain(words);
+  });
+
+  it("records a deploy tool's token only when it sets a URL, host or path, never a header or credential (beta.24 review)", () => {
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      "only a token that sets a URL, a host or a path",
+      "never one that sets a header's value or a credential",
+    ])
+      expect(rule, words).toContain(words);
+    expect(batch(["gateway"])).toContain("never one that sets a header's value or a credential");
   });
 
   it("says how a route's scopes and its virtual host are read and cited (A-gateway2)", () => {

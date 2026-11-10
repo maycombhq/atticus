@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Auth, FLOW_STEP_KINDS } from "./kinds.js";
+import { hasSecretShape } from "../cite.js";
 
 /**
  * The facts file: what the assistant writes when it reads a repo (ADR 0124). One JSON line
@@ -314,18 +315,31 @@ const SECRET_SOURCE = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/;
 const NOT_A_SECRET = /^(true|false|yes|no|on|off|include|omit|same-origin|none|null|\d+)$/i;
 
 /**
- * Whether a key and its value look like a secret: the key's last part ends in a secret word,
- * and the value is neither a reference to where the secret lives nor a flag or a mode.
+ * The names a key gives what it sets (beta.24 review): its last part, split on any character
+ * that is no letter, digit, `_` or `-` (`db.password`, `Db__Password`, an XPath's last element
+ * `KeyStorePassword`), and each name in brackets, by its own last part (an XPath's
+ * `Header[@name='x-api-key']`, `AssignVariable[Name='private.clientSecret']`).
+ */
+function namesOfKey(key: string): string[] {
+  const lastOf = (k: string) =>
+    k
+      .split(/[^A-Za-z0-9_-]+|__/)
+      .filter(Boolean)
+      .pop() ?? "";
+  const bracketed = [...key.matchAll(/\[[^\]]*?["']([^"']+)["'][^\]]*\]/g)].map((m) => m[1]!);
+  const bare = key.replace(/\[[^\]]*\]/g, "").trim();
+  return [lastOf(bare), ...bracketed.map(lastOf)].filter(Boolean);
+}
+
+/**
+ * Whether a key and its value look like a secret: a name the key gives (its last part, a
+ * bracketed name) ends in a secret word, and the value is neither a reference to where the
+ * secret lives nor a flag or a mode.
  */
 export function looksLikeSecret(key: string, value: string | undefined): boolean {
-  const last =
-    key
-      .trim()
-      .split(/[.:]|__|\s+/)
-      .pop() ?? key;
   return (
     value !== undefined &&
-    SECRET_KEY.test(last) &&
+    namesOfKey(key).some((n) => SECRET_KEY.test(n)) &&
     !SECRET_SOURCE.test(value) &&
     !NOT_A_SECRET.test(value.trim())
   );
@@ -352,6 +366,14 @@ export const ConfigFact = z
         code: "custom",
         path: ["value"],
         message: `"${c.key}" looks like a secret: give its source (env:NAME, vault:path), never its value`,
+      });
+    } else if (c.value !== undefined && hasSecretShape(c.value)) {
+      // Beta.24 review: a value shaped like a secret (an access key id, a URL's password, a
+      // bearer token) is refused whatever its key, and the message never repeats it.
+      ctx.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: `"${c.key}" has a value shaped like a secret: give its source (env:NAME, vault:path), never its value`,
       });
     }
   });
