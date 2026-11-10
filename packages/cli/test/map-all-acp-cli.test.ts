@@ -308,7 +308,14 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     });
     const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
     const ac = new AbortController();
-    setTimeout(() => ac.abort(), 600);
+    // Ctrl+C once the session is under way (its prompt sent), not after a fixed time: a slow
+    // machine (Windows CI) hadn't started the session by 600 ms, so there was nothing to cancel.
+    const pressed = setInterval(() => {
+      if (m.log().some((e) => e.event === "prompt")) {
+        clearInterval(pressed);
+        setTimeout(() => ac.abort(), 200);
+      }
+    }, 50);
     const o = io();
     expect(
       await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp" }, o.io, {
@@ -320,6 +327,7 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     expect(o.text()).toContain(
       "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
     );
+    clearInterval(pressed);
     expect(m.log().some((e) => e.event === "cancel")).toBe(true);
     expect((await readMapAllState(root))?.repos["forge-ledger"]?.parts["1"]?.state).toBe(
       "incomplete",
