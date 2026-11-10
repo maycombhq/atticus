@@ -11,6 +11,7 @@ import {
   upsert,
   activityPollMs,
   linesKey,
+  shownLines,
   withActivityLines,
   type ActivityCtx,
 } from "../src/app/activity.js";
@@ -242,6 +243,21 @@ describe("the Console's lines", () => {
     expect(withActivityLines(held, 0, ["c1: run-1 validated."], done).lines).toEqual([
       "c1: run-1 validated.",
     ]);
+  });
+
+  it("keeps showing the lines it holds while a new version of them is read (review of beta.23)", () => {
+    const e = { startedAt: at, rev: "aaaa1111" } as Api.ActivityEntryT;
+    const held = withActivityLines(
+      undefined,
+      0,
+      ["Done, from the app (running):", "a"],
+      linesKey(e),
+    );
+    // The version moved (the Done ended): the old lines stay on screen until the new ones come.
+    expect(shownLines(held, { ...e, rev: "bbbb2222" })?.lines).toEqual(held.lines);
+    // Another run's start: nothing of this one is shown for it.
+    expect(shownLines(held, { startedAt: "2026-11-09T11:00:00.000Z" })).toBeUndefined();
+    expect(shownLines(undefined, e)).toBeUndefined();
   });
 
   it("takes the server's answer past a gap (lines it dropped), says so, and goes on", () => {

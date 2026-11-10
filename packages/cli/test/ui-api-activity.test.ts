@@ -230,6 +230,38 @@ describe("the Console's list (ADR 0187)", () => {
     expect(
       Api.ActivityLines.parse((await call("/api/activity/run-abc1/lines")).body).lines,
     ).toContain("Validated.");
+    // A Done in the app printing as it runs only adds to its own part, the last: the version
+    // stays, so the page adds the new lines rather than reading them all again on every poll.
+    const gate = () => {
+      let open!: () => void;
+      const p = new Promise<void>((r) => (open = r));
+      return { p, open };
+    };
+    const printed = gate();
+    const more = gate();
+    const printedMore = gate();
+    const end = gate();
+    const running = tracked(
+      { jobs: srv.jobs },
+      "Finishing the step: run-abc1",
+      async (c) => {
+        c?.line("Reading the answer");
+        printed.open();
+        await more.p;
+        c?.line("Verifying forge-ledger");
+        printedMore.open();
+        await end.p;
+      },
+      { meta: { handoffRun: "run-abc1" } },
+    );
+    await printed.p;
+    const one = (await list()).entries.find((x) => x.id === "run-abc1")!.rev;
+    more.open();
+    await printedMore.p;
+    const two = (await list()).entries.find((x) => x.id === "run-abc1")!.rev;
+    expect(two).toBe(one);
+    end.open();
+    await running;
   });
 
   it("refuses an id or a from it can't read, and says 404 for none", async () => {

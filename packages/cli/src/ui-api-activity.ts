@@ -411,7 +411,10 @@ export function uiActivityRoutes(
     return handoffCache.runs;
   };
   /** A hand-off run's lines: what to do, then each Done's, from the app and from anywhere. */
-  const handoffLines = (h: HandoffRun): string[] => {
+  const handoffLines = (h: HandoffRun): { lines: string[]; shape: string[] } => {
+    // The parts the lines are made of (the waiting words or the state, then each Done's), each
+    // with its length but the last's: what the lines' version is made from (handoffEntry).
+    const shape: string[] = [handoffState(h.state)];
     const prompt = `${runsRelOf(root)}/${h.change}/${h.runId}/prompt.md`;
     const out: string[] = [];
     if (handoffState(h.state) === "waiting") {
@@ -427,31 +430,45 @@ export function uiActivityRoutes(
       out.push(`${h.change}: ${h.runId} ${h.state}.`, `The prompt: ${prompt}`);
       for (const e of h.errors) out.push(`  ${e}`);
     }
-    // Done in the app: its job's lines.
-    for (const j of [...ctx.jobs.list()].reverse()) {
+    // Each Done, the app's (its job's lines) and anywhere else's (`atticus handoff done <run>`'s
+    // own log), oldest first: the one still running is the last part, so what it prints is only
+    // added to the lines (review of beta.23).
+    const parts: { at: string; key: string; head: string; lines: string[] }[] = [];
+    for (const j of ctx.jobs.list()) {
       if (ctx.jobs.metaOf(j.id)?.handoffRun !== h.runId) continue;
-      const l = ctx.jobs.linesOf(j.id);
-      out.push("", `Done, from the app (${j.state}):`, ...(l?.lines ?? []));
+      parts.push({
+        at: j.startedAt,
+        key: `job ${j.id}`,
+        head: `Done, from the app (${j.state}):`,
+        lines: ctx.jobs.linesOf(j.id)?.lines ?? [],
+      });
     }
-    // Done anywhere else: `atticus handoff done <run>`'s own log.
-    for (const t of readTerminalRuns(root, readOpts).reverse()) {
+    for (const t of readTerminalRuns(root, readOpts)) {
       const [g, c, id] = t.command;
       if (g !== "handoff" || c !== "done" || id !== h.runId) continue;
-      const l = readTerminalRunLines(root, t.runId);
-      out.push(
-        "",
-        `${t.title} (${t.startedBy}, ${t.stale ? "ended" : t.state}):`,
-        ...(l?.lines ?? []),
-      );
+      parts.push({
+        at: t.startedAt,
+        key: `run ${t.runId}`,
+        head: `${t.title} (${t.startedBy}, ${t.stale ? "ended" : t.state}):`,
+        lines: readTerminalRunLines(root, t.runId)?.lines ?? [],
+      });
     }
-    return out;
+    parts.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.key < b.key ? -1 : 1));
+    for (const p of parts) {
+      // A part's head line (its state) changes as it ends, so it is part of the version too.
+      shape.push(`${p.key} ${out.length} ${p.head}`);
+      out.push("", p.head, ...p.lines);
+    }
+    return { lines: out, shape };
   };
   const handoffEntry = (h: HandoffRun): Entry => {
-    const lines = handoffLines(h);
+    const { lines, shape } = handoffLines(h);
     // Review of beta.23: these lines are made again each time (the "waiting" words go once Done
     // ran, and an app's Done comes before a terminal's), so they aren't only added to: their
     // version tells the page to read them again rather than add past what it holds.
-    const rev = createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 16);
+    // Only the parts and where each starts: lines added to the last part (a Done printing as it
+    // runs) are added to what the page holds, not a reason to read them all again.
+    const rev = createHash("sha256").update(shape.join("\n")).digest("hex").slice(0, 16);
     return {
       rev,
       id: h.runId,
@@ -505,7 +522,7 @@ export function uiActivityRoutes(
       handoffCache = undefined;
       const h = handoffRuns().find((x) => x.runId === id);
       if (!h) throw notFound(`There is no activity ${id}.`);
-      const all = handoffLines(h);
+      const all = handoffLines(h).lines;
       const start = Math.min(from ?? Math.max(all.length - RUN_LOG_READ_MAX, 0), all.length);
       return {
         id,

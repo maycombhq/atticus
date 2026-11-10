@@ -118,6 +118,19 @@ export const linesKey = (e: Pick<Entry, "startedAt" | "rev">): string =>
   e.rev ? `${e.startedAt}#${e.rev}` : e.startedAt;
 
 /**
+ * The lines to show of an entry: those held of its version, else (review of beta.23) those held
+ * of an earlier version of the same run, until the new version's are read, so the log never goes
+ * blank ("Loading…") while it is read again.
+ */
+export function shownLines(held: Lines | undefined, e: Pick<Entry, "startedAt" | "rev">) {
+  if (!held) return undefined;
+  if (held.startedAt === linesKey(e)) return held;
+  return held.startedAt === e.startedAt || held.startedAt.startsWith(`${e.startedAt}#`)
+    ? held
+    : undefined;
+}
+
+/**
  * How often the Console's list is asked for. Review of beta.23: a page no one sees (a panel in a
  * background tab, a window minimised) asks seldom, as each ask in an editor panel goes through
  * the extension, and it reads at once when shown again.
@@ -756,8 +769,8 @@ export function ActivityConsole() {
                       <LogView
                         key={`${shown.id}:${shown.startedAt}`}
                         entry={shown}
-                        {...(a.lines[shown.id]?.startedAt === linesKey(shown)
-                          ? { lines: a.lines[shown.id]! }
+                        {...(shownLines(a.lines[shown.id], shown)
+                          ? { lines: shownLines(a.lines[shown.id], shown)! }
                           : {})}
                         {...(a.linesState[shown.id] ? { state: a.linesState[shown.id]! } : {})}
                         onEarlier={() => a.loadEarlier(shown.id)}
