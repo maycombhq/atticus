@@ -669,6 +669,8 @@ export function drawnStrokes(
 ): { flow: string; index: number; what: string; by?: string }[] {
   const out: { flow: string; index: number; what: string; by?: string }[] = [];
   const seen = new Set<string>();
+  // A stroke marked on a whole delta is listed at that delta, never at a step it drew elsewhere.
+  const whole = new Set(deltas.map((d) => strokeIdOf(d)).filter((id) => id !== undefined));
   for (const d of deltas) {
     // ADR 0189 and 0193: a retire or absorb stroke, once, at its first flow.
     const rid = strokeIdOf(d);
@@ -688,7 +690,7 @@ export function drawnStrokes(
     }
     d.steps.forEach((s, index) => {
       const id = strokeIdOf(s);
-      if (!id || seen.has(id)) return;
+      if (!id || seen.has(id) || whole.has(id)) return;
       seen.add(id);
       const pair = d.steps.find((y, j) => j !== index && strokeIdOf(y) === id);
       const what =
