@@ -416,7 +416,10 @@ describe("joinRecords through a gateway: a hop that guessed makes the whole link
       (r) => r.kind === "Interface" && r.from === "portal-api" && r.to === "accounts-api",
     );
 
-  it("a hop joined by path: the walked link is inferred and flagged joined-by-path", () => {
+  it("a hop naming no host is never joined by path (beta.24): the walk stops at the gateway", () => {
+    // Beta.23 joined such a hop to whichever service served the path, a guess that made the
+    // walked link inferred; a gateway forwards to the host its target names, so with none the
+    // hop is left, and the caller's call is the gateway's.
     const repos = swap(estate(), "forge-gateway", (fs) =>
       fs.map((f) => {
         if (f.kind !== "call") return f;
@@ -424,19 +427,16 @@ describe("joinRecords through a gateway: a hop that guessed makes the whole link
         return rest as Fact;
       }),
     );
-    const out = joinFacts({ repos });
-    const hop = out.joins.find((j) => j.call.fact === "call.post.transfers")!;
-    expect(hop).toMatchObject({ how: "path", inferred: { within: "estate" } });
+    const out = joinFacts({ repos, explain: true });
+    expect(out.joins.find((j) => j.call.fact === "call.post.transfers")).toBeUndefined();
+    expect((out.left ?? []).map((l) => [l.call.fact, l.reason])).toContainEqual([
+      "call.post.transfers",
+      "no-host",
+    ]);
     const post = out.joins.find((j) => j.call.fact === PORTAL_POST)!;
-    expect(post.gateway).toHaveLength(1);
-    expect(post.inferred).toEqual({ within: "estate" });
-    const links = walkedLinks(joinRecords(out, repos));
-    expect(links).toHaveLength(2);
-    for (const r of links) {
-      expect(r.confidence).toBe("inferred");
-      expect(r.flags?.[0]).toBe("joined-by-path");
-      expect(r.flags ?? []).not.toContain("joined-by-host");
-    }
+    expect(post.gateway).toBeUndefined();
+    expect(post.entry.repo).toBe("forge-gateway");
+    expect(walkedLinks(joinRecords(out, repos))).toEqual([]);
   });
 
   it("a hop a person paired: the walked link is that person's pairing, citing the hop's call", () => {

@@ -261,6 +261,12 @@ export const JOINED_BY_NAME = "joined-by-name";
 export const JOINED_BY_REPO = "joined-by-repo";
 export const JOINED_BY_HOST = "joined-by-host";
 /**
+ * A call whose host nothing resolves, joined to a gateway proxy's flow by its whole path: the one
+ * proxy whose cited `<BasePath>` starts it, the one flow of its method under it. Code at both
+ * ends: a how, never a guess.
+ */
+export const JOINED_BY_BASE_PATH = "joined-by-base-path";
+/**
  * J0, J1: the guesses a join by host can rest on, though the host itself was cited. The setting
  * that gave the host is a platform-wide one nobody aimed at the caller (`setsForAll`), or one that
  * is the caller's only because a folder of its file is named like it (`apps/<component>/...`); or
@@ -327,6 +333,7 @@ export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
   JOINED_BY_NAME,
   JOINED_BY_REPO,
   JOINED_BY_HOST,
+  JOINED_BY_BASE_PATH,
   // A-callers: a person declared who calls a gateway route (`DECLARED_CALLER`, facts-callers).
   "declared-caller",
   // ADR 0160 (O3): a call to another team's system, answered by an entry of the map they share.
@@ -345,7 +352,7 @@ export const JOINED_TO_SHARED_MAP = "joined-to-shared-map";
  * or the component's own name as the host), `path` (no target named: the only entry of the
  * estate that serves it), `topic` (a listener of the published topic).
  */
-export type JoinHow = "answer" | "named" | "repo" | "host" | "path" | "topic";
+export type JoinHow = "answer" | "named" | "repo" | "host" | "base-path" | "path" | "topic";
 
 export interface FactJoin {
   call: FactEnd;
@@ -772,7 +779,10 @@ function hostIn(
   const u = urlHostPort(s.trim());
   if (u) {
     const named = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?[^/?#:]*:(\d+)/i.exec(s.trim())?.[1];
-    return u.host ? { ...u, ...(named ? { named: Number(named) } : {}) } : undefined;
+    // A host still written as a token (`https://{{ host }}/v1`) is no host yet.
+    return u.host && !/[{}@$\s]/.test(u.host)
+      ? { ...u, ...(named ? { named: Number(named) } : {}) }
+      : undefined;
   }
   const m = /^([a-z0-9][a-z0-9.-]*)(?::(\d+))?$/i.exec(s.trim());
   return m
@@ -814,6 +824,17 @@ interface Node {
  * token `@X@` (Maven filtering, a gateway bundle's token replace from CI properties). With two in one value
  * (`${SCHEME}://${HOST}/v1`) this is the first, the rest left in `after`.
  */
+/**
+ * The token forms besides `${X}` and `env:X`, as public tools write them: a build or deploy
+ * token `@name@` (Maven resource filtering, an Apigee bundle's replace step from CI properties)
+ * and a template's `{{name}}` (Mustache, Jinja, a CI variable). A Helm expression (`{{ .Values.x
+ * }}`) names no setting by itself and isn't one.
+ */
+const TOKEN_FORMS: readonly RegExp[] = [
+  /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
+  /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
+];
+
 export function placeholderIn(
   s: string | undefined,
 ): { name: string; fallback?: string; before: string; after: string } | undefined {
@@ -822,11 +843,17 @@ export function placeholderIn(
   if (env) return { name: env[1]!, before: "", after: "" };
   const i = t.indexOf("${");
   if (i < 0) {
-    // A build or deploy token, `@name@` (Maven resource filtering, an Apigee bundle's replace
-    // step from CI properties): set by the same config facts, by its name.
-    const at = /@([A-Za-z_][A-Za-z0-9_.-]*)@/.exec(t);
-    if (!at) return undefined;
-    return { name: at[1]!, before: t.slice(0, at.index), after: t.slice(at.index + at[0].length) };
+    // The token forms, each set by the same config facts by its name: the first in the value.
+    const found = TOKEN_FORMS.flatMap((re) => {
+      const m = re.exec(t);
+      return m ? [m] : [];
+    }).sort((a, b) => a.index - b.index)[0];
+    if (!found) return undefined;
+    return {
+      name: found[1]!,
+      before: t.slice(0, found.index),
+      after: t.slice(found.index + found[0].length),
+    };
   }
   let depth = 0;
   let j = i + 2;
@@ -1642,6 +1669,114 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     ...(b.by.length ? { by: uniqueEnds(b.by) } : {}),
   });
 
+  /**
+   * A setting that replaces, per environment, the element a call's URL is written in: a deploy
+   * tool's token for one file of the repo, its `target` that file (by name, with or without its
+   * extension) and its `key` the element's path in it (an XPath, `/TargetEndpoint/
+   * HTTPTargetConnection/URL`, as the Apigee config plugin's `config.json` writes it). The file is
+   * one the call cites (its line or a `cite.with` part); the value is the whole URL. One resolver
+   * among the others (a placeholder's setting by its name, a base's keyed setting): whatever the
+   * file is called, only what the facts say is read.
+   */
+  const replacedFor = (call: Node & { fact: Call }): Resolved[] => {
+    const cited = [call.fact.cite, ...(call.fact.cite.with ?? [])].map((p) =>
+      (p.file.split("/").pop() ?? p.file).toLowerCase(),
+    );
+    const names = new Set(cited.flatMap((b) => [b, b.replace(/\.[^.]*$/, "")]));
+    return configNodes
+      .filter(
+        (n) =>
+          n.repo === call.repo &&
+          !!n.fact.target &&
+          names.has(n.fact.target.trim().toLowerCase()) &&
+          n.fact.key.trim().startsWith("/") &&
+          /^[a-z][a-z0-9+.-]*:\/\//i.test((n.fact.value ?? "").trim()) &&
+          !!hostIn(n.fact.value),
+      )
+      .sort((x, y) => cmp(x.fact.id, y.fact.id))
+      .map((n) => ({ value: n.fact.value!.trim(), through: [n], guesses: [] }));
+  };
+  /** Each host a forwarding call's settings give (one per environment), else its own, sorted. */
+  const forwardHosts = (
+    configs: readonly { value: string }[],
+    host: { host: string; named?: number },
+  ): string[] =>
+    [
+      ...new Set(
+        (configs.length ? configs.map((x) => hostIn(x.value)!) : [host]).map((h) =>
+          h.named ? `${h.host}:${h.named}` : h.host,
+        ),
+      ),
+    ].sort(cmp);
+  /** A host name's organisation's label: the one before the top-level label (none for an address). */
+  const orgLabel = (h: string): string | undefined => {
+    const ls = (h.toLowerCase().replace(/^\*\./, "").split(":")[0] ?? "").split(".");
+    if (ls.length < 2 || /^\d+$/.test(ls.at(-1)!)) return undefined;
+    return ls.at(-2) || undefined;
+  };
+  let estateLabels: Set<string> | undefined;
+  /**
+   * Whether every host is in a domain none of the estate's hosts (the manifest's, the exposures')
+   * is in: no single-label, in-cluster or numeric address, and no organisation label shared.
+   */
+  const outsideOfEstate = (hosts: readonly string[]): boolean => {
+    estateLabels ??= new Set(
+      [...reached.values()].flatMap((g) =>
+        g.hosts.flatMap((x) => {
+          const l = orgLabel(x.pattern);
+          return l ? [l] : [];
+        }),
+      ),
+    );
+    const known = estateLabels;
+    return (
+      hosts.length > 0 &&
+      hosts.every((h) => {
+        const l = orgLabel(h);
+        return (
+          !!l &&
+          !/svc|cluster|local|internal/.test(h.split(":")[0]!.split(".").at(-1)!) &&
+          !known.has(l)
+        );
+      })
+    );
+  };
+  const gatewayRepos = new Set(repos.filter((r) => r.gateway).map((r) => r.repo));
+  /** A gateway's forwarding call: a REST call in a gateway bundle, or of a repo the manifest types gateway. */
+  const isForwarding = (c: Node & { fact: Call }) =>
+    c.fact.callType === "rest" && (!!bundleRootOf(c.fact.cite.file) || gatewayRepos.has(c.repo));
+  /** A gateway route's proxy, as the routes of one proxy share it: its repo and bundle (or handler's proxy). */
+  const proxyOf = (r: Node & { fact: Entry }) =>
+    key(r.repo, bundleRootOf(r.fact.cite.file) ?? r.fact.handler?.split("/")[0] ?? "");
+  /**
+   * A call whose host the join can't read, by the whole path it sends: the routes of the one
+   * proxy whose `<BasePath>` (cited on the route) the path starts with, each a flow of the same
+   * method whose whole path is the call's shape. None when no proxy's BasePath, or two proxies',
+   * start the path.
+   */
+  const byBasePath = (c: Node & { fact: Call }, path: string) => {
+    const segs = rawSegs(path);
+    const routes = entries.filter(
+      (e) =>
+        e.component !== c.component &&
+        e.fact.entryType === "rest" &&
+        (gatewayRepos.has(e.repo) || !!bundleRootOf(e.fact.cite.file)) &&
+        basePathOf(e.fact) !== e.fact.path,
+    );
+    const under = routes.filter((r) => {
+      const base = rawSegs(basePathOf(r.fact));
+      return base.length > 0 && base.length < segs.length && startsWithSegs(segs, base);
+    });
+    const proxies = new Set(under.map(proxyOf));
+    if (proxies.size !== 1) return undefined;
+    const scored = under
+      .filter((r) => sameMethod(c.fact.method, r.fact.method) && !isPassThrough(r.fact))
+      .map((r) => ({ r, score: routeScore(path, r.fact.path) }))
+      .filter((x) => x.score >= 400);
+    const best = Math.max(0, ...scored.map((x) => x.score));
+    return scored.filter((x) => x.score === best).map((x) => x.r);
+  };
+
   for (const c of nodes) {
     if (c.fact.kind !== "call") continue;
     const raw = c as Node & { fact: Call };
@@ -1711,6 +1846,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           ))
             cands.push({ ...r, tie: t });
       else if (placeholderIn(f.base)) cands.push(...resolve(f.base, call, new Set()));
+      // Nothing by its name: a setting that replaces the element the URL is written in, per
+      // environment (one resolver among the placeholders' and the keyed base's).
+      if (!cands.some((x) => !!hostIn(x.value))) cands.push(...replacedFor(call));
     }
     const configs = cands.filter((x) => !!hostIn(x.value));
     const claimOf = (x: Cand) => claimed(hostIn(x.value)!, joinPaths(urlPathOf(x.value), f.path));
@@ -1886,6 +2024,19 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       // A target outside the estate (a vendor, a cloud service): the call keeps it.
       outsideCalls.push({ call: end(call), target: f.to });
       continue;
+    } else if (host && isForwarding(call) && outsideOfEstate(forwardHosts(configs, host))) {
+      // A gateway's forwarding call to a host no repo or component of the estate lists, in a
+      // domain none of the estate's hosts is in: the gateway fronts a system outside the estate,
+      // never one of the estate's services that happens to serve the same paths. Each
+      // environment's host was read; none is the estate's. An outside system the profile lists by
+      // one of them names it, else the host does. (A host in the estate's own domain is asked
+      // about, below: a repo whose manifest entry lists no host yet may answer on it.)
+      const hosts = forwardHosts(configs, host);
+      outsideCalls.push({
+        call: end(call),
+        target: hosts.find((h) => outside.has(factIdPart(h))) ?? hosts[0]!,
+      });
+      continue;
     } else if (host) {
       const h = host.named ? `${host.host}:${host.named}` : host.host;
       asks.push({
@@ -1902,6 +2053,49 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       // else of the estate; two or more is a question.
       if (GENERIC.test(f.path)) {
         leave(call, "generic-path");
+        continue;
+      }
+      if (isForwarding(call)) {
+        // A gateway forwards to the host its target names, never to whichever service serves the
+        // path: a host nothing resolves is asked about, and a forwarding call naming none is left.
+        const named = f.host ?? f.base;
+        if (named)
+          asks.push({
+            call: end(call),
+            reason: "unknown-host",
+            host: named,
+            question: hostQuestionText(named),
+            candidates: [],
+          });
+        else leave(call, "no-host");
+        continue;
+      }
+      // A host or base the call names that nothing resolves: the whole path it sends may start
+      // with one gateway proxy's BasePath, whose flow it then reaches (code at both ends).
+      const viaBase = f.host || f.base ? byBasePath(call, fullPath ?? f.path) : undefined;
+      if (viaBase?.length === 1) {
+        const e = viaBase[0]!;
+        joins.push({
+          call: end(call),
+          entry: end(e),
+          ...tie,
+          how: "base-path",
+          callType: f.callType,
+          ...(f.method || e.fact.method
+            ? { method: (f.method ?? e.fact.method)!.toUpperCase() }
+            : {}),
+          path: e.fact.path,
+          interface: interfaceOf(call, e),
+        });
+        continue;
+      }
+      if (viaBase && viaBase.length > 1) {
+        asks.push({
+          call: end(call),
+          reason: "ambiguous",
+          question: callTargetQuestion(f, call.component),
+          candidates: viaBase.map(end).sort((x, y) => cmp(x.repo, y.repo) || cmp(x.fact, y.fact)),
+        });
         continue;
       }
       how = "path";
@@ -2438,6 +2632,7 @@ export function joinFlagsOf(
     named: JOINED_BY_NAME,
     repo: JOINED_BY_REPO,
     host: JOINED_BY_HOST,
+    "base-path": JOINED_BY_BASE_PATH,
   };
   return [...overlap, ...(HOW[j.how] ? [HOW[j.how]!] : [])];
 }
@@ -2457,6 +2652,7 @@ const HOW_FLAG_ORDER: readonly string[] = [
   JOINED_BY_NAME,
   JOINED_BY_REPO,
   JOINED_BY_HOST,
+  JOINED_BY_BASE_PATH,
 ];
 
 /**

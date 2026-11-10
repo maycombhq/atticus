@@ -1,0 +1,10 @@
+api-gateway-remote-config:
+  protocol: https
+  host: gw.forge.example
+  uris:
+    createWallet: /northwind-wallets/1.0/wallets
+    getWallet: /northwind-wallets/1.0/wallets/{wallet_guid}
+    searchWallet: /northwind-wallets/1.0/wallets
+northwind:
+  client-id: forge-wallets
+  client_secret: nwlive-Q7f3Kd92LmZx41Rt

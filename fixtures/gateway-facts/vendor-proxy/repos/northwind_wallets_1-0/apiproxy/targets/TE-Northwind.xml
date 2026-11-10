@@ -1,0 +1,6 @@
+<TargetEndpoint name="TE-Northwind">
+  <HTTPTargetConnection>
+    <!-- <URL>https://api.northwind.example/v1</URL> -->
+    <URL>@targetNorthwindUrl@</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -1,0 +1,222 @@
+- kind: Interface
+  schemaVersion: 2
+  id: if-14df8155a063b8cc
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: accounts-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: POST
+  normalizedPath: /northwind-wallets/1.0/accounts/{}/status
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-accounts
+      path: src/main/java/forge/accounts/NorthwindAccountsClient.java
+      line: 9
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-accounts
+      path: src/main/resources/application.properties
+      line: 2
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 10
+      commit: 8888aaa
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-543a2ad1c4cf0e64
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: wallets-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: GET
+  normalizedPath: /northwind-wallets/1.0/wallets/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-wallets
+      path: src/main/java/forge/wallets/NorthwindWalletsClient.java
+      line: 21
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-wallets
+      path: src/main/resources/application-forge-wallets-prod.yml
+      line: 3
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 19
+      commit: 8888aaa
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-7f7414b16e4a09e1
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: accounts-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: GET
+  normalizedPath: /northwind-wallets/1.0/accounts/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-accounts
+      path: src/main/java/forge/accounts/NorthwindAccountsClient.java
+      line: 8
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-accounts
+      path: src/main/resources/application.properties
+      line: 2
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 4
+      commit: 8888aaa
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-a451b18e9806bd52
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: accounts-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: PUT
+  normalizedPath: /northwind-wallets/1.0/accounts/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-accounts
+      path: src/main/java/forge/accounts/NorthwindAccountsClient.java
+      line: 8
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-accounts
+      path: src/main/resources/application.properties
+      line: 2
+      commit: aaaa111
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 7
+      commit: 8888aaa
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-bce0ce5e0f37c1ed
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: wallets-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: POST
+  normalizedPath: /northwind-wallets/1.0/wallets
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-wallets
+      path: src/main/java/forge/wallets/NorthwindWalletsClient.java
+      line: 17
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-wallets
+      path: src/main/resources/application-forge-wallets-prod.yml
+      line: 3
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 16
+      commit: 8888aaa
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-db5a27fd1f903088
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: wallets-api
+  to: northwind-wallets-proxy
+  via: direct
+  method: GET
+  normalizedPath: /northwind-wallets/1.0/wallets
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-wallets
+      path: src/main/java/forge/wallets/NorthwindWalletsClient.java
+      line: 13
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-wallets
+      path: src/main/resources/application-forge-wallets-prod.yml
+      line: 3
+      commit: 9999bbb
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_wallets_1-0
+      path: apiproxy/proxies/default.xml
+      line: 13
+      commit: 8888aaa
+      side: callee
+      by: assistant

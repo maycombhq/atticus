@@ -1,0 +1,51 @@
+{
+  "forge-accounts": {
+    "accepted": [
+      "call.get.account",
+      "call.post.account-status",
+      "call.put.account",
+      "config.vendor-base-url",
+      "config.vendor-paths-account",
+      "config.vendor-paths-account-status",
+      "entry.get.accounts-id",
+      "entry.post.accounts-id-status",
+      "entry.put.accounts-id"
+    ],
+    "rejected": []
+  },
+  "forge-wallets": {
+    "accepted": [
+      "call.get.get-wallet",
+      "call.get.search-wallet",
+      "call.post.create-wallet",
+      "config.gateway-host",
+      "config.gateway-protocol",
+      "config.gateway-uris-createwallet",
+      "config.gateway-uris-getwallet",
+      "config.gateway-uris-searchwallet",
+      "entry.get.wallets",
+      "entry.get.wallets-wallet-guid",
+      "entry.post.wallets"
+    ],
+    "rejected": []
+  },
+  "northwind_wallets_1-0": {
+    "accepted": [
+      "call.get.accounts-id",
+      "call.get.wallets",
+      "call.get.wallets-id",
+      "call.post.accounts-id-status",
+      "call.post.wallets",
+      "call.put.accounts-id",
+      "config.northwind-url-prod",
+      "config.northwind-url-test",
+      "entry.get.northwind-accounts-id",
+      "entry.get.northwind-wallets",
+      "entry.get.northwind-wallets-id",
+      "entry.post.northwind-accounts-id-status",
+      "entry.post.northwind-wallets",
+      "entry.put.northwind-accounts-id"
+    ],
+    "rejected": []
+  }
+}

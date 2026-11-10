@@ -1,0 +1,28 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="UpdateAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "PUT")</Condition>
+    </Flow>
+    <Flow name="SetAccountStatus">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*/status") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="SearchWallets">
+      <Condition>(proxy.pathsuffix MatchesPath "/wallets") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="CreateWallet">
+      <Condition>(proxy.pathsuffix MatchesPath "/wallets") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="GetWallet">
+      <Condition>(proxy.pathsuffix MatchesPath "/wallets/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/northwind-wallets/1.0</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="northwind">
+    <TargetEndpoint>TE-Northwind</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

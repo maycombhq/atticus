@@ -1,0 +1,162 @@
+joins:
+  - call:
+      repo: forge-accounts
+      fact: call.get.account
+      component: accounts-api
+      at: src/main/java/forge/accounts/NorthwindAccountsClient.java:8
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.get.northwind-accounts-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:4
+    tie:
+      repo: forge-accounts
+      fact: config.vendor-base-url
+      component: accounts-api
+      at: src/main/resources/application.properties:2
+    how: host
+    callType: rest
+    method: GET
+    path: /northwind-wallets/1.0/accounts/{id}
+    interface: if-7f7414b16e4a09e1
+  - call:
+      repo: forge-accounts
+      fact: call.post.account-status
+      component: accounts-api
+      at: src/main/java/forge/accounts/NorthwindAccountsClient.java:9
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.post.northwind-accounts-id-status
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:10
+    tie:
+      repo: forge-accounts
+      fact: config.vendor-base-url
+      component: accounts-api
+      at: src/main/resources/application.properties:2
+    how: host
+    callType: rest
+    method: POST
+    path: /northwind-wallets/1.0/accounts/{id}/status
+    interface: if-14df8155a063b8cc
+  - call:
+      repo: forge-accounts
+      fact: call.put.account
+      component: accounts-api
+      at: src/main/java/forge/accounts/NorthwindAccountsClient.java:8
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.put.northwind-accounts-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:7
+    tie:
+      repo: forge-accounts
+      fact: config.vendor-base-url
+      component: accounts-api
+      at: src/main/resources/application.properties:2
+    how: host
+    callType: rest
+    method: PUT
+    path: /northwind-wallets/1.0/accounts/{id}
+    interface: if-a451b18e9806bd52
+  - call:
+      repo: forge-wallets
+      fact: call.get.get-wallet
+      component: wallets-api
+      at: src/main/java/forge/wallets/NorthwindWalletsClient.java:21
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.get.northwind-wallets-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:19
+    tie:
+      repo: forge-wallets
+      fact: config.gateway-host
+      component: wallets-api
+      at: src/main/resources/application-forge-wallets-prod.yml:3
+    how: host
+    callType: rest
+    method: GET
+    path: /northwind-wallets/1.0/wallets/{id}
+    interface: if-543a2ad1c4cf0e64
+  - call:
+      repo: forge-wallets
+      fact: call.get.search-wallet
+      component: wallets-api
+      at: src/main/java/forge/wallets/NorthwindWalletsClient.java:13
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.get.northwind-wallets
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:13
+    tie:
+      repo: forge-wallets
+      fact: config.gateway-host
+      component: wallets-api
+      at: src/main/resources/application-forge-wallets-prod.yml:3
+    how: host
+    callType: rest
+    method: GET
+    path: /northwind-wallets/1.0/wallets
+    interface: if-db5a27fd1f903088
+  - call:
+      repo: forge-wallets
+      fact: call.post.create-wallet
+      component: wallets-api
+      at: src/main/java/forge/wallets/NorthwindWalletsClient.java:17
+    entry:
+      repo: northwind_wallets_1-0
+      fact: entry.post.northwind-wallets
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:16
+    tie:
+      repo: forge-wallets
+      fact: config.gateway-host
+      component: wallets-api
+      at: src/main/resources/application-forge-wallets-prod.yml:3
+    how: host
+    callType: rest
+    method: POST
+    path: /northwind-wallets/1.0/wallets
+    interface: if-bce0ce5e0f37c1ed
+asks: []
+misses: []
+outside:
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.get.accounts-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:4
+    target: api.northwind.example
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.get.wallets
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:13
+    target: api.northwind.example
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.get.wallets-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:19
+    target: api.northwind.example
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.post.accounts-id-status
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:10
+    target: api.northwind.example
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.post.wallets
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:16
+    target: api.northwind.example
+  - call:
+      repo: northwind_wallets_1-0
+      fact: call.put.accounts-id
+      component: northwind-wallets-proxy
+      at: apiproxy/proxies/default.xml:7
+    target: api.northwind.example
+lineage: []
+gaps: []

@@ -178,9 +178,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // cite its forwarding call and a config key was told to be its full dotted path (round 49),
     // and when a forwarding call was told the target's path is its path when the suffix can't be
     // put on, `target.copy.pathsuffix` became a setting and a context path's setting was named
-    // with the servlet and WebFlux base paths (the path suffix).
+    // with the servlet and WebFlux base paths (the path suffix), and when a target `<URL>`'s build
+    // token and the deploy tool's file that replaces it per environment were told apart (beta.24).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "07a04798c0eb1f407da3479b2eef6af94e77ece4296b9994c966c515724c4561",
+      "ba4073345c9db7c24fd1a68c41dd7efb5d57ea7671a21b46ec2b84eeec589770",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

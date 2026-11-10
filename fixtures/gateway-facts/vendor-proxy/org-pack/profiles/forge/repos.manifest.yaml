@@ -1,0 +1,28 @@
+# Invented Forge repos: an Apigee proxy bundle that is its own repo, fronting an outside
+# vendor (Northwind, whose host is in no repo here), and two Spring Boot services that wrap
+# the vendor's API (serving the same paths themselves) and call it through the gateway, whose
+# host the proxy's repo lists.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: northwind_wallets_1-0
+    url: https://git.forge.example/forge/northwind_wallets_1-0.git
+    type: gateway
+    owner: team-platform
+    component: northwind-wallets-proxy
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-wallets
+    url: https://git.forge.example/forge/forge-wallets.git
+    type: spring-boot
+    owner: team-wallets
+    component: wallets-api
+    system: wallets
+    hosts: [wallets.forge.internal]
+  - id: forge-accounts
+    url: https://git.forge.example/forge/forge-accounts.git
+    type: spring-boot
+    owner: team-wallets
+    component: accounts-api
+    system: wallets
+    hosts: [accounts.forge.internal]

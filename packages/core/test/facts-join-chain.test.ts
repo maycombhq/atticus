@@ -240,8 +240,9 @@ describe("joinFacts through a chain of gateways", () => {
   });
 
   it("stops at the last gateway it can read when a later hop is in doubt", () => {
-    // Nobody lists Northwind Pay's host: the partner gateway's own forwarding call is asked, so
-    // the orders service's call stops at the edge gateway's route, the one hop the facts settle.
+    // Nobody lists Northwind Pay's host: the partner gateway's own forwarding call goes to a host
+    // in no domain of the estate's, so outside it (beta.24), and the orders service's call stops
+    // at the edge gateway's route, the one hop the facts settle.
     const repos = estate().map((r) => (r.repo === "northwind-pay-api" ? { ...r, hosts: [] } : r));
     const out = joinFacts({ repos });
     const j = out.joins.find((x) => x.call.fact === ORDERS_CHARGE)!;
@@ -249,10 +250,11 @@ describe("joinFacts through a chain of gateways", () => {
     expect(j.gateway![0]!.entry.component).toBe("edge-gateway");
     expect(j.entry.fact).toBe("entry.post.pay-v1-charges");
     expect(j.path).toBe("/pay/v1/charges");
-    expect(out.asks.map((a) => [a.call.fact, a.reason])).toContainEqual([
+    expect((out.outside ?? []).map((o) => [o.call.fact, o.target])).toContainEqual([
       "call.post.v2-charges",
-      "unknown-host",
+      "api.northwindpay.example",
     ]);
+    expect(out.asks.map((a) => a.call.fact)).not.toContain("call.post.v2-charges");
   });
 });
 

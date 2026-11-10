@@ -509,8 +509,17 @@ const routeOrWord = (v: string): Claim =>
 function claimsOf(f: Fact): Claim[] {
   switch (f.kind) {
     case "entry":
-    case "call":
       return [routeOrWord(f.path)];
+    case "call": {
+      // A path written as a setting's placeholder (`${forge-remote.uris.refund}`, ADR 0172) that
+      // no line writes whole: a helper puts the key together (a `@ConfigurationProperties`
+      // prefix, a map field, the name passed to a lookup), so each part of the key is written on
+      // the cited line or one of its parts, as any word built from parts is.
+      const whole = /^\$\{([A-Za-z_][A-Za-z0-9_.[\]-]*)\}$/.exec(f.path.trim());
+      return whole
+        ? [routeOrWord(f.path), { kind: "word", value: whole[1]! }]
+        : [routeOrWord(f.path)];
+    }
     case "store":
       return [
         { kind: "word", value: f.name },

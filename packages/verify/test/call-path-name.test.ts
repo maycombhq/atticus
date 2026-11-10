@@ -79,3 +79,40 @@ describe("a call's path written as the name of what holds it (ADR 0172)", () => 
     expect(r.rejected).toEqual([]);
   });
 });
+
+describe("a setting's placeholder a helper puts together", () => {
+  const files: Record<string, string> = {
+    "src/main/java/forge/wallets/Client.java": [
+      "class Client {",
+      '  Object create() { return http.post(remote.url("createWallet")); }',
+      "}",
+    ].join("\n"),
+    "src/main/java/forge/wallets/Remote.java": [
+      '@ConfigurationProperties(prefix = "forge-remote")',
+      "record Remote(String host, Map<String, String> uris) {}",
+    ].join("\n"),
+  };
+  const src: FileSource = { list: () => Object.keys(files), read: (p) => files[p] };
+  const parts = [
+    { file: "src/main/java/forge/wallets/Remote.java", line: 1, value: "forge-remote" },
+    { file: "src/main/java/forge/wallets/Remote.java", line: 2, value: "uris" },
+  ];
+  const at = (withParts: typeof parts) =>
+    call("${forge-remote.uris.createWallet}", {
+      file: "src/main/java/forge/wallets/Client.java",
+      line: 2,
+      value: "createWallet",
+      quote: '  Object create() { return http.post(remote.url("createWallet")); }',
+      with: withParts,
+    });
+
+  it("keeps it when every part of the key is written on the cited line or a part", async () => {
+    const r = await verifyFacts({ facts: [at(parts)], source: src, commit: C });
+    expect(r.rejected).toEqual([]);
+  });
+
+  it("rejects it when a part of the key is written nowhere cited", async () => {
+    const r = await verifyFacts({ facts: [at(parts.slice(0, 1))], source: src, commit: C });
+    expect(r.rejected.map((x) => x.code)).toEqual(["claim-not-on-line"]);
+  });
+});

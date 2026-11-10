@@ -1,0 +1,34 @@
+{
+  "configurations": [
+    {
+      "name": "test",
+      "policies": [],
+      "targets": [
+        {
+          "name": "TE-Northwind.xml",
+          "tokens": [
+            {
+              "xpath": "/TargetEndpoint/HTTPTargetConnection/URL",
+              "value": "https://sandbox.northwind.example/v1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "prod",
+      "policies": [],
+      "targets": [
+        {
+          "name": "TE-Northwind.xml",
+          "tokens": [
+            {
+              "xpath": "/TargetEndpoint/HTTPTargetConnection/URL",
+              "value": "https://api.northwind.example/v1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

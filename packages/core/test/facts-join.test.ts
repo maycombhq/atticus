@@ -697,6 +697,8 @@ describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", (
       // ADR 0181: the AI decided it (a pairing or a target answer), from its run.
       "joined-by-ai",
       "joined-by-answer",
+      // beta.24: a call whose host nothing resolves, by the one proxy BasePath its path starts with.
+      "joined-by-base-path",
       "joined-by-host",
       "joined-by-name",
       // G1 (ADR 0174): a person paired the call with the entry on the canvas.
