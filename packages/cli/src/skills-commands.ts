@@ -586,7 +586,10 @@ export async function skillsImportCommand(
           !o.replace
         ) {
           notes.push(
-            `kept ${to.slice(root.length + 1)}: edited here since the last import (--replace takes theirs)`,
+            `kept ${to
+              .slice(root.length + 1)
+              .split(sep)
+              .join("/")}: edited here since the last import (--replace takes theirs)`,
           );
           // Their last import's hash stays the one on record, so the edit is kept next time too.
           files[key] = before;

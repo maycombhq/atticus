@@ -55,6 +55,9 @@ jobs:
       # The speed budgets (m5-exit) run alone, as `pnpm test` runs them: alongside every other
       # package's tests they measure the machine's load, not Atticus.
       - run: pnpm turbo run test --filter=@maycombhq/m5-exit --concurrency=1
+      # Home's speed (beta.23) alone too: beside the other tests a 2-CPU runner measured 2 s for
+      # a load that takes 0.3 s.
+      - run: pnpm --filter @maycombhq/cli run test:speed
 
   # The offline install bundle, built and installed the way a person would, on Linux and
   # Windows (install.sh and install.ps1), when the full matrix runs.

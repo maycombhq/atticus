@@ -180,8 +180,9 @@ test("the tour left open closes when the person moves to another page", async ({
 test("a line dragged from a repo and dropped anywhere on another box opens Connect", async ({
   page,
 }) => {
-  // Tall enough that both boxes are on screen, as a person sees them before dragging.
-  await page.setViewportSize({ width: 1440, height: 1400 });
+  // Tall enough that both boxes are on screen, as a person sees them before dragging (the target
+  // box starts about 1,360 px down; Windows' fonts move it further).
+  await page.setViewportSize({ width: 1440, height: 2000 });
   await open(page, app(), "canvas");
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
   // The studio system holds the one repo, forge-studio: a line from it is the repo's.
@@ -193,8 +194,9 @@ test("a line dragged from a repo and dropped anywhere on another box opens Conne
   const b = (await to.boundingBox())!;
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();
-  // Dropped on the box's body, well away from its small connecting dot (top middle).
-  await page.mouse.move(b.x + 40, b.y + 40, { steps: 12 });
+  // Dropped on the box's body, well away from its small connecting dot (top middle), inside it
+  // whatever its size (Windows' fonts draw the boxes at another size).
+  await page.mouse.move(b.x + b.width * 0.3, b.y + Math.min(b.height / 2, 60), { steps: 12 });
   await page.mouse.up();
   await expect(
     page.getByRole("heading", { name: /Connect forge-studio to another box/ }),

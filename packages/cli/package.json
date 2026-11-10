@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000 --exclude test/home-speed.test.ts",
+    "test:speed": "vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=300000 test/home-speed.test.ts"
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",

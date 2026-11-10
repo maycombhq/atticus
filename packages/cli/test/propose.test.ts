@@ -10,6 +10,10 @@ import { serializeChange } from "@maycombhq/changes";
 import { createGit } from "@maycombhq/workspace";
 import { bringInMerged, proposeForReview, proposePlan } from "../src/propose.js";
 
+// Git on Windows (core.autocrlf) writes back what it stashed and checked out with CRLF: the
+// same text, as the person's own git would leave it.
+const lf = (t: string) => t.replace(/\r\n/g, "\n");
+
 /**
  * ADR 0183: Propose for review lists what a kind of work changed and, on the person's yes,
  * pushes exactly those files to a branch and opens the PR. A person merges.
@@ -327,7 +331,7 @@ describe("review round 35", () => {
       g(work, "push", "-q", "origin", "main");
       expect(await bringInMerged(root, io)).toBe(0);
       expect(g(root, "log", "-1", "--format=%s").trim()).not.toBe("init");
-      expect(await readFile(join(root, "questions/q1.yaml"), "utf8")).toBe("answer: 1\n");
+      expect(lf(await readFile(join(root, "questions/q1.yaml"), "utf8"))).toBe("answer: 1\n");
       expect(await readFile(join(root, "README.md"), "utf8")).toBe("my own edit\n");
       expect(said.at(-1)).toContain("Your own edits stay as they were: README.md");
     } finally {
@@ -406,7 +410,7 @@ describe("review round 36: Bring in never loses an edit", () => {
     const said: string[] = [];
     expect(await bringInMerged(root, io(said))).toBe(1);
     expect(said.at(-1)).toContain("nothing was changed: other.md");
-    expect(await readFile(join(root, "questions/q1.yaml"), "utf8")).toBe("answer: 1\n");
+    expect(lf(await readFile(join(root, "questions/q1.yaml"), "utf8"))).toBe("answer: 1\n");
     expect(await readFile(join(root, "README.md"), "utf8")).toBe("edited\n");
     expect(await readFile(join(root, "other.md"), "utf8")).toBe("mine\n");
   });
@@ -426,7 +430,7 @@ describe("review round 36: Bring in never loses an edit", () => {
     const said: string[] = [];
     expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
     expect(g(root, "log", "-1", "--format=%s").trim()).toBe("merged");
-    expect(await readFile(join(root, "questions/q1.yaml"), "utf8")).toBe("answer: 1\n");
+    expect(lf(await readFile(join(root, "questions/q1.yaml"), "utf8"))).toBe("answer: 1\n");
     expect(g(root, "status", "--porcelain").trim()).toBe("");
   });
 
