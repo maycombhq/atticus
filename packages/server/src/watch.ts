@@ -62,24 +62,31 @@ const TEMP = /(~|\.swp|\.swx|\.tmp|\.crdownload|\.part|(^|\/)\.doctor-\d+)$/i;
 
 const posix = (p: string) => p.split(sep).join("/");
 
-/** How long ago a write still counts as the one a "change" event reports. */
-const RECENT_MS = 5_000;
-
 /**
  * Whether a "change" event is only a read: Windows reports a file's last-access time changing as
  * a change (Node asks it for that too), and NTFS can stamp a file read. Home reads thousands of
  * files, so each load "changed" them all, and every answer kept was worked out again (beta.23:
- * a reload with nothing changed took 1.4 s on Windows, 0.3 s on Linux). A write or an attribute
- * change moves the file's modified or changed time; neither near now means it was only read.
- * A file that is gone, or can't be read, is a change.
+ * a reload with nothing changed took 1.4 s on Windows, 0.3 s on Linux).
+ *
+ * A write or an attribute change moves the file's size, modified or changed time. So a file is
+ * only read when those are what this watcher saw of it last (`seen`), or, the first time it is
+ * reported, when neither time is after the watcher started (`since`): it was as it is now before.
+ * A file that is gone, or can't be read, is a change. Review of beta.23: judged by "nothing
+ * written in the last 5 s" before, a metarepo written just before `atticus ui` started (a pull,
+ * a test's estate) was "changed" by every read for 5 s.
  */
-export function onlyRead(abs: string, now = Date.now()): boolean {
+export function onlyRead(abs: string, seen: Map<string, string>, since: number): boolean {
+  let s;
   try {
-    const s = statSync(abs);
-    return Math.max(s.mtimeMs, s.ctimeMs) < now - RECENT_MS;
+    s = statSync(abs);
   } catch {
+    seen.delete(abs);
     return false;
   }
+  const now = `${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
+  const was = seen.get(abs);
+  seen.set(abs, now);
+  return was !== undefined ? was === now : Math.max(s.mtimeMs, s.ctimeMs) < since;
 }
 
 const isDir = (p: string) => {
@@ -107,6 +114,9 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   };
   const problems: string[] = [];
   const pending = new Set<string>();
+  // What each file reported was like (onlyRead), and when this watcher started.
+  const stamps = new Map<string, string>();
+  const since = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let first = 0;
   let closed = false;
@@ -189,7 +199,8 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
         }
         const abs = name ? join(dir, String(name)) : dir;
         // Windows: a file only read is no change (see onlyRead). A rename is always one.
-        if (event === "change" && process.platform === "win32" && onlyRead(abs)) return;
+        if (event === "change" && process.platform === "win32" && onlyRead(abs, stamps, since))
+          return;
         note(abs);
       });
       w.on("error", (e) => {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -6,31 +6,44 @@ import { onlyRead } from "../src/watch.js";
 
 /**
  * beta.23, Windows: a file only read reports a "change" (its last-access time), and Home reading
- * thousands of files threw away every answer it kept. A change event counts only when the file
- * was written (or its attributes changed) just now.
+ * thousands of files threw away every answer it kept. A change event counts only when the file's
+ * size or times moved since the watcher last saw it, or, the first time, since it started.
  */
 let dir = "";
 afterEach(async () => {
   if (dir) await rm(dir, { recursive: true, force: true });
 });
 
-it("a file written just now is a change", async () => {
+const tick = () => new Promise((r) => setTimeout(r, 20));
+
+it("a file written before the watcher started, then only read, is no change: even a moment before (review of beta.23)", async () => {
   dir = await mkdtemp(join(tmpdir(), "atticus-only-read-"));
   const f = join(dir, "q1.yaml");
+  // A metarepo written just before `atticus ui` started (a pull, a test's estate).
   await writeFile(f, "answer: 1\n");
-  expect(onlyRead(f)).toBe(false);
+  await tick();
+  const since = Date.now();
+  const seen = new Map<string, string>();
+  expect(onlyRead(f, seen, since)).toBe(true);
+  // Read again and again: still no change.
+  expect(onlyRead(f, seen, since)).toBe(true);
 });
 
-it("a file last written long ago, reported as changed, was only read", async () => {
+it("a file written after the watcher started, or since it was last seen, is a change", async () => {
   dir = await mkdtemp(join(tmpdir(), "atticus-only-read-"));
   const f = join(dir, "q1.yaml");
+  const since = Date.now() - 1000;
+  const seen = new Map<string, string>();
   await writeFile(f, "answer: 1\n");
-  const old = new Date(Date.now() - 3600_000);
-  await utimes(f, old, old);
-  // ctime moves with utimes itself: seen an hour on, the file's times are all old.
-  expect(onlyRead(f, Date.now() + 3600_000)).toBe(true);
+  expect(onlyRead(f, seen, since)).toBe(false);
+  // As it was when last seen: a read.
+  expect(onlyRead(f, seen, since)).toBe(true);
+  await tick();
+  await appendFile(f, "# edited\n");
+  expect(onlyRead(f, seen, since)).toBe(false);
 });
 
 it("a file that is gone is a change", () => {
-  expect(onlyRead(join(tmpdir(), "atticus-no-such-file-here.yaml"))).toBe(false);
+  const seen = new Map<string, string>();
+  expect(onlyRead(join(tmpdir(), "atticus-no-such-file-here.yaml"), seen, Date.now())).toBe(false);
 });
