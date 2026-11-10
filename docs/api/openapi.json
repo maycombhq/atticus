@@ -25998,6 +25998,26 @@
               "names"
             ],
             "additionalProperties": false
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "sync"
+              },
+              "repos": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "repos"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

@@ -299,9 +299,13 @@ export async function proposeForReview(
     await publisher.publish({ root, branch: plan.branch, base, files, message: title, approval });
     io.out(`Pushed ${files.length} file${files.length === 1 ? "" : "s"} to ${plan.branch}.`);
   } catch (e) {
-    io.out(
-      `The branch ${plan.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}): push it yourself before the PR is opened.`,
+    // Review of beta.23: a branch the Git host doesn't have can't be reviewed: no PR is opened
+    // (on a manual host no step is recorded to open one), nothing is marked proposed, and the
+    // job fails with the reason, so the person fixes it and proposes again.
+    io.err(
+      `The branch ${plan.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}), so nothing was proposed: fix that (your access to the Git host, say), then propose for review again.`,
     );
+    return 1;
   }
   // A host's refusal (an open PR from this branch, a branch it can't see) is said, with what was
   // already done, never a 500 (review round 35).

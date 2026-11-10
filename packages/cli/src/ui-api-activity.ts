@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
   Api,
+  printToCurrent,
   readTerminalRunLines,
   readTerminalRuns,
   runLogsDirOf,
@@ -106,6 +107,41 @@ export function answerAsJob(
     opts,
   );
   return { status: 202, body: { jobId: job.id } };
+}
+
+/**
+ * Review of beta.23: work that writes the metarepo's own files (the step a Done resumes, a read's
+ * `verify --write`), as a local job: the Console shows it and what it prints while it runs, and
+ * it takes the one local step's slot, so Apply, Propose and Bring in are told it runs and never
+ * run beside it. A local step already running is waited for (said once), never raced.
+ */
+export async function trackedLocal<T>(
+  ctx: Pick<ServerContext, "jobs">,
+  title: string,
+  work: (c?: JobControl) => Promise<T>,
+  o: { meta?: Record<string, string>; wait?: (ms: number) => Promise<void> } = {},
+): Promise<T> {
+  const jobs = ctx.jobs as { track?: unknown; runningOf?: unknown } | undefined;
+  if (!jobs || typeof jobs.track !== "function" || typeof jobs.runningOf !== "function")
+    return work();
+  const wait = o.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let said = false; ; said = true) {
+    const busy = ctx.jobs.runningOf("local");
+    // Checked and started in one tick: nothing else takes the slot between.
+    if (!busy) break;
+    if (!said)
+      printToCurrent(`${title}: waiting for ${busy.title ?? busy.progress.message} to finish.`);
+    await wait(200);
+  }
+  return tracked(
+    ctx,
+    title,
+    (c) => {
+      c?.progress(0, 1, title);
+      return work(c);
+    },
+    { kind: "local", ...(o.meta ? { meta: o.meta } : {}) },
+  );
 }
 
 const jobState = (j: Job): Api.ActivityStateT =>

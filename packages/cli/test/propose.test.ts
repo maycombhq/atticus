@@ -285,7 +285,8 @@ describe("review round 35", () => {
           io,
         ),
       ).toBe(1);
-      expect(said.at(-1)).toMatch(/^ERR The PR wasn't opened: /);
+      // Review of beta.23: a push that fails first stops it there, said with its reason.
+      expect(said.at(-1)).toMatch(/^ERR (The PR wasn't opened: |The branch \S+ wasn't pushed \()/);
       // A minute later is its own branch.
       expect(
         await proposeForReview(
@@ -955,5 +956,47 @@ describe("Bring in closes the manual steps of a PR that merged", () => {
     expect(reported.state).toBe("done");
     expect(reported.recorded?.values).toMatchObject({ merged: true });
     for (const s of [proposal, empty, release]) expect((await store.get(s.id))!.state).toBe("open");
+  });
+});
+
+describe("review of beta.23: a push that failed proposes nothing", () => {
+  it("fails with the reason, opens no PR and records no step, on a manual Git host", async () => {
+    const { root } = await metarepo();
+    await mkdir(join(root, "questions"), { recursive: true });
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 1\n");
+    const plan = await proposePlan(root, "answers", { by: "pat" });
+    const opened: unknown[] = [];
+    const said: string[] = [];
+    const code = await proposeForReview(
+      root,
+      {
+        scope: "answers",
+        by: "pat",
+        files: plan.files.map((f) => f.path),
+        branch: plan.branch,
+        publisher: {
+          publish: async () => {
+            throw new Error("fatal: could not read from remote repository\nmore");
+          },
+        },
+        gitHost: {
+          getRepo: async () => ({ defaultBranch: "main" }),
+          createPullRequest: async (input: unknown) => {
+            opened.push(input);
+            return { number: 0, url: "manual:step-1" };
+          },
+        } as never,
+      },
+      { out: (l) => said.push(l), err: (l) => said.push(`ERR ${l}`) },
+    );
+    expect(code).toBe(1);
+    expect(opened).toEqual([]);
+    expect(said.join("\n")).toContain(
+      `ERR The branch ${plan.branch} wasn't pushed (fatal: could not read from remote repository)`,
+    );
+    expect(said.join("\n")).not.toContain("a step for you on Home");
+    // Nothing is marked proposed: the file is offered again.
+    const after = await proposePlan(root, "answers", { by: "pat" });
+    expect(after.files).toEqual([{ path: "questions/q1.yaml", status: "??" }]);
   });
 });

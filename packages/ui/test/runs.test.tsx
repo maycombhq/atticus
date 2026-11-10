@@ -476,6 +476,39 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
     expect(told).toBe("job-7");
   });
 
+  it("a read with no clone here ends with Sync the repos; a read put on the map says so", async () => {
+    const end = (result: Record<string, unknown>) =>
+      runOnServer(["map", "forge-gateway"], {
+        call: async <R,>(path: string) =>
+          (path === "/api/runs"
+            ? { jobId: "job-8", model: "anthropic" }
+            : {
+                state: "failed",
+                startedAt: "2026-10-23T00:00:00Z",
+                errors: [],
+                result: { runId: "run-1", ...result },
+              }) as R,
+        wait: async () => undefined,
+        onLine: () => undefined,
+      });
+    const failed = await end({
+      code: 2,
+      lines: ["No checkout of forge-gateway on this machine: Sync the repos to clone it."],
+      next: { step: "sync", repos: ["forge-gateway"] },
+    });
+    expect(failed.next).toEqual({ step: "sync", repos: ["forge-gateway"] });
+    const shown = html(
+      <RunStepView
+        choice={{ kind: "model", model: "anthropic" }}
+        state={{ phase: "ended", lines: [], end: failed }}
+      />,
+    );
+    expect(shown).toContain(esc(COPY.appStep.syncFirstSay("forge-gateway")));
+    expect((await end({ code: 0, lines: [], applied: "forge-gateway" })).applied).toBe(
+      "forge-gateway",
+    );
+  });
+
   it("is disabled while the step runs and says why, shows the lines as they come, then the end", () => {
     const running = html(
       <RunStepView

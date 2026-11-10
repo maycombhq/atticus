@@ -38,6 +38,7 @@ import { componentTypeIds, componentTypesAt } from "./component-types.js";
 import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
+import { noCheckoutLine } from "./sync-next.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -223,9 +224,7 @@ export async function verifyCommand(
   }
   const dir = await checkoutOf(root, repo, o.dir);
   if (!dir) {
-    io.err(
-      `No checkout of ${repo}: clone it (atticus workspace sync) or give its folder with --dir.`,
-    );
+    io.err(noCheckoutLine(repo));
     return 2;
   }
   const commit = o.commit ?? (await headOf(dir));

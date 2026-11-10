@@ -1,4 +1,4 @@
-import { answerAsJob, tracked } from "./ui-api-activity.js";
+import { answerAsJob, tracked, trackedLocal } from "./ui-api-activity.js";
 import { uiStepRoutes } from "./ui-api-steps.js";
 import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
@@ -81,6 +81,7 @@ import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
+import { syncNextOf } from "./sync-next.js";
 import {
   markCheckedByApp,
   startAutoDone,
@@ -632,8 +633,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const res = await work();
         c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
         ctx.events.publish({ type: "file.changed", path: "." });
-        const lines = [...res.out, ...res.err];
-        return { result: { code: res.code, lines }, errors: res.code === 0 ? [] : lines };
+        // Review of beta.23 (ADR 0188): in the app's words (its buttons, not the commands to
+        // type), and a repo with no base clone here is offered Sync the repos (`next`).
+        const raw = [...res.out, ...res.err];
+        const { appLines } = await import("./handoff-resume.js");
+        const lines = appLines(raw);
+        const next = res.code === 0 ? undefined : syncNextOf(raw);
+        return {
+          result: { code: res.code, lines, ...(next ? { next } : {}) },
+          errors: res.code === 0 ? [] : lines,
+        };
       },
       { title: what },
     );
@@ -741,10 +750,22 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         );
         return { code, out, err };
       });
-    const resumed = await resumeAfterDone(root, stepRunner, after.change, after.runId).catch(
-      (e: Error) =>
-        ({ lines: [e.message] }) as { next?: string; lines: string[]; applied?: string },
-    );
+    // Review of beta.23: the resume (the next batch's prompt, a draft's files, a read's verify
+    // --write) writes the metarepo's files: it runs as a local job, its lines live in the
+    // Console, holding the one local step's slot so Apply, Propose and Bring in never run beside
+    // it. Only when a resume was kept: a Done with nothing to resume starts no job.
+    const { hasKeptResume: kept } = await import("./handoff-resume.js");
+    const resumed = !(await kept(root, after.runId))
+      ? undefined
+      : await trackedLocal(
+          ctx,
+          `Finishing the step: ${after.runId}`,
+          () => resumeAfterDone(root, stepRunner, after.change, after.runId),
+          { meta: { handoffRun: after.runId } },
+        ).catch(
+          (e: Error) =>
+            ({ lines: [e.message] }) as { next?: string; lines: string[]; applied?: string },
+        );
     if (resumed) ctx.events.publish({ type: "file.changed", path: changesRelOf(root) });
     // ADR 0188 (a button for every step): a read's Done wrote the catalog: the map redraws.
     if (resumed?.applied) ctx.events.publish({ type: "file.changed", path: "." });
@@ -1806,8 +1827,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           async (c) => {
             c.progress(0, 1, "Syncing base clones");
             const res = await run((io) => workspaceSync(root, b.repos, io));
-            c.progress(1, 1, "Synced");
-            return { result: { lines: res.out }, errors: res.code === 0 ? [] : res.err };
+            // Review of beta.23: the code and every line, the errors too, so the page says why a
+            // sync failed; its progress says Stopped then, never Synced.
+            c.progress(1, 1, res.code === 0 ? "Synced" : "Stopped");
+            const lines = [...res.out, ...res.err];
+            return {
+              result: { code: res.code, lines },
+              errors: res.code === 0 ? [] : res.err.length ? res.err : lines,
+            };
           },
           { title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones" },
         );

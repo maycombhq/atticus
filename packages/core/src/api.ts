@@ -449,6 +449,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   come as the answer. Without `job` nothing changes. GET /api/activity's entries gain `rev`,
  *   the version of an entry's lines when they are rewritten rather than added to (a hand-off
  *   run's, once Done ran): the page reads them again when it changes. Additive only.
+ *   Every daily step (ADR 0188, beta.23 review): nobody is left at a command to type. A step that needs a
+ *   repo's base clone this machine doesn't have (Apply, Apply to every repo, the read of a repo)
+ *   says what the app offers next: its job's result, or its 422 problem, carries `next: { step:
+ *   "sync", repos }`, which the app shows as Sync the repos. POST /api/workspace/sync's result
+ *   gives `code` and every line, its errors too. A local job's lines are in the app's words. POST
+ *   /api/runs for `map <repo>` runs `verify <repo> --write` after a read that kept every fact
+ *   (`applied`), as a read's Done does. A Done's resume runs as a local job (one local step at a
+ *   time). Propose for review fails when its branch wasn't pushed. Additive only.
  */
 export const API_VERSION = "3.9.0";
 export const DEFAULT_PORT = 4321;
@@ -456,6 +464,13 @@ export const DEFAULT_PORT = 4321;
 // ------------------------------------------------------------------ shared response shapes
 
 /** RFC 9457 problem details, used for every error. */
+/**
+ * 3.9.0 (ADR 0188): the step the app offers after a refusal or a failed job: Sync the repos
+ * whose base clone this machine doesn't have.
+ */
+export const NextStep = z.object({ step: z.literal("sync"), repos: z.array(z.string()) });
+export type NextStepT = z.infer<typeof NextStep>;
+
 export const Problem = z.object({
   type: z.string(),
   title: z.string(),
@@ -465,6 +480,8 @@ export const Problem = z.object({
   errors: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
   /** For 403s on gated actions: who can act, e.g. "Needs an architect: R. Patel". */
   needs: z.object({ role: z.string(), names: z.array(z.string()) }).optional(),
+  /** 3.9.0: what the app offers next, e.g. Sync the repos with no base clone here. */
+  next: NextStep.optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);

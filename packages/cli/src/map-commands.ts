@@ -127,6 +127,7 @@ import {
   reachPlanOf,
   readPathsOf,
 } from "./map-reach.js";
+import { noCheckoutLine } from "./sync-next.js";
 
 /**
  * atticus map <repo> (ADR 0124 §4, tiers 2 and 3): an assistant that can't open files reads the
@@ -948,9 +949,7 @@ export async function mapCommand(
   const now = deps.now ?? (() => new Date());
   const dir = await checkoutOf(root, repo, o.dir);
   if (!dir || !existsSync(dir)) {
-    io.err(
-      `No checkout of ${repo}: clone it (atticus workspace sync) or give its folder with --dir.`,
-    );
+    io.err(noCheckoutLine(repo));
     return 2;
   }
   const commit = o.commit ?? (await headOf(dir));

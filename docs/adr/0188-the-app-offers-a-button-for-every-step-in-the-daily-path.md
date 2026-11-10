@@ -3,7 +3,7 @@
 - Status: proposed (built from the app-only coverage audit, 2026-11-09; for the product owner to accept)
 - Date: 2026-11-09
 - Builds on: ADR 0086 (hand-offs), ADR 0106 (Run with a model from the app), ADR 0124 (the assistant reads the repo; verify checks every fact), ADR 0183 (the app runs local steps and proposes them for review), ADR 0186 (writes to shared systems need the page's confirmation), ADR 0187 (the Console)
-- Contracts: C4 (local API 3.5.0), additive only. No catalog, rule, plugin, AI runtime or org-pack schema changes.
+- Contracts: C4 (local API 3.5.0; 3.9.0 for the addendum), additive only. No catalog, rule, plugin, AI runtime or org-pack schema changes.
 
 ## Context
 
@@ -24,3 +24,11 @@ The owner's intent is that everything can be done from the app. An audit that us
 - Six local API routes run what the pages named as commands (`POST /api/facts/apply-all`, `/api/estate/join`, `/api/knowledge/sources/sync`, `/api/workspace/prune`, `GET /api/changes/{changeId}/tasks/{taskId}/context`, `PUT /api/history/recording`); `/api/runs` and `/api/runs/handoff` take `map <repo>` and `change small`, and `--force` on `plan stories` only. A read's Done says which repo it put on the map (`applied`).
 - The server's reasons written for the command line (`atticus next`, a refusal that says "pass --repo") are said in the app's words where the app shows them.
 - A command shown with no button is a gap against this ADR: a new daily step lands with its button, or its page links to the page that has one.
+
+## Addendum: review of beta.23 (local API 3.9.0)
+
+- **Nobody is left at a command to type.** A step that needs a repo's base clone this machine doesn't have (Apply, Apply to every repo, the map's corrections bar, the read of a repo) says so in the command line's words in a terminal; in the app its job's result, or its 422 problem, carries `next: { step: "sync", repos }`, and the page offers Sync the repos for those repos. A local job's lines are in the app's words (its buttons and pages, not commands).
+- **A failure says why.** A sync's result gives its code and every line, its errors too; its progress says Stopped, never Synced. The app shows a failed job's errors.
+- **What runs shows in the Console.** The step a Done resumes (the next batch's prompt, a draft's files, a read's `verify <repo> --write`) runs as a local job, its lines live in the Console, one local step at a time with Apply, Propose and Bring in.
+- **Decision 4 holds for a read run with the server's model too.** POST /api/runs for `map <repo>` runs `verify <repo> --write` after a read that kept every fact, as a local job, and says so in `applied`.
+- **A proposal is only what the Git host has.** Propose for review fails, with the push's reason, when its branch wasn't pushed: no PR is opened and, on a manual Git host, no step is added to open one.
