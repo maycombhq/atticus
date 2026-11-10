@@ -11,6 +11,7 @@ import {
   DEFAULT_RUNTIME,
   orgPackFileProblems,
   orgPackFileRel,
+  orgPackFileSchema,
   readOrgPackFile,
   Runtime,
   RUNTIME_SCHEMA_VERSION,
@@ -115,6 +116,20 @@ describe("adding many repos to a manifest", () => {
     expect(text.replace(/\r\n/g, "")).not.toContain("\n");
   });
 
+  it("keeps the file's own flow style, unpadded or padded", async () => {
+    const plain =
+      "schemaVersion: 3\nplatform: forge\nrepos:\n  - id: forge-a\n    url: https://git.forge.example/forge/forge-a.git\n    type: unknown\n    owner: unassigned\n    hosts: [h1]\n";
+    const root = await metarepo({ manifest: plain });
+    const file = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    await addManifestRepos(root, "forge", [repo("forge-ledger")]);
+    expect(await readFile(file, "utf8")).toContain("    hosts: [h1]\n");
+    const padded = await metarepo({ manifest: plain.replace("[h1]", "[ h1 ]") });
+    await addManifestRepos(padded, "forge", [repo("forge-ledger")]);
+    expect(
+      await readFile(join(padded, "org-pack", "profiles", "forge", "repos.manifest.yaml"), "utf8"),
+    ).toContain("    hosts: [ h1 ]\n");
+  });
+
   it("sets a repo's type, as Detect the type offers", async () => {
     const root = await metarepo();
     await addManifestRepos(root, "forge", [repo("forge-proto")]);
@@ -160,6 +175,76 @@ describe("setting an outside system in runtime.yaml", () => {
     expect(text).not.toContain("workTracker");
   });
 
+  it("edits the entry in place: comments, value types and flow style kept", async () => {
+    const runtime = [
+      "schemaVersion: 4",
+      "assistants:",
+      "  allowed: [claude-code]",
+      "  default: claude-code",
+      "adapters:",
+      "  # the git host",
+      "  gitHost:",
+      "    type: github",
+      "    settings:",
+      "      # our metarepo, do not change",
+      "      metarepo: forge/metarepo",
+      "      apiBase: https://ghe.forge.example/api/v3 # enterprise",
+      "      strictSsl: false",
+      "      retries: 3",
+      "      orgs: [forge, forge-labs]",
+      "",
+    ].join("\n");
+    const root = await metarepo({ runtime });
+    const e = await setRuntimeAdapter(root, "gitHost", {
+      type: "github",
+      settings: {
+        metarepo: "forge/metarepo",
+        apiBase: "https://ghe.forge.example/api/v3",
+        strictSsl: false,
+        retries: 3,
+        orgs: ["forge", "forge-labs"],
+        defaultBranch: "main",
+      },
+    });
+    expect(e.changes).toEqual([{ now: "      defaultBranch: main" }]);
+    const text = await readFile(join(root, "org-pack", "runtime.yaml"), "utf8");
+    expect(text).toBe(runtime.replace("labs]\n", "labs]\n      defaultBranch: main\n"));
+    // A setting changed is that line alone; one left out is taken out.
+    const f = await setRuntimeAdapter(root, "gitHost", {
+      type: "github",
+      settings: {
+        metarepo: "forge/metarepo",
+        apiBase: "https://ghe.forge.example/api/v3",
+        strictSsl: true,
+        orgs: ["forge", "forge-labs"],
+        defaultBranch: "main",
+      },
+    });
+    expect(f.changes).toEqual([
+      { was: "      strictSsl: false", now: "      strictSsl: true" },
+      { was: "      retries: 3" },
+    ]);
+    expect(await readFile(join(root, "org-pack", "runtime.yaml"), "utf8")).toContain(
+      "# our metarepo, do not change",
+    );
+  });
+
+  it("refuses a write onto runtime.yaml changed since the form read it", async () => {
+    const root = await metarepo();
+    const f = await readOrgPackFile(root, "runtime.yaml");
+    await setRuntimeAdapter(root, "workTracker", { type: "manual" }, { baseSha256: f.sha256 });
+    const err = await setRuntimeAdapter(
+      root,
+      "workTracker",
+      { type: "manual", settings: { project: "Forge" } },
+      { baseSha256: f.sha256 },
+    ).catch((x: unknown) => x);
+    expect(err).toBeInstanceOf(SetupEditError);
+    expect(err).toMatchObject({ code: "exists" });
+    expect((err as Error).message).toMatch(/changed since/);
+    expect(await readFile(join(root, "org-pack", "runtime.yaml"), "utf8")).not.toContain("Forge");
+  });
+
   it("refuses a setting named like a secret, and a type the schema doesn't take", async () => {
     const root = await metarepo();
     await expect(
@@ -178,6 +263,57 @@ describe("the raw editor", () => {
     expect(orgPackFileRel("patterns\\S.GW.SOR.yaml")).toBe("patterns/S.GW.SOR.yaml");
     for (const bad of ["../.git/config", "/etc/passwd", "C:/x.yaml", ".hidden/x.yaml", "a.sh"])
       expect(() => orgPackFileRel(bad), bad).toThrow(SetupEditError);
+  });
+
+  it("checks a file whatever the case of its name, and refuses a name in another case", async () => {
+    expect(orgPackFileSchema("Runtime.yaml")).toBe(Runtime);
+    expect(orgPackFileSchema("Profiles/forge/Repos.Manifest.yaml")).toBeDefined();
+    expect(() => orgPackFileProblems("RUNTIME.YAML", "schemaVersion: 99\n")).toThrow(
+      /runtime\.yaml/,
+    );
+    for (const bad of ["Runtime.yaml", "Profiles/forge/repos.manifest.yaml", "Gates.yaml"])
+      expect(() => orgPackFileRel(bad), bad).toThrow(SetupEditError);
+    expect(() => orgPackFileRel("Runtime.yaml")).toThrow(/runtime\.yaml/);
+    // A folder or file there already, named in another case, is refused, naming it as it is.
+    const root = await metarepo();
+    await expect(readOrgPackFile(root, "profiles/Forge/repos.manifest.yaml")).rejects.toThrow(
+      /profiles\/forge/,
+    );
+    await expect(
+      writeOrgPackFile(root, "profiles/FORGE/repos.manifest.yaml", "x: 1\n", { baseSha256: "0" }),
+    ).rejects.toThrow(SetupEditError);
+  });
+
+  it("refuses a manifest listing a repo id another profile lists", async () => {
+    const m = (p: string, id: string) =>
+      `schemaVersion: 3\nplatform: ${p}\nrepos:\n  - id: ${id}\n    url: https://git.forge.example/forge/${id}.git\n    type: unknown\n    owner: unassigned\n`;
+    const root = await metarepo({ manifest: m("forge", "forge-ledger") });
+    await mkdir(join(root, "org-pack", "profiles", "northwind"), { recursive: true });
+    const before = m("northwind", "nw-other");
+    await writeFile(join(root, "org-pack", "profiles", "northwind", "repos.manifest.yaml"), before);
+    const f = await readOrgPackFile(root, "profiles/northwind/repos.manifest.yaml");
+    await expect(
+      writeOrgPackFile(
+        root,
+        "profiles/northwind/repos.manifest.yaml",
+        m("northwind", "forge-ledger"),
+        { baseSha256: f.sha256 },
+      ),
+    ).rejects.toThrow(/profiles\/forge\/repos\.manifest\.yaml already lists forge-ledger/);
+    expect(
+      await readFile(
+        join(root, "org-pack", "profiles", "northwind", "repos.manifest.yaml"),
+        "utf8",
+      ),
+    ).toBe(before);
+    // Its own ids, edited, are its own.
+    const own = await writeOrgPackFile(
+      root,
+      "profiles/northwind/repos.manifest.yaml",
+      m("northwind", "nw-renamed"),
+      { baseSha256: f.sha256 },
+    );
+    expect(own.written).toBe(true);
   });
 
   it("checks a file with its schema before it writes, onto the file as opened", async () => {

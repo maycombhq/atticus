@@ -219,7 +219,8 @@ export async function addManifestRepos(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  // Written in the file's own style (`[a]` or `[ a ]`), so only the lines added change.
+  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: /[[{] \S/.test(lfOnly(text)) });
   const changes = changedLines(lfOnly(text), after);
   if (o.preview || !entries.length) return { file, changes, written: false };
   // In the file's own line endings (a Windows checkout's CRLF), onto the file as read.

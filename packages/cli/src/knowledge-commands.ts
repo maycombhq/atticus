@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   eolOf,
@@ -8,6 +8,7 @@ import {
   inputsDirOf,
   loadOrgPack,
   Sources,
+  writeFileIfUnchanged,
   type CatalogRecord,
   type OrgPack,
   orgPackDirOf,
@@ -89,6 +90,14 @@ export interface SourceAddOptions {
   save?: boolean;
 }
 
+/**
+ * An address carrying credentials: any user part in an http(s) address (a token is often the
+ * user name alone), or a password in any other (`ssh://git@host` alone is Git's usual user).
+ */
+export const hasCredentials = (s: string) =>
+  /^https?:\/\/[^/?#\s]*@/i.test(s.trim()) ||
+  /^[a-z][a-z0-9+.-]*:\/\/[^/?#@\s]*:[^/?#@\s]*@/i.test(s.trim());
+
 const isRemote = (s: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^[\w.-]+@[\w.-]+:/.test(s);
 
 export async function sourcesAdd(
@@ -106,6 +115,14 @@ export async function sourcesAdd(
   if (type !== "git" && (o.path || o.ref || o.submodule)) {
     io.err("--path, --ref and --submodule are for a git wiki.");
     return 2;
+  }
+  // A user name, token or password in the address would be written into sources.yaml, which is
+  // shared through a pull request (`https://oauth2:<token>@host`, `https://<token>@host`).
+  if (hasCredentials(location)) {
+    io.err(
+      "That address has a user name or token in it, and sources.yaml is shared with everyone who reads the org pack. Give the address without them (https://host/path), and let Git's credential helper or an environment variable give them when the wiki is read.",
+    );
+    return 1;
   }
   const orgPackDir = join(orgPackDirOf(root));
   const op = await loadOrgPack(orgPackDir);
@@ -197,9 +214,8 @@ export async function sourcesAdd(
   }
   if (o.save) {
     const file = join(orgPackDir, "sources.yaml");
-    const text = await readFile(file, "utf8").catch(
-      () => "# Where things are and what Atticus reads.\nschemaVersion: 1\n",
-    );
+    const onDisk = await readFile(file, "utf8").catch(() => undefined);
+    const text = onDisk ?? "# Where things are and what Atticus reads.\nschemaVersion: 1\n";
     const doc = parseDocument(lfOnly(text));
     const wikis = doc.get("wikis");
     // ADR 0190 (the app's Add a wiki): the `wikis: []` init writes becomes a block list, and the
@@ -208,7 +224,15 @@ export async function sourcesAdd(
       if (!wikis.items.length) wikis.flow = false;
       wikis.add(doc.createNode(entry));
     } else doc.set("wikis", doc.createNode([entry]));
-    await writeFile(file, inEol(doc.toString(), eolOf(text)), "utf8");
+    // The file as it stands, checked again (it may have changed since the org pack was read).
+    const recheck = Sources.safeParse(doc.toJS());
+    if (!recheck.success) {
+      io.err(recheck.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n"));
+      return 1;
+    }
+    // Written whole or not at all, onto the file as read: an edit made meanwhile (another
+    // window, the raw editor) is FileChangedError, never overwritten.
+    await writeFileIfUnchanged(file, onDisk, inEol(doc.toString(), eolOf(text)));
     io.out(
       `Added ${entry.id} (${type}) to org-pack/sources.yaml: commit it through a pull request.`,
     );
