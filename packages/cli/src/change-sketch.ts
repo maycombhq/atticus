@@ -12,8 +12,10 @@ import {
   writeSketch,
   type Estate,
   type FlowDelta,
+  Stroke as StrokeSchema,
   type Stroke,
 } from "@maycombhq/planner";
+import { parse as parseYaml } from "yaml";
 import { labelText, readDrawio, type DiagramEdge, type Legend } from "@maycombhq/reconcile";
 import { targetFlowsOf } from "./change-map.js";
 import type { Output } from "./commands.js";
@@ -131,6 +133,134 @@ export function readMermaidSketch(text: string): { lines: SketchLine[]; problems
     l.to = labels.get(l.to) ?? l.to;
   }
   return { lines, problems };
+}
+
+/**
+ * ADR 0193: a strokes file, YAML or JSON: a list of strokes, or `strokes: [ ... ]`, each the
+ * stroke the canvas draws (checked against the Stroke schema). Applied in the file's order.
+ */
+export function readStrokesFile(
+  text: string,
+  name: string,
+): { strokes: { stroke: Stroke; at: string }[]; problems: string[] } {
+  let doc: unknown;
+  try {
+    doc = /\.json$/i.test(name) ? JSON.parse(text) : parseYaml(text);
+  } catch (e) {
+    return {
+      strokes: [],
+      problems: [`${name} doesn't read: ${(e as Error).message.split("\n")[0]}`],
+    };
+  }
+  const list = Array.isArray(doc)
+    ? doc
+    : doc && typeof doc === "object" && Array.isArray((doc as { strokes?: unknown }).strokes)
+      ? (doc as { strokes: unknown[] }).strokes
+      : undefined;
+  if (!list)
+    return {
+      strokes: [],
+      problems: [`${name} has no strokes: write a list of strokes, or strokes: [ ... ].`],
+    };
+  const strokes: { stroke: Stroke; at: string }[] = [];
+  const problems: string[] = [];
+  list.forEach((raw, i) => {
+    const s = StrokeSchema.safeParse(raw);
+    if (s.success) strokes.push({ stroke: s.data, at: `stroke ${i + 1}` });
+    else
+      problems.push(
+        `stroke ${i + 1}: isn't a stroke Atticus draws: ${s.error.issues
+          .map((x) => `${x.path.join(".") || "kind"}: ${x.message}`)
+          .join("; ")}`,
+      );
+  });
+  return { strokes, problems };
+}
+
+/** Edit distance between two ids, for "did you mean". */
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cur = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+  }
+  return row[b.length]!;
+}
+
+/** The nearest component ids to one the map doesn't have: at most three, never a guess applied. */
+export function suggestComponents(id: string, components: readonly string[]): string[] {
+  const words = new Set(id.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+  return [...new Set(components)]
+    .map((c) => {
+      const shared = c.split(/[^a-z0-9]+/).filter((w) => words.has(w)).length;
+      return {
+        c,
+        d: distance(id, c) - shared * 2,
+        ok: distance(id, c) <= Math.max(3, id.length / 3) || shared > 0,
+      };
+    })
+    .filter((x) => x.ok)
+    .sort((x, y) => x.d - y.d || x.c.localeCompare(y.c))
+    .slice(0, 3)
+    .map((x) => x.c);
+}
+
+/** The components of the estate: of today's flows and the catalog's Component records. */
+const componentsOf = (estate: Estate) => [
+  ...estate.flows.map((f) => f.flow.component),
+  ...estate.records.filter((r) => r.kind === "Component").map((r) => r.id),
+];
+
+/** A stroke in a line of output: what it draws. */
+function describeStroke(s: Stroke): Pick<SketchLine, "from" | "to" | "label"> {
+  switch (s.kind) {
+    case "absorb":
+      return { from: s.component, to: s.into.component, label: "absorb" };
+    case "retire":
+      return { from: s.component, to: "", label: "retire" };
+    case "call":
+      return { from: s.from.component, to: s.to.component, label: s.to.entry };
+    case "topic":
+      return { from: s.from.component, to: s.listener?.component ?? "", label: s.topic };
+    case "table":
+      return { from: s.from.component, to: s.table, label: s.op };
+    case "remove":
+      return { from: s.flow, to: "", label: `remove step ${s.step}` };
+    case "retarget":
+      return { from: s.flow, to: s.to.component, label: s.to.entry };
+    case "undo":
+      return { from: s.flow, to: "", label: `undo ${s.index}` };
+  }
+}
+
+/** A drawn or left-out stroke as one line: `absorb a into b`, `a → b POST /x`. */
+const strokeText = (l: Pick<SketchLine, "from" | "to" | "label">) =>
+  l.label === "absorb"
+    ? `absorb ${l.from} into ${l.to}`
+    : l.label === "retire"
+      ? `retire ${l.from}`
+      : `${l.from}${l.to ? ` → ${l.to}` : ""} ${l.label}`;
+
+/** A problem with "did you mean" for each component the stroke names that the map doesn't have. */
+function withSuggestions(problem: string, s: Stroke, estate: Estate): string {
+  const named = [
+    ...(s.kind === "absorb" || s.kind === "retire" ? [s.component] : []),
+    ...("from" in s ? [s.from.component] : []),
+  ];
+  const known = new Set(componentsOf(estate));
+  const hints = named
+    .filter((c) => !known.has(c) && !estate.ids.has(c))
+    .map((c) => ({ c, near: suggestComponents(c, [...known]) }))
+    .filter((x) => x.near.length)
+    .map(
+      (x) => ` Did you mean ${x.near.join(", ")}${x.near.length > 1 ? " (nearest first)" : ""}?`,
+    );
+  return problem + hints.join("");
 }
 
 /** The lines of a draw.io export, through the reconcile reader. */
@@ -280,7 +410,7 @@ export function strokesOfLines(
   return plan;
 }
 
-/** atticus change sketch <change> --from <file.drawio|.mmd> [--save]. */
+/** atticus change sketch <change> --from <file.drawio|.mmd|strokes.yaml|strokes.json> [--save]. */
 export async function changeSketchCommand(
   root: string,
   change: string | undefined,
@@ -288,7 +418,9 @@ export async function changeSketchCommand(
   io: Output,
 ): Promise<number> {
   if (!change || !o.from) {
-    io.err("Usage: atticus change sketch <change> --from <file.drawio|.mmd> [--save]");
+    io.err(
+      "Usage: atticus change sketch <change> --from <file.drawio|.mmd|strokes.yaml|.json> [--save]",
+    );
     return 2;
   }
   const t = await targetFlowsOf(root, change);
@@ -302,13 +434,25 @@ export async function changeSketchCommand(
     return 2;
   }
   const ext = extname(o.from).toLowerCase();
-  const read =
-    ext === ".drawio" || ext === ".xml" || text.trimStart().startsWith("<")
-      ? readDrawioSketch(text)
-      : readMermaidSketch(text);
   const estate = await loadEstate(root, t.records);
   const dir = changeFolder(root, change);
-  const plan = strokesOfLines(read.lines, estate, (await readDeltas(dir)).deltas);
+  // ADR 0193: a strokes file is applied as written, in order; a picture is read as lines first.
+  const strokesFile = ext === ".yaml" || ext === ".yml" || ext === ".json";
+  const sf = strokesFile ? readStrokesFile(text, basename(o.from)) : undefined;
+  const read = sf
+    ? { lines: [] as SketchLine[], problems: sf.problems }
+    : ext === ".drawio" || ext === ".xml" || text.trimStart().startsWith("<")
+      ? readDrawioSketch(text)
+      : readMermaidSketch(text);
+  const plan: SketchPlan = sf
+    ? {
+        strokes: sf.strokes.map((x) => ({
+          stroke: x.stroke,
+          line: { ...describeStroke(x.stroke), at: x.at },
+        })),
+        skipped: [],
+      }
+    : strokesOfLines(read.lines, estate, (await readDeltas(dir)).deltas);
   const by = `${o.by ?? "a person"} from ${basename(o.from)}`;
   const problems = [...read.problems];
   const drawn: string[] = [];
@@ -323,12 +467,19 @@ export async function changeSketchCommand(
     for (const s of plan.strokes) {
       const r = applyStroke(deltas, s.stroke, estate, by);
       if (r.problem) {
-        plan.skipped.push({ line: s.line, why: r.problem });
+        plan.skipped.push({
+          line: s.line,
+          why: sf ? withSuggestions(r.problem, s.stroke, estate) : r.problem,
+        });
         continue;
       }
       deltas = r.deltas;
       changed.push(...r.changed);
-      drawn.push(`${s.line.from} → ${s.line.to} ${s.line.label} (${s.line.at})`);
+      drawn.push(
+        sf
+          ? `${strokeText(s.line)} (${s.line.at})`
+          : `${s.line.from} → ${s.line.to} ${s.line.label} (${s.line.at})`,
+      );
     }
     if (o.save && drawn.length)
       await writeSketch(dir, await planSketchWrite(dir, deltas, changed, estate, by));
@@ -351,7 +502,11 @@ export async function changeSketchCommand(
   }
   for (const d of drawn) io.out(`${o.save ? "Drawn" : "Would draw"}: ${d}`);
   for (const s of plan.skipped)
-    io.out(`Left out: ${s.line.from} → ${s.line.to} ${s.line.label} (${s.line.at}): ${s.why}`);
+    io.out(
+      sf
+        ? `Left out: ${strokeText(s.line)} (${s.line.at}): ${s.why}`
+        : `Left out: ${s.line.from} → ${s.line.to} ${s.line.label} (${s.line.at}): ${s.why}`,
+    );
   for (const p of problems) io.out(`Didn't read: ${p}`);
   if (!drawn.length) {
     io.out("Nothing to draw from this file.");

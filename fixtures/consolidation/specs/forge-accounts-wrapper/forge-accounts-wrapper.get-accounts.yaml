@@ -1,0 +1,34 @@
+schemaVersion: 2
+kind: Flow
+id: forge-accounts-wrapper.get-accounts
+status: current
+confidence: inferred
+component: forge-accounts-wrapper
+errors: []
+evidence: []
+family: []
+name: GET /accounts/{id} is passed through
+template: default@1
+trigger:
+  kind: endpoint
+  ref: forge-accounts-wrapper.get-accounts
+  what: The gateway proxy forwards the request
+  evidence:
+    - { source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 9 }
+steps:
+  - kind: entry
+    what: GET /accounts/{id} arrives
+    refs: [forge-accounts-wrapper.get-accounts]
+    evidence:
+      - { source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 9 }
+  - kind: call-out
+    what: The request is passed to Northwind Pay as is
+    refs: []
+    to: { component: northwind-pay-gateway, entry: "GET /v1/accounts/{id}" }
+    evidence:
+      - { source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 11 }
+  - kind: respond
+    what: The answer goes back unchanged
+    refs: []
+    evidence:
+      - { source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 13 }
