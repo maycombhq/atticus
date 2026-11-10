@@ -134,6 +134,8 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
   const [plan, setPlan] = useState<Plan>();
   const [rows, setRows] = useState<Row[]>([]);
   const [platform, setPlatform] = useState<string | undefined>();
+  // The org pack's platforms, once a read has said them (the picker shows with several).
+  const [platforms, setPlatforms] = useState<string[]>([]);
   // A new list starts the preview again (a written one keeps its Propose until then).
   const [round, setRound] = useState(0);
   const read = useAction();
@@ -174,15 +176,27 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
               async () => {
                 const p = await api<Plan>("/api/setup/repos/plan", {
                   method: "POST",
-                  body: mode === "paste" ? { urls } : { dir: dir.trim() },
+                  // A folder's repos are read for the platform chosen (discover's ids are that
+                  // manifest's); with several and none chosen, the platforms come back first.
+                  body:
+                    mode === "paste"
+                      ? { urls }
+                      : { dir: dir.trim(), ...(platform ? { platform } : {}) },
                 });
                 setPlan(p);
-                setPlatform(p.platform ?? p.platforms[0]);
+                setPlatforms(p.platforms);
+                // With several platforms, none is picked for the person.
+                setPlatform(
+                  p.platform ?? platform ?? (mode === "paste" ? p.platforms[0] : undefined),
+                );
                 setRows(p.repos.map((r) => ({ ...r, add: true, about: "" })));
                 setRound(round + 1);
                 return p;
               },
-              (p) => S.toAdd(p.repos.length),
+              (p) =>
+                mode === "folder" && !p.platform && p.platforms.length > 1
+                  ? S.choosePlatform(p.platforms.length)
+                  : S.toAdd(p.repos.length),
             );
           }}
         >
@@ -216,6 +230,32 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
               </span>
             </>
           )}
+          {platforms.length > 1 && (
+            <div className="stack" style={{ gap: 4 }}>
+              <label htmlFor="add-repos-platform">{S.platformLabel}</label>
+              <select
+                id="add-repos-platform"
+                className="field"
+                value={platform ?? ""}
+                aria-describedby={
+                  mode === "folder" && !platform ? "add-repos-platform-hint" : undefined
+                }
+                onChange={(e) => setPlatform(e.target.value || undefined)}
+              >
+                <option value="">{S.platformNone}</option>
+                {platforms.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </select>
+              {mode === "folder" && !platform && (
+                <span id="add-repos-platform-hint" className="state">
+                  {S.choosePlatform(platforms.length)}
+                </span>
+              )}
+            </div>
+          )}
           <div className="row">
             <button type="submit" className="btn" disabled={read.busy || !given}>
               {read.busy ? S.reading : S.read}
@@ -225,22 +265,6 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
         </form>
         {plan && (
           <>
-            {plan.platforms.length > 1 && (
-              <label className="row" style={{ gap: 8 }}>
-                <span>{S.platformLabel}</span>
-                <select
-                  className="field"
-                  value={platform}
-                  onChange={(e) => setPlatform(e.target.value)}
-                >
-                  {plan.platforms.map((x) => (
-                    <option key={x} value={x}>
-                      {x}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <PlanTable plan={plan} rows={rows} setRows={setRows} />
             {rows.length > 0 && (
               <EditPreview

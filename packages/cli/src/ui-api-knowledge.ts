@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import {
   Api,
   changesRelOf,
+  FileChangedError,
   KNOWLEDGE_KINDS,
   KNOWLEDGE_RECORD_KIND,
   knowledgeDirOf,
@@ -460,6 +461,15 @@ export function uiKnowledgeRoutes(
           ...(frameworks?.length ? { frameworks } : {}),
           ...(o.owner ? { owner: o.owner } : {}),
           save: o.save,
+        }).catch((e: unknown) => {
+          // sources.yaml changed between its read and the write (another window, the raw editor).
+          if (e instanceof FileChangedError)
+            throw new HttpError(
+              409,
+              "Conflict",
+              "sources.yaml changed since it was read (another window or the CLI): look again.",
+            );
+          throw e;
         });
         const words = [...c.problems, ...c.lines].join("\n") || "Atticus refused.";
         if (code === 2) throw badRequest(words);

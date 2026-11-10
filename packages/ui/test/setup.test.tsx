@@ -14,6 +14,7 @@ vi.mock("react", async () => {
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
 const sent: { path: string; body?: unknown }[] = [];
+let planReply: unknown;
 const EDIT = {
   path: "org-pack/runtime.yaml",
   changes: [{ was: "adapters: {}" }, { now: "adapters:" }, { now: "  gitHost: manual" }],
@@ -26,6 +27,7 @@ vi.mock("../src/api/client.js", async () => {
     ...real,
     api: async (path: string, o?: { body?: { preview?: boolean } }) => {
       sent.push({ path, body: o?.body });
+      if (path === "/api/setup/repos/plan") return planReply;
       return { ...EDIT, written: o?.body?.preview !== true };
     },
   };
@@ -33,8 +35,9 @@ vi.mock("../src/api/client.js", async () => {
 const { COPY } = await import("../src/copy.js");
 const { DiffLines, EditPreview } = await import("../src/screens/setup/EditPreview.js");
 const { Propose } = await import("../src/app/propose.js");
-const { PlanTable, reposToAdd } = await import("../src/screens/setup/AddRepos.js");
-const { adapterValue, settingsOf } = await import("../src/screens/setup/Adapters.js");
+const { AddRepos, PlanTable, reposToAdd } = await import("../src/screens/setup/AddRepos.js");
+const { AdapterForm, adapterValue, settingsOf, shown } =
+  await import("../src/screens/setup/Adapters.js");
 const { CreateMetarepoForm } = await import("../src/screens/setup/CreateMetarepo.js");
 const S = COPY.setup;
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -164,6 +167,137 @@ describe("the outside systems", () => {
       settings: { owner: "forge" },
       bad: ["not a setting"],
     });
+  });
+
+  it("reads other settings as YAML values, and shows them so they read back the same", () => {
+    expect(
+      settingsOf('strictSsl: false\nretries: 3\norgs: [forge, forge-labs]\nlabel: "3"\n').settings,
+    ).toEqual({ strictSsl: false, retries: 3, orgs: ["forge", "forge-labs"], label: "3" });
+    const values = {
+      strictSsl: false,
+      retries: 3,
+      orgs: ["forge", "forge, labs"],
+      label: "3",
+      apiBase: "https://ghe.forge.example/api/v3",
+      note: "yes",
+    };
+    const text = Object.entries(values)
+      .map(([k, v]) => `${k}: ${shown(v)}`)
+      .join("\n");
+    expect(settingsOf(text).settings).toEqual(values);
+  });
+
+  it("sends a known field's value as the file had it while it is unchanged", () => {
+    const k = { ...kind, current: { type: "github", settings: { defaultBranch: "main" } } };
+    const was = { metarepo: "forge/metarepo", defaultBranch: "main" };
+    const withNumber = { ...k, current: { type: "github", settings: { ...was, idPattern: 7 } } };
+    expect(
+      adapterValue(
+        { ...withNumber, fields: [...kind.fields, { name: "idPattern", list: false }] },
+        "github",
+        { metarepo: "forge/metarepo", defaultBranch: "main", idPattern: "7" },
+        "",
+        { ...was, idPattern: 7 },
+      )?.settings,
+    ).toEqual({ ...was, idPattern: 7 });
+  });
+
+  const gitHost = (settings: Record<string, string | string[]>) => ({
+    ...kind,
+    current: { type: "manual", settings },
+  });
+  const field = (m: { tree: unknown }, name: string) =>
+    all(m.tree).find((e) => e.props.id === `adapter-gitHost-${name}`)!;
+
+  it("follows the file when it is read again, unless the person has edited the form", () => {
+    const props = {
+      kind: gitHost({ metarepo: "forge-metarepo" }),
+      sha256: "a".repeat(64),
+      onWritten: () => undefined,
+    };
+    const m = mount(AdapterForm as never, props as never);
+    expect(field(m, "metarepo").props.value).toBe("forge-metarepo");
+    // Another window wrote it: the untouched form shows the file as it is now.
+    props.kind = gitHost({ metarepo: "forge-payments-metarepo" });
+    props.sha256 = "b".repeat(64);
+    m.render();
+    expect(field(m, "metarepo").props.value).toBe("forge-payments-metarepo");
+    expect(text(m.tree)).not.toContain(S.adapterChanged(S.kinds.gitHost!));
+    // Edited here, then changed elsewhere: the edit stays, and the page says the write would be
+    // refused, with a way to start again from the file.
+    (field(m, "metarepo").props.onChange as (e: unknown) => void)({
+      target: { value: "forge-mine" },
+    });
+    m.render();
+    props.kind = gitHost({ metarepo: "forge-theirs" });
+    props.sha256 = "c".repeat(64);
+    m.render();
+    expect(field(m, "metarepo").props.value).toBe("forge-mine");
+    expect(text(m.tree)).toContain(S.adapterChanged(S.kinds.gitHost!));
+    const again = all(m.tree).find(
+      (e) => e.type === "button" && text(e.props.children) === S.adapterReload,
+    )!;
+    (again.props.onClick as () => void)();
+    m.render();
+    expect(field(m, "metarepo").props.value).toBe("forge-theirs");
+  });
+
+  it("sends the file's sha256 as the form read it, so a stale write is refused", async () => {
+    sent.length = 0;
+    const props = {
+      kind: gitHost({ metarepo: "forge-metarepo" }),
+      sha256: "d".repeat(64),
+      onWritten: () => undefined,
+    };
+    const m = mount(AdapterForm as never, props as never);
+    const preview = all(m.tree).find((e) => e.type === EditPreview)!;
+    await (preview.props.preview as () => Promise<unknown>)();
+    expect(sent[0]).toMatchObject({
+      path: "/api/setup/adapters/gitHost",
+      body: { baseSha256: "d".repeat(64), preview: true },
+    });
+  });
+});
+
+describe("discovering a folder of clones", () => {
+  it("asks which platform first when there are several, then sends it", async () => {
+    sent.length = 0;
+    const m = mount(AddRepos as never, {} as never);
+    const els = () => all(m.tree);
+    const radio = els().filter((e) => e.type === "input" && e.props.type === "radio")[1]!;
+    (radio.props.onChange as () => void)();
+    m.render();
+    (els().find((e) => e.props.id === "add-repos-dir")!.props.onChange as (e: unknown) => void)({
+      target: { value: "/work/clones" },
+    });
+    m.render();
+    const submit = () =>
+      (els().find((e) => e.type === "form")!.props.onSubmit as (e: unknown) => void)({
+        preventDefault: () => undefined,
+      });
+    planReply = {
+      platforms: ["forge", "northwind"],
+      repos: [],
+      listed: [],
+      refused: [],
+      skipped: [],
+    };
+    submit();
+    await flush();
+    await flush();
+    m.render();
+    expect(text(m.tree)).toContain(S.choosePlatform(2));
+    const select = els().find((e) => e.props.id === "add-repos-platform")!;
+    (select.props.onChange as (e: unknown) => void)({ target: { value: "northwind" } });
+    m.render();
+    planReply = { ...(planReply as object), platform: "northwind" };
+    submit();
+    await flush();
+    await flush();
+    expect(sent.map((s) => s.body)).toEqual([
+      { dir: "/work/clones" },
+      { dir: "/work/clones", platform: "northwind" },
+    ]);
   });
 });
 

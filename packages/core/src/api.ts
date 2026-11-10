@@ -427,8 +427,18 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `passage`. GET, POST /api/changes/{changeId}/stories/shape and POST
  *   .../stories/shape/{entryId}/remove are the business analyst's shaping of the stories.
  *   Additive only.
+ * 3.9.0 (ADR 0190, set up from the app, a review's fixes): GET /api/setup/adapters gains
+ *   `sha256` (runtime.yaml's, as read) and PUT /api/setup/adapters/{kind} takes it back as
+ *   `baseSha256`, so a form read before another edit is refused (409) rather than overwriting it.
+ *   The raw editor (GET/PUT /api/setup/file) refuses a name Atticus reads written in another case
+ *   (`Runtime.yaml`, 422) and a manifest listing a repo id another profile lists (422); a
+ *   runtime.yaml that doesn't parse can be saved over, and new content that doesn't read is 422,
+ *   never 500. POST /api/setup/sources refuses a location with a user name or password in it
+ *   (422) and a sources.yaml changed meanwhile (409). POST /api/setup/repos/plan for a folder,
+ *   with several platforms and none given, answers the platforms to choose from and reads
+ *   nothing. Additive only.
  */
-export const API_VERSION = "3.8.0";
+export const API_VERSION = "3.9.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -4482,6 +4492,8 @@ const AdapterSettingValue = z.union([z.string(), z.number(), z.boolean(), z.arra
 export const AdaptersView = z.object({
   /** runtime.yaml, metarepo-relative. */
   path: z.string(),
+  /** 3.9.0: runtime.yaml's sha256 as read, sent back as a write's `baseSha256`. */
+  sha256: z.string(),
   kinds: z.array(
     z.object({
       kind: z.string(),
@@ -4503,6 +4515,14 @@ export const AdapterRequest = z.strictObject({
       settings: z.record(z.string().max(100), AdapterSettingValue).optional(),
     })
     .nullable(),
+  /**
+   * 3.9.0: runtime.yaml's sha256 as the form read it (AdaptersView's), so a write onto a file
+   * changed since is refused (409), never overwriting the newer edit.
+   */
+  baseSha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   preview: z.boolean().optional(),
 });
 export const OrgPackFileView = z.object({
@@ -6884,7 +6904,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "planRepos",
       summary:
-        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. Writes nothing",
+        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing",
       tag: "run",
       body: ReposPlanRequest,
       ok: { status: 200, schema: "ReposPlanView", description: "OK" },
@@ -6929,7 +6949,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getAdapters",
       summary:
-        "The outside systems runtime.yaml names (Git host, work tracker, service desk, notifications, wiki, design tool): the types its schema takes for each, the settings Atticus reads, and what is set now. No secret is ever in them",
+        "The outside systems runtime.yaml names (Git host, work tracker, service desk, notifications, wiki, design tool): the types its schema takes for each, the settings Atticus reads, what is set now, and runtime.yaml's sha256 to send back with a write. No secret is ever in them",
       tag: "run",
       ok: { status: 200, schema: "AdaptersView", description: "OK" },
     },
@@ -6938,7 +6958,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: {
       id: "setAdapter",
       summary:
-        "Set (or with null, take out) one outside system in runtime.yaml, checked with the Runtime schema first (a type it doesn't take, a setting named like a secret or a value that looks like a token is refused, 422); comments and line endings kept. With preview, the lines it would change. A token is kept in the credential store from the terminal (atticus secret set), never through this API",
+        "Set (or with null, take out) one outside system in runtime.yaml, checked with the Runtime schema first (a type it doesn't take, a setting named like a secret or a value that looks like a token is refused, 422); edited in place, so comments, value types and line endings are kept. With `baseSha256` (GET's `sha256`), a runtime.yaml changed since is 409. With preview, the lines it would change. A token is kept in the credential store from the terminal (atticus secret set), never through this API",
       tag: "run",
       params: [p("kind")],
       body: AdapterRequest,
@@ -6981,7 +7001,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "addSource",
       summary:
-        "A wiki added to sources.yaml with atticus sources add's own code (its checks, its id, the path written relative to the org pack); comments and line endings kept. With preview, the entry it would add",
+        "A wiki added to sources.yaml with atticus sources add's own code (its checks, its id, the path written relative to the org pack); comments and line endings kept. A location with a user name or password in it is refused (422: Git's credential helper or an environment variable gives them), and so is a sources.yaml changed meanwhile (409). With preview, the entry it would add",
       tag: "run",
       body: SourceRequest,
       ok: { status: 200, schema: "FileEditView", description: "OK" },

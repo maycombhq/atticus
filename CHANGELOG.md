@@ -6,6 +6,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **The raw editor checks a file whatever the case of its name**: `Runtime.yaml` or `Profiles/forge/repos.manifest.yaml` was written unchecked (no schema, no secret or model-address check), and on Windows or macOS that is the same file Atticus reads. A name in another case is now refused, naming the right one.
+- **A raw manifest edit can't list a repo id another profile lists**: it was written, and then every command that reads the repos stopped. It is now refused, naming the manifest that lists it, as adding repos does.
+- **An adapter form never overwrites a newer edit**: the form follows runtime.yaml when it is read again while you haven't changed it; if you have and the file changed meanwhile, the page says so and the write is refused (409) instead of putting the older values back. Local API 3.9.0.
+- **An adapter's other settings keep their types**: `strictSsl: false`, `retries: 3` and `orgs: [forge, forge-labs]` were written back as the words `"false"`, `"3"` and `forge, forge-labs`. Values now read as YAML does, and a setting you didn't change is sent as the file had it.
+- **Setting an adapter changes only its lines**: its comments were dropped and the file's `[claude-code]` became `[ claude-code ]`; the entry is now edited in place and the file's own flow style is kept (adding repos to a manifest keeps it too).
+- **The raw editor can save a fix over a runtime.yaml that doesn't parse**, and content with an empty adapter (`gitHost:`) is refused with what is wrong instead of "Something went wrong".
+- **Add a wiki never writes a user name or token into sources.yaml**: an address such as `https://oauth2:<token>@host/…` was written as it was. It is refused (in the app and `atticus sources add`), saying to let Git's credential helper or an environment variable give them; the write is now atomic and refused when sources.yaml changed meanwhile.
+- **Discover a folder of clones works with several platforms**: it always failed, asking for a `--platform` flag the app has no way to give. The page now asks which platform first and reads the folder for it.
 - **Home reloads fast on Windows too**: Map › Trust and each change's cockpit are kept until a base clone's checkout moves, and that was judged by the times of `.git` folders, which git moves as it reads (its lock files). On Windows every reload worked them out again (1.3 s with nothing changed, against 0.3 s on Linux); now only the files that say what is checked out are read (HEAD, its branch, the reflog, packed-refs).
 - **`atticus skills import` names a file it kept with forward slashes on Windows too**, as every other line it prints does.
 - **Nothing scrolled to hides behind the Console bar**: a Tab to a button or a link to a heading stops clear of the bar fixed at the foot of the app (or of the open Console), not under it.

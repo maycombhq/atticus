@@ -14,6 +14,7 @@ import {
   ManifestEditError,
   manifestFiles,
   orgPackDirOf,
+  orgPackFileProblems,
   readOrgPackFile,
   RepoDescription,
   setManifestField,
@@ -64,6 +65,9 @@ const unprocessable = (detail: string) => new HttpError(422, "That can't be writ
  */
 const looksLikeSecret = (v: string) =>
   looksLikeKey(v) ||
+  // An address with a user name, a token or a password in it (`https://<token>@host`,
+  // `https://oauth2:<token>@host`): Git's credential helper or an environment variable gives them.
+  /^https?:\/\/[^/?#\s]*@/i.test(v.trim()) ||
   /^(gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_-]{16,}$/.test(v.trim()) ||
   /^[a-z2-7]{52}$/.test(v.trim());
 
@@ -231,13 +235,29 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
             ))
           )
             throw notFound(`There is no folder ${dir} on this machine.`);
+          // With several platforms the repos are one platform's, and only the person knows
+          // which: the platforms come back to choose from, before the folder is read.
+          if (!b.platform && platforms.length > 1) {
+            const ask: Api.ReposPlanViewT = {
+              platforms,
+              repos: [],
+              listed: [],
+              refused: [],
+              skipped: [],
+            };
+            return { status: 200, body: ask };
+          }
           const { reposDiscover, AdoptError } = await import("@maycombhq/adopt");
           const found = await reposDiscover(
             root,
             { dir },
             { dryRun: true, ...(b.platform ? { platform: b.platform } : {}) },
           ).catch((e: unknown) => {
-            if (e instanceof AdoptError) throw unprocessable(e.message);
+            // discover's words name its CLI flags; the app has a field for each.
+            if (e instanceof AdoptError)
+              throw unprocessable(
+                e.message.replace(/ with --platform\b/g, " (choose the platform)"),
+              );
             throw e;
           });
           skipped = found.skipped;
@@ -412,9 +432,11 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
       // 3. The outside systems in runtime.yaml.
       .add("GET", "/api/setup/adapters", async () => {
         needMetarepo();
+        const file = await readOrgPackFile(root, "runtime.yaml");
         const op = await loadOrgPack(orgPackDirOf(root));
         const body: Api.AdaptersViewT = {
-          path: (await readOrgPackFile(root, "runtime.yaml")).path,
+          path: file.path,
+          sha256: file.sha256,
           kinds: ADAPTER_KINDS.map((kind) => {
             const c = op.runtime.adapters[kind];
             return {
@@ -443,7 +465,10 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
                 `${name} looks like a token or key. A secret never goes in runtime.yaml: keep it in this machine's credential store from your terminal (atticus secret set <NAME>), under the name the adapter's plugin reads.`,
               );
         try {
-          const e = await setRuntimeAdapter(root, kind, b.value, { preview: b.preview === true });
+          const e = await setRuntimeAdapter(root, kind, b.value, {
+            preview: b.preview === true,
+            ...(b.baseSha256 ? { baseSha256: b.baseSha256 } : {}),
+          });
           if (e.written) changed(e.path);
           return { status: 200, body: editBody(e) };
         } catch (e) {
@@ -470,19 +495,24 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
           // no value that looks like a key is written, as in the AI settings.
           let model: ModelSetting;
           let ask = false;
-          if (was.rel === "runtime.yaml") {
-            const before = (parse(was.content) ?? {}) as { adapters?: { model?: ModelSetting } };
-            const after = (() => {
+          // The name as Atticus reads it: readOrgPackFile refuses another case (`Runtime.yaml`).
+          if (was.rel.toLowerCase() === "runtime.yaml") {
+            // New content that doesn't read is refused first, in the schema's words (never a 500).
+            const problems = orgPackFileProblems(was.rel, b.content);
+            if (problems.length) throw unprocessable(problems.join("; "));
+            // A file on disk that doesn't parse (the one being fixed) has no model to compare.
+            const before = (() => {
               try {
-                return (parse(b.content) ?? {}) as {
-                  adapters?: Record<string, { settings?: Record<string, unknown> } | string>;
-                };
+                return (parse(was.content) ?? {}) as { adapters?: { model?: ModelSetting } };
               } catch {
                 return {};
               }
             })();
+            const after = (parse(b.content) ?? {}) as {
+              adapters?: Record<string, { settings?: Record<string, unknown> } | string | null>;
+            };
             for (const a of Object.values(after.adapters ?? {}))
-              for (const v of Object.values(typeof a === "object" ? (a.settings ?? {}) : {}))
+              for (const v of Object.values(a && typeof a === "object" ? (a.settings ?? {}) : {}))
                 for (const one of Array.isArray(v) ? v : [v])
                   if (typeof one === "string" && looksLikeSecret(one))
                     throw unprocessable(
@@ -528,6 +558,7 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
         const file = join(orgPackDirOf(root), "sources.yaml");
         const before = await readFile(file, "utf8").catch(() => "");
         const { sourcesAdd } = await import("./knowledge-commands.js");
+        // sources add's own write: onto sources.yaml as it read it, so an edit meanwhile is 409.
         const res = await run((io) =>
           sourcesAdd(root, b.type, b.location.trim(), io, {
             ...(b.id ? { id: b.id } : {}),
@@ -535,7 +566,7 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
             ...(b.ref ? { ref: b.ref } : {}),
             save: b.preview !== true,
           }),
-        );
+        ).catch(refusal);
         if (res.code !== 0) throw unprocessable([...res.err, ...res.out].join("\n"));
         const path = (await readOrgPackFile(root, "sources.yaml")).path;
         if (b.preview === true) {

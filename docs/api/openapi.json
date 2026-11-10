@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.8.0",
+    "version": "3.9.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -10002,7 +10002,7 @@
     "/api/setup/repos/plan": {
       "post": {
         "operationId": "planRepos",
-        "summary": "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. Writes nothing",
+        "summary": "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing",
         "tags": [
           "run"
         ],
@@ -10405,7 +10405,7 @@
     "/api/setup/adapters": {
       "get": {
         "operationId": "getAdapters",
-        "summary": "The outside systems runtime.yaml names (Git host, work tracker, service desk, notifications, wiki, design tool): the types its schema takes for each, the settings Atticus reads, and what is set now. No secret is ever in them",
+        "summary": "The outside systems runtime.yaml names (Git host, work tracker, service desk, notifications, wiki, design tool): the types its schema takes for each, the settings Atticus reads, what is set now, and runtime.yaml's sha256 to send back with a write. No secret is ever in them",
         "tags": [
           "run"
         ],
@@ -10436,7 +10436,7 @@
     "/api/setup/adapters/{kind}": {
       "put": {
         "operationId": "setAdapter",
-        "summary": "Set (or with null, take out) one outside system in runtime.yaml, checked with the Runtime schema first (a type it doesn't take, a setting named like a secret or a value that looks like a token is refused, 422); comments and line endings kept. With preview, the lines it would change. A token is kept in the credential store from the terminal (atticus secret set), never through this API",
+        "summary": "Set (or with null, take out) one outside system in runtime.yaml, checked with the Runtime schema first (a type it doesn't take, a setting named like a secret or a value that looks like a token is refused, 422); edited in place, so comments, value types and line endings are kept. With `baseSha256` (GET's `sha256`), a runtime.yaml changed since is 409. With preview, the lines it would change. A token is kept in the credential store from the terminal (atticus secret set), never through this API",
         "tags": [
           "run"
         ],
@@ -10503,6 +10503,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "baseSha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   },
                   "preview": {
                     "type": "boolean"
@@ -10881,7 +10885,7 @@
     "/api/setup/sources": {
       "post": {
         "operationId": "addSource",
-        "summary": "A wiki added to sources.yaml with atticus sources add's own code (its checks, its id, the path written relative to the org pack); comments and line endings kept. With preview, the entry it would add",
+        "summary": "A wiki added to sources.yaml with atticus sources add's own code (its checks, its id, the path written relative to the org pack); comments and line endings kept. A location with a user name or password in it is refused (422: Git's credential helper or an environment variable gives them), and so is a sources.yaml changed meanwhile (409). With preview, the entry it would add",
         "tags": [
           "run"
         ],
@@ -39416,6 +39420,9 @@
           "path": {
             "type": "string"
           },
+          "sha256": {
+            "type": "string"
+          },
           "kinds": {
             "type": "array",
             "items": {
@@ -39513,6 +39520,7 @@
         },
         "required": [
           "path",
+          "sha256",
           "kinds",
           "problems"
         ],

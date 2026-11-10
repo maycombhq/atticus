@@ -349,4 +349,126 @@ describe("set up from the app (ADR 0190)", () => {
       422,
     );
   });
+
+  it("never writes a wiki's address with a user name or token in it", async () => {
+    const before = await pack("sources.yaml");
+    for (const location of [
+      "https://oauth2:glpat-abcdefghijklmnopqrst@git.forge.example/forge/wiki.git",
+      "https://glpat-abcdefghijklmnopqrst@git.forge.example/forge/wiki.git",
+      "https://forge-bot@git.forge.example/forge/wiki.git",
+    ]) {
+      const r = await call("POST", "/api/setup/sources", { type: "git", location });
+      expect(r.status, location).toBe(422);
+      expect(JSON.stringify(r.body)).toMatch(/credential helper/);
+    }
+    expect(await pack("sources.yaml")).toBe(before);
+    // A setting's value like it is refused too.
+    const a = await call("PUT", "/api/setup/adapters/gitHost", {
+      value: { type: "manual", settings: { apiBase: "https://forge-bot@git.forge.example/api" } },
+    });
+    expect(a.status).toBe(422);
+  });
+
+  it("refuses a write from an adapter form read before another edit", async () => {
+    const a = Api.AdaptersView.parse((await call("GET", "/api/setup/adapters")).body);
+    expect(a.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const value = { type: "manual", settings: { project: "Forge Cards" } };
+    const ok = await call("PUT", "/api/setup/adapters/workTracker", {
+      value,
+      baseSha256: a.sha256,
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const stale = await call("PUT", "/api/setup/adapters/workTracker", {
+      value: { type: "manual", settings: { project: "Forge Old" } },
+      baseSha256: a.sha256,
+    });
+    expect(stale.status).toBe(409);
+    expect(JSON.stringify(stale.body)).toMatch(/changed since/);
+    expect(await pack("runtime.yaml")).toContain("project: Forge Cards");
+  });
+
+  it("checks runtime.yaml in the raw editor whatever the case of its name", async () => {
+    const f = Api.OrgPackFileView.parse(
+      (await call("GET", "/api/setup/file?path=runtime.yaml")).body,
+    );
+    const r = await call("PUT", "/api/setup/file", {
+      path: "Runtime.yaml",
+      content:
+        "schemaVersion: 99\nadapters:\n  gitHost:\n    type: github\n    settings:\n      metarepo: ghp_abcdefghijklmnopqrstuvwxyz0123456789\n",
+      baseSha256: f.sha256,
+    });
+    expect(r.status).toBe(422);
+    expect(JSON.stringify(r.body)).toMatch(/open runtime\.yaml/);
+    expect(await pack("runtime.yaml")).toBe(f.content);
+    expect(
+      (await call("GET", "/api/setup/file?path=Profiles/forge/repos.manifest.yaml")).status,
+    ).toBe(422);
+  });
+
+  it("saves a fix over a runtime.yaml that doesn't parse; content that doesn't read is 422", async () => {
+    const good = await pack("runtime.yaml");
+    await writeFile(join(root, "org-pack", "runtime.yaml"), "schemaVersion: [4\n");
+    const f = Api.OrgPackFileView.parse(
+      (await call("GET", "/api/setup/file?path=runtime.yaml")).body,
+    );
+    const empty = await call("PUT", "/api/setup/file", {
+      path: "runtime.yaml",
+      content: good.replace(/^adapters:\n/m, "adapters:\n  wiki:\n"),
+      baseSha256: f.sha256,
+    });
+    expect(empty.status, JSON.stringify(empty.body)).toBe(422);
+    // Nothing to compare the model's address with, so the person confirms where it goes.
+    const p = await call("PUT", "/api/setup/file", {
+      path: "runtime.yaml",
+      content: good,
+      baseSha256: f.sha256,
+      preview: true,
+    });
+    expect(p.status, JSON.stringify(p.body)).toBe(200);
+    expect(p.body).toMatchObject({ confirm: "ai-model" });
+    const fix = await call("PUT", "/api/setup/file", {
+      path: "runtime.yaml",
+      content: good,
+      baseSha256: f.sha256,
+      confirmation: await confirmFor(srv, "ai-model", "model"),
+    });
+    expect(fix.status, JSON.stringify(fix.body)).toBe(200);
+    expect(await pack("runtime.yaml")).toBe(good);
+  });
+
+  it("asks which platform a folder's repos are for when there are several", async () => {
+    await mkdir(join(root, "org-pack", "profiles", "northwind"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack", "profiles", "northwind", "repos.manifest.yaml"),
+      "schemaVersion: 3\nplatform: northwind\nrepos: []\n",
+    );
+    const clones = await mkdtemp(join(tmpdir(), "atticus-clones-"));
+    await mkdir(join(clones, "nw-fees", ".git"), { recursive: true });
+    await writeFile(join(clones, "nw-fees", ".git", "HEAD"), "ref: refs/heads/main\n");
+    await writeFile(join(clones, "nw-fees", "package.json"), '{ "name": "x" }\n');
+    const r = await call("POST", "/api/setup/repos/plan", { dir: clones });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const ask = Api.ReposPlanView.parse(r.body);
+    expect(ask.platforms).toEqual(["forge", "northwind"]);
+    expect(ask.platform).toBeUndefined();
+    expect(ask.repos).toEqual([]);
+    const plan = Api.ReposPlanView.parse(
+      (await call("POST", "/api/setup/repos/plan", { dir: clones, platform: "northwind" })).body,
+    );
+    expect(plan).toMatchObject({ platform: "northwind" });
+    expect(plan.repos.map((x) => x.id)).toEqual(["nw-fees"]);
+  });
+
+  it("refuses a raw manifest edit listing a repo id another profile lists", async () => {
+    const rel = "profiles/northwind/repos.manifest.yaml";
+    const f = Api.OrgPackFileView.parse((await call("GET", `/api/setup/file?path=${rel}`)).body);
+    const r = await call("PUT", "/api/setup/file", {
+      path: rel,
+      content:
+        "schemaVersion: 3\nplatform: northwind\nrepos:\n  - id: forge-ledger\n    url: https://git.northwind.example/nw/forge-ledger.git\n    type: unknown\n    owner: unassigned\n",
+      baseSha256: f.sha256,
+    });
+    expect(r.status).toBe(422);
+    expect(JSON.stringify(r.body)).toMatch(/already lists forge-ledger/);
+  });
 });

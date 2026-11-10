@@ -5864,6 +5864,9 @@ export const COPY = {
     read: "Read the list",
     reading: "Reading…",
     platformLabel: "Platform",
+    platformNone: "Choose one",
+    choosePlatform: (n: number) =>
+      `The org pack has ${n} platforms, and a folder's repos are one platform's: choose which, then read the folder.`,
     toAdd: (n: number) => `${n} repo${n === 1 ? "" : "s"} to add`,
     colAdd: "Add",
     colId: "Id",
@@ -5944,7 +5947,11 @@ export const COPY = {
         "AI never pushes to these; the default branch always is one. Such as main and release.",
     } as Record<string, string>,
     more: "Other settings the adapter's plugin reads (name: value, one a line)",
-    moreHint: "Never a token or key: Atticus refuses one.",
+    moreHint:
+      'Values read as YAML: true, 3 and [a, b] are a yes, a number and a list; quote one to keep it words ("3"). Never a token or key: Atticus refuses one.',
+    adapterChanged: (kind: string) =>
+      `runtime.yaml changed since you started editing ${kind} (another window, the raw editor or the CLI). Writing this would be refused: start again from the file as it is now, or make your edit there.`,
+    adapterReload: "Start again from the file",
     badLine: (line: string) => `"${line}" doesn't read as name: value.`,
     live: (type: string) =>
       `${type} is a live adapter: its plugin goes in the org pack. Until it can be reached, its steps fall back to manual ones.`,
