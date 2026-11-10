@@ -242,9 +242,19 @@ export async function stopApp(a: App): Promise<void> {
 
 /** Go to a screen by its route and wait for its first panel. */
 export async function open(page: Page, app: App, route: string): Promise<void> {
+  // The tour opens once /api/health names the metarepo: on a slow machine (CI) that can be after
+  // the page looks settled, and the tour then covered the next click. Wait for it first.
+  const health = page
+    .waitForResponse((r) => new URL(r.url()).pathname === "/api/health", { timeout: 15_000 })
+    .catch(() => undefined);
   await page.goto(`${app.url}/#/${route}`);
   await expect(page.locator(".panel").first()).toBeVisible();
   await page.waitForLoadState("networkidle");
+  await health;
+  // Two frames: the answer is rendered (the tour, if it is to open, is open).
+  await page.evaluate(
+    "new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))))",
+  );
   await skipTour(page);
 }
 
