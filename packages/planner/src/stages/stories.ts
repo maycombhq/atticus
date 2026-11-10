@@ -141,11 +141,13 @@ import { plannedRepos } from "./planned.js";
 import {
   keepStoryNumbers,
   lastPart,
+  mergeStoryNumbers,
   readStoryNumbers,
   stepKeys,
   storyKey,
   storyNumber,
   withStoriesLock,
+  writeStoryNumbers,
   type StoryNumbers,
 } from "./numbers.js";
 import {
@@ -4206,7 +4208,14 @@ export async function storiesStage(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   // Review round 50: numbered as before, so a story or task still there keeps its number.
-  const base = numberedStories(deltas, estate, await readStoryNumbers(dir));
+  // Review of beta.23: numbered and reserved in one step, under the stories' lock, before the
+  // draft: a story the business analyst adds while the model drafts takes the next free number,
+  // never one this draft gave a new flow's story.
+  const base = await withStoriesLock(dir, async () => {
+    const b = numberedStories(deltas, estate, await readStoryNumbers(dir));
+    await writeStoryNumbers(dir, mergeStoryNumbers(await readStoryNumbers(dir), b.numbers));
+    return b;
+  });
   const { numbers } = base;
   // ADR 0191: the business analyst's renames, splits, merges and added stories, with the tasks
   // where the last draft mapped them; a draft maps them again (`parse`).

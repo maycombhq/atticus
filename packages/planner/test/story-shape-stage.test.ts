@@ -171,4 +171,46 @@ describe("a shaping recorded while the stories are drafted", () => {
       expect.stringContaining(`Story ${added} "Tell the customer" has no task yet`),
     ]);
   }, 60_000);
+
+  it("takes a number no story of the draft has, even while the first draft runs (review of beta.23)", async () => {
+    const dir = await root();
+    const folder = join(dir, "openspec/changes", CHANGE);
+    for (const [stage, file] of [
+      [featureStage, "placed.yaml"],
+      [architectureStage, "deltas.yaml"],
+    ] as const)
+      expect(
+        (
+          await stage(dir, CHANGE, {
+            runtime: new MockRuntime(respond(fixture(file)), { now: () => NOW }),
+            now: NOW,
+          })
+        ).state,
+      ).toBe("done");
+    // The first stories draft: its stories are numbered before the model is asked, and the
+    // business analyst adds one while it drafts.
+    let added = "";
+    let refused = "";
+    await storiesStage(dir, CHANGE, {
+      runtime: new Meanwhile(fixture("answer.yaml"), async () => {
+        try {
+          const r = await recordShape(
+            folder,
+            { op: "add", name: "Tell the customer" },
+            { by: "bea", at: "2026-10-24T09:40:00Z" },
+          );
+          added = r.entry.added!;
+        } catch (e) {
+          refused = (e as Error).message;
+        }
+      }),
+      now: NOW,
+    });
+    expect(refused).toBe("");
+    const numbers = (await readStoryNumbers(folder))!;
+    const n = (id: string) => Number(/^s(\d+)-/.exec(id)![1]);
+    const drafted = numbers.stories.filter((s) => s.id !== added).map((s) => n(s.id));
+    expect(drafted.length).toBeGreaterThan(0);
+    expect(drafted).not.toContain(n(added));
+  }, 60_000);
 });
