@@ -662,8 +662,24 @@ const NAMED = new Set(["grpc", "soap"]);
 const GENERIC =
   /^\/(health|healthz|ready|readiness|live|liveness|ping|status|info|metrics|prometheus|actuator)(\/|$)/i;
 
+/**
+ * The segments of the paths read lately, as `segments` gives them: a join compares the same few
+ * thousand paths millions of times. Bounded, and pure (the same path, the same segments).
+ */
+const SEGMENTS_SEEN = new Map<string, readonly string[] | undefined>();
+const SEGMENTS_SEEN_MAX = 100_000;
+
 /** Path segments as compared: lower case, parameters `{}`, a catch-all `**`. */
-function segments(path: string): string[] | undefined {
+function segments(path: string): readonly string[] | undefined {
+  if (SEGMENTS_SEEN.has(path)) return SEGMENTS_SEEN.get(path);
+  const out = segmentsOf(path);
+  if (SEGMENTS_SEEN.size >= SEGMENTS_SEEN_MAX) SEGMENTS_SEEN.clear();
+  const frozen = out ? Object.freeze(out) : undefined;
+  SEGMENTS_SEEN.set(path, frozen);
+  return frozen;
+}
+
+function segmentsOf(path: string): string[] | undefined {
   const p = (path.trim().split(/[?#]/, 1)[0] ?? "").replace(/\{([^}:?]*)[^}]*\}/g, "{$1}");
   if (!p.includes("/")) return undefined;
   return p
@@ -1056,10 +1072,31 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     else nodesByRepo.set(n.repo, [n]);
   }
   const configsByRepo = new Map<string, (Node & { fact: Config })[]>();
+  /** The config nodes by the setting's name as a placeholder names it (`settingNameKey`). */
+  const configsByName = new Map<string, (Node & { fact: Config })[]>();
   for (const n of configNodes) {
     const l = configsByRepo.get(n.repo);
     if (l) l.push(n);
     else configsByRepo.set(n.repo, [n]);
+    const k = settingNameKey(n.fact.key);
+    const m = configsByName.get(k);
+    if (m) m.push(n);
+    else configsByName.set(k, [n]);
+  }
+  /** The calls made from each entry (`from`, a gateway route's forwarding calls), by repo. */
+  const callsFrom = new Map<string, (Node & { fact: Call })[]>();
+  for (const n of nodes) {
+    if (n.fact.kind !== "call" || !n.fact.from) continue;
+    const k = key(n.repo, n.fact.from);
+    const l = callsFrom.get(k);
+    if (l) l.push(n as Node & { fact: Call });
+    else callsFrom.set(k, [n as Node & { fact: Call }]);
+  }
+  const entriesByRepo = new Map<string, (Node & { fact: Entry })[]>();
+  for (const e of entries) {
+    const l = entriesByRepo.get(e.repo);
+    if (l) l.push(e);
+    else entriesByRepo.set(e.repo, [e]);
   }
   /** Each file's deployments, by the name it deploys (a ConfigMap or Helm values beside one). */
   const deploysIn = new Map<string, Set<string>>();
@@ -1157,9 +1194,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     }
     const want = settingNameKey(p.name);
     const out: Resolved[] = [];
-    const named = configNodes.filter(
-      (s) => !seen.has(key(s.repo, s.fact.id)) && settingNameKey(s.fact.key) === want,
-    );
+    const named = (configsByName.get(want) ?? []).filter((s) => !seen.has(key(s.repo, s.fact.id)));
     const mine = named.flatMap((s) => {
       const how = setsFor(s, owner);
       const guess: JoinHostGuess[] = how === "folder" ? [JOINED_BY_FOLDER_NAME] : [];
@@ -1503,11 +1538,57 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (input.explain) left.push({ call: end(c), reason });
   };
 
+  // ---- the entries by the shape of their path, so a call looks its candidates up (review of
+  // beta.24: scanning every entry for every call made a 40-repo estate's join take minutes).
+  // `routeScore` is above zero only for a served path with a catch-all, or for one with a literal
+  // segment whose last literal is the called path's segment as far from its end: with the same
+  // length every literal must match, and where one path ends the other, its tail is the same
+  // (and holds a literal). So a served path is indexed by its last literal and how far from the
+  // end it is, and a call looks up one bucket per literal segment of its own; `/` is its own.
+  const entryOrder = new Map(entries.map((e, i) => [e, i] as const));
+  const byLastLiteral = new Map<string, (Node & { fact: Entry })[]>();
+  const withCatchAll: (Node & { fact: Entry })[] = [];
+  const literal = (s: string) => s !== "{}" && s !== "**";
+  const push = (k: string, e: Node & { fact: Entry }) => {
+    const l = byLastLiteral.get(k);
+    if (l) l.push(e);
+    else byLastLiteral.set(k, [e]);
+  };
+  for (const e of entries) {
+    const segs = segments(e.fact.path);
+    if (!segs) continue;
+    if (segs.includes("**")) {
+      withCatchAll.push(e);
+      continue;
+    }
+    if (!segs.length) {
+      push("/", e);
+      continue;
+    }
+    for (let k = 0; k < segs.length; k++)
+      if (literal(segs[segs.length - 1 - k]!)) {
+        push(`${k}\u0000${segs[segs.length - 1 - k]}`, e);
+        break;
+      }
+  }
+  /** The entries `routeScore` may score above zero for a called path, in `entries`' order. */
+  const routeCandidates = (path: string): readonly (Node & { fact: Entry })[] => {
+    const segs = segments(path);
+    if (!segs) return [];
+    const got: (Node & { fact: Entry })[] = [...withCatchAll];
+    if (!segs.length) got.push(...(byLastLiteral.get("/") ?? []));
+    for (let k = 0; k < segs.length; k++) {
+      const s = segs[segs.length - 1 - k]!;
+      if (literal(s)) got.push(...(byLastLiteral.get(`${k}\u0000${s}`) ?? []));
+    }
+    return got.sort((x, y) => entryOrder.get(x)! - entryOrder.get(y)!);
+  };
+
   /** The entries of a scope that serve a call, best first: score and node. */
   const serving = (c: Node & { fact: Call }, inScope: (e: Node) => boolean, loose: boolean) => {
     const types = SERVES[c.fact.callType] ?? [];
     const scored: { e: Node & { fact: Entry }; score: number }[] = [];
-    for (const e of entries) {
+    for (const e of NAMED.has(c.fact.callType) ? entries : routeCandidates(c.fact.path)) {
       if (e.component === c.component || !types.includes(e.fact.entryType) || !inScope(e)) continue;
       if (!sameMethod(c.fact.method, e.fact.method)) continue;
       const score = NAMED.has(c.fact.callType)
@@ -1619,9 +1700,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const proxies = new Set(
       routes.flatMap((r) => (r.fact.handler ? [r.fact.handler.split("/")[0]!] : [])),
     );
-    const by = configNodes.find(
+    const by = (configsByRepo.get(c.repo) ?? []).find(
       (n) =>
-        n.repo === c.repo &&
         settingNameKey(n.fact.key).endsWith("COPYPATHSUFFIX") &&
         /^false$/i.test((n.fact.value ?? "").trim()) &&
         (bundleRootOf(n.fact.cite.file) === root ||
@@ -1698,8 +1778,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (f.callType !== "rest") return [];
     const root = bundleRootOf(f.cite.file);
     if (!root) return [];
-    const bundled = entries.filter(
-      (n) => n.repo === c.repo && bundleRootOf(n.fact.cite.file) === root,
+    const bundled = (entriesByRepo.get(c.repo) ?? []).filter(
+      (n) => bundleRootOf(n.fact.cite.file) === root,
     );
     const passes = bundled.filter((n) => isPassThrough(n.fact));
     const flows = bundled.filter((n) => !isPassThrough(n.fact));
@@ -1756,7 +1836,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       };
       type Hit = SuffixHit & { rank: number; score: number; contradicted?: true };
       const hits: Hit[] = [];
-      for (const e of entries) {
+      // Every way to match a route's path (as it is, a base taken off its front) keeps its end,
+      // so the entries its whole path's shape looks up are all there are; under a pass-through,
+      // any entry the target's path starts.
+      for (const e of x.under ? entries : routeCandidates(toPath(x.segs))) {
         if (e.component === c.component || !SERVES.rest!.includes(e.fact.entryType)) continue;
         if (!inScope(e) || !sameMethod(method, e.fact.method) || isPassThrough(e.fact)) continue;
         let hit: Hit | undefined;
@@ -2046,9 +2129,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
 
     // The config fact that gives the call's base URL ties it to a host; where its value is a
     // placeholder (J0), each value the settings for the caller's component give it does.
-    const keyed = configNodes.filter(
-      (n) => n.repo === call.repo && !!f.base && n.fact.key === f.base,
-    );
+    const keyed = f.base
+      ? (configsByRepo.get(call.repo) ?? []).filter((n) => n.fact.key === f.base)
+      : [];
     type Cand = {
       value: string;
       tie?: Node & { fact: Config };
@@ -2484,14 +2567,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const virtualHostOf = (route: Node & { fact: Entry }): string | undefined => {
     const proxy = route.fact.handler?.split("/")[0];
     if (!proxy) return undefined;
-    return nodes
-      .filter(
-        (n): n is Node & { fact: Config } =>
-          n.repo === route.repo &&
-          n.fact.kind === "config" &&
-          /^virtualhost$/i.test(n.fact.key) &&
-          n.fact.target === proxy,
-      )
+    return (configsByRepo.get(route.repo) ?? [])
+      .filter((n) => /^virtualhost$/i.test(n.fact.key) && n.fact.target === proxy)
       .sort((x, y) => cmp(x.fact.id, y.fact.id))[0]?.fact.value;
   };
   const isRoute = (n: Node) =>
@@ -2510,12 +2587,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * call joined, and all to the same entry. Else undefined: the call stays at the gateway.
    */
   const forwardedTo = (route: Node & { fact: Entry }): FactJoin | undefined => {
-    const forwards = nodes.filter(
-      (n): n is Node & { fact: Call } =>
-        n.repo === route.repo &&
-        n.fact.kind === "call" &&
-        n.fact.from === route.fact.id &&
-        !EVENTS.has(n.fact.callType),
+    const forwards = (callsFrom.get(key(route.repo, route.fact.id)) ?? []).filter(
+      (n) => !EVENTS.has(n.fact.callType),
     );
     const mine = (j: FactJoin) =>
       !j.forRoute || (j.forRoute.repo === route.repo && j.forRoute.fact === route.fact.id);
@@ -2648,11 +2721,23 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   asks.push(...cycles);
 
   // ---- the fields that cross each join
-  const fieldsOf = (repo: string, owner: string) =>
-    nodes.filter(
-      (n): n is Node & { fact: Field } =>
-        n.repo === repo && n.fact.kind === "field" && n.fact.owner === owner,
-    );
+  /** Each owner's fields, and each repo's stores that write under an entry: looked up. */
+  const fieldsByOwner = new Map<string, (Node & { fact: Field })[]>();
+  const writesUnder = new Map<string, (Node & { fact: Store })[]>();
+  for (const n of nodes) {
+    if (n.fact.kind === "field") {
+      const k = key(n.repo, n.fact.owner);
+      const l = fieldsByOwner.get(k);
+      if (l) l.push(n as Node & { fact: Field });
+      else fieldsByOwner.set(k, [n as Node & { fact: Field }]);
+    } else if (n.fact.kind === "store" && n.fact.op === "write" && n.fact.under) {
+      const k = key(n.repo, n.fact.under);
+      const l = writesUnder.get(k);
+      if (l) l.push(n as Node & { fact: Store });
+      else writesUnder.set(k, [n as Node & { fact: Store }]);
+    }
+  }
+  const fieldsOf = (repo: string, owner: string) => fieldsByOwner.get(key(repo, owner)) ?? [];
   const sideOf = (f: Field) => f.side ?? "request";
   const fieldEnd = (n: Node & { fact: Field }): FieldEnd => ({
     repo: n.repo,
@@ -2669,9 +2754,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         return { table: tableOf(store), name: col.name, fact: col.id, how: "mapped" };
     }
     const want = fieldNameKey(field.name);
-    for (const n of nodes) {
+    for (const n of writesUnder.get(key(repo, entry)) ?? []) {
       const s = n.fact;
-      if (n.repo !== repo || s.kind !== "store" || s.under !== entry || s.op !== "write") continue;
       const col = fieldsOf(repo, s.id).find((x) => fieldNameKey(x.fact.name) === want);
       if (col) return { table: tableOf(s), name: col.fact.name, fact: col.fact.id, how: "name" };
       const named = (s.columns ?? []).find((x) => fieldNameKey(x) === want);
