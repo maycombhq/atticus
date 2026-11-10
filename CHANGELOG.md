@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
-- **Home reloads fast on Windows too**: Windows reports a file only read as changed (its last-access time), so Home reading its files threw away every answer it had kept, and a reload with nothing changed took 1.4 s there against 0.3 s on Linux. The app's server now counts a change on Windows only when the file was written or its attributes changed.
+- **Home reloads fast on Windows too**: Map › Trust and each change's cockpit are kept until a base clone's checkout moves, and that was judged by the times of `.git` folders, which git moves as it reads (its lock files). On Windows every reload worked them out again (1.3 s with nothing changed, against 0.3 s on Linux); now only the files that say what is checked out are read (HEAD, its branch, the reflog, packed-refs).
 - **`atticus skills import` names a file it kept with forward slashes on Windows too**, as every other line it prints does.
 - **Nothing scrolled to hides behind the Console bar**: a Tab to a button or a link to a heading stops clear of the bar fixed at the foot of the app (or of the open Console), not under it.
 - **The app builds on Windows again**: two files of the canvas differed only in the case of their names (`tools.ts` and `Tools.tsx`), which Windows can't tell apart; one is renamed, and the portable-paths check now refuses such a pair.

@@ -364,8 +364,12 @@ export async function trustView(root: string): Promise<View> {
 }
 
 /**
- * The state of the checkouts trustView reads (each base clone's .git, its HEAD and branch refs),
- * which the server's watcher doesn't follow: a pull or a checkout there changes it.
+ * The state of the checkouts trustView reads, which the server's watcher doesn't follow: a pull,
+ * a commit or a checkout there changes it. Files only, never a folder's time: git makes and
+ * removes files in .git as it reads (index.lock), so a folder's time moved on every load and
+ * Home worked Map › Trust and each cockpit out again each time (beta.23, Windows: 1.3 s for a
+ * reload with nothing changed). What is checked out is HEAD, the branch HEAD names, its reflog
+ * (written on every commit, pull and checkout) and packed-refs.
  */
 export async function checkoutsStamp(root: string): Promise<string> {
   const dirs = isAdopted(root)
@@ -377,11 +381,24 @@ export async function checkoutsStamp(root: string): Promise<string> {
           return [];
         }
       });
-  return stampOfFiles(
-    dirs.flatMap((d) =>
-      [".git", ".git/HEAD", ".git/packed-refs", ".git/refs/heads"].map((p) => join(d, p)),
-    ),
+  const files = await Promise.all(
+    dirs.map(async (d) => {
+      const git = join(d, ".git");
+      const head = await readFile(join(git, "HEAD"), "utf8").catch(() => "");
+      const branch = /^ref: (refs\/\S+)/.exec(head)?.[1];
+      return [
+        join(git, "HEAD"),
+        join(git, "packed-refs"),
+        join(git, "logs", "HEAD"),
+        ...(branch ? [join(git, ...branch.split("/"))] : []),
+      ];
+    }),
   );
+  // HEAD's text too: a checkout of another branch can leave its size and time as they were.
+  const heads = await Promise.all(
+    dirs.map((d) => readFile(join(d, ".git", "HEAD"), "utf8").catch(() => "-")),
+  );
+  return `${heads.join("|")}#${await stampOfFiles(files.flat())}`;
 }
 
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
