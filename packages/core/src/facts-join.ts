@@ -1533,15 +1533,17 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       segs: string[];
       under: boolean;
       off?: true;
+      /** How many of `segs`' first segments are the target's own path (not the route's suffix). */
+      own: number;
     }[] = [];
-    if (!routes.length) tried.push({ segs: t, under: passing });
+    if (!routes.length) tried.push({ segs: t, under: passing, own: t.length });
     for (const r of routes) {
       if (isPassThrough(r.fact)) {
-        tried.push({ route: r, segs: t, under: true });
+        tried.push({ route: r, segs: t, under: true, own: t.length });
         continue;
       }
       if (off) {
-        tried.push({ route: r, segs: t, under: false, off: true });
+        tried.push({ route: r, segs: t, under: false, off: true, own: t.length });
         continue;
       }
       const base = proxyBaseOf(r, passes);
@@ -1549,7 +1551,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const suffix = rawSegs(r.fact.path).slice(base.length);
       // A forwarding call written with the suffix already on (as the map prompt asks) keeps it.
       const carries = suffix.length > 0 && endsWithSegs(t, suffix);
-      tried.push({ route: r, segs: carries ? t : [...t, ...suffix], under: false });
+      tried.push({
+        route: r,
+        segs: carries ? t : [...t, ...suffix],
+        under: false,
+        own: carries ? t.length - suffix.length : t.length,
+      });
     }
     const out: SuffixHit[] = [];
     for (const x of tried) {
@@ -1564,14 +1571,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         const es = rawSegs(e.path);
         return es.includes("**") || !startsWithSegs(es, segs) ? 0 : 1;
       };
-      const hits: (SuffixHit & { rank: number; score: number })[] = [];
+      type Hit = SuffixHit & { rank: number; score: number; contradicted?: true };
+      const hits: Hit[] = [];
       for (const e of entries) {
         if (e.component === c.component || !SERVES.rest!.includes(e.fact.entryType)) continue;
         if (!inScope(e) || !sameMethod(method, e.fact.method) || isPassThrough(e.fact)) continue;
-        let hit: (SuffixHit & { rank: number; score: number }) | undefined;
+        let hit: Hit | undefined;
         const as = score(x.segs, e.fact);
         if (as) hit = { e, rank: 0, score: as };
-        for (const b of hit ? [] : basesOf(e)) {
+        const declared = hit ? [] : basesOf(e);
+        for (const b of declared) {
           if (!startsWithSegs(x.segs, b.segs)) continue;
           const s = score(x.segs.slice(b.segs.length), e.fact);
           if (s) {
@@ -1579,15 +1588,19 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
             break;
           }
         }
-        // Nothing names the base: the longest run of the target's path that starts the entry's.
-        for (let d = 1; !hit && d < t.length; d++) {
+        // Nothing names the base: the longest run of the target's path that starts the entry's,
+        // leaving at least one of the target's own segments in the path matched (never the
+        // route's suffix alone). A base the service declares that doesn't fit rules out a match
+        // by the URL: at most a guess.
+        for (let d = 1; !hit && d < x.own; d++) {
           const s = score(x.segs.slice(d), e.fact);
           if (s)
             hit = {
               e,
-              base: { from: "overlap", segs: t.slice(0, d), by: [] },
+              base: { from: "overlap", segs: x.segs.slice(0, d), by: [] },
               rank: BASE_RANK.overlap,
               score: s,
+              ...(declared.length ? { contradicted: true as const } : {}),
             };
         }
         if (hit) hits.push({ ...hit, ...(x.route ? { route: x.route } : {}) });
@@ -1608,7 +1621,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           ...(h.route ? { route: h.route } : {}),
           // One route's whole URL that ends in exactly one entry's path is matched, not guessed.
           ...(h.base
-            ? { base: h.base.from === "overlap" && !x.under ? { ...h.base, from: "url" } : h.base }
+            ? {
+                base:
+                  h.base.from === "overlap" && !x.under && !h.contradicted
+                    ? { ...h.base, from: "url" }
+                    : h.base,
+              }
             : {}),
           ...(x.off && off?.by ? { off: off.by } : {}),
           ...(method || h.e.fact.method
@@ -1944,6 +1962,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         }
         continue;
       }
+      // An Apigee forwarding call the path suffix joins nowhere is never joined by its path's end
+      // alone (the target's whole URL is what the backend receives): it stays a miss.
+      if (!asIs && scope && f.callType === "rest" && bundleRootOf(f.cite.file)) hits = [];
     }
     if (hits.length === 1) {
       const e = hits[0]!;
@@ -1996,6 +2017,18 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       // The fallback found no entry: a host or base the code names that nothing resolved, or none.
       leave(call, f.host || f.base ? "unresolved-placeholder" : "no-host");
   }
+
+  // One service serves under one base: where matches by the URL give one service two, neither is
+  // read from code, so each stays a guess (`overlap`).
+  const urlBases = new Map<string, Set<string>>();
+  for (const j of joins)
+    if (j.base?.from === "url") {
+      const k = key(j.entry.repo, j.entry.component);
+      urlBases.set(k, (urlBases.get(k) ?? new Set()).add(j.base.path));
+    }
+  for (const [i, j] of joins.entries())
+    if (j.base?.from === "url" && urlBases.get(key(j.entry.repo, j.entry.component))!.size > 1)
+      joins[i] = { ...j, base: { ...j.base, from: "overlap" } };
 
   // ---- through the gateways (A-gateway; a chain of them, A-gateway2): a call that lands on a
   // route joins where the route forwards, and on through every further gateway it reaches.
