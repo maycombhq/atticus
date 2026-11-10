@@ -2,14 +2,13 @@ import { fileStepStore, manualAdapter, type Notifier, type WorkTracker } from "@
 import { changeFolder } from "@maycombhq/changes";
 import { Api, changesRelOf, loadOrgPack, orgPackDirOf, readTeams, RecordId } from "@maycombhq/core";
 import {
-  applyShape,
-  draftedStories,
   metarepoAdapters,
   readShape,
   recordShape,
   removeShape,
   SHAPE_FILE,
   ShapeError,
+  shapedStories,
   shapeIssues,
   shapeView,
   syncWorkItems,
@@ -114,8 +113,8 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
     shape?: StoriesShape,
   ): Promise<Api.StoryShapeViewT> => {
     const s = shape ?? (await readShape(changeFolder(root, change)));
-    const drafted = await draftedStories(root, change).catch(() => undefined);
-    const shaped = drafted ? applyShape(drafted.stories, s) : undefined;
+    // ADR 0191 review: applied once, to the stories as drafted before any shaping.
+    const shaped = await shapedStories(root, change, s);
     const v = shapeView(s, shaped);
     return Api.StoryShapeView.parse({
       change,

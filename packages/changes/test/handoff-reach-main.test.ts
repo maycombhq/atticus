@@ -63,6 +63,10 @@ it("carries an earlier phase's stage files, the corrections and drafted record w
   await passedRound(root, ID, "design", 3);
   await put(root, "stage/corrections.yaml");
   await put(root, "stage/drafted.yaml");
+  // ADR 0191 review: the business analyst's shaping of the stories, beside their numbers, so the
+  // tech lead's clone builds the same shaped stories after the plan hand-off merged.
+  await put(root, "stage/stories-numbers.yaml");
+  await put(root, "stage/stories-shape.yaml");
   const design = await handoff(root, ID, {
     gitHost: gh,
     repo: REPO,
@@ -79,6 +83,8 @@ it("carries an earlier phase's stage files, the corrections and drafted record w
       "stage/architecture.yaml",
       "stage/corrections.yaml",
       "stage/drafted.yaml",
+      "stage/stories-numbers.yaml",
+      "stage/stories-shape.yaml",
       "target-flows/ledger.accept-transfer.yaml",
     ]),
   );

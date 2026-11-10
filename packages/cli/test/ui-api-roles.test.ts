@@ -346,5 +346,16 @@ describe("a hand-off tells the next role", () => {
     expect(n.sent).toEqual([
       expect.objectContaining({ channel: "@ari", link: h.pr.url, mentions: ["ari"] }),
     ]);
+    // ADR 0191 review: an owner named in another case (or with @) is the same reviewer.
+    const m = new MockNotifier();
+    const told = await notifyHandoffReviewers(
+      root,
+      { ...c, owners: { architect: ["@Ari"] } },
+      h,
+      { by: "pat", at: NOW, ref: h.branch },
+      m,
+    );
+    expect(told).toHaveLength(1);
+    expect(m.sent).toEqual([expect.objectContaining({ channel: "@Ari", mentions: ["Ari"] })]);
   });
 });

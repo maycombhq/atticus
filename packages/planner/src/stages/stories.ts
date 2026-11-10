@@ -111,6 +111,7 @@ import { migrationPath } from "../task-context.js";
 import {
   applyShape,
   assignFromAnswer,
+  numbersWithMoved,
   readShape,
   SHAPE_FILE,
   SHAPE_RULE,
@@ -118,6 +119,8 @@ import {
   shapeIssues,
   shapePrompt,
   writeShape,
+  type Shaped,
+  type StoriesShape,
 } from "./story-shape.js";
 import {
   issueFingerprint,
@@ -136,12 +139,13 @@ import {
 import { doneAt, type DoneAt } from "./places.js";
 import { plannedRepos } from "./planned.js";
 import {
+  keepStoryNumbers,
   lastPart,
   readStoryNumbers,
   stepKeys,
   storyKey,
   storyNumber,
-  writeStoryNumbers,
+  withStoriesLock,
   type StoryNumbers,
 } from "./numbers.js";
 import {
@@ -3774,8 +3778,9 @@ export async function writeStories(
     join(dir, ...ANSWER_FILE.split("/")),
     `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
   );
-  // Review round 50: the numbers given, so the next run keeps them.
-  if (extras.numbers) await writeStoryNumbers(dir, extras.numbers);
+  // Review round 50: the numbers given, so the next run keeps them. ADR 0191 review: over the
+  // ones on file now, so a number the business analyst reserved meanwhile stays reserved.
+  if (extras.numbers) await keepStoryNumbers(dir, extras.numbers);
   return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
 }
 
@@ -4032,6 +4037,11 @@ export interface DraftedStories {
   requests: RequestTask[];
   /** The stories' and tasks' numbers, kept and given (review round 50). */
   numbers: StoryNumbers;
+  /**
+   * ADR 0191 review: the stories before the business analyst's shaping (`stories` has it
+   * applied), to apply another shaping to (the app's view of one just recorded) exactly once.
+   */
+  unshaped: DeltaStory[];
 }
 
 /**
@@ -4068,18 +4078,33 @@ export async function draftedStories(root: string, changeId: string): Promise<Dr
   );
   const base = numberedStories(deltas, estate, await readStoryNumbers(dir));
   // ADR 0191: the business analyst's shaping, with the tasks where the last draft mapped them.
-  const stories = applyShape(base.stories, await readShape(dir)).stories;
+  const stories = applyShape(base.stories, await readShape(dir), undefined, base.numbers).stories;
   const numbers = base.numbers;
   return {
     change,
     dir,
     stories,
     numbers,
+    unshaped: base.stories,
     // B-tasks: an answer kept per step (before B-tasks) reads per task.
     answer: foldAnswer(answer, stories),
     extras: await storyExtras(ctx, change),
     requests: mergeRequests(answer, deltas, items),
   };
+}
+
+/**
+ * ADR 0191 review: the drafted stories with a shaping applied once (the app's view of one just
+ * recorded, or of the one on file), or undefined when the stories aren't drafted.
+ */
+export async function shapedStories(
+  root: string,
+  changeId: string,
+  shape?: StoriesShape,
+): Promise<Shaped | undefined> {
+  const d = await draftedStories(root, changeId).catch(() => undefined);
+  if (!d) return undefined;
+  return applyShape(d.unshaped, shape ?? (await readShape(d.dir)), undefined, d.numbers);
 }
 
 /**
@@ -4186,7 +4211,7 @@ export async function storiesStage(
   // ADR 0191: the business analyst's renames, splits, merges and added stories, with the tasks
   // where the last draft mapped them; a draft maps them again (`parse`).
   const shape = await readShape(dir);
-  let shaped = applyShape(base.stories, shape);
+  let shaped = applyShape(base.stories, shape, undefined, numbers);
   let stories = shaped.stories;
   const shapeText = shapePrompt(shaped, shape);
   const runNotes = await taskRunNotes(dir, stories);
@@ -4524,7 +4549,7 @@ Rules:
       // ADR 0191: the draft maps the tasks to the business analyst's stories, and their names
       // are the stories' titles (the person's word).
       if (value && shape.entries.length) {
-        shaped = applyShape(base.stories, shape, assignFromAnswer(value, stories, shape));
+        shaped = applyShape(base.stories, shape, assignFromAnswer(value, stories, shape), numbers);
         stories = shaped.stories;
         value = {
           ...value,
@@ -4576,13 +4601,20 @@ Rules:
       const written = await writeStories(root, change.id, stories, a, requests, now, open, {
         ...extras,
         estate,
-        numbers,
+        // ADR 0191 review: a moved task's number is kept under its new story too, so a task the
+        // story gains later never takes it.
+        numbers: shape.entries.length ? numbersWithMoved(numbers, shaped) : numbers,
         notes: writeNotes,
       });
       // ADR 0191: the mapping the draft made is kept, so every later read has the same stories.
+      // ADR 0191 review: written over the shaping on file now, not the one read at the start, so
+      // a rename, split, merge or added story the business analyst recorded meanwhile is kept
+      // (waiting for the next draft); the path is the change folder's, as every other written.
       if (shape.entries.length) {
-        await writeShape(dir, shapeAfterDraft(shape, shaped, now.toISOString()));
-        written.push(`${rel}/${SHAPE_FILE}`);
+        await withStoriesLock(dir, async () =>
+          writeShape(dir, shapeAfterDraft(await readShape(dir), shaped, now.toISOString(), shape)),
+        );
+        written.push(SHAPE_FILE);
       }
       return written;
     },

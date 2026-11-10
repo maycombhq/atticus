@@ -125,9 +125,9 @@ describe("atticus upgrade", () => {
       // ADR 0134: and on to version 3, in the same run, so a repo can give its base path.
       ["manifest-schema-v3", ["org-pack/profiles/forge/repos.manifest.yaml"]],
     ]);
-    // The questions step writes version 5 now (ADR 0181 part 4: a question's role), and says so.
+    // The questions step writes version 6 now (ADR 0191: what a question asks, its re-routing), and says so.
     expect(c.pending.find((p) => p.id === "questions-v3")?.summary).toMatch(
-      /^Questions at schema version 5: .*reopened.*\(ADR 0162\).*role.*\(ADR 0181\)$/,
+      /^Questions at schema version 6: .*reopened.*\(ADR 0162\).*role.*\(ADR 0181\).*re-routing.*\(ADR 0191\)$/,
     );
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);

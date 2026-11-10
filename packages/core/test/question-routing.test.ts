@@ -135,6 +135,30 @@ describe("what a finding asks", () => {
     ).toBe("design");
   });
 
+  it("keeps a business finding on the brief the product owner's when its words only sound like design", () => {
+    // ADR 0191 review: alerts, queues, monitoring, topics and interfaces are words a brief uses
+    // of the business too; on the brief only a clearly design finding leaves the product owner.
+    for (const summary of [
+      "The brief doesn't say who is alerted when a hold is refused.",
+      "Who monitors the daily hold limit isn't said.",
+      "The interface the customer places a hold through isn't described.",
+      "The queue of holds waiting for approval has no owner.",
+      "No topic of the customer's message is given for a refused hold.",
+      "No fallback is given for a customer whose hold is refused.",
+    ])
+      expect(asksOfFinding({ artifact: "brief.md", summary }), summary).toBe("business");
+    expect(
+      asksOfFinding({ artifact: "brief.md", summary: "No timeout is set for the ledger call." }),
+    ).toBe("design");
+    expect(
+      asksOfFinding({
+        artifact: "brief.md",
+        lens: "architecture",
+        summary: "The queue is shared.",
+      }),
+    ).toBe("design");
+  });
+
   it("goes by the file: the design's files are design, tasks and the release delivery", () => {
     expect(asksOfFinding({ artifact: "design.md", summary: "x" })).toBe("design");
     expect(asksOfFinding({ artifact: "target-flows/forge-ledger.holds.yaml", summary: "x" })).toBe(

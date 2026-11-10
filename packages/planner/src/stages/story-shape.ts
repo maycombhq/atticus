@@ -4,7 +4,14 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { writeFileAtomic } from "@maycombhq/changes";
 import { slug } from "../words.js";
-import { readStoryNumbers, storyNumber, writeStoryNumbers, type StoryNumbers } from "./numbers.js";
+import {
+  lastPart,
+  readStoryNumbers,
+  storyNumber,
+  withStoriesLock,
+  writeStoryNumbers,
+  type StoryNumbers,
+} from "./numbers.js";
 import type { DeltaStory, DeltaTask } from "./stories.js";
 
 /**
@@ -29,6 +36,9 @@ import type { DeltaStory, DeltaTask } from "./stories.js";
  */
 
 export const SHAPE_FILE = "stage/stories-shape.yaml";
+
+/** The repo a reserved number of an added story is kept under, until a task gives it its repo. */
+const SHAPED_REPO = "shaped";
 
 const Id = z.string().trim().min(1);
 const Words = z.string().trim().min(1);
@@ -117,7 +127,16 @@ function mergedAway(s: StoriesShape): Set<string> {
  * drafted (the numbers kept), every story named must be one of them, and a new story takes the
  * next free number, reserved at once in the numbers file so it is never given to another.
  */
-export async function recordShape(
+export function recordShape(
+  dir: string,
+  req: ShapeRequest,
+  o: { by: string; at: string },
+): Promise<{ shape: StoriesShape; entry: ShapeEntry }> {
+  // ADR 0191 review: read, changed and written while no draft of the stories writes them.
+  return withStoriesLock(dir, () => record(dir, req, o));
+}
+
+async function record(
   dir: string,
   req: ShapeRequest,
   o: { by: string; at: string },
@@ -154,7 +173,11 @@ export async function recordShape(
   };
   let entry: ShapeEntry;
   const reserve: StoryNumbers["stories"] = [];
-  const repoOf = (story: string) => numbers.stories.find((x) => x.id === story)?.repo;
+  // An added story has no repo until the AI gives it a task (its number is kept as "shaped's").
+  const repoOf = (story: string) => {
+    const r = numbers.stories.find((x) => x.id === story)?.repo;
+    return r === SHAPED_REPO ? undefined : r;
+  };
   if (req.op === "rename") entry = { ...base, story: need(req.story, "rename") };
   else if (req.op === "merge") {
     const ids = [...new Set(req.stories ?? [])];
@@ -183,14 +206,14 @@ export async function recordShape(
     };
     for (const p of entry.parts!)
       reserve.push({
-        repo: repoOf(story) ?? "shaped",
+        repo: repoOf(story) ?? SHAPED_REPO,
         flow: `shape:${id}:${p.id}`,
         id: p.id,
         tasks: [],
       });
   } else {
     entry = { ...base, added: fresh(req.name) };
-    reserve.push({ repo: "shaped", flow: `shape:${id}`, id: entry.added!, tasks: [] });
+    reserve.push({ repo: SHAPED_REPO, flow: `shape:${id}`, id: entry.added!, tasks: [] });
   }
   const next_ = { ...shape, entries: [...shape.entries, ShapeEntry.parse(entry)] };
   await writeShape(dir, next_);
@@ -203,7 +226,11 @@ export async function recordShape(
  * Take back a shaping no draft has applied yet. One a draft applied stays on file (a later one
  * changes it); its reserved numbers stay used, never given again.
  */
-export async function removeShape(dir: string, entryId: string): Promise<StoriesShape> {
+export function removeShape(dir: string, entryId: string): Promise<StoriesShape> {
+  return withStoriesLock(dir, () => unrecord(dir, entryId));
+}
+
+async function unrecord(dir: string, entryId: string): Promise<StoriesShape> {
   const shape = await readShape(dir);
   const e = shape.entries.find((x) => x.id === entryId);
   if (!e) throw new ShapeError("not-found", `There is no shaping ${entryId} on this change.`);
@@ -255,6 +282,7 @@ export function applyShape(
   base: readonly DeltaStory[],
   shape: StoriesShape,
   assign?: Readonly<Record<string, string>>,
+  numbers?: StoryNumbers,
 ): Shaped {
   const stories: DeltaStory[] = base.map((s) => ({ ...s, tasks: [...s.tasks] }));
   const names = new Map<string, string>();
@@ -262,6 +290,8 @@ export function applyShape(
   const merged = new Map<string, string>();
   if (!shape.entries.length) return { stories, names, words, labels: {}, assigned: {}, merged };
   const byId = () => new Map(stories.map((s) => [s.id, s]));
+  // A story the BA added has no repo of its own until it holds a task (it took the last story's).
+  const unplaced = (s: DeltaStory) => !s.tasks.length && !base.some((b) => b.id === s.id);
   for (const e of shape.entries) {
     const at = byId();
     if (e.op === "rename" && e.story && at.has(merged.get(e.story) ?? e.story)) {
@@ -277,7 +307,14 @@ export function applyShape(
       into.name = e.name;
       for (const id of rest) {
         const from = at.get(id);
-        if (!from || from === into || from.repo !== into.repo) continue;
+        if (!from || from === into) continue;
+        // ADR 0191 review: an added story merges with a story of any repo, and takes its repo.
+        if (from.repo !== into.repo && unplaced(into)) {
+          into.repo = from.repo;
+          into.flow = from.flow;
+          into.change = from.change;
+        }
+        if (from.repo !== into.repo && !unplaced(from)) continue;
         into.tasks.push(...from.tasks.map((t) => ({ ...t, story: into.id })));
         into.dependsOn = [...new Set([...(into.dependsOn ?? []), ...(from.dependsOn ?? [])])];
         stories.splice(stories.indexOf(from), 1);
@@ -350,18 +387,38 @@ export function applyShape(
   }
   // A moved task keeps the number it was given in its new story; a newly moved one takes the
   // story's next free number. A task back in its own story has its own number again.
+  // ADR 0191 review: every number in a story is one task's. A task of the story keeps the number
+  // the numbers gave it (whatever moved out before it); a moved task's kept number that one of the
+  // story's own tasks now has is given up for the next free one; and the next free number is
+  // after every number the story has used, a removed task's too (the numbers file), so none is
+  // given twice or given again.
+  const usedOf = new Map((numbers?.stories ?? []).map((x) => [x.id, x.tasks.map((t) => t.label)]));
   for (const s of stories) {
     const own = base.find((b) => b.id === s.id);
     const n = storyNo(s.id);
-    const used = new Set<string>([
-      ...(own?.tasks ?? []).map((t, i) => t.label ?? `${n}.${i + 1}`),
+    const ownLabel = new Map((own?.tasks ?? []).map((t, i) => [t.id, t.label ?? `${n}.${i + 1}`]));
+    const taken = new Set(
+      s.tasks.flatMap((t) => (ownLabel.has(t.id) ? [ownLabel.get(t.id)!] : [])),
+    );
+    const used = [
+      ...ownLabel.values(),
+      ...(usedOf.get(s.id) ?? []),
       ...Object.values(shape.labels).filter((l) => l.startsWith(`${n}.`)),
-    ]);
-    let last = Math.max(0, ...[...used].map((l) => Number(/\.(\d+)$/.exec(l)?.[1] ?? 0)));
-    s.tasks = s.tasks.map((t): DeltaTask => {
-      if (own?.tasks.some((x) => x.id === t.id)) return t;
+    ];
+    let last = Math.max(0, ...used.map(lastPart));
+    s.tasks = s.tasks.map((t, i): DeltaTask => {
+      const mine = ownLabel.get(t.id);
+      if (mine !== undefined) {
+        if (mine === `${n}.${i + 1}`) {
+          if (t.label === undefined) return t;
+          const { label: _drop, ...rest } = t;
+          return rest;
+        }
+        return t.label === mine ? t : { ...t, label: mine };
+      }
       const kept = shape.labels[t.id];
-      const label = kept?.startsWith(`${n}.`) ? kept : `${n}.${++last}`;
+      const label = kept?.startsWith(`${n}.`) && !taken.has(kept) ? kept : `${n}.${++last}`;
+      taken.add(label);
       labels[t.id] = label;
       return { ...t, label };
     });
@@ -444,12 +501,47 @@ export function shapeView(
   };
 }
 
-/** After a draft wrote the stories: the mapping and numbers kept, each shaping marked applied. */
-export function shapeAfterDraft(shape: StoriesShape, shaped: Shaped, at: string): StoriesShape {
+/**
+ * After a draft wrote the stories: the mapping and numbers kept, each shaping marked applied.
+ * ADR 0191 review: `shape` is the shaping on file when the draft writes; `drafted`, the one the
+ * draft read when it started (by default the same). Only a shaping the draft applied is marked
+ * applied: one the business analyst recorded meanwhile stays waiting for the next draft.
+ */
+export function shapeAfterDraft(
+  shape: StoriesShape,
+  shaped: Shaped,
+  at: string,
+  drafted: StoriesShape = shape,
+): StoriesShape {
+  const key = ({ applied: _a, ...e }: ShapeEntry) => JSON.stringify(e);
+  const seen = new Set(drafted.entries.map(key));
   return {
     ...shape,
-    entries: shape.entries.map((e) => (e.applied ? e : { ...e, applied: at })),
+    entries: shape.entries.map((e) => (e.applied || !seen.has(key(e)) ? e : { ...e, applied: at })),
     assigned: shaped.assigned,
     labels: { ...shape.labels, ...shaped.labels },
+  };
+}
+
+/**
+ * ADR 0191 review: the numbers with each moved task's number kept under the story it moved to,
+ * so a task the story gains later is never numbered the same (numbers.ts gives the next free
+ * number after every one a story's record holds). A moved task is kept by its id (`moved <id>`),
+ * never a step's identity, so no task of the story takes the number as its own.
+ */
+export function numbersWithMoved(numbers: StoryNumbers, shaped: Shaped): StoryNumbers {
+  return {
+    ...numbers,
+    stories: numbers.stories.map((x) => {
+      const s = shaped.stories.find((y) => y.id === x.id);
+      const have = new Set(x.tasks.map((t) => t.label));
+      const add = (s?.tasks ?? []).flatMap((t) => {
+        const label = shaped.labels[t.id];
+        if (!label || have.has(label)) return [];
+        have.add(label);
+        return [{ label, steps: [`moved ${t.id}`] }];
+      });
+      return add.length ? { ...x, tasks: [...x.tasks, ...add] } : x;
+    }),
   };
 }

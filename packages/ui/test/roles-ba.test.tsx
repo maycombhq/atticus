@@ -79,17 +79,15 @@ describe("a question routed by what it asks", () => {
 });
 
 describe("owners suggested from roles.yaml", () => {
-  it("accepts a suggestion by adding its people to the owners as they are", () => {
+  it("accepts a suggestion by adding its people to that role only", () => {
+    // ADR 0191 review: the other roles aren't sent, so an owner someone else named meanwhile
+    // (the page's copy is older) is never cleared by an Accept (an empty role is a removal).
     expect(
       acceptBody({ "product-owner": ["pat"] }, { role: "architect", people: ["lee"] }),
-    ).toEqual({
-      owners: {
-        "product-owner": ["pat"],
-        architect: ["lee"],
-        "business-analyst": [],
-        "team-lead": [],
-      },
-    });
+    ).toEqual({ owners: { architect: ["lee"] } });
+    expect(
+      acceptBody({ architect: ["ari"] }, { role: "architect", people: ["lee", "ari"] }),
+    ).toEqual({ owners: { architect: ["ari", "lee"] } });
     expect(
       suggestionFrom({
         role: "architect",

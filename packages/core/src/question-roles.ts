@@ -99,8 +99,18 @@ export function asksOfQuestion(q: RoutedQuestion): QuestionAsks | undefined {
 const DESIGN_FILES =
   /^(design\.md|interfaces|target-flows\/|mappings\.md|data\.md|diagrams?\/|catalog$)/;
 const DELIVERY_FILES = /^(tasks\.md|tasks\/|release|qa|conformance|build)/;
+/** Words only the estate's design uses: a finding saying them asks how the estate does it. */
 const DESIGN_WORDS =
-  /\b(hop|resilien\w*|timeouts?|retr(?:y|ies)|circuit[- ]breakers?|alerts?|alerting|observab\w*|monitor\w*|interfaces?|endpoints?|topics?|schemas?|idempoten\w*|latency|throughput|failover|fallback|rate[- ]limit\w*|mtls|oauth|queues?)\b/;
+  /\b(hop|resilien\w*|timeouts?|retr(?:y|ies)|circuit[- ]breakers?|observab\w*|endpoints?|idempoten\w*|latency|throughput|failover|rate[- ]limit\w*|mtls|oauth)\b/;
+/**
+ * ADR 0191 review: words the design uses that a brief uses of the business too (alert the
+ * customer, monitor the limit, the customer's interface, a queue of approvals). They make a
+ * finding design off the brief; on the brief they don't, so a blocking business finding there is
+ * never hidden from the product owner.
+ */
+const SHARED_DESIGN_WORDS =
+  /\b(alerts?|alerting|monitor\w*|interfaces?|topics?|schemas?|fallbacks?|queues?)\b/;
+const BRIEF = /(^|\/)brief\.md$/;
 
 /**
  * ADR 0191: what a critic finding asks of people, by the same three levels, so a product owner's
@@ -108,7 +118,9 @@ const DESIGN_WORDS =
  * about circuit breakers and alerts, and Home showed the product owner a change blocked by them).
  * A finding on the design's files is design; on tasks.md, the build or the release, delivery; one
  * on the brief, the proposal, the UX or the stories is business unless its rule, lens or words are
- * about how the estate does it (resilience, timeouts, alerts, interfaces).
+ * about how the estate does it (resilience, timeouts, alerts, interfaces). On the brief, only the
+ * architecture lens or words no business sentence uses (a timeout, a retry, a circuit breaker)
+ * make it design: an alert, a queue or an interface there may be the business's own.
  */
 export function asksOfFinding(f: {
   artifact: string;
@@ -121,6 +133,7 @@ export function asksOfFinding(f: {
   if (DELIVERY_FILES.test(a)) return "delivery";
   const words = `${(f.rule ?? "").replace(/[.-]/g, " ")} ${f.summary ?? ""}`.toLowerCase();
   if (f.lens === "architecture" || DESIGN_WORDS.test(words)) return "design";
+  if (!BRIEF.test(a) && SHARED_DESIGN_WORDS.test(words)) return "design";
   if (f.lens === "delivery" || f.lens === "release" || f.lens === "code-and-test")
     return "delivery";
   return "business";

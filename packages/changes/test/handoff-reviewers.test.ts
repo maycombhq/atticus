@@ -58,3 +58,26 @@ it("says whom to name when the change names no next owner", async () => {
   if (h.reviewers.length === 0)
     expect(pr.body).toContain("name the architect under the change's owners");
 });
+
+it("never names the person raising the hand-off its reviewer, whatever the case of their handle", async () => {
+  const root = await forgeMetarepo();
+  const gh = host();
+  await newChange(root, {
+    title: "Add transfer limit",
+    type: "feature",
+    by: "pat",
+    owners: { ...FEATURE_OWNERS, architect: ["Ari", "avery"] },
+    systems: ["ledger", "portal"],
+    now: T("09:00"),
+  });
+  await copyPhase(root, ID, `${ID}/define`);
+  const h = await handoff(root, ID, {
+    gitHost: gh,
+    repo: REPO,
+    by: "@ari",
+    approval: approval("ari", T("10:00")),
+    now: T("10:00"),
+  });
+  expect(h.reviewers.map((p) => p.toLowerCase())).not.toContain("ari");
+  expect(h.reviewers).toContain("avery");
+});

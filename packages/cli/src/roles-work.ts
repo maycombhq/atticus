@@ -1,6 +1,7 @@
 import { fileStepStore, manualAdapter, type Approval, type Notifier } from "@maycombhq/adapters";
 import { changeFolder, changeStore } from "@maycombhq/changes";
 import {
+  handleKey,
   loadOrgPack,
   nextOwnersOf,
   orgPackDirOf,
@@ -154,7 +155,9 @@ export async function notifyHandoffReviewers(
   given?: Notifier,
 ): Promise<string[]> {
   const next = nextOwnersOf(h.phase, c.owners);
-  const people = (next?.people ?? []).filter((p) => h.reviewers.map(handle).includes(p));
+  // ADR 0191 review: an owner is a reviewer as handles compare (any case, with or without @).
+  const reviewing = new Set(h.reviewers.map(handleKey));
+  const people = (next?.people ?? []).filter((p) => reviewing.has(handleKey(p))).map(handle);
   if (!next || !people.length) return [];
   const n = await notifierFor(root, c.id, given);
   if (!n.notify) return [];
