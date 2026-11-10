@@ -229,10 +229,23 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   [JOINED_TO_SHARED_MAP]: "shared",
 };
 
-/** How an Interface's call found its callee, from its flags and via (C1, ADR 0135). */
+/** The flags that are guesses (J0, J1, F2): a link whose call was found so is inferred. */
+const GUESS_FLAGS: ReadonlySet<string> = new Set(JOIN_GUESS_FLAGS);
+
+/**
+ * How an Interface's call found its callee, from its flags and via (C1, ADR 0135). A verified
+ * link was made by a call nobody guessed (ADR 0135 section 5), so its how is the first flag that
+ * is no guess, or its topic: the guesses its other calls rest on are `alsoOf`'s, never its how.
+ */
 export function joinHow(i: RecordOf<"Interface">): Join["how"] {
-  for (const f of i.flags ?? []) if (HOW_OF_FLAG[f]) return HOW_OF_FLAG[f]!;
-  if (i.via === "event-bus" || i.via === "mq") return "topic";
+  const flags = i.flags ?? [];
+  const topic = i.via === "event-bus" || i.via === "mq";
+  if (i.confidence === "verified") {
+    for (const f of flags) if (HOW_OF_FLAG[f] && !GUESS_FLAGS.has(f)) return HOW_OF_FLAG[f]!;
+    if (topic) return "topic";
+  }
+  for (const f of flags) if (HOW_OF_FLAG[f]) return HOW_OF_FLAG[f]!;
+  if (topic) return "topic";
   return "unknown";
 }
 
@@ -241,19 +254,35 @@ const GUESS_HOWS: ReadonlySet<Join["how"]> = new Set(
   JOIN_GUESS_FLAGS.map((f) => HOW_OF_FLAG[f]!).filter(Boolean),
 );
 
+/** A verified link's guesses, each how once, in its flags' order: shown as "also" (beta.24). */
+function alsoOf(i: RecordOf<"Interface">, how: Join["how"]): Join["how"][] {
+  if (i.confidence !== "verified" || GUESS_HOWS.has(how)) return [];
+  return [
+    ...new Set(
+      (i.flags ?? []).flatMap((f) =>
+        GUESS_FLAGS.has(f) && HOW_OF_FLAG[f] ? [HOW_OF_FLAG[f]!] : [],
+      ),
+    ),
+  ];
+}
+
 function joinOf(i: RecordOf<"Interface">): Join {
   const side = (s: string | undefined) => evidenceOf(i.evidence.filter((e) => e.side === s));
   const sided = new Set(["caller", "callee", "gateway"]);
+  const how = joinHow(i);
+  const also = alsoOf(i, how);
   return {
     interface: i.id,
     from: i.from,
     to: i.to,
-    how: joinHow(i),
+    how,
     gateway: i.via === "gateway",
-    // A link is verified when one of its calls is (ADR 0135 section 5), and its first flag says
-    // how that call was found; one whose first flag is a guess has no call that wasn't guessed to
-    // show, so it is never shown verified beside the guess's words (beta.24).
-    verified: i.confidence === "verified" && !GUESS_HOWS.has(joinHow(i)),
+    // A link is verified when one of its calls is (ADR 0135 section 5): its how is that call's,
+    // and the guesses its other calls rest on are `also`, never the reason. One with no how but
+    // a guess has no call that wasn't guessed to show, so it is never shown verified beside the
+    // guess's words (beta.24).
+    verified: i.confidence === "verified" && !GUESS_HOWS.has(how),
+    ...(also.length ? { also } : {}),
     ...(i.method ? { method: i.method } : {}),
     ...(i.normalizedPath ? { path: i.normalizedPath } : {}),
     caller: side("caller"),

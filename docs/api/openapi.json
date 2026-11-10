@@ -26892,6 +26892,31 @@
           "verified": {
             "type": "boolean"
           },
+          "also": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "person",
+                "answer",
+                "named",
+                "repo",
+                "host",
+                "base-path",
+                "declared",
+                "topic",
+                "path",
+                "label",
+                "platform-setting",
+                "folder-name",
+                "conflict",
+                "service-name",
+                "shared",
+                "ai",
+                "unknown"
+              ]
+            }
+          },
           "method": {
             "type": "string"
           },
