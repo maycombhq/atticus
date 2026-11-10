@@ -831,14 +831,17 @@ function olderQuestionText(text: string): boolean {
   } catch {
     return false;
   }
-  const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-  return v === 1 || v === 2 || v === 3 || v === 4;
+  return olderVersion((data as { schemaVersion?: unknown } | null)?.schemaVersion);
 }
+
+/** Whether a question file's version is one before this Atticus's (1 to 5; 6 is current). */
+const olderVersion = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= 1 && v < QUESTION_SCHEMA_VERSION;
 
 /**
  * Rewrite questions/<id>.yaml files written at an older question schema version (1, ADR 0078;
- * 2, ADR 0117) at the current one (3, ADR 0153): only the version changes, since what each
- * version adds is optional. Returns the files, relative to the root; with dryRun, the files it
+ * 2, ADR 0117; 3, ADR 0153; 4, ADR 0162; 5, ADR 0181) at the current one (6, ADR 0191): only the
+ * version changes, since what each version adds is optional. Returns the files, relative to the root; with dryRun, the files it
  * would rewrite.
  */
 export async function migrateQuestions(
@@ -875,8 +878,9 @@ export async function migrateQuestions(
         break;
       }
       const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-      // ADR 0181: version 4 files too, rewritten at 5 (the number only).
-      if (v !== 1 && v !== 2 && v !== 3 && v !== 4) break;
+      // ADR 0181: version 4 files too; ADR 0191 review: and version 5 ones, rewritten at the
+      // current version (the number only: what each version adds is optional).
+      if (!olderVersion(v)) break;
       const q = Question.safeParse(data);
       if (!q.success) break;
       // Round 49: a copy (`q-… copy.yaml`) or a renamed file isn't the question's own file:

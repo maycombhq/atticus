@@ -142,6 +142,37 @@ describe("the migration", () => {
     expect(roleOfQuestion(questions[0]!)).toBe("architecture");
     expect(await migrateQuestions(root, { dryRun: true })).toEqual([]);
   });
+
+  it("writes a version-5 file at version 6 (ADR 0191), once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-roles-"));
+    await mkdir(join(root, "questions"), { recursive: true });
+    const file = join(root, "questions", "q-0123456789ac.yaml");
+    await writeFile(
+      file,
+      stringify({
+        schemaVersion: 5,
+        id: "q-0123456789ac",
+        askedBy: { step: "change-feature", command: "atticus change feature add-holds", at: AT },
+        repo: "add-holds",
+        question: "How long does a hold last?",
+        evidence: ["openspec/changes/add-holds/proposal.md:3"],
+        scope: { level: "repo", id: "add-holds" },
+        state: "open",
+        rerun: "atticus change feature add-holds",
+        role: "product",
+      }),
+    );
+    expect(await migrateQuestions(root, { dryRun: true })).toEqual([
+      "questions/q-0123456789ac.yaml",
+    ]);
+    expect(await migrateQuestions(root)).toEqual(["questions/q-0123456789ac.yaml"]);
+    const y = parseYaml(await readFile(file, "utf8")) as Record<string, unknown>;
+    expect(y.schemaVersion).toBe(6);
+    expect(y.role).toBe("product");
+    expect(y.asks).toBeUndefined();
+    expect(await migrateQuestions(root, { dryRun: true })).toEqual([]);
+    expect(await migrateQuestions(root)).toEqual([]);
+  });
 });
 
 describe("a person's roles on a change", () => {
