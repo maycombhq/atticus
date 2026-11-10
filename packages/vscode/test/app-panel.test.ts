@@ -185,7 +185,9 @@ describe("stopping the app", { timeout: 60_000 }, () => {
 
 describe("the atticus found against the one the extension needs", () => {
   it("tells an older atticus from a newer one, betas before the release, and gives an unreadable one the benefit of the doubt", () => {
-    expect(versionAtLeast("2.0.0-beta.22", MIN_CLI)).toBe(true);
+    // The bundled app is beta.23's and needs its API (3.8+: /api/activity, /api/setup/…).
+    expect(versionAtLeast("2.0.0-beta.23", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.22", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.21", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.22", "2.0.0-beta.21")).toBe(true);
     expect(versionAtLeast("2.0.0", "2.0.0-beta.21")).toBe(true);
