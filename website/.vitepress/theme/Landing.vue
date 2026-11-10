@@ -55,19 +55,19 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.23";
+const release = "2.0.0-beta.24";
 const news = [
   {
-    body: "Everything from the app: every daily step is a button (Apply, Sync the repos, Run it, Propose for review), and one Console shows everything Atticus runs, wherever it was started, live.",
-    link: "/guide/commands.html",
-  },
-  {
-    body: "A line dropped anywhere on another box connects them, and Apply to every repo's map is right on the map; an Apigee proxy links to its backend endpoint by the whole URL.",
+    body: "Correct a whole arrow at once: All calls on this arrow are wrong moves or removes every call on it in one write, and every arrow offers This link is wrong.",
     link: "/guide/correcting-the-map.html",
   },
   {
-    body: "Roles from product owner to tech lead: each stage is one conversation, questions go to the role they ask, the business analyst shapes the stories, and Home loads in seconds on a 40-repo estate.",
-    link: "/guide/roles.html",
+    body: "Apigee proxies go where their deploy tokens say: a target URL written as a config.json placeholder is resolved per bundle, services join a proxy by its BasePath, and a host nothing names is a question you answer in the app (or Ignore).",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "A library of your own is what your services build on: a dash-dot depends on arrow from each module whose pom or Gradle build names it, its own calls kept its own.",
+    link: "/guide/correcting-the-map.html",
   },
   {
     body: "A person approves every shared write, from the app too: hand-off, release PRs, merging and task PRs need the page's own confirmation, so an assistant holding the API token can't push or merge; AI model keys come only from ATTICUS_* or the providers' own names.",

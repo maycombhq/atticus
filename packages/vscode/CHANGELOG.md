@@ -2,9 +2,13 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
-## 0.7.23 (pre-release, with Atticus 2.0.0-beta.23)
+## 0.7.24 (pre-release, with Atticus 2.0.0-beta.24)
 
-- **Ships with Atticus 2.0.0-beta.23, and needs it.** The app in its tab reads the Console, the stages' threads, work items and the setup pages from beta.23's local API (3.8 and later); an older `atticus` is now called out of date instead of failing page by page.
+- **Ships with Atticus 2.0.0-beta.24, and needs it.** The app in its tab reads beta.24's local API (3.10): All calls on this arrow are wrong, the arrow's every call, the boxes made from an answer's words on Map › Trust, Ignore on a join question and the **depends on** arrows to a library of the estate's own.
+
+## 0.7.23 (pre-release, with Atticus 2.0.0-beta.24)
+
+- **Ships with Atticus 2.0.0-beta.24, and needs it.** The app in its tab reads the Console, the stages' threads, work items and the setup pages from beta.23's local API (3.8 and later); an older `atticus` is now called out of date instead of failing page by page.
 - **A slow write is no longer "the app isn't answering".** Writes (a task run's Done, putting work items in a live tracker) wait up to 10 minutes and run as jobs the Console shows; a running app that is slow to answer says it is still working, not that it stopped.
 - **Run all ready tasks and Scans finish in the tab**, which gets no live events: they ask the job how it stands.
 - **No relaunch on every poll.** After `atticus ui` failed to start, the tab's Console no longer starts it again each few seconds; Atticus: Open the app does (or a call after five minutes). A hidden tab asks once a minute.
