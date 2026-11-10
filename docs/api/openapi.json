@@ -27412,6 +27412,18 @@
           },
           "fastPath": {
             "type": "boolean"
+          },
+          "yourRoles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            }
           }
         },
         "required": [
@@ -29138,6 +29150,18 @@
           },
           "fastPath": {
             "type": "boolean"
+          },
+          "yourRoles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "product",
+                "architecture",
+                "analysis",
+                "delivery"
+              ]
+            }
           },
           "notes": {
             "type": "array",
@@ -36685,6 +36709,9 @@
               },
               "path": {
                 "type": "string"
+              },
+              "catalog": {
+                "type": "boolean"
               }
             },
             "required": [

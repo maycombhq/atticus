@@ -5,7 +5,9 @@ import {
   changesDirOf,
   listQuestions,
   nextOwnersOf,
+  ownersOfRole,
   type ChangeLifecycle,
+  type CustomRole,
   type QuestionRole,
 } from "@maycombhq/core";
 import { changeReport, changeStore } from "@maycombhq/changes";
@@ -66,17 +68,21 @@ const handle = (p: string) => p.trim().replace(/^@/, "");
  * ADR 0191: who a change waits on. An open hand-off waits on its reviewers of the next role (the
  * architect for Define's); otherwise the phase's own role: the product owner in Define, the
  * architect in Design, the business analyst in Plan until the stories are done, then the tech
- * lead, who also has Build. People are the change's owners of that role (none named: empty).
+ * lead, who also has Build. People are the change's owners of that role (none named: empty),
+ * read as Your changes reads them: any case, `tech-lead` for the team lead, roles.yaml's custom
+ * roles.
  */
 export function waitsOnOf(
   c: Pick<ChangeLifecycle, "state" | "owners" | "handoffs">,
   storiesDone: boolean,
+  custom: readonly CustomRole[] = [],
 ): WaitsOn | undefined {
   const live = c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
   if (live) {
-    const n = nextOwnersOf(live.phase, c.owners);
+    const n = nextOwnersOf(live.phase, c.owners, custom);
     if (n) {
-      const named = live.reviewers.map(handle).filter((p) => n.people.includes(p));
+      const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+      const named = n.people.filter((p) => live.reviewers.some((r) => same(handle(r), p)));
       return {
         role: n.role,
         people: named.length ? named : n.people,
@@ -98,8 +104,7 @@ export function waitsOnOf(
             ? "team-lead"
             : undefined;
   if (!role) return undefined;
-  const people = [...new Set((c.owners[role] ?? []).map(handle))].filter((p) => !p.includes("/"));
-  return { role, people, because: "phase", phase: c.state };
+  return { role, people: ownersOfRole(role, c.owners, custom), because: "phase", phase: c.state };
 }
 
 async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
@@ -144,7 +149,8 @@ export async function cockpit(
     ...stages.flatMap((s) => s.asked),
   ]);
   // ADR 0181 part 4: each open question of the change by the role that owns it.
-  const { stageQuestions, roleWithStage, personsRoles } = await import("./change-roles.js");
+  const { stageQuestions, roleWithStage, personsRoles, customRoles } =
+    await import("./change-roles.js");
   const raisedBy = await stageQuestions(root, id);
   const byRole: Partial<Record<QuestionRole, number>> = {};
   for (const q of questions) {
@@ -160,7 +166,11 @@ export async function cockpit(
     .read(id)
     .catch(() => undefined);
   const waitsOn = lifecycle
-    ? waitsOnOf(lifecycle, stages.find((s) => s.stage === "stories")?.state === "done")
+    ? waitsOnOf(
+        lifecycle,
+        stages.find((s) => s.stage === "stories")?.state === "done",
+        await customRoles(root),
+      )
     : undefined;
   return {
     id,

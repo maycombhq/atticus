@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
-import { Api, DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
+import { Api, catalogMayHaveChangedAt, DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager, type JobKind } from "./jobs.js";
@@ -36,6 +36,11 @@ export type LiveEvent = { type: string } & Record<string, unknown>;
 export class EventHub {
   private sockets = new Set<Socket>();
   private listeners = new Set<(e: LiveEvent) => void>();
+  /**
+   * `root`: each file.changed event is published saying whether it can change the catalog
+   * (`catalog`, beta.23 review), by the layout the org pack names, so a page needn't guess it.
+   */
+  constructor(private readonly root?: string) {}
   /** Hear every event in this process too (ADR 0119: a reader that keeps files in memory). */
   listen(fn: (e: LiveEvent) => void): () => void {
     this.listeners.add(fn);
@@ -50,7 +55,22 @@ export class EventHub {
   get size() {
     return this.sockets.size;
   }
-  publish(e: LiveEvent) {
+  publish(given: LiveEvent) {
+    let e = given;
+    if (
+      this.root !== undefined &&
+      e.type === "file.changed" &&
+      typeof e.path === "string" &&
+      typeof e.catalog !== "boolean"
+    ) {
+      let catalog = true;
+      try {
+        catalog = catalogMayHaveChangedAt(this.root, e.path);
+      } catch {
+        // The layout couldn't be read: it may be.
+      }
+      e = { ...e, catalog };
+    }
     for (const fn of this.listeners) fn(e);
     const text = JSON.stringify(e);
     for (const s of this.sockets) s.send(text);
@@ -235,7 +255,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     o.pageKey && STRONG.test(o.pageKey) && o.pageKey !== token
       ? o.pageKey
       : randomBytes(32).toString("base64url");
-  const events = new EventHub();
+  const events = new EventHub(o.root);
   let writing = 0;
   const jobs = new JobManager((e) => events.publish(e));
   const confirmations = new Confirmations();

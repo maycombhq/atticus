@@ -36,6 +36,7 @@ vi.mock("../src/api/client.js", async () => ({
     reload: () => undefined,
   }),
   useLiveEvents: () => undefined,
+  useFileChanges: () => undefined,
 }));
 const { COPY } = await import("../src/copy.js");
 const { Propose } = await import("../src/app/propose.js");

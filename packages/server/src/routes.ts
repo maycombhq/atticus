@@ -7,6 +7,7 @@ import {
   fastPathOf,
   Lens,
   questionOfLens,
+  rolesOfPerson,
   RECORD_KINDS,
   RecordId,
   SCHEMA_VERSION,
@@ -403,10 +404,10 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const changes = (await changeStore(root).list()).filter((c) => !state || c.state === state);
       const body = [];
       // ADR 0113: whether each takes the fast path, from its type and its brief.
-      const types = await loadOrgPack(orgPackDirOf(root)).then(
-        (op) => op.changeTypes.types,
-        () => [],
-      );
+      const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+      const types = op?.changeTypes.types ?? [];
+      // 3.9.0 (beta.23 review): the viewer's roles on each, so Home knows them for every change.
+      const custom = op?.roles?.custom ?? [];
       for (const c of changes.sort((a, b) => a.id.localeCompare(b.id))) {
         const type = types.find((t) => t.id === c.type);
         const fast =
@@ -416,7 +417,10 @@ export function apiRoutes(r: Router, ctx: Context): Router {
             type,
             await readFile(join(changeFolder(root, c.id), "brief.md"), "utf8").catch(() => ""),
           ).fast;
-        body.push(summary(c, await latestFindings(root, c.id), fast));
+        body.push({
+          ...summary(c, await latestFindings(root, c.id), fast),
+          yourRoles: rolesOfPerson(ctx.user, c.owners ?? {}, custom),
+        });
       }
       return { status: 200, body };
     })

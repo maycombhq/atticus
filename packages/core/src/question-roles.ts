@@ -175,13 +175,40 @@ export function nextOwnerOf(phase: string): string | undefined {
 export function nextOwnersOf(
   phase: string,
   owners: Readonly<Record<string, readonly string[]>>,
+  custom: readonly CustomRole[] = [],
 ): { role: string; people: string[] } | undefined {
   const role = nextOwnerOf(phase);
   if (!role) return undefined;
-  const people = [...new Set((owners[role] ?? []).map((p) => p.trim().replace(/^@/, "")))].filter(
-    (p) => p && !p.includes("/"),
-  );
-  return { role, people };
+  return { role, people: ownersOfRole(role, owners, custom) };
+}
+
+/**
+ * ADR 0191 review: the people a built-in owner key names on a change, its keys read as
+ * rolesOfPerson reads them: any case, the words people write for it (`tech-lead`, `developer`
+ * and `delivery-lead` for the team lead), or a custom role of roles.yaml based on it, the key
+ * itself first. Another built-in role (a security reviewer beside the architect) is its own.
+ * Handles, no @, once each as handles compare; a team (`forge/platform`) is not a person.
+ */
+export function ownersOfRole(
+  key: string,
+  owners: Readonly<Record<string, readonly string[]>>,
+  custom: readonly CustomRole[] = [],
+): string[] {
+  const k = ownerKeyOf(key, custom);
+  const own = (o: string) => o.trim().toLowerCase() === k;
+  const keys = Object.keys(owners)
+    .filter((o) => ownerKeyOf(o, custom) === k)
+    .sort((a, b) => Number(own(b)) - Number(own(a)));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const o of keys)
+    for (const p of owners[o] ?? []) {
+      const h = p.trim().replace(/^@/, "");
+      if (!h || h.includes("/") || seen.has(h.toLowerCase())) continue;
+      seen.add(h.toLowerCase());
+      out.push(h);
+    }
+  return out;
 }
 
 /** What each of the built-in roles change.yaml's `owners` names does on a change, as a question role. */
@@ -199,6 +226,22 @@ const OWNER_ROLE: Readonly<Record<string, QuestionRole>> = {
   developer: "delivery",
   "delivery-lead": "delivery",
 };
+
+/** The words people write in change.yaml for a built-in role's owner key. */
+const OWNER_ALIAS: Readonly<Record<string, string>> = {
+  "tech-lead": "team-lead",
+  developer: "team-lead",
+  "delivery-lead": "team-lead",
+};
+
+/** The built-in owner key an owner key stands for: itself, an alias's, or a custom role's base. */
+function ownerKeyOf(key: string, custom: readonly CustomRole[], depth = 0): string {
+  const k = key.trim().toLowerCase();
+  if (OWNER_ALIAS[k]) return OWNER_ALIAS[k];
+  if (OWNER_ROLE[k] || depth > 3) return k;
+  const c = custom.find((x) => x.id.toLowerCase() === k);
+  return c ? ownerKeyOf(c.basedOn, custom, depth + 1) : k;
+}
 
 /** A custom role of roles.yaml (`custom`): its id and the built-in role it is based on. */
 export interface CustomRole {

@@ -304,6 +304,19 @@ describe("the local server (ADR 0015)", () => {
     const changes = z.array(ChangeSummary).parse((await call("/api/changes")).body);
     expect(changes.map((c) => c.id)).toEqual(["add-transfer-limit"]);
     expect(changes[0]!.openFindings).toEqual({ blocking: 1, gap: 0, risk: 0, idea: 0 });
+    // Beta.23 review: the viewer's roles on each change, so Home knows them for every change.
+    expect(changes[0]!.yourRoles).toEqual([]);
+    const dana = await startServer({ root, port: 0, user: "Dana", watch: false });
+    try {
+      const r = await fetch(`${dana.url}/api/changes`, {
+        headers: { "X-Atticus-Token": dana.token },
+      });
+      const theirs = z.array(ChangeSummary).parse(await r.json());
+      // delivery-lead and developer are the tech lead's words in change.yaml.
+      expect(theirs[0]!.yourRoles).toEqual(["delivery"]);
+    } finally {
+      await dana.close();
+    }
     expect(z.array(ChangeSummary).parse((await call("/api/changes?state=released")).body)).toEqual(
       [],
     );
@@ -641,6 +654,8 @@ describe("live events on /api/events", () => {
       expect(await heard).toEqual({
         type: "file.changed",
         path: "openspec/changes/add-transfer-limit/brief.md",
+        // 3.9.0: a change's brief isn't the catalog's.
+        catalog: false,
       });
       ws.close();
     } finally {

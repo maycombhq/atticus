@@ -437,6 +437,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   (422) and a sources.yaml changed meanwhile (409). POST /api/setup/repos/plan for a folder,
  *   with several platforms and none given, answers the platforms to choose from and reads
  *   nothing. Additive only.
+ *   Home (beta.23 review): GET /api/changes gives each change the viewer's `yourRoles`
+ *   (read from its owners as the questions' `yourRoles` are), so Home knows them for every change
+ *   in flight. A `file.changed` live event says whether it can change the catalog (`catalog`),
+ *   by the folders the org pack's layout names. Additive only.
  */
 export const API_VERSION = "3.9.0";
 export const DEFAULT_PORT = 4321;
@@ -800,6 +804,11 @@ export const ChangeSummary = z.object({
   updatedAt: z.string(),
   /** ADR 0113: it takes the fast path, one step from brief to tasks (its type is small, or its brief says so). */
   fastPath: z.boolean().optional(),
+  /**
+   * 3.9.0 (beta.23 review): the viewer's roles on the change, from its owners (any case, the
+   * words people write for a role, roles.yaml's custom roles); empty when it names them nowhere.
+   */
+  yourRoles: z.array(QuestionRole).optional(),
 });
 
 export const ChangeDetail = ChangeSummary.extend({
@@ -4998,7 +5007,12 @@ export type ActivityLinesT = z.infer<typeof ActivityLines>;
 
 /** Messages on the WebSocket at /api/events. */
 export const LiveEvent = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("file.changed"), path: z.string() }),
+  z.object({
+    type: z.literal("file.changed"),
+    path: z.string(),
+    /** 3.9.0: whether it can change the catalog, by the folders the org pack's layout names. */
+    catalog: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal("job.progress"),
     jobId: z.string(),

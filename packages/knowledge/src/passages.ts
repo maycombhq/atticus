@@ -1,6 +1,7 @@
 import { itemTitle } from "./knowledge-store.js";
 import type { KnowledgeRecord } from "./knowledge-scan.js";
 import { rankItems, termsOf } from "./knowledge-ask.js";
+import { visibleText } from "./quotes.js";
 
 /**
  * ADR 0191: what the organisation's wikis and documents say to a person's question, by its words
@@ -36,12 +37,32 @@ const MAX_TEXT = 1500;
 
 const clip = (s: string) => (s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT - 1).trimEnd()}…` : s);
 
+/**
+ * The page's lines as a person sees them: hidden text (comments, hidden elements, display:none
+ * spans) blanked as quotes are, and YAML front matter left out, each line kept where it was.
+ */
+function visibleLines(text: string): { lines: string[]; from: number } {
+  const raw = text.replace(/\r\n?/g, "\n").split("\n");
+  const lines = visibleText(raw.join("\n"))
+    .split("\n")
+    .map((l, i) => (l === raw[i] ? l : l.replace(/[ \t]{2,}/g, " ").trimEnd()));
+  let from = 0;
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((l, k) => k > 0 && (l.trim() === "---" || l.trim() === "..."));
+    if (end > 0) {
+      for (let k = 0; k <= end; k++) lines[k] = "";
+      from = end + 1;
+    }
+  }
+  return { lines, from };
+}
+
 /** A page's sections: each heading with the text under it (deeper headings start their own). */
 export function pageSections(p: PassagePage): Passage[] {
-  const lines = p.text.split(/\r?\n/);
+  const { lines, from } = visibleLines(p.text);
   const out: Passage[] = [];
   const path: { level: number; text: string }[] = [];
-  let start = 0;
+  let start = from;
   let heading = "";
   const flush = (end: number) => {
     const body = lines.slice(start, end);

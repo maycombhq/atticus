@@ -101,7 +101,7 @@ export async function setupSteps(
           done: false,
           checking: true,
           detail: "checking this machine (Git, OpenSpec, your assistant)",
-          fix: "Wait a moment: the checks finish on their own. Set up › Doctor (atticus doctor) shows each one.",
+          fix: "Wait a moment: the checks finish on their own. Settings › This machine shows each one (in a terminal, atticus doctor).",
         }
       : {
           id: "machine",
@@ -111,8 +111,8 @@ export async function setupSteps(
             ? `to fix: ${failing.map((c) => c.label).join(", ")}`
             : `${doctor.filter((c) => c.status === "warn").length} to look at`,
           fix: failing.length
-            ? `Run atticus doctor: ${failing.map((c) => c.fix ?? c.label).join(" ")}`
-            : "Run atticus doctor for the details.",
+            ? `Open Settings › This machine, fix what it names, then press Check again: ${failing.map((c) => c.fix ?? c.label).join(" ")} (In a terminal, atticus doctor shows the same checks.)`
+            : "Settings › This machine shows the details (in a terminal, atticus doctor).",
         },
     {
       id: "org-pack",
