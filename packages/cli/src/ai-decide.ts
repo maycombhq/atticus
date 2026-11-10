@@ -32,6 +32,7 @@ import {
   orgPackDirOf,
   pairingBar,
   parseAuditFile,
+  personEditOfTo,
   parseCorrections,
   parseFacts,
   proposalRelOf,
@@ -487,7 +488,8 @@ export async function decideLinks(
       const byPerson = await answeredByPerson(root, o.view.from, o.facts);
       return lines.filter((l) => {
         const f = calls.get(l)!;
-        if (linksFor(f, now).some((c) => !c.ai)) return false;
+        // Review round 2 (beta.23): a person's edit of where it goes ("This link is wrong") too.
+        if (linksFor(f, now).some((c) => !c.ai) || personEditOfTo(f, now)) return false;
         if (byPerson.has(f.id)) {
           answered.add(l);
           return false;
@@ -580,7 +582,9 @@ async function personLinkVerdict(
   const calls = callsOfQuestion(q, new Map([[q.repo, facts]]));
   if (!calls.length) return undefined;
   const corrections = await correctionsOf(root, q.repo);
-  if (calls.some((c) => linksFor(c, corrections).some((l) => !l.ai)))
+  if (
+    calls.some((c) => linksFor(c, corrections).some((l) => !l.ai) || personEditOfTo(c, corrections))
+  )
     return "a person said where its call goes on the canvas (a pairing or none): their word stands";
   const rules = await linkRulesOf(root, q.repo);
   for (const c of calls)
@@ -1209,6 +1213,7 @@ async function correctLink(
       if (!(await coversCall(rule.match, c, facts))) continue;
       const st = linksFor(c, corrections)[0];
       if (st && !st.ai) continue; // a person's word stands
+      if (personEditOfTo(c, corrections)) continue; // a person said where it goes
       if (byPerson.has(c.id)) continue; // a person answered where it goes
       const item = `link:${repo}:${c.id}`;
       const was = st?.ai

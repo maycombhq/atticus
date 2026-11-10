@@ -4809,6 +4809,8 @@ export const COPY = {
     ruleWritten: (q: string) => `The open target question ${q} is answered with /**.`,
     undo: "Undo",
     undone: "Undone: the line is removed.",
+    undoneRuleStays: (q: string, target: string) =>
+      `Undone: the pair lines are removed. The rule's answer is not undone: the target question ${q} still sends this repo's loose calls, and calls read later, to ${target} (/**). To take it back, answer ${q} again on the Questions page.`,
     nothingPicked: "Pick at least one pair, or the rule for all.",
     pairedMark: "paired by a person",
     makeRule: "Make this a rule for every repo of this type?",

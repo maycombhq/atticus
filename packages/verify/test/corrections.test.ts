@@ -224,6 +224,23 @@ describe("G1 (ADR 0174): a pairing", () => {
     expect(r.facts[0]).toMatchObject({ to: "forge-ledger" });
   });
 
+  it("an AI's, newer or not, gives way to a person's edit that sets the call's target", () => {
+    const edit = {
+      ...link({ repo: "x", path: "/x" }),
+      action: "edit",
+      set: { to: "forge-ledger" },
+      link: undefined,
+      at: "2026-11-06T10:00:00.000Z",
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    const ai = {
+      ...link({ system: "northwind-pay", path: "/v1/charges" }),
+      by: "atticus",
+      ai: { runtime: "copilot-acp", run: "20261108-101500-ab12", bar: "confident" },
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    const r = applyCorrections([call], [edit, ai]);
+    expect(r.facts[0]).toMatchObject({ to: "forge-ledger", by: "person" });
+  });
+
   it("follows a call an edit moved to another line", () => {
     const move = {
       ...link({ repo: "x", path: "/x" }),

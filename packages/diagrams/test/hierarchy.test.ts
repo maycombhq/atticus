@@ -772,3 +772,52 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect(link.joins!.find((j) => j.interface === HOST)!.shared).toBeUndefined();
   });
 });
+
+describe("a system box names the repos it holds (review round 2, beta.23)", () => {
+  it("lists every repo placed in it, not only the ones its System record lists", () => {
+    const pay = (repo: string) => [{ source: "config", repo, path: "pom.xml", line: 3 }];
+    const records = [
+      {
+        kind: "System",
+        id: "payments",
+        name: "Payments",
+        confidence: "verified",
+        boundary: "product",
+        owner: "team-a",
+        repos: ["forge-pay-api"],
+        evidence: pay("forge-pay-api"),
+      },
+      {
+        kind: "Component",
+        id: "pay-api-svc",
+        confidence: "verified",
+        system: "payments",
+        repo: "forge-pay-api",
+        type: "service",
+        evidence: pay("forge-pay-api"),
+      },
+      {
+        kind: "Component",
+        id: "pay-worker-svc",
+        confidence: "verified",
+        system: "payments",
+        repo: "forge-pay-worker",
+        type: "service",
+        evidence: pay("forge-pay-worker"),
+      },
+    ].map((r) => {
+      const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    });
+    const est = buildEstate(records);
+    const sys = nodeView(est, "estate", { lens: "architecture" }).children.find(
+      (n) => n.id === "system:payments",
+    )!;
+    // Both repos are drawn inside the box, so a line from it can't mean only one of them.
+    expect(ids(nodeView(est, "system:payments", { lens: "architecture" }).children)).toEqual(
+      expect.arrayContaining(["repo:forge-pay-api", "repo:forge-pay-worker"]),
+    );
+    expect(sys.properties.repos).toEqual(["forge-pay-api", "forge-pay-worker"]);
+  });
+});

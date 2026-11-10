@@ -164,9 +164,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["estate"]));
   const [selected, setSelected] = useState<string | undefined>();
   // G1 (ADR 0174): connecting a repo's box to another, call by call.
-  const [connecting, setConnecting] = useState<
-    { from: string; initial?: Api.LinkBoxT } | undefined
-  >();
+  const [connecting, setConnecting] = useState<{ from: string; initial?: BoxChoice } | undefined>();
   // G2 (ADR 0174): setting a repo's owner and system.
   const [owning, setOwning] = useState<string | undefined>();
   // G3 (ADR 0174): declaring a system's link, and adding to the picture.
@@ -832,15 +830,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 }}
                 {...(pickedLink ? { selectedLink: pickedLink.id } : {})}
                 onConnect={(a, b) => {
-                  // A line is drawn from a repo (or its component) to another box; drawn the
-                  // other way round from a system, the ends swap; within one repo, nothing.
-                  let from = drawnBoxOf(find(a));
-                  let to = drawnBoxOf(find(b));
-                  if (from && !from.repo && to?.repo) [from, to] = [to, from];
-                  // Said, not silently dropped: a line needs a repo at one end and two boxes.
-                  if (!from?.repo || !to) return flash({ text: COPY.connect.dropNeedsRepo });
-                  if (to.repo === from.repo) return flash({ text: COPY.connect.dropSameRepo });
-                  setConnecting({ from: from.repo, initial: to });
+                  const c = connectDrawn(find(a), find(b));
+                  // Said, not silently dropped: why a line connects nothing.
+                  if ("say" in c) return flash({ text: c.say });
+                  setConnecting(c);
                 }}
                 aside={
                   <div className="stack">
@@ -899,7 +892,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     )}
                     {connecting && (
                       <ConnectPanel
-                        key={`${connecting.from}:${connecting.initial?.repo ?? connecting.initial?.system ?? ""}`}
+                        key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
                         from={connecting.from}
                         boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
                         {...(connecting.initial ? { initial: connecting.initial } : {})}
@@ -974,22 +967,53 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   );
 }
 
-/** G1 (ADR 0174): the repo or outside system a box stands for, when it stands for one. */
+/** A system box of a system outside the estate (one no estate repo is in): a vendor's, a team's. */
+const outsideSystem = (n: Api.HierNodeT) => {
+  const repos = n.properties.repos;
+  const boundary = n.properties.boundary;
+  if (boundary === "outside" || boundary === "vendor") return true;
+  return !(Array.isArray(repos) && repos.length > 0) && boundary !== "product";
+};
+
 /**
- * The box a line drawn on the canvas means: a system box that holds exactly one repo of the
- * estate means that repo (its calls are the repo's); otherwise as boxOf says.
+ * The box a line drawn on the canvas means: a system box of the estate that holds exactly one
+ * repo means that repo (its calls are the repo's); one with several repos (or none) means no one
+ * box, so undefined (review round 2, beta.23: never sent as an outside system); an outside
+ * system's box means that system; anything else as boxOf says.
  */
 export function drawnBoxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
   const b = boxOf(n);
-  const repos = n?.kind === "system" ? n.properties.repos : undefined;
-  if (
-    b?.system &&
-    Array.isArray(repos) &&
-    repos.length === 1 &&
-    n?.properties.boundary !== "outside"
-  )
-    return { repo: String(repos[0]) };
-  return b;
+  if (!b?.system || !n || outsideSystem(n)) return b;
+  const repos = n.properties.repos;
+  return Array.isArray(repos) && repos.length === 1 ? { repo: String(repos[0]) } : undefined;
+}
+
+/** A box as Connect to…'s list names it. */
+const choiceOf = (n: Api.HierNodeT, b: Api.LinkBoxT): BoxChoice =>
+  b.repo && n.kind !== "repo"
+    ? { label: `${WORDS.kindWord.repo}: ${b.repo}`, box: b }
+    : { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b };
+
+/**
+ * G1 (ADR 0174): what a line drawn on the canvas from box `a` to box `b` opens, or what to say
+ * when it connects nothing. A line is drawn from a repo (or its component, or a system holding
+ * one repo) to another box; drawn the other way round from an outside system, the ends swap; a
+ * system with several repos at either end, two outside systems, or one repo to itself, said.
+ */
+export function connectDrawn(
+  a: Api.HierNodeT | undefined,
+  b: Api.HierNodeT | undefined,
+): { from: string; initial: BoxChoice } | { say: string } {
+  let from = drawnBoxOf(a);
+  let to = drawnBoxOf(b);
+  let toNode = b;
+  if (from?.system && to?.repo) {
+    [from, to] = [to, from];
+    toNode = a;
+  }
+  if (!from?.repo || !to || !toNode) return { say: COPY.connect.dropNeedsRepo };
+  if (to.repo === from.repo) return { say: COPY.connect.dropSameRepo };
+  return { from: from.repo, initial: choiceOf(toNode, to) };
 }
 
 export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
@@ -1001,17 +1025,21 @@ export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
   return undefined;
 }
 
-/** Every repo and system box of the views loaded, once each, for the Connect to… list. */
+/**
+ * Every repo and outside system box of the views loaded (their boxes outside the opened box
+ * too), once each, for the Connect to… list: a system of the estate by the one repo it holds,
+ * never by its id (the candidates know only outside systems by id).
+ */
 export function connectChoices(views: Views): BoxChoice[] {
   const seen = new Map<string, BoxChoice>();
   for (const v of views.values())
-    for (const n of [v.node, ...v.children]) {
+    for (const n of [v.node, ...v.children, ...v.outside]) {
       if (n.kind !== "repo" && n.kind !== "system") continue;
-      const b = boxOf(n);
+      const b = drawnBoxOf(n);
       if (!b) continue;
       const k = b.repo ? `r:${b.repo}` : `s:${b.system}`;
-      if (!seen.has(k))
-        seen.set(k, { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b });
+      // A repo's own box names it before a system that holds only it.
+      if (!seen.has(k) || n.kind === "repo") seen.set(k, choiceOf(n, b));
     }
   return [...seen.values()].sort((x, y) => (x.label < y.label ? -1 : 1));
 }

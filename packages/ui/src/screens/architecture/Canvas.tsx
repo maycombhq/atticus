@@ -155,18 +155,51 @@ function BoxView({ data }: NodeProps<BoxNode>) {
   );
 }
 
-/** The box a pointer or touch ended on, by the node element under it (its id). */
-export function boxUnder(e: MouseEvent | TouchEvent): string | undefined {
+/** The elements under a point, topmost first (the document's; tests pass their own). */
+type ElementsAt = (x: number, y: number) => readonly Element[];
+
+/**
+ * The box a pointer or touch ended on, by the node element under it (its id). Review round 2
+ * (beta.23): only through the canvas's own layers (the line being drawn, links, their labels):
+ * a drop on the inspector, the Connect panel, the minimap or anything else over the picture
+ * connects to no box hidden beneath it.
+ */
+export function boxUnder(
+  e: MouseEvent | TouchEvent,
+  at: ElementsAt = (x, y) => document.elementsFromPoint(x, y),
+): string | undefined {
   const t = "changedTouches" in e ? e.changedTouches[0] : undefined;
   const x = t ? t.clientX : "clientX" in e ? e.clientX : undefined;
   const y = t ? t.clientY : "clientY" in e ? e.clientY : undefined;
-  // The line being drawn lies over the box: look through every element under the point.
-  const under = x === undefined || y === undefined ? [] : document.elementsFromPoint(x, y);
-  for (const el of under) {
+  if (x === undefined || y === undefined) return undefined;
+  for (const el of at(x, y)) {
     const node = el.closest?.(".react-flow__node");
     if (node) return node.getAttribute("data-id") ?? undefined;
+    // Topmost first: an overlay (a panel of the canvas, the minimap) or anything outside the
+    // canvas ends the look; the canvas's own layers above a box are looked through.
+    if (!el.closest?.(".react-flow") || el.closest(".react-flow__panel")) return undefined;
   }
   return undefined;
+}
+
+/**
+ * A line dropped off a box's dot (xyflow found no handle there): the box under the drop, if any,
+ * as [caller, callee]. Review round 2 (beta.23): a line drawn from a box's incoming (target) dot
+ * means the other box calls this one, as xyflow reads a drop on a dot.
+ */
+export function connectEndOf(
+  e: MouseEvent | TouchEvent,
+  state: {
+    isValid: boolean | null;
+    fromNode?: { id: string } | null;
+    fromHandle?: { type?: string | null } | null;
+  },
+  under: (e: MouseEvent | TouchEvent) => string | undefined = boxUnder,
+): [string, string] | undefined {
+  if (state.isValid || !state.fromNode) return undefined;
+  const to = under(e);
+  if (!to || to === state.fromNode.id) return undefined;
+  return state.fromHandle?.type === "target" ? [to, state.fromNode.id] : [state.fromNode.id, to];
 }
 
 /** Who owns a topic or queue, as its box says it (F10). */
@@ -596,11 +629,10 @@ export function ArchitectureCanvas(p: {
               ? {
                   onConnectEnd: (
                     e: MouseEvent | TouchEvent,
-                    state: { isValid: boolean | null; fromNode?: { id: string } | null },
+                    state: Parameters<typeof connectEndOf>[1],
                   ) => {
-                    if (state.isValid || !state.fromNode) return;
-                    const to = boxUnder(e);
-                    if (to && to !== state.fromNode.id) p.onConnect!(state.fromNode.id, to);
+                    const ends = connectEndOf(e, state);
+                    if (ends) p.onConnect!(ends[0], ends[1]);
                   },
                 }
               : {})}

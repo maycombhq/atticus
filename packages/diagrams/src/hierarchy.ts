@@ -418,8 +418,9 @@ export function buildEstate(records: CatalogRecord[]): Estate {
   }
 
   // A system box names the repos inside it, so a line drawn from or to it can mean its repo.
+  // Review round 2 (beta.23): the repos drawn in it (its record's and those its components place
+  // there), not only the ones its record lists, so a box with two repos never reads as one.
   for (const [sys, n] of [...nodes.entries()].filter(([id]) => id.startsWith("system:"))) {
-    if (n.properties.repos) continue;
     const inside = [...repoSystem.entries()]
       .filter(([, s]) => `system:${s}` === sys && systems.has(s))
       .map(([r]) => r)
