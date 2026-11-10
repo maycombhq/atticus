@@ -54,15 +54,16 @@ export function ownersBody(fields: Readonly<Record<OwnerRole, string>>): {
   };
 }
 
-/** The body that accepts a suggestion: the owners as they are, with the role's people added. */
+/**
+ * The body that accepts a suggestion: the role's owners as they are, with its people added. Only
+ * that role (ADR 0191 review): the route names the roles a body gives and clears one given empty,
+ * so sending every role from the page's copy could clear an owner someone named since it loaded.
+ */
 export function acceptBody(
   owners: Readonly<Record<string, readonly string[]>> | undefined,
   s: { role: string; people: readonly string[] },
 ): { owners: Record<string, string[]> } {
-  const next: Record<string, string[]> = {};
-  for (const r of OWNER_ROLES) next[r] = [...(owners?.[r] ?? [])];
-  next[s.role] = [...new Set([...(next[s.role] ?? []), ...s.people])];
-  return { owners: next };
+  return { owners: { [s.role]: [...new Set([...(owners?.[s.role] ?? []), ...s.people])] } };
 }
 
 /** Where a suggestion comes from, in words. */
@@ -158,11 +159,12 @@ export function ChangeOwners(p: {
                           void accept.run(
                             () => {
                               const body = acceptBody(owners, s);
-                              return api(`/api/changes/${encodeURIComponent(p.change)}/owners`, {
-                                method: "PUT",
-                                body,
-                              }).then(() => {
-                                setOwners(body.owners);
+                              return api<{ owners?: Record<string, string[]> }>(
+                                `/api/changes/${encodeURIComponent(p.change)}/owners`,
+                                { method: "PUT", body },
+                              ).then((c) => {
+                                // The owners as written, every role's (the body has one).
+                                setOwners(c?.owners ?? { ...owners, ...body.owners });
                                 suggested.reload();
                                 p.onSaved?.();
                               });
