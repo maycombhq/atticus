@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 
 import { VERSION } from "./version.js";
 import { aliasArgv } from "./top-commands.js";
+import { printProgress, withRunLine } from "./run-progress.js";
 import { OPTIONS, optionsFor } from "@maycombhq/ai/cli-options";
 
 /**
@@ -66,10 +67,11 @@ export async function setUpAi(): Promise<void> {
   // W1: the critic checks a name a lens's finding says is missing against the repos' code.
   naysayer.registerCodeSearch(codeTools.criticCodeSearch);
   // ADR 0171: a copilot-acp session runs atticus commands with this Atticus, its progress on
-  // standard error so a step's own output stays data.
+  // standard error so a step's own output stays data. ADR 0187: and in the run's log and the
+  // app job's lines, as the run's other lines are, so the Console shows a long step.
   ai.registerCopilotAcp({
     ...(process.argv[1] ? { exec: ai.atticusExec(process.argv[1]) } : {}),
-    onProgress: (l) => process.stderr.write(`${l}\n`),
+    onProgress: (l) => printProgress(l),
     clientVersion: VERSION,
   });
 }
@@ -912,7 +914,13 @@ export async function main(
     },
   };
   try {
-    const code = await dispatch(argv, io);
+    // A Copilot step's progress (printProgress) goes to this run's log too.
+    const code = await (said
+      ? withRunLine(
+          (l) => said.line(l),
+          () => dispatch(argv, io),
+        )
+      : dispatch(argv, io));
     // Review of beta.23: a run this command resumed is done with; the resume the app kept for it
     // is forgotten, so the app's own check or its next start never resumes it again.
     if (code === 0 && argv.some((a) => a === "--resume" || a.startsWith("--resume="))) {

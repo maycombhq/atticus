@@ -219,6 +219,28 @@ describe("the Console's lines", () => {
     expect(withActivityLines(b, 0, ["x"], "2026-11-10T00:00:00.000Z").lines).toEqual(["x"]);
   });
 
+  it("takes the server's answer past a gap (lines it dropped), says so, and goes on", () => {
+    const at = "2026-11-09T10:00:00.000Z";
+    const held = withActivityLines(undefined, 0, ["a", "b", "c"], at);
+    // Asked from line 3; the server kept lines from 9 on only.
+    const next = withActivityLines(held, 9, ["j", "k"], at, { gap: true });
+    expect(next).toEqual({ from: 9, lines: ["j", "k"], startedAt: at, dropped: 6 });
+    // Then on from there as before.
+    expect(withActivityLines(next, 11, ["l"], at)).toMatchObject({
+      from: 9,
+      lines: ["j", "k", "l"],
+    });
+    // A live event past a gap still waits for the fetch (the lines may be there).
+    expect(withActivityLines(held, 9, ["j"], at)).toBe(held);
+    // Said in the log, above the lines.
+    const shown = { ...entry(), lines: 11, from: 9 };
+    const out = html(
+      ctx({ entries: [shown], selected: shown.id, lines: { [shown.id]: next } }),
+      <ActivityConsole />,
+    );
+    expect(out).toContain(T.dropped(6));
+  });
+
   it("keeps the list newest first, and names an entry by its kind when it has no title", () => {
     const l = upsert([entry()], command);
     expect(l.map((e) => e.id)).toEqual([command.id, "job-1"]);

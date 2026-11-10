@@ -1,11 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { hostname } from "node:os";
@@ -23,7 +27,10 @@ import { ignoreLocalSync, redactText } from "./log.js";
  * - `.atticus/logs/running/<runId>.json`: who and what — the command words, the ids it was given
  *   (repo, change, run and task ids: words that look like an id and nothing else), the names of
  *   its flags (never their values), the process and a hash of the machine's name, when it
- *   started, and how it ended (its exit code), written again when it ends.
+ *   started, and how it ended (its exit code), written again when it ends. While it runs it is
+ *   written again every RUN_HEARTBEAT_MS (`beatAt`), and on Linux it keeps when its process
+ *   started (`procStart`, from /proc): a process id used again by another process, or a run
+ *   silent past RUN_SILENT_MS, is a run that ended without saying.
  *
  * Only the last RUN_LOG_KEEP runs are kept. `.atticus/logs/` is this machine's own (never
  * committed). The names have no `:` (Windows). Nothing here loads a schema: the command line
@@ -37,6 +44,10 @@ export const RUN_LOG_MAX_BYTES = 2 * 1024 * 1024;
 export const RUN_LOG_LINE_MAX = 4000;
 /** The lines a read gives at most. */
 export const RUN_LOG_READ_MAX = 5000;
+/** A running command writes its record again this often. */
+export const RUN_HEARTBEAT_MS = 30_000;
+/** A running record that beats, silent (record and log) for longer than this, has ended. */
+export const RUN_SILENT_MS = 5 * 60 * 1000;
 /** `20261109-101530-4242-ab12`: when (UTC), the process, and a little randomness. */
 export const TERMINAL_RUN_ID = /^\d{8}-\d{6}-\d{1,10}-[0-9a-f]{4}$/;
 
@@ -64,6 +75,10 @@ export interface TerminalRunRecord {
   lines: number;
   /** Lines no longer in the log (the log keeps its last lines). */
   dropped: number;
+  /** When the process started, as the system says (Linux: /proc), to tell a reused pid. */
+  procStart?: string;
+  /** When a running command last wrote its record (every RUN_HEARTBEAT_MS). */
+  beatAt?: string;
 }
 
 /** A record as read: `stale` when its process is gone though it never said it ended. */
@@ -134,6 +149,22 @@ const hostHash = () => {
   }
 };
 
+/**
+ * When a process started, as Linux keeps it (/proc/<pid>/stat's starttime, in ticks since boot):
+ * one file read, no command run. Undefined elsewhere, or when it can't be read.
+ */
+export function procStartOf(pid: number): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // The name, in brackets, may hold spaces: the fields after its last ")" start at the 3rd.
+    const v = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    return v && /^\d+$/.test(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 const idAt = (d: Date, pid: number) =>
   `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}-${pid}-${randomBytes(2).toString("hex")}`;
@@ -174,6 +205,12 @@ export interface StartRunOptions {
    * command line passes true; a test doesn't).
    */
   hookProcess?: boolean;
+  /** Write the record again this often while it runs. Default RUN_HEARTBEAT_MS with hookProcess. */
+  heartbeatMs?: number;
+  /** When this process started (procStartOf, for its own pid only). */
+  procStart?: () => string | undefined;
+  /** Whether a process is there (pidAlive), for the runs pruned as this one starts. */
+  alive?: (pid: number) => boolean;
 }
 
 const writeJson = (file: string, v: unknown) => {
@@ -189,8 +226,11 @@ const writeJson = (file: string, v: unknown) => {
   }
 };
 
-/** Older runs past `keep` (the newest first by their id, which starts with the time) removed. */
-function prune(root: string, keep: number) {
+/**
+ * Older runs past `keep` (the newest first by their id, which starts with the time) removed,
+ * never one still running (its process there): a long `map --all` outlives fifty quick runs.
+ */
+function prune(root: string, keep: number, live: (id: string) => boolean) {
   let names: string[];
   try {
     names = readdirSync(runningDirOf(root))
@@ -199,14 +239,20 @@ function prune(root: string, keep: number) {
   } catch {
     return;
   }
-  for (const n of names.slice(0, Math.max(names.length - keep, 0))) {
+  const removed = new Set<string>();
+  let over = names.length - keep;
+  for (const n of names) {
+    if (over <= 0) break;
     const id = n.slice(0, -5);
+    if (live(id)) continue;
     rmSync(join(runningDirOf(root), n), { force: true });
     rmSync(join(runLogsDirOf(root), `${id}.log`), { force: true });
+    removed.add(id);
+    over--;
   }
   // A log left without its record (a record removed by hand) goes too.
   try {
-    const kept = new Set(names.slice(-keep).map((n) => n.slice(0, -5)));
+    const kept = new Set(names.map((n) => n.slice(0, -5)).filter((id) => !removed.has(id)));
     for (const n of readdirSync(runLogsDirOf(root)))
       if (n.endsWith(".log") && TERMINAL_RUN_ID.test(n.slice(0, -4)) && !kept.has(n.slice(0, -4)))
         rmSync(join(runLogsDirOf(root), n), { force: true });
@@ -229,6 +275,13 @@ export function startTerminalRun(
   const maxBytes = Math.max(o.maxBytes ?? RUN_LOG_MAX_BYTES, 256);
   const started = now();
   const runId = idAt(started, pid);
+  const heartbeatMs = o.heartbeatMs ?? (o.hookProcess ? RUN_HEARTBEAT_MS : undefined);
+  // When this process started: only for its own pid (a test's made-up pid has none).
+  const procStart = o.procStart
+    ? o.procStart()
+    : pid === process.pid
+      ? procStartOf(pid)
+      : undefined;
   const { command, title } = runTitle(o.positionals, o.flags);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
@@ -243,6 +296,8 @@ export function startTerminalRun(
     state: "running",
     lines: 0,
     dropped: 0,
+    ...(procStart ? { procStart } : {}),
+    ...(heartbeatMs ? { beatAt: started.toISOString() } : {}),
   };
   const jsonFile = join(runningDirOf(root), `${runId}.json`);
   const logFile = join(runLogsDirOf(root), `${runId}.log`);
@@ -250,7 +305,11 @@ export function startTerminalRun(
     mkdirSync(runningDirOf(root), { recursive: true });
     mkdirSync(runLogsDirOf(root), { recursive: true });
     ignoreLocalSync(root);
-    prune(root, keep - 1);
+    const alive = o.alive ?? pidAlive;
+    prune(root, keep - 1, (id) => {
+      const r = readRecord(root, id);
+      return !!r && r.state === "running" && !goneRun(r, rec.host, alive, now().getTime(), root);
+    });
     writeFileSync(logFile, "", "utf8");
     writeJson(jsonFile, rec);
   } catch {
@@ -263,6 +322,7 @@ export function startTerminalRun(
 
   const save = () => {
     try {
+      if (heartbeatMs && !ended) rec.beatAt = now().toISOString();
       writeJson(jsonFile, { ...rec, lines: rec.dropped + inFile });
     } catch {
       // never fail a command over its run log
@@ -279,7 +339,17 @@ export function startTerminalRun(
       at--;
     }
     const kept = all.slice(at);
-    writeFileSync(logFile, kept.length ? `${kept.join("\n")}\n` : "", "utf8");
+    // Written beside it and put in place: a reader that followed the old file by its offset
+    // sees another file (its inode), and reads again from the record's count.
+    const tmp = `${logFile}.${process.pid}.tmp`;
+    const text = kept.length ? `${kept.join("\n")}\n` : "";
+    try {
+      writeFileSync(tmp, text, "utf8");
+      renameSync(tmp, logFile);
+    } catch {
+      rmSync(tmp, { force: true });
+      writeFileSync(logFile, text, "utf8");
+    }
     rec.dropped += at;
     inFile = kept.length;
     bytes = size;
@@ -287,6 +357,13 @@ export function startTerminalRun(
   };
 
   const unhook: (() => void)[] = [];
+  if (heartbeatMs) {
+    const beat = setInterval(() => {
+      if (!ended) save();
+    }, heartbeatMs);
+    beat.unref?.();
+    unhook.push(() => clearInterval(beat));
+  }
   const recorder: TerminalRunRecorder = {
     runId,
     line(text) {
@@ -356,6 +433,43 @@ export function pidAlive(pid: number): boolean {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+const mtimeOf = (file: string) => {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Whether a run said `running` has ended without saying: its process is gone on this machine,
+ * its pid is another process's now (that started at another time), it beats and has been silent
+ * past RUN_SILENT_MS, or it started days ago (elsewhere: its process can't be looked for).
+ */
+function goneRun(
+  r: TerminalRunRecord,
+  here: string,
+  alive: (pid: number) => boolean,
+  now: number,
+  root: string,
+  startOf: (pid: number) => string | undefined = procStartOf,
+): boolean {
+  const age = now - Date.parse(r.startedAt);
+  if (r.host !== here) return age > 2 * DAY;
+  if (!alive(r.pid) || age > 7 * DAY) return true;
+  const started = r.procStart ? startOf(r.pid) : undefined;
+  // The system says when the process with this pid started: it is the run's, or another's.
+  if (started !== undefined) return started !== r.procStart;
+  if (r.beatAt) {
+    const last = Math.max(
+      Date.parse(r.beatAt) || 0,
+      mtimeOf(join(runLogsDirOf(root), `${r.runId}.log`)),
+    );
+    return now - last > RUN_SILENT_MS;
+  }
+  return false;
+}
+
 function readRecord(root: string, runId: string): TerminalRunRecord | undefined {
   if (!TERMINAL_RUN_ID.test(runId)) return undefined;
   try {
@@ -377,6 +491,8 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
       flags: Array.isArray(r.flags) ? r.flags.map(String) : [],
       lines: Number(r.lines) || 0,
       dropped: Number(r.dropped) || 0,
+      ...(typeof r.procStart === "string" ? { procStart: r.procStart } : {}),
+      ...(typeof r.beatAt === "string" ? { beatAt: r.beatAt } : {}),
     };
   } catch {
     return undefined;
@@ -389,7 +505,12 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
  */
 export function readTerminalRuns(
   root: string,
-  o: { alive?: (pid: number) => boolean; now?: () => Date } = {},
+  o: {
+    alive?: (pid: number) => boolean;
+    now?: () => Date;
+    /** When a process started (procStartOf). */
+    startOf?: (pid: number) => string | undefined;
+  } = {},
 ): TerminalRunView[] {
   let names: string[];
   try {
@@ -406,9 +527,7 @@ export function readTerminalRuns(
     const r = readRecord(root, n.slice(0, -5));
     if (!r) continue;
     if (r.state === "running") {
-      const age = now - Date.parse(r.startedAt);
-      const gone = r.host === here ? !alive(r.pid) || age > 7 * DAY : age > 2 * DAY;
-      if (gone) {
+      if (goneRun(r, here, alive, now, root, o.startOf)) {
         out.push({ ...r, stale: true });
         continue;
       }
@@ -422,7 +541,11 @@ export function readTerminalRuns(
 export const readTerminalRun = (
   root: string,
   runId: string,
-  o: { alive?: (pid: number) => boolean; now?: () => Date } = {},
+  o: {
+    alive?: (pid: number) => boolean;
+    now?: () => Date;
+    startOf?: (pid: number) => string | undefined;
+  } = {},
 ): TerminalRunView | undefined =>
   TERMINAL_RUN_ID.test(runId)
     ? readTerminalRuns(root, o).find((r) => r.runId === runId)
@@ -456,4 +579,125 @@ export function readTerminalRunLines(
       : Math.max(Math.min(from, total), r.dropped);
   const lines = all.slice(start - r.dropped, start - r.dropped + max);
   return { from: start, lines, total };
+}
+
+/** Where a tail of a run's log has read to: the next line's number and its byte in the file. */
+export interface RunLogTail {
+  line: number;
+  bytes: number;
+  /** The record's dropped count and the file (its inode) when read: either changing is a cut. */
+  dropped: number;
+  ino: number;
+}
+
+/** The complete lines of `buf` from line `skip` on, at most `max`, and the byte after them. */
+function linesIn(
+  buf: Buffer,
+  skip: number,
+  max: number,
+): { lines: string[]; end: number; more: boolean } {
+  const lines: string[] = [];
+  let at = 0;
+  let n = 0;
+  while (at < buf.length) {
+    const nl = buf.indexOf(10, at);
+    // A line being written (no newline yet) waits for its end.
+    if (nl < 0) break;
+    if (n >= skip) {
+      if (lines.length >= max) return { lines, end: at, more: true };
+      lines.push(buf.toString("utf8", at, nl));
+    }
+    n++;
+    at = nl + 1;
+  }
+  return { lines, end: at, more: false };
+}
+
+/** The bytes of a file from `from` to `size`. */
+function readFrom(file: string, from: number, size: number): Buffer {
+  const buf = Buffer.alloc(Math.max(size - from, 0));
+  if (!buf.length) return buf;
+  const fd = openSync(file, "r");
+  try {
+    let got = 0;
+    while (got < buf.length) {
+      const n = readSync(fd, buf, got, buf.length - got, from + got);
+      if (n <= 0) break;
+      got += n;
+    }
+    return got < buf.length ? buf.subarray(0, got) : buf;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * A run's new lines since `at` (where the last tail read to), at most `max`: only the bytes
+ * added are read. Without `at`, or when the log was cut meanwhile, the whole log is read once:
+ * its last `max` lines without `at`, else from `at.line` (or the first line kept, when those were
+ * dropped). `more` says lines past `max` wait for the next read. Undefined for no such run.
+ */
+export function tailTerminalRunLines(
+  root: string,
+  runId: string,
+  at: RunLogTail | undefined,
+  max = RUN_LOG_READ_MAX,
+): { from: number; lines: string[]; at: RunLogTail; more: boolean } | undefined {
+  const file = join(runLogsDirOf(root), `${runId}.log`);
+  for (let tries = 0; ; tries++) {
+    const r = readRecord(root, runId);
+    if (!r) return undefined;
+    let size = 0;
+    let ino = 0;
+    try {
+      const st = statSync(file);
+      size = st.size;
+      ino = st.ino;
+    } catch {
+      // no log yet: no lines
+    }
+    if (at && at.dropped === r.dropped && at.ino === ino && size >= at.bytes) {
+      let buf: Buffer;
+      try {
+        buf = readFrom(file, at.bytes, size);
+      } catch {
+        buf = Buffer.alloc(0);
+      }
+      const got = linesIn(buf, 0, max);
+      return {
+        from: at.line,
+        lines: got.lines,
+        at: {
+          line: at.line + got.lines.length,
+          bytes: at.bytes + got.end,
+          dropped: r.dropped,
+          ino,
+        },
+        more: got.more,
+      };
+    }
+    let buf: Buffer;
+    try {
+      buf = readFileSync(file);
+    } catch {
+      buf = Buffer.alloc(0);
+    }
+    // Cut as it was read (the record says another count now): read again, once.
+    const again = readRecord(root, runId);
+    if (again && again.dropped !== r.dropped && tries < 1) continue;
+    let count = 0;
+    for (let i = buf.indexOf(10); i >= 0; i = buf.indexOf(10, i + 1)) count++;
+    const total = r.dropped + count;
+    const start =
+      at === undefined
+        ? Math.max(total - max, r.dropped)
+        : Math.max(Math.min(at.line, total), r.dropped);
+    const got = linesIn(buf, start - r.dropped, max);
+    return {
+      from: start,
+      lines: got.lines,
+      at: { line: start + got.lines.length, bytes: got.end, dropped: r.dropped, ino },
+      more: got.more,
+    };
+  }
 }

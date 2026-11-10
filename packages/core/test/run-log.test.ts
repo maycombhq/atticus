@@ -12,6 +12,7 @@ import {
   runTitle,
   startedByOf,
   startTerminalRun,
+  tailTerminalRunLines,
   TERMINAL_RUN_ID,
 } from "../src/run-log.js";
 
@@ -220,5 +221,149 @@ describe("a terminal run's files", () => {
     expect(readTerminalRuns(other)).toEqual([]);
     expect(readTerminalRunLines(other, "../../etc/passwd")).toBeUndefined();
     expect(existsSync(runLogsDirOf(other))).toBe(false);
+  });
+});
+
+describe("a long run among many (review of ADR 0187)", () => {
+  it("never prunes a run still running, whose process is alive", async () => {
+    const root = await fresh();
+    let t = Date.parse("2026-11-09T10:00:00Z");
+    const now = () => new Date(t);
+    const long = startTerminalRun(root, {
+      positionals: ["map"],
+      flags: ["all"],
+      pid: 1111,
+      now,
+      alive: (pid) => pid === 1111,
+    })!;
+    long.line("step 1 of 40");
+    for (let i = 0; i < 12; i++) {
+      t += 1000;
+      const r = startTerminalRun(root, {
+        positionals: ["verify"],
+        flags: [],
+        pid: 2000 + i,
+        now,
+        keep: 5,
+        alive: (pid) => pid === 1111,
+      })!;
+      r.end(0);
+    }
+    const runs = readTerminalRuns(root, { alive: (pid) => pid === 1111, now });
+    expect(runs.some((r) => r.runId === long.runId && !r.stale)).toBe(true);
+    // The finished ones are still pruned to the newest.
+    expect(runs.filter((r) => r.state === "done").length).toBe(4);
+    long.line("step 2 of 40");
+    expect(readTerminalRunLines(root, long.runId)!.lines).toEqual(["step 1 of 40", "step 2 of 40"]);
+    // One whose process is gone is pruned as before.
+    t += 1000;
+    startTerminalRun(root, {
+      positionals: ["scan"],
+      flags: [],
+      pid: 3000,
+      now,
+      keep: 5,
+      alive: () => false,
+    })!.end(0);
+    expect(
+      readTerminalRuns(root, { alive: () => true, now }).some((r) => r.runId === long.runId),
+    ).toBe(false);
+  });
+
+  it("calls a reused process id's run ended: its process started at another time", async () => {
+    const root = await fresh();
+    // Its own process: the record keeps when it started where the system says so cheaply.
+    startTerminalRun(root, { positionals: ["map"], flags: ["all"], procStart: () => "4242" })!;
+    expect(
+      readTerminalRuns(root, { alive: () => true, startOf: () => "4242" })[0]!.stale,
+    ).toBeUndefined();
+    expect(readTerminalRuns(root, { alive: () => true, startOf: () => "9999" })[0]).toMatchObject({
+      state: "running",
+      stale: true,
+    });
+    // Where the system can't say, the process being there is enough.
+    expect(
+      readTerminalRuns(root, { alive: () => true, startOf: () => undefined })[0]!.stale,
+    ).toBeUndefined();
+  });
+
+  it("beats while it runs, and a run silent for over five minutes ended without saying", async () => {
+    const root = await fresh();
+    const rec = startTerminalRun(root, {
+      positionals: ["map"],
+      flags: ["all"],
+      pid: 5151,
+      heartbeatMs: 20,
+      procStart: () => undefined,
+    })!;
+    const beatOf = () =>
+      (
+        JSON.parse(readFileSync(join(runningDirOf(root), `${rec.runId}.json`), "utf8")) as {
+          beatAt?: string;
+        }
+      ).beatAt;
+    const first = beatOf();
+    expect(first).toBeDefined();
+    await new Promise((r) => setTimeout(r, 120));
+    expect(beatOf()).not.toBe(first);
+    const o = { alive: () => true, startOf: () => undefined };
+    expect(
+      readTerminalRuns(root, { ...o, now: () => new Date(Date.now() + 60_000) })[0]!.stale,
+    ).toBeUndefined();
+    expect(
+      readTerminalRuns(root, { ...o, now: () => new Date(Date.now() + 6 * 60_000) })[0],
+    ).toMatchObject({
+      stale: true,
+    });
+    rec.end(0);
+    const after = beatOf();
+    await new Promise((r) => setTimeout(r, 80));
+    // Ended: no more beats.
+    expect(beatOf()).toBe(after);
+  });
+});
+
+describe("tailing a run's log from where it was read", () => {
+  it("reads only what was added, at most a cap at a time, and goes on from there", async () => {
+    const root = await fresh();
+    const rec = startTerminalRun(root, { positionals: ["map"], flags: [], pid: 7 })!;
+    rec.line("first");
+    const a = tailTerminalRunLines(root, rec.runId, undefined, 3)!;
+    expect(a).toMatchObject({ from: 0, lines: ["first"], more: false });
+    for (let i = 0; i < 7; i++) rec.line(`line ${i}`);
+    rec.line("FINAL SUMMARY");
+    const b = tailTerminalRunLines(root, rec.runId, a.at, 3)!;
+    expect(b).toMatchObject({ from: 1, lines: ["line 0", "line 1", "line 2"], more: true });
+    const c = tailTerminalRunLines(root, rec.runId, b.at, 3)!;
+    const d = tailTerminalRunLines(root, rec.runId, c.at, 3)!;
+    expect([...c.lines, ...d.lines]).toEqual([
+      "line 3",
+      "line 4",
+      "line 5",
+      "line 6",
+      "FINAL SUMMARY",
+    ]);
+    expect(d).toMatchObject({ from: 7, more: false });
+    expect(d.at.line).toBe(9);
+    // Nothing new: nothing read.
+    expect(tailTerminalRunLines(root, rec.runId, d.at, 3)).toMatchObject({
+      from: 9,
+      lines: [],
+      more: false,
+    });
+  });
+
+  it("starts again from the lines kept when the log was cut", async () => {
+    const root = await fresh();
+    const rec = startTerminalRun(root, { positionals: ["map"], flags: [], pid: 8, maxBytes: 400 })!;
+    rec.line("a");
+    const a = tailTerminalRunLines(root, rec.runId, undefined)!;
+    for (let i = 0; i < 60; i++) rec.line(`line ${i} ${"x".repeat(10)}`);
+    const b = tailTerminalRunLines(root, rec.runId, a.at)!;
+    // Lines 1.. were partly dropped: it answers from the first one kept.
+    expect(b.from).toBeGreaterThan(1);
+    expect(b.lines[0]).toContain(`line ${b.from - 1} `);
+    expect(b.lines.at(-1)).toContain("line 59 ");
+    expect(b.at.line).toBe(61);
   });
 });

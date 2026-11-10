@@ -8,6 +8,8 @@ import {
   runsDirOf,
   runsRelOf,
   RUN_LOG_READ_MAX,
+  tailTerminalRunLines,
+  type RunLogTail,
   type TerminalRunView,
 } from "@maycombhq/core";
 import {
@@ -42,6 +44,8 @@ const MAX_ENTRIES = 100;
 /** A finished hand-off run stays in the list this long. */
 const HANDOFF_RECENT_MS = 24 * 60 * 60 * 1000;
 const HANDOFF_MAX = 20;
+/** A command's log is read at most this many caps (RUN_LOG_READ_MAX lines) a tick. */
+const TAIL_READS_PER_TICK = 4;
 const ID = /^[A-Za-z0-9._-]{1,160}$/;
 const RUN_DIR = /^run-[0-9a-z-]+$/;
 
@@ -144,6 +148,22 @@ const handoffState = (s: string): Api.ActivityStateT =>
         ? "cancelled"
         : "waiting";
 
+const newestFirst = (a: Entry, b: Entry) =>
+  b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id);
+
+/**
+ * The entries the list gives, newest first: every one that runs (a long run started before a
+ * hundred quick ones stays, and so does the strip), then the newest of the rest up to `max`.
+ */
+export function newestKeepingRunning(entries: Entry[], max: number): Entry[] {
+  const running = entries.filter((e) => e.state === "running");
+  const rest = entries
+    .filter((e) => e.state !== "running")
+    .sort(newestFirst)
+    .slice(0, Math.max(max - running.length, 0));
+  return [...running, ...rest].sort(newestFirst);
+}
+
 export function uiActivityRoutes(
   r: Router,
   ctx: ServerContext,
@@ -191,8 +211,14 @@ export function uiActivityRoutes(
   };
 
   // ---------------------------------------------------------------- commands run elsewhere
-  /** What this server has sent of each command's run: its lines, its state, the log's size. */
-  const tails = new Map<string, { total: number; state: string; size: number }>();
+  /**
+   * What this server has sent of each command's run: its lines, its state, the log's size and
+   * file, where its tail read to, and whether lines past a read's cap wait for the next tick.
+   */
+  const tails = new Map<
+    string,
+    { total: number; state: string; size: number; ino: number; at?: RunLogTail; more: boolean }
+  >();
   const terminalEntry = (t: TerminalRunView, total?: number): Entry => ({
     id: `${TERM}${t.runId}`,
     kind: "command",
@@ -206,15 +232,20 @@ export function uiActivityRoutes(
     from: t.dropped,
     runId: t.runId,
   });
-  const logSize = (runId: string) => {
+  const logStat = (runId: string) => {
     try {
-      return statSync(join(runLogsDirOf(root), `${runId}.log`)).size;
+      const s = statSync(join(runLogsDirOf(root), `${runId}.log`));
+      return { size: s.size, ino: s.ino };
     } catch {
-      return 0;
+      return { size: 0, ino: 0 };
     }
   };
   let seeded = false;
-  /** New lines and ends of the commands' runs, sent live (the first look only learns them). */
+  /**
+   * New lines and ends of the commands' runs, sent live (the first look only learns them). A
+   * log is read from where its tail read to, never whole again; a burst past a read's cap is
+   * read on, a few caps a tick, and the rest next tick, so every line and the end reach the page.
+   */
   const tick = () => {
     let runs: TerminalRunView[];
     try {
@@ -225,12 +256,15 @@ export function uiActivityRoutes(
     for (const t of runs) {
       const was = tails.get(t.runId);
       const state = t.stale ? "ended" : t.state;
-      const size = logSize(t.runId);
-      if (was && was.state === state && was.size === size) continue;
+      const { size, ino } = logStat(t.runId);
+      if (was && !was.more && was.state === state && was.size === size && was.ino === ino) continue;
       let total = was?.total ?? 0;
-      if (!was || size !== was.size) {
-        const got = readTerminalRunLines(root, t.runId, was ? was.total : undefined);
-        if (got) {
+      let at = was?.at;
+      let more = false;
+      if (!was || was.more || size !== was.size || ino !== was.ino) {
+        for (let reads = 0; reads < TAIL_READS_PER_TICK; reads++) {
+          const got = tailTerminalRunLines(root, t.runId, at);
+          if (!got) break;
           if (was && seeded && got.lines.length)
             ctx.events.publish({
               type: "activity.lines",
@@ -238,10 +272,14 @@ export function uiActivityRoutes(
               at: got.from,
               lines: got.lines,
             });
-          total = got.from + got.lines.length;
+          total = got.at.line;
+          at = got.at;
+          more = got.more;
+          // The first look only learns where the log is.
+          if (!was || !more) break;
         }
       }
-      tails.set(t.runId, { total, state, size });
+      tails.set(t.runId, { total, state, size, ino, ...(at ? { at } : {}), more });
       if (seeded && (!was || was.state !== state || was.total !== total))
         ctx.events.publish({ type: "activity.changed", entry: terminalEntry(t, total) });
     }
@@ -370,10 +408,9 @@ export function uiActivityRoutes(
       ...ctx.jobs.list().map(jobEntry),
       ...readTerminalRuns(root, readOpts).map((t) => terminalEntry(t)),
       ...handoffEntries(),
-    ]
-      .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id))
-      .slice(0, MAX_ENTRIES);
-    return { entries, running: entries.filter((e) => e.state === "running").length };
+    ];
+    const kept = newestKeepingRunning(entries, MAX_ENTRIES);
+    return { entries: kept, running: kept.filter((e) => e.state === "running").length };
   };
 
   const linesOf = (id: string, from: number | undefined): Api.ActivityLinesT => {

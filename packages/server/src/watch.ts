@@ -44,6 +44,12 @@ export interface WatchOptions {
    * are followed apart: they never go out as file.changed (the pages would read again for nothing).
    */
   onRunLog?: () => void;
+  /**
+   * The least time between two onRunLog calls: a chatty command writes its log many times a
+   * second, and each call reads the runs again. A burst is told once, then once after it ends
+   * (never left untold). Default 200 ms.
+   */
+  runLogDelayMs?: number;
 }
 
 /** Never followed: they change as the app reads, or they are code, not Atticus's files. */
@@ -153,13 +159,28 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
 
   const logsDir = join(root, ".atticus", "logs");
   const runLogDirs = [join(logsDir, "running"), join(logsDir, "runs")];
+  // A run's files changed: told at most once every runLogDelay, and always once after the last.
+  const runLogDelay = o.runLogDelayMs ?? 200;
+  let runLogTimer: ReturnType<typeof setTimeout> | undefined;
+  let runLogLast = 0;
+  const runLogChanged = () => {
+    if (runLogTimer || !o.onRunLog) return;
+    runLogTimer = setTimeout(
+      () => {
+        runLogTimer = undefined;
+        runLogLast = Date.now();
+        if (!closed) o.onRunLog?.();
+      },
+      Math.max(runLogLast + runLogDelay - Date.now(), 0),
+    );
+  };
   const follow = (dir: string, recursive: boolean) => {
     if (closed || watchers.has(dir) || !isDir(dir)) return;
     try {
       const w = watch(dir, { recursive }, (event, name) => {
         // A command's run files: only the nudge (a new folder under logs/ may be one of them).
         if (dir === logsDir) return attach();
-        if (runLogDirs.includes(dir)) return o.onRunLog?.();
+        if (runLogDirs.includes(dir)) return runLogChanged();
         if (!recursive && name) {
           // A new top folder may be one Atticus keeps files in: follow it from now on.
           attach();
@@ -231,6 +252,7 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
     close() {
       closed = true;
       clearTimeout(timer);
+      clearTimeout(runLogTimer);
       for (const w of watchers.values()) w.close();
       watchers.clear();
       pending.clear();
