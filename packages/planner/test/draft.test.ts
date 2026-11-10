@@ -186,6 +186,40 @@ describe("draftChange", () => {
     expect((await threadReplies(root, CHANGE, "proposal"))[0]!.read).toBe(true);
   });
 
+  it("leaves a reply sent while its hand-off waited unread, for the next draft (review of beta.23)", async () => {
+    const root = await briefOnly();
+    const { HandoffRuntime } = await import("@maycombhq/ai");
+    const { replyInStage, threadReplies } = await import("../src/index.js");
+    let t = Date.parse(NOW);
+    const tick = () => new Date((t += 5000));
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: tick });
+    const reply = (text: string, at: string) =>
+      replyInStage(root, { change: CHANGE, stage: "proposal", text, by: "priya", at });
+    const before = await reply("Say which team owns the limit.", NOW);
+    const waiting = await draftChange(root, CHANGE, { runtime: rt(), now: new Date(NOW) });
+    expect(waiting.state).toBe("waiting");
+    const runId = waiting.waiting!.runId;
+    const prompt = await readFile(join(root, ".runs", CHANGE, runId, "prompt.md"), "utf8");
+    expect(prompt).toContain("Say which team owns the limit.");
+    // Sent while the prompt waits: it isn't in it.
+    const since = await reply("Name the vendor Northwind Pay.", "2026-10-20T10:00:00Z");
+    expect(prompt).not.toContain("Name the vendor Northwind Pay.");
+    await writeFile(join(root, ".runs", CHANGE, runId, "change-draft.md"), GOOD);
+    await rt().done(runId);
+    const r = await draftChange(root, CHANGE, {
+      runtime: rt(),
+      now: new Date(NOW),
+      resume: runId,
+      force: true,
+    });
+    expect(r.state).toBe("written");
+    const read = new Map(
+      (await threadReplies(root, CHANGE, "proposal")).map((x) => [x.question, x.read]),
+    );
+    expect(read.get(before.question.id)).toBe(true);
+    expect(read.get(since.question.id)).toBe(false);
+  });
+
   it("refuses a brief that is still the template", async () => {
     const root = await briefOnly();
     await writeFile(

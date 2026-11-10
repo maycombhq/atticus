@@ -15,6 +15,7 @@ import {
   runsDirOf,
   runsRelOf,
   toCanonicalYaml,
+  withSharedFileLock,
   type HeldQuestion,
   type Question,
   type QuestionDraft,
@@ -275,7 +276,7 @@ const STAGE_WORDS: Partial<Record<string, string>> = {
   small: "small change's plan",
 };
 
-async function readLoop(dir: string, change: string, stage: Stage): Promise<StageLoop> {
+async function readLoopFile(dir: string, change: string, stage: Stage): Promise<StageLoop> {
   const text = await readFile(join(dir, loopRel(stage)), "utf8").catch(() => undefined);
   if (text !== undefined) {
     const r = StageLoop.safeParse(parse(text));
@@ -289,6 +290,48 @@ async function readLoop(dir: string, change: string, stage: Stage): Promise<Stag
     state: "drafting",
     updatedAt: new Date(0).toISOString(),
   });
+}
+
+/**
+ * Review of beta.23 (ADR 0189): what each loop held in memory was last read or written as, so
+ * its next write keeps what the thread added to the file meanwhile (a reply, a dropped question
+ * kept) and never brings back what the thread took off it.
+ */
+interface LoopBase {
+  questions: string[];
+  read: string[];
+  dropped: string[];
+}
+const bases = new WeakMap<StageLoop, LoopBase>();
+const baseOf = (l: StageLoop): LoopBase => ({
+  questions: [...l.questions],
+  read: [...l.read],
+  dropped: (l.dropped ?? []).map((d) => d.key),
+});
+
+async function readLoop(dir: string, change: string, stage: Stage): Promise<StageLoop> {
+  const l = await readLoopFile(dir, change, stage);
+  bases.set(l, baseOf(l));
+  return l;
+}
+
+/**
+ * The loop as this writer has it, with what another writer changed on file since its base: the
+ * questions and read answers they added, the dropped questions they added or kept (took off).
+ * Changes `l` in place, so a run under way sees a reply posted meanwhile.
+ */
+function mergeLoop(l: StageLoop, base: LoopBase | undefined, disk: StageLoop): void {
+  const added = (mine: string[], theirs: string[], was: string[] = []) =>
+    [...new Set([...mine, ...theirs.filter((x) => !was.includes(x))])].sort();
+  l.questions = added(l.questions, disk.questions, base?.questions);
+  l.read = added(l.read, disk.read, base?.read);
+  const onDisk = new Map((disk.dropped ?? []).map((d) => [d.key, d]));
+  const was = new Set(base?.dropped ?? []);
+  const dropped = (l.dropped ?? []).filter((d) => !(was.has(d.key) && !onDisk.has(d.key)));
+  for (const [key, d] of onDisk)
+    if (!was.has(key) && !dropped.some((x) => x.key === key)) dropped.push(d);
+  if (dropped.length) l.dropped = dropped;
+  else delete l.dropped;
 }
 
 /**
@@ -307,19 +350,50 @@ export async function readStageLoop(
   return { loop: await readLoop(dir, change, stage), present, file: loopRel(stage) };
 }
 
-/** Write a stage's loop file as the loop does. */
+/** Write a stage's loop file as the loop does (keeping what another writer added meanwhile). */
 export const writeStageLoop = (dir: string, l: StageLoop): Promise<void> => writeLoop(dir, l);
+
+/**
+ * Change a stage's loop file outside a run (a reply, a comment, a dropped question kept): read,
+ * changed and written holding the file's lock, the lock a run's own writes take, so neither
+ * loses what the other wrote (review of beta.23, ADR 0189).
+ */
+export async function updateStageLoop<T>(
+  dir: string,
+  change: string,
+  stage: Stage,
+  edit: (loop: StageLoop, file: string) => T | Promise<T>,
+): Promise<T> {
+  return withSharedFileLock(join(dir, loopRel(stage)), async () => {
+    const loop = await readLoopFile(dir, change, stage);
+    const out = await edit(loop, loopRel(stage));
+    await writeLoopFile(dir, loop);
+    return out;
+  });
+}
 
 // The questions the stages hold back, and the command that runs a stage again, live in their
 // own light module so `atticus questions list` needn't load the whole planner (waiting.ts).
 export { waitingQuestions, type WaitingQuestion } from "./waiting.js";
 export { rerunOf } from "./waiting.js";
 
-async function writeLoop(dir: string, l: StageLoop): Promise<void> {
+async function writeLoopFile(dir: string, l: StageLoop): Promise<void> {
   await writeFileAtomic(
     join(dir, loopRel(l.stage)),
     `# The ${l.stage} stage's loop (ADR 0087): drafts, the findings each one had, and the questions it raised. Atticus writes this file.\n${toCanonicalYaml(StageLoop.parse(l), ["schemaVersion", "change", "stage", "iteration", "state", "updatedAt", "run"])}`,
   );
+}
+
+/**
+ * Write the loop a run holds: under the file's lock, with what the thread added to the file since
+ * the run last read or wrote it (a reply posted during a long run, a dropped question kept).
+ */
+async function writeLoop(dir: string, l: StageLoop): Promise<void> {
+  await withSharedFileLock(join(dir, loopRel(l.stage)), async () => {
+    mergeLoop(l, bases.get(l), await readLoopFile(dir, l.change, l.stage));
+    await writeLoopFile(dir, l);
+    bases.set(l, baseOf(l));
+  });
 }
 
 /**
@@ -454,6 +528,24 @@ export async function runStageLoop<A>(
     };
   }
   const loop = await readLoop(dir, change.id, spec.stage);
+  // Review of beta.23: a resume reads in only the run the stage waits on (its draft, or a lens of
+  // the round its draft waits on). A run read in already (by the app's Done and the command line
+  // both, or Done twice) is never read in again: its answer would be drafted and checked twice.
+  if (o.resume) {
+    const waitsOn =
+      loop.state === "waiting" &&
+      (loop.run === o.resume ||
+        (!!loop.review && (await isLensOf(root, change.id, loop.review, o.resume))));
+    if (!waitsOn)
+      throw new PlannerError(
+        "refused",
+        `Run ${o.resume} isn't a draft or a lens of ${change.id}'s ${spec.stage} stage waiting to be read in: ${
+          loop.state === "waiting" && loop.run
+            ? `the stage waits on run ${loop.run}; resume with that one.`
+            : "the stage waits on no run, so its answer was read in already (or the stage was prepared again)."
+        }`,
+      );
+  }
   // The change's run records past runtime.yaml's retention go (ADR 0115 addendum, 2026-10-25):
   // .runs/ keeps every prompt and answer on this machine, but not for ever. A run the stage waits
   // on that is pruned is drafted or reviewed again, as for any run that is gone.
@@ -980,7 +1072,10 @@ export async function runStageLoop<A>(
       }
       delete loop.review;
       delete loop.run;
-      answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
+      // The answers the draft under review was given: those read in with it, not one sent since.
+      answered = (await questionsOf(loop.questions)).filter(
+        (q) => q.state === "answered" && loop.read.includes(q.id),
+      );
       if (review.draft) run = await o.runtime.result(review.draft).catch(() => undefined);
       answer = await spec.current();
       files = review.files;
@@ -1069,6 +1164,9 @@ export async function runStageLoop<A>(
         step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id}`,
       });
       let draftRun: Run;
+      // Review of beta.23: the answers the waiting prompt carried, set when it was handed off.
+      const carriedAnswers = loop.carried;
+      delete loop.carried;
       if (resume) {
         draftRun = await o.runtime.result(resume);
         // Only this stage's own draft is read in as its draft (two steps at once hand off two
@@ -1079,6 +1177,9 @@ export async function runStageLoop<A>(
             `Run ${resume} isn't a draft or a lens of ${change.id}'s ${spec.stage} stage: resume with the run the stage handed off${loop.run ? ` (${loop.run})` : ""}.`,
           );
         resume = undefined;
+        // Its prompt was written when it was handed off: a reply sent while it waited isn't in
+        // it, so it isn't read (marked read, or counted as decided) until the next round.
+        if (carriedAnswers) answered = answered.filter((q) => carriedAnswers.includes(q.id));
       } else {
         const prepared = await o.runtime.prepare({
           change: change.id,
@@ -1112,6 +1213,7 @@ export async function runStageLoop<A>(
       if (run.state === "waiting" || run.state === "prepared") {
         loop.state = "waiting";
         loop.run = run.runId;
+        loop.carried = answered.map((q) => q.id).sort();
         loop.updatedAt = at;
         await writeLoop(dir, loop);
         return result("waiting", { waiting: { runId: run.runId } });
@@ -1167,6 +1269,7 @@ export async function runStageLoop<A>(
         if (second.state === "waiting" || second.state === "prepared") {
           loop.state = "waiting";
           loop.run = second.runId;
+          loop.carried = answered.map((q) => q.id).sort();
           loop.readAgain = second.runId;
           loop.updatedAt = at;
           await writeLoop(dir, loop);

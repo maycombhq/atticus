@@ -40,6 +40,38 @@ export interface ThreadHandlers {
   onAnswered?: () => void;
 }
 
+/** A reply saved whose next round didn't start (review of beta.23): the reply isn't to be sent again. */
+export class ReplySaved extends Error {
+  constructor(readonly reason: string) {
+    super(T.savedNotStarted(reason));
+  }
+}
+
+/**
+ * Send a reply, then (with `next`) start the next round. When the round doesn't start, the reply
+ * is saved all the same: the thread reads again to show it, and the failure says so (ReplySaved).
+ */
+export async function replyAndStart(
+  o: { post: () => Promise<unknown>; start: () => Promise<unknown>; reload: () => void },
+  next: boolean,
+): Promise<void> {
+  await o.post();
+  if (!next) return o.reload();
+  try {
+    await o.start();
+  } catch (e) {
+    o.reload();
+    throw new ReplySaved(message(e));
+  }
+}
+
+/** What the reply box does when a send fails: a saved reply leaves no words to send twice. */
+export function replyFailed(e: unknown): { clear: boolean; text: string } {
+  return e instanceof ReplySaved
+    ? { clear: true, text: e.message }
+    : { clear: false, text: message(e) };
+}
+
 const shortFile = (p: string) => p.split("/").slice(-2).join("/");
 
 function PromptItem({ it }: { it: Extract<Item, { kind: "prompt" }> }) {
@@ -413,7 +445,12 @@ function ReplyBox(p: {
       },
       (err: unknown) => {
         setBusy(false);
-        setNote({ ok: false, text: message(err) });
+        const f = replyFailed(err);
+        if (f.clear) {
+          p.setText("");
+          p.onClearAbout();
+        }
+        setNote({ ok: false, text: f.text });
       },
     );
   };
@@ -572,16 +609,26 @@ export function StageThreadPanel({ change, stage }: { change: string; stage: Sta
     await api("/api/runs/handoff", { method: "POST", body: { args: v.step } });
     view.reload();
   };
-  const onReply: ThreadHandlers["onReply"] = async (text, about, next) => {
-    await api(path, {
-      method: "POST",
-      body: about
-        ? { kind: "finding", finding: about.view.finding.id, gate: about.view.finding.gate, text }
-        : { kind: "reply", text },
-    });
-    if (next) await start();
-    else view.reload();
-  };
+  const onReply: ThreadHandlers["onReply"] = (text, about, next) =>
+    replyAndStart(
+      {
+        post: () =>
+          api(path, {
+            method: "POST",
+            body: about
+              ? {
+                  kind: "finding",
+                  finding: about.view.finding.id,
+                  gate: about.view.finding.gate,
+                  text,
+                }
+              : { kind: "reply", text },
+          }),
+        start,
+        reload: () => view.reload(),
+      },
+      next,
+    );
   const onAct: ThreadHandlers["onAct"] = async (it, action, reason) => {
     const f = it.view.finding;
     await api(`/api/findings/${encodeURIComponent(change)}/${encodeURIComponent(f.id)}/action`, {

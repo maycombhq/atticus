@@ -913,6 +913,13 @@ export async function main(
   };
   try {
     const code = await dispatch(argv, io);
+    // Review of beta.23: a run this command resumed is done with; the resume the app kept for it
+    // is forgotten, so the app's own check or its next start never resumes it again.
+    if (code === 0 && argv.some((a) => a === "--resume" || a.startsWith("--resume="))) {
+      const { forgetKeptResume, resumedRunOf } = await import("./handoff-resume.js");
+      const resumed = resumedRunOf(argv);
+      if (resumed) await forgetKeptResume(root, resumed);
+    }
     said?.end(code);
     log()?.info("command", { command: words.join(" "), flags, code, ms: Date.now() - started });
     return code;

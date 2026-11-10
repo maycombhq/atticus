@@ -5422,6 +5422,8 @@ export const COPY = {
     needText: "Write what to tell the assistant first.",
     clearAbout: "Not about a finding",
     sent: "Sent. The next round's prompt carries it.",
+    savedNotStarted: (why: string) =>
+      `Your reply is saved, but the next round didn't start: ${why} Press Start the next round once that is fixed; there's no need to send the reply again.`,
     replyClosed: "Replies open once the stage has run.",
     details: "Details",
     detailAgent: (agent: string, runtime: string) => `Step ${agent}, ${runtime}`,

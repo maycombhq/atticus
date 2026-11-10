@@ -648,7 +648,15 @@ export async function draftChange(
       await writeFileAtomic(path, stamp + text);
       files.push(rel);
     }
-    if (replies.length) await markProposalRepliesRead(root, change.id);
+    // Review of beta.23: only the replies this answer's prompt carried are read. A resumed
+    // hand-off's prompt was written when its run was prepared, so a reply sent since stays unread
+    // for the next draft; a reply sent while this draft ran was never in `replies`.
+    const resumed = !!o.resume && n === 1;
+    const prepared = Date.parse(run.startedAt);
+    const carried = replies
+      .filter((r) => !resumed || !(Date.parse(r.at) > prepared))
+      .map((r) => r.question);
+    if (carried.length) await markProposalRepliesRead(root, change.id, carried);
     return { ...base, state: "written", files, discarded, problems: [] };
   }
   return {

@@ -6,6 +6,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- **A reply sent while a stage's prompt waits is read by the next round**: it wasn't in the prompt the assistant answered, yet reading that answer in marked it read, so no round ever saw it. Only the answers the prompt carried are marked read now (the loop file keeps them as `carried`), for the proposal's thread too.
+- **One answer is never read in twice**: Done and the app's own check at once, a second Done, or the command line's `--resume` and then the app's could each resume the same run. A stage refuses a resume of a run it isn't waiting on, Done stays busy until its resume has run, and the command line's own `--resume` forgets the resume the app kept.
+- **A reply or a kept question during a long run stays**: the run wrote its loop file whole and dropped a reply posted meanwhile, or brought back a question a person kept; the thread and the run now take the file's lock, and the run keeps what the thread added.
+- **"Send and start the next round" says the reply is saved when the round doesn't start**: the box clears and the thread shows the reply, with why the round didn't start, instead of keeping the words as if nothing was sent.
+- **The thread's "checked by" says who ran the last check**: a run the command line validated, only resumed by the app, no longer reads as checked by the app, and a person's Done after the app's failed check takes the app's mark off.
+- **A reply sent twice in a few seconds is kept once**: the same words from the same person, still unread, are the reply already on file.
 - **Home reloads fast on Windows too**: Map › Trust and each change's cockpit are kept until a base clone's checkout moves, and that was judged by the times of `.git` folders, which git moves as it reads (its lock files). On Windows every reload worked them out again (1.3 s with nothing changed, against 0.3 s on Linux); now only the files that say what is checked out are read (HEAD, its branch, the reflog, packed-refs).
 - **`atticus skills import` names a file it kept with forward slashes on Windows too**, as every other line it prints does.
 - **Nothing scrolled to hides behind the Console bar**: a Tab to a button or a link to a heading stops clear of the bar fixed at the foot of the app (or of the open Console), not under it.

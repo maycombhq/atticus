@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { batchSections } from "@maycombhq/ai";
@@ -62,6 +62,15 @@ export async function markCheckedByApp(root: string, change: string, runId: stri
     JSON.stringify({ at: new Date().toISOString() }) + "\n",
     "utf8",
   );
+}
+
+/** Take the app's mark off, before another check of the run (review of beta.23). */
+export async function unmarkCheckedByApp(
+  root: string,
+  change: string,
+  runId: string,
+): Promise<void> {
+  await rm(join(runsDirOf(root), change, runId, AUTO_CHECKED), { force: true });
 }
 
 export async function checkedByApp(root: string, change: string, runId: string): Promise<boolean> {

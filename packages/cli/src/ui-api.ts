@@ -81,7 +81,12 @@ import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
-import { markCheckedByApp, startAutoDone, type AutoDoneOptions } from "./handoff-autodone.js";
+import {
+  markCheckedByApp,
+  startAutoDone,
+  unmarkCheckedByApp,
+  type AutoDoneOptions,
+} from "./handoff-autodone.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -650,25 +655,39 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     if ((before.state === "validated" && !onlyResume) || before.state === "cancelled")
       throw conflict(`Run ${runId} is already ${before.state}.`);
     // One Done at a time per run: a second click while the first builds is told so (two
-    // builds in one worktree collide, on Windows over locked files).
+    // builds in one worktree collide, on Windows over locked files). Review of beta.23: until
+    // its resume has run too, so a second Done (or the app's own check) never resumes it twice.
     if (doneBusy.has(runId))
       throw conflict(`Done for ${runId} is already running; wait for it to finish.`);
     doneBusy.add(runId);
-    let res: Ran;
     try {
-      // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
-      // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
-      res = onlyResume
-        ? { code: 0, out: [], err: [] }
-        : await tracked(
-            ctx,
-            by === "app" ? `Checked the answer: ${runId}` : `Done: ${runId}`,
-            () => run((io) => runDone(root, runId, { by: user }, io, deps.taskRun)),
-            { meta: { handoffRun: runId } },
-          );
-      if (by === "app") await markCheckedByApp(root, before.change, runId).catch(() => undefined);
+      return await doneOnce(runId, by, before, onlyResume);
     } finally {
       doneBusy.delete(runId);
+    }
+  };
+  const doneOnce = async (
+    runId: string,
+    by: "person" | "app",
+    before: Awaited<ReturnType<typeof findRun>>,
+    onlyResume: boolean,
+  ) => {
+    let res: Ran;
+    if (onlyResume) res = { code: 0, out: [], err: [] };
+    else {
+      // Review of beta.23: who checked says who ran this check; an older check's mark goes.
+      await unmarkCheckedByApp(root, before.change, runId).catch(() => undefined);
+      // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
+      // ADR 0187: as a job, whose lines the hand-off run's Console entry shows.
+      res = await tracked(
+        ctx,
+        by === "app" ? `Checked the answer: ${runId}` : `Done: ${runId}`,
+        () => run((io) => runDone(root, runId, { by: user }, io, deps.taskRun)),
+        { meta: { handoffRun: runId } },
+      );
+      // Only a check the app ran is the app's: a run the command line validated, only resumed
+      // here, keeps saying a person checked it.
+      if (by === "app") await markCheckedByApp(root, before.change, runId).catch(() => undefined);
     }
     const after = await findRun(root, runId);
     ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runsDirOf, writeFileIfUnchanged } from "@maycombhq/core";
+import { withFileLock } from "./file-lock.js";
 import { isHandoffStep } from "./handoff-steps.js";
 import { listRuns } from "./runs-view.js";
 import { forgetUserState, readUserState, writeUserState } from "./user-state.js";
@@ -99,6 +100,29 @@ const resumeFile = (runId: string) => {
 /** ADR 0189: whether Atticus kept a step's resume for this run (Done, or the app's check, runs it). */
 export async function hasKeptResume(root: string, runId: string): Promise<boolean> {
   return !!(await readUserState(root, resumeFile(runId)).catch(() => undefined));
+}
+
+/**
+ * Review of beta.23: the run a command resumes (`--resume <run>` or `--resume=<run>`), or
+ * undefined. Once it ran, the resume the app kept for that run is done with.
+ */
+export function resumedRunOf(argv: readonly string[]): string | undefined {
+  const isRun = (v: string | undefined) => !!v && /^run-[0-9A-Za-z._-]+$/.test(v);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--resume" && isRun(argv[i + 1])) return argv[i + 1];
+    if (a.startsWith("--resume=") && isRun(a.slice("--resume=".length)))
+      return a.slice("--resume=".length);
+  }
+  return undefined;
+}
+
+/**
+ * Forget the resume the app kept for a run the command line resumed itself (review of beta.23),
+ * so neither the app's own check nor the next server start resumes it a second time.
+ */
+export async function forgetKeptResume(root: string, runId: string): Promise<void> {
+  await forgetUserState(root, resumeFile(runId)).catch(() => undefined);
 }
 
 /** The steps that read the wikis take `--source <wiki>` from the app (round 36). */
@@ -277,7 +301,20 @@ export async function prepareStep(
  * After Done passed: the step's resume, when the app prepared it. Gives the next run when the
  * step offers another prompt, else what it said (it wrote the files).
  */
-export async function resumeAfterDone(
+export function resumeAfterDone(
+  root: string,
+  runStep: StepRunner,
+  change: string,
+  runId: string,
+): Promise<{ next?: string; lines: string[]; applied?: string } | undefined> {
+  // Review of beta.23: one resume at a time per run, so two at once (Done and the app's own
+  // check) never both read the kept resume before either forgets it: the second finds none.
+  return withFileLock(join(runsDirOf(root), change, runId, "resume"), () =>
+    resumeOnce(root, runStep, change, runId),
+  );
+}
+
+async function resumeOnce(
   root: string,
   runStep: StepRunner,
   change: string,

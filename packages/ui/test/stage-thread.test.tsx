@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api, Finding } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { StageThreadView } from "../src/screens/work/StageThread.js";
+import { replyAndStart, replyFailed, StageThreadView } from "../src/screens/work/StageThread.js";
 import { lensesWaiting } from "../src/screens/work/critic-ran.js";
 import { strokeOf, EMPTY_FORM } from "../src/screens/work/Sketch.js";
 
@@ -166,6 +166,55 @@ describe("the stage's thread", () => {
     const after = page({ state: "drafting", waiting: undefined });
     expect(after).toContain(`>${esc(T.send)}<`);
     expect(after).toContain(`>${esc(T.startNext)}<`);
+  });
+
+  // Review of beta.23: "Send and start the next round" saved the reply, then the round didn't
+  // start: the box kept the words and said it failed, inviting the same reply twice.
+  it("says a reply is saved when the round it was to start didn't, and keeps no words to send again", async () => {
+    const said: string[] = [];
+    const io = (start: () => Promise<unknown>) => ({
+      post: async () => void said.push("posted"),
+      start,
+      reload: () => void said.push("reloaded"),
+    });
+    const failed = await replyAndStart(
+      io(async () => {
+        throw new Error("Another step is running.");
+      }),
+      true,
+    ).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(said).toEqual(["posted", "reloaded"]);
+    expect(replyFailed(failed)).toEqual({
+      clear: true,
+      text: T.savedNotStarted("Another step is running."),
+    });
+    // A reply that wasn't saved keeps its words, to send again.
+    const unsaved = await replyAndStart(
+      {
+        post: async () => {
+          throw new Error("The server is gone.");
+        },
+        start: async () => undefined,
+        reload: () => undefined,
+      },
+      true,
+    ).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(replyFailed(unsaved)).toEqual({ clear: false, text: "The server is gone." });
+    // Send only: no round is started, and the thread reads again.
+    said.length = 0;
+    let started = false;
+    await replyAndStart(
+      io(async () => (started = true)),
+      false,
+    );
+    expect(started).toBe(false);
+    expect(said).toEqual(["posted", "reloaded"]);
   });
 
   it("has loading, error, empty and not-yet states", () => {

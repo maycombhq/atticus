@@ -414,6 +414,12 @@ export const StageLoop = z.strictObject({
   /** Answered questions whose answers a draft has read. */
   read: z.array(z.string()).default([]),
   /**
+   * The answered questions the waiting draft's prompt carried (beta.23, optional and additive):
+   * when it is read in, only these are marked read, so a reply sent while the prompt waited is
+   * read by the next round instead of being marked read unseen.
+   */
+  carried: z.array(z.string()).optional(),
+  /**
    * Questions held back once and handed to the drafter with an answer on file that may decide
    * them, by the id they would have had (ADR 0117 addendum, 2026-10-24). One asked again after
    * that goes to a person. Also the critic's risks handed back for their one draft, as
