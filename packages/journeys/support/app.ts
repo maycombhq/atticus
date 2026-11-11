@@ -90,6 +90,9 @@ export async function forgeMetarepo(): Promise<string> {
     "--by",
     "tom",
   );
+  // Beta.26: the Console records every command that writes, these two included; making the
+  // fixture is not part of any journey, so the metarepo starts with nothing run, as a fresh one.
+  await rm(join(root, ".atticus", "logs"), { recursive: true, force: true });
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
   git("init", "-q", "-b", "main");
   // The person using the app is the metarepo's Git user (ADR 0073).

@@ -113,10 +113,12 @@ export function MapBar(p: {
           type="button"
           className={`btn viewer-btn arch-tools-toggle${t.open ? " primary" : ""}`}
           aria-expanded={t.open}
-          // Beta.26 review: the drawer isn't there while closed, so nothing is pointed at then.
+          // Beta.26 review: the drawer isn't there while closed, so nothing is pointed at then;
+          // data-controls names it always, so a tab left and come back to opens it again.
           {...(t.open ? { "aria-controls": t.bodyId } : {})}
           aria-label={t.open ? T.hide : T.show}
           title={t.open ? T.hide : T.show}
+          data-controls={t.bodyId}
           onClick={t.onToggle}
         >
           <MapIcon d="tools" />
@@ -183,6 +185,7 @@ export function CanvasLegend(p: {
         className="btn arch-legend-btn"
         aria-expanded={open}
         {...(open ? { "aria-controls": `${id}-legend` } : {})}
+        data-controls={`${id}-legend`}
         onClick={() => {
           setOpen(!open);
           saveLegendOpen(!open);

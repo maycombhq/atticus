@@ -5,6 +5,9 @@ const app = forgeJourney();
 
 test("follows the setup checklist and accepts the catalog", async ({ page }) => {
   await open(page, app(), "home");
+  // Beta.26: an estate not set up is one line at the top of Home; its button opens the steps in
+  // their fold at the foot, so Home still fits one screen.
+  await page.getByRole("button", { name: "Show the steps" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "Set up Atticus" })).toBeVisible();
   await expect(page.getByText(/Repos are cloned here/)).toBeVisible();
   await accessible(page, "setup checklist");

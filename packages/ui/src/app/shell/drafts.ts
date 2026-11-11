@@ -45,7 +45,9 @@ const HAS_REACT_ID = /«[^»]*»|:r[0-9a-z]*:|_r_[0-9a-z]+_/;
 export function toggleKeys(toggles: readonly ToggleLike[]): (string | undefined)[] {
   const seen = new Map<string, number>();
   return toggles.map((b) => {
-    const c = b.getAttribute("aria-controls");
+    // beta.26: a disclosure whose panel isn't drawn while closed points at it only when open
+    // (aria-controls must name an element there); data-controls names it always, for the draft.
+    const c = b.getAttribute("aria-controls") ?? b.getAttribute("data-controls");
     if (!c) return undefined;
     const k = c.replace(REACT_ID, "~");
     const n = seen.get(k) ?? 0;
@@ -77,7 +79,9 @@ export function reopen(open: ReadonlySet<string>, toggles: readonly ToggleLike[]
 
 /** The disclosure buttons in a page's element. */
 export const togglesIn = (root: ParentNode): ToggleLike[] => [
-  ...root.querySelectorAll<HTMLButtonElement>("button[aria-expanded][aria-controls]"),
+  ...root.querySelectorAll<HTMLButtonElement>(
+    "button[aria-expanded][aria-controls], button[aria-expanded][data-controls]",
+  ),
 ];
 
 const TEXT_TYPES = new Set(["", "text", "search", "email", "url", "number", "tel"]);

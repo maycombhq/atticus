@@ -417,6 +417,22 @@ describe("what a tab keeps of a page while another is shown", () => {
     ]);
   });
 
+  it("opens again a disclosure that names its panel only while open (data-controls), beta.26", () => {
+    // The map's Tools: aria-controls only while the drawer is drawn; data-controls always.
+    let expanded = false;
+    let clicks = 0;
+    const closed = {
+      getAttribute: (n: string) =>
+        n === "data-controls" ? "_r_9_-body" : n === "aria-expanded" ? String(expanded) : null,
+      click: () => {
+        clicks++;
+        expanded = !expanded;
+      },
+    };
+    expect(reopen(new Set(["~-body#0"]), [closed]).size).toBe(0);
+    expect(clicks).toBe(1);
+  });
+
   it("puts it back as the page's fields come in, as typing would", () => {
     const d = {
       fields: { "#brief-text": "Limit transfers to 5,000", "input:0": "holds" },
