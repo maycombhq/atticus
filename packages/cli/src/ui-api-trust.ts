@@ -21,7 +21,7 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
-import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
+import { frameworkFacts, frameworkGaps, keyIsSecret } from "@maycombhq/verify";
 import {
   badRequest,
   conflict,
@@ -89,13 +89,16 @@ const text = (p: string) => readFile(p, "utf8").catch(() => undefined);
 /** The commit a checkout is at, from its `.git` files (core, ADR 0140). */
 export { headFromFiles };
 
-/** Beta.24: the report's live-looking secrets, each a file, a line and a key (never a value). */
+/**
+ * Beta.24: the report's live-looking secrets, each a file, a line and a key (never a value).
+ * Review of beta.24: a key that is a secret itself is none (`""`), even from an older report.
+ */
 function secretsOf(raw: unknown): Pick<Report, "secrets"> {
   if (!Array.isArray(raw)) return {};
   const secrets = raw.flatMap((x) => {
     const s = x as { file?: unknown; line?: unknown; key?: unknown } | null;
     return s && typeof s.file === "string" && typeof s.key === "string" && Number.isInteger(s.line)
-      ? [{ file: s.file, line: s.line as number, key: s.key }]
+      ? [{ file: s.file, line: s.line as number, key: keyIsSecret(s.key) ? "" : s.key }]
       : [];
   });
   return secrets.length ? { secrets } : {};

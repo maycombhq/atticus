@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, ApiError, onWrote, useApi } from "../api/client.js";
+import { api, ApiError, onWrote, useApi, useReloadOnFiles } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
@@ -304,7 +304,16 @@ export function BringIn() {
 }
 
 /** `atticus verify --all --write`, then Propose for review. */
-export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: () => void }) {
+export function ApplyAll({
+  noPropose,
+  onDone,
+  onFailed,
+}: {
+  noPropose?: boolean;
+  onDone?: () => void;
+  /** Review of beta.24: it applied only some, or none: its errors are on show. */
+  onFailed?: () => void;
+}) {
   const act = useAction();
   const [lines, setLines] = useState<string[]>();
   // Review of beta.23: a repo with no clone here: Sync the repos, not a command to type.
@@ -326,6 +335,7 @@ export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: 
               } catch (e) {
                 setLines([(e as Error).message]);
                 setNext(nextAfter(e));
+                onFailed?.();
                 throw e;
               } finally {
                 workChanged();
@@ -353,10 +363,15 @@ export function ApplyAll({ noPropose, onDone }: { noPropose?: boolean; onDone?: 
 /**
  * The map's own bar: the repos whose corrections are newer than their last Apply (the server's
  * applyFirst), with one Apply for them all (each repo's own when only one), read again after
- * every write the app makes, so a line drawn or removed on the map shows here at once.
+ * every write the app makes, so a line drawn or removed on the map shows here at once. Review of
+ * beta.24: and on the server's file events, so a correction the CLI or an assistant writes shows
+ * too; after an Apply to every repo's map that applied only some, it stays (its errors and Sync
+ * with it) until dismissed or the next Apply, though one repo alone would get its own Apply.
  */
 export function CorrectionsToApply() {
   const plan = useApi<Plan>("/api/propose?scope=work");
+  useReloadOnFiles(plan);
+  const [failed, setFailed] = useState(false);
   const reload = plan.reload;
   useEffect(() => {
     work.addEventListener(WORK_CHANGED, reload);
@@ -368,7 +383,8 @@ export function CorrectionsToApply() {
   }, [reload]);
   const [applied, setApplied] = useState(false);
   const repos = plan.state === "ready" ? (plan.data.applyFirst ?? []) : [];
-  if (!repos.length && !applied) return null;
+  if (!repos.length && !applied && !failed) return null;
+  const all = repos.length > 1 || failed;
   return (
     <section
       className="panel stack"
@@ -380,9 +396,27 @@ export function CorrectionsToApply() {
           {P.onMap(repos.join(", "))}
         </p>
       )}
-      {repos.length > 1 && <ApplyAll noPropose onDone={() => setApplied(true)} />}
-      {repos.length === 1 && <ApplyAndPropose scope="corrections" repo={repos[0]} noPropose />}
-      {applied && !repos.length && (
+      {all && (
+        <ApplyAll
+          noPropose
+          onDone={() => {
+            setFailed(false);
+            setApplied(true);
+          }}
+          onFailed={() => setFailed(true)}
+        />
+      )}
+      {failed && (
+        <div>
+          <button type="button" className="btn" onClick={() => setFailed(false)}>
+            {P.dismissErrors}
+          </button>
+        </div>
+      )}
+      {!all && repos.length === 1 && (
+        <ApplyAndPropose scope="corrections" repo={repos[0]} noPropose />
+      )}
+      {applied && !repos.length && !failed && (
         <p role="status" className="work-say" style={{ margin: 0 }}>
           {P.onMapApplied} <a href="#/home">{P.toHome}</a>
         </p>

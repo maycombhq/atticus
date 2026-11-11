@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, useApi, type Loaded } from "../../api/client.js";
+import { api, useApi, writtenOf, type Loaded } from "../../api/client.js";
 import { Citation, useEvidence, type FactsView } from "../../app/evidence.js";
 import { escapeCloses } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -898,6 +898,11 @@ export function ArrowWrongForm(p: {
                 {A.declared(found.declared.length)}
               </p>
             )}
+            {found && found.byLine.length > 0 && (
+              <p className="ev-say" style={{ margin: 0 }}>
+                {A.byLine(found.byLine.length)}
+              </p>
+            )}
             {found && found.routing.length > 0 && (
               <p className="ev-say" style={{ margin: 0 }}>
                 {A.routing(found.routing.length)}
@@ -1001,7 +1006,11 @@ export function ArrowWrong(p: {
         for (const f of result.files) ev?.reload(f.repo);
         p.onSaved?.(lines);
       },
-      (e: unknown) => setSaving({ state: "error", text: message(e) }),
+      (e: unknown) => {
+        // Review of beta.24: files written all the same (a 500 names them) are read again.
+        for (const w of writtenOf(e)) ev?.reload(w.repo);
+        setSaving({ state: "error", text: message(e) });
+      },
     );
   };
   return (

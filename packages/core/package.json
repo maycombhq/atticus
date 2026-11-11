@@ -15,6 +15,10 @@
     "./light": {
       "types": "./dist/light.d.ts",
       "import": "./dist/light.js"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "import": "./dist/paths.js"
     }
   },
   "files": [

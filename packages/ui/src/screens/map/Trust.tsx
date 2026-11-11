@@ -174,7 +174,9 @@ export function TrustRow({ r }: { r: Repo }) {
           <ul className="ev-list" style={{ margin: "4px 0" }}>
             {report.secrets.map((x) => (
               <li key={`${x.file}:${x.line}`}>
-                <code className="mono">{T.secrets.at(x.file, x.line, x.key)}</code>
+                <code className="mono">
+                  {T.secrets.at(x.file, x.line, x.key || T.secrets.secretKey)}
+                </code>
               </li>
             ))}
           </ul>

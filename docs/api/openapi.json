@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.10.0",
+    "version": "3.11.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2151,8 +2151,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "The edge's id, as the view gives it (required)",
-            "required": false
+            "description": "The edge's id, as the view gives it",
+            "required": true
           },
           {
             "name": "node",
@@ -2160,7 +2160,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The node whose view has the edge (or focus)",
+            "description": "The node whose view has the edge: one of node or focus is required",
             "required": false
           },
           {
@@ -2169,7 +2169,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The node whose focus view has the edge (or node)",
+            "description": "The node whose focus view has the edge: one of node or focus is required",
             "required": false
           },
           {
@@ -2186,6 +2186,32 @@
               ]
             },
             "description": "The view's lens",
+            "required": false
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "2",
+                "3"
+              ]
+            },
+            "description": "With node: the view's depth, as GET /api/graph/node/{id} takes it (3.11.0)",
+            "required": false
+          },
+          {
+            "name": "all",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "With node: every box, as GET /api/graph/node/{id} takes it (3.11.0)",
             "required": false
           }
         ],
@@ -5226,7 +5252,7 @@
                 "properties": {
                   "items": {
                     "minItems": 1,
-                    "maxItems": 200,
+                    "maxItems": 5000,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -5325,6 +5351,26 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Too large: the upload is over the limit the problem names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
@@ -5336,7 +5382,7 @@
             }
           },
           "500": {
-            "description": "Written only in part: the problem names exactly what was written",
+            "description": "Not done: the problem says what was written all the same (`written`), most often nothing",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26493,6 +26539,25 @@
               "repos"
             ],
             "additionalProperties": false
+          },
+          "written": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "file"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [

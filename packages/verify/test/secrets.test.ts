@@ -141,4 +141,23 @@ describe("a live-looking secret: the review's cases (beta.24 review)", () => {
       { file: "config.json", line: 3, key: "/AssignMessage/Set/Headers/Header[@name='x-api-key']" },
     ]);
   });
+
+  it("never names a line by a key that is a secret itself: an access key id, a random token (review of beta.24)", () => {
+    const id = "AKIAIOSFODNN7EXAMPLE";
+    const cases: [string, string][] = [
+      ["credentials", `${id}:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`],
+      [".env", `${id}=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`],
+      ["config/app.yml", `  - ${id}: x`],
+      ["config/app.yml", `  q7Xf3Kd92LmZx41RtB8w: ${id}`],
+    ];
+    for (const [file, line] of cases) {
+      const found = liveSecretsIn(file, [line]);
+      expect(found, line).toEqual([{ file, line: 1, key: "" }]);
+      expect(JSON.stringify(found)).not.toContain(id);
+    }
+    // A key of words, even a long one with a digit, is still said.
+    expect(liveSecretsIn(".env", ["NorthwindV2ApiKey=nwlive-Q7f3Kd92LmZx41Rt"])).toEqual([
+      { file: ".env", line: 1, key: "NorthwindV2ApiKey" },
+    ]);
+  });
 });

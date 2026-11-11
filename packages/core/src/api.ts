@@ -483,8 +483,20 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   drawn in the architecture and repo lenses, never merged into calls or their counts; its join's
  *   `how` is `coordinates` and it carries `dependency` (group, name, version, scope), with the
  *   dependency's lines as `caller` and the publishing lines as `callee`. Additive only.
+ * 3.11.0 (review of beta.24, round 2): POST /api/links/corrections takes up to 5000 items
+ *   (`LINK_CORRECTIONS_MAX`, was 200), every call GET /api/graph/edge-calls can give, still all
+ *   or none, in a body of up to 16 MB. An item is skipped only when the correction its fact
+ *   meets now (by its id and cite, as verify meets it) says the same: one on file for a line the
+ *   fact has left meets nothing, so the new one is written. A repo named in another case is the
+ *   one the manifests or the facts files spell (one plan for it); a name none spells is 404. A
+ *   corrections file another process holds past the wait answers 409 with `written: []`. A
+ *   problem may carry `written` (the repos whose files were written, `{ repo, file }`); a 500
+ *   names them, and most write none. GET /api/graph/edge-calls requires `edge` and one of
+ *   `node` or `focus`, and takes the node view's `depth` and `all`, so an edge of a depth-2 or
+ *   an all view is found. Repo trust's `secrets[].key` is empty when the key is a secret itself
+ *   (an access key id), never shown. Additive only.
  */
-export const API_VERSION = "3.10.0";
+export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -508,6 +520,11 @@ export const Problem = z.object({
   needs: z.object({ role: z.string(), names: z.array(z.string()) }).optional(),
   /** 3.9.0: what the app offers next, e.g. Sync the repos with no base clone here. */
   next: NextStep.optional(),
+  /**
+   * 3.11.0: a batch write's problem (POST /api/links/corrections): the repos whose files were
+   * written all the same, each `{ repo, file }`; empty when none was.
+   */
+  written: z.array(z.object({ repo: z.string(), file: z.string() })).optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);
@@ -1761,6 +1778,9 @@ export const FactCorrectionResult = z.object({
  * why for every one (an item's own `reason` first). Every item is checked before any is written;
  * then each repo's corrections file takes its lines in one write.
  */
+/** 3.11.0: the most calls one POST /api/links/corrections corrects (was 200). */
+export const LINK_CORRECTIONS_MAX = 5000;
+
 export const LinkCorrectionsRequest = z.strictObject({
   items: z
     .array(
@@ -1773,7 +1793,7 @@ export const LinkCorrectionsRequest = z.strictObject({
       }),
     )
     .min(1)
-    .max(200),
+    .max(LINK_CORRECTIONS_MAX),
   reason: z.string().trim().min(1).max(500).optional(),
 });
 export const LinkCorrectionsResult = z.object({
@@ -1791,8 +1811,9 @@ export const LinkCorrectionsResult = z.object({
   /** The commands that apply them, one per repo. */
   verify: z.array(z.string()),
   /**
-   * Review of beta.24: the items left out because the newest correction on file for that fact
-   * says the same already (asked again, nothing is written twice).
+   * Review of beta.24: the items left out because the correction on file that the fact meets
+   * now says the same already (asked again, nothing is written twice; 3.11.0: one for a line the
+   * fact has left meets nothing).
    */
   skipped: z.array(z.object({ repo: z.string(), fact: z.string() })).optional(),
 });
@@ -5910,10 +5931,20 @@ const OPS: Record<string, Record<string, Op>> = {
         "Every call merged into one edge of a view (a node's, or a focus), not only the first 20 the view lists (review of beta.24)",
       tag: "views",
       params: [
-        q("edge", str, "The edge's id, as the view gives it (required)"),
-        q("node", str, "The node whose view has the edge (or focus)"),
-        q("focus", str, "The node whose focus view has the edge (or node)"),
+        { ...q("edge", str, "The edge's id, as the view gives it"), required: true },
+        q("node", str, "The node whose view has the edge: one of node or focus is required"),
+        q("focus", str, "The node whose focus view has the edge: one of node or focus is required"),
         q("lens", { type: "string", enum: [...GRAPH_LENSES] }, "The view's lens"),
+        q(
+          "depth",
+          { type: "string", enum: ["1", "2", "3"] },
+          "With node: the view's depth, as GET /api/graph/node/{id} takes it (3.11.0)",
+        ),
+        q(
+          "all",
+          { type: "string", enum: ["1"] },
+          "With node: every box, as GET /api/graph/node/{id} takes it (3.11.0)",
+        ),
       ],
       ok: { status: 200, schema: "GraphEdgeCallsView", description: "OK" },
       errors: [400, 404, 422],
@@ -6408,7 +6439,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       body: LinkCorrectionsRequest,
       ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },
-      errors: [400, 404, 422, 500],
+      errors: [400, 404, 409, 413, 422, 500],
     },
   },
   "/api/facts/{repo}/preview": {
@@ -8396,7 +8427,7 @@ const ERROR_TEXT: Record<number, string> = {
   409: "Conflict: the file changed since you read it, or the state doesn't allow this",
   413: "Too large: the upload is over the limit the problem names",
   422: "Atticus refused: the problem carries the command's own words (ADR 0043)",
-  500: "Written only in part: the problem names exactly what was written",
+  500: "Not done: the problem says what was written all the same (`written`), most often nothing",
 };
 
 /** Build the OpenAPI 3.1 document from the zod schemas. */

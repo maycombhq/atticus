@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { normalizePath } from "@maycombhq/core/paths";
 import { hitsAt, splitAt, type FactCite, type FactsView } from "../../app/evidence-model.js";
 import type { Views } from "./model.js";
 
@@ -68,14 +69,18 @@ export interface CallToCorrect {
 
 /**
  * What a correction of one link rests on (review of beta.24): every call fact on every line of
- * the caller's (of the link's method, when a line holds several), each the caller's own. A link a
+ * the caller's (of the link's method, when a line holds several), each the caller's own. Round 2:
+ * and of the link's path, normalised as the join normalises it, so a line that holds another
+ * arrow's call of the same method leaves that one alone; when no call on a line has the link's
+ * path (a base path the join took off, say), every call of the method there, and `byLine` says
+ * so. A link a
  * person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
  * with no line of a caller's (`routing`, a gateway proxy's routing) has none of its own: its
  * proxy's forwarding call is shared by every caller of the route, so it is never corrected from
  * here. `none`: the caller's lines hold no call fact loaded.
  */
 export type LinkBasis =
-  | { kind: "calls"; calls: CallToCorrect[] }
+  | { kind: "calls"; calls: CallToCorrect[]; byLine?: boolean }
   | { kind: "declared" }
   | { kind: "routing" }
   | { kind: "none" };
@@ -85,21 +90,29 @@ export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefin
   const lines = callerLines(j);
   if (!lines.length) return { kind: "routing" };
   const m = (x: string | undefined) => (x ?? "").toUpperCase();
+  const path = j.path ? normalizePath(j.path) : undefined;
   const calls: CallToCorrect[] = [];
   const seen = new Set<string>();
+  let byLine = false;
   for (const line of lines) {
     const all = callFactsOn(line, viewOf(line.repo));
     const ofMethod = all.filter(
       (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
     );
-    for (const c of ofMethod.length ? ofMethod : all) {
+    const some = ofMethod.length ? ofMethod : all;
+    const ofPath = path
+      ? some.filter((c) => c.claim.path !== undefined && normalizePath(c.claim.path) === path)
+      : some;
+    if (path && !ofPath.length && some.length > 1) byLine = true;
+    for (const c of ofPath.length ? ofPath : some) {
       const k = `${line.repo}\u0000${c.id}`;
       if (seen.has(k)) continue;
       seen.add(k);
       calls.push({ repo: line.repo, at: line.at, fact: c });
     }
   }
-  return calls.length ? { kind: "calls", calls } : { kind: "none" };
+  if (!calls.length) return { kind: "none" };
+  return byLine ? { kind: "calls", calls, byLine } : { kind: "calls", calls };
 }
 
 /** The repos whose facts a link's correction reads: its caller's. */
@@ -111,26 +124,36 @@ export const callerRepos = (joins: readonly Join[]): string[] => [
 export function arrowCalls(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
-): { calls: CallToCorrect[]; missing: string[]; declared: string[]; routing: string[] } {
+): {
+  calls: CallToCorrect[];
+  missing: string[];
+  declared: string[];
+  routing: string[];
+  /** Links whose line holds no call of their path: every call of the method there is taken. */
+  byLine: string[];
+} {
   const calls: CallToCorrect[] = [];
   const missing: string[] = [];
   const declared: string[] = [];
   const routing: string[] = [];
+  const byLine: string[] = [];
   const seen = new Set<string>();
   for (const j of joins) {
     const b = linkBasis(j, viewOf);
     if (b.kind === "declared") declared.push(j.interface);
     else if (b.kind === "routing") routing.push(j.interface);
     else if (b.kind === "none") missing.push(j.interface);
-    else
+    else {
+      if (b.byLine) byLine.push(j.interface);
       for (const c of b.calls) {
         const k = `${c.repo}\u0000${c.fact.id}`;
         if (seen.has(k)) continue;
         seen.add(k);
         calls.push(c);
       }
+    }
   }
-  return { calls, missing, declared, routing };
+  return { calls, missing, declared, routing, byLine };
 }
 
 /**
@@ -151,13 +174,14 @@ export function arrowCorrections(
       missing: string[];
       declared: string[];
       routing: string[];
+      byLine: string[];
     }
   | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" } {
   const reason = fix.reason.trim();
   if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
   const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
   if (fix.kind !== "not-a-call" && !target) return { error: "needTarget" };
-  const { calls, missing, declared, routing } = arrowCalls(joins, viewOf);
+  const { calls, missing, declared, routing, byLine } = arrowCalls(joins, viewOf);
   const items: Api.LinkCorrectionsRequestT["items"] = [];
   const lines = new Set<string>();
   let already = 0;
@@ -180,6 +204,7 @@ export function arrowCorrections(
     missing,
     declared,
     routing,
+    byLine,
   };
 }
 

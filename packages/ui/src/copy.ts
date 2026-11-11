@@ -1046,6 +1046,8 @@ export const COPY = {
           ? "A secret seems to sit in a config file"
           : `${n} secrets seem to sit in config files`,
       at: (file: string, line: number, key: string) => `A secret sits in ${file}:${line} (${key})`,
+      /** Review of beta.24: what a line is said by when its key is a secret itself. */
+      secretKey: "a key that looks like a secret",
       fix: "Move it to where your secrets live (a vault, an environment variable, a Secret) and read it from there; then rotate it, as it has been in the repo. Atticus never copies its value into a map.",
     },
     coverage: "Coverage",
@@ -4314,6 +4316,8 @@ export const COPY = {
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
     onMap: (repos: string) =>
       `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
+    /** Review of beta.24: put away what Apply to every repo's map said went wrong. */
+    dismissErrors: "Dismiss",
     onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
@@ -5374,6 +5378,9 @@ export const COPY = {
       callsFailed: (why: string) => `Couldn't read every call on this arrow: ${why}`,
       declared: (n: number) =>
         `${n} of these link${n === 1 ? " is" : "s are"} a person's declaration, not a call in code, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: withdraw a declaration from This link is wrong under its call.`,
+      /** Review of beta.24: a link whose line holds no call of its path, only others'. */
+      byLine: (n: number) =>
+        `${n === 1 ? "One link's line holds" : `${n} links' lines hold`} no call of ${n === 1 ? "its" : "their"} path, so every call of the method on ${n === 1 ? "that line" : "those lines"} is corrected: check they all belong to this arrow.`,
       routing: (n: number) =>
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: correct the proxy's forwarding on the proxy's own box, which changes that route for every caller.`,
       already:

@@ -518,3 +518,153 @@ describe("every call on an arrow, all or none", () => {
     expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(2);
   });
 });
+
+/**
+ * Review of beta.24, round 2: an item is skipped only when the correction on file applies to the
+ * fact as it is now (the code moved: the fact cites another line, and the old correction meets
+ * nothing) and says the same; an arrow of more than 200 calls can be corrected in one request; a
+ * corrections file another process holds past the wait is a conflict (409) that wrote nothing;
+ * a repo named in another case is the facts file's spelling, one plan for it.
+ */
+describe("every call on an arrow: what is on file, how many, who holds it", () => {
+  let r3: string;
+  let s3: RunningServer;
+  const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8");
+  const post = async (body: unknown) => {
+    const r = await fetch(s3.url + "/api/links/corrections", {
+      method: "POST",
+      headers: { "X-Atticus-Token": s3.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+  };
+  const text = (repo: string) =>
+    readFile(join(r3, `facts/${repo}.corrections.jsonl`), "utf8").catch(() => undefined);
+  beforeAll(async () => {
+    r3 = await mkdtemp(join(tmpdir(), "atticus-ui-arrow3-"));
+    await mkdir(join(r3, "facts"), { recursive: true });
+    for (const repo of ["forge-ledger", "forge-teller"])
+      await writeFile(join(r3, `facts/${repo}.jsonl`), facts);
+    s3 = await startServer({
+      root: r3,
+      port: 0,
+      user: PERSON,
+      extend: (r, ctx) => uiFactsRoutes(r, ctx, { now: () => NOW, lockWaitMs: 300 }),
+    });
+  });
+  afterAll(async () => {
+    s3?.close();
+    const { rm } = await import("node:fs/promises");
+    await rm(r3, { recursive: true, force: true });
+  });
+
+  it("writes a correction whose earlier one cites a line the fact has left (the code moved)", async () => {
+    // An earlier correction of c-notify when it sat on line 5; it is on line 9 now.
+    const old = JSON.stringify({
+      schemaVersion: 1,
+      fact: "c-notify",
+      target: {
+        kind: "call",
+        file: "src/main/java/forge/ledger/Notifier.java",
+        line: 5,
+        value: "/notify",
+      },
+      action: "wrong",
+      reason: "A health probe",
+      by: PERSON,
+      at: "2026-09-01T00:00:00.000Z",
+    });
+    await writeFile(join(r3, "facts/forge-ledger.corrections.jsonl"), old + "\n");
+    const view = await fetch(s3.url + "/api/facts/forge-ledger", {
+      headers: { "X-Atticus-Token": s3.token },
+    }).then((r) => r.json() as Promise<Api.RepoFactsViewT>);
+    expect(view.facts.find((f) => f.id === "c-notify")!.correction).toBeUndefined();
+    const r = await post({
+      items: [{ repo: "forge-ledger", fact: "c-notify", action: "wrong" }],
+      reason: "A health probe",
+    });
+    expect(r.status).toBe(200);
+    const res = Api.LinkCorrectionsResult.parse(r.body);
+    expect(res.skipped).toBeUndefined();
+    expect(res.files.map((f) => [f.repo, f.corrections[0]!.target.line])).toEqual([
+      ["forge-ledger", 9],
+    ]);
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(2);
+    // Now it applies and says the same: asked again, skipped.
+    const again = Api.LinkCorrectionsResult.parse(
+      (
+        await post({
+          items: [{ repo: "forge-ledger", fact: "c-notify", action: "wrong" }],
+          reason: "A health probe",
+        })
+      ).body,
+    );
+    expect(again.files).toEqual([]);
+    expect(again.skipped).toEqual([{ repo: "forge-ledger", fact: "c-notify" }]);
+  });
+
+  it("takes an arrow of thousands of calls in one request, and refuses more than 5000", async () => {
+    await writeFile(join(r3, "facts/forge-teller.corrections.jsonl"), "");
+    const reason = "A probe the platform team runs, not a call to the mailer. ".repeat(8).trim();
+    const item = { repo: "forge-teller", fact: "c-fx-rate", action: "wrong" as const, reason };
+    const many = await post({ items: Array.from({ length: 5000 }, () => item) });
+    expect(many.status).toBe(200);
+    const res = Api.LinkCorrectionsResult.parse(many.body);
+    expect(res.files.map((f) => f.lines.length)).toEqual([1]);
+    expect(res.skipped).toEqual([{ repo: "forge-teller", fact: "c-fx-rate" }]);
+    const over = await post({ items: Array.from({ length: 5001 }, () => item) });
+    expect(over.status).toBe(400);
+  });
+
+  it("answers 409, nothing written, when another process holds a corrections file past the wait", async () => {
+    const { hostname } = await import("node:os");
+    const file = join(r3, "facts/forge-ledger.corrections.jsonl");
+    const before = await text("forge-ledger");
+    await writeFile(
+      `${file}.lock`,
+      JSON.stringify({
+        pid: process.ppid,
+        host: hostname(),
+        startedAt: new Date().toISOString(),
+        what: "write of forge-ledger.corrections.jsonl",
+        token: "other",
+      }),
+    );
+    try {
+      const r = await post({
+        items: [
+          { repo: "forge-teller", fact: "c-notify", action: "wrong" },
+          { repo: "forge-ledger", fact: "c-fx-rate", action: "wrong" },
+        ],
+        reason: "Not a call",
+      });
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ written: [] });
+      expect(String(r.body.detail)).toContain("Nothing was written to any repo");
+      expect(await text("forge-ledger")).toBe(before);
+    } finally {
+      const { rm } = await import("node:fs/promises");
+      await rm(`${file}.lock`, { force: true });
+    }
+  });
+
+  it("makes one plan of a repo named in two cases, by the facts file's spelling", async () => {
+    await writeFile(join(r3, "facts/forge-ledger.corrections.jsonl"), "");
+    const r = await post({
+      items: [
+        { repo: "forge-ledger", fact: "c-fx-rate", action: "edit", set: { to: "forge-mailer" } },
+        { repo: "Forge-Ledger", fact: "c-notify", action: "edit", set: { to: "forge-mailer" } },
+      ],
+      reason: "The mailer",
+    });
+    expect(r.status).toBe(200);
+    const res = Api.LinkCorrectionsResult.parse(r.body);
+    expect(res.files.map((f) => [f.repo, f.lines.length])).toEqual([["forge-ledger", 2]]);
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(2);
+    // A repo no manifest and no facts file names is refused.
+    const none = await post({
+      items: [{ repo: "forge-nowhere", fact: "c-notify", action: "wrong", reason: "x" }],
+    });
+    expect(none.status).toBe(404);
+  });
+});

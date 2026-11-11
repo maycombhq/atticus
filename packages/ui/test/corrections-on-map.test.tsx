@@ -11,8 +11,10 @@ vi.mock("react", async () => {
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
 let applyFirst: string[] | undefined = [];
+const reloadOnFiles: unknown[][] = [];
 vi.mock("../src/api/client.js", async () => ({
   ...(await vi.importActual<object>("../src/api/client.js")),
+  useReloadOnFiles: (...views: unknown[]) => void reloadOnFiles.push(views),
   useApi: () => ({
     state: "ready",
     data: {
@@ -57,4 +59,30 @@ it("after Apply to every repo's map, says so and where to propose it", () => {
   applyFirst = [];
   m.render();
   expect(text(m.tree)).toContain(P.onMapApplied);
+});
+
+// Review of beta.24: a correction the CLI or an assistant writes shows too, by the server's
+// file events, not only the app's own writes.
+it("is read again when a file changes on the server", () => {
+  applyFirst = ["forge-ledger"];
+  reloadOnFiles.length = 0;
+  mount(CorrectionsToApply as never, {} as never);
+  expect(reloadOnFiles.at(-1)?.[0]).toMatchObject({ state: "ready" });
+});
+
+// Review of beta.24: Apply to every repo's map applied two of three: its errors and Sync stay
+// until dismissed or the next Apply, though one repo is left (which alone would get its own).
+it("keeps Apply to every repo's map, with its errors, after it applied only some", () => {
+  applyFirst = ["forge-card-vault", "forge-ledger", "forge-teller"];
+  const m = mount(CorrectionsToApply as never, {} as never);
+  (all(m.tree).find((e) => e.type === ApplyAll)!.props.onFailed as () => void)();
+  applyFirst = ["forge-teller"];
+  m.render();
+  expect(all(m.tree).some((e) => e.type === ApplyAll)).toBe(true);
+  expect(all(m.tree).some((e) => e.type === ApplyAndPropose)).toBe(false);
+  const dismiss = all(m.tree).find((e) => e.type === "button" && text(e) === P.dismissErrors)!;
+  (dismiss.props.onClick as () => void)();
+  m.render();
+  expect(all(m.tree).find((e) => e.type === ApplyAndPropose)?.props.repo).toBe("forge-teller");
+  expect(all(m.tree).some((e) => e.type === ApplyAll)).toBe(false);
 });

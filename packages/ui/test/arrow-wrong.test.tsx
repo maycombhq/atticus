@@ -19,8 +19,8 @@ import {
 } from "../src/screens/architecture/WhyLinked.js";
 
 /**
- * Beta.24: a link a gateway's routing made can be corrected at its forwarding call, and "This
- * whole arrow is wrong" corrects every call on an arrow in one step (one form, one write of each
+ * Beta.24: a link a gateway's routing made is never corrected at the route's shared forwarding
+ * call, and "This whole arrow is wrong" corrects every call on an arrow in one step (one form, one write of each
  * caller repo's corrections file), beside the per-call "This link is wrong", which is unchanged.
  */
 
@@ -227,6 +227,7 @@ describe("this whole arrow is wrong", () => {
       // The proxy's forwarding is shared by every caller of the route: never corrected here.
       declared: ["if-declared"],
       routing: ["if-hop"],
+      byLine: [],
     });
     expect(
       arrowCorrections([JOIN, TELLER], viewOf, { kind: "not-a-call", reason: "health probes" }),
@@ -242,6 +243,7 @@ describe("this whole arrow is wrong", () => {
       missing: [],
       declared: [],
       routing: [],
+      byLine: [],
     });
   });
 
@@ -377,6 +379,49 @@ describe("this whole arrow is wrong", () => {
     expect(
       whatMoved(view([merged]), view([]), ["forge-web:src/signup.service.ts:7"]).map((m) => m.call),
     ).toEqual(["forge-web:src/signup.service.ts:7"]);
+  });
+
+  // Review of beta.24, round 2: two calls of one method on one line, to two paths (two arrows).
+  it("corrects only the call of the link's path on a line that holds another arrow's call", () => {
+    const fact = (id: string, path: string, to: string): Api.FactCiteViewT => ({
+      ...CALL,
+      id,
+      label: `GET ${path} → ${to}`,
+      claim: { method: "GET", path, to, value: path },
+      cite: { file: "src/Rates.java", line: 12, value: path },
+    });
+    const view: FactsView = {
+      ...FACTS,
+      repo: "forge-ledger",
+      file: "facts/forge-ledger.jsonl",
+      facts: [
+        fact("c-rates", "/v1/rates/{pair}", "northwind-fx"),
+        fact("c-limits", "/v1/limits", "forge-limits"),
+      ],
+    };
+    const join: Api.HierJoinT = {
+      ...JOIN,
+      interface: "if-ledger-fx",
+      from: "ledger-api",
+      to: "northwind-fx",
+      how: "path",
+      method: "GET",
+      // The join's own spelling of the path: its parameter normalised.
+      path: "/v1/rates/{}",
+      caller: [{ source: "code", repo: "forge-ledger", at: "src/Rates.java:12" }],
+      callee: [],
+    };
+    const r = arrowCorrections([join], () => view, { kind: "not-a-call", reason: "a probe" });
+    expect("body" in r && r.body.items.map((i) => i.fact)).toEqual(["c-rates"]);
+    expect("body" in r && r.byLine).toEqual([]);
+    // No call on the line has the link's path: every call there, and the form says so.
+    const elsewhere = { ...join, path: "/v2/quotes" };
+    const all = arrowCorrections([elsewhere], () => view, { kind: "not-a-call", reason: "x" });
+    expect("body" in all && all.body.items.map((i) => i.fact)).toEqual(["c-rates", "c-limits"]);
+    expect("body" in all && all.byLine).toEqual(["if-ledger-fx"]);
+    expect(
+      html(<ArrowWrongForm link={edge([elsewhere])} viewOf={() => view} known={[]} startOpen />),
+    ).toContain(esc(W.arrow.byLine(1)));
   });
 
   it("means every call when the view lists only 20 of an arrow's 25", () => {

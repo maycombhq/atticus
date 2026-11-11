@@ -9,6 +9,7 @@ import { hasSecretShape, looksLikeSecret } from "@maycombhq/core";
 export interface SecretLine {
   file: string;
   line: number;
+  /** Review of beta.24: empty when the key is a secret itself (an access key id), never shown. */
   key: string;
 }
 
@@ -71,8 +72,26 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
   return undefined;
 }
 
-/** The lines of a config file that hold what looks like a live secret. */
+/**
+ * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
+ * well-known token shape (an access key id written as a credentials file's key), or a long run of
+ * letters and digits that switches between them as a random token does (`q7Xf3Kd9…`), not words.
+ */
+export function keyIsSecret(key: string): boolean {
+  if (hasSecretShape(key)) return true;
+  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
+  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
+  let switches = 0;
+  for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
+  return switches >= key.length / 2;
+}
+
+/**
+ * The lines of a config file that hold what looks like a live secret. Review of beta.24: a key
+ * that is a secret itself (`keyIsSecret`) is said as none (`""`, the app's words say why).
+ */
 export function liveSecretsIn(file: string, lines: readonly string[]): SecretLine[] {
+  const shownKey = (key: string) => (keyIsSecret(key) ? "" : key);
   if (!isConfigFile(file)) return [];
   const out: SecretLine[] = [];
   lines.forEach((text, i) => {
@@ -98,12 +117,13 @@ export function liveSecretsIn(file: string, lines: readonly string[]): SecretLin
         looksLikeSecret(key, value),
     );
     if (named) {
-      out.push({ file, line: i + 1, key: named.key });
+      out.push({ file, line: i + 1, key: shownKey(named.key) });
       return;
     }
     // A secret by its shape alone (an access key id, a URL's password, a bearer token), whatever
-    // names it: said by the line's key, if it has one.
-    if (hasSecretShape(text)) out.push({ file, line: i + 1, key: pairs[0]?.key ?? "(token)" });
+    // names it: said by the line's key, if it has one and it is no secret itself.
+    if (hasSecretShape(text))
+      out.push({ file, line: i + 1, key: pairs[0] ? shownKey(pairs[0].key) : "(token)" });
   });
   return out;
 }

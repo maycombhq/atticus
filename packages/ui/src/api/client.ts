@@ -19,6 +19,8 @@ export interface Problem {
   notYet?: boolean;
   /** API 3.9.0 (ADR 0188): what the app offers next, Sync the repos with no base clone here. */
   next?: { step: "sync"; repos: string[] };
+  /** API 3.11.0: a batch write's files written all the same (a 500 names them; most none). */
+  written?: { repo: string; file: string }[];
 }
 
 export class ApiError extends Error {
@@ -119,9 +121,30 @@ export async function api<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean } = {},
 ): Promise<T> {
-  const r = await counted<T>(path, o);
-  if (o.method && o.method !== "GET") wrote.dispatchEvent(new Event(WROTE));
-  return r;
+  const write = !!o.method && o.method !== "GET";
+  try {
+    const r = await counted<T>(path, o);
+    if (write) wrote.dispatchEvent(new Event(WROTE));
+    return r;
+  } catch (e) {
+    // Review of beta.24: a write that failed but wrote some files all the same is heard too.
+    if (write && writtenOf(e).length) wrote.dispatchEvent(new Event(WROTE));
+    throw e;
+  }
+}
+
+/**
+ * API 3.11.0: the files a failed write wrote all the same (its problem's `written`, each repo's
+ * file), so a page reads those again; none for any other error.
+ */
+export function writtenOf(e: unknown): { repo: string; file: string }[] {
+  const w = e instanceof ApiError ? e.problem.written : undefined;
+  return Array.isArray(w)
+    ? w.filter(
+        (x): x is { repo: string; file: string } =>
+          !!x && typeof x.repo === "string" && typeof x.file === "string",
+      )
+    : [];
 }
 
 /**

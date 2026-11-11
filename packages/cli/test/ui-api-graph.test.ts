@@ -109,6 +109,19 @@ describe("GET /api/graph/edge-calls: every call on one edge (review of beta.24)"
     expect((await get(`/api/graph/edge-calls?node=estate&edge=calls:nope>nope`)).status).toBe(404);
     expect((await get(`/api/graph/edge-calls?edge=${encodeURIComponent(e.id)}`)).status).toBe(400);
   });
+
+  it("finds an edge of a deeper view by the view's own depth (3.11.0)", async () => {
+    const one = Api.GraphNodeView.parse((await get("/api/graph/node/estate")).body);
+    const two = Api.GraphNodeView.parse((await get("/api/graph/node/estate?depth=2")).body);
+    const e = two.edges.find((x) => !one.edges.some((y) => y.id === x.id) && x.joins?.length)!;
+    expect(e).toBeDefined();
+    const at = `/api/graph/edge-calls?node=estate&edge=${encodeURIComponent(e.id)}`;
+    expect((await get(at)).status).toBe(404);
+    const r = await get(`${at}&depth=2`);
+    expect(r.status).toBe(200);
+    expect(Api.GraphEdgeCallsView.parse(r.body).count).toBe(e.count);
+    expect((await get(`${at}&depth=7`)).status).toBe(400);
+  });
 });
 
 describe("GET /api/graph/focus/{id}: a node and its neighbours", () => {
