@@ -230,20 +230,46 @@ export function hostsIgnoreCovers(
  * The open join host questions of a repo to retire after a write, each with why: those this write
  * no longer asks (the read since set the host, a person's answer elsewhere joins the calls, the
  * calls are gone). One whose host is asked now under another id (its calls changed) names it.
- * An answered question is never listed: its answer still names the calls' target.
+ * An answered question is never listed: its answer still names the calls' target. Beta.25: the
+ * repo's open hosts questions too (`hostsOpen`), once the join asks about their host from no repo.
  */
 export function staleJoinHostQuestions(input: {
   repo: string;
   open: readonly Question[];
   drafted: readonly { id: string; host: string }[];
   join?: FactsJoinResult;
+  /**
+   * Beta.25: the open hosts questions (`scan-hosts`) of the repo. One retires the same way when
+   * the join no longer asks about its host from any repo (the profile or the manifest names it
+   * now, the calls are gone), unless the scan's own asking still asks it (`stillAsked`).
+   */
+  hostsOpen?: readonly Question[];
+  /** The ids of the hosts questions the scan's asking (`askHosts`) still asks, kept open. */
+  stillAsked?: ReadonlySet<string>;
 }): { id: string; why: string; replacedBy?: string[] }[] {
   const drafted = new Set(input.drafted.map((d) => d.id));
   const out: { id: string; why: string; replacedBy?: string[] }[] = [];
-  for (const q of input.open) {
-    if (q.state !== "open" || q.repo !== input.repo || !isJoinHostQuestion(q)) continue;
+  const joinAsks = new Set(
+    (input.join?.asks ?? []).flatMap((a) =>
+      a.reason === "unknown-host" && a.host ? [a.host] : [],
+    ),
+  );
+  // No join this write: it can't say it no longer asks.
+  const hostsStep = (input.join ? (input.hostsOpen ?? []) : []).filter(
+    (q) =>
+      q.state === "open" &&
+      q.repo === input.repo &&
+      q.askedBy?.step === HOSTS_STEP &&
+      !input.stillAsked?.has(q.id) &&
+      !!hostOfQuestion(q) &&
+      !joinAsks.has(hostOfQuestion(q)!),
+  );
+  for (const q of [...input.open, ...hostsStep]) {
+    const isHostsStep = q.askedBy?.step === HOSTS_STEP;
+    if (!isHostsStep && (q.state !== "open" || q.repo !== input.repo || !isJoinHostQuestion(q)))
+      continue;
     if (drafted.has(q.id)) continue;
-    const host = joinHostOfQuestion(q)!;
+    const host = isHostsStep ? hostOfQuestion(q)! : joinHostOfQuestion(q)!;
     const by = input.drafted.filter((d) => d.host === host).map((d) => d.id);
     if (by.length) {
       out.push({
