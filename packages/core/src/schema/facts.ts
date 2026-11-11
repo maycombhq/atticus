@@ -303,7 +303,7 @@ export const DeployFact = z.strictObject({
  * it builds on. A version-4 file reads unchanged: both are new kinds, nothing else moved.
  *
  * ADR 0192 addendum (beta.25), no version change: a pom's `<scope>system</scope>` is recorded as
- * `provided` (it is drawn so), so 2.0.0-beta.24 reads every file 2.0.0-beta.25 writes. A reader of
+ * `provided` (it is drawn so), so 2.0.0-beta.25 reads every file 2.0.0-beta.25 writes. A reader of
  * beta.25 or later leaves out, one fact at a time, a fact a newer Atticus wrote (a kind it doesn't
  * know, or a known kind with a value or a field it doesn't), said as such (`parseFacts`' `newer`),
  * rather than refusing the whole file, and `atticus verify --write` keeps that line as written.

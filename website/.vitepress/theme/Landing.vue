@@ -55,8 +55,20 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.24";
+const release = "2.0.0-beta.25";
 const news = [
+  {
+    body: "The map's side panels are laid out: an arrow's calls as cards with their lines, a box's actions in two groups, and when one line holds several calls, All calls on this arrow are wrong asks which.",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "Secrets never reach a message, a report or a facts file, and a service behind a proxy is asked about, never sent outside, when it serves the proxy's path.",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "A multi-module service is one box with one depends on arrow to the library it builds on, and CI runs in about 14 minutes instead of an hour.",
+    link: "/guide/correcting-the-map.html",
+  },
   {
     body: "Correct a whole arrow at once: All calls on this arrow are wrong moves or removes every call on it in one write, and every arrow offers This link is wrong.",
     link: "/guide/correcting-the-map.html",
