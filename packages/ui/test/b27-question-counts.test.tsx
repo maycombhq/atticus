@@ -12,7 +12,8 @@ import { ActivityBar } from "../src/app/shell/ActivityBar.js";
 import { StatusBar } from "../src/app/shell/StatusBar.js";
 import { shellCounts } from "../src/app/shell/Shell.js";
 import { screenOf } from "../src/app/screens.js";
-import { waitingTiles } from "../src/screens/CommandCenter.js";
+import { panelQuestionCount, QuestionsList } from "../src/app/shell/BottomPanel.js";
+import { homeQuestionsOf, waitingTiles } from "../src/screens/CommandCenter.js";
 import { topWaiting } from "../src/screens/home/HomePanels.js";
 import { waitingQuestions } from "../src/screens/OwnerQuestions.js";
 import {
@@ -93,11 +94,9 @@ describe("the questions to answer: one definition", () => {
     // The Explorer: its rows add up to it.
     const rows = questionItems(steps, owner);
     expect(rows.reduce((a, r) => a + (r.count ?? 0), 0)).toBe(n);
-    // Home's tile, with what it is made of under it.
-    const w = waitingQuestions(4, 3);
+    // Home's tile, with what it is made of under it: from Home's two reads, as Home computes it.
     const tiles = waitingTiles({
-      questions: w.n,
-      questionsOf: { steps: 4, owner: 3 },
+      ...homeQuestionsOf(steps, owner),
       needs: 0,
       steps: 0,
       blocking: 0,
@@ -106,7 +105,23 @@ describe("the questions to answer: one definition", () => {
       label: COPY.commandCenter.waitQuestions,
       value: n,
       sub: COPY.commandCenter.home.questionsSub(4, 3),
+      href: "#/questions",
     });
+    // Only owner questions waiting: the tile opens on them.
+    expect(homeQuestionsOf({ questions: [], counts: { open: 0 } }, owner).questionsHref).toBe(
+      waitingQuestions(0, 3).href,
+    );
+    // The bottom panel's Questions tab, and its list adding up to it.
+    const ready = <T,>(data: T) => ({ state: "ready" as const, data });
+    expect(panelQuestionCount(ready(steps), ready(owner))).toBe(n);
+    expect(panelQuestionCount(ready(steps), { state: "loading" })).toBeUndefined();
+    const panel = renderToStaticMarkup(
+      <QuestionsList of={ready(steps)} owner={owner.open} onRetry={() => undefined} />,
+    );
+    expect(panel).toContain(esc(COPY.questions.toAnswer(n, 4, 3)));
+    expect(panel).toContain(COPY.bottomPanel.questions.ownerRow(3));
+    expect(panel).toContain('href="#/questions?kind=owner"');
+    expect((panel.match(/class="bp-row"/g) ?? []).length).toBe(4 + 1);
     // The Questions page: the line at its top, and its two kinds' tabs.
     const line = renderToStaticMarkup(
       <QuestionsToAnswerLine of={questionsToAnswerOf(steps, owner)} />,

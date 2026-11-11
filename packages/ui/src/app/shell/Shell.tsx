@@ -28,6 +28,7 @@ import {
 } from "../question-counts.js";
 import { Explorer } from "./Explorer.js";
 import { useKnownAnswer } from "./explorer-data.js";
+import { MANIFEST_REPOS_PATH, manifestRepoCount } from "../repo-counts.js";
 import { PinIcon, SearchIcon, Tip } from "./icons.js";
 import { pinHash, togglePin, usePins } from "./pinned-pages.js";
 import {
@@ -216,8 +217,8 @@ function useCounts(want: boolean): { questions?: number; repos?: number } {
   return shellCounts(steps, owner, trust);
 }
 
-/** The status bar's repos: the manifest's, as Map › Trust lists them. */
-export const TRUST_PATH = "/api/trust";
+/** The status bar's repos: the manifest's, as Map › Trust lists them (repo-counts.ts). */
+export const TRUST_PATH = MANIFEST_REPOS_PATH;
 
 /** The shell's counts from the answers it has (tests give their own). */
 export function shellCounts(
@@ -226,9 +227,10 @@ export function shellCounts(
   trust: { repos?: unknown[] } | undefined,
 ): { questions?: number; repos?: number } {
   const q = questionsToAnswerOf(steps, owner);
+  const repos = manifestRepoCount(trust);
   return {
     ...(q ? { questions: q.total } : {}),
-    ...(Array.isArray(trust?.repos) ? { repos: trust.repos.length } : {}),
+    ...(repos !== undefined ? { repos } : {}),
   };
 }
 

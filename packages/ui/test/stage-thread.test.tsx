@@ -239,6 +239,24 @@ describe("the stage's thread", () => {
     expect(none).toContain(`>${esc(T.start)}<`);
     expect(none).toContain("Start it first.");
   });
+
+  it("beta.27 review: a proposal written outside the app says so once, not twice", () => {
+    // The server's headline says the conversation has nothing in it; "Nothing has happened at
+    // this stage yet" under it stacked a second line saying the same, and wrongly (it is done).
+    const headline =
+      "The proposal is written (openspec/changes/add-transfer-limit/proposal.md): it was written outside the app, so this conversation has nothing in it.";
+    const elsewhere = page({
+      stage: "proposal",
+      state: "done",
+      headline,
+      items: [],
+      waiting: undefined,
+    });
+    expect(elsewhere).toContain(esc(headline));
+    expect(elsewhere).not.toContain(esc(T.empty));
+    // A stage that hasn't started still says nothing happened.
+    expect(page({ state: "not-started", items: [], waiting: undefined })).toContain(esc(T.empty));
+  });
 });
 
 describe("the critic's note says a lens waits only when one does", () => {

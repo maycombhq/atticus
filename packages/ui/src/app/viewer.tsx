@@ -295,9 +295,19 @@ export function useFullScreen(initial = false): [boolean, (on?: boolean) => void
  * of a screen; never under `min`.
  */
 export const MAX_TOP = 160;
+/** Beta.27: the keys line's one line, which availableHeight leaves room for under the picture. */
+export const KEYS_LINE = 16;
+/** The margin under the keys line. */
+const UNDER_KEYS = 8;
 export function availableHeight(windowHeight: number, top: number, min = 420): number {
-  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, MAX_TOP) - 24));
+  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, MAX_TOP) - KEYS_LINE - UNDER_KEYS));
 }
+/**
+ * The picture's height with the keys line under it: what the line takes past its one line
+ * (KEYS_LINE, a narrow frame wrapping it) is the picture's.
+ */
+export const stageHeight = (height: number, keys: number) =>
+  Math.max(160, height - Math.max(0, keys - KEYS_LINE));
 
 /**
  * The height a picture gets inside the area that scrolls it (beta.26: the IDE layout's page,
@@ -522,12 +532,6 @@ export function ViewerToolbar(p: {
  * the page, details laid over its right edge (collapsible, never squeezing the picture), and full
  * screen. Keys pressed while focus is inside the frame (not in a field) drive the viewer.
  */
-/** Beta.27: the keys line's one line, which availableHeight leaves room for under the picture. */
-export const KEYS_LINE = 16;
-/** The picture's height with the keys line under it: what the line takes past one line is the picture's. */
-export const stageHeight = (height: number, keys: number) =>
-  Math.max(160, height - Math.max(0, keys - KEYS_LINE));
-
 export function DiagramFrame(p: {
   title: string;
   full: boolean;

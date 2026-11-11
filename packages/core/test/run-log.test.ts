@@ -14,6 +14,9 @@ import {
   startTerminalRun,
   tailTerminalRunLines,
   TERMINAL_RUN_ID,
+  TITLE_VALUE_FLAGS,
+  TITLE_VALUE_MAX,
+  titleValue,
 } from "../src/run-log.js";
 
 /**
@@ -141,6 +144,151 @@ describe("which commands keep a run log", () => {
     expect(t("with", "C:\\Users\\tom\\x")).toBe("atticus sync --with");
     expect(t("with", "two words")).toBe("atticus sync --with");
     expect(t("with", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")).toBe("atticus sync --with");
+  });
+
+  it("beta.27 review: keeps a value only for a flag on the allow-list, never an unknown one's", () => {
+    const t = (flag: string, value: string) =>
+      runTitle(
+        ["map", "forge-ledger"],
+        [flag],
+        { [flag]: value },
+        { home: "/home/bao", user: "bao" },
+      ).title;
+    // The reviewer's command line: every value was in the title.
+    expect(
+      runTitle(
+        ["map", "forge-ledger"],
+        ["pass", "client-key", "by", "from", "pw"],
+        {
+          pass: "hunter2",
+          "client-key": "abc",
+          by: "bao@northwind.example",
+          // Made as the test runs: no token-shaped text in the source (push protection).
+          from: `oauth2:${["glpat", "Forge".repeat(4)].join("-")}@git.northwind.example:org/repo.git`,
+          pw: "Tr0ub4dor",
+        },
+        { home: "/home/bao", user: "bao" },
+      ).title,
+    ).toBe("atticus map forge-ledger --pass --client-key --by --from --pw");
+    // Flags off the list keep their name only, whatever the value.
+    for (const flag of [
+      "pass",
+      "pw",
+      "pat",
+      "passphrase",
+      "key",
+      "client-key",
+      "bearer",
+      "jwt",
+      "with",
+      "value",
+      "note",
+      "answer",
+      "text",
+      "header",
+      "host",
+      "url",
+      "users",
+      "file",
+      "from",
+      "max-tokens",
+      "confirm",
+    ])
+      expect(t(flag, "forge-ledger"), flag).toBe(`atticus map forge-ledger --${flag}`);
+    expect(TITLE_VALUE_FLAGS.has("by")).toBe(true);
+    expect(TITLE_VALUE_FLAGS.has("pass")).toBe(false);
+  });
+
+  it("beta.27 review: drops an allowed flag's value shaped like a secret or a person's address", () => {
+    const t = (flag: string, value: string) =>
+      titleValue(flag, value, { home: "/home/bao", user: "bao" });
+    // A person: a handle is kept, an email never.
+    expect(t("by", "@bao")).toBe("@bao");
+    expect(t("by", "bao.nguyen")).toBe("bao.nguyen");
+    expect(t("by", "bao@northwind.example")).toBeUndefined();
+    expect(t("by", "@bao@northwind.example")).toBeUndefined();
+    expect(t("owner", "team-ledger@northwind.example")).toBeUndefined();
+    // Credentials in a place: a scheme, a user and password before a host, with or without one.
+    expect(t("repo", "https://git.northwind.example/forge")).toBeUndefined();
+    expect(t("repo", "svc:hunter2@git.northwind.example")).toBeUndefined();
+    expect(t("repo", "postgres:hunter2@db")).toBeUndefined();
+    expect(t("repo", "git.northwind.example:org/repo.git")).toBe(
+      "git.northwind.example:org/repo.git",
+    );
+    // Token shapes, short or long.
+    for (const v of [
+      "glpat-abcdefghij1234567890",
+      "glpat-x",
+      "ghp_short",
+      "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+      "github_pat_11AAAA",
+      "sk_live_abc123",
+      "sk-proj-abcdefghijklmnopqrstuvwxyz012345",
+      "sk-ant-api03-abcDEF123",
+      "npm_abcdefghijklmnopqrstuvwxyz0123456789",
+      "xoxb-123456789012-abcdef",
+      "AKIAIOSFODNN7EXAMPLE",
+      "AIzaSyA1234567890abcdefghijklmnopqrstu",
+      "hf_abcdefghijklmnopqrstuvwxyz01234567",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "0123456789abcdef",
+      "0123456789abcdef0123",
+      "q7Xf3Kd9Lm2Np8Rs4Tv6",
+      "4111111111111111",
+      "123-45-6789",
+      "dXNlcjpwYXNzd29yZA==",
+      "forge-ledger,ghp_short",
+    ])
+      expect(t("change", v), v).toBeUndefined();
+    // This machine's home folder or user name in a path.
+    expect(t("repos", "home/bao/forge")).toBeUndefined();
+    // Ids, names, dates and lists of them stay, cut when long.
+    expect(t("target", "2027-03-31")).toBe("2027-03-31");
+    expect(t("repos", "forge-ledger,forge-teller")).toBe("forge-ledger,forge-teller");
+    expect(t("lens", "security")).toBe("security");
+    expect(t("pr", "42")).toBe("42");
+    const long = Array.from({ length: 8 }, (_, i) => `forge-repo-${i}`).join(",");
+    expect(t("repos", long)).toBe(`${long.slice(0, TITLE_VALUE_MAX)}…`);
+  });
+
+  it("beta.27 review: never keeps a value of a flag it doesn't know, whatever the value (fuzz)", () => {
+    // A seeded generator, so a failure can be run again.
+    let seed = 27;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const pick = (al: string, n: number) =>
+      Array.from({ length: n }, () => al[Math.floor(next() * al.length)]).join("");
+    const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const shapes = [
+      () => `glpat-${pick(A + "-_", 20)}`,
+      () => `npm_${pick(A, 36)}`,
+      () => `sk_live_${pick(A, 24)}`,
+      () => pick("0123456789abcdef", 16),
+      () => pick("abcdefghijklmnopqrstuvwxyz0123456789", 20),
+      () => pick(A + "!@#", 12),
+      () => pick(A, 10),
+      () => pick(A, 6),
+      () => `svc:${pick(A, 16)}@git.northwind.example`,
+      () => `${pick("abcdefghij", 6)}@northwind.example`,
+      () => "forge-ledger",
+    ];
+    const flags = ["pass", "pw", "secret-ish", "client-key", "with", "x", "token2", "k"];
+    for (let i = 0; i < 2000; i++) {
+      const flag = flags[i % flags.length]!;
+      const value = shapes[i % shapes.length]!();
+      const { title } = runTitle(["sync"], [flag], { [flag]: value });
+      expect(title, `${flag}=${value}`).toBe(`atticus sync --${flag}`);
+    }
+    // Secret-shaped tokens are dropped from an allowed flag too.
+    for (let i = 0; i < 500; i++) {
+      const v = [
+        `glpat-${pick(A, 20)}`,
+        `npm_${pick(A, 36)}`,
+        `sk_live_${pick(A, 24)}`,
+        pick("0123456789abcdef", 16),
+        `svc:${pick(A, 16)}@git.northwind.example`,
+      ][i % 5]!;
+      expect(titleValue("change", v), v).toBeUndefined();
+    }
   });
 
   it("leaves where it ran out of a title: --root and --metarepo say a folder, not what ran", () => {

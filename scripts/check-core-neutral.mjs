@@ -197,9 +197,9 @@ export const ALLOW = [
   },
   {
     file: "packages/core/src/run-log.ts",
-    names: ["copilot", "ado"],
+    names: ["copilot", "ado", "github"],
     reason:
-      "a command's run log says it was started by a Copilot session, which ATTICUS_ACP_SESSION marks: the copilot-acp mode's own name (ADR 0171, ADR 0187); and `ado` is the CLI's own command group (`atticus ado …`), named in the list of command groups the Console records (beta.26), not knowledge of Azure DevOps",
+      "a command's run log says it was started by a Copilot session, which ATTICUS_ACP_SESSION marks: the copilot-acp mode's own name (ADR 0171, ADR 0187); `ado` is the CLI's own command group (`atticus ado …`), named in the list of command groups the Console records (beta.26), not knowledge of Azure DevOps; and `github_pat_` is one of the well-known token prefixes a run's title drops a value for (beta.27 review, as cite.ts's token shapes), not knowledge of a Git host",
   },
   {
     file: "packages/core/src/schema/ai.ts",

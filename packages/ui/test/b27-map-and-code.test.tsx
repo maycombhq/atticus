@@ -2,11 +2,25 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Laid } from "../src/app/layout/index.js";
-import { DiagramFrame, fitLegibly, KEYS_LINE, stageHeight } from "../src/app/viewer.js";
 import {
+  availableHeight,
+  DiagramFrame,
+  FIT_MAX,
+  fitLegibly,
+  KEYS_LINE,
+  MAX_TOP,
+  stageHeight,
+  ZOOM,
+} from "../src/app/viewer.js";
+import {
+  canvasFit,
   FIT_MIN_ZOOM,
+  FIT_PADDING,
+  fitPad,
   flowElements,
+  LABEL_TRIES,
   labelSpot,
+  labelSpots,
   linkLabelSize,
   type BoxRect,
 } from "../src/screens/architecture/Canvas.js";
@@ -133,6 +147,113 @@ describe("a link's label sits on its route, clear of the boxes", () => {
     const at = edges[0]!.data!.labelAt!;
     expect(overlaps(at, payments)).toBe(false);
   });
+
+  it("beta.27 review: keeps two links' labels off each other too, through flowElements", () => {
+    // Portal calls Ledger twice (two routes side by side, 10 px apart): beta.27's first cut put
+    // both labels at their routes' middles, one on the other.
+    const box = (id: string, label: string): CanvasBox => ({
+      id,
+      label,
+      kind: "system",
+      gaps: [],
+      childCount: 0,
+      outside: false,
+      group: false,
+      inside: 0,
+    });
+    const link = (id: string, label: string) =>
+      ({
+        id,
+        from: "system:portal",
+        to: "system:ledger",
+        label,
+        gaps: [],
+      }) as unknown as CanvasGraph["links"][number];
+    const graph = {
+      boxes: [box("system:portal", "Portal"), box("system:ledger", "Ledger")],
+      links: [link("l1", "calls"), link("l2", "publishes to")],
+    } as CanvasGraph;
+    const placed = (id: string, r: BoxRect) => ({ id, ...r, group: false });
+    const routeAt = (x: number) => [
+      { x, y: 64 },
+      { x, y: 400 },
+    ];
+    const laid = {
+      boxes: {
+        "system:portal": placed("system:portal", { x: 100, y: 0, width: 160, height: 64 }),
+        "system:ledger": placed("system:ledger", { x: 100, y: 400, width: 160, height: 64 }),
+      },
+      routes: {
+        l1: { id: "l1", from: "system:portal", to: "system:ledger", points: routeAt(175) },
+        l2: { id: "l2", from: "system:portal", to: "system:ledger", points: routeAt(185) },
+      },
+      dropped: [],
+    } as unknown as Laid;
+    const { edges } = flowElements(graph, laid, "DOWN");
+    const rect = (e: (typeof edges)[number]) => {
+      const s = linkLabelSize(e.data!.link);
+      const c = e.data!.labelAt!;
+      return { x: c.x - s.width / 2, y: c.y - s.height / 2, width: s.width, height: s.height };
+    };
+    const [a, b] = edges.map(rect) as [BoxRect, BoxRect];
+    const apart =
+      a.x + a.width <= b.x ||
+      b.x + b.width <= a.x ||
+      a.y + a.height <= b.y ||
+      b.y + b.height <= a.y;
+    expect(apart).toBe(true);
+    // The first stays where it would alone: the middle of its route.
+    expect(edges[0]!.data!.labelAt).toEqual({ x: 175, y: 232 });
+  });
+
+  it("beta.27 review: tries a bounded number of spots, then the first clear of the boxes", () => {
+    // A route of many segments, every spot under a label already placed.
+    const long = Array.from({ length: 30 }, (_, i) => ({ x: 0, y: i * 10 }));
+    const everywhere: BoxRect = { x: -500, y: -500, width: 1000, height: 1000 };
+    const c = labelSpot(long, size, [], [everywhere]);
+    // Nothing is clear of the labels: the first spot clear of the boxes (the middle's).
+    expect(c).toEqual(labelSpot(long, size, []));
+    expect(LABEL_TRIES).toBeLessThanOrEqual(50);
+    // labelSpots places them in order.
+    const spots = labelSpots(
+      [
+        { id: "a", points: route, size },
+        { id: "b", points: route, size },
+        { id: "none", size },
+      ],
+      [],
+    );
+    expect([...spots.keys()]).toEqual(["a", "b"]);
+    expect(spots.get("a")).toEqual({ x: 180, y: 232 });
+    expect(spots.get("b")).not.toEqual(spots.get("a"));
+  });
+});
+
+describe("the canvas's fit, as Fit and a resize run it", () => {
+  it("beta.27 review: never zooms a small picture in past actual size", () => {
+    // Beta.27's first cut passed ZOOM.max (3): a two-box estate filled the frame at 300 %.
+    const v = canvasFit({ x: 0, y: 0, w: 300, h: 100 }, { width: 1200, height: 800 });
+    expect(v.k).toBe(FIT_MAX);
+    expect(v.k).toBeLessThan(ZOOM.max);
+    expect(v).toEqual({ k: 1, x: 450, y: 350 });
+  });
+
+  it("keeps fitView's 0.08 padding round a picture that fills the frame", () => {
+    // fitView(padding 0.08) fits the bounds to the view over 1.08; canvasFit's pad matches it.
+    const view = { width: 1080, height: 1080 };
+    expect(fitPad(view)).toBe(Math.round((1080 - 1080 / (1 + FIT_PADDING)) / 2));
+    const v = canvasFit({ x: 0, y: 0, w: 1000, h: 1000 }, view);
+    expect(v.k).toBeCloseTo(1, 2);
+    expect(v.x).toBeCloseTo(40, 0);
+    expect(v.y).toBeCloseTo(40, 0);
+  });
+
+  it("starts a picture too big for the legible floor at its top-left, padded", () => {
+    const view = { width: 1000, height: 800 };
+    const v = canvasFit({ x: 10, y: 20, w: 600, h: 1400 }, view);
+    expect(v.k).toBe(FIT_MIN_ZOOM);
+    expect(v.y).toBeCloseTo(fitPad(view) - 20 * FIT_MIN_ZOOM);
+  });
 });
 
 describe("the keys line under a picture is read whole", () => {
@@ -151,6 +272,17 @@ describe("the keys line under a picture is read whole", () => {
   it("takes the room a wrapped line needs from the picture", () => {
     expect(stageHeight(600, KEYS_LINE)).toBe(600);
     expect(stageHeight(600, KEYS_LINE * 2)).toBe(600 - KEYS_LINE);
+  });
+
+  it("beta.27 review: the picture's height leaves the keys line's one line under it", () => {
+    // The window less the picture's top, the keys line and a small margin.
+    expect(availableHeight(900, 100)).toBe(900 - 100 - KEYS_LINE - 8);
+    expect(availableHeight(900, 2400)).toBe(900 - MAX_TOP - KEYS_LINE - 8);
+    // DiagramFrame's own doc comment sits on DiagramFrame.
+    const src = css("../src/app/viewer.tsx");
+    const at = src.indexOf("export function DiagramFrame(");
+    expect(src.slice(src.lastIndexOf("*/", at) - 400, at)).toMatch(/The frame round a picture/);
+    expect(src.slice(src.lastIndexOf("*/", at), at).trim()).toBe("*/");
   });
 });
 

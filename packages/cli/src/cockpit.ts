@@ -109,6 +109,11 @@ export function waitsOnOf(
 
 /** The next steps that are the gate's own: raising its hand-off, or merging the one raised. */
 const GATE_STEPS = new Set(["handoff", "small-handoff", "merge"]);
+/**
+ * Beta.27 review: in the release phase, go/no-go is decided over the release PRs (ADR 0184), so
+ * raising them, merging them and the release step itself are the gate's own steps too.
+ */
+const RELEASE_GATE_STEPS = new Set(["release", "release-prs", "release-prs-merge"]);
 
 /**
  * Beta.27: At a glance's one sentence agrees with its next step. `change status` says "Ready to
@@ -116,16 +121,16 @@ const GATE_STEPS = new Set(["handoff", "small-handoff", "merge"]);
  * waits, its stage to run again, a seed to accept) isn't one of those checks, so beta.26 said
  * "Ready to raise "Plan ready"" over "Answer 1 question, then run the stories stage again".
  * While the next step is anything but the gate's own, the sentence says it isn't ready yet.
+ * Beta.27 review: readiness is the report's `ready`, never a match on its sentence's words.
  */
 export function glanceNextStep(
-  report: Pick<ChangeReport, "nextStep" | "type" | "phase" | "handoff" | "blockers">,
+  report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
   next: Pick<NextStep, "step"> | undefined,
 ): string {
-  if (!report.phase || report.handoff || report.blockers.length) return report.nextStep;
-  const name = handoffName(report.type, report.phase);
-  if (report.nextStep !== `Ready to raise "${name}".`) return report.nextStep;
+  if (!report.ready || !report.phase) return report.nextStep;
   if (!next || GATE_STEPS.has(next.step)) return report.nextStep;
-  return `Not ready to raise "${name}" yet: the step below comes first.`;
+  if (report.phase === "release" && RELEASE_GATE_STEPS.has(next.step)) return report.nextStep;
+  return `Not ready to raise "${handoffName(report.type, report.phase)}" yet: the step below comes first.`;
 }
 
 async function stageProgress(dir: string, stage: StageName, open: Set<string>) {

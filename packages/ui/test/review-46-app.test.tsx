@@ -44,6 +44,8 @@ vi.mock("../src/api/client.js", async () => ({
     h.live = fn;
   },
   useReloadOnFiles: () => undefined,
+  // Beta.27 review: Questions' count at its top follows file events (useKnownAnswer).
+  useFileChanges: () => undefined,
 }));
 
 const { COPY } = await import("../src/copy.js");

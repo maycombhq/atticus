@@ -202,6 +202,13 @@ export async function canAdvance(
 export interface ChangeReport extends Assessment {
   /** One sentence: what to do next. */
   nextStep: string;
+  /**
+   * Beta.27 review: whether the phase's hand-off can be raised now (nextStep says "Ready to
+   * raise"): nothing in its checks blocks, no hand-off is open, every task is ticked. What reads
+   * readiness reads this, never nextStep's words. Not in the local API (C4): its views pick their
+   * fields from the report.
+   */
+  ready: boolean;
   /** Problems loading the org pack, policy, templates or catalog. */
   problems: string[];
 }
@@ -211,7 +218,8 @@ export async function changeReport(root: string, id: string): Promise<ChangeRepo
   const ctx = await loadChangeContext(root);
   const a = await assess(ctx, await changeStore(root).read(id));
   const tasks = a.phase === "build" ? await taskTicks(root, id) : undefined;
-  return { ...a, nextStep: nextStep(a, tasks), problems: ctx.problems };
+  const next = nextStep(a, tasks);
+  return { ...a, nextStep: next.text, ready: next.ready, problems: ctx.problems };
 }
 
 /** How many of tasks.md's tasks are ticked; undefined when it lists none. */
@@ -224,32 +232,42 @@ async function taskTicks(
   return boxes.length ? { done: boxes.filter(Boolean).length, total: boxes.length } : undefined;
 }
 
-function nextStep(a: Assessment, tasks?: { done: number; total: number }): string {
+function nextStep(
+  a: Assessment,
+  tasks?: { done: number; total: number },
+): { text: string; ready: boolean } {
+  const not = (text: string) => ({ text, ready: false });
   switch (a.state) {
     case "draft":
-      return "Create the change with atticus change new.";
+      return not("Create the change with atticus change new.");
     case "archived":
-      return "Nothing: the change is archived.";
+      return not("Nothing: the change is archived.");
     case "released":
-      return "Archive the change.";
+      return not("Archive the change.");
     case "post-release-review":
-      return a.reasons.length
-        ? "Resolve the post-release review findings, then archive the change."
-        : "Review the skipped lenses, then archive the change.";
+      return not(
+        a.reasons.length
+          ? "Resolve the post-release review findings, then archive the change."
+          : "Review the skipped lenses, then archive the change.",
+      );
     case "returned":
-      return `Revise the work, then hand off ${a.phase} again.`;
+      return not(`Revise the work, then hand off ${a.phase} again.`);
   }
   const name = handoffName(a.type, a.phase!);
   if (!a.handoff) {
     // Seventh UX walk: the build hand-off isn't ready while a task is still open.
     if (!a.blockers.length && tasks && tasks.done < tasks.total)
-      return `Finish the ${a.phase} work (${tasks.done} of ${tasks.total} tasks ticked in tasks.md), then raise "${name}".`;
+      return not(
+        `Finish the ${a.phase} work (${tasks.done} of ${tasks.total} tasks ticked in tasks.md), then raise "${name}".`,
+      );
     return a.blockers.length
-      ? `Finish the ${a.phase} work, then raise "${name}".`
-      : `Ready to raise "${name}".`;
+      ? not(`Finish the ${a.phase} work, then raise "${name}".`)
+      : { text: `Ready to raise "${name}".`, ready: true };
   }
   if (a.handoff.state === "changes-requested")
-    return `Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`;
-  if (isManualPrUrl(a.handoff.pr.url)) return manualHandoffWords(a.handoff.phase);
-  return `Merge PR #${a.handoff.pr.number} once it is approved (${a.handoff.pr.url}); syncing then moves the change on.`;
+    return not(`Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`);
+  if (isManualPrUrl(a.handoff.pr.url)) return not(manualHandoffWords(a.handoff.phase));
+  return not(
+    `Merge PR #${a.handoff.pr.number} once it is approved (${a.handoff.pr.url}); syncing then moves the change on.`,
+  );
 }

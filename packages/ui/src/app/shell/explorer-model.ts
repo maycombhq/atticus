@@ -26,6 +26,8 @@ export interface ExItem {
   /** A map box's kind mark: lib, gw or outside. */
   kind?: "lib" | "gw" | "outside";
   count?: number;
+  /** Beta.27 review: what `count` counts, for a screen reader (else "items"). */
+  countOf?: "repos" | "components";
   /** A change whose phase is the person's role's. */
   waits?: boolean;
   /** A pinned page: Delete unpins it. */
@@ -121,8 +123,16 @@ const byLabel = (a: ExItem, b: ExItem) => a.label.localeCompare(b.label);
  * address VS Code's /diagram link opens). A repo is marked lib or gw when its components are
  * libraries or it holds a gateway; a system outside the estate is marked outside and listed last.
  * Nodes the catalog has no record of (unknown) are questions, not systems.
+ *
+ * Beta.27 review: a system's row counts its repos only (a component no repo holds is listed
+ * under it, not counted as a repo); a system of the estate with none says "no repo". `notOnMap`,
+ * the manifest's repos the map has no box for (repo-counts.ts), are listed last under "Not on
+ * the map", each opening Map › Trust, so the tree's repos add up to the header's.
  */
-export function systemItems(view: { children: readonly EstateNode[] }): ExItem[] {
+export function systemItems(
+  view: { children: readonly EstateNode[] },
+  notOnMap: readonly string[] = [],
+): ExItem[] {
   const nodes = view.children;
   const kidsOf = (id: string) => nodes.filter((n) => n.parent === id);
   const markOf = (n: EstateNode): ExItem["kind"] => {
@@ -145,7 +155,7 @@ export function systemItems(view: { children: readonly EstateNode[] }): ExItem[]
       label: n.label,
       hash: mapHash(n.id),
       ...(kind ? { kind } : {}),
-      ...(count ? { count } : {}),
+      ...(count ? { count, countOf: "components" as const } : {}),
     };
   };
   const parts = (id: string) =>
@@ -158,19 +168,48 @@ export function systemItems(view: { children: readonly EstateNode[] }): ExItem[]
     .map((n): ExItem & { outside: boolean } => {
       const children = parts(n.id);
       const kind = markOf(n);
+      const repos = kidsOf(n.id).filter((k) => k.kind === "repo").length;
+      const outside = isOutside(n);
       return {
         id: `systems/${n.id}`,
         label: n.label,
         hash: mapHash(n.id),
         ...(kind ? { kind } : {}),
-        ...(children.length ? { count: children.length, children } : {}),
-        outside: isOutside(n),
+        ...(repos ? { count: repos, countOf: "repos" as const } : {}),
+        ...(!repos && !outside ? { detail: E.noRepo } : {}),
+        ...(children.length ? { children } : {}),
+        outside,
       };
     })
     .sort((a, b) => Number(a.outside) - Number(b.outside) || byLabel(a, b))
     .map(({ outside: _o, ...item }) => item);
-  // A repo or component no system holds sits at the top, after the systems.
-  return [...systems, ...parts("estate")];
+  const unmapped: ExItem[] = notOnMap.length
+    ? [
+        {
+          id: "systems/not-on-map",
+          label: E.notOnMap,
+          hash: "#/trust",
+          count: notOnMap.length,
+          countOf: "repos",
+          children: [...notOnMap]
+            .sort((a, b) => a.localeCompare(b))
+            .map((r) => ({ id: `systems/manifest:${r}`, label: r, hash: "#/trust" })),
+        },
+      ]
+    : [];
+  // A repo or component no system holds sits after the systems; the repos with no box last.
+  return [...systems, ...parts("estate"), ...unmapped];
+}
+
+/** Beta.27 review: the repos the tree lists (a repo's row, under a system or not on the map). */
+export function treeRepos(items: readonly ExItem[]): number {
+  return items.reduce(
+    (n, i) =>
+      n +
+      (i.id.startsWith("systems/repo:") || i.id.startsWith("systems/manifest:") ? 1 : 0) +
+      treeRepos(i.children ?? []),
+    0,
+  );
 }
 
 /**

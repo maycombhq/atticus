@@ -66,10 +66,11 @@ describe.skipIf(typeof (nodeModule as { registerHooks?: unknown }).registerHooks
       for (const f of r.files.filter((x) => owner(x) === "packages/ai"))
         expect(f).toMatch(/\/ai\/dist\/cli-options\.js$/);
       // Only core's light entry (the schema version, the log and, ADR 0187, a run's log and the
-      // job printer: node built-ins only), never its schemas.
+      // job printer: node built-ins only), never its schemas. Beta.27: and the secret shapes a
+      // run's title is checked against (cite, which imports nothing).
       for (const f of r.files.filter((x) => owner(x) === "packages/core"))
         expect(f).toMatch(
-          /\/core\/dist\/(light|log|fs|run-log|printer|kept-files|schema\/version)\.js$/,
+          /\/core\/dist\/(light|log|fs|run-log|cite|printer|kept-files|schema\/version)\.js$/,
         );
     });
 

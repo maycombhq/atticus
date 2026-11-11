@@ -27,7 +27,8 @@ import {
   type QuestionsToAnswer,
   type StepQuestionsAnswer,
 } from "../app/question-counts.js";
-import { useKnownAnswer } from "../app/shell/explorer-data.js";
+import { readAnswerAgain, useKnownAnswer } from "../app/shell/explorer-data.js";
+import { inEditor } from "../app/theme.js";
 import "./questions.css";
 
 /**
@@ -460,6 +461,14 @@ export function byRepo(qs: QuestionView[]): [string, QuestionView[]][] {
 }
 
 /** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
+/**
+ * Beta.27 review: whether the Questions page's own read counts the estate's open questions from
+ * the steps (the open list, or every state's, whose counts say how many are open): not when it
+ * is one change's, one role's or the person's own.
+ */
+export const countsEstateSteps = (path: string): boolean =>
+  path === STEP_QUESTIONS_PATH || path === "/api/questions";
+
 export function questionsUrl(filter: "open" | "all", whose: "all" | "mine"): string {
   const q = [
     ...(filter === "open" ? ["state=open"] : []),
@@ -1665,7 +1674,8 @@ export function Questions({ hash }: { hash: string }) {
   // the question opened does, so opening one keeps the role picked.
   const hashScope = JSON.stringify(roleScopeOf(hash));
   useEffect(() => setScope(JSON.parse(hashScope) as ReturnType<typeof roleScopeOf>), [hashScope]);
-  const fetched = useApi<QuestionListView>(withRoleScope(questionsUrl(filter, whose), scope));
+  const ownPath = withRoleScope(questionsUrl(filter, whose), scope);
+  const fetched = useApi<QuestionListView>(ownPath);
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
   useReloadOnFiles(fetched, owner);
@@ -1679,10 +1689,21 @@ export function Questions({ hash }: { hash: string }) {
   useEffect(() => setKind(questionsKind(hash)), [hash]);
   // Beta.27: the questions to answer, both kinds, counted as Home, the badge and the status bar
   // count them (whatever this page's filters show): the counts under it are the steps' only.
+  // Beta.27 review: from the page's own read when it counts the estate's open questions (every
+  // state's list counts them too); else the last answer to the estate's, read again after an
+  // answer here, never by an editor's panel (it has no status bar to share the read with).
+  const ownCountsSteps = countsEstateSteps(ownPath);
+  const wantSteps = !ownCountsSteps && !(typeof document !== "undefined" && inEditor(document));
+  const known = useKnownAnswer<StepQuestionsAnswer>(STEP_QUESTIONS_PATH, wantSteps);
   const toAnswer = questionsToAnswerOf(
-    useKnownAnswer<StepQuestionsAnswer>(STEP_QUESTIONS_PATH),
+    ownCountsSteps ? (fetched.state === "ready" ? fetched.data : undefined) : known,
     owner.state === "ready" ? owner.data : undefined,
   );
+  /** An answer given here: the list again, and the estate's count when it is another read. */
+  const answered = () => {
+    list.reload();
+    if (wantSteps) void readAnswerAgain(STEP_QUESTIONS_PATH);
+  };
 
   const current = questionRoute(hash);
   const [text, setText] = useState("");
@@ -1835,14 +1856,14 @@ export function Questions({ hash }: { hash: string }) {
                     setBulkDone(r);
                     // The answered ones are let go; what failed stays picked, to try again.
                     select(r.ok, false);
-                    list.reload();
+                    answered();
                   }}
                   onClear={() => setSelected(new Set())}
                 />
               ) : current ? (
                 <Detail
                   id={current}
-                  onAnswered={list.reload}
+                  onAnswered={answered}
                   {...(list.state === "ready" && list.data.about?.[current]?.proposal
                     ? { proposal: list.data.about[current].proposal }
                     : {})}

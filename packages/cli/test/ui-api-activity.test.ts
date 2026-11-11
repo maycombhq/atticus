@@ -6,7 +6,7 @@ import type { z } from "zod";
 import { Api, runsDirOf, startTerminalRun } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { newestKeepingRunning, tracked, uiActivityRoutes } from "../src/ui-api-activity.js";
-import { main, optionValuesOf } from "../src/main.js";
+import { main, optionValuesOf, titleWordsOf } from "../src/main.js";
 
 /**
  * ADR 0187: the Console's list. The app's jobs with what they printed, the commands run in a
@@ -326,11 +326,82 @@ describe("a command run from the command line (ADR 0187)", () => {
       "/work/forge",
     ];
     const values = optionValuesOf(argv);
-    expect(values).toMatchObject({ target: "2027-03-31", by: "@bao", root: "/work/forge" });
+    // Beta.27 review: only the allow-list's values are read at all (--root is a folder).
+    expect(values).toEqual({ target: "2027-03-31", by: "@bao" });
     expect(
       runTitle(["initiative", "plan", "transfer-limits-rollout"], ["target", "by", "root"], values)
         .title,
     ).toBe("atticus initiative plan transfer-limits-rollout --target 2027-03-31 --by @bao");
+  });
+
+  it("beta.27 review: the title's allow-list names only string options the command line declares", async () => {
+    const { TITLE_VALUE_FLAGS } = await import("@maycombhq/core");
+    const { OPTIONS } = await import("@maycombhq/ai/cli-options");
+    const declared = OPTIONS as Record<string, { type: string }>;
+    for (const f of TITLE_VALUE_FLAGS) {
+      expect(Object.hasOwn(declared, f), `--${f} is declared`).toBe(true);
+      expect(declared[f]!.type, `--${f} takes a string`).toBe("string");
+    }
+  });
+
+  it("beta.27 review: an unknown flag's value never reaches the run's record, nor the Console", async () => {
+    const argv = [
+      "map",
+      "forge-ledger",
+      "--pass=hunter2",
+      "--client-key=northwind-client-7",
+      "--by",
+      "bao@northwind.example",
+      // Made as the test runs: no token-shaped text in the source (push protection).
+      `--from=oauth2:${["glpat", "Forge".repeat(4)].join("-")}@git.northwind.example:org/repo.git`,
+      "--pw=Tr0ub4dor",
+      "--passphrase",
+      "correct-horse",
+    ];
+    // Unknown flags give no value; a known one (--from) isn't on the allow-list; --by's email is
+    // read but the title drops it.
+    expect(optionValuesOf(argv)).toEqual({ by: "bao@northwind.example" });
+    // A word after an unknown flag without `=` is its value: the title shows `…` for it.
+    expect(titleWordsOf(argv)).toEqual(["map", "forge-ledger", "…"]);
+    const r = await metarepo();
+    const out: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) };
+    await main([...argv, "--root", r], io, { record: true });
+    const { readTerminalRuns, runLogsDirOf, runningDirOf } = await import("@maycombhq/core");
+    const [rec] = readTerminalRuns(r);
+    expect(rec?.title).toBe(
+      "atticus map forge-ledger … --pass --client-key --by --from --pw --passphrase",
+    );
+    const { readdir, readFile } = await import("node:fs/promises");
+    // The record, and the lines it printed (the Console serves both).
+    const read = async (dir: string) =>
+      Promise.all((await readdir(dir)).map((f) => readFile(join(dir, f), "utf8")));
+    const raw = [...(await read(runningDirOf(r))), ...(await read(runLogsDirOf(r)))].join("\n");
+    for (const secret of [
+      "hunter2",
+      "northwind-client-7",
+      "bao@northwind.example",
+      "glpat-",
+      "Tr0ub4dor",
+      "correct-horse",
+    ])
+      expect(raw, secret).not.toContain(secret);
+    // What the Console serves for it.
+    const s = await startServer({
+      root: r,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (x, ctx) => uiActivityRoutes(x, ctx, { alive: () => true, tickMs: 50 }),
+    });
+    try {
+      const got = await fetch(`${s.url}/api/activity`, { headers: { "X-Atticus-Token": s.token } });
+      const body = JSON.stringify(await got.json());
+      for (const secret of ["hunter2", "bao@northwind.example", "glpat-", "Tr0ub4dor"])
+        expect(body, secret).not.toContain(secret);
+    } finally {
+      await s.close();
+    }
   });
 });
 

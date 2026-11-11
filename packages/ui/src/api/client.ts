@@ -285,6 +285,23 @@ export function useLastAnswer<T>(path: string): T | undefined {
 /** What a call answered, as useApi records it: the Explorer's reads tell it too (and tests). */
 export const rememberAnswer = remember;
 
+/**
+ * Beta.27 review: the GET paths something on the page reads and reads again on file events
+ * itself (a mounted useApi, an Explorer section), by how many read each. A count the shell
+ * shows from the last answer (useKnownAnswer) reads it again only when nothing else does.
+ */
+const reading = new Map<string, number>();
+export function readingPath(path: string): () => void {
+  reading.set(path, (reading.get(path) ?? 0) + 1);
+  return () => {
+    const n = (reading.get(path) ?? 1) - 1;
+    if (n > 0) reading.set(path, n);
+    else reading.delete(path);
+  };
+}
+/** Whether a mounted read follows `path` (see readingPath). */
+export const isPathRead = (path: string): boolean => (reading.get(path) ?? 0) > 0;
+
 export type Loaded<T> =
   | { state: "loading" }
   /** `status`: the HTTP status when the server answered (404: the thing isn't there). */
@@ -314,6 +331,7 @@ export function useApi<T>(
   const [at, setAt] = useState<number | undefined>();
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const answered = useRef(false);
+  useEffect(() => (path ? readingPath(path) : undefined), [path]);
   useEffect(() => {
     if (!path) return;
     const ctl = new AbortController();

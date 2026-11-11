@@ -9,7 +9,13 @@ import {
 } from "react";
 import { catalogMayHaveChanged, isOffline, useFileChanges } from "../../api/client.js";
 import { COPY } from "../../copy.js";
-import { useLazyApi, type Lazy } from "./explorer-data.js";
+import { useKnownAnswer, useLazyApi, type Lazy } from "./explorer-data.js";
+import {
+  MANIFEST_REPOS_PATH,
+  repoCountsOf,
+  type ManifestReposAnswer,
+  type RepoCounts,
+} from "../repo-counts.js";
 import {
   OWNER_QUESTIONS_PATH,
   questionsToAnswerOf,
@@ -130,7 +136,15 @@ function spoken(item: ExItem): string {
     ...(item.title ? [item.title] : []),
     ...(item.detail ? [item.detail] : []),
     ...(item.kind ? [E.kindWords[item.kind]] : []),
-    ...(item.count !== undefined ? [E.items(item.count)] : []),
+    ...(item.count !== undefined
+      ? [
+          item.countOf === "repos"
+            ? E.repos(item.count)
+            : item.countOf === "components"
+              ? E.components(item.count)
+              : E.items(item.count),
+        ]
+      : []),
     ...(item.waits ? [E.waitsOnYou] : []),
   );
 }
@@ -367,11 +381,14 @@ function statusOf(l: Lazy<unknown>, notYetIsEmpty = false): Status {
   return { state: "loading" };
 }
 
-const countRepos = (items: readonly ExItem[]): number =>
-  items.reduce(
-    (n, i) => n + (i.id.startsWith("systems/repo:") ? 1 : 0) + countRepos(i.children ?? []),
-    0,
-  );
+/**
+ * Beta.27 review: the Systems header, in the manifest's repos (repo-counts.ts): all of them when
+ * the map has a box for each, else how many of them it has; none until both reads are known.
+ */
+export function systemsHeader(c: RepoCounts | undefined): string | undefined {
+  if (!c) return undefined;
+  return c.onMap === c.repos ? E.repos(c.repos) : E.reposOnMap(c.onMap, c.repos);
+}
 
 /**
  * The Explorer the shell shows. `current` is the active hash route; `onOpen(hash)` opens a page.
@@ -400,6 +417,10 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
     { questions: { repo: string; state?: string }[] } & StepQuestionsAnswer
   >(QUESTIONS_PATH, want("questions"), defer("questions"));
   const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
+  // Beta.27 review: the manifest's repos (Map › Trust's read, the status bar's too), so the
+  // header and the tree count repos as the status bar does.
+  const manifest = useKnownAnswer<ManifestReposAnswer>(MANIFEST_REPOS_PATH, want("systems"));
+  const repoCounts = repoCountsOf(manifest, estate.state === "ready" ? estate.data : undefined);
   const pins = usePins();
 
   // What an assistant, the CLI or another page writes shows here without a reload.
@@ -416,14 +437,14 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const all = useMemo(
     () => ({
       changes: changes.state === "ready" ? changeItems(changes.data) : [],
-      systems: estate.state === "ready" ? systemItems(estate.data) : [],
+      systems: estate.state === "ready" ? systemItems(estate.data, repoCounts?.notOnMap ?? []) : [],
       questions:
         questions.state === "ready"
           ? questionItems(questions.data, owner.state === "ready" ? owner.data : undefined)
           : [],
       pinned: pinnedItems(pins),
     }),
-    [changes, estate, questions, owner, pins],
+    [changes, estate, questions, owner, pins, manifest],
   );
   const shown = useMemo(() => {
     const out = {} as Record<SectionId, ExItem[]>;
@@ -448,7 +469,7 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   };
   const counts: Record<SectionId, string | undefined> = {
     changes: changes.state === "ready" ? E.count(all.changes.length) : undefined,
-    systems: estate.state === "ready" ? E.repos(countRepos(all.systems)) : undefined,
+    systems: systemsHeader(repoCounts),
     // Beta.27: the questions to answer, as the badge, the status bar and Home count them.
     questions: (() => {
       const q = questionsToAnswerOf(

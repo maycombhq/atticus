@@ -3,8 +3,11 @@ import {
   api,
   ApiError,
   BUSY_EVENT,
+  isPathRead,
+  readingPath,
   rememberAnswer,
   requestsInFlight,
+  useFileChanges,
   useLastAnswer,
 } from "../../api/client.js";
 
@@ -77,7 +80,11 @@ export function useLazyApi<T>(
   path: string,
   want: boolean,
   defer: boolean,
+  /** Beta.27 review: counted as a read that follows its path (readingPath); not the shell's own. */
+  o: { counted?: boolean } = {},
 ): Lazy<T> & { reload: () => void } {
+  const counted = o.counted ?? true;
+  useEffect(() => (want && counted ? readingPath(path) : undefined), [path, want, counted]);
   const [s, set] = useState<Lazy<T>>(() =>
     kept.has(path) ? { state: "ready", data: kept.get(path) as T } : { state: "idle" },
   );
@@ -137,6 +144,33 @@ export function useLazyApi<T>(
  */
 export function useKnownAnswer<T>(path: string, want = true): T | undefined {
   const last = useLastAnswer<T>(path);
-  const own = useLazyApi<T>(path, want && last === undefined, true);
+  // Beta.27 review: file events read it again (beta.27's first cut never did, so a count shown
+  // from an earlier page's answer stayed stale), unless a read on the page follows the path
+  // itself (isPathRead): its answer comes here too, and the path is never asked twice.
+  const [stale, setStale] = useState(0);
+  const own = useLazyApi<T>(path, want && (last === undefined || stale > 0), true, {
+    counted: false,
+  });
+  const reload = own.reload;
+  useFileChanges(() => {
+    if (!want || isPathRead(path)) return;
+    setStale((n) => n + 1);
+    reload();
+  });
   return last ?? (own.state === "ready" ? own.data : undefined);
+}
+
+/**
+ * Beta.27 review: read `path` again now and tell every count shown from it (useLastAnswer), as a
+ * page does after it changed what the path answers (Questions, after an answer, scoped to a
+ * change, where its own read is another path). Never throws: a failed read keeps the last answer.
+ */
+export function readAnswerAgain(path: string): Promise<void> {
+  return api<unknown>(path).then(
+    (data) => {
+      kept.set(path, data);
+      rememberAnswer(path, data);
+    },
+    () => undefined,
+  );
 }

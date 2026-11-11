@@ -27,8 +27,8 @@ import { ignoreLocalSync, redactText } from "./log.js";
  *   colour codes; bounded (its last lines are kept past RUN_LOG_MAX_BYTES).
  * - `.atticus/logs/running/<runId>.json`: who and what — the command words, the ids it was given
  *   (repo, change, run and task ids: words that look like an id and nothing else), the names of
- *   its flags (in `flags`, never their values; beta.27: the title keeps a value that is an id, a
- *   name or a date, never a secret-looking one: titleValue), the process and a hash of the
+ *   its flags (in `flags`, never their values; beta.27: the title keeps the value of a flag on
+ *   an allow-list, TITLE_VALUE_FLAGS, when it is an id, a name or a date: titleValue), the process and a hash of the
  *   machine's name, when it
  *   started, and how it ended (its exit code), written again when it ends. While it runs it is
  *   written again every RUN_HEARTBEAT_MS (`beatAt`), and on Linux it keeps when its process
@@ -192,42 +192,122 @@ const ID_WORD = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_WORDS = 8;
 /** The flags that say where a command ran, left out of its title. */
 const WHERE_FLAGS = new Set(["root", "metarepo"]);
-const safeWord = (w: string) =>
-  ID_WORD.test(w) && !w.includes("//") && redactText(w, { home: "", user: "" }) === w ? w : "…";
+type Redaction = { home?: string; user?: string };
+const safeWord = (w: string, r: Redaction = {}) =>
+  ID_WORD.test(w) && !w.includes("//") && redactText(w, r) === w ? w : "…";
 
 /**
- * Beta.27: a flag's value kept in a title: an id, a name, a date, a handle or a list of them
- * (`2027-03-31`, `@bao`, `forge-ledger,forge-teller`), never one a secret could be. A flag whose
- * name says secret (`--token`, `--api-key`, `--client-secret`) keeps no value whatever it is; a
- * value shaped like one (a token, a random string, a digest: core's hasSecretShape and
- * keyIsSecret, the verifier's), or anything the log's redaction would change, is dropped too.
+ * Beta.27 review: the flags whose value a run's title keeps — an allow-list, never a deny-list.
+ * Each is a string option the command line declares (cli-options' OPTIONS; a test holds the two
+ * together) whose value, by its name and what it means, is an id, a name, a handle, a date or a
+ * small number: a repo, a change, a run, a stage's kind, a lens, a person (`--by @bao`). Free text
+ * (`--note`, `--answer`, `--with`, `--value`), a file, a folder, a host or a URL (`--from`,
+ * `--path`, `--host`), a key (`--key`), anything an organisation's secret could be typed into and
+ * every flag the command line doesn't know (`--pass=hunter2`) keep their name only.
  */
-const VALUE_WORD = /^@?[A-Za-z0-9][A-Za-z0-9._/,:+@_-]{0,99}$/;
-const SECRET_FLAG =
-  /(token|passw|pwd|secret|api-?key|access-?key|private-?key|credential|auth|cookie|session|cert|signature)/i;
-export function titleValue(flag: string, value: string | undefined): string | undefined {
-  if (value === undefined || !value || SECRET_FLAG.test(flag)) return undefined;
+export const TITLE_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  "area",
+  "audience",
+  "base",
+  "by",
+  "change",
+  "component",
+  "depth",
+  "epic",
+  "estate",
+  "format",
+  "framework",
+  "gate",
+  "group",
+  "hops",
+  "iteration",
+  "journey",
+  "kind",
+  "language",
+  "lens",
+  "level",
+  "limit",
+  "mode",
+  "model",
+  "models",
+  "owner",
+  "platform",
+  "pr",
+  "release",
+  "repo",
+  "repos",
+  "round",
+  "run",
+  "scope",
+  "state",
+  "step",
+  "story",
+  "system",
+  "tag",
+  "target",
+  "task",
+  "team",
+  "template",
+  "type",
+]);
+/** A value kept is cut to this many characters. */
+export const TITLE_VALUE_MAX = 48;
+/** An id, a name, a date, a handle or a list of them: one word, no `@` but a handle's. */
+const VALUE_WORD = /^@?[A-Za-z0-9][A-Za-z0-9._/,:+-]{0,199}$/;
+/** A handle: `@bao`, never `bao@bank.example`. */
+const HANDLE = /^@[\w.-]+$/;
+/** Well-known token prefixes, at any length (core's shapes want the whole token). */
+const TOKEN_PREFIX =
+  /^(?:gh[pousr]_|github_pat_|glpat-|glptt-|gldt-|npm_|pypi-|hf_|(?:sk|rk|pk)[-_]|xox[abprs]-|AKIA|ASIA|AIza|eyJ|ya29\.|shpat_|dop_v1_|SG\.)/;
+/** Long runs of hex or of digits (a digest, a random id, a card or account number). */
+const LONG_RUN = /[0-9a-f]{16,}|[0-9A-F]{16,}|\d{9,}|\b\d{3}-\d{2}-\d{4}\b/;
+
+/**
+ * Beta.27: a flag's value kept in a title, as typed (`--target 2027-03-31`, `--by @bao`,
+ * `--repos forge-ledger,forge-teller`). Beta.27 review: only for a flag of TITLE_VALUE_FLAGS, and
+ * even then not a value with an `@` anywhere but a leading handle's (an email, `user:pass@host`),
+ * a `://`, a `:` before an `@`, a backslash, a token's prefix or shape (core's hasSecretShape and
+ * keyIsSecret, the verifier's), a long run of hex or digits, or anything the log's redaction (with
+ * this machine's home folder and user name) would change; one kept is cut to TITLE_VALUE_MAX.
+ */
+export function titleValue(
+  flag: string,
+  value: string | undefined,
+  redact: Redaction = {},
+): string | undefined {
+  if (value === undefined || !value || !TITLE_VALUE_FLAGS.has(flag)) return undefined;
   if (!VALUE_WORD.test(value) || value.includes("//") || value.includes("\\")) return undefined;
+  if (value.includes("@") && !HANDLE.test(value)) return undefined;
+  if (value.includes("://") || /:.*@/.test(value)) return undefined;
+  for (const part of value.split(/[,:+]/)) {
+    if (!part) continue;
+    if (TOKEN_PREFIX.test(part) || LONG_RUN.test(part)) return undefined;
+    if (hasSecretShape(part) || keyIsSecret(part)) return undefined;
+  }
   if (hasSecretShape(value) || keyIsSecret(value)) return undefined;
-  return redactText(value, { home: "", user: "" }) === value ? value : undefined;
+  if (redactText(value, redact) !== value) return undefined;
+  return value.length > TITLE_VALUE_MAX ? `${value.slice(0, TITLE_VALUE_MAX)}…` : value;
 }
 
 /**
  * The command words, ids and flag names of a run, and its title. Beta.27: with the flags'
  * values (`values`, by flag name; a boolean flag has none), each kept when titleValue keeps it, so
- * the title reads as the command was typed; beta.26 dropped them all ("--target --by").
+ * the title reads as the command was typed; beta.26 dropped them all ("--target --by"). The words
+ * and values are redacted as the log is (`redact`: this machine's home folder and user name by
+ * default; a test gives its own).
  */
 export function runTitle(
   positionals: readonly string[],
   flags: readonly string[],
   values: Readonly<Record<string, string | undefined>> = {},
+  redact: Redaction = {},
 ): { command: string[]; title: string } {
-  const command = positionals.slice(0, MAX_WORDS).map(safeWord);
+  const command = positionals.slice(0, MAX_WORDS).map((w) => safeWord(w, redact));
   // Where it ran (the metarepo's folder) isn't what ran (beta.26 review).
   const names = flags
     .filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f) && !WHERE_FLAGS.has(f))
     .map((f) => {
-      const v = Object.hasOwn(values, f) ? titleValue(f, values[f]) : undefined;
+      const v = Object.hasOwn(values, f) ? titleValue(f, values[f], redact) : undefined;
       return v === undefined ? `--${f}` : `--${f} ${v}`;
     });
   return { command, title: ["atticus", ...command, ...names].join(" ") };
@@ -386,7 +466,7 @@ export function startTerminalRun(
     : pid === process.pid
       ? procStartOf(pid)
       : undefined;
-  const { command, title } = runTitle(o.positionals, o.flags, o.values);
+  const { command, title } = runTitle(o.positionals, o.flags, o.values, o.redact);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
     runId,

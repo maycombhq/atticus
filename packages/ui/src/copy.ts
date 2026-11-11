@@ -5171,6 +5171,12 @@ export const COPY = {
       answer: "Answer",
       answerLabel: (q: string) => `Answer: ${q}`,
       more: (n: number) => `and ${n.toLocaleString()} more on the Questions page`,
+      /** Beta.27 review: the owner questions, one row, so the list adds up to the tab's count. */
+      ownerRow: (n: number) =>
+        n === 1 ? "1 owner question" : `${n.toLocaleString()} owner questions`,
+      ownerMeta: "asked of a system's owner",
+      ownerLabel: (n: number) =>
+        `Answer the ${n === 1 ? "owner question" : `${n.toLocaleString()} owner questions`}`,
     },
     problems: {
       loading: "Reading what needs attention…",
@@ -6649,6 +6655,16 @@ export const COPY = {
     /** The section's count, read after its name. */
     count: (n: number) => `${n}`,
     repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
+    /**
+     * Beta.27 review: the Systems header when the map has boxes for only some of the manifest's
+     * repos (repo-counts.ts); the rest are listed under notOnMap.
+     */
+    reposOnMap: (onMap: number, all: number) =>
+      `${onMap} of ${all} repo${all === 1 ? "" : "s"} on the map`,
+    notOnMap: "Not on the map",
+    /** A system the map holds no repo of: its row says so instead of a count. */
+    noRepo: "no repo",
+    components: (n: number) => `${n} component${n === 1 ? "" : "s"}`,
     waitsOnYou: "waits on you",
     /** A row's whole name for a screen reader, its parts joined. */
     spoken: (...parts: string[]) => parts.join(", "),

@@ -7,6 +7,7 @@ import {
   recordedCommand,
   SCHEMA_VERSION,
   startTerminalRun,
+  TITLE_VALUE_FLAGS,
 } from "@maycombhq/core/light";
 import { basename, join, resolve } from "node:path";
 import type { Output } from "./commands.js";
@@ -973,6 +974,33 @@ function positionalsAt(argv: string[]): number[] {
 }
 
 /**
+ * Argv's positional words as the parser reads them (an option's value isn't one). Beta.27 review:
+ * a word right after a flag the command line doesn't know, given without `=` (`--pass hunter2`),
+ * is that flag's value as the person meant it, so the title shows `…` for it, never the word.
+ */
+export function titleWordsOf(argv: string[]): string[] {
+  const options = optionsFor(argv);
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options,
+    strict: false,
+    tokens: true,
+  });
+  const out: string[] = [];
+  let prev: (typeof tokens)[number] | undefined;
+  for (const t of tokens) {
+    if (t.kind === "positional") {
+      const unknownFlag =
+        prev?.kind === "option" && !Object.hasOwn(options, prev.name) && prev.inlineValue !== true;
+      out.push(unknownFlag ? "…" : argv[t.index]!);
+    }
+    prev = t;
+  }
+  return out;
+}
+
+/**
  * ADR 0187: a long command's run files, when it is one (recordedCommand) at a metarepo; else
  * nothing is written. Its positional words as the parser reads them (an option's value isn't one).
  */
@@ -981,7 +1009,7 @@ function recorderFor(argv: string[], flags: string[], root: string) {
   let positionals: string[];
   let values: Record<string, string>;
   try {
-    positionals = positionalsAt(argv).map((i) => argv[i]!);
+    positionals = titleWordsOf(argv);
     values = optionValuesOf(argv);
   } catch {
     return undefined;
@@ -991,18 +1019,32 @@ function recorderFor(argv: string[], flags: string[], root: string) {
   return startTerminalRun(root, { positionals, flags, values, hookProcess: true });
 }
 
-/** Beta.27: each option's value as the parser reads it (the last one given), by its name. */
+/**
+ * Beta.27: the value of each option a title may show (the last one given), by its name. Beta.27
+ * review: only an option the command line declares as taking a string (OPTIONS) and the title's
+ * allow-list names (core's TITLE_VALUE_FLAGS); an unknown `--x=v` (parseArgs, not strict, reads
+ * it) and every other flag give none, so their values never reach the run's record.
+ */
 export function optionValuesOf(argv: string[]): Record<string, string> {
+  const options = optionsFor(argv);
+  const declared = options as Record<string, { type: string }>;
   const { tokens } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: optionsFor(argv),
+    options,
     strict: false,
     tokens: true,
   });
   const out: Record<string, string> = {};
   for (const t of tokens)
-    if (t.kind === "option" && typeof t.value === "string") out[t.name] = t.value;
+    if (
+      t.kind === "option" &&
+      typeof t.value === "string" &&
+      Object.hasOwn(declared, t.name) &&
+      declared[t.name]!.type === "string" &&
+      TITLE_VALUE_FLAGS.has(t.name)
+    )
+      out[t.name] = t.value;
   return out;
 }
 

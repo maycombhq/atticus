@@ -51,6 +51,7 @@ const {
   PANEL_EVENT,
   PANEL_HEIGHT_KEY,
   QUESTIONS_URL,
+  OWNER_QUESTIONS_URL,
   showPanelTab,
   TRUST_URL,
   clampHeight,
@@ -519,7 +520,9 @@ describe("Questions and Problems are read when first shown", () => {
     const m = mount(BottomPanel, props(true));
     (tabs(m.tree)[1]!.props.onClick as () => void)();
     m.render();
-    expect(new Set(asked.filter(Boolean))).toEqual(new Set([QUESTIONS_URL]));
+    // Beta.27 review: both kinds of question to answer, the owner questions too.
+    expect(new Set(asked.filter(Boolean))).toEqual(new Set([QUESTIONS_URL, OWNER_QUESTIONS_URL]));
+    answers.set(OWNER_QUESTIONS_URL, { state: "ready", data: { open: 0 } });
     answers.set(QUESTIONS_URL, {
       state: "ready",
       data: {
@@ -532,7 +535,7 @@ describe("Questions and Problems are read when first shown", () => {
     // Back on the Console, the questions stay read and counted.
     (tabs(m.tree)[0]!.props.onClick as () => void)();
     m.render();
-    expect(asked.at(-3)).toBe(QUESTIONS_URL);
+    expect(asked.slice(-4, -2)).toEqual([QUESTIONS_URL, OWNER_QUESTIONS_URL]);
     const q = tabs(m.tree)[1]!;
     expect(text(q.props.children)).toBe(`${P.tab.questions}2${P.count(2)}`);
     const badge = all(q.props.children).find((e) => e.props.className === "bp-count")!;

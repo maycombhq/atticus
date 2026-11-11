@@ -37,7 +37,12 @@ import { Panel } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 import type { QuestionListView } from "./Questions.js";
 import { waitingQuestions } from "./OwnerQuestions.js";
-import { questionsToAnswerOf } from "../app/question-counts.js";
+import {
+  questionsToAnswerOf,
+  type OwnerQuestionsAnswer,
+  type QuestionsToAnswer,
+  type StepQuestionsAnswer,
+} from "../app/question-counts.js";
 import { Propose } from "../app/propose.js";
 import { stageOf, type OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
@@ -525,6 +530,24 @@ export function DigestButtons({ to }: { to?: string }) {
 type CountStatus = { state: "loading" } | { state: "error"; error: string } | undefined;
 
 /**
+ * Beta.27 review: Home's Questions to answer, from its two reads as the server answered them
+ * (GET /api/questions?state=open and GET /api/owner-questions): the number, the two kinds said
+ * under it and where the tile opens. Home computes its tile with this, and a test with the same.
+ */
+export function homeQuestionsOf(
+  steps: StepQuestionsAnswer | undefined,
+  owner: OwnerQuestionsAnswer | undefined,
+): {
+  questions: number | undefined;
+  questionsOf: QuestionsToAnswer | undefined;
+  questionsHref: string;
+} {
+  const toAnswer = questionsToAnswerOf(steps, owner);
+  const w = waitingQuestions(toAnswer?.steps, toAnswer?.owner);
+  return { questions: w.n, questionsOf: toAnswer, questionsHref: w.href };
+}
+
+/**
  * What waits on you, by kind (ADR 0105), as Home's first tiles (beta.26): what waits on you
  * (the open needs across every change and the manual steps, said apart under it), the questions
  * to answer, and the blocking findings (with the open findings by source under it), each linking
@@ -971,11 +994,10 @@ export function CommandCenter() {
   );
   const notMine = open.filter((f) => levels && f.asks && !levels.includes(f.asks)).length;
   // Beta.27: the questions to answer, counted as the badge, the status bar and Questions count.
-  const toAnswer = questionsToAnswerOf(
+  const homeQs = homeQuestionsOf(
     asked.state === "ready" ? asked.data : undefined,
     qs.state === "ready" ? qs.data : undefined,
   );
-  const waitingQs = waitingQuestions(toAnswer?.steps, toAnswer?.owner);
   const facts = kinds.state === "ready" ? kinds.data.reduce((a, k) => a + k.count, 0) : 0;
   const countOf = (kind: string) =>
     kinds.state === "ready" ? (kinds.data.find((k) => k.kind === kind)?.count ?? 0) : 0;
@@ -1009,9 +1031,7 @@ export function CommandCenter() {
     (trust.state === "ready" ? trust.data.problems.length : 0);
   const status = homeStatus(listState, blocking.length);
   const wait = waitingTiles({
-    questions: waitingQs.n,
-    questionsOf: toAnswer,
-    questionsHref: waitingQs.href,
+    ...homeQs,
     needs: needs.state === "ready" ? allNeeds.filter((n) => n.status === "open").length : undefined,
     steps: todo.state === "ready" ? todo.data.steps.length : undefined,
     blocking: findings.state === "ready" ? blocking.length : undefined,
@@ -1124,7 +1144,7 @@ export function CommandCenter() {
               partial={partial}
             />
             <div className="hm-foot">
-              <a href={waitingQs.href ?? "#/questions"}>{H.seeAllQuestions}</a>
+              <a href={homeQs.questionsHref}>{H.seeAllQuestions}</a>
               {listState === "ready" && waiting > 0 && (
                 <button
                   type="button"

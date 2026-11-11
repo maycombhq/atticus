@@ -7,5 +7,10 @@
 export { SCHEMA_VERSION } from "./schema/version.js";
 export { createLog, logFileOf, NO_LOG, type Log, type LogEntry, type LogLevel } from "./log.js";
 // ADR 0187: a long command keeps what it prints for the app's Console.
-export { recordedCommand, startTerminalRun, type TerminalRunRecorder } from "./run-log.js";
+export {
+  recordedCommand,
+  startTerminalRun,
+  TITLE_VALUE_FLAGS,
+  type TerminalRunRecorder,
+} from "./run-log.js";
 export { printToCurrent, withPrinter } from "./printer.js";
