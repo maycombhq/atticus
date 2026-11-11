@@ -59,16 +59,8 @@ import {
   estateMergeInput,
   productionRepos,
   prototypeScanNotes,
-  type EstateRepo,
 } from "./merge-input.js";
-import { estateFacts, factsForScan, type FactBasis, type ReadersStandIn } from "./facts-scan.js";
-import {
-  carryFrom,
-  withCarried,
-  withoutCovered,
-  type CarriedSummary,
-  type UnreadWhy,
-} from "./scan-carry.js";
+import { factsForScan, type FactBasis } from "./facts-scan.js";
 import { applyFactJoins, joinReposOf, outsideSystems } from "./facts-catalog.js";
 import {
   applyClients,
@@ -111,13 +103,6 @@ export interface ScanOptions {
    * absorb keeps under the state folder's `absorbed/<id>/`.
    */
   federated?: { id: string; dir: string }[];
-  /**
-   * Beta.26 review (ADR 0124 addendum B-keep): the catalog before the scan, so what this scan
-   * can't read is carried (scan-carry.ts): the records of an estate repo not read here, and those
-   * from verified facts while the readers stand in, merged beside what it reads so the joins
-   * resolve. Left out, the scan's catalog is only what it read.
-   */
-  carry?: readonly CatalogRecord[];
 }
 
 /** What each federated metarepo contributed. */
@@ -207,8 +192,6 @@ export interface EstateScan {
    * changed source files no fact covers yet, or the built-in readers.
    */
   basis?: Record<string, FactBasis>;
-  /** With `carry`: what the scan carried from the catalog before it, said by why. */
-  carried?: CarriedSummary;
 }
 
 async function isDir(p: string): Promise<boolean> {
@@ -446,8 +429,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const results: RepoScan[] = [];
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
   const basis: Record<string, FactBasis> = {};
-  const skipped: Record<string, "not-cloned" | "unreadable"> = {};
-  const standIn: Record<string, ReadersStandIn> = {};
   /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
   const factRepos: { repo: string; facts: Fact[]; targets: Record<string, string> }[] = [];
   /** Each repo's structured files, to tell which no record cites. */
@@ -469,7 +450,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: "workspace",
         message: "isn't cloned here yet; run atticus workspace sync",
       });
-      skipped[r.id] = "not-cloned";
       continue;
     }
     try {
@@ -480,7 +460,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: "workspace",
         message: `can't read the base clone (${(e as Error).message}); run atticus workspace sync`,
       });
-      skipped[r.id] = "unreadable";
       continue;
     }
     const extractors: Extractor[] = off.has("readers")
@@ -593,67 +572,25 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     });
     if (fromFacts.note) factNotes.push(fromFacts.note);
     basis[r.id] = fromFacts.records && fromFacts.basis ? fromFacts.basis : { from: "readers" };
-    if (fromFacts.standIn) standIn[r.id] = fromFacts.standIn;
     if (fromFacts.facts)
       factRepos.push({ repo: r.id, facts: fromFacts.facts, targets: fromFacts.targets ?? {} });
     results.push({ ...scan, records: fromFacts.records ?? readerRecords });
     o.onProgress?.(++done, repos.length, r.id);
   }
 
-  // Beta.26 review (ADR 0124 addendum B-keep): what this scan can't read is carried from the
-  // catalog before it, and merged beside what it read so the joins resolve (scan-carry.ts).
-  const estate = productionRepos(op);
-  const carry = o.carry
-    ? carryFrom({
-        before: o.carry,
-        estate: estate.map((r) => r.id),
-        read: results.map((s) => s.repo),
-        standIn,
-        why: Object.fromEntries(
-          estate.map((r): [string, UnreadWhy] => [
-            r.id,
-            o.repos && !o.repos.includes(r.id) ? "not-asked" : (skipped[r.id] ?? "not-cloned"),
-          ]),
-        ),
-        repoOf: componentRepos(estate, o.carry),
-      })
-    : undefined;
-  let covered = 0;
-  if (carry)
-    for (const [n, s] of results.entries()) {
-      const left = withoutCovered(s.repo, s.records, carry);
-      covered += left.covered;
-      if (left.covered) results[n] = { ...s, records: left.records };
-    }
-  // A carried repo's hosts and modules are the merge's too, so a call to it is joined.
-  const mergeRepos = carry ? estate : repos;
   const mergeInput = (records: CatalogRecord[]) =>
-    estateMergeInput(
-      op,
-      mergeRepos,
-      records,
-      (id) => modulesOf.get(id) ?? mergeRepos.find((r) => r.id === id)?.modules ?? [],
-    );
+    estateMergeInput(op, repos, records, (id) => modulesOf.get(id) ?? []);
   // What the org's pipeline templates and library steps do, on the pipelines using them (ADR 0062).
-  let codeRecords = [
-    ...(carry?.context ?? []),
-    ...applyPipelineModels(
-      results.flatMap((s) => s.records),
-      frameworks,
-    ),
-  ];
-  // The repos read from their facts join each other's entries, as verify --write joins them;
-  // with what is carried, the verified facts on file of the repos not read are joined too (their
-  // records are carried, not made again), so a call into one finds its entry.
-  const others = carry && factRepos.length ? await estateFacts(o.root, op, "") : undefined;
-  const carriedFacts = (others?.repos ?? [])
-    .filter((x) => carry!.unread.has(x.repo))
-    .map((x) => ({ ...x, targets: others!.targets[x.repo] ?? {} }));
+  let codeRecords = applyPipelineModels(
+    results.flatMap((s) => s.records),
+    frameworks,
+  );
+  // The repos read from their facts join each other's entries, as verify --write joins them.
   if (factRepos.length) {
-    const joinRepos = joinReposOf(op, [...factRepos, ...carriedFacts]);
+    const joinRepos = joinReposOf(op, factRepos);
     const join = joinFacts({
       repos: joinRepos,
-      targets: Object.fromEntries([...factRepos, ...carriedFacts].map((x) => [x.repo, x.targets])),
+      targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
       outside: outsideSystems(op),
       ...joinConventions(op),
       walkGateways: helperOn("gateway-walk"),
@@ -741,22 +678,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   for (const p of applied.problems)
     problems.push({ source: "curated", message: JSON.stringify(p) });
   merged = { ...merged, records: applied.records };
-  // What rests only on repos this scan can't read stands as it was (scan-carry.ts).
-  let carried: CarriedSummary | undefined;
-  if (carry) {
-    const w = withCarried(merged.records, carry, covered);
-    carried = w.summary;
-    const ifs = w.records.filter((r) => r.kind === "Interface");
-    merged = {
-      ...merged,
-      records: w.records,
-      stats: {
-        interfaces: ifs.length,
-        verified: ifs.filter((r) => r.confidence === "verified").length,
-        unresolved: w.records.filter((r) => r.kind === "Unresolved").length,
-      },
-    };
-  }
   for (const i of merged.invalid)
     problems.push({
       source: "merge",
@@ -838,25 +759,5 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     notes,
     ...(federated ? { federated } : {}),
     basis,
-    ...(carried ? { carried } : {}),
   };
-}
-
-/**
- * The repo each component is of: the manifests' (a repo's component, its modules'), then the
- * carried catalog's Components that name their repo.
- */
-function componentRepos(
-  estate: readonly EstateRepo[],
-  records: readonly CatalogRecord[],
-): (component: string) => string | undefined {
-  const of = new Map<string, string>();
-  for (const r of estate) {
-    of.set(r.component ?? r.id, r.id);
-    for (const m of r.modules) if (!of.has(m.component)) of.set(m.component, r.id);
-  }
-  for (const c of records)
-    if (c.kind === "Component" && typeof c.repo === "string" && c.repo && !of.has(c.id))
-      of.set(c.id, c.repo);
-  return (component) => of.get(component);
 }

@@ -3001,7 +3001,7 @@ export const COPY = {
     /** App-only audit: the old built-in readers are a cross-check, never how the map is made. */
     scanNow: "Check with the built-in readers",
     scanCrossCheck:
-      "A cross-check, not how the map is made: the built-in readers read the repos cloned here and add what they find beside your assistant's facts. They never take out what your assistant's verified facts say, nor the records of a repo that isn't cloned here. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+      "A cross-check, not how the map is made: the built-in readers read the cloned repos' files and add what they find beside your assistant's facts. It asks which repo answers on an unknown host only for the repos your assistant has read.",
     scanAskAll: "Also ask about the repos your assistant hasn't read",
     scanAdded: (added: number, changed: number, removed: number, questions: number) =>
       `The built-in readers added ${added} ${added === 1 ? "record" : "records"}, changed ${changed} and removed ${removed}. ${questions === 1 ? "1 host question is" : `${questions} host questions are`} open.`,

@@ -8,9 +8,7 @@ import {
   readCatalog,
   scanEstate,
   writeCatalog,
-  type CarriedSummary,
   type CatalogDiff,
-  type UnreadWhy,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
@@ -51,91 +49,6 @@ function driftLine(d: DriftAfterScan): string {
   if (d.round === undefined) return `${head}: no drift.`;
   const what = `${d.open} open finding${d.open === 1 ? "" : "s"}${d.blocking ? ` (${d.blocking} blocking)` : ""}`;
   return `${head}: ${what} in review/drift/${d.round}${d.unchanged ? ", nothing new" : ""}.`;
-}
-
-/** What a scan carried that it couldn't read (scanner's scan-carry.ts), said before what changed. */
-export function keptLines(k: CarriedSummary): string[] {
-  const out: string[] = [];
-  const n = (x: number, one: string) => `${x} ${one}${x === 1 ? "" : "s"}`;
-  // Beta.26 review: said by why each repo wasn't read; only a repo not cloned is told to clone.
-  for (const g of k.by) {
-    const one = g.repos.length === 1;
-    const head = `Kept ${n(g.records, "record")} as ${g.records === 1 ? "it was" : "they were"} of ${g.repos.join(", ")}`;
-    if (g.why === "not-cloned")
-      out.push(
-        `${head}, ${one ? "which isn't" : "which aren't"} cloned here: atticus workspace sync clones ${one ? "it" : "them"}, then scan again to read ${one ? "it" : "them"}.`,
-      );
-    else if (g.why === "unreadable")
-      out.push(
-        `${head}, whose clone${one ? "" : "s"} couldn't be read (see the problems below): atticus workspace sync, then scan again.`,
-      );
-    else
-      out.push(
-        `${head}, which this scan wasn't asked to read (--repos): a scan without --repos reads ${one ? "it" : "them"} again.`,
-      );
-  }
-  if (k.fromFacts)
-    out.push(
-      `Kept ${n(k.fromFacts, "record")} from your assistant's verified facts while the readers stand in: the readers' records are beside them, never over them, until atticus verify <repo> --write.`,
-    );
-  if (k.covered)
-    out.push(
-      `Left out ${n(k.covered, "record")} of the readers' that a kept fact record already has (the same call, endpoint, table, column or setting).`,
-    );
-  if (k.outdated)
-    out.push(
-      `Let go ${n(k.outdated, "record")} from your assistant's facts that cite a file changed since they were read: /atticus-map <repo>, then atticus verify <repo> --write reads ${k.outdated === 1 ? "it" : "them"} again.`,
-    );
-  return out;
-}
-
-/**
- * Beta.26 review: a scan's `--json` report said in words, for the app's Console (the job keeps
- * the JSON as its result): what it read, what it kept, what it wrote, its problems and notes.
- */
-export function scanSummaryLines(report: Record<string, unknown>): string[] {
-  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-  const n = (x: number, one: string) => `${x} ${one}${x === 1 ? "" : "s"}`;
-  const s = (report.stats ?? {}) as Record<string, unknown>;
-  const out = [
-    `Scanned ${n(num(s.repos), "repo")}: ${n(num(s.records), "record")}, ${n(num(s.interfaces), "interface")} (${num(s.verified)} verified), ${n(num(s.unresolved), "loose end")}.`,
-  ];
-  const k = (report.kept ?? {}) as Record<string, unknown>;
-  const why = (v: unknown): UnreadWhy =>
-    v === "unreadable" || v === "not-asked" ? v : "not-cloned";
-  out.push(
-    ...keptLines({
-      unread: Array.isArray(k.unread) ? k.unread.map(String) : [],
-      records: num(k.records),
-      by: (Array.isArray(k.by) ? k.by : []).map((g) => {
-        const x = (g ?? {}) as Record<string, unknown>;
-        return {
-          why: why(x.why),
-          repos: Array.isArray(x.repos) ? x.repos.map(String) : [],
-          records: num(x.records),
-        };
-      }),
-      fromFacts: num(k.fromFacts),
-      covered: num(k.covered),
-      outdated: num(k.outdated),
-    }),
-  );
-  const f = report.files as { written?: unknown; unchanged?: unknown; removed?: unknown } | null;
-  if (f)
-    out.push(
-      `catalog/generated: ${num(f.written)} written, ${num(f.unchanged)} unchanged, ${num(f.removed)} removed`,
-    );
-  for (const note of Array.isArray(report.notes) ? report.notes : [])
-    out.push(`note: ${String(note)}`);
-  for (const p of Array.isArray(report.problems) ? report.problems : []) {
-    const x = (p ?? {}) as { repo?: unknown; source?: unknown; message?: unknown };
-    out.push(
-      `${x.repo ? `${String(x.repo)}: ` : ""}${String(x.source ?? "")}: ${String(x.message ?? "")}`,
-    );
-  }
-  const w = Array.isArray(report.warnings) ? report.warnings.length : 0;
-  if (w) out.push(`${n(w, "warning")}: atticus scan --warnings lists ${w === 1 ? "it" : "them"}`);
-  return out;
 }
 
 /**
@@ -196,32 +109,18 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const out = join(catalogDirOf(root), "generated");
   const before = await readCatalog(out, { cacheRoot: root });
   const started = Date.now();
-  // Beta.26 review: the readers are a cross-check, so what the scan can't read is carried from
-  // the catalog before it and merged beside what it reads (scanner's scan-carry.ts, ADR 0124
-  // addendum B-keep): the records of an estate repo not read here (not cloned, a clone that
-  // doesn't read, not asked for), and those from verified facts while the readers stand in.
   const scan = await scanEstate({
     root,
     ...(o.repos ? { repos: o.repos } : {}),
     ...(o.full ? { cache: null } : {}),
-    carry: before.records,
   });
-  const kept: CarriedSummary = scan.carried ?? {
-    unread: [],
-    records: 0,
-    by: [],
-    fromFacts: 0,
-    covered: 0,
-    outdated: 0,
-  };
-  const records = scan.records;
-  const diff = diffCatalogs(before.records, records);
-  const write = o.dryRun ? undefined : await writeCatalog(out, records);
+  const diff = diffCatalogs(before.records, scan.records);
+  const write = o.dryRun ? undefined : await writeCatalog(out, scan.records);
   // The drift check reads the catalog just written, so it runs only when one was.
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
   // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
   const hosts = write
-    ? await askHosts(root, records, {
+    ? await askHosts(root, scan.records, {
         command: "atticus scan",
         ...(o.askFrom ? { only: o.askFrom } : {}),
       })
@@ -258,7 +157,6 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           files: write ?? null,
           drift,
           questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
-          kept,
         },
         null,
         2,
@@ -309,7 +207,6 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
       io.out(
         `Framework model ${framework} read nothing in ${repos.join(", ")}, which import${repos.length === 1 ? "s" : ""} it; the framework may have changed. Have your assistant re-draft it: atticus onboard framework ${framework} --from <its source, JAR or package> --users ${repos.join(",")} (then onboard accept framework ${framework} --replace)`,
       );
-    for (const l of keptLines(kept)) io.out(l);
     for (const l of diffLines(diff)) io.out(l);
     if (write)
       io.out(

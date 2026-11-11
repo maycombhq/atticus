@@ -32,17 +32,6 @@ import { joinAnswerQuestions } from "./join-host-questions.js";
 export type FactBasis = { from: "facts"; unread: string[] } | { from: "readers" };
 
 /**
- * Beta.26 review: why the readers stand in for a repo whose facts are on file, so a scan keeps
- * what those facts made only while they can't be used: they don't read as facts, some aren't
- * verified yet, or their commit can't be compared with the checkout's; or each cites a file
- * changed since (or names a fact that does), with the files changed, so only the records citing
- * none of them are kept.
- */
-export type ReadersStandIn =
-  | { why: "unparsed" | "unverified" | "not-comparable" }
-  | { why: "cited-changed"; changed: string[] };
-
-/**
  * A scan's use of a repo's verified facts (ADR 0124 §3): when the assistant has read a repo and
  * the verifier kept its facts, the scan takes them over the built-in readers' records, and the
  * readers become a cross-check, said as a note (what they found that the facts don't have).
@@ -71,8 +60,6 @@ export async function factsForScan(
   targets?: Record<string, string>;
   /** What the records rest on; none when the readers stand in. */
   basis?: FactBasis;
-  /** Why the readers stand in, when facts are on file but not used. */
-  standIn?: ReadersStandIn;
 }> {
   const rel = `${factsRelOf(root)}/${repo}.jsonl`;
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
@@ -82,14 +69,12 @@ export async function factsForScan(
   const parsed = parseFacts(text);
   if (!parsed.ok)
     return {
-      standIn: { why: "unparsed" },
       note: `${repo}: ${rel} doesn't read as facts (${parsed.issues[0]?.message ?? "invalid"}); its readers' records are used. Run atticus verify ${repo}.`,
     };
   let facts = parsed.facts;
   const unverified = facts.filter((f) => f.verified === "none").length;
   if (unverified)
     return {
-      standIn: { why: "unverified" },
       note: `${repo}: ${unverified} of its facts aren't verified yet; its readers' records are used. Run atticus verify ${repo}.`,
     };
   const older = commit ? facts.filter((f) => !sameCommit(f.commit, commit)) : [];
@@ -106,7 +91,6 @@ export async function factsForScan(
       : undefined;
     if (!diff || diff.missing.length)
       return {
-        standIn: { why: "not-comparable" },
         note: `${repo}: its facts are of commit ${(diff?.missing[0] ?? older[0]!.commit).slice(0, 7)}, the checkout is at ${commit!.slice(0, 7)}, and the two can't be compared here; its readers' records are used until it is read again (/atticus-map ${repo}, then atticus verify ${repo} --write).`,
       };
     // A changed file invalidates only what cites it: the rest are carried, their lines checked.
@@ -125,16 +109,6 @@ export async function factsForScan(
     const from = [...new Set(older.map((f) => f.commit.slice(0, 7)))].join(", ");
     if (!report.accepted.length)
       return {
-        standIn: {
-          why: "cited-changed",
-          changed: [
-            ...new Set(
-              Object.values(diff.changes).flatMap((cs) =>
-                cs.flatMap((c) => (c.from ? [c.path, c.from] : [c.path])),
-              ),
-            ),
-          ].sort(cmpText),
-        },
         note: `${repo}: every one of its facts (of commit ${from}) cites a file changed since, or names a fact that does; its readers' records are used until it is read again (/atticus-map ${repo}, then atticus verify ${repo} --write).`,
       };
     // The source files changed since the read: no fact covers what they now say.
