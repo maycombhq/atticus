@@ -37,6 +37,10 @@ strokes:
 
 Components that serve the same paths (two wrappers each answering `GET /search`) can't land on one target as they are: a second flow at the same entry is refused. `into.prefix` (`/legacy-cards`) puts every moved flow's entry under that path on the target, and every caller is sent to the prefixed path. A gateway proxy's own contract is unchanged; only where it routes changes.
 
+### Absorbing again takes only what is new
+
+A repo may still be worked on after it is absorbed (an API added to it while the migration runs). Absorbing it again into the same component, after the map is read again, moves only the flows not moved yet and sends on only callers not sent yet; what the first absorb drew is untouched, and the second has its own Undo. With nothing new, the stroke says so. Absorbing into a different component what is absorbed already is refused.
+
 ## Consequences
 
 - A consolidation of twenty wrappers is twenty lines of a file, previewed, then written once; the architecture stage keeps every drawn step as drawn (ADR 0179).

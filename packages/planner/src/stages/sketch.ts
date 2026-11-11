@@ -532,6 +532,35 @@ function absorbStroke(
         ? `${a} has no flow and no caller on today's map, so there is nothing of it to absorb yet.`
         : `${a} isn't a component of today's map.`,
     );
+  // Absorbed before in this change: absorbing again takes only what is new since (a flow added to
+  // the repo, a new caller), so a repo still being worked on can be absorbed again as it grows.
+  const ABSORBED = /^Absorbs (\S+) into (\S+?)[: ]/;
+  const earlier = before.filter((d) => d.change === "remove" && ABSORBED.exec(d.why)?.[1] === a);
+  const earlierInto = earlier.map((d) => ABSORBED.exec(d.why)![2]).find((x) => x !== undefined);
+  if (earlierInto && earlierInto !== b)
+    return fail(
+      `${a} is absorbed into ${earlierInto} already in this change: absorb it there, or take that back first.`,
+    );
+  const movedBefore = new Set(earlier.map((d) => d.flow));
+  const retargetedBefore = (flow: string, step: number) =>
+    before.some(
+      (d) =>
+        d.flow === flow &&
+        d.steps.some(
+          (x) =>
+            x.op === "remove" &&
+            x.step === step &&
+            (x.why ?? "").startsWith(`${a} is absorbed into ${b}`),
+        ),
+    );
+  if (earlierInto) {
+    const pendingFlows = flows.filter((f) => !movedBefore.has(f.flow.id));
+    const pendingCallers = callers.filter((c) => !retargetedBefore(c.f.flow.id, c.step));
+    if (!pendingFlows.length && !pendingCallers.length)
+      return fail(`${a} is absorbed into ${b} already, and the map shows nothing new of it since.`);
+    flows.splice(0, flows.length, ...pendingFlows);
+    callers.splice(0, callers.length, ...pendingCallers);
+  }
   const removed = flows.filter((f) =>
     before.some((d) => d.flow === f.flow.id && d.change === "remove"),
   );

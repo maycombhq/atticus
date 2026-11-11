@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Added
 
-- **`absorb`, a sketch stroke that folds a component into another.** Its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change. One Undo takes it all back. `into.prefix` puts the moved entries under a path, so components that serve the same paths can merge (ADR 0193).
+- **`absorb`, a sketch stroke that folds a component into another.** Its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change. One Undo takes it all back. `into.prefix` puts the moved entries under a path, so components that serve the same paths can merge; absorbing again later takes only what is new in the repo since (ADR 0193).
 - **`atticus change sketch <change> --from strokes.yaml|.json`** reads the canvas's strokes from a file, applied in order, with the same preview and `--save`; an unknown component id gets the nearest ids as "Did you mean" (ADR 0193).
 
 ### Changed

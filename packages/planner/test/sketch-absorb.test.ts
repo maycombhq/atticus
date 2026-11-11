@@ -221,9 +221,13 @@ describe("absorbing a component into another (ADR 0193)", () => {
     );
     expect(run(absorb("forge-api", "forge-api")).problem).toContain("into itself");
     const one = run(absorb("forge-accounts-wrapper", "forge-api"));
-    // Absorbing again is refused: its flows are changed in this change already.
+    // Absorbing again into the same component, with nothing new on the map, has nothing to do.
     expect(run(absorb("forge-accounts-wrapper", "forge-api"), one.deltas).problem).toContain(
-      "changed in this change already",
+      "nothing new",
+    );
+    // Absorbing into another component what is absorbed already is refused.
+    expect(run(absorb("forge-accounts-wrapper", "forge-other"), one.deltas).problem).toContain(
+      "absorbed into forge-api already",
     );
     // forge-accounts-proxy serves GET /accounts/{id} too: a second flow at that entry is refused.
     expect(run(absorb("forge-accounts-proxy", "forge-api"), one.deltas).problem).toContain(
@@ -304,5 +308,80 @@ describe("absorbing a component into another (ADR 0193)", () => {
         why: "w",
       }).success,
     ).toBe(false);
+  });
+
+  it("absorbing again takes only what is new since: a flow added to the repo, and its new callers (ADR 0193)", () => {
+    const first = applyStroke(
+      [],
+      absorb("forge-accounts-wrapper", "forge-api", { runsOn: { type: "service" } }),
+      estate,
+      "pat",
+      "s1",
+    );
+    expect(first.problem).toBeUndefined();
+    // Later the team adds an endpoint to the wrapper (the map is read again): a new flow, and a
+    // new proxy route calling it.
+    const added = flow(
+      "forge-accounts-wrapper",
+      "forge-accounts-wrapper.get-statements",
+      "forge-accounts-wrapper",
+      "forge-accounts-wrapper.get-statements",
+      [
+        { kind: "entry", what: "GET /accounts/{id}/statements arrives" },
+        {
+          kind: "call-out",
+          what: "Passed to Northwind Pay",
+          to: { component: "northwind-pay-gateway", entry: "GET /v1/accounts/{id}/statements" },
+        },
+      ],
+    );
+    const route = flow(
+      "forge-accounts-proxy",
+      "forge-accounts-proxy.route-statements",
+      "forge-accounts-proxy",
+      "forge-accounts-proxy.get-statements",
+      [
+        { kind: "entry", what: "GET /accounts/{id}/statements arrives at the gateway" },
+        {
+          kind: "call-out",
+          what: "Routed to the accounts wrapper",
+          to: { component: "forge-accounts-wrapper", entry: "GET /accounts/{id}/statements" },
+        },
+      ],
+    );
+    const later = {
+      ...estate,
+      flows: [
+        ...estate.flows,
+        { repo: "forge-accounts-wrapper", flow: added },
+        { repo: "forge-accounts-proxy", flow: route },
+      ],
+      ids: new Set([...estate.ids, added.id, route.id]),
+    };
+    const again = applyStroke(
+      first.deltas,
+      absorb("forge-accounts-wrapper", "forge-api"),
+      later,
+      "pat",
+      "s2",
+    );
+    expect(again.problem).toBeUndefined();
+    // Only the new flow moves, and only the new caller is sent on; the first absorb is untouched.
+    const newOnes = again.deltas.filter((d) => !first.deltas.some((x) => x.flow === d.flow));
+    expect(newOnes.map((d) => [d.flow, d.change]).sort()).toEqual([
+      ["forge-accounts-proxy.route-statements", "modify"],
+      ["forge-accounts-wrapper.get-statements", "remove"],
+      ["forge-api.get-statements", "new"],
+    ]);
+    for (const d of first.deltas) expect(again.deltas.find((x) => x.flow === d.flow)).toEqual(d);
+    // Undo of the second absorb takes back only what it added.
+    const undone = applyStroke(
+      again.deltas,
+      { kind: "undo", flow: "forge-api.get-statements", index: 0 },
+      later,
+      "pat",
+    );
+    expect(undone.problem).toBeUndefined();
+    expect(undone.deltas).toEqual(first.deltas);
   });
 });
