@@ -27224,6 +27224,29 @@
               "additionalProperties": false
             }
           },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "fact": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "fact",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
           "callee": {
             "type": "array",
             "items": {

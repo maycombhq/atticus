@@ -79,11 +79,39 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
  */
 export function keyIsSecret(key: string): boolean {
   if (hasSecretShape(key)) return true;
-  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
-  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
+  // Round 3: a run of 24 or more hex digits, letters and digits both (a random id, a digest).
+  for (const run of key.match(/[0-9a-f]{24,}|[0-9A-F]{24,}/g) ?? [])
+    if (/\d/.test(run) && /[a-f]/i.test(run)) return true;
+  if (key.length < 16 || !/^[A-Za-z0-9+/=_-]+$/.test(key) || !/\d/.test(key)) return false;
+  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : /[A-Z]/.test(c) ? 2 : 3);
   let switches = 0;
   for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
-  return switches >= key.length / 2;
+  if (switches >= key.length / 2 && !readsAsWords(key)) return true;
+  // Round 3: as random as a token is (3.5 bits a character or more), and not words.
+  return entropyOf(key) >= 3.5 && !readsAsWords(key);
+}
+
+/** Shannon entropy, in bits a character. */
+function entropyOf(s: string): number {
+  const n = new Map<string, number>();
+  for (const c of s) n.set(c, (n.get(c) ?? 0) + 1);
+  let h = 0;
+  for (const k of n.values()) h -= (k / s.length) * Math.log2(k / s.length);
+  return h;
+}
+
+/**
+ * Whether a key is made of words (`x509Certificate2Path`, `NorthwindV2ApiKey`): its letters,
+ * split at case changes and at what isn't a letter, are mostly pieces of three or more, and its
+ * letters have vowels as words do (a random token's are about one in five).
+ */
+function readsAsWords(key: string): boolean {
+  const pieces = key.split(/[^A-Za-z]+|(?<=[a-z])(?=[A-Z])/).filter(Boolean);
+  const letters = pieces.join("");
+  if (!letters.length) return false;
+  const vowels = (letters.match(/[aeiouy]/gi) ?? []).length / letters.length;
+  const long = pieces.filter((p) => p.length >= 3).reduce((k, p) => k + p.length, 0);
+  return vowels >= 0.25 && long / letters.length >= 0.6;
 }
 
 /**

@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, ApiError, onWrote, useApi, useReloadOnFiles } from "../api/client.js";
+import { api, ApiError, onWrote, useApi, useFileChanges, type LiveEvent } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { focusIfLost } from "./ui.js";
-import { Note, useAction } from "../screens/know/common.js";
+import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
 import { followJob, nextAfter, type NextStep } from "./job.js";
 import { SyncFirst } from "./sync-first.js";
@@ -303,90 +303,168 @@ export function BringIn() {
   );
 }
 
+/**
+ * Apply to every repo's map as it stands (review of beta.24, round 3): running, and once it
+ * ended its lines, the Sync it asks for and what it said. A page that must keep it across its own
+ * reloads (the map's bar, which reads again while the job writes) holds it and passes it in.
+ */
+export interface ApplyAllRun {
+  running: boolean;
+  jobId?: string;
+  lines?: string[];
+  /** Review of beta.23: a repo with no clone here: Sync the repos, not a command to type. */
+  next?: NextStep;
+  /** What it said: that it is working, that it applied every repo, or why it failed. */
+  note?: { ok: boolean; text: string; working?: boolean };
+}
+export const APPLY_ALL_IDLE: ApplyAllRun = { running: false };
+
+/**
+ * `atticus verify --all --write` as a job, each step said to `set`: true when it applied every
+ * repo. Pages that show what waits are told it ended (`workChanged`), whatever it did.
+ */
+export async function runApplyAll(
+  set: (s: ApplyAllRun | ((was: ApplyAllRun) => ApplyAllRun)) => void,
+): Promise<boolean> {
+  set({ running: true, note: { ok: true, text: COPY.app.working, working: true } });
+  try {
+    const r = await followJob("/api/facts/apply-all", {}, undefined, (jobId) =>
+      set((was) => ({ ...was, jobId })),
+    );
+    set({ running: false, lines: r.lines, note: { ok: true, text: COPY.appStep.appliedAll } });
+    return true;
+  } catch (e) {
+    const next = nextAfter(e);
+    set({
+      running: false,
+      lines: [message(e)],
+      ...(next ? { next } : {}),
+      note: { ok: false, text: message(e) },
+    });
+    return false;
+  } finally {
+    workChanged();
+  }
+}
+
 /** `atticus verify --all --write`, then Propose for review. */
 export function ApplyAll({
   noPropose,
   onDone,
   onFailed,
+  run,
+  onRun,
 }: {
   noPropose?: boolean;
   onDone?: () => void;
   /** Review of beta.24: it applied only some, or none: its errors are on show. */
   onFailed?: () => void;
+  /**
+   * Review of beta.24, round 3: the run as the page holds it, and `onRun` starts it there, so a
+   * reload of the page while the job writes, or after, loses neither its lines nor its Sync.
+   */
+  run?: ApplyAllRun;
+  onRun?: () => void;
 }) {
-  const act = useAction();
-  const [lines, setLines] = useState<string[]>();
-  // Review of beta.23: a repo with no clone here: Sync the repos, not a command to type.
-  const [next, setNext] = useState<NextStep | undefined>();
-  const [jobId, setJobId] = useState<string | undefined>();
+  const [own, setOwn] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
+  const held = run ?? own;
+  const start =
+    onRun ??
+    (() =>
+      void runApplyAll(setOwn).then((ok) => {
+        if (ok) onDone?.();
+        else onFailed?.();
+      }));
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="row" style={{ gap: 6, alignItems: "center" }}>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={act.busy}
-          onClick={() =>
-            void act.run(async () => {
-              setNext(undefined);
-              try {
-                const r = await followJob("/api/facts/apply-all", {}, undefined, setJobId);
-                setLines(r.lines);
-              } catch (e) {
-                setLines([(e as Error).message]);
-                setNext(nextAfter(e));
-                onFailed?.();
-                throw e;
-              } finally {
-                workChanged();
-              }
-              onDone?.();
-            }, COPY.appStep.appliedAll)
-          }
-        >
-          {act.busy ? COPY.appStep.applyingAll : COPY.appStep.applyAll}
+        <button type="button" className="btn primary" disabled={held.running} onClick={start}>
+          {held.running ? COPY.appStep.applyingAll : COPY.appStep.applyAll}
         </button>
-        {act.busy && <ShowInConsole id={jobId} />}
+        {held.running && <ShowInConsole id={held.jobId} />}
       </div>
-      <Note note={act.note} />
-      {lines && lines.length > 0 && (
+      <Note note={held.note} />
+      {held.lines && held.lines.length > 0 && (
         <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
-          {lines.join("\n")}
+          {held.lines.join("\n")}
         </pre>
       )}
-      {next && <SyncFirst repos={next.repos} />}
+      {held.next && <SyncFirst repos={held.next.repos} />}
       {!noPropose && <Propose scope="work" />}
     </div>
   );
 }
 
 /**
+ * Review of beta.24, round 3: a file event the map's bar reads again for: a corrections file, an
+ * answered question Apply reads, or a repo's verify.yaml (an Apply the CLI ran). Any other file
+ * leaves it as it is.
+ */
+export const touchesApplyFirst = (e: LiveEvent): boolean =>
+  e.type === "file.changed" &&
+  typeof e.path === "string" &&
+  (/(?:^|[\\/])facts[\\/][^\\/]+\.(?:corrections\.jsonl|verify\.yaml)$/.test(e.path) ||
+    /(?:^|[\\/])questions[\\/]q-[^\\/]+\.yaml$/.test(e.path));
+
+/** How long after the app's own write its file events are taken as that write heard back. */
+export const OWN_WRITE_ECHO_MS = 2000;
+
+/**
  * The map's own bar: the repos whose corrections are newer than their last Apply (the server's
  * applyFirst), with one Apply for them all (each repo's own when only one), read again after
  * every write the app makes, so a line drawn or removed on the map shows here at once. Review of
  * beta.24: and on the server's file events, so a correction the CLI or an assistant writes shows
- * too; after an Apply to every repo's map that applied only some, it stays (its errors and Sync
- * with it) until dismissed or the next Apply, though one repo alone would get its own Apply.
+ * too. Round 3: only for the files it is about, once a burst, and not again for the app's own
+ * write heard back; and Apply to every repo's map stays while it runs (the job's writes read the
+ * bar again, and it may then name one repo or none) and, when it applied only some, with its
+ * errors and Sync until dismissed or the next Apply. The bar holds the run, so a reload loses none.
  */
 export function CorrectionsToApply() {
   const plan = useApi<Plan>("/api/propose?scope=work");
-  useReloadOnFiles(plan);
-  const [failed, setFailed] = useState(false);
   const reload = plan.reload;
+  const own = useRef(0);
   useEffect(() => {
-    work.addEventListener(WORK_CHANGED, reload);
-    const off = onWrote(reload);
+    const now = () => {
+      own.current = Date.now();
+      reload();
+    };
+    work.addEventListener(WORK_CHANGED, now);
+    const off = onWrote(now);
     return () => {
-      work.removeEventListener(WORK_CHANGED, reload);
+      work.removeEventListener(WORK_CHANGED, now);
       off();
     };
   }, [reload]);
+  useFileChanges((events) => {
+    if (!events.some(touchesApplyFirst)) return;
+    if (Date.now() - own.current < OWN_WRITE_ECHO_MS) return;
+    reload();
+  });
+  const [run, setRun] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
   const [applied, setApplied] = useState(false);
+  // WCAG 2.4.3: Dismiss goes with the errors; the keyboard goes to the bar's Apply (or the bar).
+  const [dismissed, setDismissed] = useState(0);
+  const bar = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!dismissed) return;
+    (bar.current?.querySelector<HTMLElement>("button") ?? bar.current)?.focus();
+  }, [dismissed]);
   const repos = plan.state === "ready" ? (plan.data.applyFirst ?? []) : [];
-  if (!repos.length && !applied && !failed) return null;
-  const all = repos.length > 1 || failed;
+  const failed = !run.running && run.note?.ok === false;
+  if (!repos.length && !applied && !run.running && !failed) return null;
+  const all = repos.length > 1 || run.running || failed;
+  const start = () => {
+    setApplied(false);
+    void runApplyAll(setRun).then((ok) => {
+      if (!ok) return;
+      setRun(APPLY_ALL_IDLE);
+      setApplied(true);
+    });
+  };
   return (
     <section
+      ref={bar}
+      tabIndex={-1}
       className="panel stack box-bar"
       style={{ gap: 6, gridColumn: "1 / -1" }}
       aria-label={COPY.appStep.applyAll}
@@ -396,19 +474,17 @@ export function CorrectionsToApply() {
           {P.onMap(repos.join(", "))}
         </p>
       )}
-      {all && (
-        <ApplyAll
-          noPropose
-          onDone={() => {
-            setFailed(false);
-            setApplied(true);
-          }}
-          onFailed={() => setFailed(true)}
-        />
-      )}
+      {all && <ApplyAll noPropose run={run} onRun={start} />}
       {failed && (
         <div>
-          <button type="button" className="btn" onClick={() => setFailed(false)}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setRun(APPLY_ALL_IDLE);
+              setDismissed((n) => n + 1);
+            }}
+          >
             {P.dismissErrors}
           </button>
         </div>

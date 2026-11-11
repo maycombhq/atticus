@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FactCorrection, parseCorrections, parseFacts, type Fact } from "@maycombhq/core";
-import { applyCorrections, dirSource, verifyFacts } from "../src/index.js";
+import { applyCorrections, correctionFor, dirSource, verifyFacts } from "../src/index.js";
 
 /**
  * A person's corrections of a repo's facts, from the Map (ADR 0124 addendum D-app, F3):
@@ -112,6 +112,32 @@ describe("a person's corrections, applied by the verifier", () => {
     const r = applyCorrections(facts(), [wrong!, FactCorrection.parse(later)]);
     expect(r.applied).toEqual([{ fact: "e-settle-listener", action: "edit", by: wrong!.by }]);
     expect(r.stale).toEqual([]);
+  });
+
+  // Review of beta.24, round 3: two corrections written at the same moment (one batch, or one
+  // clock tick) are told apart by where they are in the file: the later line wins.
+  it("on a tie of when, the correction later in the file wins: one batch's last of a fact", () => {
+    const [wrong] = corrections();
+    const at = "2026-10-25T09:00:00Z";
+    const edit = (handler: string) =>
+      FactCorrection.parse({
+        ...wrong!,
+        at,
+        action: "edit",
+        reason: undefined,
+        set: { handler },
+      });
+    const first = edit("SettlementListener.first");
+    const last = edit("SettlementListener.last");
+    const f = facts().find((x) => x.id === "e-settle-listener")!;
+    expect(correctionFor(f, [first, last])).toBe(last);
+    expect(correctionFor(f, [last, first])).toBe(first);
+    // A tie between one met by its id and one met by what it cites: still the later line.
+    const byCite = FactCorrection.parse({ ...last, fact: "e-renamed" });
+    expect(correctionFor(f, [first, byCite])).toBe(byCite);
+    const r = applyCorrections(facts(), [first, last]);
+    const kept = r.facts.find((x) => x.id === "e-settle-listener") as { handler?: string };
+    expect(kept.handler).toBe("SettlementListener.last");
   });
 
   it("refuses a correction that marks a fact wrong without why, or sets what isn't a claim", () => {

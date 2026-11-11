@@ -28,13 +28,22 @@ export function withFileLock<T>(path: string, work: () => Promise<T>): Promise<T
  * a time across processes too (round 46): the app server appends while a CLI command may rewrite
  * the file, so it takes the file's shared lock (`withSharedFileLock`), as every rewrite does.
  */
-export function appendLines(file: string, lines: readonly string[]): Promise<void> {
-  return withSharedFileLock(file, async () => {
-    const now = await readFile(file, "utf8").catch(() => "");
-    const eol = /\r\n/.test(now) ? "\r\n" : "\n";
-    const lead = now && !now.endsWith("\n") ? eol : "";
-    await appendFile(file, lead + lines.map((l) => `${l}${eol}`).join(""), "utf8");
-  });
+export function appendLines(
+  file: string,
+  lines: readonly string[],
+  /** How long to wait for a lock another process holds (the shared lock's own wait by default). */
+  o: { waitMs?: number } = {},
+): Promise<void> {
+  return withSharedFileLock(
+    file,
+    async () => {
+      const now = await readFile(file, "utf8").catch(() => "");
+      const eol = /\r\n/.test(now) ? "\r\n" : "\n";
+      const lead = now && !now.endsWith("\n") ? eol : "";
+      await appendFile(file, lead + lines.map((l) => `${l}${eol}`).join(""), "utf8");
+    },
+    o,
+  );
 }
 
 /**

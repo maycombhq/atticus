@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseFacts } from "@maycombhq/core";
-import { dirSource, liveSecretsIn, verifyFacts } from "../src/index.js";
+import { dirSource, keyIsSecret, liveSecretsIn, verifyFacts } from "../src/index.js";
 
 /**
  * Beta.24: a config file that holds what looks like a live secret is said when the repo is
@@ -159,5 +159,32 @@ describe("a live-looking secret: the review's cases (beta.24 review)", () => {
     expect(liveSecretsIn(".env", ["NorthwindV2ApiKey=nwlive-Q7f3Kd92LmZx41Rt"])).toEqual([
       { file: ".env", line: 1, key: "NorthwindV2ApiKey" },
     ]);
+  });
+
+  // Review of beta.24, round 3: a random key in lowercase hex, or in base64url, is a secret too.
+  it("never names a line by a random hex or base64url key (review of beta.24, round 3)", () => {
+    const id = "AKIAIOSFODNN7EXAMPLE";
+    for (const key of [
+      "6d7ba6243c180beaf40be98ed4967b5d",
+      "9F86D081884C7D659A2FEAA0C55AD015",
+      "k3j5h2l4m9n8b7v6c1x0z2q4",
+      "Zq8xT_r4LmP2-vK9wQs3Nd",
+    ]) {
+      expect(keyIsSecret(key), key).toBe(true);
+      const found = liveSecretsIn("credentials", [`${key}:${id}`]);
+      expect(found, key).toEqual([{ file: "credentials", line: 1, key: "" }]);
+      expect(JSON.stringify(found)).not.toContain(key);
+    }
+    // Keys of words, a setting's dotted name, a short one: said as they are.
+    for (const key of [
+      "spring.datasource.hikari.maximumPoolSize",
+      "FORGE_LEDGER_BASE_URL_FOR_RECONCILIATION",
+      "northwindApiKey",
+      "x509Certificate2Path",
+      "NorthwindV2ApiKey",
+      "forge-ledger-reconciliation-batch-size",
+      "aws_access_key_id",
+    ])
+      expect(keyIsSecret(key), key).toBe(false);
   });
 });

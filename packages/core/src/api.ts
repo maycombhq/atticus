@@ -495,6 +495,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `node` or `focus`, and takes the node view's `depth` and `all`, so an edge of a depth-2 or
  *   an all view is found. Repo trust's `secrets[].key` is empty when the key is a secret itself
  *   (an access key id), never shown. Additive only.
+ *   Review of beta.24, round 3: GET /api/graph/edge-calls gives each link's `calls` (`HierJoin`,
+ *   optional), the call facts it is made of (repo, fact id and line) from the join of the facts on
+ *   file, so a line that holds another arrow's call too is corrected for this arrow's alone. POST
+ *   /api/facts/{repo}/corrections takes the repo in another case as the batch does, and answers
+ *   409 with `written: []` while another process holds the corrections file. A repo name two facts
+ *   files spell but for case is refused (422, `written: []`); a facts folder's `.rejected`,
+ *   `.reviewed` and `.questions` files name no repo. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -694,6 +701,14 @@ export const HierJoin = z.object({
   path: z.string().optional(),
   /** The caller's lines: the call, and the config that ties it to the host. */
   caller: z.array(HierEvidence),
+  /**
+   * 3.11.0 (review of beta.24, round 3): the call facts this link is made of, each its repo, fact
+   * id and line (`path:line`), as GET /api/graph/edge-calls names them from the join of the facts
+   * on file: what "All calls on this arrow are wrong" corrects, where a line holds another
+   * arrow's call too. Left out where the server can't name them (no org pack or facts on file),
+   * and in the node and focus views.
+   */
+  calls: z.array(z.object({ repo: z.string(), fact: z.string(), at: z.string() })).optional(),
   /** The callee's lines: the entry that serves it. */
   callee: z.array(HierEvidence),
   /** Each gateway hop's lines, in order. */

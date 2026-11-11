@@ -297,16 +297,35 @@ const holdingAll = <T>(
  * Review of beta.24: a repo as the estate spells it, from the repos' manifests and the facts
  * files: a name in another case (`Forge-Ledger`) is the one repo it names on a file system that
  * ignores case, so it is spelt the one way, and a batch makes one plan of it. A name nothing
- * spells is refused.
+ * spells is refused. Round 3: one table by the name in lower case, the manifests' spelling first;
+ * a facts folder's other files (`.corrections`, `.rejected`, `.reviewed`, `.questions`) spell no
+ * repo; and a name two facts files spell but for case (a file system that tells them apart) is
+ * refused, as it is no one repo where case is ignored.
  */
 async function repoSpellings(root: string): Promise<(name: string) => string> {
-  const known = new Set<string>((await loadRepos(root).catch(() => [])).map((r) => r.id));
+  const byLower = new Map<string, Set<string>>();
+  const add = (n: string) => {
+    const k = n.toLowerCase();
+    byLower.set(k, (byLower.get(k) ?? new Set()).add(n));
+  };
+  const manifests = new Map<string, string>();
+  for (const r of await loadRepos(root).catch(() => [])) manifests.set(r.id.toLowerCase(), r.id);
   for (const n of await readdir(factsDirOf(root)).catch(() => [] as string[]))
-    if (n.endsWith(".jsonl") && !n.endsWith(".corrections.jsonl")) known.add(n.slice(0, -6));
+    if (n.endsWith(".jsonl") && !/\.(corrections|rejected|reviewed|questions)\.jsonl$/.test(n))
+      add(n.slice(0, -6));
   return (name) => {
-    if (known.has(name)) return name;
-    const same = [...known].filter((k) => k.toLowerCase() === name.toLowerCase()).sort();
+    const k = name.toLowerCase();
+    const manifest = manifests.get(k);
+    if (manifest) return manifest;
+    const same = [...(byLower.get(k) ?? [])].sort();
     if (!same.length) throw notFound(`No repo of the estate is named ${name}.`);
+    if (same.length > 1)
+      throw new HttpError(
+        422,
+        "Atticus can't tell which repo that is",
+        `The facts files spell ${same.join(", ")}, which differ only by case: one repo where case is ignored. Rename one (and its facts files) so each repo is spelt one way.`,
+        { written: [] },
+      );
     return same[0]!;
   };
 }
@@ -346,7 +365,8 @@ export function uiFactsRoutes(
         return { status: 200, body: v };
       })
       .add("POST", "/api/facts/{repo}/corrections", async ({ params, body }) => {
-        const repo = repoOf(params.repo!);
+        // Round 3: the repo as the estate spells it, as the batch takes it.
+        const repo = (await repoSpellings(ctx.root))(repoOf(params.repo!));
         const b = Api.FactCorrectionRequest.safeParse(body ?? {});
         if (!b.success)
           throw badRequest(
@@ -362,7 +382,18 @@ export function uiFactsRoutes(
         const written = correctionLine(c);
         await mkdir(factsDirOf(ctx.root), { recursive: true });
         const cfile = join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
-        await appendLines(cfile, [written]);
+        // Round 3: a file another process holds past the wait is a conflict that wrote nothing.
+        await appendLines(cfile, [written], { waitMs: deps.lockWaitMs ?? 15_000 }).catch(
+          (e: unknown) => {
+            if (!(e instanceof LockHeldError)) throw e;
+            throw new HttpError(
+              409,
+              "Another write holds a corrections file",
+              `${e.message} Nothing was written; try again once it is done.`,
+              { written: [] },
+            );
+          },
+        );
         ctx.events.publish({ type: "file.changed", path: rel });
         const result: Api.FactCorrectionResultT = {
           correction: c,
@@ -376,9 +407,11 @@ export function uiFactsRoutes(
       // This whole arrow is wrong (beta.24): one correction of every call on a link. Every item is
       // checked first, so a call that can't be recorded writes none. Review of beta.24: all or
       // none, and never twice. Every involved file's shared lock is held for the whole batch (in
-      // one order, so two batches can't wait on each other); an item whose newest correction on
-      // file says the same already is skipped; each file is written whole and renamed into
-      // place; a failure puts back every file written, or, when one can't be, says which were.
+      // one order, so two batches can't wait on each other), and one held past the wait is a 409
+      // that wrote nothing; an item whose correction the fact meets now (by its id and cite, as
+      // verify meets it) says the same already is skipped; each file is written whole and
+      // renamed into place; a failure puts back every file written, or, when one can't be, says
+      // which were (`written`). Up to 5000 items (LINK_CORRECTIONS_MAX), in a body of 16 MB.
       .add(
         "POST",
         "/api/links/corrections",
@@ -535,9 +568,9 @@ export function uiFactsRoutes(
             ...(skipped.length ? { skipped } : {}),
           };
           return { status: 200, body: result };
-          // Review of beta.24: up to 5000 calls in one request (every call edge-calls gives), each
-          // with its why: more than the server's usual 4 MB.
         },
+        // Review of beta.24: up to 5000 calls in one request (every call edge-calls gives), each
+        // with its why: more than the server's usual 4 MB.
         { maxBody: LINK_CORRECTIONS_MAX_BODY },
       )
   );

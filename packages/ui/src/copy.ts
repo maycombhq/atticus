@@ -4317,7 +4317,7 @@ export const COPY = {
     onMap: (repos: string) =>
       `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
     /** Review of beta.24: put away what Apply to every repo's map said went wrong. */
-    dismissErrors: "Dismiss",
+    dismissErrors: "Dismiss these errors",
     onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
@@ -5385,9 +5385,15 @@ export const COPY = {
       callsFailed: (why: string) => `Couldn't read every call on this arrow: ${why}`,
       declared: (n: number) =>
         `${n} of these link${n === 1 ? " is" : "s are"} a person's declaration, not a call in code, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: withdraw a declaration from This link is wrong under its call.`,
-      /** Review of beta.24: a link whose line holds no call of its path, only others'. */
+      /**
+       * Review of beta.24: a link whose line holds no call of its path, only others'. Round 3: or
+       * two of its path that can't be told apart (one method and path to two hosts).
+       */
       byLine: (n: number) =>
-        `${n === 1 ? "One link's line holds" : `${n} links' lines hold`} no call of ${n === 1 ? "its" : "their"} path, so every call of the method on ${n === 1 ? "that line" : "those lines"} is corrected: check they all belong to this arrow.`,
+        `${n === 1 ? "One link's line holds" : `${n} links' lines hold`} no call of ${n === 1 ? "its" : "their"} path, or more than one, so every call of the method on ${n === 1 ? "that line" : "those lines"} is corrected: check they all belong to this arrow.`,
+      /** Review of beta.24, round 3: more calls than one request corrects. */
+      tooMany: (n: number, max: number) =>
+        `This arrow has ${n} calls to correct, more than the ${max} one correction can take. Correct the calls of one box at a time, opening the arrow from a box inside it.`,
       routing: (n: number) =>
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: correct the proxy's forwarding on the proxy's own box, which changes that route for every caller.`,
       already:

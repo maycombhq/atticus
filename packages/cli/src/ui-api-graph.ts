@@ -12,14 +12,25 @@ import {
   writeFileAtomic,
   diagramsRelOf,
   factsDirOf,
+  helperOn,
   isAdopted,
+  joinConventions,
   joinDependencies,
+  joinFacts,
   loadOrgPack,
   orgPackDirOf,
   type CatalogRecord,
   type DependencyLink,
+  type FactsJoinResult,
+  type JoinRepo,
 } from "@maycombhq/core";
-import { componentRenames, estateFacts, joinReposOf } from "@maycombhq/scanner";
+import {
+  componentRenames,
+  estateFacts,
+  isPrototypeRepo,
+  joinReposOf,
+  outsideSystems,
+} from "@maycombhq/scanner";
 import {
   buildEstate,
   focusView,
@@ -100,29 +111,77 @@ export async function estateDependencies(
   return joinDependencies({ repos }).links;
 }
 
+/**
+ * Review of beta.24, round 3: the estate's join of the facts on file, as `atticus verify --write`
+ * joins them (the answers' targets and pairings, the outside systems, the conventions, the walk
+ * through gateways). No org pack: no join.
+ */
+export async function estateJoinOf(
+  root: string,
+): Promise<{ join: FactsJoinResult; repos: JoinRepo[] }> {
+  const none = { join: { joins: [], asks: [], misses: [], lineage: [], gaps: [] }, repos: [] };
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  if (!op) return none;
+  const estate = await estateFacts(root, op, "");
+  const facts = estate.repos.filter((x) => !isPrototypeRepo(op, x.repo));
+  if (!facts.some((r) => r.facts.length)) return none;
+  const repos = joinReposOf(op, facts, componentRenames(facts, op));
+  const join = joinFacts({
+    repos,
+    ...(Object.keys(estate.targets).length ? { targets: estate.targets } : {}),
+    ...(Object.keys(estate.pairs).length ? { pairs: estate.pairs } : {}),
+    ...(Object.keys(estate.aiTargets).length ? { aiTargets: estate.aiTargets } : {}),
+    outside: outsideSystems(op),
+    ...joinConventions(op),
+    walkGateways: helperOn("gateway-walk"),
+  });
+  return { join, repos };
+}
+
+/** One call a link is made of: its repo, fact id and line (API 3.11.0, `HierJoin.calls`). */
+type LinkCall = NonNullable<Api.HierJoinT["calls"]>[number];
+
+/**
+ * Review of beta.24, round 3: the call facts each Interface is made of, by its id, from the join
+ * of the facts on file: what All calls on this arrow are wrong corrects, where a line holds
+ * another arrow's call too. None with no org pack or no facts.
+ */
+export async function estateLinkCalls(root: string): Promise<Map<string, LinkCall[]>> {
+  const out = new Map<string, LinkCall[]>();
+  for (const j of (await estateJoinOf(root)).join.joins) {
+    const calls = out.get(j.interface) ?? [];
+    if (!calls.some((c) => c.repo === j.call.repo && c.fact === j.call.fact))
+      calls.push({ repo: j.call.repo, fact: j.call.fact, at: j.call.at });
+    out.set(j.interface, calls);
+  }
+  return out;
+}
+
 export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
   // beta.21: the estate is built once per catalog state, not on every box opened. The files are
   // checked at most once a second, and at once when the app sees a catalog file change. ADR
   // 0192: and the facts', which the dependency edges are joined from.
   const memoKey = `estate:${ctx.root}`;
+  const callsKey = `link-calls:${ctx.root}`;
   ctx.events.listen((e) => {
     if (
       e.type === "file.changed" &&
       typeof e.path === "string" &&
       /^(\.atticus[\\/])?(catalog|facts)[\\/]/.test(e.path)
-    )
+    ) {
       recheckNow(memoKey);
+      recheckNow(callsKey);
+    }
   });
+  const stateFiles = async () => [
+    ...(await filesUnder(catalogDirOf(ctx.root))),
+    ...(await filesUnder(factsDirOf(ctx.root))),
+  ];
   const estate = async (): Promise<Estate> =>
-    memoByFiles(
-      memoKey,
-      async () => [
-        ...(await filesUnder(catalogDirOf(ctx.root))),
-        ...(await filesUnder(factsDirOf(ctx.root))),
-      ],
-      buildFromCatalog,
-      { recheckAfterMs: 1000 },
-    );
+    memoByFiles(memoKey, stateFiles, buildFromCatalog, { recheckAfterMs: 1000 });
+  // Round 3: the join of the facts on file, only when an edge's calls are asked for.
+  const linkCalls = async () =>
+    memoByFiles(callsKey, stateFiles, () => estateLinkCalls(ctx.root), { recheckAfterMs: 1000 });
   const buildFromCatalog = async (): Promise<Estate> => {
     const records = await catalogRecords(ctx.root);
     if (!records.length)
@@ -209,12 +268,18 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         );
         const e = v.edges.find((x) => x.id === edge);
         if (!e) throw notFound(`The ${lens} view of ${id} has no edge ${edge}.`);
+        // 3.11.0 (round 3): each link's call facts, from the join of the facts on file, so a
+        // line that holds another arrow's call too is corrected for this arrow's alone.
+        const calls = e.joins?.length ? await linkCalls() : new Map<string, LinkCall[]>();
         return {
           status: 200,
           body: {
             edge: e.id,
             count: e.count,
-            joins: e.joins ?? [],
+            joins: (e.joins ?? []).map((j) => {
+              const c = calls.get(j.interface);
+              return c?.length ? { ...j, calls: c } : j;
+            }),
           } satisfies Api.GraphEdgeCallsViewT,
         };
       })

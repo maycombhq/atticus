@@ -11,6 +11,7 @@ import { AiMark, linkDecisionAt, readyView, useDecisions } from "../../app/decis
 import { aiJoins, linkTypeWord } from "./model.js";
 import { CorrectionsList } from "./Declare.js";
 import {
+  ARROW_CALLS_MAX,
   arrowCalls,
   arrowCorrections,
   callerLine,
@@ -946,7 +947,14 @@ export function ArrowWrongForm(p: {
     e.preventDefault();
     if (!joins || saving.state === "done" || saving.state === "working") return;
     const b = arrowCorrections(joins, p.viewOf, fix());
-    if ("error" in b) return setProblem(b.error === "noCalls" ? A.noCalls : W[b.error]);
+    if ("error" in b)
+      return setProblem(
+        b.error === "noCalls"
+          ? A.noCalls
+          : b.error === "tooMany"
+            ? A.tooMany(found?.calls.length ?? 0, ARROW_CALLS_MAX)
+            : W[b.error],
+      );
     setProblem(undefined);
     p.onSave?.(b.body, b.lines);
   };

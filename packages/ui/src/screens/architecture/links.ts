@@ -11,6 +11,9 @@ import type { Views } from "./model.js";
 
 export type Join = Api.HierJoinT;
 
+/** The most calls one POST /api/links/corrections corrects: the API's LINK_CORRECTIONS_MAX. */
+export const ARROW_CALLS_MAX = 5000;
+
 /** The call's own line: the caller's first code citation (the config that ties it comes after). */
 export function callerLine(j: Join): { repo: string; at: string } | undefined {
   const c = j.caller.find((e) => e.repo && e.source === "code") ?? j.caller.find((e) => e.repo);
@@ -71,10 +74,11 @@ export interface CallToCorrect {
  * What a correction of one link rests on (review of beta.24): every call fact on every line of
  * the caller's (of the link's method, when a line holds several), each the caller's own. Round 2:
  * and of the link's path, normalised as the join normalises it, so a line that holds another
- * arrow's call of the same method leaves that one alone; when no call on a line has the link's
- * path (a base path the join took off, say), every call of the method there, and `byLine` says
- * so. A link a
- * person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
+ * arrow's call of the same method leaves that one alone. Round 3: the call facts the server names
+ * the link's (`calls`, from the join of the facts on file) when it names any on these lines; else
+ * the path, or one that ends with it at a segment (a proxy's base path the join took off, see
+ * `ofLinkPath`). When no call on a line has the link's path, or two do that can't be told apart,
+ * every call of the method there, and `byLine` says so. A link a person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
  * with no line of a caller's (`routing`, a gateway proxy's routing) has none of its own: its
  * proxy's forwarding call is shared by every caller of the route, so it is never corrected from
  * here. `none`: the caller's lines hold no call fact loaded.
@@ -85,26 +89,58 @@ export type LinkBasis =
   | { kind: "routing" }
   | { kind: "none" };
 
+/**
+ * The calls of a link's path (normalised as the join normalises it): the same path, or one that
+ * ends with it at a segment (`/api/ledger/accounts/{}` for `/accounts/{}`, a proxy's base path
+ * the join took off). A link joined by base path takes those that end with it first, any other
+ * link those of the same path first; when that leaves several, they are all given.
+ */
+function ofLinkPath(calls: readonly FactCite[], path: string, basePath: boolean): FactCite[] {
+  const p = (c: FactCite) => (c.claim.path === undefined ? undefined : normalizePath(c.claim.path));
+  const same = calls.filter((c) => p(c) === path);
+  const ends =
+    path === "/" || path === ""
+      ? []
+      : calls.filter((c) => {
+          const q = p(c);
+          return q !== undefined && q.length > path.length && q.endsWith(path);
+        });
+  const [first, then] = basePath ? [ends, same] : [same, ends];
+  return first.length ? first : then;
+}
+
 export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefined): LinkBasis {
   if (j.how === "declared") return { kind: "declared" };
   const lines = callerLines(j);
   if (!lines.length) return { kind: "routing" };
   const m = (x: string | undefined) => (x ?? "").toUpperCase();
   const path = j.path ? normalizePath(j.path) : undefined;
+  // Round 3: the call facts the server names this link's (GET /api/graph/edge-calls), when any of
+  // them is on the caller's lines as the facts read now; else the path decides.
+  const named = new Set((j.calls ?? []).map((c) => `${c.repo}\u0000${c.fact}`));
+  const onLines = lines.map((line) => ({ line, all: callFactsOn(line, viewOf(line.repo)) }));
+  const byId = onLines.some(({ line, all }) =>
+    all.some((c) => named.has(`${line.repo}\u0000${c.id}`)),
+  );
   const calls: CallToCorrect[] = [];
   const seen = new Set<string>();
   let byLine = false;
-  for (const line of lines) {
-    const all = callFactsOn(line, viewOf(line.repo));
-    const ofMethod = all.filter(
-      (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
-    );
-    const some = ofMethod.length ? ofMethod : all;
-    const ofPath = path
-      ? some.filter((c) => c.claim.path !== undefined && normalizePath(c.claim.path) === path)
-      : some;
-    if (path && !ofPath.length && some.length > 1) byLine = true;
-    for (const c of ofPath.length ? ofPath : some) {
+  for (const { line, all } of onLines) {
+    let take: FactCite[];
+    if (byId) take = all.filter((c) => named.has(`${line.repo}\u0000${c.id}`));
+    else {
+      const ofMethod = all.filter(
+        (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
+      );
+      const some = ofMethod.length ? ofMethod : all;
+      // No call of the link's path on the line, or two that can't be told apart (one method and
+      // path to two hosts): every call there, and the form says so.
+      const ofPath = path ? ofLinkPath(some, path, j.how === "base-path") : some;
+      const one = !path || ofPath.length === 1;
+      if (!one && some.length > 1) byLine = true;
+      take = one ? ofPath : some;
+    }
+    for (const c of take) {
       const k = `${line.repo}\u0000${c.id}`;
       if (seen.has(k)) continue;
       seen.add(k);
@@ -176,7 +212,7 @@ export function arrowCorrections(
       routing: string[];
       byLine: string[];
     }
-  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" } {
+  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" | "tooMany" } {
   const reason = fix.reason.trim();
   if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
   const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
@@ -198,6 +234,8 @@ export function arrowCorrections(
     );
   }
   if (!items.length) return { error: already ? "sameTarget" : "noCalls" };
+  // Review of beta.24, round 3: more than one request takes is said in words, never sent.
+  if (items.length > ARROW_CALLS_MAX) return { error: "tooMany" };
   return {
     body: { items, ...(reason ? { reason } : {}) },
     lines: [...lines],

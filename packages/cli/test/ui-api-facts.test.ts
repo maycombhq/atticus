@@ -667,4 +667,97 @@ describe("every call on an arrow: what is on file, how many, who holds it", () =
     });
     expect(none.status).toBe(404);
   });
+
+  // Review of beta.24, round 3: one batch's two corrections of one fact are written at the same
+  // moment; the later one is the one the fact meets.
+  it("gives a fact corrected twice in one batch the later correction", async () => {
+    await writeFile(join(r3, "facts/forge-ledger.corrections.jsonl"), "");
+    const to = (target: string) => ({
+      repo: "forge-ledger",
+      fact: "c-fx-rate",
+      action: "edit" as const,
+      set: { to: target },
+    });
+    const r = await post({ items: [to("forge-rates"), to("forge-mailer")], reason: "x" });
+    expect(r.status).toBe(200);
+    const view = await fetch(s3.url + "/api/facts/forge-ledger", {
+      headers: { "X-Atticus-Token": s3.token },
+    }).then((x) => x.json() as Promise<Api.RepoFactsViewT>);
+    expect(view.facts.find((f) => f.id === "c-fx-rate")!.correction?.set).toEqual({
+      to: "forge-mailer",
+    });
+  });
+
+  // Review of beta.24, round 3: a facts folder's other files are no repo's spelling.
+  it("never takes a reviewed, rejected or questions file for a repo", async () => {
+    const rejected = facts.split("\n")[0]!;
+    for (const kind of ["rejected", "reviewed", "questions"]) {
+      await writeFile(join(r3, `facts/forge-ledger.${kind}.jsonl`), rejected + "\n");
+      const r = await post({
+        items: [{ repo: `forge-ledger.${kind}`, fact: "c-notify", action: "wrong", reason: "x" }],
+      });
+      expect(r.status, kind).toBe(404);
+      expect(await text(`forge-ledger.${kind}`)).toBeUndefined();
+    }
+  });
+
+  it("refuses a name two repos share but for case, where the file system tells them apart", async () => {
+    const { readdir, rm } = await import("node:fs/promises");
+    await writeFile(join(r3, "facts/Forge-Teller.jsonl"), facts);
+    try {
+      // A file system that ignores case has one file for both: nothing to refuse there.
+      const both = (await readdir(join(r3, "facts"))).filter(
+        (n) => n.toLowerCase() === "forge-teller.jsonl",
+      );
+      if (both.length < 2) return;
+      const r = await post({
+        items: [{ repo: "FORGE-TELLER", fact: "c-notify", action: "wrong", reason: "x" }],
+      });
+      expect(r.status).toBe(422);
+      expect(String(r.body.detail)).toContain("Forge-Teller, forge-teller");
+    } finally {
+      await rm(join(r3, "facts/Forge-Teller.jsonl"), { force: true });
+    }
+  });
+
+  // Review of beta.24, round 3: the one-correction route answers as the batch does.
+  it("writes one correction to the repo as it is spelt, and answers 409 while a file is held", async () => {
+    const { hostname } = await import("node:os");
+    const { rm } = await import("node:fs/promises");
+    await writeFile(join(r3, "facts/forge-ledger.corrections.jsonl"), "");
+    const one = async (repo: string) => {
+      const r = await fetch(`${s3.url}/api/facts/${repo}/corrections`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s3.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ fact: "c-notify", action: "wrong", reason: "A health probe" }),
+      });
+      return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+    };
+    const r = await one("Forge-Ledger");
+    expect(r.status).toBe(200);
+    expect(Api.FactCorrectionResult.parse(r.body).file).toBe(
+      "facts/forge-ledger.corrections.jsonl",
+    );
+    expect((await text("forge-ledger"))!.trim().split("\n")).toHaveLength(1);
+    const file = join(r3, "facts/forge-ledger.corrections.jsonl");
+    const before = await text("forge-ledger");
+    await writeFile(
+      `${file}.lock`,
+      JSON.stringify({
+        pid: process.ppid,
+        host: hostname(),
+        startedAt: new Date().toISOString(),
+        what: "write of forge-ledger.corrections.jsonl",
+        token: "other",
+      }),
+    );
+    try {
+      const held = await one("forge-ledger");
+      expect(held.status).toBe(409);
+      expect(held.body).toMatchObject({ written: [] });
+      expect(await text("forge-ledger")).toBe(before);
+    } finally {
+      await rm(`${file}.lock`, { force: true });
+    }
+  });
 });
