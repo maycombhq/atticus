@@ -4,7 +4,7 @@ import type { CatalogRecord } from "./catalog.js";
 import { interfaceId, normalizePath, slugify } from "./identity.js";
 import { canonicalize } from "./serialize.js";
 import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
-import { Fact, FactsFile, type FactOf } from "./schema/facts.js";
+import { FACT_KINDS, Fact, type FactOf } from "./schema/facts.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 import { migrationOf, type MigrationFile } from "./migration-files.js";
 import { normalizeFactPaths } from "./fact-paths.js";
@@ -25,10 +25,49 @@ export interface FactIssue {
   message: string;
 }
 
-export type ParseFactsResult = { ok: true; facts: Fact[] } | { ok: false; issues: FactIssue[] };
+/**
+ * A fact of a kind this Atticus doesn't know (beta.25, ADR 0192 addendum): a newer Atticus wrote
+ * it. It is left out of what is read, and said, rather than refusing the whole file; whoever
+ * writes the file back must keep it (or not write), since it is a teammate's fact.
+ */
+export interface NewerFact {
+  line?: number;
+  factId: string;
+  kind: string;
+  message: string;
+  /** The line as written (a line-by-line read), for a writer to keep it as it is. */
+  raw?: string;
+}
+
+export type ParseFactsResult =
+  | {
+      ok: true;
+      facts: Fact[];
+      /** Beta.25: the facts of kinds a newer Atticus wrote, left out of `facts`. */
+      newer?: NewerFact[];
+    }
+  | { ok: false; issues: FactIssue[] };
+
+const KNOWN_KINDS: ReadonlySet<string> = new Set(FACT_KINDS);
+
+/** A JSON value that is a fact of a kind this Atticus doesn't know, said as one; else undefined. */
+export function newerFactOf(json: unknown, line?: number): NewerFact | undefined {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return undefined;
+  const { kind, id } = json as { kind?: unknown; id?: unknown };
+  if (typeof kind !== "string" || typeof id !== "string" || KNOWN_KINDS.has(kind)) return undefined;
+  return {
+    ...(line !== undefined ? { line } : {}),
+    factId: id,
+    kind,
+    message: `fact ${id} is written by a newer Atticus (fact kind ${kind}); install it to read this fact`,
+  };
+}
 
 export function parseFacts(text: string): ParseFactsResult {
   const trimmed = text.trim();
+  const facts: Fact[] = [];
+  const issues: FactIssue[] = [];
+  const newer: NewerFact[] = [];
   if (trimmed.startsWith("[")) {
     // Round 46: a JSON array cut short (a write interrupted) is a refused file, never a throw.
     let json: unknown;
@@ -37,12 +76,20 @@ export function parseFacts(text: string): ParseFactsResult {
     } catch (e) {
       return { ok: false, issues: [{ code: "not-json", message: (e as Error).message }] };
     }
-    const r = FactsFile.safeParse(normalizeFactPaths(json));
-    if (r.success) return { ok: true, facts: r.data };
-    return { ok: false, issues: r.error.issues.map((i) => issueOf(i)) };
+    if (!Array.isArray(json))
+      return { ok: false, issues: [{ code: "invalid_type", message: "(root): not an array" }] };
+    json.forEach((item, i) => {
+      const n = newerFactOf(item);
+      if (n) return void newer.push(n);
+      const r = Fact.safeParse(normalizeFactPaths(item));
+      if (r.success) facts.push(r.data);
+      else
+        for (const iss of r.error.issues)
+          issues.push({ code: iss.code, message: `${[i, ...iss.path].join(".")}: ${iss.message}` });
+    });
+    if (issues.length) return { ok: false, issues };
+    return { ok: true, facts, ...(newer.length ? { newer } : {}) };
   }
-  const facts: Fact[] = [];
-  const issues: FactIssue[] = [];
   const lines = trimmed === "" ? [] : trimmed.split(/\r?\n/);
   lines.forEach((raw, i) => {
     const line = i + 1;
@@ -54,6 +101,8 @@ export function parseFacts(text: string): ParseFactsResult {
       issues.push({ line, code: "not-json", message: (e as Error).message });
       return;
     }
+    const n = newerFactOf(json, line);
+    if (n) return void newer.push(n);
     const r = Fact.safeParse(normalizeFactPaths(json));
     if (r.success) facts.push(r.data);
     else for (const iss of r.error.issues) issues.push({ line, ...issueOf(iss) });
@@ -65,7 +114,9 @@ export function parseFacts(text: string): ParseFactsResult {
       issues.push({ factId: f.id, code: "duplicate-id", message: `fact id repeated at ${i + 1}` });
     else seen.set(f.id, i);
   });
-  return issues.length ? { ok: false, issues } : { ok: true, facts };
+  return issues.length
+    ? { ok: false, issues }
+    : { ok: true, facts, ...(newer.length ? { newer } : {}) };
 }
 
 function issueOf(i: z.core.$ZodIssue): FactIssue {
@@ -85,7 +136,7 @@ export function parseFactLine(
   raw: string,
   line: number,
   seen: Set<string>,
-): { fact?: Fact; bad?: BadFactLine } {
+): { fact?: Fact; bad?: BadFactLine; newer?: NewerFact } {
   if (raw.trim() === "") return {};
   // A byte-order mark, which PowerShell 5.1 writes at the head of a UTF-8 file, isn't the fact's.
   const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
@@ -98,6 +149,8 @@ export function parseFactLine(
       : (e as Error).message;
     return { bad: { line, raw, issues: [{ line, code: "not-json", message }] } };
   }
+  const newer = newerFactOf(json, line);
+  if (newer) return { newer: { ...newer, raw } };
   const r = Fact.safeParse(normalizeFactPaths(json));
   if (!r.success)
     return {
@@ -133,16 +186,20 @@ export function parseFactLine(
 export function parseFactsLines(text: string): {
   facts: Fact[];
   bad: BadFactLine[];
+  /** Beta.25: facts of kinds a newer Atticus wrote, left out of `facts` (`newerFactOf`). */
+  newer: NewerFact[];
 } {
   const facts: Fact[] = [];
   const bad: BadFactLine[] = [];
+  const newer: NewerFact[] = [];
   const seen = new Set<string>();
   text.split(/\r?\n/).forEach((raw, i) => {
     const r = parseFactLine(raw, i + 1, seen);
     if (r.fact) facts.push(r.fact);
     else if (r.bad) bad.push(r.bad);
+    else if (r.newer) newer.push(r.newer);
   });
-  return { facts, bad };
+  return { facts, bad, newer };
 }
 
 /** One canonical JSON line per fact, sorted by id; the same facts give the same bytes. */

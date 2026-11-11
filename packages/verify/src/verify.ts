@@ -31,6 +31,8 @@ import { globToRegExp } from "@maycombhq/sdk";
 import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-policy.js";
 import {
   buildCoordinatesProblem,
+  buildModuleOf,
+  buildModuleProblem,
   buildUnrecorded,
   isBuildFile,
   type BuildUnrecorded,
@@ -412,6 +414,11 @@ export interface VerifyOptions {
      * module isn't checked here (the join reports one that names nothing).
      */
     repoComponents?: Readonly<Record<string, readonly string[]>>;
+    /**
+     * ADR 0192 addendum (beta.25): each repo's modules as the manifest lists them, by repo id: a
+     * coordinates fact cited in a module's build file belongs to that module's component.
+     */
+    modules?: Readonly<Record<string, readonly { path: string; component: string }[]>>;
   };
   /**
    * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
@@ -895,6 +902,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // J1: the estate's components an exposure may name, and whether this repo serves anything.
   const estate = o.estate ? new Set(o.estate.components.map(factIdPart)) : undefined;
   const serves = facts.some((f) => f.kind === "entry");
+  // ADR 0192 addendum: the module a coordinates fact naming no component is given (its build file's).
+  const moduleOf = new Map<string, string>();
   const repoComponents = new Map(
     Object.entries(o.estate?.repoComponents ?? {}).map(
       ([r, cs]) => [factIdPart(r), new Set(cs.map(factIdPart))] as const,
@@ -1165,11 +1174,20 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     // ADR 0192: the coordinates are the project's own (an artifact) or a dependency's on the
     // cited line, the group's line is cited too, and a version is written where it says.
+    // Beta.25: and the fact's component is the module whose build file it cites, given it when
+    // it names none.
     if ((f.kind === "artifact" || f.kind === "dependency") && !found.has(f.id)) {
-      const bad = buildCoordinatesProblem(f, linesOf);
+      const mod = buildModuleOf(f, linesOf, o.estate?.modules?.[f.repo] ?? []);
+      const bad = buildCoordinatesProblem(f, linesOf) ?? buildModuleProblem(f, mod);
       if (bad) problem(f, "build-coordinates", bad);
-      else if (f.version !== undefined)
-        add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
+      else {
+        if (mod && f.component === undefined) moduleOf.set(f.id, mod.component);
+        if (f.version !== undefined)
+          add(
+            f,
+            checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false),
+          );
+      }
     }
     if (f.kind === "flow") {
       f.steps.forEach((s, i) =>
@@ -1304,7 +1322,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       // sample session's mark stands only on a fact a person made too (the sample check writes
       // its own results, not this file). Everything else is verified by the line check.
       const verified = f.by === "person" && f.verified !== "none" ? f.verified : "line";
-      const base = { ...f, verified, cite: fixQuote(f.cite) } as Fact;
+      const module = moduleOf.get(f.id);
+      const base = {
+        ...f,
+        ...(module !== undefined ? { component: module } : {}),
+        verified,
+        cite: fixQuote(f.cite),
+      } as Fact;
       // A-read problem 4, as A-uncited turns it round: an auth no line is cited for is said here
       // and kept in the fact, since it is what the reader wrote; `catalogAuth` leaves it out of
       // the catalog. A person's own fact is their word, marked as theirs, and is not listed.

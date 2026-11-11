@@ -2,6 +2,17 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Fixed
+
+- **A library's "depends on" arrows are drawn from builds as people write them** (ADR 0192 addendum). A pom whose `<project xmlns=… xsi:schemaLocation=…>` start tag is written over two lines (the Spring Initializr and Maven archetype default) published nothing, so no service's arrow to it was drawn; a pom is now read as one text with its lines kept, so any tag, comment or CDATA section broken over lines reads, and a `${property}` in a group or name is resolved from the pom's `<properties>` or `<parent>` (every line it resolves through cited). `<scope>system</scope>` can be recorded (facts version 6, additive: a version-5 file reads unchanged).
+- **A dependency is its module's.** A dependency cited in `wallets-api/pom.xml` but said to be `wallets-batch`'s drew the arrow from the wrong box, and one that named no module was drawn from the repo's component; the verifier now refuses a component that isn't the build file's module (the manifest's `modules`, else a parent pom's `<modules>` or settings.gradle's `include`) and gives one that names none its module.
+- **A Gradle build is read with its blocks**: a `dependency`, `mavenBom`, `constraints`, `force` or `classpath` line in `dependencyManagement { }`, `constraints { }`, `resolutionStrategy { }` or `buildscript { }` is no dependency, nor is `url 'https://…'`; `integrationTestImplementation` and other test suites' configurations are test-scoped, `providedCompile` provided. A multi-project Gradle library's subprojects publish under the names settings.gradle includes them by (`include 'x'`, `project(':x').name = 'y'`), with the group the root build sets for them.
+- **This link is wrong takes the arrow away.** A "depends on" link declared on more than one line (two module poms, a `<profile>`, `implementation` and `runtimeOnly`) offered only its first line, so the arrow came back after Apply; the form now lists every line, each chosen at first, and marks each chosen one wrong. An arrow merged from more than 20 dependencies shows them all (GET /api/graph/edge-calls). Local API 3.11.0: a `depends-on` join's `dependency.facts`.
+- **A facts file a newer Atticus wrote is read.** A fact of a kind this version doesn't know is left out and said ("written by a newer Atticus"), and `atticus verify` keeps it in the file as written, where the whole file was refused. Releases up to beta.24 still refuse such a file: a team upgrades together.
+- A batch prompt carries the build coordinates' rule and the `artifact` and `dependency` lines only when it holds a build file (pom.xml, build.gradle(.kts), settings.gradle(.kts)), not for every deploy file. The reading rules' words change, so their hash does; no rule set is added, so nothing is read again for it.
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed

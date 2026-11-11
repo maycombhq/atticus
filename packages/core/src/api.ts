@@ -483,8 +483,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   drawn in the architecture and repo lenses, never merged into calls or their counts; its join's
  *   `how` is `coordinates` and it carries `dependency` (group, name, version, scope), with the
  *   dependency's lines as `caller` and the publishing lines as `callee`. Additive only.
+ *
+ * 3.11.0 (beta.25, a library's "depends on" arrows, ADR 0192 addendum): a `depends-on` join's
+ *   `dependency` carries `facts`, every dependency fact the link rests on (its repo, id, cited
+ *   line and every line it rests on), `caller` listing all their lines: This link is wrong marks
+ *   each one chosen, so the arrow can't come back from another line. GET /api/graph/edge-calls
+ *   gives every join merged into a `depends-on` edge too, not only the 20 a view lists. Facts
+ *   version 6: a dependency's `scope` may be `system`. Additive only.
  */
-export const API_VERSION = "3.10.0";
+export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -713,6 +720,20 @@ export const HierJoin = z.object({
       name: z.string(),
       version: z.string().optional(),
       scope: z.string().optional(),
+      /**
+       * 3.11.0: every dependency fact the link rests on, the first (`caller`'s first line) first:
+       * its repo, its id, its cited line (`file:line`) and every line it rests on.
+       */
+      facts: z
+        .array(
+          z.object({
+            repo: z.string(),
+            fact: z.string(),
+            at: z.string(),
+            lines: z.array(z.string()),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });

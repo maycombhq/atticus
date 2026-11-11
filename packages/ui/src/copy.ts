@@ -5300,6 +5300,14 @@ export const COPY = {
         "Say why it is no dependency on the estate's library (a test helper, a stale line, a fork). Atticus writes it to the depending repo's corrections file through the local API; atticus verify leaves the dependency out every time it runs, and the link goes. Nothing changes until you run the command below and the change is reviewed in a pull request.",
       reason: "Why (required)",
       needReason: "Say why the dependency is wrong first.",
+      // Beta.25: a link that rests on several dependency facts (two module poms, a profile, two
+      // configurations): each is listed, every one chosen at first.
+      pickFacts: (n: number) =>
+        `The ${n} lines of its build that declare it (the link goes once each is wrong)`,
+      needFact: "Choose at least one line that declares the dependency.",
+      // Beta.25: a merged arrow's every dependency, read when the view lists only some.
+      moreLoading: "Reading every dependency on this arrow…",
+      moreFailed: (why: string) => `Couldn't read every dependency on this arrow: ${why}`,
       noFact: (repo: string) =>
         `No dependency fact of ${repo} is on this line, so there is nothing to correct here. Read the repo again (/atticus-map ${repo}) or correct the line's facts from its citation.`,
       loadingFacts: "Reading the depending repo's facts…",

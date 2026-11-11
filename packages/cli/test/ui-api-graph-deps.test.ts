@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await srv?.close();
+  await rm(root, { recursive: true, force: true });
 });
 
 const get = async (path: string) => {
@@ -77,6 +78,7 @@ describe("depends-on edges from the facts on file (ADR 0192)", () => {
   it("is none with no org pack, and none with no dependency fact", async () => {
     const bare = await mkdtemp(join(tmpdir(), "atticus-ui-graph-deps-bare-"));
     expect(await estateDependencies(bare)).toEqual([]);
+    await rm(bare, { recursive: true, force: true });
   });
 
   it("draws them on the canvas as depends-on edges, in the shape the contract gives", async () => {
@@ -97,5 +99,19 @@ describe("depends-on edges from the facts on file (ADR 0192)", () => {
         { repo: "forge-wallets", at: "wallets-api/pom.xml:12" },
       ],
     });
+  });
+
+  it("gives every join of a depends-on edge, each with the dependency facts it rests on (3.11.0)", async () => {
+    const edge = encodeURIComponent("depends-on:system:ledger>system:payments");
+    const r = await get(`/api/graph/edge-calls?node=estate&lens=architecture&edge=${edge}`);
+    expect(r.status).toBe(200);
+    const v = Api.GraphEdgeCallsView.parse(r.body);
+    expect(v.count).toBe(2);
+    expect(
+      v.joins.map((j) => [j.from, j.dependency?.facts?.map((f) => `${f.repo}:${f.at}`)]),
+    ).toEqual([
+      ["ledger-api", ["forge-ledger:pom.xml:10"]],
+      ["statements-api", ["forge-statements:build.gradle:9"]],
+    ]);
   });
 });

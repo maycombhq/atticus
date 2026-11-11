@@ -79,6 +79,7 @@ import {
   sliceText,
   staleMessage,
   verifyFacts,
+  isBuildFile,
   type FileKind,
   type FrameworkTopic,
   type FileSlice,
@@ -303,7 +304,19 @@ function instructionTokens(
   return (
     // The rule asking what the repo is (ADR 0128) isn't counted here: it is paid for out of the
     // reserve below (`reserveFor`), so the room planned for files is what it always was.
-    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds, frameworks })) +
+    // ADR 0192: counted as if a batch of deploy files held a build file (build files are deploy
+    // files), the most its prompt can carry.
+    estimateTokens(
+      mapBatchInstructions({
+        repo,
+        commit,
+        batch: 999,
+        of: 999,
+        kinds,
+        frameworks,
+        build: kinds.includes("deploy"),
+      }),
+    ) +
     estimateTokens(DATA_RULE) +
     // the <atticus-data> wrapper around the batch's files
     60
@@ -767,6 +780,10 @@ async function packFor(
     : extra + rejected.reduce((n, t) => n + estimateTokens(t), 0) <= reserve
       ? both
       : own;
+  // ADR 0192 (beta.25): the build coordinates' rule and lines only for a batch with a build file.
+  const ownBuild = slices.some((x) => isBuildFile(x.path));
+  const theirBuild = s.rejected.some((r) => citedFiles(r.fact).some(isBuildFile));
+  const build = fix ? theirBuild : kinds === both ? ownBuild || theirBuild : ownBuild;
   const sources: SourceInput[] = [
     {
       id: "0-instructions",
@@ -779,6 +796,7 @@ async function packFor(
         of: s.batches.length,
         ...(fix ? { fix: true } : {}),
         kinds,
+        build,
         // A-framework: the frameworks the repo's own facts declare, else its type's hint. The
         // build files are read first, so from the second batch on this is what the code says.
         frameworks: await frameworksFor(root, s.repo, facts),

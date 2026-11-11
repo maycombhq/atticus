@@ -378,6 +378,12 @@ export interface BuildEstateOptions {
 export function dependencyJoin(l: DependencyLink): Join {
   const lines = (end: DependencyLink["from"]): Evidence[] =>
     end.lines.map((at) => ({ source: "code", repo: end.repo, at }));
+  // Beta.25: every dependency fact on the link, each corrected under it.
+  const facts = l.facts?.length ? l.facts : [l.from];
+  const caller: Evidence[] = [];
+  for (const f of facts)
+    for (const e of lines(f))
+      if (!caller.some((x) => x.repo === e.repo && x.at === e.at)) caller.push(e);
   return {
     interface: dependencyLinkId(l),
     from: l.from.component,
@@ -386,7 +392,7 @@ export function dependencyJoin(l: DependencyLink): Join {
     gateway: false,
     // code at both ends, each claim checked on its line, and nobody had to guess
     verified: true,
-    caller: lines(l.from),
+    caller,
     callee: lines(l.to),
     hops: [],
     other: [],
@@ -395,6 +401,7 @@ export function dependencyJoin(l: DependencyLink): Join {
       name: l.name,
       ...(l.version ? { version: l.version } : {}),
       ...(l.scope ? { scope: l.scope } : {}),
+      facts: facts.map(({ repo, fact, at, lines: ls }) => ({ repo, fact, at, lines: ls })),
     },
   };
 }

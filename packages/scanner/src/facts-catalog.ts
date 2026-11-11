@@ -1289,6 +1289,15 @@ export function joinReposOf(
             })),
           }
         : {}),
+      // ADR 0192 addendum: every module by its folder, so a build fact is its module's.
+      ...(m?.modules?.length
+        ? {
+            moduleDirs: m.modules.map((x) => ({
+              path: x.path,
+              component: renames?.[repo]?.[factIdPart(x.component)] ?? x.component,
+            })),
+          }
+        : {}),
       // An API gateway's entries are routes the join follows through (ADR 0124 addendum A-gateway).
       // A type that says which side it faces (`gateway-external`, `gateway-internal`) marks each
       // hop through it (A-gateway2); a plain `gateway` leaves that to the proxy's virtual host.

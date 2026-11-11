@@ -136,13 +136,14 @@ describe("the batch prompt's instructions (tiers 2 and 3)", () => {
 });
 
 describe("lean batch prompts: the core and the topic rules a batch needs (ADR 0124 addendum A-lean)", () => {
-  const batch = (kinds?: RuleTopic[]) =>
+  const batch = (kinds?: RuleTopic[], build?: boolean) =>
     mapBatchInstructions({
       repo: "r",
       commit: "0123abc",
       batch: 1,
       of: 3,
       ...(kinds ? { kinds } : {}),
+      ...(build !== undefined ? { build } : {}),
     });
   const parts = FACT_RULE_PARTS.flat();
   const FLOW = "A `flow` fact follows one journey";
@@ -184,7 +185,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when the artifact and dependency facts were added, a build's coordinates and what it
     // builds on (ADR 0192).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "667960efb7051306fead9ecca9c599cc637b4bb74f551aaaccbbf548fc483aaf",
+      "1c4299062995aad662d74b9d58f22085061dbc41d0158ac757f875ba8f29ca42",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -194,7 +195,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
 
   it("puts every rule in at least one kind of batch", () => {
     for (const p of parts) {
-      const kinds = p.when ? RULE_TOPICS.filter((k) => batch([k]).includes(p.text)) : [];
+      // ADR 0192 (beta.25): a build part goes in only with a build file in the batch.
+      const kinds = p.when
+        ? RULE_TOPICS.filter((k) => batch([k], p.build ?? undefined).includes(p.text))
+        : [];
       if (p.when) expect(kinds.length, p.text.slice(0, 60)).toBeGreaterThan(0);
       else expect(batch([]), p.text.slice(0, 60)).toContain(p.text);
     }
@@ -223,11 +227,18 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     expect(batch([])).toContain('"question"');
     expect(batch([])).toContain(factsReference([]));
     // ADR 0192: the build coordinates are in build files: a batch of none has no line for them,
-    // a deploy batch and a batch told nothing of its files do.
+    // a batch with a build file and a batch told nothing of its files do. Beta.25: keyed on the
+    // build files themselves, so a deploy batch of a Dockerfile or a chart has none either.
     expect(batch([])).not.toContain("- artifact:");
     expect(batch(["backend", "routes"])).not.toContain("- dependency:");
-    expect(batch(["deploy"])).toContain("- artifact: group: text, name: text");
-    expect(batch(["deploy"])).toContain("- dependency: group: text, name: text");
+    expect(batch(["deploy", "config"])).not.toContain("- artifact:");
+    expect(batch(["deploy", "config"])).not.toContain("An `artifact` fact is the coordinates");
+    expect(batch(["deploy", "config"], true)).toContain("- artifact: group: text, name: text");
+    expect(batch(["deploy", "config"], true)).toContain("- dependency: group: text, name: text");
+    expect(batch(["deploy", "config"], true)).toContain("An `artifact` fact is the coordinates");
+    expect(factsReference()).toMatch(
+      /- dependency: .*scope\?: compile\|runtime\|provided\|test\|import\|system/,
+    );
     expect(batch()).toContain(factsReference());
     expect(factsReference()).toContain("- dependency:");
   });

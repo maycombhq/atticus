@@ -148,7 +148,19 @@ describe("depends-on edges (ADR 0192)", () => {
         ],
         hops: [],
         other: [],
-        dependency: { group: "forge.payments", name: "forge-payments-common" },
+        dependency: {
+          group: "forge.payments",
+          name: "forge-payments-common",
+          // beta.25: every dependency fact the link rests on, each with its lines
+          facts: [
+            {
+              repo: "forge-wallets",
+              fact: "dependency.wallets-api.forge-payments-common",
+              at: "wallets-api/pom.xml:13",
+              lines: ["wallets-api/pom.xml:13", "wallets-api/pom.xml:12"],
+            },
+          ],
+        },
       },
     ]);
     // wallets-batch builds only its tests on the library: no edge from it.

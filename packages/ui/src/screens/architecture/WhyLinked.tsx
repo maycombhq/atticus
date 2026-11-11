@@ -16,9 +16,9 @@ import {
   callerLine,
   callerRepos,
   callFactsOf,
-  dependencyCorrection,
-  dependencyFactsOf,
+  dependencyCorrections,
   joinWhat,
+  linkDependenciesOf,
   linkCorrection,
   predict,
   type Join,
@@ -527,12 +527,17 @@ export function DependencyWrongForm(p: {
   facts: Loaded<FactsView> | undefined;
   saving?: LinkSaving;
   onSave?: (repo: string, body: Record<string, unknown>, will: Prediction) => void;
+  /** Beta.25: several dependency facts chosen, each one's correction (in order). */
+  onSaveAll?: (repo: string, bodies: Record<string, unknown>[], will: Prediction) => void;
   onClose: () => void;
 }) {
   const D = W.dependency;
   const id = useId();
   const line = callerLine(p.join);
-  const deps = dependencyFactsOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  // Beta.25: every dependency fact on the link, each chosen at first, so marking them wrong
+  // takes the link away rather than leaving it on another line.
+  const deps = linkDependenciesOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  const [unchosen, setUnchosen] = useState<ReadonlySet<string>>(() => new Set());
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | undefined>();
   const saving = p.saving ?? { state: "idle" };
@@ -551,15 +556,20 @@ export function DependencyWrongForm(p: {
         {D.factsFailed(p.facts.error)}
       </p>
     );
-  const fact = deps[0];
-  if (!fact) return <p className="ev-say">{D.noFact(line.repo)}</p>;
+  if (!deps.length) return <p className="ev-say">{D.noFact(line.repo)}</p>;
+  const repo = deps[0]!.repo;
+  const chosen = deps.filter((d) => !unchosen.has(d.id));
+  const labelOf = (d: (typeof deps)[number]) => d.fact?.label ?? d.id;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const b = dependencyCorrection(fact, reason);
-    if ("error" in b) return setProblem(D.needReason);
+    const b = dependencyCorrections(chosen, reason);
+    if ("error" in b) return setProblem(b.error === "needFact" ? D.needFact : D.needReason);
     setProblem(undefined);
-    p.onSave?.(line.repo, b.body, { kind: "dropped", from: p.join.from, was: p.join.to });
+    const will: Prediction = { kind: "dropped", from: p.join.from, was: p.join.to };
+    if (b.bodies.length === 1) p.onSave?.(repo, b.bodies[0]!, will);
+    else if (p.onSaveAll) p.onSaveAll(repo, b.bodies, will);
+    else for (const body of b.bodies) p.onSave?.(repo, body, will);
   };
   return (
     <form
@@ -572,9 +582,34 @@ export function DependencyWrongForm(p: {
         {D.wrongTitle(label)}
       </h4>
       <p className="ev-say">{D.wrongIntro}</p>
-      <p className="ev-say" style={{ margin: 0 }}>
-        <code className="mono">{fact.label}</code>
-      </p>
+      {deps.length === 1 ? (
+        <p className="ev-say" style={{ margin: 0 }}>
+          <code className="mono">{labelOf(deps[0]!)}</code>{" "}
+          <span className="hud">{deps[0]!.at}</span>
+        </p>
+      ) : (
+        <fieldset className="stack" style={{ gap: 2, margin: 0 }}>
+          <legend className="hud">{D.pickFacts(deps.length)}</legend>
+          {deps.map((d) => (
+            <label key={d.id} className="row" style={{ gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={!unchosen.has(d.id)}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setUnchosen((u) => {
+                    const next = new Set(u);
+                    if (on) next.delete(d.id);
+                    else next.add(d.id);
+                    return next;
+                  });
+                }}
+              />
+              <code className="mono">{labelOf(d)}</code> <span className="hud">{d.at}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       <label className="stack" style={{ gap: 2 }}>
         <span className="hud">{D.reason}</span>
         <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -608,7 +643,7 @@ export function DependencyWrongForm(p: {
             {D.will(p.join.from, p.join.to)}
           </p>
           <p className="ev-say">{W.saved(saving.result.file)}</p>
-          <CorrectionNext repo={line.repo} result={saving.result} />
+          <CorrectionNext repo={repo} result={saving.result} />
         </div>
       )}
     </form>
@@ -682,6 +717,27 @@ export function LinkWrong(p: {
   const [saving, setSaving] = useState<LinkSaving>({ state: "idle" });
   const what = joinWhat(p.join);
   const dependency = !!p.join.dependency;
+  // Beta.25: a link's dependency facts marked wrong one after another, in one go.
+  const onSaveAll = (repo: string, bodies: Record<string, unknown>[], will: Prediction) => {
+    if (!line) return;
+    setSaving({ state: "working" });
+    void (async () => {
+      let result: Api.FactCorrectionResultT | undefined;
+      try {
+        for (const body of bodies)
+          result = await api<Api.FactCorrectionResultT>(
+            `/api/facts/${encodeURIComponent(repo)}/corrections`,
+            { method: "POST", body },
+          );
+      } catch (e: unknown) {
+        ev?.reload(repo);
+        return setSaving({ state: "error", text: message(e) });
+      }
+      setSaving({ state: "done", result: result!, will });
+      ev?.reload(repo);
+      p.onSaved?.(`${line.repo}:${line.at}`);
+    })();
+  };
   const onSave = (repo: string, body: Record<string, unknown>, will: Prediction) => {
     if (!line) return;
     setSaving({ state: "working" });
@@ -721,6 +777,7 @@ export function LinkWrong(p: {
             facts={line ? ev?.of(line.repo) : undefined}
             saving={saving}
             onSave={onSave}
+            onSaveAll={onSaveAll}
             onClose={() => setOpen(false)}
           />
         ) : !line ? (

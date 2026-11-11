@@ -258,9 +258,15 @@ export interface VerifySummary {
  * file yet is left out of `repoComponents`. Undefined when there is no org pack, or it lists no
  * repo, so nothing checks the name then.
  */
-export async function estateComponentsOf(
-  root: string,
-): Promise<{ components: string[]; repoComponents: Record<string, string[]> } | undefined> {
+export async function estateComponentsOf(root: string): Promise<
+  | {
+      components: string[];
+      repoComponents: Record<string, string[]>;
+      /** ADR 0192 addendum: each repo's manifest modules, so a module's build facts are its own. */
+      modules: Record<string, { path: string; component: string }[]>;
+    }
+  | undefined
+> {
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const repos = (op?.profiles ?? []).flatMap((p) => p.repos?.repos ?? []);
   if (!repos.length) return undefined;
@@ -280,7 +286,11 @@ export async function estateComponentsOf(
       ...new Set([r.component ?? r.id, ...(r.modules ?? []).map((m) => m.component), ...named]),
     ].sort();
   }
-  return { components: [...new Set(components)].sort(), repoComponents };
+  const modules: Record<string, { path: string; component: string }[]> = {};
+  for (const r of repos)
+    if (r.modules?.length)
+      modules[r.id] = r.modules.map((m) => ({ path: m.path, component: m.component }));
+  return { components: [...new Set(components)].sort(), repoComponents, modules };
 }
 
 /**
@@ -334,6 +344,11 @@ export async function writeVerifyFiles(
   reviewedProblems: readonly ReviewedLineProblem[] = [],
   /** R6: the slips of form fixed in the facts before they were checked. */
   slips: readonly FormSlip[] = [],
+  /**
+   * Beta.25 (ADR 0192 addendum): lines holding a fact of a kind a newer Atticus wrote, kept in
+   * the facts file as written, after the facts this version read.
+   */
+  newerLines: readonly string[] = [],
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -344,7 +359,12 @@ export async function writeVerifyFiles(
   // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
   await writeFileAtomic(
     join(dir, `${repo}.jsonl`),
-    serializeFacts([...report.accepted, ...otherCommit]),
+    serializeFacts([...report.accepted, ...otherCommit]) +
+      [...newerLines]
+        .map((l) => l.trim())
+        .sort()
+        .map((l) => `${l}\n`)
+        .join(""),
   );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [

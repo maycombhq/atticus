@@ -27,8 +27,14 @@ export interface DependencyEnd extends FactEnd {
 }
 
 export interface DependencyLink {
-  /** The dependency fact, in the component that builds on the library. */
+  /** The dependency fact, in the component that builds on the library (the first by id). */
   from: DependencyEnd;
+  /**
+   * Beta.25: every dependency fact the link rests on, `from` first, each with its lines: two
+   * module poms of one component, a `<profile>`'s copy, `implementation` and `runtimeOnly` of the
+   * same coordinates. The link goes only once each of them is wrong.
+   */
+  facts?: DependencyEnd[];
   /** The artifact fact, in the library's component, that publishes the coordinates. */
   to: DependencyEnd;
   group: string;
@@ -69,9 +75,30 @@ function endOf(repo: string, component: string, f: Fact): DependencyEnd {
   return { repo, fact: f.id, component, at, lines };
 }
 
+/** A cited file's folder, `/` separated. */
+const dirOf = (file: string) => {
+  const f = file.replace(/\\/g, "/");
+  return f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+};
+const normDir = (p: string) => p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+
+/**
+ * The component a build fact belongs to: its own `component`, else the manifest's module whose
+ * folder holds (or is under) the build file it cites (beta.25), else the repo's.
+ */
+function buildComponentOf(r: JoinRepo, f: Fact): string {
+  if (f.component) return f.component;
+  const dir = dirOf(f.cite.file);
+  const mod = [...(r.moduleDirs ?? [])]
+    .map((m) => ({ ...m, path: normDir(m.path) }))
+    .filter((m) => m.path && (dir === m.path || dir.startsWith(`${m.path}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return mod?.component ?? r.component ?? r.repo;
+}
+
 export function joinDependencies(input: { repos: readonly JoinRepo[] }): DependencyJoinResult {
   const repos = [...input.repos].sort((x, y) => cmp(x.repo, y.repo));
-  const componentOf = (r: JoinRepo, f: Fact) => factIdPart(f.component ?? r.component ?? r.repo);
+  const componentOf = (r: JoinRepo, f: Fact) => factIdPart(buildComponentOf(r, f));
   const byId = (x: Fact, y: Fact) => cmp(x.id, y.id);
 
   // What the estate publishes, by coordinates: every component that says it does.
@@ -102,7 +129,7 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
   }
 
   const links: DependencyLink[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, DependencyLink>();
   let outside = 0;
   let test = 0;
   for (const r of repos)
@@ -124,17 +151,25 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
       const lib = to[0]!;
       if (from.repo === lib.repo && from.component === lib.component) continue;
       const key = `${from.repo}\u0000${from.component}\u0000${lib.repo}\u0000${lib.component}\u0000${coordinates(f)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const twin = seen.get(key);
+      if (twin) {
+        // Beta.25: the same dependency on another line is on the link too, so marking one wrong
+        // never leaves the link standing on another unseen.
+        twin.facts!.push(from);
+        continue;
+      }
       const pub = facts.get(`${lib.repo}\u0000${lib.fact}`)!;
-      links.push({
+      const link: DependencyLink = {
         from,
+        facts: [from],
         to: lib,
         group: pub.group,
         name: pub.name,
         ...(f.scope && f.scope !== "compile" ? { scope: f.scope } : {}),
         ...(f.version ? { version: f.version } : {}),
-      });
+      };
+      seen.set(key, link);
+      links.push(link);
     }
   links.sort(
     (a, b) =>
