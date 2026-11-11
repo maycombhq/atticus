@@ -183,8 +183,11 @@ export function CommandPalette({
         className="palette panel"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === "Escape") close();
-          else if (e.key === "Tab") {
+          if (e.key === "Escape") {
+            // Taken: the side panel over the page (a narrow window) stays open behind it.
+            e.preventDefault();
+            close();
+          } else if (e.key === "Tab") {
             // A modal keeps focus: Tab stays on the input (the list is driven by the arrows).
             e.preventDefault();
             input.current?.focus();

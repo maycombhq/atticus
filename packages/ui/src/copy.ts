@@ -1950,6 +1950,23 @@ export const COPY = {
     who: (user: string, role?: string) => (role ? `${user} · ${role}` : user),
     /** Embedded in an editor: the few title-bar buttons, beside the tabs. */
     tools: "Page tools",
+    /**
+     * Ctrl+K's commands for the bottom panel (review, beta.26): each only shows a tab of it,
+     * nothing is written. `also`: other words each is found by.
+     */
+    panelCommands: {
+      console: "Open the Console",
+      questions: "Show the open questions in the panel",
+      problems: "Show the problems",
+      runs: "Show the recent runs",
+      detail: "bottom panel",
+      also: {
+        console: ["console", "log", "output", "terminal"],
+        questions: ["questions", "panel"],
+        problems: ["problems", "failed", "blocking", "rejected", "errors"],
+        runs: ["runs", "recent", "history", "jobs"],
+      } as Record<"console" | "questions" | "problems" | "runs", readonly string[]>,
+    },
     /** The layout setting (Settings, and Ctrl+K). */
     layout: {
       title: "Layout",

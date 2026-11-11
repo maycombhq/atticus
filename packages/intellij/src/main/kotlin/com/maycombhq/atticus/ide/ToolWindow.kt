@@ -76,7 +76,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
         bar.targetComponent = this
         toolbar = bar.component
         AtticusApp.of(project).listen(life, { show(it) }, { browser?.cefBrowser?.reload() })
-        AtticusApp.of(project).listenOpen(life) { hash -> browserUrl?.let { browser?.loadURL(Metarepo.screenUrl(it, hash)) } }
+        AtticusApp.of(project).listenOpen(life) { hash -> browserUrl?.let { browser?.loadURL(Metarepo.panelUrl(it, hash)) } }
         show(AppState.Checking)
     }
 
@@ -156,7 +156,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
                 },
             )
         }
-        val b = browser?.takeIf { browserUrl == url } ?: JBCefBrowser.createBuilder().setUrl(Metarepo.screenUrl(url, AtticusApp.of(project).screen)).build().also {
+        val b = browser?.takeIf { browserUrl == url } ?: JBCefBrowser.createBuilder().setUrl(Metarepo.panelUrl(url, AtticusApp.of(project).screen)).build().also {
             dropBrowser()
             Disposer.register(life, it)
             browser = it

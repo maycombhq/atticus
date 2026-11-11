@@ -194,3 +194,43 @@ export function restoreDraft(root: HTMLElement, scroller: HTMLElement, draft: Dr
   step();
   return stop;
 }
+
+/** The tab a draft's place is in: the place is `<tab key>|<page>`. */
+const tabOfPlace = (place: string): string => place.slice(0, place.lastIndexOf("|"));
+
+/**
+ * The drafts of the pages left, by place (`<tab key>|<page>`), for this page load. A closed tab
+ * takes its drafts with it (review, beta.26: a tab opened again came back with what was typed
+ * before it was closed); closing the tab shown leaves its page too, and that draft isn't kept.
+ */
+export class DraftShelf {
+  private kept = new Map<string, Draft>();
+  private closing: string | undefined;
+
+  /** The page at `place` was left: keep its draft (none: forget any), unless its tab closes. */
+  leave(place: string, d: Draft | undefined): void {
+    const closed = this.closing !== undefined && tabOfPlace(place) === this.closing;
+    this.closing = undefined;
+    if (d && !closed) this.kept.set(place, d);
+    else this.kept.delete(place);
+  }
+
+  /** The draft to put back at `place`, given once. */
+  take(place: string): Draft | undefined {
+    const d = this.kept.get(place);
+    this.kept.delete(place);
+    return d;
+  }
+
+  /** A tab closes: its pages' drafts go; `shown`: it is the tab shown, whose page is left next. */
+  close(tabKey: string, shown: boolean): void {
+    for (const place of [...this.kept.keys()])
+      if (tabOfPlace(place) === tabKey) this.kept.delete(place);
+    this.closing = shown ? tabKey : undefined;
+  }
+
+  /** A page is shown: a close that left no page behind is over. */
+  shown(): void {
+    this.closing = undefined;
+  }
+}

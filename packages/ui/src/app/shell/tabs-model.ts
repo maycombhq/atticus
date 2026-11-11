@@ -168,3 +168,14 @@ export function restoreTabs(saved: TabsState | undefined, hash: string): TabsSta
 /** The address of the tab shown, for an app opened with no address. */
 export const activeHash = (s: TabsState): string =>
   s.tabs.find((t) => t.key === s.active)?.hash ?? HOME_HASH;
+
+/**
+ * The address the app starts on (review, beta.26): the one it was given, or, with none, the
+ * kept tab that was shown. Picked before the first render, so Home doesn't mount and then give
+ * way. Home's empty address stays empty.
+ */
+export function startHash(hash: string, store: Store | undefined = browserStore()): string {
+  if (hash && hash !== "#" && hash !== "#/") return hash;
+  const h = activeHash(readTabs(store) ?? initialTabs());
+  return h === HOME_HASH ? hash : h;
+}

@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { COPY } from "../../copy.js";
 import { SideIcon, Tip } from "./icons.js";
 import { HOME_KEY, tabLabel, type TabsState } from "./tabs-model.js";
@@ -8,8 +8,37 @@ const T = COPY.ide;
 /** The page panel the tabs control. */
 export const PANEL_ID = "sh-panel";
 
-/** A tab's element id, from its key (a change's id is letters, digits, dots and dashes). */
-export const tabId = (key: string): string => `sh-tab-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+/**
+ * A tab's element id, from its key. A change's id may hold dots and underscores, so anything an
+ * id can't hold is spelled out (as the Explorer's domId does), and two keys never share an id.
+ */
+export const tabId = (key: string): string =>
+  `sh-tab-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(36)}_`)}`;
+
+/**
+ * After a tab is closed by mouse (its × or a middle click): the button pressed is gone, so focus
+ * that fell to the page's body goes to `next` (the tab shown now), else to the page.
+ */
+function refocusAfterClose(next: string | undefined): void {
+  requestAnimationFrame(() => {
+    const a = document.activeElement as { isConnected?: boolean } | null;
+    if (a && a !== document.body && a.isConnected !== false) return;
+    const to =
+      (next ? document.getElementById(tabId(next)) : null) ?? document.getElementById("main");
+    to?.focus();
+  });
+}
+
+/** Bring the tab shown into the strip's view when the strip scrolls sideways. */
+function revealTab(key: string): void {
+  try {
+    const el = globalThis.document?.getElementById(tabId(key)) as
+      (HTMLElement & { scrollIntoView?: (o?: ScrollIntoViewOptions) => void }) | null | undefined;
+    el?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+  } catch {
+    // No page (a test's render).
+  }
+}
 
 /**
  * The tab strip (ADR 0194): a tab per open page, the one shown selected. A tablist: the arrow
@@ -34,6 +63,19 @@ export function TabStrip({
   tools?: ReactNode;
 }) {
   const list = useRef<HTMLDivElement>(null);
+  // Review (beta.26): many tabs scroll the strip sideways; the one shown is kept in view.
+  useEffect(() => revealTab(state.active), [state.active]);
+  /** The tab shown once `key` is closed: its right neighbour if it is shown, else the shown one. */
+  const shownAfter = (key: string): string | undefined => {
+    if (key !== state.active) return state.active;
+    const i = state.tabs.findIndex((t) => t.key === key);
+    return (state.tabs[i + 1] ?? state.tabs[i - 1])?.key;
+  };
+  const closeByMouse = (key: string) => {
+    const next = shownAfter(key);
+    onClose(key);
+    refocusAfterClose(next);
+  };
   const focusTab = (key: string | undefined) => {
     if (key) document.getElementById(tabId(key))?.focus();
   };
@@ -105,7 +147,7 @@ export function TabStrip({
               onAuxClick={(e) => {
                 if (e.button === 1 && closable) {
                   e.preventDefault();
-                  onClose(t.key);
+                  closeByMouse(t.key);
                 }
               }}
               onKeyDown={(e) => onKey(e, i)}
@@ -118,7 +160,7 @@ export function TabStrip({
                   title={T.closeTab(label)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onClose(t.key);
+                    closeByMouse(t.key);
                   }}
                 >
                   ×

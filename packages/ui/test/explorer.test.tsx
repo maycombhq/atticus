@@ -233,7 +233,7 @@ describe("the Explorer's sections, from the data the app already reads", () => {
     // The Pin button sits right after the heading, in the same row, with its own name.
     const row = h.split('<div class="ex-headrow">').find((x) => x.includes('id="ex-head-pinned"'))!;
     const after = row.split("</h2>")[1]!;
-    expect(after.startsWith('<button type="button" class="ex-pin"')).toBe(true);
+    expect(after.startsWith('<button id="ex-pin-here" type="button" class="ex-pin"')).toBe(true);
     expect(after).toContain(`aria-label="${COPY.explorer.pinHere("Home")}"`);
   });
 

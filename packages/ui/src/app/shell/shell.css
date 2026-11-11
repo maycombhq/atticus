@@ -313,6 +313,8 @@
   margin-right: -3px;
   cursor: col-resize;
   z-index: 5;
+  /* A touch drags the handle rather than scrolling the page (as the bottom panel's edge). */
+  touch-action: none;
 }
 .sh-resizer:hover,
 .sh-resizer:focus-visible {

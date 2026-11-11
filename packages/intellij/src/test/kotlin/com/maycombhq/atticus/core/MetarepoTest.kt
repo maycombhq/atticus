@@ -89,6 +89,15 @@ class MetarepoTest {
     }
 
     @Test
+    fun `the App tab's address marks the panel as IntelliJ's, before the screen`() {
+        // ADR 0194: the app leaves out its title, activity and status bars in an editor's panel.
+        assertEquals("http://127.0.0.1:5123/?host=intellij#/home", Metarepo.panelUrl("http://127.0.0.1:5123", "#/home"))
+        assertEquals("http://127.0.0.1:5123/?host=intellij#/runs?run=run-1-0001", Metarepo.panelUrl("http://127.0.0.1:5123/", "#/runs?run=run-1-0001"))
+        assertEquals("http://127.0.0.1:5123/?host=intellij", Metarepo.panelUrl("http://127.0.0.1:5123", null))
+        assertEquals("http://127.0.0.1:5123/?host=intellij", Metarepo.panelUrl("http://127.0.0.1:5123", "javascript:alert(1)"))
+    }
+
+    @Test
     fun `a practice sandbox's metarepo is the folder it names, not the sandbox folder`() {
         val dir = dir.resolve("atticus-practice.2").toString()
         val printed =

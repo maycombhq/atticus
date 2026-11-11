@@ -282,7 +282,7 @@ export function useLastAnswer<T>(path: string): T | undefined {
   return v;
 }
 
-/** For tests: what a call answered, as useApi records it. */
+/** What a call answered, as useApi records it: the Explorer's reads tell it too (and tests). */
 export const rememberAnswer = remember;
 
 export type Loaded<T> =

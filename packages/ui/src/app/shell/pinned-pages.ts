@@ -45,13 +45,17 @@ export function readPins(store: Store | undefined = browserStore()): string[] {
 /** The pins of this page's life, per store: what shows when the store refuses to keep them. */
 const session = new WeakMap<object, string[]>();
 const NO_STORE = {};
+/** Stores that refused the last write (full, say): their pins are behind this page's. */
+const behind = new WeakSet<object>();
 
 function savePins(pins: string[], store: Store | undefined): void {
   session.set(store ?? NO_STORE, pins);
   try {
     store?.setItem(PINS_KEY, JSON.stringify(pins));
+    if (store) behind.delete(store);
   } catch {
-    // Storage blocked: the pins last until the page reloads.
+    // Storage blocked or full: the pins last until the page reloads.
+    if (store) behind.add(store);
   }
   if (typeof dispatchEvent === "function") dispatchEvent(new CustomEvent(PINS_EVENT));
 }
@@ -65,9 +69,12 @@ export function togglePin(hash: string, store: Store | undefined = browserStore(
   return next;
 }
 
-/** Storage's pins, or this page's when storage refuses (so a pin still shows until reload). */
-function readPinsOr(store: Store | undefined): string[] {
-  let works = true;
+/**
+ * Storage's pins, or this page's when storage refuses to be read or refused the last write (a
+ * full store reads its old pins: the new one would vanish), so a pin still shows until reload.
+ */
+export function readPinsOr(store: Store | undefined): string[] {
+  let works = !!store && !behind.has(store);
   try {
     store?.getItem(PINS_KEY);
   } catch {

@@ -38,6 +38,18 @@ type Entry = Api.ActivityEntryT;
 export const PANEL_TABS = ["console", "questions", "problems", "runs"] as const;
 export type PanelTab = (typeof PANEL_TABS)[number];
 
+/** Heard by the panel: show this tab (`detail`), opening the panel (Ctrl+K's panel commands). */
+export const PANEL_EVENT = "atticus:panel";
+
+/** Show a tab of the bottom panel, from anywhere (it opens the panel); nothing is read or run. */
+export function showPanelTab(tab: PanelTab): void {
+  try {
+    globalThis.dispatchEvent?.(new CustomEvent(PANEL_EVENT, { detail: tab }));
+  } catch {
+    // No window (a test): nothing to tell.
+  }
+}
+
 /** Where the panel's height is kept, per viewer (this browser, or this editor's panel). */
 export const PANEL_HEIGHT_KEY = "atticus.panel.height";
 export const MIN_HEIGHT = 120;
@@ -45,10 +57,36 @@ export const DEFAULT_HEIGHT = 240;
 /** How far one arrow key moves the panel's top edge; Page Up and Page Down move five times it. */
 export const HEIGHT_STEP = 16;
 
-/** The tallest the panel goes: four fifths of the window, never under the shortest. */
-export function maxPanelHeight(viewport: number | undefined): number {
-  const v = typeof viewport === "number" && viewport > 0 ? viewport : 900;
-  return Math.max(MIN_HEIGHT, Math.round(v * 0.8));
+/** The least the page above the panel keeps: the panel never squeezes it under this. */
+export const MIN_PAGE_HEIGHT = 180;
+
+/**
+ * The tallest the panel goes: the room the page and the panel share in the page's column (the
+ * column less its bars), less the page's least; never under the panel's shortest. Unknown room
+ * (no column to measure): the window's height, else 900.
+ */
+export function maxPanelHeight(room: number | undefined): number {
+  const v = typeof room === "number" && room > 0 ? room : 900;
+  return Math.max(MIN_HEIGHT, Math.round(v - MIN_PAGE_HEIGHT));
+}
+
+type Measured = { offsetHeight: number; id?: string };
+
+/**
+ * The room the page and the panel share: the panel's column's height less everything else in
+ * it but the page (#main), such as the tab strip; `viewport` when there is no column to measure.
+ */
+export function roomFor(
+  section: (Measured & { parentElement?: unknown }) | null | undefined,
+  viewport: number | undefined,
+): number | undefined {
+  const col = section?.parentElement as
+    { clientHeight: number; children: ArrayLike<Measured> } | null | undefined;
+  if (!col || !(col.clientHeight > 0)) return viewport;
+  let bars = 0;
+  for (const c of Array.from(col.children))
+    if (c !== section && c.id !== "main") bars += c.offsetHeight || 0;
+  return col.clientHeight - bars;
 }
 
 export const clampHeight = (h: number, max: number): number =>
@@ -428,9 +466,28 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
   const a = useActivity();
   const [tab, setTab] = useState<PanelTab>("console");
   const [seen, setSeen] = useState<Partial<Record<PanelTab, true>>>({});
-  const [height, setHeight] = useState(() =>
-    clampHeight(readPanelHeight() ?? DEFAULT_HEIGHT, maxPanelHeight(globalThis.innerHeight)),
-  );
+  // The height the viewer chose, and the room there is now: the panel shows the one clamped to
+  // the other on every render, so a smaller window (or a taller bar) never squeezes the page,
+  // and a larger one gives the chosen height back (review, beta.26).
+  const [wanted, setHeight] = useState(() => readPanelHeight() ?? DEFAULT_HEIGHT);
+  const section = useRef<HTMLElement>(null);
+  const [room, setRoom] = useState<number | undefined>(() => globalThis.innerHeight);
+  useEffect(() => {
+    const measure = () => setRoom(roomFor(section.current, globalThis.innerHeight));
+    measure();
+    if (typeof addEventListener !== "function") return;
+    addEventListener("resize", measure);
+    const col = section.current?.parentElement;
+    const seen =
+      col && typeof ResizeObserver === "function" ? new ResizeObserver(measure) : undefined;
+    if (col) seen?.observe(col);
+    return () => {
+      removeEventListener("resize", measure);
+      seen?.disconnect();
+    };
+  }, [open]);
+  const max = maxPanelHeight(room);
+  const height = clampHeight(wanted, max);
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ y: number; h: number } | undefined>(undefined);
   const heightNow = useRef(height);
@@ -496,6 +553,20 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     setTab(t);
     if (!open) onToggle();
   };
+  // Ctrl+K's panel commands: the tab asked for, the panel opened, the focus on the tab.
+  const chooseNow = useRef(choose);
+  chooseNow.current = choose;
+  useEffect(() => {
+    if (typeof addEventListener !== "function") return;
+    const on = (e: Event) => {
+      const t = (e as CustomEvent<unknown>).detail;
+      if (!(PANEL_TABS as readonly unknown[]).includes(t)) return;
+      chooseNow.current(t as PanelTab);
+      requestAnimationFrame(() => focusId(`bp-tab-${t as PanelTab}`));
+    };
+    addEventListener(PANEL_EVENT, on);
+    return () => removeEventListener(PANEL_EVENT, on);
+  }, []);
   const onTabKey = (e: KeyboardEvent) => {
     const to = tabByKey(e.key, PANEL_TABS.indexOf(tab), PANEL_TABS.length);
     if (to === undefined) return;
@@ -505,7 +576,6 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     focusId(`bp-tab-${t}`);
   };
 
-  const max = maxPanelHeight(globalThis.innerHeight);
   const onEdgeKey = (e: KeyboardEvent) => {
     const h = resizeByKey(e.key, height, max);
     if (h === undefined) return;
@@ -570,6 +640,7 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
 
   return (
     <section
+      ref={section}
       className={`bp${open ? " open" : ""}${dragging ? " dragging" : ""}`}
       aria-label={P.label}
       style={open ? { height } : undefined}

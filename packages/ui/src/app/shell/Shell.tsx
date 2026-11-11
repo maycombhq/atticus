@@ -10,6 +10,7 @@ import { readViewerRole } from "../../screens/RoleQuestions.js";
 import { ActivityBar, MoreFlyout } from "./ActivityBar.js";
 import { BottomPanel } from "./BottomPanel.js";
 import {
+  DraftShelf,
   draftOf,
   typedOf,
   fieldKey,
@@ -18,7 +19,6 @@ import {
   openToggles,
   restoreDraft,
   togglesIn,
-  type Draft,
 } from "./drafts.js";
 import { Explorer } from "./Explorer.js";
 import { PinIcon, SearchIcon, Tip } from "./icons.js";
@@ -36,9 +36,7 @@ import {
 import { healthFacts, StatusBar, type StatusFacts } from "./StatusBar.js";
 import { PANEL_ID, TabStrip, tabId } from "./TabStrip.js";
 import {
-  activeHash,
   closeTab,
-  HOME_HASH,
   moveTab,
   openTab,
   readTabs,
@@ -84,17 +82,12 @@ function useMedia(query: string): boolean {
   return on;
 }
 
-/** The tabs, following the address; kept per browser. */
+/**
+ * The tabs, following the address; kept per browser. Opened with no address, the app starts on
+ * the tab that was shown: App picks it before the first render (startHash).
+ */
 export function useTabs(hash: string): [TabsState, (s: TabsState) => void] {
   const [tabs, setTabs] = useState<TabsState>(() => restoreTabs(readTabs(), hash));
-  // Opened with no address: the tab that was shown.
-  useEffect(() => {
-    if (!hash || hash === "#" || hash === "#/") {
-      const h = activeHash(tabs);
-      if (h !== HOME_HASH) location.replace(h);
-    }
-    // Only on loading the app.
-  }, []);
   useEffect(() => setTabs((s) => openTab(s, hash)), [hash]);
   useEffect(() => saveTabs(tabs), [tabs]);
   return [tabs, setTabs];
@@ -105,14 +98,15 @@ const draftKeyOf = (hash: string) => `${tabKeyOf(hash)}|${screenOf(hash).id}`;
 
 /**
  * Keep what the person typed into a page and how far it was scrolled when they leave it for
- * another tab or page, and put it back when they return (drafts.ts).
+ * another tab or page, and put it back when they return (drafts.ts). Returns what to call as a
+ * tab closes: its drafts go with it.
  */
 function useDrafts(
   hash: string,
   panel: React.RefObject<HTMLDivElement | null>,
   scroller: React.RefObject<HTMLElement | null>,
-) {
-  const drafts = useRef(new Map<string, Draft>());
+): (tabKey: string, shown: boolean) => void {
+  const drafts = useRef(new DraftShelf());
   const changed = useRef(new Set<string>());
   const shown = useRef(draftKeyOf(hash));
   // What the person changes, as they change it.
@@ -142,8 +136,7 @@ function useDrafts(
         scroller.current?.scrollTop ?? 0,
         openToggles(togglesIn(panel.current)),
       );
-      if (d) drafts.current.set(shown.current, d);
-      else drafts.current.delete(shown.current);
+      drafts.current.leave(shown.current, d);
       changed.current = new Set();
     };
     addEventListener("hashchange", keep);
@@ -154,15 +147,31 @@ function useDrafts(
     const key = draftKeyOf(hash);
     if (key === shown.current) return;
     shown.current = key;
-    const d = drafts.current.get(key);
+    drafts.current.shown();
+    const d = drafts.current.take(key);
     if (!d || !panel.current || !scroller.current) {
       if (scroller.current) scroller.current.scrollTop = 0;
       return;
     }
-    drafts.current.delete(key);
     changed.current = typedOf(d);
     return restoreDraft(panel.current, scroller.current, d);
   }, [hash, panel, scroller]);
+  return (tabKey, shownTab) => drafts.current.close(tabKey, shownTab);
+}
+
+/**
+ * Whether an Escape closes the side panel over the page: not one something else took (Ctrl+K
+ * prevents its own), nor one from inside a dialog (React may have taken the dialog away before
+ * the window hears the key, but its input is still inside it).
+ */
+export function overlayEscape(e: {
+  key: string;
+  defaultPrevented?: boolean;
+  target: EventTarget | { closest?: (q: string) => unknown } | null;
+}): boolean {
+  if (e.key !== "Escape" || e.defaultPrevented) return false;
+  const t = e.target as { closest?: (q: string) => unknown } | null;
+  return !t?.closest?.("[role=dialog], [role=alertdialog]");
 }
 
 /**
@@ -223,8 +232,11 @@ function useSide(narrow: boolean) {
   };
 }
 
-/** The handle between the side panel and the page: drag it, or use the arrow keys. */
-function Resizer({
+/**
+ * The handle between the side panel and the page: drag it (the main button; a drag the browser
+ * cancels keeps the width reached, as the bottom panel's edge does), or use the arrow keys.
+ */
+export function Resizer({
   width,
   onResize,
   onLive,
@@ -255,22 +267,35 @@ function Resizer({
         }
       }}
       onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
         const x0 = e.clientX;
         const w0 = width;
         const el = e.currentTarget;
-        el.setPointerCapture(e.pointerId);
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          // A pointer the page can't capture: the drag still follows while over the handle.
+        }
         let w = w0;
+        let done = false;
         const move = (m: PointerEvent) => {
           w = clampSide(w0 + m.clientX - x0);
           onLive(w);
         };
-        const up = () => {
+        const end = () => {
+          if (done) return;
+          done = true;
           el.removeEventListener("pointermove", move);
-          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointerup", end);
+          el.removeEventListener("pointercancel", end);
+          el.removeEventListener("lostpointercapture", end);
           onResize(w);
         };
         el.addEventListener("pointermove", move);
-        el.addEventListener("pointerup", up);
+        el.addEventListener("pointerup", end);
+        el.addEventListener("pointercancel", end);
+        el.addEventListener("lostpointercapture", end);
       }}
     />
   );
@@ -311,7 +336,7 @@ export function Shell({
   const panel = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLElement>(null);
   const sideToggle = useRef<HTMLDivElement>(null);
-  useDrafts(hash, panel, scroller);
+  const forgetDrafts = useDrafts(hash, panel, scroller);
   const counts = useCounts();
   const activity = useActivity();
   const { me } = useMe();
@@ -347,10 +372,13 @@ export function Shell({
     </a>
   );
   // A narrow window's side panel lies over the page: opened, it takes the focus; Escape (from
-  // anywhere) closes it and gives the focus back to its button.
-  const closeOverlay = () => {
+  // anywhere) or the scrim closes it and gives the focus back to its button. Opening a page from
+  // it, or any move of the address (the activity bar, a link), closes it too, and focus that was
+  // in it goes to the page (review, beta.26: it fell to the body).
+  const closeOverlay = (focus: "button" | "page" = "button") => {
     side.close();
-    sideToggle.current?.querySelector<HTMLElement>("[aria-controls='sh-side']")?.focus();
+    if (focus === "page") document.getElementById("main")?.focus({ preventScroll: true });
+    else sideToggle.current?.querySelector<HTMLElement>("[aria-controls='sh-side']")?.focus();
   };
   const overlay = side.overlay;
   useEffect(() => {
@@ -360,12 +388,21 @@ export function Shell({
       ?.querySelector<HTMLElement>("a[href], button, input, [tabindex='0']")
       ?.focus();
     const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || document.querySelector("[role=dialog]")) return;
+      if (!overlayEscape(e) || document.querySelector("[role=dialog]")) return;
       e.preventDefault();
       closeOverlay();
     };
+    const moved = () => {
+      const inSide = document.getElementById("sh-side")?.contains(document.activeElement);
+      if (inSide) closeOverlay("page");
+      else side.close();
+    };
     addEventListener("keydown", esc);
-    return () => removeEventListener("keydown", esc);
+    addEventListener("hashchange", moved);
+    return () => {
+      removeEventListener("keydown", esc);
+      removeEventListener("hashchange", moved);
+    };
     // closeOverlay only closes and focuses: the overlay's being open decides it.
   }, [overlay]);
   return (
@@ -400,8 +437,10 @@ export function Shell({
             <Explorer
               current={hash}
               onOpen={(h) => {
-                if (side.overlay) side.close();
+                const over = side.overlay;
                 if (location.hash !== h) location.hash = h;
+                // The Explorer goes with the overlay: the focus goes to the page opened.
+                if (over) closeOverlay("page");
               }}
             />
           )}
@@ -409,7 +448,9 @@ export function Shell({
         {side.open && !side.overlay && (
           <Resizer width={side.width} onResize={side.resize} onLive={side.setWidth} />
         )}
-        {side.overlay && <div className="sh-scrim" aria-hidden="true" onClick={side.close} />}
+        {side.overlay && (
+          <div className="sh-scrim" aria-hidden="true" onClick={() => closeOverlay()} />
+        )}
         <div className="sh-column">
           <div ref={sideToggle}>
             <TabStrip
@@ -419,6 +460,7 @@ export function Shell({
                 if (t) goFromTabs(t.hash);
               }}
               onClose={(key) => {
+                forgetDrafts(key, key === tabs.active);
                 const r = closeTab(tabs, key);
                 setTabs(r.state);
                 if (r.go) goFromTabs(r.go);

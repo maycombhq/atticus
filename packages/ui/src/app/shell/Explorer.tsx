@@ -14,6 +14,8 @@ import {
   changeItems,
   domId,
   filterItems,
+  focusAfterUnpin,
+  PIN_BUTTON_ID,
   pageLabel,
   pinnedItems,
   questionItems,
@@ -327,6 +329,7 @@ export function ExplorerView(p: ExplorerViewProps): JSX.Element {
                 </h2>
                 {s.id === "pinned" && (
                   <button
+                    id={PIN_BUTTON_ID}
                     type="button"
                     className="ex-pin"
                     aria-pressed={p.pinnedHere}
@@ -456,13 +459,14 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
     ...(counts[id] ? { count: counts[id] } : {}),
   }));
 
-  // A key that moved the focus moves the browser's focus to the row, once it is drawn.
+  // A key that moved the focus moves the browser's focus to the row (an element id), once it is
+  // drawn: after an unpin, once the pins are read again.
   useEffect(() => {
     const id = moved.current;
     if (!id) return;
     moved.current = undefined;
-    document.getElementById(domId(id))?.focus();
-  }, [focus, shown]);
+    document.getElementById(id)?.focus();
+  }, [focus, shown, pins]);
 
   const toggleItem = (id: string) =>
     setExpanded((x) => {
@@ -506,20 +510,19 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
         if (!a) return;
         e.preventDefault();
         if ("focus" in a) {
-          moved.current = a.focus;
+          moved.current = domId(a.focus);
           setFocus((f) => ({ ...f, [id]: a.focus }));
         } else if ("expand" in a || "collapse" in a)
           toggleItem("expand" in a ? a.expand : a.collapse);
         else if ("open" in a) onOpen(a.open);
         else {
-          // The row after the one unpinned takes the focus (or the one before, at the end).
+          // The row after the one unpinned takes the focus (or the one before, at the end; with
+          // none left, the section's Pin button).
           const at = rows.findIndex((r) => r.item.pin === a.unpin);
           const next = rows[at + 1] ?? rows[at - 1];
+          moved.current = focusAfterUnpin(rows, a.unpin);
           togglePin(a.unpin);
-          if (next) {
-            moved.current = next.item.id;
-            setFocus((f) => ({ ...f, [id]: next.item.id }));
-          }
+          if (next) setFocus((f) => ({ ...f, [id]: next.item.id }));
         }
       }}
     />

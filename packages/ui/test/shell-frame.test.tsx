@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
-import { layoutCommands } from "../src/app/App.js";
+import { layoutCommands, panelCommands } from "../src/app/App.js";
+import { PANEL_EVENT } from "../src/app/shell/BottomPanel.js";
 import { paletteItems } from "../src/app/palette.js";
 import { morePagesCount } from "../src/app/nav.js";
 import { screenOf } from "../src/app/screens.js";
@@ -182,7 +183,15 @@ describe("the tab strip", () => {
   });
 
   it("names a tab's element safely from a change's id", () => {
-    expect(tabId("change:add.limit-2")).toBe("sh-tab-change_add_limit-2");
+    expect(tabId("change:add.limit-2")).toBe("sh-tab-change_1m_add_1a_limit-2");
+    expect(tabId("canvas")).toBe("sh-tab-canvas");
+  });
+
+  it("gives two changes whose ids differ only by a dot or an underscore two tab ids", () => {
+    // A change's id allows dots and underscores: mapping both to "_" made these one id.
+    const ids = ["change:add.limit", "change:add_limit", "change:add-limit"].map(tabId);
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(id).toMatch(/^sh-tab-[A-Za-z0-9_-]+$/);
   });
 });
 
@@ -290,6 +299,30 @@ describe("the layout, chosen per browser", () => {
     expect(paletteItems("", [], [], ide).some((i) => i.kind === "command")).toBe(false);
     const classic = layoutCommands("classic", (l) => picked.push(l));
     expect(paletteItems("ide", [], [], classic)[0]!.label).toBe(T.layout.toIde);
+  });
+
+  it("runs the bottom panel's tabs from Ctrl+K, each only showing its tab", () => {
+    const C = T.panelCommands;
+    const cmds = panelCommands();
+    expect(cmds.map((c) => c.label)).toEqual([C.console, C.questions, C.problems, C.runs]);
+    expect(paletteItems("console", [], [], cmds)[0]).toMatchObject({
+      kind: "command",
+      label: C.console,
+    });
+    expect(paletteItems("failed", [], [], cmds)[0]!.label).toBe(C.problems);
+    expect(paletteItems("", [], [], cmds).some((i) => i.kind === "command")).toBe(false);
+    const told: unknown[] = [];
+    const was = globalThis.dispatchEvent;
+    globalThis.dispatchEvent = (e: Event) => {
+      told.push([e.type, (e as CustomEvent).detail]);
+      return true;
+    };
+    try {
+      cmds[2]!.run();
+    } finally {
+      globalThis.dispatchEvent = was;
+    }
+    expect(told).toEqual([[PANEL_EVENT, "problems"]]);
   });
 
   it("keeps the side panel's width within bounds, and whether it is hidden", () => {

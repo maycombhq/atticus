@@ -115,4 +115,26 @@ describe("the theme tokens", () => {
     expect(contrast(light.get("--on-accent")!, light.get("--accent")!)).toBeGreaterThanOrEqual(4.5);
     expect(low).toEqual([]);
   });
+
+  it("keeps the Explorer's small words on the shown page's row at 4.5:1, in both themes", () => {
+    // Review (beta.26): "plan" in --muted on the row's tint was 4.3:1 in the light theme.
+    const css = blocks(readFileSync(join(SRC, "app", "shell", "explorer.css"), "utf8"));
+    const here = css.find((b) => b.selector.includes(".ex-row.here .ex-detail"))!;
+    expect(here.selector).toMatch(/\.ex-row\.here \.ex-kind/);
+    expect(here.selector).toMatch(/\.ex-row\.here \.ex-count/);
+    const colour = here.body.match(/color:\s*var\((--[\w-]+)\)/)![1]!;
+    const rgba = (v: string, under: number[]): number[] => {
+      if (v.startsWith("#")) return [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+      const [r, g, b, a = 1] = v.match(/[\d.]+/g)!.map(Number);
+      return [r!, g!, b!].map((c, i) => Math.round(c * a + under[i]! * (1 - a)));
+    };
+    const hex = (c: number[]) => `#${c.map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+    for (const set of [light, dark]) {
+      const ground = rgba(set.get("--ground")!, [0, 0, 0]);
+      const nav = rgba(set.get("--nav")!, ground);
+      const tint = rgba(set.get("--picked-strong")!, nav);
+      expect(contrast(set.get(colour)!, hex(tint))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(set.get("--amber-text")!, hex(tint))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });

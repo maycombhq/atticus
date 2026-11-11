@@ -47,14 +47,18 @@ const {
   DEFAULT_HEIGHT,
   FINDINGS_URL,
   MIN_HEIGHT,
+  MIN_PAGE_HEIGHT,
+  PANEL_EVENT,
   PANEL_HEIGHT_KEY,
   QUESTIONS_URL,
+  showPanelTab,
   TRUST_URL,
   clampHeight,
   maxPanelHeight,
   problemsOf,
   readPanelHeight,
   resizeByKey,
+  roomFor,
   runningSummary,
   savePanelHeight,
   tabByKey,
@@ -402,6 +406,73 @@ describe("the panel's height", () => {
     expect(separator(m.tree)!.props["aria-valuenow"]).toBe(350);
     expect(clampHeight(10, 500)).toBe(MIN_HEIGHT);
     expect(resizeByKey("Tab", 200, 500)).toBeUndefined();
+  });
+});
+
+describe("the panel's height leaves the page room (review, beta.26)", () => {
+  it("caps the panel at the column's room for the page and panel, less the page's least", () => {
+    expect(maxPanelHeight(600)).toBe(600 - MIN_PAGE_HEIGHT);
+    expect(maxPanelHeight(200)).toBe(MIN_HEIGHT);
+    // The room is the column less its bars (the tab strip): the page and the panel share it.
+    const section = { offsetHeight: 240 } as unknown as HTMLElement;
+    const column = {
+      clientHeight: 700,
+      children: [{ id: "", offsetHeight: 36 }, { id: "main", offsetHeight: 424 }, section],
+    };
+    (section as unknown as { parentElement: unknown }).parentElement = column;
+    expect(roomFor(section, 900)).toBe(664);
+    // No column to measure (a test's render): the window's height.
+    expect(roomFor(null, 900)).toBe(900);
+    expect(roomFor(undefined, undefined)).toBeUndefined();
+  });
+
+  it("clamps the height kept as the window shrinks, and gives it back as it grows", () => {
+    const win = new EventTarget();
+    vi.stubGlobal("addEventListener", win.addEventListener.bind(win));
+    vi.stubGlobal("removeEventListener", win.removeEventListener.bind(win));
+    vi.stubGlobal("innerHeight", 900);
+    vi.stubGlobal("localStorage", storage({ value: "400" }));
+    const m = mount(BottomPanel, props(true));
+    const height = () => separator(m.tree)!.props["aria-valuenow"];
+    const section = () =>
+      (els(m.tree).find((e) => e.type === "section")!.props.style as { height: number }).height;
+    expect(height()).toBe(400);
+    vi.stubGlobal("innerHeight", 500);
+    win.dispatchEvent(new Event("resize"));
+    m.render();
+    expect(height()).toBe(500 - MIN_PAGE_HEIGHT);
+    expect(section()).toBe(500 - MIN_PAGE_HEIGHT);
+    expect(separator(m.tree)!.props["aria-valuemax"]).toBe(500 - MIN_PAGE_HEIGHT);
+    vi.stubGlobal("innerHeight", 900);
+    win.dispatchEvent(new Event("resize"));
+    m.render();
+    expect(height()).toBe(400);
+  });
+});
+
+describe("Ctrl+K's panel commands (review, beta.26)", () => {
+  it("opens the panel on the tab asked for and focuses it", () => {
+    const win = new EventTarget();
+    vi.stubGlobal("addEventListener", win.addEventListener.bind(win));
+    vi.stubGlobal("removeEventListener", win.removeEventListener.bind(win));
+    vi.stubGlobal("dispatchEvent", win.dispatchEvent.bind(win));
+    const frames: (() => void)[] = [];
+    vi.stubGlobal("requestAnimationFrame", (f: () => void) => frames.push(f));
+    const focused: string[] = [];
+    vi.stubGlobal("document", {
+      getElementById: (id: string) => ({ focus: () => focused.push(id) }),
+    });
+    const m = mount(BottomPanel, props(false));
+    showPanelTab("problems");
+    m.render();
+    expect(toggles).toBe(1);
+    expect(selectedTab(m.tree)).toBe("bp-tab-problems");
+    for (const f of frames) f();
+    expect(focused).toEqual(["bp-tab-problems"]);
+    // Something that isn't a tab is let be.
+    win.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: "elsewhere" }));
+    m.render();
+    expect(selectedTab(m.tree)).toBe("bp-tab-problems");
   });
 });
 

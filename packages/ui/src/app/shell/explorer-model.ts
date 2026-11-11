@@ -335,6 +335,19 @@ export function treeKey(
   return undefined;
 }
 
+/** The Pinned section's Pin button's element id. */
+export const PIN_BUTTON_ID = "ex-pin-here";
+
+/**
+ * Where the focus goes after Delete unpins a pinned page (review, beta.26: it fell to the body):
+ * the next pinned page's row, else the one before, else the section's Pin button. An element id.
+ */
+export function focusAfterUnpin(rows: readonly Row[], pin: string): string {
+  const at = rows.findIndex((r) => r.item.pin === pin);
+  const next = at < 0 ? undefined : (rows[at + 1] ?? rows[at - 1]);
+  return next ? domId(next.item.id) : PIN_BUTTON_ID;
+}
+
 /** A row's element id: the item's id with anything an id can't hold spelled out. */
 export const domId = (itemId: string) =>
   `ex-i-${itemId.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(36)}_`)}`;

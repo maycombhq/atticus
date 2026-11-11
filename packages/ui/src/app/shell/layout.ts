@@ -72,6 +72,26 @@ export function useLayout(): [Layout, (l: Layout) => void] {
   return [layout, saveLayout];
 }
 
+type Focusable = { focus(): void };
+interface FocusDoc {
+  body: unknown;
+  activeElement: unknown;
+  getElementById(id: string): Focusable | null;
+  querySelector(q: string): unknown;
+}
+
+/**
+ * After the layout switched (review, beta.26): the page was drawn anew, so focus left on an
+ * element of the other layout is lost. It goes to Settings' radio of the layout picked when that
+ * page is shown, else to the page (#main); focus still on something on the page stays.
+ */
+export function focusAfterLayoutSwitch(doc: FocusDoc): void {
+  const a = doc.activeElement as { isConnected?: boolean } | null;
+  if (a && a !== doc.body && a.isConnected !== false) return;
+  const picked = doc.querySelector('input[name="layout"]:checked') as Focusable | null;
+  (picked ?? doc.getElementById("main"))?.focus();
+}
+
 export interface SidePrefs {
   width: number;
   hidden: boolean;

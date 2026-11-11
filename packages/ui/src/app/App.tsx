@@ -19,16 +19,27 @@ import { Nav } from "./nav.js";
 import { screenOf, type ScreenDef } from "./screens.js";
 import { SectionTabs } from "./tabs.js";
 import { inEditor } from "./theme.js";
-import { useLayout, type Layout } from "./shell/layout.js";
+import { focusAfterLayoutSwitch, useLayout, type Layout } from "./shell/layout.js";
+import { inEditorPanel } from "./shell/host.js";
+import { showPanelTab } from "./shell/BottomPanel.js";
 import { Shell, takeTabSwitch } from "./shell/Shell.js";
-import { tabKeyOf } from "./shell/tabs-model.js";
+import { startHash, tabKeyOf } from "./shell/tabs-model.js";
 
 export { askExample } from "./chrome.js";
 
 const T = COPY.shell;
 
-function useHash(): string {
-  const [h, set] = useState(location.hash);
+/**
+ * The address shown. `ide`: opened with no address, the IDE layout starts on the tab that was
+ * shown, chosen before the first render so Home never mounts first (review, beta.26).
+ */
+function useHash(ide: boolean): string {
+  const [h, set] = useState(() => {
+    const given = location.hash;
+    const start = ide ? startHash(given) : given;
+    if (start !== given) history.replaceState(history.state, "", start);
+    return start;
+  });
   useEffect(() => {
     const on = () => set(location.hash);
     addEventListener("hashchange", on);
@@ -159,6 +170,21 @@ export function layoutCommands(layout: Layout, set: (l: Layout) => void): Palett
     : [{ label: L.toIde, detail: L.commandDetail, run: () => set("ide"), also: [L.title] }];
 }
 
+/**
+ * Review (beta.26): the IDE layout's Ctrl+K commands for its bottom panel: the Console, the open
+ * questions, the problems and the recent runs, each only showing that tab (nothing is written;
+ * every page, Scans among them, is in Ctrl+K by its name already).
+ */
+export function panelCommands(): PaletteCommand[] {
+  const C = COPY.ide.panelCommands;
+  return (["console", "questions", "problems", "runs"] as const).map((t) => ({
+    label: C[t],
+    detail: C.detail,
+    run: () => showPanelTab(t),
+    also: C.also[t],
+  }));
+}
+
 /** The IDE layout's palette shows the person's own example as its placeholder. */
 function IdePalette({ commands }: { commands: PaletteCommand[] }) {
   const example = useAskExample();
@@ -166,7 +192,9 @@ function IdePalette({ commands }: { commands: PaletteCommand[] }) {
 }
 
 export function App() {
-  const hash = useHash();
+  // ADR 0194: the IDE layout by default; the classic one stays, per browser, for this release.
+  const [layout, setLayout] = useLayout();
+  const hash = useHash(layout === "ide");
   const current = screenOf(hash);
   const health = useApi<Health>("/api/health");
   // The server says whether it was started with --full (every page a tab, More pages open).
@@ -174,9 +202,10 @@ export function App() {
   const server = useServer();
   // ADR 0190: a folder that isn't a metarepo yet shows Create the metarepo here, nothing else.
   const bare = health.state === "ready" && health.data.metarepo === false;
-  // ADR 0194: the IDE layout by default; the classic one stays, per browser, for this release.
-  const [layout, setLayout] = useLayout();
-  const commands = useMemo(() => layoutCommands(layout, setLayout), [layout, setLayout]);
+  const commands = useMemo(
+    () => [...layoutCommands(layout, setLayout), ...(layout === "ide" ? panelCommands() : [])],
+    [layout, setLayout],
+  );
   const reloadHealth = health.reload;
   useEffect(() => {
     if (server.epoch) reloadHealth();
@@ -196,6 +225,14 @@ export function App() {
     // Review (beta.26): run on every address, so a tab switch within one screen (two changes'
     // tabs on At a glance) uses up its flag and the next link in the page still moves focus.
   }, [current.id, hash]);
+  // Review (beta.26): the other layout draws the page anew, so the focus (Settings' radio, or
+  // Ctrl+K's box) would drop to the body: it goes to the layout picked, else the page.
+  const shownLayout = useRef(layout);
+  useEffect(() => {
+    if (shownLayout.current === layout) return;
+    shownLayout.current = layout;
+    focusAfterLayoutSwitch(document);
+  }, [layout]);
   const tour = !bare && (
     <Tour
       metarepo={
@@ -267,7 +304,7 @@ export function App() {
                   hash={hash}
                   current={current}
                   {...(health.state === "ready" ? { health: health.data } : {})}
-                  embedded={!!hostBridge() || inEditor()}
+                  embedded={inEditorPanel()}
                   heading={bare ? COPY.setup.title : current.label}
                   top={
                     <>

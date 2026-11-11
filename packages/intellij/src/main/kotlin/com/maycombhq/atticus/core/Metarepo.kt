@@ -96,6 +96,20 @@ object Metarepo {
         return if (screen != null && Regex("^#/[\\w/?=&.%-]*$").matches(screen)) "$b/$screen" else b
     }
 
+    /** What the App tab adds before the screen, so the app knows it is in an editor's panel (ADR 0194). */
+    const val PANEL_MARK = "?host=intellij"
+
+    /**
+     * The address the App tab loads: [screenUrl] with [PANEL_MARK] before the hash. The app then
+     * leaves out its title, activity and status bars, as in VS Code's panel, and keeps the mark
+     * for the session; Open in Browser keeps the plain address.
+     */
+    fun panelUrl(base: String, screen: String?): String {
+        val b = base.trimEnd('/')
+        val hash = screenUrl(b, screen).removePrefix(b).removePrefix("/")
+        return "$b/$PANEL_MARK$hash"
+    }
+
     /**
      * The metarepo `atticus sandbox create <dir>` made: the folder its "Its metarepo is …" line
      * names, else `<dir>/metarepo` (the sandbox folder itself holds the repos beside it).

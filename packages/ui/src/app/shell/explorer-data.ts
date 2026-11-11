@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, BUSY_EVENT, requestsInFlight } from "../../api/client.js";
+import { api, ApiError, BUSY_EVENT, rememberAnswer, requestsInFlight } from "../../api/client.js";
 
 /**
  * The Explorer's reads (beta.26). Each is a GET the app already makes (Home's /api/changes and
@@ -8,8 +8,11 @@ import { api, ApiError, BUSY_EVENT, requestsInFlight } from "../../api/client.js
  * (packages/cli/test/home-speed.test.ts), so a section reads nothing until it is open, and a
  * section open when the panel first shows waits until the page's own requests are answered
  * (the loading bar's count back at nought for a moment). A section a person opens reads at once.
- * An answer is kept for the page's life: the panel shown again shows it without asking; file
- * events read it again.
+ * An answer is kept for the page's life: the panel shown again shows it at once and reads it
+ * again behind it (a section open from the start once the page is quiet, as on its first read),
+ * so a count changed elsewhere doesn't stay stale until a file event (review, beta.26); file
+ * events read it again. Each answer is told to the shell's counts too (the activity bar's badge
+ * and the status bar, useLastAnswer), as a page's own read of the path is.
  */
 
 export type Lazy<T> =
@@ -80,10 +83,10 @@ export function useLazyApi<T>(
   }, []);
   useEffect(() => {
     if (!want) return;
-    if (tick === 0 && kept.has(path)) {
+    const cached = tick === 0 && kept.has(path);
+    if (cached) {
       asked.current = true;
       set({ state: "ready", data: kept.get(path) as T });
-      return;
     }
     let live = true;
     const ctl = new AbortController();
@@ -94,10 +97,12 @@ export function useLazyApi<T>(
       api<T>(path, { signal: ctl.signal }).then(
         (data) => {
           kept.set(path, data);
+          rememberAnswer(path, data);
           if (live) set({ state: "ready", data });
         },
         (e: unknown) => {
-          if (!live || ctl.signal.aborted) return;
+          // A read behind a kept answer that fails keeps the answer shown.
+          if (!live || ctl.signal.aborted || cached) return;
           set({
             state: "error",
             error: e instanceof Error ? e.message : String(e),
