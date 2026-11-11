@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { SYSTEM, type Outcome } from "./system.js";
+import { sut, type Outcome } from "./system.js";
 import type { Model } from "./model.js";
 import {
   changedPaths,
@@ -453,16 +453,15 @@ export function checkStep(s: Step, enabled: ReadonlySet<Invariant>): void {
 export async function checkEquivalence(w: World): Promise<void> {
   const m = w.model;
   if (m.handEdits.length) {
-    const r = await SYSTEM.discardEdits(w.root, m.handEdits.length);
+    const r = await sut().build(w.root, { discardEdits: m.handEdits.length });
     if (r.wrote) m.handEdits = [];
   }
-  await SYSTEM.confirmRemovals(w.root);
-  await SYSTEM.build(w.root);
+  await sut().build(w.root, {});
   const here = await readTree(join(w.root, "catalog", "generated"));
   const top = await mkdtemp(join(tmpdir(), "cs4-fresh-"));
   try {
     const fresh = join(top, "metarepo");
-    await SYSTEM.freshBuild(w.root, fresh, m);
+    await sut().freshBuild(w.root, fresh, m);
     const there = await readTree(join(fresh, "catalog", "generated"));
     if (!sameTree(here, there)) {
       const d = changedPaths(here, there);

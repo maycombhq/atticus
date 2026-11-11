@@ -21,7 +21,8 @@ import {
 } from "./estate.js";
 import { checkStep, type Invariant, type Step } from "./invariants.js";
 import type { Model } from "./model.js";
-import { SYSTEM, type Outcome } from "./system.js";
+import { fault } from "./fault.js";
+import { sut, type Outcome } from "./system.js";
 import { records, sameTree, type Snap, type World } from "./world.js";
 
 /**
@@ -144,11 +145,12 @@ async function scan(m: Model, w: World, d: Desc): Promise<Acted | undefined> {
     const aside = join(w.top, "aside");
     if (d.t === "scan-not-cloned") await rename(w.clone(target!.id), aside);
     try {
-      return await SYSTEM.scan(w.root, {
+      fault.on = d.t === "scan-reader-fails" ? target!.id : undefined;
+      return await sut().scan(w.root, {
         ...(d.t === "scan-subset" ? { repos: asked.map((s) => m.repos[s]!.id) } : {}),
-        ...(d.t === "scan-reader-fails" ? { failOn: target!.id } : {}),
       });
     } finally {
+      fault.on = undefined;
       if (d.t === "scan-not-cloned") await rename(aside, w.clone(target!.id));
     }
   };
@@ -200,7 +202,7 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
         renderFacts(r.base, r.id, r.code, r.commit, { broken: !ok }),
       );
       const write = d.t === "verify-write";
-      const once = () => SYSTEM.verify(w.root, r.id, { write });
+      const once = () => sut().verify(w.root, r.id, { write });
       const outcome = await once();
       if (write && ok && outcome.code !== 0 && !outcome.guard)
         throw new Error(`harness: verify --write of good facts failed: ${outcome.err.join("\n")}`);
@@ -245,7 +247,7 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
       if (to) to.hosts.push(host);
       m.answers.set(host, to ? to.slot : "none");
       m.changes.answered.add(host);
-      return { outcome: await SYSTEM.build(w.root) };
+      return { outcome: await sut().build(w.root, {}) };
     }
 
     case "curate": {
@@ -284,7 +286,7 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
         since: m.writes,
       });
       m.changes.curated.add(e.id);
-      return { outcome: await SYSTEM.build(w.root) };
+      return { outcome: await sut().build(w.root, {}) };
     }
 
     case "uncurate": {
@@ -293,7 +295,7 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
       const file = [...before.curated.keys()].find((k) => k.endsWith(`${dec!.id}.yaml`));
       if (file) await rm(join(w.root, "catalog", "curated", ...file.split("/")));
       m.changes.curated.add(dec!.target);
-      return { outcome: await SYSTEM.build(w.root) };
+      return { outcome: await sut().build(w.root, {}) };
     }
 
     case "archive":
@@ -304,7 +306,7 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
       else r.listed = false;
       await writeManifest(w.root, m.manifest());
       m.changes.slots.add(r.slot);
-      return { outcome: await SYSTEM.build(w.root) };
+      return { outcome: await sut().build(w.root, {}) };
     }
 
     case "hand-edit": {
@@ -320,19 +322,19 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
 
     case "discard-edits": {
       if (!m.handEdits.length) return undefined;
-      const outcome = await SYSTEM.discardEdits(w.root, m.handEdits.length);
+      const outcome = await sut().build(w.root, { discardEdits: m.handEdits.length });
       if (outcome.wrote) m.handEdits = [];
       return { outcome };
     }
 
     case "confirm-removals":
-      return { outcome: await SYSTEM.confirmRemovals(w.root) };
+      return { outcome: await sut().build(w.root, {}) };
 
     case "rename": {
       const r = live(m, d.slot);
       if (!r || r.id.endsWith("-core")) return undefined;
       const to = `${r.id}-core`;
-      const outcome = await SYSTEM.rename(w.root, r.id, to);
+      const outcome = await sut().rename(w.root, r.id, to, {});
       if (outcome.code === 0) {
         // The person clones it again under its new id (atticus workspace sync, here a move).
         if (existsSync(w.clone(r.id))) await rename(w.clone(r.id), w.clone(to));
@@ -346,14 +348,14 @@ async function act(d: Desc, m: Model, w: World, before: Snap): Promise<Acted | u
       // Undo refuses over hand edits, as a build does: there is nothing to check then.
       const last = w.lastWrite;
       if (!last || m.handEdits.length) return undefined;
-      const outcome = await SYSTEM.undo(w.root);
+      const outcome = await sut().undo(w.root, { yes: true });
       const afterUndo = await w.snap();
-      await SYSTEM.undo(w.root);
+      await sut().undo(w.root, { yes: true });
       return { outcome, afterUndo, lastWrite: last };
     }
 
     case "upgrade": {
-      const outcome = await SYSTEM.upgrade(w.root, { yes: d.yes });
+      const outcome = await sut().upgrade(w.root, { yes: d.yes });
       if (d.yes && outcome.code === 0) m.upgraded = true;
       return { outcome };
     }

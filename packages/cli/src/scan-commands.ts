@@ -488,6 +488,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
             id: x.id,
             repos: x.repos,
             explainedBy: x.explainedBy,
+            reasons: x.reasons,
           })),
           retired: scan.build.retired,
           ...(w?.undo !== undefined ? { undo: w.undo } : {}),

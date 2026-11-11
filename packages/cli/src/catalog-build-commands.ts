@@ -27,6 +27,7 @@ import {
   readBuildManifest,
   takeUndoCopy,
   undoDirOf,
+  writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
 } from "@maycombhq/scanner";
@@ -81,6 +82,7 @@ export function buildJson(r: BuildAndWrite) {
       id: x.id,
       repos: x.repos,
       explainedBy: x.explainedBy,
+      reasons: x.reasons,
     })),
     retired: r.build.retired,
     orphaned: r.build.orphaned,
@@ -166,10 +168,10 @@ export async function catalogUndo(
   if (!o.yes) {
     if (o.json) io.out(JSON.stringify({ copies: list, plan }, null, 2));
     else {
-      io.out(`Undo copies kept here (the last ${list.length}, newest first):`);
-      for (const c of list) io.out(`  ${c.n}: ${c.command} (${c.at}, ${c.files.length} files)`);
+      io.out(`The last ${list.length} builds kept here, newest first:`);
+      list.forEach((c, i) => io.out(`  ${i + 1}: ${c.command} (${c.at}, ${c.files.length} files)`));
       io.out(
-        `atticus catalog undo${o.n !== undefined ? ` ${o.n}` : ""} --yes would put back ${plan.files.length} ${plan.files.length === 1 ? "file" : "files"} as they were before ${plan.copies.length === 1 ? `copy ${plan.copies[0]!.n}` : `copies ${plan.copies.map((c) => c.n).join(", ")}`}:`,
+        `atticus catalog undo${o.n !== undefined ? ` ${o.n}` : ""} --yes would put back ${plan.files.length} ${plan.files.length === 1 ? "file" : "files"} as they were before ${plan.copies.length === 1 ? `the latest build (${plan.copies[0]!.command})` : `the ${plan.copies.length} latest builds`}:`,
       );
       for (const f of plan.files.slice(0, 30))
         io.out(`  ${f.to === "absent" ? "remove" : "restore"} ${f.path}`);
@@ -185,6 +187,10 @@ export async function catalogUndo(
       io.err(
         "Nothing undone: files under catalog/generated were changed by hand since the last build. Make them curated (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
+      if (o.json)
+        io.out(
+          JSON.stringify({ refused: { reasons: ["hand-edits"], edits: g.refused.edits } }, null, 2),
+        );
       return 1;
     }
     const r = await applyUndo(
@@ -317,6 +323,7 @@ export async function catalogEdits(
     const built = new Map(b.records.map((r) => [recordPath(r), r]));
     const curatedDir = join(catalogDirOf(root), "curated");
     const written: string[] = [];
+    const curated: string[] = [];
     const left: { path: string; why: string }[] = [];
     const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
     for (const e of edits) {
@@ -386,31 +393,25 @@ export async function catalogEdits(
       await mkdir(dirname(full), { recursive: true });
       await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
       written.push(posix(relative(root, full)));
+      curated.push(e.path);
     }
-    let r: BuildAndWrite | undefined;
-    if (!left.length)
-      r = await buildAndWrite(root, {
-        command: "atticus catalog edits --curate",
-        discardEdits: edits.length,
-      });
-    if (o.json)
-      io.out(
-        JSON.stringify(
-          { edits, decisions: written, left, ...(r ? { build: buildJson(r) } : {}) },
-          null,
-          2,
-        ),
-      );
+    // The next build replaces each edit made curated (its bytes kept in that build's undo copy);
+    // nothing is built here, so the person reviews the decisions first.
+    await writeCuratedEdits(root, undoDir, curated);
+    if (o.json) io.out(JSON.stringify({ edits, decisions: written, left }, null, 2));
     else {
       for (const w of written)
         io.out(`Wrote ${w}: propose it in a pull request so every build keeps the edit.`);
       for (const l of left) io.err(`${l.path}: not made curated: ${l.why}.`);
-      if (r) for (const l of buildLines(root, r)) (r.guard.refused ? io.err : io.out)(l);
-      else if (left.length)
+      if (written.length)
+        io.out(
+          "atticus catalog build (or the next scan) builds with them, and replaces the edited files; their bytes are kept for atticus catalog undo.",
+        );
+      if (left.length)
         io.err(
-          `The build isn't run until every edit is curated or discarded: atticus catalog build --discard-edits ${edits.length} discards them all (a copy is kept for undo).`,
+          `What isn't curated stays a hand edit: discard it with atticus catalog build --discard-edits <count> (a copy is kept for undo).`,
         );
     }
-    return left.length || r?.guard.refused ? 1 : 0;
+    return left.length ? 1 : 0;
   });
 }

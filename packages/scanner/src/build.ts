@@ -901,6 +901,21 @@ function sourceWords(path: string, b: Build): string {
 /** The two limits of point 4: built in, not settings (a setting would be a C6 change). */
 export const REMOVAL_LIMITS = { share: 0.1, count: 200 } as const;
 
+/** Why a removal is explained (ADR 0195 point 4), as kinds a program reads. */
+export type RemovalReason =
+  /** A slot changed: a repo's new read or facts no longer produce it, or a join no longer forms. */
+  | "slot"
+  /** A repo the manifests no longer list. */
+  | "manifest"
+  /** A repo marked archived. */
+  | "archived"
+  /** A curated decision (a suppress). */
+  | "curated"
+  /** A build input other than a slot changed: an answer, a pairing, the org pack, inputs/... */
+  | "input"
+  /** The build itself changed (an Atticus whose passes give other records). */
+  | "build";
+
 export interface Removal {
   /** The record file, relative to the root. */
   path: string;
@@ -910,6 +925,8 @@ export interface Removal {
   repos: string[];
   /** What explains it: the slots or inputs that changed since the last build, or why else. */
   explainedBy: string[];
+  /** The same as kinds, most specific first: a repo gone, a decision, a slot, an input. */
+  reasons: RemovalReason[];
 }
 
 export interface HandEdit {
@@ -947,6 +964,36 @@ export interface GuardResult {
   /** Hand edits a confirmed discard replaces. */
   edits: HandEdit[];
   refused?: BuildRefusal;
+}
+
+/** Where `atticus catalog edits --curate` notes the edits it made curated (beside the undo copies). */
+export const curatedEditsPathOf = (undoDir: string) =>
+  join(dirname(undoDir), "build-curated-edits.json");
+
+/** The edits made curated, by path (relative to the root), with the hash they had (or "deleted"). */
+export async function readCuratedEdits(undoDir: string): Promise<Map<string, string>> {
+  const t = await readText(curatedEditsPathOf(undoDir));
+  if (!t) return new Map();
+  try {
+    return new Map(Object.entries(JSON.parse(t) as Record<string, string>));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Note edits as made curated: the next build replaces them, its undo copy keeping their bytes. */
+export async function writeCuratedEdits(
+  root: string,
+  undoDir: string,
+  paths: readonly string[],
+): Promise<void> {
+  const out: Record<string, string> = Object.fromEntries(await readCuratedEdits(undoDir));
+  for (const p of paths) {
+    const t = await readText(join(root, ...p.split("/")));
+    out[p] = t === undefined ? "deleted" : sha(t);
+  }
+  await mkdir(dirname(curatedEditsPathOf(undoDir)), { recursive: true });
+  await writeFile(curatedEditsPathOf(undoDir), JSON.stringify(out, null, 2) + "\n", "utf8");
 }
 
 /** The last build.json, when there is one that reads. */
@@ -1063,7 +1110,17 @@ export async function guardBuild(
         edits.push({ path: `${genRel}/${p}`, how: "deleted" });
   }
   edits.sort((a, c) => cmpText(a.path, c.path));
-  if (before) {
+  // Edits `atticus catalog edits --curate` made curated decisions of: their effect is in
+  // catalog/curated now, so this build replaces them (their bytes go into the undo copy).
+  const marked = await readCuratedEdits(o.undoDir);
+  const curatedEdits = edits.filter((e) => {
+    const m = marked.get(e.path);
+    if (m === undefined) return false;
+    const now = onDisk.get(strip(e.path));
+    return now ? m === now.sha : m === "deleted";
+  });
+  for (const e of curatedEdits) edits.splice(edits.indexOf(e), 1);
+  if (before && o.discardEdits !== onDisk.size) {
     reasons.push("not-upgraded");
     lines.push(
       `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}): run atticus upgrade to adopt its ${onDisk.size} record files into legacy slots (it shows what it would do first; atticus upgrade --yes applies it), or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}.`,
@@ -1080,6 +1137,10 @@ export async function guardBuild(
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
   }
   const discardCount = before ? onDisk.size : edits.length;
+  const beforeEdits: HandEdit[] = [...onDisk.keys()].map((p) => ({
+    path: `${genRel}/${p}`,
+    how: "added" as const,
+  }));
 
   // ---- removals: what the last build wrote and this one wouldn't
   const removals: Removal[] = [];
@@ -1101,22 +1162,43 @@ export async function guardBuild(
       const id = r?.id ?? (file ?? "").replace(/\.ya?ml$/, "");
       const repos = r ? repoOfEvidence(r) : [];
       const why = new Set<string>();
+      const kinds = new Set<RemovalReason>();
       let estate = false;
       for (const s of f.sources)
         if (!nowSources.has(`${s.path}\u0000${s.sha256}`)) {
           if (s.path === ALL_SLOTS) estate = true;
-          else why.add(sourceWords(s.path, b));
+          else {
+            why.add(sourceWords(s.path, b));
+            kinds.add(/(^|\/)sources\//.test(s.path) ? "slot" : "input");
+          }
         }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      if (estate && !why.size) why.add("another repo's slot changed (a join with it)");
-      for (const repo of repos) if (repoGone(repo)) why.add(`${repo} isn't listed, or is archived`);
-      if (b.curated.suppressed.includes(id)) why.add("a curated suppress");
+      if (estate && !why.size) {
+        why.add("another repo's slot changed (a join with it)");
+        kinds.add("slot");
+      }
+      for (const repo of repos)
+        if (repoGone(repo)) {
+          const archived = b.listed.includes(repo);
+          why.add(archived ? `${repo} is archived` : `${repo} isn't in the manifests any more`);
+          kinds.add(archived ? "archived" : "manifest");
+        }
+      if (last.manifest.buildVersion !== b.manifest.buildVersion) {
+        why.add(`the build changed (${last.manifest.buildVersion} to ${b.manifest.buildVersion})`);
+        kinds.add("build");
+      }
+      if (b.curated.suppressed.includes(id)) {
+        why.add("a curated suppress");
+        kinds.add("curated");
+      }
+      const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];
       const removal: Removal = {
         path: f.path,
         kind: r?.kind ?? kind ?? "",
         id,
         repos,
         explainedBy: [...why].sort(cmpText),
+        reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
     }
@@ -1181,16 +1263,13 @@ export async function guardBuild(
         ),
         ...(removals.length ? { removals, allowRemovals: removals.length } : {}),
         ...(unexplained.length ? { unexplained } : {}),
-        ...(edits.length || before ? { edits, discardEdits: discardCount } : {}),
+        ...(edits.length || before
+          ? { edits: before ? beforeEdits : edits, discardEdits: discardCount }
+          : {}),
       },
     };
   }
-  return {
-    removals,
-    edits: before
-      ? [...onDisk.keys()].map((p) => ({ path: `${genRel}/${p}`, how: "added" as const }))
-      : edits,
-  };
+  return { removals, edits: [...(before ? beforeEdits : edits), ...curatedEdits] };
 }
 
 // ------------------------------------------------------------------ the write, and undo
@@ -1215,6 +1294,19 @@ export interface WriteResult {
 }
 
 export const UNDO_KEEP = 5;
+
+/**
+ * A test hook (ADR 0195 point 10, "a crash part way through a write"): when set, the next write
+ * stops after its slots (`after-slots`) or after some of its record files (`mid-records`),
+ * throwing `BuildCrash`, as a process that died there would leave it. Never set outside tests.
+ */
+export const buildWriteHooks: { crash?: "after-slots" | "mid-records" } = {};
+
+export class BuildCrash extends Error {
+  constructor(readonly at: "after-slots" | "mid-records") {
+    super(`the write stopped ${at} (a test hook)`);
+  }
+}
 
 interface UndoEntry {
   version: 1;
@@ -1352,7 +1444,19 @@ export async function writeBuiltCatalog(
       wrote.push(relOf(root, s.path));
     }
   }
+  const crash = buildWriteHooks.crash;
+  buildWriteHooks.crash = undefined;
+  if (crash === "after-slots") throw new BuildCrash(crash);
+  if (crash === "mid-records") {
+    const records = touched.filter(
+      (t) => t.text !== null && t.path.startsWith(target.generated) && t.path !== target.manifest,
+    );
+    for (const t of records.slice(0, Math.ceil(records.length / 2)))
+      await writeFileAtomic(t.path, t.text!);
+    throw new BuildCrash(crash);
+  }
   const w = await writeCatalog(target.generated, b.records);
+  await rm(curatedEditsPathOf(o.undoDir), { force: true });
   if ((await readText(target.manifest)) !== manifestText)
     await writeFileAtomic(target.manifest, manifestText);
   return {
@@ -1371,23 +1475,23 @@ export interface UndoPlan {
   files: { path: string; to: "file" | "absent"; from: number }[];
 }
 
-/** What `atticus catalog undo [<n>]` would restore: before copy n (default the latest). */
-export async function planUndo(
-  undoDir: string,
-  n?: number,
-): Promise<UndoPlan | { problem: string }> {
+/**
+ * What `atticus catalog undo [<n>]` would restore: the n latest builds taken back, in order (1,
+ * the default, is the latest; up to the five kept), so the files are as they were before the
+ * n-th latest.
+ */
+export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { problem: string }> {
   const list = await listUndo(undoDir);
   if (!list.length)
     return {
       problem:
         "There is nothing to undo: no build has been written here yet (undo copies are kept on this machine only).",
     };
-  const upTo = n ?? list[0]!.n;
-  if (!list.some((x) => x.n === upTo))
+  if (!Number.isInteger(n) || n < 1 || n > list.length)
     return {
-      problem: `There is no undo copy ${upTo}; the copies kept are ${list.map((x) => x.n).join(", ")}.`,
+      problem: `There ${list.length === 1 ? "is 1 build" : `are ${list.length} builds`} to undo here; undo takes back 1 to ${list.length} of them.`,
     };
-  const copies = list.filter((x) => x.n >= upTo);
+  const copies = list.slice(0, n);
   const files = new Map<string, { path: string; to: "file" | "absent"; from: number }>();
   // The oldest copy that touched a file knows what it was before them all.
   for (const c of [...copies].reverse())

@@ -128,6 +128,14 @@ export interface WriteFactsResult {
    * its meta, and whether either changed. Left out for a prototype, which is never in the catalog.
    */
   snapshot?: { path: string; status: "written" | "unchanged"; facts: number; commit: string };
+  /** ADR 0195 point 4: each record the build removed, with what explains it. */
+  removed?: {
+    kind: string;
+    id: string;
+    repos: string[];
+    explainedBy: string[];
+    reasons: string[];
+  }[];
 }
 
 /** J2: one Interface of a write, with its confidence and how its callee was found. */
@@ -688,7 +696,9 @@ export async function writeFactsIntoCatalog(
     };
     const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
     // ADR 0195 point 4: the removals the build wrote, each with what explains it, are said.
-    for (const l of buildLines(root, built).filter((l) => !l.startsWith("slots: ")).slice(1))
+    for (const l of buildLines(root, built)
+      .filter((l) => !l.startsWith("slots: "))
+      .slice(1))
       if (o.verbose || w.removals.length) io.out(l);
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
@@ -995,6 +1005,14 @@ export async function writeFactsIntoCatalog(
       changes: { ...diff, byKind },
       links,
       snapshot,
+      // ADR 0195 point 4: what the build removed, each with what explains it.
+      removed: w.removals.map((x) => ({
+        kind: x.kind,
+        id: x.id,
+        repos: x.repos,
+        explainedBy: x.explainedBy,
+        reasons: x.reasons,
+      })),
     };
   } finally {
     await lock.release();
