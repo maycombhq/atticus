@@ -134,7 +134,10 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/journeys/package.json') }}
       # The role journeys drive the app in Chromium.
       - if: steps.shard.outputs.kind == 'journeys'
-        run: pnpm --filter @maycombhq/journeys exec playwright install --with-deps chromium
+        # The system packages come from the runner's apt mirror, which sometimes can't be reached
+        # (beta.26: "Temporary failure resolving azure.archive.ubuntu.com"); the hosted images
+        # already carry what Chromium needs, so the browser alone is installed then.
+        run: pnpm --filter @maycombhq/journeys exec playwright install --with-deps chromium || pnpm --filter @maycombhq/journeys exec playwright install chromium
       - run: pnpm build
       # Test results are kept only for the same tree: tests read files across the repo (fixtures,
       # docs, other packages) that turbo can't see, so a result from any other tree could hide a

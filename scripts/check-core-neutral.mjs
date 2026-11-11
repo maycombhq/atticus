@@ -197,9 +197,9 @@ export const ALLOW = [
   },
   {
     file: "packages/core/src/run-log.ts",
-    names: ["copilot"],
+    names: ["copilot", "ado"],
     reason:
-      "a command's run log says it was started by a Copilot session, which ATTICUS_ACP_SESSION marks: the copilot-acp mode's own name (ADR 0171, ADR 0187)",
+      "a command's run log says it was started by a Copilot session, which ATTICUS_ACP_SESSION marks: the copilot-acp mode's own name (ADR 0171, ADR 0187); and `ado` is the CLI's own command group (`atticus ado …`), named in the list of command groups the Console records (beta.26), not knowledge of Azure DevOps",
   },
   {
     file: "packages/core/src/schema/ai.ts",
