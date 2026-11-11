@@ -9,7 +9,6 @@ import {
   credentialLike,
   FACT_KINDS,
   Fact,
-  FactsFile,
   looksLikeSecret,
   type FactOf,
 } from "./schema/facts.js";
