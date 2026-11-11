@@ -48,13 +48,15 @@ export function Panel(p: {
   rows?: string;
   children: ReactNode;
   labelledBy?: string;
+  /** A class of the screen's own (cw-, hm-), beside panel and its kind. */
+  className?: string;
 }) {
   const id =
     p.labelledBy ??
     (p.title ? `p-${p.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : undefined);
   return (
     <section
-      className={`panel ${p.kind ?? ""}`}
+      className={`panel ${p.kind ?? ""}${p.className ? ` ${p.className}` : ""}`}
       aria-labelledby={p.title ? id : undefined}
       style={{ gridColumn: p.span, gridRow: p.rows }}
     >

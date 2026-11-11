@@ -25,6 +25,7 @@ import {
 import { Command, NoChangeYet, PickAChange, RunNextPanel } from "./RunNext.js";
 import { RunsLink } from "../runs/Runs.js";
 import { ChangeImpactPanel } from "./Impact.js";
+import { ChangeWork, CwHead, Explain, StageBadge } from "./cw.js";
 
 /**
  * Feature design, Stories and Tasks (plan 4.5): for now each shows the change's files and the
@@ -61,10 +62,8 @@ export function ChangePicker(p: {
 }) {
   const id = `pick-${p.screen}`;
   return (
-    <div className="row" style={{ gap: 8 }}>
-      <label htmlFor={id} className="hud" style={{ fontSize: 10 }}>
-        {W.pickChange}
-      </label>
+    <div className="cw-picker">
+      <label htmlFor={id}>{W.pickChange}</label>
       <select
         id={id}
         className="run-select"
@@ -178,11 +177,12 @@ export function TaskList({ change, tasks }: { change: string; tasks: TaskRow[] }
                 <span className="muted" style={{ fontSize: 12 }}>
                   {W.runOnBoard}
                 </span>
-                <span className="hud" style={{ fontSize: 10, marginTop: 4 }}>
-                  {W.fromTerminal}
-                </span>
-                <Command text={s.command} label={R.copy} />
-                <Command text={s.slash!.command} label={R.copySlash} />
+                {/* beta.26: the commands folded under the board's link, not stacked open. */}
+                <details className="work-terminal">
+                  <summary>{W.fromTerminal}</summary>
+                  <Command text={s.command} label={R.copy} />
+                  <Command text={s.slash!.command} label={R.copySlash} />
+                </details>
               </div>
             );
           },
@@ -215,26 +215,26 @@ export function StagePage(p: {
         const ready = p.tasks?.state === "ready" ? p.tasks.data : undefined;
         return (
           <>
-            <div className="row between" style={{ flexWrap: "wrap", marginBottom: 12 }}>
-              <p style={{ margin: 0 }}>
-                <span className="n" style={{ fontSize: 20 }}>
-                  {c.title}
-                </span>
-              </p>
-              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                <RunsLink change={c.id} />
-                {p.stage === "tasks" && (
-                  <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
-                    {COPY.conformance.title}
-                  </a>
-                )}
-                <ChangePicker list={list} current={c.id} screen={screen} />
-              </div>
-            </div>
+            <CwHead
+              title={c.title}
+              sub={c.id}
+              badges={<StageBadge state={c.state} blocked={!!c.openFindings?.blocking} />}
+              actions={
+                <>
+                  <RunsLink change={c.id} />
+                  {p.stage === "tasks" && (
+                    <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
+                      {COPY.conformance.title}
+                    </a>
+                  )}
+                  <ChangePicker list={list} current={c.id} screen={screen} />
+                </>
+              }
+            />
             {/* UX review: where the stage's work is done in the app, first. */}
             {/* Eighth UX walk: stories are written by the stage's own Prepare; Breakdown reads. */}
             {(p.stage === "stories" || p.stage === "tasks") && (
-              <p className="work-say" style={{ margin: 0 }}>
+              <p className="cw-lead">
                 <a
                   className={p.stage === "tasks" ? "btn primary" : undefined}
                   href={`#/${p.stage === "stories" ? "breakdown" : "tasks"}?change=${encodeURIComponent(c.id)}`}
@@ -251,72 +251,77 @@ export function StagePage(p: {
             ) : (
               <RunNextPanel step={stageStep(p.stage, c, ready, cockpit)} />
             )}
-            <div className="bento">
-              {/* Eighth UX walk: where the feature lands (feature.md), the stage's own draft. */}
-              {p.stage === "feature" && <PlacementPanel change={c.id} />}
-              {/* ADR 0181: the stage's drafts, drafted by AI until a person edits them, each
-                  with Correct; corrections wait for the stage's next run. */}
-              <StageDraftsPanel change={c.id} page={p.stage} />
-              {/* ADR 0189: the stage as one conversation: the prompt, the answer, the critic's
-                  findings, the questions and the person's replies, in order, with the reply box. */}
-              {p.stage !== "tasks" && (
-                <StageThreadPanel
-                  change={c.id}
-                  stage={p.stage === "feature" ? "feature" : "stories"}
-                />
-              )}
-              <Panel title={W.files} span={p.stage === "tasks" ? "span 4" : "1 / -1"}>
-                {p.detail ? (
-                  <View of={p.detail}>
-                    {(d) => <FilesTable detail={d} stage={p.stage} extra={extra} />}
-                  </View>
-                ) : (
-                  <div className="state">{W.noFiles}</div>
+            {/* beta.26: the stage's work on the left; its files and what it rests on beside. */}
+            <div className="cw-cols">
+              <div className="cw-col">
+                {/* Eighth UX walk: where the feature lands (feature.md), the stage's own draft. */}
+                {p.stage === "feature" && <PlacementPanel change={c.id} />}
+                {p.stage === "tasks" && (
+                  <Panel title={W.tasks}>
+                    {p.tasks ? (
+                      <View of={p.tasks}>{(t) => <TaskList change={c.id} tasks={t} />}</View>
+                    ) : (
+                      <div className="state">{W.noTasks.replace("<change>", c.id)}</div>
+                    )}
+                  </Panel>
                 )}
-              </Panel>
-              {p.stage === "tasks" && (
-                <Panel title={W.tasks} span="span 8">
-                  {p.tasks ? (
-                    <View of={p.tasks}>{(t) => <TaskList change={c.id} tasks={t} />}</View>
+                {/* ADR 0189: the stage as one conversation: the prompt, the answer, the
+                    critic's findings, the questions and the person's replies, in order, with
+                    the reply box. */}
+                {p.stage !== "tasks" && (
+                  <StageThreadPanel
+                    change={c.id}
+                    stage={p.stage === "feature" ? "feature" : "stories"}
+                  />
+                )}
+                {/* ADR 0181: the stage's drafts, drafted by AI until a person edits them, each
+                    with Correct; corrections wait for the stage's next run. */}
+                <StageDraftsPanel change={c.id} page={p.stage} />
+                {/* Seventh UX walk: the stories themselves, each with Edit, as on Breakdown. */}
+                {p.stage === "stories" && (
+                  <StoryFiles
+                    change={c.id}
+                    listed={
+                      p.detail?.state === "ready"
+                        ? p.detail.data.artifacts.some((a) => a.artifact === "stories")
+                        : p.detail?.state === "error"
+                          ? true
+                          : undefined
+                    }
+                  />
+                )}
+                {/* ADR 0191: the business analyst shapes the stories; the plan's work items. */}
+                {p.stage === "stories" && <StoryShapePanel change={c.id} />}
+                {/* ADR 0102: what the change needs from the organisation. */}
+                <NeedsPanel change={c.id} />
+              </div>
+              <div className="cw-col">
+                <Panel title={W.files}>
+                  {p.detail ? (
+                    <View of={p.detail}>
+                      {(d) => <FilesTable detail={d} stage={p.stage} extra={extra} />}
+                    </View>
                   ) : (
-                    <div className="state">{W.noTasks.replace("<change>", c.id)}</div>
+                    <div className="state">{W.noFiles}</div>
                   )}
                 </Panel>
-              )}
-              {/* Seventh UX walk: the stories themselves, each with Edit, as on Breakdown. */}
-              {p.stage === "stories" && (
-                <StoryFiles
-                  change={c.id}
-                  listed={
-                    p.detail?.state === "ready"
-                      ? p.detail.data.artifacts.some((a) => a.artifact === "stories")
-                      : p.detail?.state === "error"
-                        ? true
-                        : undefined
-                  }
-                />
-              )}
-              {/* ADR 0191: the business analyst shapes the stories; the plan's work items. */}
-              {p.stage === "stories" && <StoryShapePanel change={c.id} />}
-              {p.stage === "stories" && <WorkItemsPanel change={c.id} />}
-              {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
-              {p.stage === "feature" && <ChangeInputs change={c.id} />}
-              {/* ADR 0124, Part 5: the org knowledge that applies is on the change's Knowledge
-                  page (2026-10-27); here, a line saying so, so it isn't shown twice. */}
-              {p.stage === "feature" && (
-                <Panel title={COPY.changeKnowledge.title} span="1 / -1">
-                  <p className="work-why" style={{ marginTop: 0 }}>
-                    {COPY.changeKnowledge.onFeature}
-                  </p>
-                  <p className="work-say" style={{ margin: 0 }}>
-                    <a href={`#/change-knowledge?change=${encodeURIComponent(c.id)}`}>
-                      {COPY.changeKnowledge.openPage}
-                    </a>
-                  </p>
-                </Panel>
-              )}
-              {/* ADR 0102: what the change needs from the organisation. */}
-              <NeedsPanel change={c.id} />
+                {/* ADR 0191: the plan's work items in the tracker, beside the stories. */}
+                {p.stage === "stories" && <WorkItemsPanel change={c.id} />}
+                {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
+                {p.stage === "feature" && <ChangeInputs change={c.id} />}
+                {/* ADR 0124, Part 5: the org knowledge that applies is on the change's Knowledge
+                    page (2026-10-27); here, a line saying so, so it isn't shown twice. */}
+                {p.stage === "feature" && (
+                  <Panel title={COPY.changeKnowledge.title}>
+                    <Explain text={COPY.changeKnowledge.onFeature} />
+                    <p className="work-say" style={{ margin: 0 }}>
+                      <a href={`#/change-knowledge?change=${encodeURIComponent(c.id)}`}>
+                        {COPY.changeKnowledge.openPage}
+                      </a>
+                    </p>
+                  </Panel>
+                )}
+              </div>
             </div>
           </>
         );
@@ -385,9 +390,7 @@ export function ArchitectureStep({
 }) {
   return (
     <>
-      <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-        {W.architectureIntro}
-      </p>
+      <Explain text={W.architectureIntro} />
       <View of={list}>
         {(l) => {
           const picked = pickChange(l, wanted);
@@ -412,10 +415,11 @@ export function ArchitectureStep({
                     : {})}
                 />
               </p>
+              {/* beta.26: each change's three links on a row of its own, not run together. */}
               {l.length > 0 && (
-                <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
+                <ul className="cw-stages cw-links">
                   {l.map((c) => (
-                    <span key={c.id} className="row" style={{ gap: 12 }}>
+                    <li key={c.id}>
                       <a href={`#/flows?change=${encodeURIComponent(c.id)}`}>
                         {COPY.flows.openTargets}: {c.title}
                       </a>
@@ -425,9 +429,9 @@ export function ArchitectureStep({
                       <a href={`#/estimate?change=${encodeURIComponent(c.id)}`}>
                         {COPY.estimate.title}: {c.title}
                       </a>
-                    </span>
+                    </li>
                   ))}
-                </p>
+                </ul>
               )}
             </>
           );
@@ -488,15 +492,18 @@ export function ArchitecturePage({ hash }: { hash: string }) {
   });
   return (
     <>
-      <ArchitectureStep list={list} wanted={wanted} {...(picked ? { cockpit } : {})} />
-      {picked && (
-        <div className="bento" style={{ marginBottom: 12 }}>
-          <ChangeImpactPanel change={picked.id} />
-          {/* ADR 0181: the target flows and design, drafted by AI, each with Correct. */}
-          <StageDraftsPanel change={picked.id} page="architecture" />
-        </div>
-      )}
-      <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
+      {/* beta.26: the stage's parts in the change pages' look; the map below keeps its own. */}
+      <ChangeWork>
+        <ArchitectureStep list={list} wanted={wanted} {...(picked ? { cockpit } : {})} />
+        {picked && (
+          <div className="bento">
+            <ChangeImpactPanel change={picked.id} />
+            {/* ADR 0181: the target flows and design, drafted by AI, each with Correct. */}
+            <StageDraftsPanel change={picked.id} page="architecture" />
+          </div>
+        )}
+        <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
+      </ChangeWork>
       <Architecture hash={hash} />
     </>
   );

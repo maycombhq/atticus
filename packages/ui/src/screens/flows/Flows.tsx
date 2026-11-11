@@ -367,6 +367,7 @@ function RepoFlows(p: {
           <span className="hud">{C.filter}</span>
           <input
             id="flow-filter"
+            className="field"
             type="search"
             placeholder={C.filterHint}
             value={filter}
@@ -505,6 +506,7 @@ function ChangePicker(p: { list: Loaded<{ id: string; title: string }[]>; change
       <span className="hud">{C.change}</span>
       <select
         id="flow-change"
+        className="run-select"
         value={p.change ?? ""}
         onChange={(e) => (location.hash = e.target.value ? targetHref(e.target.value) : "#/flows")}
       >
@@ -546,6 +548,7 @@ export function Flows({ hash }: { hash: string }) {
                       <span className="hud">{C.repo}</span>
                       <select
                         id="flow-repo"
+                        className="run-select"
                         value={repo}
                         onChange={(e) => (location.hash = flowHref(e.target.value))}
                       >

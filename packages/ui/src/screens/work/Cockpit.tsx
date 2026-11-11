@@ -12,6 +12,7 @@ import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 import { hasAction, StepAction } from "./step-action.js";
 import { StageThreadPanel } from "./StageThread.js";
+import { CwHead, Explain, StageBadge } from "./cw.js";
 
 /**
  * The change cockpit (WP7.1): one page per change with what a person needs to follow it. Where
@@ -152,114 +153,116 @@ export function CockpitView(p: {
 }) {
   const c = p.c;
   const drafted = taskNext(c.next?.command, p.tasks);
+  // beta.26: what to do on the left (the next step, what blocks it); where the change is and its
+  // repos beside it, each a compact card.
   return (
-    <div className="stack">
-      <section aria-labelledby="cockpit-where" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-where" className="hud">
-          {C.where}
-        </h3>
-        <p style={{ margin: 0 }}>{C.state(c.state, c.risk.level)}</p>
-        {c.waitsOn && <WaitsOnLine w={c.waitsOn} />}
-        {/* Where the stages' work is when it ran ahead of the gates (ADR 0124 addendum B-change). */}
-        {c.work && (
-          <p className="muted" style={{ margin: 0 }}>
-            {c.work}
-          </p>
-        )}
-        <ol
-          className="row"
-          style={{ gap: 6, flexWrap: "wrap", listStyle: "none", padding: 0, margin: 0 }}
-        >
-          {c.stages.map((s) => {
-            const mark = stageMark(s);
-            return (
-              <li key={s.stage}>
-                <a
-                  className={`chip ${mark === "done" ? "" : mark === "current" ? "warn" : ""}`}
-                  href={hrefOf(C.stageScreen[s.stage]!, c.id)}
-                  aria-current={mark === "current" ? "step" : undefined}
-                >
-                  {C.stage(C.stages[s.stage]!, C.marks[mark]!)}
-                </a>
-                {/* Ninth UX walk: "done2 drafts" ran together; a space keeps them apart. */}
-                {(s.drafts > 0 || s.openQuestions > 0) && " "}
-                {(s.drafts > 0 || s.openQuestions > 0) && (
-                  <span className="muted" style={{ fontSize: 11.5, marginLeft: 4 }}>
-                    {C.progress(s.drafts, s.rounds, s.openQuestions)}
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-
-      <section aria-labelledby="cockpit-next" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-next" className="hud">
-          {C.next}
-        </h3>
-        <p style={{ margin: 0 }}>{c.nextStep}</p>
-        {drafted ? (
-          <DraftedTaskNext d={drafted} onDone={p.onTasks} />
-        ) : (
-          c.next && (
-            <>
-              <p className="muted" style={{ margin: 0 }}>
-                {inAppWords(c.next.why)}
-              </p>
-              <NextAction change={c.id} next={c.next} />
-            </>
-          )
-        )}
-      </section>
-
-      {c.reasons.length > 0 && (
-        <section aria-labelledby="cockpit-blocks" className="stack" style={{ gap: 6 }}>
-          <h3 id="cockpit-blocks" className="hud">
-            {C.blocks}
+    <div className="cw-cols">
+      <div className="cw-col">
+        <section aria-labelledby="cockpit-next" className="cw-card cw-step">
+          <h3 id="cockpit-next" className="hud">
+            {C.next}
           </h3>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {c.reasons.map((r) => (
-              <li key={`${r.code}-${r.message}`}>{r.message}</li>
-            ))}
-          </ul>
+          <p className="cw-step-what">{c.nextStep}</p>
+          {drafted ? (
+            <DraftedTaskNext d={drafted} onDone={p.onTasks} />
+          ) : (
+            c.next && (
+              <>
+                <p className="muted" style={{ margin: 0 }}>
+                  {inAppWords(c.next.why)}
+                </p>
+                <NextAction change={c.id} next={c.next} />
+              </>
+            )
+          )}
         </section>
-      )}
 
-      {c.openQuestions > 0 && (
-        <p style={{ margin: 0 }}>
-          <a href={hrefOf("questions", c.id)}>{C.questions(c.openQuestions)}</a>
-        </p>
-      )}
+        {c.reasons.length > 0 && (
+          <section aria-labelledby="cockpit-blocks" className="cw-card">
+            <h3 id="cockpit-blocks" className="hud">
+              {C.blocks}
+            </h3>
+            <ul className="cw-plain">
+              {c.reasons.map((r) => (
+                <li key={`${r.code}-${r.message}`}>{r.message}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
 
-      <section aria-labelledby="cockpit-repos" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-repos" className="hud">
-          {C.repos}
-        </h3>
-        {c.repos.length === 0 ? (
-          <OpenWorkspace change={c.id} />
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {c.repos.map((r) => (
-              <li key={r.id}>
-                <span className="mono">{r.id}</span>: {C.branchOn(r.branch, r.base)}
-                {r.pr && !isManualLink(r.pr) && (
-                  <>
-                    {" · "}
-                    <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {/* Ninth UX walk: one PR a manual Git host leaves to a person is said once, not per repo. */}
-        {c.repos.some((r) => r.pr && isManualLink(r.pr)) && (
-          <p className="muted" style={{ margin: 0 }}>
-            <ManualPr />
-          </p>
-        )}
-      </section>
+      <div className="cw-col">
+        <section aria-labelledby="cockpit-where" className="cw-card">
+          <h3 id="cockpit-where" className="hud">
+            {C.where}
+          </h3>
+          <p style={{ margin: 0 }}>{C.state(c.state, c.risk.level)}</p>
+          {c.waitsOn && <WaitsOnLine w={c.waitsOn} />}
+          {/* Where the stages' work is when it ran ahead of the gates (ADR 0124 addendum B-change). */}
+          {c.work && (
+            <p className="muted" style={{ margin: 0 }}>
+              {c.work}
+            </p>
+          )}
+          <ol className="cw-stages">
+            {c.stages.map((s) => {
+              const mark = stageMark(s);
+              return (
+                <li key={s.stage}>
+                  <a
+                    className={`chip ${mark === "done" ? "done" : mark === "current" ? "warn" : "dim"}`}
+                    href={hrefOf(C.stageScreen[s.stage]!, c.id)}
+                    aria-current={mark === "current" ? "step" : undefined}
+                  >
+                    {C.stage(C.stages[s.stage]!, C.marks[mark]!)}
+                  </a>
+                  {/* Ninth UX walk: "done2 drafts" ran together; a space keeps them apart. */}
+                  {(s.drafts > 0 || s.openQuestions > 0) && " "}
+                  {(s.drafts > 0 || s.openQuestions > 0) && (
+                    <span className="cw-row-sub">
+                      {C.progress(s.drafts, s.rounds, s.openQuestions)}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          {c.openQuestions > 0 && (
+            <p style={{ margin: 0, fontSize: 12.5 }}>
+              <a href={hrefOf("questions", c.id)}>{C.questions(c.openQuestions)}</a>
+            </p>
+          )}
+        </section>
+
+        <section aria-labelledby="cockpit-repos" className="cw-card">
+          <h3 id="cockpit-repos" className="hud">
+            {C.repos}
+          </h3>
+          {c.repos.length === 0 ? (
+            <OpenWorkspace change={c.id} />
+          ) : (
+            <ul className="cw-plain">
+              {c.repos.map((r) => (
+                <li key={r.id}>
+                  <span className="mono">{r.id}</span>: {C.branchOn(r.branch, r.base)}
+                  {r.pr && !isManualLink(r.pr) && (
+                    <>
+                      {" · "}
+                      <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* Ninth UX walk: one PR a manual Git host leaves to a person is said once, not per repo. */}
+          {c.repos.some((r) => r.pr && isManualLink(r.pr)) && (
+            <p className="muted" style={{ margin: 0 }}>
+              <ManualPr />
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -340,9 +343,9 @@ export function PastChangesView(p: {
 }) {
   const L = C.like;
   return (
-    <section aria-label={L.title}>
-      <h3>{L.title}</h3>
-      <p className="muted">{L.intro}</p>
+    <section aria-label={L.title} className="cw-card">
+      <h3 className="hud">{L.title}</h3>
+      <Explain text={L.intro} />
       {p.r.how === "words" && p.r.note && p.r.changes.length > 0 && (
         <p className="muted">{L.byWords(p.r.note)}</p>
       )}
@@ -354,7 +357,7 @@ export function PastChangesView(p: {
             <li key={c.id}>
               <strong>{c.title}</strong>
               {c.archived && <span className="muted"> · {L.archived(c.archived)}</span>}
-              {c.summary && <div>{c.summary}</div>}
+              {c.summary && <div className="cw-row-sub">{c.summary}</div>}
               {p.onUse && (
                 <button
                   type="button"
@@ -449,9 +452,26 @@ export function CockpitPicked(p: {
   );
   useReloadOnFiles(tasks);
   if (!p.current || !p.list.some((x) => x.id === p.current)) return <PickAChange bare />;
+  const row = p.list.find((x) => x.id === p.current)!;
   return (
-    <>
-      <ChangePicker list={p.list} current={p.current} screen="cockpit" />
+    <div className="cw-glance">
+      <CwHead
+        title={row.title}
+        sub={row.id}
+        badges={
+          <>
+            <StageBadge state={row.state} blocked={!!row.openFindings?.blocking} />
+            {p.c.state === "ready" && (
+              <span
+                className={`chip ${p.c.data.risk.level === "high" ? "blocking" : p.c.data.risk.level === "medium" ? "warn" : "dim"}`}
+              >
+                {COPY.changeWork.risk(p.c.data.risk.level)}
+              </span>
+            )}
+          </>
+        }
+        actions={<ChangePicker list={p.list} current={p.current} screen="cockpit" />}
+      />
       <View of={p.c}>
         {(d) => (
           <>
@@ -461,18 +481,16 @@ export function CockpitPicked(p: {
               onTasks={tasks.reload}
             />
             {/* ADR 0189: the first step, and a small change's one step, as conversations too. */}
-            <div className="bento" style={{ marginTop: 12 }}>
-              {d.next?.command?.startsWith("atticus change small ") ? (
-                <StageThreadPanel change={d.id} stage="small" />
-              ) : (
-                <StageThreadPanel change={d.id} stage="proposal" />
-              )}
-            </div>
+            {d.next?.command?.startsWith("atticus change small ") ? (
+              <StageThreadPanel change={d.id} stage="small" />
+            ) : (
+              <StageThreadPanel change={d.id} stage="proposal" />
+            )}
           </>
         )}
       </View>
       <PastChanges change={p.current} />
-    </>
+    </div>
   );
 }
 
@@ -487,6 +505,7 @@ export function ChangeCockpit({ hash }: { hash: string }) {
   return (
     <Panel
       title={C.title}
+      className="cw-frame"
       meta={
         current && me.state === "ready" ? (
           <WatchButton

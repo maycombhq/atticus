@@ -13,6 +13,7 @@ import {
 import { Note, plural, useAction } from "./shared.js";
 import { COPY } from "../../copy.js";
 import { isManualLink, ManualHandoff, MANUAL_STEPS_HREF } from "../know/task-pr.js";
+import "../work/cw.css";
 
 const T = COPY.release;
 
@@ -105,27 +106,19 @@ function List({ list, current }: { list: Loaded<ReleaseItem[]>; current?: string
     <Panel title={T.changes} span="span 3" rows="span 3">
       <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesInFlight}>
         {(l) => (
-          <nav aria-label={T.changes} className="stack" style={{ gap: 2 }}>
+          <nav aria-label={T.changes} className="cw-list">
             {l.map((c) => (
               <a
                 key={c.id}
                 href={`#/release/${c.id}`}
                 aria-current={c.id === current ? "page" : undefined}
-                className="list-row"
-                style={{
-                  textDecoration: "none",
-                  padding: "8px 6px",
-                  borderRadius: 6,
-                  background: c.id === current ? "var(--picked)" : undefined,
-                }}
+                className="cw-row"
+                // beta.26: cut short in the list, whole on hover, as on All changes.
+                title={`${c.title} (${c.id})`}
               >
-                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span className="mono" style={{ fontSize: 12 }}>
-                    {c.id}
-                  </span>
-                  <span className="muted" style={{ fontSize: 11.5 }}>
-                    {c.title}
-                  </span>
+                <span className="cw-row-main">
+                  <span className="cw-row-title">{c.title}</span>
+                  <span className="cw-row-sub">{c.id}</span>
                 </span>
                 <span className={`chip ${c.atRelease ? "warn" : "dim"}`}>
                   {STATE_LABEL[c.state] ?? c.state.toUpperCase()}
@@ -364,7 +357,7 @@ export function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      <Panel title={T.releasePrs} span="span 6">
+      <Panel title={T.releasePrs} span="span 9">
         <View of={d} empty={(r) => r.repos.length === 0} emptyText={T.noCodeRepos}>
           {(r) => (
             <div className="stack">

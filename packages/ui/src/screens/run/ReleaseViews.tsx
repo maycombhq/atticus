@@ -300,7 +300,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
         </View>
       </Panel>
 
-      <Panel title={TX.rolloutReadinessAndHypercare} meta={TX.fromDesignMd} span="span 9">
+      <Panel title={TX.rolloutReadinessAndHypercare} meta={TX.fromDesignMd} span="1 / -1">
         <View of={p}>
           {(x) => (
             <dl className="run-facts">

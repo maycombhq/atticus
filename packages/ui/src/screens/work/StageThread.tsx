@@ -9,6 +9,7 @@ import { ArtifactEditor } from "../Changes.js";
 import { CopyButton } from "../run/shared.js";
 import { Problems } from "./RunNext.js";
 import "./work.css";
+import { Explain } from "./cw.js";
 
 /**
  * ADR 0189: a stage is one conversation. The stage's tab shows its thread inline, in order: the
@@ -514,10 +515,8 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
   };
   const handlers: ThreadHandlers = p;
   return (
-    <Panel title={T.title(p.stage)} span="1 / -1">
-      <p className="work-why" style={{ marginTop: 0 }}>
-        {T.intro}
-      </p>
+    <Panel title={T.title(p.stage)} span="1 / -1" className="cw-thread">
+      <Explain text={T.intro} />
       <View of={p.of}>
         {(v) => {
           const fixToAssistant = (it: FindingItem) => {
@@ -531,7 +530,7 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                 {v.headline}
               </p>
               {!v.waiting && v.state !== "done" && (
-                <div>
+                <div className="cw-thread-start">
                   <button
                     type="button"
                     className="btn primary"

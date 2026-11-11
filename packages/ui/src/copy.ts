@@ -2228,6 +2228,16 @@ export const COPY = {
     needsCantRead: (change: string, error: string) =>
       `Couldn't read the needs of ${change}: ${error}`,
   },
+  // beta.26: the change and work screens in the IDE look (screens/work/cw.tsx).
+  changeWork: {
+    more: "More",
+    less: "Less",
+    /** The All changes list's head: how many changes it holds. */
+    changeCount: (n: number) => `${n} change${n === 1 ? "" : "s"}`,
+    /** A change's id and type, under its title. */
+    /** A change's risk as a badge in its head: "Low risk". */
+    risk: (level: string) => `${level.charAt(0).toUpperCase()}${level.slice(1)} risk`,
+  },
   changes: {
     qa: "QA",
     define: "Define",

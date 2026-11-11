@@ -24,6 +24,8 @@ import { Onboarding } from "./work/Onboarding.js";
 import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
 import "./knowledge/knowledge.css";
 import "./setup/setup.css";
+import { ChangeWork } from "./work/cw.js";
+import { SCREENS } from "../app/screens.js";
 
 /**
  * Screen id (screens.ts) → component. Each screen gets the current hash so it can read its own
@@ -70,7 +72,7 @@ export function withLook(look: "kn" | "st", S: Screen): Screen {
   return Look;
 }
 
-const SCREENS: Record<string, Screen> = {
+const BARE: Record<string, Screen> = {
   // The stage screens of plan 4.5 (Change's tabs) and the first steps. The Overview is part of
   // Home: its address, #/dashboard, opens Home (OLD_ADDRESSES in app/screens.ts).
   onboarding: () => <Onboarding />,
@@ -108,9 +110,31 @@ const SCREENS: Record<string, Screen> = {
   words: Words,
 };
 
+/**
+ * beta.26: the change and work screens in the IDE look. Every page of a change (but the two that
+ * hold the map's canvas, which keep the map's own look) and Model runs, History and Flows sit in
+ * ChangeWork, the scope of cw.css.
+ */
+export const CW_SCREENS: ReadonlySet<string> = new Set([
+  ...SCREENS.filter(
+    (s) => s.section === "Change" && s.id !== "architecture" && s.id !== "change-diagram",
+  ).map((s) => s.id),
+  "runs",
+  "history",
+  "flows",
+]);
+
 export const SCREEN_COMPONENTS: Record<string, Screen> = Object.fromEntries(
-  Object.entries(SCREENS).map(([id, S]) => {
+  Object.entries(BARE).map(([id, S]): [string, Screen] => {
     const look = LOOKS[id];
-    return [id, look ? withLook(look, S) : S];
+    if (look) return [id, withLook(look, S)];
+    if (!CW_SCREENS.has(id)) return [id, S];
+    const Wrapped: Screen = (p) => (
+      <ChangeWork>
+        <S {...p} />
+      </ChangeWork>
+    );
+    Wrapped.displayName = `ChangeWork(${id})`;
+    return [id, Wrapped];
   }),
 );
