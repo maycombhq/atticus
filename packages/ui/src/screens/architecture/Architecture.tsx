@@ -36,6 +36,7 @@ import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { ArrowWrong, LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
 import { knownTargets, whatMoved } from "./links.js";
+import { EveryDependency } from "./EveryDependency.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
   canvasGraph,
@@ -583,8 +584,13 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     return undefined;
   };
   // ADR 0192: a build dependency has no calls to correct at once: each is corrected under it.
+  // Beta.25: an arrow merged from more than its view lists reads the rest, each with its form.
   const above = (l: Api.HierEdgeT) =>
-    l.type === "depends-on" ? null : (
+    l.type === "depends-on" ? (
+      l.count > (l.joins?.length ?? 0) && callsPath(l) ? (
+        <EveryDependency link={l} path={callsPath(l)!} under={under} />
+      ) : null
+    ) : (
       <ArrowWrong
         link={l}
         known={known}

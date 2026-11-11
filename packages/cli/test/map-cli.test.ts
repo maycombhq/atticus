@@ -21,7 +21,7 @@ import {
 } from "@maycombhq/ai";
 import { FACT_RULE_PARTS, RULE_TOPICS } from "@maycombhq/assistant-files";
 import { parseFacts, type Fact } from "@maycombhq/core";
-import { FILE_KINDS, kindsOf } from "@maycombhq/verify";
+import { FILE_KINDS, isBuildFile, kindsOf } from "@maycombhq/verify";
 import type { StepFact } from "../src/commands.js";
 import { mapCommand, readAnswer, type MapOptions } from "../src/map-commands.js";
 
@@ -502,7 +502,11 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       for (const p of parts) {
         // A-framework: this fixture has no manifest and no facts yet, so nothing says which
         // frameworks it declares and no framework's rules are bought; see the test below.
-        const needed = (!p.when || p.when.some((k) => kinds.includes(k))) && !p.on;
+        // ADR 0192 (beta.25): a build part only with a build file among them.
+        const needed =
+          (!p.when || p.when.some((k) => kinds.includes(k))) &&
+          !p.on &&
+          (!p.build || [...filesIn(prompt)].some(isBuildFile));
         // A rule the files need is always there; one they don't is left out, unless a rejected
         // fact shown in the prompt cites a file that needs it.
         if (needed) expect(prompt, p.text.slice(0, 40)).toContain(p.text);

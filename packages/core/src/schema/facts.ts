@@ -86,7 +86,12 @@ const common = {
   id: FactId,
   repo: str(),
   commit: z.string().regex(/^[0-9a-f]{7,64}$/),
-  /** The module in the repo the fact belongs to; the repo itself when left out. */
+  /**
+   * The component the fact belongs to: the component the manifest names (a module only when the
+   * manifest lists modules); the repo's own when left out. Review of beta.25: in a repo whose
+   * manifest lists no modules, one the manifest doesn't name (a folder's) is placed in the repo's
+   * component (`placedComponentOf`), with a note.
+   */
   component: z.string().optional(),
   cite: Cite,
   verified: FactVerified.default("none"),
@@ -296,6 +301,12 @@ export const DeployFact = z.strictObject({
  * 4 (ADR 0180): the `component` kind, what a component is.
  * 5 (ADR 0192): the `artifact` and `dependency` kinds, a component's build coordinates and what
  * it builds on. A version-4 file reads unchanged: both are new kinds, nothing else moved.
+ *
+ * ADR 0192 addendum (beta.25), no version change: a pom's `<scope>system</scope>` is recorded as
+ * `provided` (it is drawn so), so 2.0.0-beta.24 reads every file 2.0.0-beta.25 writes. A reader of
+ * beta.25 or later leaves out, one fact at a time, a fact a newer Atticus wrote (a kind it doesn't
+ * know, or a known kind with a value or a field it doesn't), said as such (`parseFacts`' `newer`),
+ * rather than refusing the whole file, and `atticus verify --write` keeps that line as written.
  */
 export const FACTS_SCHEMA_VERSION = 5 as const;
 
@@ -828,7 +839,11 @@ export const ArtifactFact = z.strictObject({
   version: z.string().min(1).max(100).optional(),
 });
 
-/** A dependency's scope (ADR 0192): Maven's, or what a Gradle configuration means. */
+/**
+ * A dependency's scope (ADR 0192): Maven's, or what a Gradle configuration means. A pom's
+ * `<scope>system</scope>` (a jar from a path on the machine) is recorded as `provided`, which is
+ * how it is drawn (ADR 0192 addendum).
+ */
 export const DEPENDENCY_SCOPES = ["compile", "runtime", "provided", "test", "import"] as const;
 export type DependencyScope = (typeof DEPENDENCY_SCOPES)[number];
 

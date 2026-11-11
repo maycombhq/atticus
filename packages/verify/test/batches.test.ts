@@ -42,6 +42,10 @@ describe("readingOrder: build and deploy files, config, then entry points (ADR 0
 
   it("puts build files first and tests last, whatever the language", () => {
     expect(readingRank("pom.xml")).toBe(0);
+    // review of beta.25: a parent pom named for what it is, and a Gradle version catalog
+    expect(readingRank("parent/parent-pom.xml")).toBe(0);
+    expect(readingRank("gradle/libs.versions.toml")).toBe(0);
+    expect(fileKinds("gradle/libs.versions.toml")).toContain("deploy");
     expect(readingRank("api/build.gradle.kts")).toBe(0);
     expect(readingRank("web/package.json")).toBe(0);
     expect(readingRank("Dockerfile")).toBe(0);

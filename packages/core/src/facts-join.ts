@@ -78,6 +78,11 @@ export interface JoinRepo {
   basePath?: string;
   /** Modules with hosts of their own (ADR 0057), and their base paths (ADR 0134). */
   modules?: readonly { component: string; hosts: readonly string[]; basePath?: string }[];
+  /**
+   * Beta.25 (ADR 0192 addendum): every module the manifest lists, by its folder, hosts or not: a
+   * build fact (`artifact`, `dependency`) that names no component is its build file's module's.
+   */
+  moduleDirs?: readonly { path: string; component: string }[];
   /** An API gateway (the manifest's `type: gateway`): its entries are routes it forwards. */
   gateway?: boolean;
   /**

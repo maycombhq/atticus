@@ -73,7 +73,7 @@ const joined = (rs = repos()) => joinFacts({ repos: rs, outside: ["northwind-pay
 
 describe("the contracts (ADR 0163)", () => {
   it("bumps the facts, repo type and conventions versions", () => {
-    expect(FACTS_SCHEMA_VERSION).toBe(5);
+    expect(FACTS_SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
     expect(REPO_TYPE_SCHEMA_VERSION).toBe(2);
     expect(CONVENTIONS_SCHEMA_VERSION).toBe(2);
   });

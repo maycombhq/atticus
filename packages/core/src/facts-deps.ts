@@ -26,14 +26,43 @@ export interface DependencyEnd extends FactEnd {
   lines: string[];
 }
 
-export interface DependencyLink {
-  /** The dependency fact, in the component that builds on the library. */
-  from: DependencyEnd;
-  /** The artifact fact, in the library's component, that publishes the coordinates. */
-  to: DependencyEnd;
+/**
+ * Review of beta.25: one dependency fact a link rests on, with the coordinates it names (a link
+ * between two components holds every coordinate one builds on of the other's: `kit-api` and
+ * `kit-core` of component `kit` are one arrow).
+ */
+export interface DependencyFactEnd extends DependencyEnd {
   group: string;
   name: string;
-  /** The dependency's declared scope, when it says one other than compile. */
+  version?: string;
+  /** Its scope, when not compile. */
+  scope?: DependencyScope;
+}
+
+export interface DependencyLink {
+  /** The dependency fact, in the component that builds on the library (the first by id). */
+  from: DependencyEnd;
+  /**
+   * Beta.25: every dependency fact the link rests on, `from` first, each with its lines: two
+   * module poms of one component, a `<profile>`'s copy, `implementation` and `runtimeOnly` of the
+   * same coordinates, and (review of beta.25) every other coordinate of the same library
+   * component, each with its coordinates. The link goes only once each of them is wrong.
+   */
+  facts?: (DependencyEnd &
+    Partial<Pick<DependencyFactEnd, "group" | "name" | "version" | "scope">>)[];
+  /** The artifact fact, in the library's component, that publishes the coordinates. */
+  to: DependencyEnd;
+  /**
+   * Review of beta.25: every artifact fact of the library's component a dependency on the link
+   * names, `to` first (one per coordinate).
+   */
+  published?: DependencyEnd[];
+  group: string;
+  name: string;
+  /**
+   * The dependency's declared scope, when it says one other than compile; on a link merged from
+   * several facts (review of beta.25), only when every one of them has it, else left out.
+   */
   scope?: DependencyScope;
   /** The version the dependency declares, when it says one. */
   version?: string;
@@ -69,9 +98,36 @@ function endOf(repo: string, component: string, f: Fact): DependencyEnd {
   return { repo, fact: f.id, component, at, lines };
 }
 
+/** A cited file's folder, `/` separated. */
+const dirOf = (file: string) => {
+  const f = file.replace(/\\/g, "/");
+  return f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+};
+const normDir = (p: string) => p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+
+/**
+ * The component a build fact belongs to: its own `component`, else the manifest's module whose
+ * folder holds (or is under) the build file it cites (beta.25), else the repo's.
+ */
+function buildComponentOf(r: JoinRepo, f: Fact): string {
+  if (f.component) return f.component;
+  // A dependency cited on a Gradle version catalog's entry is the module's whose build line names
+  // its alias (`cite.with`'s build.gradle(.kts) line).
+  const catalog = /(^|\/)gradle\/[\w-]+\.versions\.toml$/i.test(f.cite.file.replace(/\\/g, "/"));
+  const build = catalog
+    ? (f.cite.with ?? []).find((p) => /(^|[/\\])build\.gradle(\.kts)?$/i.test(p.file))?.file
+    : f.cite.file;
+  const dir = dirOf(build ?? f.cite.file);
+  const mod = [...(r.moduleDirs ?? [])]
+    .map((m) => ({ ...m, path: normDir(m.path) }))
+    .filter((m) => m.path && (dir === m.path || dir.startsWith(`${m.path}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return mod?.component ?? r.component ?? r.repo;
+}
+
 export function joinDependencies(input: { repos: readonly JoinRepo[] }): DependencyJoinResult {
   const repos = [...input.repos].sort((x, y) => cmp(x.repo, y.repo));
-  const componentOf = (r: JoinRepo, f: Fact) => factIdPart(f.component ?? r.component ?? r.repo);
+  const componentOf = (r: JoinRepo, f: Fact) => factIdPart(buildComponentOf(r, f));
   const byId = (x: Fact, y: Fact) => cmp(x.id, y.id);
 
   // What the estate publishes, by coordinates: every component that says it does.
@@ -102,7 +158,7 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
   }
 
   const links: DependencyLink[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, DependencyLink>();
   let outside = 0;
   let test = 0;
   for (const r of repos)
@@ -123,18 +179,41 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
       const from = endOf(r.repo, componentOf(r, f), f);
       const lib = to[0]!;
       if (from.repo === lib.repo && from.component === lib.component) continue;
-      const key = `${from.repo}\u0000${from.component}\u0000${lib.repo}\u0000${lib.component}\u0000${coordinates(f)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
       const pub = facts.get(`${lib.repo}\u0000${lib.fact}`)!;
-      links.push({
+      const fact: DependencyFactEnd = {
+        ...from,
+        group: pub.group,
+        name: pub.name,
+        ...(f.version ? { version: f.version } : {}),
+        ...(f.scope && f.scope !== "compile" ? { scope: f.scope } : {}),
+      };
+      // Review of beta.25: one link per pair of components, whatever coordinates it rests on, so
+      // a view's join (known by the pair) never stands for one coordinate and hides another.
+      const key = `${from.repo}\u0000${from.component}\u0000${lib.repo}\u0000${lib.component}`;
+      const twin = seen.get(key);
+      if (twin) {
+        // Beta.25: the same dependency on another line, or another coordinate of the library, is
+        // on the link too, so marking one wrong never leaves the link standing on another unseen.
+        twin.facts!.push(fact);
+        // Review of beta.25: the link's scope is one every fact on it has, else it says none
+        // (a compile kit-api and a runtime kit-core are no runtime link).
+        if (twin.scope !== fact.scope) delete twin.scope;
+        if (!twin.published!.some((p) => p.repo === lib.repo && p.fact === lib.fact))
+          twin.published!.push(lib);
+        continue;
+      }
+      const link: DependencyLink = {
         from,
+        facts: [fact],
         to: lib,
+        published: [lib],
         group: pub.group,
         name: pub.name,
         ...(f.scope && f.scope !== "compile" ? { scope: f.scope } : {}),
         ...(f.version ? { version: f.version } : {}),
-      });
+      };
+      seen.set(key, link);
+      links.push(link);
     }
   links.sort(
     (a, b) =>
@@ -146,6 +225,9 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
   return { links, ambiguous, outside, test };
 }
 
-/** The id a "depends on" link is known by, for a view's join: stable across reads of one pom. */
+/**
+ * The id a "depends on" link is known by, for a view's join: stable across reads of one pom, and
+ * (review of beta.25) one per pair of components, as the join makes one link per pair.
+ */
 export const dependencyLinkId = (l: Pick<DependencyLink, "from" | "to">): string =>
   `depends-on:${l.from.repo}/${l.from.component}>${l.to.repo}/${l.to.component}`;

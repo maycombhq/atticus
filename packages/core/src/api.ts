@@ -503,6 +503,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   one read and written; a repo name two facts files spell but for case is refused (422,
  *   `written: []`); a facts folder's `.rejected`, `.reviewed` and `.questions` files name no
  *   repo. GET /api/graph/edge-calls is as in round 2 (it names no call facts). Additive only.
+ * 3.11.0 (beta.25, a library's "depends on" arrows, ADR 0192 addendum): a `depends-on` join's
+ *   `dependency` carries `facts`, every dependency fact the link rests on (its repo, id, cited
+ *   line and every line it rests on, and the coordinates it names), `caller` listing all their
+ *   lines and `callee` every publishing line: one link per pair of components, holding every
+ *   coordinate one builds on of the other's. This link is wrong marks each one chosen, so the
+ *   arrow can't come back from another line, in one POST /api/links/corrections (all or none,
+ *   for dependency facts as for calls). GET /api/graph/edge-calls gives every join merged into a
+ *   `depends-on` edge too, not only the 20 a view lists. The facts file stays at version 5 (a
+ *   pom's `system` scope is recorded as `provided`). Additive only.
  * 3.11.0 (beta.25, review of beta.24's answer boxes): GET /api/trust's `answerBoxes` are only what
  *   a person's own words made (answers whose words read as a sentence, and the system of a profile
  *   they made), never a system judged by the shape of its id, nor one an option, the picker or an
@@ -739,7 +748,8 @@ export const HierJoin = z.object({
   run: z.string().optional(),
   /**
    * 3.10.0 (ADR 0192): on a `depends-on` edge's join (`how: coordinates`), the coordinates the
-   * dependency names and the library publishes, and its scope when not compile. `interface` is
+   * dependency names and the library publishes, and its scope when not compile (review of
+   * beta.25: on a link of several facts, only when every one has it). `interface` is
    * then the link's own id (`depends-on:<repo>/<component>><repo>/<component>`, no Interface
    * record), `caller` the dependency's lines in the depending build file, `callee` the lines that
    * publish the coordinates. Left out on a call's join.
@@ -750,6 +760,27 @@ export const HierJoin = z.object({
       name: z.string(),
       version: z.string().optional(),
       scope: z.string().optional(),
+      /**
+       * 3.11.0: every dependency fact the link rests on, the first (`caller`'s first line) first:
+       * its repo, its id, its cited line (`file:line`) and every line it rests on, and the
+       * coordinates it names (`group`, `name`, its `version` and `scope` when said): a link is
+       * one per pair of components, so it holds every coordinate one builds on of the other's
+       * (`group` and `name` above are the first's).
+       */
+      facts: z
+        .array(
+          z.object({
+            repo: z.string(),
+            fact: z.string(),
+            at: z.string(),
+            lines: z.array(z.string()),
+            group: z.string().optional(),
+            name: z.string().optional(),
+            version: z.string().optional(),
+            scope: z.string().optional(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
@@ -6466,7 +6497,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "correctLinkCalls",
       summary:
-        "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+        "This whole arrow is wrong (beta.24): one correction of every call on a link, or (beta.25) of every dependency fact a depends-on link rests on, each in its repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written, all or none. Returns each file, the git command that commits them all and the verify command per repo",
       tag: "workspace",
       body: LinkCorrectionsRequest,
       ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },

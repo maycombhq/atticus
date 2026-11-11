@@ -68,8 +68,11 @@ export interface PlanOptions {
 // A build file a framework is declared in (ADR 0124 addendum A-framework): Gemfile, a gemspec,
 // requirements and composer.json were added there, so a Rails, Python or PHP repo's framework is
 // read in the first batch with the other build files, not somewhere in the middle of the repo.
+// Review of beta.25: a parent pom named for what it is (`parent-pom.xml`, `forge.pom`) and a
+// Gradle version catalog (`gradle/libs.versions.toml`) are build files too, so the build
+// coordinates' rule and a catalog alias's lines are read with the poms and builds that use them.
 const BUILD =
-  /(^|\/)(pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln|tf|tfvars|bicep|hcl)|Dockerfile[^/]*|Containerfile|Jenkinsfile|Makefile|Procfile|(docker-)?compose[^/]*\.ya?ml|Chart\.yaml|values[^/]*\.ya?ml|azure-pipelines[^/]*\.ya?ml|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|serverless\.ya?ml|template\.ya?ml|manifest\.ya?ml)$/;
+  /(^|\/)(pom\.xml|[^/]+[-_.]pom\.xml|[^/]+\.pom|gradle\/[\w-]+\.versions\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln|tf|tfvars|bicep|hcl)|Dockerfile[^/]*|Containerfile|Jenkinsfile|Makefile|Procfile|(docker-)?compose[^/]*\.ya?ml|Chart\.yaml|values[^/]*\.ya?ml|azure-pipelines[^/]*\.ya?ml|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|serverless\.ya?ml|template\.ya?ml|manifest\.ya?ml)$/;
 const DEPLOY_DIR =
   /(^|\/)(\.github\/workflows|\.circleci|k8s|kubernetes|helm|charts|deploy|deployment|deployments|manifests|infra|terraform|pipelines?)\//;
 const CONFIG =

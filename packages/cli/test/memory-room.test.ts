@@ -196,6 +196,16 @@ describe("streamFacts: a facts file read a line at a time", () => {
     expect(streamed.bad.map((b) => b.issues[0]!.code)).toEqual(["not-json", "duplicate-id"]);
   });
 
+  it("keeps a fact of a kind a newer Atticus wrote aside, as written (beta.25)", async () => {
+    const { file } = estate(3);
+    const newer = '{"kind":"package","id":"package.forge-ui","repo":"r","commit":"c","cite":{}}';
+    writeFileSync(file, readFileSync(file, "utf8") + newer + "\n");
+    const streamed = await streamFacts(file);
+    expect(streamed.bad).toEqual([]);
+    expect(streamed.newer.map((n) => [n.kind, n.raw])).toEqual([["package", newer]]);
+    expect(parseFactsLines(readFileSync(file, "utf8")).newer).toEqual(streamed.newer);
+  });
+
   it("stops with the message when the facts don't fit, rather than reading on", async () => {
     const { file } = estate(2_300);
     const room = roomGuard({

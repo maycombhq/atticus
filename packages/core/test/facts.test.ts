@@ -58,11 +58,13 @@ describe("facts: the assistant's input format (ADR 0124)", () => {
     }
   });
 
-  it("refuses a fact with no citation, an unknown kind, or a typo", () => {
+  it("refuses a fact with no citation or a typo, and leaves out an unknown kind", () => {
     const first = facts()[0]!;
     const noCite = { ...first, cite: undefined };
     expect(parseFacts(JSON.stringify(noCite)).ok).toBe(false);
-    expect(parseFacts(JSON.stringify({ ...first, kind: "thing" })).ok).toBe(false);
+    // Beta.25: a kind this Atticus doesn't know is a newer one's fact: left out and said.
+    const thing = parseFacts(JSON.stringify({ ...first, kind: "thing" }));
+    expect(thing.ok && thing.facts.length === 0 && thing.newer?.[0]?.kind).toBe("thing");
     expect(parseFacts(JSON.stringify({ ...first, pathh: "/x" })).ok).toBe(false);
   });
 

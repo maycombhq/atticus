@@ -70,6 +70,19 @@ describe("a repo's read (ADR 0140)", () => {
     expect(none.next).toBe("atticus verify forge-portal-bff");
   });
 
+  it("says the facts a newer Atticus wrote, and reads the rest (beta.25)", async () => {
+    const newer = { kind: "package", id: "package.forge-portal-ui", repo: "forge-portal-bff" };
+    const r = await repoReadOf(
+      await metarepo({ head: A, report: REPORT, facts: [call("c1", "src/A.java", 3), newer] }),
+      "forge-portal-bff",
+    );
+    expect(r.state).toBe("incomplete");
+    expect(r.facts.map((f) => f.id)).toEqual(["c1"]);
+    expect(r.why).toEqual([
+      "1 fact is written by a newer Atticus (fact kind package); install it to read it",
+    ]);
+  });
+
   it("is not read when it has no facts and no report", async () => {
     const r = await repoReadOf(await metarepo(), "forge-ledger");
     expect(r).toEqual({ repo: "forge-ledger", state: "not-read", why: [], facts: [] });

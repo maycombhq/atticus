@@ -16,6 +16,7 @@ import {
   isBinaryText,
   isLfsPointer,
   noteProblem,
+  placedComponentOf,
   type NumberedNote,
   NEVER_CHECKED_STEPS,
   quoteHoldsSecret,
@@ -35,8 +36,13 @@ import { globToRegExp } from "@maycombhq/sdk";
 import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-policy.js";
 import {
   buildCoordinatesProblem,
+  buildModuleOf,
+  buildModuleProblem,
   buildUnrecorded,
   isBuildFile,
+  isBuildFileIn,
+  pomFilesNamed,
+  isVersionCatalogFile,
   type BuildUnrecorded,
 } from "./build-coords.js";
 import { lineOfValue, securityLineKind } from "./call-security-lines.js";
@@ -498,6 +504,23 @@ export interface VerifyReport {
    * when there are none.
    */
   buildUnrecorded?: BuildUnrecorded[];
+  /**
+   * A note, not a rejection (review of beta.25, ADR 0192 addendum §2): the kept facts that named
+   * a component neither their repo's own nor one the manifest names, in a repo whose manifest
+   * entry lists no modules (`ledger-api`, a folder's name), each placed in the repo's component
+   * (`placedComponentOf`), so its endpoints are in the box its depends-on arrow starts from. In
+   * id order; left out when there are none.
+   */
+  componentsPlaced?: PlacedComponent[];
+}
+
+/** A fact placed in its repo's component: its id, the component it named, where, and the cite. */
+export interface PlacedComponent {
+  id: string;
+  named: string;
+  component: string;
+  /** The fact's own cite, `file:line`. */
+  cite: string;
 }
 
 /** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
@@ -603,6 +626,23 @@ export interface VerifyOptions {
      * module isn't checked here (the join reports one that names nothing).
      */
     repoComponents?: Readonly<Record<string, readonly string[]>>;
+    /**
+     * ADR 0192 addendum (beta.25): each repo's modules as the manifest lists them, by repo id: a
+     * coordinates fact cited in a module's build file belongs to that module's component.
+     */
+    modules?: Readonly<Record<string, readonly { path: string; component: string }[]>>;
+    /**
+     * Review of beta.25: each repo's own component, by repo id (the manifest's `component`, else
+     * its id): a repo whose manifest entry lists no modules ships as that one component, so each
+     * of its build files is that component's, whatever folder it is in.
+     */
+    repoComponent?: Readonly<Record<string, string>>;
+    /**
+     * Review of beta.25: the repos that are prototypes (ADR 0133), whose UI, BFF and mocks are
+     * components of their own however the manifest lists them, so no fact of theirs is placed in
+     * the repo's component (`placedComponentOf`).
+     */
+    prototypes?: readonly string[];
   };
   /**
    * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
@@ -1111,6 +1151,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // J1: the estate's components an exposure may name, and whether this repo serves anything.
   const estate = o.estate ? new Set(o.estate.components.map(factIdPart)) : undefined;
   const serves = facts.some((f) => f.kind === "entry");
+  // ADR 0192 addendum: the module a coordinates fact naming no component is given (its build file's).
+  const moduleOf = new Map<string, string>();
+  // Review of beta.25: the component each placed fact named (`placedComponentOf`), by fact id.
+  const placedFrom = new Map<string, string>();
   const repoComponents = new Map(
     Object.entries(o.estate?.repoComponents ?? {}).map(
       ([r, cs]) => [factIdPart(r), new Set(cs.map(factIdPart))] as const,
@@ -1392,11 +1436,44 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     // ADR 0192: the coordinates are the project's own (an artifact) or a dependency's on the
     // cited line, the group's line is cited too, and a version is written where it says.
+    // Beta.25: and the fact's component is the module whose build file it cites, given it when
+    // it names none.
+    // Review of beta.25: in a repo whose manifest lists no modules, any other fact naming a
+    // component the manifest doesn't (a folder's name) is placed in the repo's, with a note.
+    const own = o.estate?.repoComponent?.[f.repo];
+    if (own !== undefined && o.estate) {
+      const to = placedComponentOf(f, {
+        component: own,
+        modules: o.estate.modules?.[f.repo],
+        components: o.estate.components,
+        prototype: o.estate.prototypes?.includes(f.repo),
+      });
+      if (to !== undefined) {
+        moduleOf.set(f.id, to);
+        placedFrom.set(f.id, f.component!);
+      }
+    }
     if ((f.kind === "artifact" || f.kind === "dependency") && !found.has(f.id)) {
-      const bad = buildCoordinatesProblem(f, linesOf);
+      const mod = buildModuleOf(
+        f,
+        linesOf,
+        o.estate?.modules?.[f.repo] ?? [],
+        o.estate?.repoComponent?.[f.repo],
+      );
+      const bad = buildCoordinatesProblem(f, linesOf, listed()) ?? buildModuleProblem(f, mod);
       if (bad) problem(f, "build-coordinates", bad);
-      else if (f.version !== undefined)
-        add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
+      else {
+        // A manifest module's fact is given its module; the repo's own stays the repo's (named
+        // by the manifest, so a renamed component needs no fact rewritten).
+        if (mod?.from === "manifest" && mod.component && f.component === undefined)
+          moduleOf.set(f.id, mod.component);
+        // A version catalog's version.ref is resolved in buildCoordinatesProblem (beta.25).
+        if (f.version !== undefined && !isVersionCatalogFile(f.cite.file))
+          add(
+            f,
+            checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false),
+          );
+      }
     }
     if (f.kind === "flow") {
       f.steps.forEach((s, i) =>
@@ -1554,7 +1631,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       // sample session's mark stands only on a fact a person made too (the sample check writes
       // its own results, not this file). Everything else is verified by the line check.
       const verified = f.by === "person" && f.verified !== "none" ? f.verified : "line";
-      const base = { ...f, verified, cite: fixQuote(f.cite) } as Fact;
+      const module = moduleOf.get(f.id);
+      const base = {
+        ...f,
+        ...(module !== undefined ? { component: module } : {}),
+        verified,
+        cite: fixQuote(f.cite),
+      } as Fact;
       // A-read problem 4, as A-uncited turns it round: an auth no line is cited for is said here
       // and kept in the fact, since it is what the reader wrote; `catalogAuth` leaves it out of
       // the catalog. A person's own fact is their word, marked as theirs, and is not listed.
@@ -1747,10 +1830,24 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   });
 
   // ADR 0192, the cross-check: what the build files read write that no kept fact records.
+  // the parent poms a <relativePath> names, read only when a build file was read
+  const namedPoms = [...touched].some((p) => isBuildFile(p))
+    ? pomFilesNamed(listed(), linesOf)
+    : undefined;
+  const placed: PlacedComponent[] = accepted
+    .filter((f) => placedFrom.has(f.id))
+    .map((f) => ({
+      id: f.id,
+      named: placedFrom.get(f.id)!,
+      component: f.component!,
+      cite: `${f.cite.file}:${f.cite.line}`,
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const unrecorded = buildUnrecorded(
-    [...touched].filter((p) => isBuildFile(p) && insideRepo(p) && !isSecretPath(p)),
+    [...touched].filter((p) => isBuildFileIn(p, namedPoms) && insideRepo(p) && !isSecretPath(p)),
     (p) => linesOf(p),
     accepted,
+    listed(),
   );
 
   return {
@@ -1789,5 +1886,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     specOpsUncovered,
     frameworkGaps: frameworkGaps(accepted, rules.frameworks),
     ...(unrecorded.length ? { buildUnrecorded: unrecorded } : {}),
+    ...(placed.length ? { componentsPlaced: placed } : {}),
   };
 }

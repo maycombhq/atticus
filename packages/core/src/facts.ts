@@ -7,6 +7,7 @@ import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
 import {
   configSecretField,
   credentialLike,
+  FACT_KINDS,
   Fact,
   FactsFile,
   looksLikeSecret,
@@ -33,10 +34,193 @@ export interface FactIssue {
   message: string;
 }
 
-export type ParseFactsResult = { ok: true; facts: Fact[] } | { ok: false; issues: FactIssue[] };
+/**
+ * A fact of a kind this Atticus doesn't know (beta.25, ADR 0192 addendum): a newer Atticus wrote
+ * it. It is left out of what is read, and said, rather than refusing the whole file; whoever
+ * writes the file back must keep it (or not write), since it is a teammate's fact.
+ */
+export interface NewerFact {
+  line?: number;
+  factId: string;
+  kind: string;
+  message: string;
+  /** The line as written (a line-by-line read), for a writer to keep it as it is. */
+  raw?: string;
+}
+
+export type ParseFactsResult =
+  | {
+      ok: true;
+      facts: Fact[];
+      /** Beta.25: the facts of kinds a newer Atticus wrote, left out of `facts`. */
+      newer?: NewerFact[];
+    }
+  | { ok: false; issues: FactIssue[] };
+
+const KNOWN_KINDS: ReadonlySet<string> = new Set(FACT_KINDS);
+
+/** A JSON value that is a fact of a kind this Atticus doesn't know, said as one; else undefined. */
+export function newerFactOf(json: unknown, line?: number): NewerFact | undefined {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return undefined;
+  const { kind, id } = json as { kind?: unknown; id?: unknown };
+  if (typeof kind !== "string" || typeof id !== "string" || KNOWN_KINDS.has(kind)) return undefined;
+  return {
+    ...(line !== undefined ? { line } : {}),
+    factId: id,
+    kind,
+    message: `fact ${id} is written by a newer Atticus (fact kind ${kind}); install it to read this fact`,
+  };
+}
+
+/** A field's name as Atticus writes them (`authCite`), and an enum's value (`system`, `ai-run`). */
+const FIELD_NAME = /^[a-z][A-Za-z0-9]*$/;
+const ENUM_VALUE = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+
+/** The fields a kind's facts have, its citation's too: what a slip of a letter is measured from. */
+const FIELDS = new Map<string, readonly string[]>();
+function fieldsOf(kind: string): readonly string[] {
+  const held = FIELDS.get(kind);
+  if (held) return held;
+  const option = Fact.options.find((o) => o.shape.kind.safeParse(kind).success);
+  const out = [...Object.keys(option?.shape ?? {}), "file", "line", "value", "quote", "with"];
+  FIELDS.set(kind, out);
+  return out;
+}
+
+/**
+ * How many edits apart two names are: a letter added, dropped or changed, or two side by side
+ * swapped (`complie`, `lnie`), each one edit. More than 2 is said as 3.
+ */
+function edits(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const d: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    d[i] = [i];
+    for (let j = 1; j <= b.length; j++) {
+      if (i === 0) {
+        d[0]![j] = j;
+        continue;
+      }
+      let v = Math.min(
+        d[i - 1]![j]! + 1,
+        d[i]![j - 1]! + 1,
+        d[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        v = Math.min(v, d[i - 2]![j - 2]! + 1);
+      d[i]![j] = v;
+    }
+  }
+  return Math.min(d[a.length]![b.length]!, 3);
+}
+
+/**
+ * A field name that is a slip of one the kind has, never a newer Atticus's field (review of
+ * beta.25): one edit from it (`scpoe`, `groupp`, `verison`), starting with its letter, and not
+ * the field with an `s` (or a `d`) added or dropped, which is another word (`lines`, `scopes`,
+ * `repos`, `named`). A name two edits from a field (`path` and `with`, `code` and `conf`) is a
+ * word of its own: a newer Atticus's field.
+ */
+const nearFieldOf = (kind: string, key: string) => {
+  if (key.length <= 3) return false;
+  const k = key.toLowerCase();
+  return fieldsOf(kind).some((field) => {
+    const f = field.toLowerCase();
+    if (f === k || f[0] !== k[0]) return false;
+    const inflected = [`${f}s`, `${f}d`].includes(k) || [`${k}s`, `${k}d`].includes(f);
+    return !inflected && edits(f, k) === 1;
+  });
+};
+
+/**
+ * A list's value that is a slip of one of its values, two edits or fewer from it (`complie`,
+ * `declard`, `asistant`): the value it may have meant, else undefined (review of beta.25).
+ */
+const meantValueOf = (v: string, values: readonly unknown[]): string | undefined =>
+  values
+    .filter((x): x is string => typeof x === "string")
+    .map((x) => [x, edits(x, v)] as const)
+    .filter(([, n]) => n <= 2)
+    .sort((a, b) => a[1] - b[1])[0]?.[0];
+
+/**
+ * A refused fact's issue as it is said back to the assistant (review of beta.25): a pom's
+ * `system` scope is recorded as `provided` (ADR 0192 addendum §6), and a slip of a list's value
+ * names the value it may have meant.
+ */
+function sayIssue(json: unknown, i: z.core.$ZodIssue): z.core.$ZodIssue {
+  if (i.code !== "invalid_value") return i;
+  const v = valueAt(json, i.path);
+  if (typeof v !== "string") return i;
+  const kind = (json as { kind?: unknown } | null)?.kind;
+  if (kind === "dependency" && i.path.length === 1 && i.path[0] === "scope" && v === "system")
+    return { ...i, message: "record a system-scoped dependency as provided" };
+  const meant = ENUM_VALUE.test(v) ? meantValueOf(v, i.values) : undefined;
+  return meant ? { ...i, message: `${i.message} (did you mean "${meant}"?)` } : i;
+}
+
+const valueAt = (json: unknown, path: readonly PropertyKey[]): unknown => {
+  let at: unknown = json;
+  for (const k of path) {
+    if (!at || typeof at !== "object") return undefined;
+    at = (at as Record<PropertyKey, unknown>)[k];
+  }
+  return at;
+};
+
+/**
+ * Review of beta.25: a fact of a kind this Atticus knows that a newer Atticus wrote: every reason
+ * it doesn't read is a field this Atticus doesn't know (a name as Atticus writes them, never a
+ * slip of one the kind has: `nearFieldOf`) or a value of one of its lists it doesn't know (a
+ * lowercase word more than two edits from each of the list's values, as `scope: "shaded"`; never
+ * `scope: "system"`, which is recorded as provided). Said as such, so the fact is left out on its
+ * own and kept as written; anything else wrong is a wrong fact, refused for the assistant to fix.
+ */
+export function newerShapeOf(
+  json: unknown,
+  issues: readonly z.core.$ZodIssue[],
+  line?: number,
+): NewerFact | undefined {
+  if (!json || typeof json !== "object" || Array.isArray(json) || !issues.length) return undefined;
+  const { kind, id } = json as { kind?: unknown; id?: unknown };
+  if (typeof kind !== "string" || typeof id !== "string" || !KNOWN_KINDS.has(kind))
+    return undefined;
+  const said: string[] = [];
+  for (const i of issues) {
+    const where = i.path.map(String).join(".");
+    // a name a letter or two from one this kind has (`pathh`) is a slip, not a newer field
+    const near = i.code === "unrecognized_keys" && i.keys.some((k) => nearFieldOf(kind, k));
+    if (
+      i.code === "unrecognized_keys" &&
+      !near &&
+      i.keys.length &&
+      i.keys.every((k) => FIELD_NAME.test(k))
+    )
+      said.push(
+        ...i.keys.map((k) => `field ${where ? `${where}.` : ""}${k} is new to the ${kind} fact`),
+      );
+    else if (i.code === "invalid_value") {
+      const v = valueAt(json, i.path);
+      if (typeof v !== "string" || !ENUM_VALUE.test(v)) return undefined;
+      // a slip (`complie`), and a pom's system scope (recorded as provided), are wrong facts
+      if (meantValueOf(v, i.values) !== undefined) return undefined;
+      if (kind === "dependency" && where === "scope" && v === "system") return undefined;
+      said.push(`${where} "${v}" is a value this Atticus doesn't know`);
+    } else return undefined;
+  }
+  return {
+    ...(line !== undefined ? { line } : {}),
+    factId: id,
+    kind,
+    message: `fact ${id} is written by a newer Atticus (${said.join("; ")}); install it to read this fact`,
+  };
+}
 
 export function parseFacts(text: string): ParseFactsResult {
   const trimmed = text.trim();
+  const facts: Fact[] = [];
+  const issues: FactIssue[] = [];
+  const newer: NewerFact[] = [];
   if (trimmed.startsWith("[")) {
     // Round 46: a JSON array cut short (a write interrupted) is a refused file, never a throw.
     let json: unknown;
@@ -45,12 +229,21 @@ export function parseFacts(text: string): ParseFactsResult {
     } catch (e) {
       return { ok: false, issues: [{ code: "not-json", message: (e as Error).message }] };
     }
-    const r = FactsFile.safeParse(normalizeFactPaths(json));
-    if (r.success) return { ok: true, facts: r.data };
-    return { ok: false, issues: r.error.issues.map((i) => issueOf(i)) };
+    if (!Array.isArray(json))
+      return { ok: false, issues: [{ code: "invalid_type", message: "(root): not an array" }] };
+    json.forEach((item, i) => {
+      const n = newerFactOf(item);
+      if (n) return void newer.push(n);
+      const r = Fact.safeParse(normalizeFactPaths(item));
+      if (r.success) facts.push(r.data);
+      else if (newerShapeOf(item, r.error.issues)) newer.push(newerShapeOf(item, r.error.issues)!);
+      else
+        for (const iss of r.error.issues.map((x) => sayIssue(item, x)))
+          issues.push({ code: iss.code, message: `${[i, ...iss.path].join(".")}: ${iss.message}` });
+    });
+    if (issues.length) return { ok: false, issues };
+    return { ok: true, facts, ...(newer.length ? { newer } : {}) };
   }
-  const facts: Fact[] = [];
-  const issues: FactIssue[] = [];
   const lines = trimmed === "" ? [] : trimmed.split(/\r?\n/);
   lines.forEach((raw, i) => {
     const line = i + 1;
@@ -62,9 +255,13 @@ export function parseFacts(text: string): ParseFactsResult {
       issues.push({ line, code: "not-json", message: (e as Error).message });
       return;
     }
+    const n = newerFactOf(json, line);
+    if (n) return void newer.push(n);
     const r = Fact.safeParse(normalizeFactPaths(json));
     if (r.success) facts.push(r.data);
-    else for (const iss of r.error.issues) issues.push({ line, ...issueOf(iss) });
+    else if (newerShapeOf(json, r.error.issues, line))
+      newer.push(newerShapeOf(json, r.error.issues, line)!);
+    else for (const iss of r.error.issues) issues.push({ line, ...issueOf(sayIssue(json, iss)) });
   });
   const seen = new Map<string, number>();
   facts.forEach((f, i) => {
@@ -73,7 +270,9 @@ export function parseFacts(text: string): ParseFactsResult {
       issues.push({ factId: f.id, code: "duplicate-id", message: `fact id repeated at ${i + 1}` });
     else seen.set(f.id, i);
   });
-  return issues.length ? { ok: false, issues } : { ok: true, facts };
+  return issues.length
+    ? { ok: false, issues }
+    : { ok: true, facts, ...(newer.length ? { newer } : {}) };
 }
 
 function issueOf(i: z.core.$ZodIssue): FactIssue {
@@ -170,7 +369,7 @@ export function parseFactLine(
   raw: string,
   line: number,
   seen: Set<string>,
-): { fact?: Fact; bad?: BadFactLine } {
+): { fact?: Fact; bad?: BadFactLine; newer?: NewerFact } {
   if (raw.trim() === "") return {};
   // A byte-order mark, which PowerShell 5.1 writes at the head of a UTF-8 file, isn't the fact's.
   const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
@@ -183,11 +382,20 @@ export function parseFactLine(
       : (e as Error).message;
     return { bad: { line, raw, issues: [{ line, code: "not-json", message }] } };
   }
+  const newer = newerFactOf(json, line);
+  if (newer) return { newer: { ...newer, raw } };
   const r = Fact.safeParse(normalizeFactPaths(json));
-  if (!r.success)
+  if (!r.success) {
+    const shape = newerShapeOf(json, r.error.issues, line);
+    if (shape) return { newer: { ...shape, raw } };
     return {
-      bad: { line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) },
+      bad: {
+        line,
+        raw,
+        issues: r.error.issues.map((iss) => ({ line, ...issueOf(sayIssue(json, iss)) })),
+      },
     };
+  }
   if (seen.has(r.data.id))
     return {
       bad: {
@@ -218,16 +426,20 @@ export function parseFactLine(
 export function parseFactsLines(text: string): {
   facts: Fact[];
   bad: BadFactLine[];
+  /** Beta.25: facts of kinds a newer Atticus wrote, left out of `facts` (`newerFactOf`). */
+  newer: NewerFact[];
 } {
   const facts: Fact[] = [];
   const bad: BadFactLine[] = [];
+  const newer: NewerFact[] = [];
   const seen = new Set<string>();
   text.split(/\r?\n/).forEach((raw, i) => {
     const r = parseFactLine(raw, i + 1, seen);
     if (r.fact) facts.push(r.fact);
     else if (r.bad) bad.push(r.bad);
+    else if (r.newer) newer.push(r.newer);
   });
-  return { facts, bad };
+  return { facts, bad, newer };
 }
 
 /** One canonical JSON line per fact, sorted by id; the same facts give the same bytes. */
@@ -271,6 +483,38 @@ export function entryEndpointId(f: FactOf<"entry">, component: string): string {
       ? `on-${idPart(f.path)}`
       : idPart(`${f.method ?? ""} ${f.path}`);
   return `${component}.${name}`;
+}
+
+/**
+ * The component a fact is placed in that names one its repo's manifest doesn't have (review of
+ * beta.25, ADR 0192 addendum §2): a repo whose manifest entry lists no modules ships as its one
+ * component, so a fact (an entry, a call, a store, any but a build's coordinates, which the
+ * verifier refuses instead) naming a component that is neither the repo's own nor one the
+ * manifest names anywhere (`ledger-api`, a folder's name) is the repo's component's, and its
+ * endpoints are in the box its depends-on arrow starts from. Undefined when the fact stays as it
+ * is: it names none, or one the manifest names, or the repo lists modules, or it is a prototype
+ * (ADR 0133: its UI, BFF and mocks are components of their own, read and compared, never
+ * written into the catalog).
+ */
+export function placedComponentOf(
+  f: Fact,
+  manifest: {
+    /** The repo's own component (the manifest's `component`, else its id). */
+    component: string;
+    /** The repo's modules as the manifest lists them. */
+    modules?: readonly unknown[] | undefined;
+    /** Every component (and repo id) the estate's manifests name. */
+    components: readonly string[];
+    /** The repo is a prototype (its manifest `type`). */
+    prototype?: boolean | undefined;
+  },
+): string | undefined {
+  if (f.component === undefined || f.kind === "artifact" || f.kind === "dependency") return;
+  if (manifest.modules?.length || manifest.prototype) return;
+  const c = idPart(f.component);
+  if (c === idPart(manifest.component)) return;
+  if (manifest.components.some((x) => idPart(x) === c)) return;
+  return manifest.component;
 }
 
 /**

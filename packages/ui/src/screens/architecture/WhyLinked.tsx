@@ -18,9 +18,10 @@ import {
   callerLine,
   callerRepos,
   callFactsOf,
-  dependencyCorrection,
-  dependencyFactsOf,
+  dependencyBatch,
+  dependencyCorrections,
   joinWhat,
+  linkDependenciesOf,
   linkCorrection,
   predict,
   tickedOf,
@@ -128,6 +129,18 @@ export function AlsoLine({ also }: { also: readonly string[] | undefined }) {
 }
 
 /**
+ * The scope a dependency link's head says (review of beta.25): the link's, and only when every
+ * dependency fact on it has that scope (a fact saying none is compile), so a compile `kit-api`
+ * and a runtime `kit-core` merged into one link head it with none, even from a server that gave
+ * the link its first fact's scope.
+ */
+function linkScopeOf(join: Api.HierJoinT): string | undefined {
+  const d = join.dependency;
+  if (!d?.scope) return undefined;
+  return (d.facts ?? []).every((f) => f.scope === d.scope) ? d.scope : undefined;
+}
+
+/**
  * ADR 0192: one build dependency on the link: the coordinates, the line that declares them in
  * the depending build file and the lines that publish them in the library's.
  */
@@ -135,14 +148,13 @@ export function DependencyView({ join, children }: { join: Api.HierJoinT; childr
   const D = W.dependency;
   const what = joinWhat(join);
   const title = D.title(join.from, join.to, what);
+  const scope = linkScopeOf(join);
   return (
     <article className="li-call" aria-label={title}>
       <CallHead
         what={what}
         ends={D.ends(join.from, join.to)}
-        {...(join.dependency?.scope
-          ? { extra: <span className="li-scope"> {D.scope(join.dependency.scope)}</span> }
-          : {})}
+        {...(scope ? { extra: <span className="li-scope"> {D.scope(scope)}</span> } : {})}
         chip={
           <span className={`chip ${join.verified ? "done" : "warn"}`}>
             {join.verified ? W.verified : W.inferred}
@@ -441,7 +453,31 @@ export type LinkSaving =
   | { state: "idle" }
   | { state: "working" }
   | { state: "done"; result: Api.FactCorrectionResultT; will: Prediction }
+  /** Review of beta.25: several dependency facts corrected in one POST /api/links/corrections. */
+  | { state: "done-all"; result: Api.LinkCorrectionsResultT; will: Prediction }
   | { state: "error"; text: string };
+
+/**
+ * Review of beta.25: every chosen dependency fact of a link marked wrong in one POST
+ * /api/links/corrections, all or none (the route checks every item first and writes each file
+ * whole, putting back what it wrote when one can't be): never one POST per fact, which could
+ * leave some written and the arrow standing on the rest.
+ */
+export async function saveDependencyBatch(
+  post: (
+    path: string,
+    init: { method: "POST"; body: unknown },
+  ) => Promise<Api.LinkCorrectionsResultT>,
+  body: Api.LinkCorrectionsRequestT,
+  will: Prediction,
+): Promise<LinkSaving> {
+  try {
+    const result = await post("/api/links/corrections", { method: "POST", body });
+    return { state: "done-all", result, will };
+  } catch (e: unknown) {
+    return { state: "error", text: message(e) };
+  }
+}
 
 const CHOICES = ["estate", "outside", "not-a-call"] as const;
 
@@ -619,12 +655,17 @@ export function DependencyWrongForm(p: {
   facts: Loaded<FactsView> | undefined;
   saving?: LinkSaving;
   onSave?: (repo: string, body: Record<string, unknown>, will: Prediction) => void;
+  /** Review of beta.25: several dependency facts chosen: one batch correcting all of them. */
+  onSaveAll?: (body: Api.LinkCorrectionsRequestT, will: Prediction) => void;
   onClose: () => void;
 }) {
   const D = W.dependency;
   const id = useId();
   const line = callerLine(p.join);
-  const deps = dependencyFactsOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  // Beta.25: every dependency fact on the link, each chosen at first, so marking them wrong
+  // takes the link away rather than leaving it on another line.
+  const deps = linkDependenciesOf(p.join, p.facts?.state === "ready" ? p.facts.data : undefined);
+  const [unchosen, setUnchosen] = useState<ReadonlySet<string>>(() => new Set());
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | undefined>();
   const saving = p.saving ?? { state: "idle" };
@@ -643,16 +684,23 @@ export function DependencyWrongForm(p: {
         {D.factsFailed(p.facts.error)}
       </p>
     );
-  const fact = deps[0];
-  if (!fact) return <p className="ev-say">{D.noFact(line.repo)}</p>;
+  if (!deps.length) return <p className="ev-say">{D.noFact(line.repo)}</p>;
+  const repo = deps[0]!.repo;
+  const chosen = deps.filter((d) => !unchosen.has(d.id));
+  const labelOf = (d: (typeof deps)[number]) => d.fact?.label ?? d.id;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const b = dependencyCorrection(fact, reason);
-    if ("error" in b) return setProblem(D.needReason);
+    const b = dependencyCorrections(chosen, reason);
+    if ("error" in b) return setProblem(b.error === "needFact" ? D.needFact : D.needReason);
     setProblem(undefined);
-    p.onSave?.(line.repo, b.body, { kind: "dropped", from: p.join.from, was: p.join.to });
+    const will: Prediction = { kind: "dropped", from: p.join.from, was: p.join.to };
+    if (chosen.length === 1 && chosen[0]!.repo === repo)
+      return p.onSave?.(repo, b.bodies[0]!, will);
+    const all = dependencyBatch(chosen, reason);
+    if ("body" in all) p.onSaveAll?.(all.body, will);
   };
+  const written = saving.state === "done-all" ? saving.result.files : [];
   return (
     <form
       className="ev-correct stack li-form"
@@ -664,9 +712,47 @@ export function DependencyWrongForm(p: {
         {D.wrongTitle(label)}
       </h4>
       <p className="ev-say">{D.wrongIntro}</p>
-      <p className="ev-say" style={{ margin: 0 }}>
-        <code className="mono">{fact.label}</code>
-      </p>
+      {deps.length === 1 ? (
+        <p className="ev-say" style={{ margin: 0 }}>
+          <code className="mono">{labelOf(deps[0]!)}</code>{" "}
+          {deps[0]!.coordinates && (
+            <>
+              <code className="mono">{deps[0]!.coordinates}</code>{" "}
+            </>
+          )}
+          <span className="li-at">{deps[0]!.at}</span>
+        </p>
+      ) : (
+        <fieldset className="ev-choice">
+          <legend className="hud">{D.pickFacts(deps.length)}</legend>
+          {deps.map((d) => (
+            <label key={`${d.repo}:${d.id}`} className="li-choice">
+              <input
+                type="checkbox"
+                checked={!unchosen.has(d.id)}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setUnchosen((u) => {
+                    const next = new Set(u);
+                    if (on) next.delete(d.id);
+                    else next.add(d.id);
+                    return next;
+                  });
+                }}
+              />
+              <span>
+                <code className="mono">{labelOf(d)}</code>{" "}
+                {d.coordinates && (
+                  <>
+                    <code className="mono">{d.coordinates}</code>{" "}
+                  </>
+                )}
+                <span className="li-at">{d.at}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       <label className="li-field">
         <span className="hud">{D.reason}</span>
         <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -700,7 +786,40 @@ export function DependencyWrongForm(p: {
             {D.will(p.join.from, p.join.to)}
           </p>
           <p className="ev-say">{W.saved(saving.result.file)}</p>
-          <CorrectionNext repo={line.repo} result={saving.result} />
+          <CorrectionNext repo={repo} result={saving.result} />
+        </div>
+      )}
+      {saving.state === "done-all" && (
+        <div role="status" className="li-result">
+          <p className="ev-say" style={{ margin: 0 }}>
+            {D.will(p.join.from, p.join.to)}
+          </p>
+          <p className="ev-say">
+            {written.length
+              ? D.savedAll(
+                  written.reduce((k, f) => k + f.lines.length, 0),
+                  written.map((f) => f.file).join(", "),
+                )
+              : D.alreadyAll}
+            {written.length && saving.result.skipped?.length
+              ? ` ${D.skippedAll(saving.result.skipped.length)}`
+              : ""}
+          </p>
+          {written
+            .flatMap((f) => (f.corrections[0] ? [{ f, first: f.corrections[0] }] : []))
+            .map(({ f, first }) => (
+              <CorrectionNext
+                key={f.repo}
+                repo={f.repo}
+                result={{
+                  correction: first,
+                  file: f.file,
+                  commit: saving.result.commit,
+                  verify: `atticus verify ${f.repo}`,
+                  line: f.lines.join("\n"),
+                }}
+              />
+            ))}
         </div>
       )}
     </form>
@@ -831,6 +950,17 @@ export function LinkWrong(p: {
   useFocusBack({ open, done: saving.state === "done" }, opener);
   const what = joinWhat(p.join);
   const dependency = !!p.join.dependency;
+  // Review of beta.25: a link's dependency facts marked wrong in one POST, all or none.
+  const onSaveAll = (body: Api.LinkCorrectionsRequestT, will: Prediction) => {
+    if (!line) return;
+    setSaving({ state: "working" });
+    void saveDependencyBatch(api<Api.LinkCorrectionsResultT>, body, will).then((s) => {
+      setSaving(s);
+      if (s.state !== "done-all") return;
+      for (const f of s.result.files) ev?.reload(f.repo);
+      p.onSaved?.(`${line.repo}:${line.at}`);
+    });
+  };
   const onSave = (repo: string, body: Record<string, unknown>, will: Prediction) => {
     if (!line) return;
     setSaving({ state: "working" });
@@ -871,6 +1001,7 @@ export function LinkWrong(p: {
             facts={line ? ev?.of(line.repo) : undefined}
             saving={saving}
             onSave={onSave}
+            onSaveAll={onSaveAll}
             onClose={() => setOpen(false)}
           />
         ) : !line ? (

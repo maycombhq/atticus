@@ -7,6 +7,7 @@ import {
   DEFAULT_CONVENTIONS,
   factsDirOf,
   isAdopted,
+  isPrototypeType,
   isSecretPath,
   loadOrgPack,
   orgPackDirOf,
@@ -250,6 +251,12 @@ export interface VerifySummary {
    * that no artifact or dependency fact records. Left out when there are none.
    */
   buildUnrecorded?: VerifyReport["buildUnrecorded"];
+  /**
+   * A note, not a rejection (review of beta.25): the facts that named a component the manifest
+   * doesn't list, in a repo whose manifest lists no modules, each placed in the repo's component.
+   * Left out when there are none.
+   */
+  componentsPlaced?: VerifyReport["componentsPlaced"];
 }
 
 /**
@@ -259,9 +266,22 @@ export interface VerifySummary {
  * file yet is left out of `repoComponents`. Undefined when there is no org pack, or it lists no
  * repo, so nothing checks the name then.
  */
-export async function estateComponentsOf(
-  root: string,
-): Promise<{ components: string[]; repoComponents: Record<string, string[]> } | undefined> {
+export async function estateComponentsOf(root: string): Promise<
+  | {
+      components: string[];
+      repoComponents: Record<string, string[]>;
+      /** ADR 0192 addendum: each repo's manifest modules, so a module's build facts are its own. */
+      modules: Record<string, { path: string; component: string }[]>;
+      /**
+       * Review of beta.25: each repo's own component (the manifest's, else its id), which every
+       * build file of a repo whose entry lists no modules is.
+       */
+      repoComponent: Record<string, string>;
+      /** Review of beta.25: the prototype repos (ADR 0133), none of whose facts is placed. */
+      prototypes: string[];
+    }
+  | undefined
+> {
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const repos = (op?.profiles ?? []).flatMap((p) => p.repos?.repos ?? []);
   if (!repos.length) return undefined;
@@ -281,7 +301,20 @@ export async function estateComponentsOf(
       ...new Set([r.component ?? r.id, ...(r.modules ?? []).map((m) => m.component), ...named]),
     ].sort();
   }
-  return { components: [...new Set(components)].sort(), repoComponents };
+  const modules: Record<string, { path: string; component: string }[]> = {};
+  for (const r of repos)
+    if (r.modules?.length)
+      modules[r.id] = r.modules.map((m) => ({ path: m.path, component: m.component }));
+  const repoComponent: Record<string, string> = {};
+  for (const r of repos) repoComponent[r.id] = r.component ?? r.id;
+  const prototypes = repos.filter((r) => isPrototypeType(r.type)).map((r) => r.id);
+  return {
+    components: [...new Set(components)].sort(),
+    repoComponents,
+    modules,
+    repoComponent,
+    prototypes,
+  };
 }
 
 /**
@@ -335,6 +368,11 @@ export async function writeVerifyFiles(
   reviewedProblems: readonly ReviewedLineProblem[] = [],
   /** R6: the slips of form fixed in the facts before they were checked. */
   slips: readonly FormSlip[] = [],
+  /**
+   * Beta.25 (ADR 0192 addendum): lines holding a fact of a kind a newer Atticus wrote, kept in
+   * the facts file as written, after the facts this version read.
+   */
+  newerLines: readonly string[] = [],
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -342,10 +380,28 @@ export async function writeVerifyFiles(
   // commit: it stays in the facts file (and is still refused), so a run on the wrong checkout
   // never empties the file and lets the next run write a catalog without that repo's records.
   const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").map((r) => r.fact);
+  // Review of beta.25: a newer Atticus's line is kept unless this run wrote a fact of its id.
+  const written = new Set([...report.accepted, ...otherCommit].map((f) => f.id));
+  const idOf = (l: string): unknown => {
+    try {
+      return (JSON.parse(l.charCodeAt(0) === 0xfeff ? l.slice(1) : l) as { id?: unknown }).id;
+    } catch {
+      return undefined;
+    }
+  };
   // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
   await writeFileAtomic(
     join(dir, `${repo}.jsonl`),
-    serializeFacts([...report.accepted, ...otherCommit]),
+    serializeFacts([...report.accepted, ...otherCommit]) +
+      [...newerLines]
+        .map((l) => l.trim())
+        .filter((l) => {
+          const id = idOf(l);
+          return typeof id !== "string" || !written.has(id);
+        })
+        .sort()
+        .map((l) => `${l}\n`)
+        .join(""),
   );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [
@@ -434,6 +490,7 @@ export async function writeVerifyFiles(
     }));
   if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
   if (report.buildUnrecorded?.length) summary.buildUnrecorded = report.buildUnrecorded;
+  if (report.componentsPlaced?.length) summary.componentsPlaced = report.componentsPlaced;
   await writeFileAtomic(join(dir, `${repo}.verify.yaml`), stringify(summary));
   return summary;
 }

@@ -291,10 +291,91 @@ export function dependencyCorrection(
   return { body: { fact: fact.id, action: "wrong", reason: why } };
 }
 
+/** One dependency fact a `depends-on` link rests on, as This link is wrong lists it. */
+export interface LinkDependency {
+  repo: string;
+  id: string;
+  /** Its cited line, `file:line`. */
+  at: string;
+  /** The fact as the repo's facts give it, when they are read and hold it. */
+  fact?: FactCite;
+  /**
+   * Review of beta.25: the coordinates it names (`group:name`), from the join (C4 3.11.0): a link
+   * holds every coordinate its component builds on of the library's.
+   */
+  coordinates?: string;
+}
+
+/**
+ * Beta.25: every dependency fact a `depends-on` link rests on (its join's `dependency.facts`,
+ * C4 3.11.0), each with its fact when the depending repo's facts are read; a join from before
+ * lists the facts on its first line (`dependencyFactsOf`).
+ */
+export function linkDependenciesOf(j: Join, v: FactsView | undefined): LinkDependency[] {
+  const listed = j.dependency?.facts;
+  if (!listed?.length)
+    return dependencyFactsOf(j, v).map((f) => ({
+      repo: v!.repo,
+      id: f.id,
+      at: `${f.cite.file}:${f.cite.line}`,
+      fact: f,
+    }));
+  return listed.map((d) => {
+    const fact = v && v.repo === d.repo ? v.facts.find((f) => f.id === d.fact) : undefined;
+    return {
+      repo: d.repo,
+      id: d.fact,
+      at: d.at,
+      ...(fact ? { fact } : {}),
+      ...(d.group && d.name ? { coordinates: `${d.group}:${d.name}` } : {}),
+    };
+  });
+}
+
+/**
+ * Beta.25: the POST /api/facts/{repo}/corrections bodies that say each chosen dependency is wrong
+ * (with why, which is required), or what is missing (a key of the copy).
+ */
+export function dependencyCorrections(
+  chosen: readonly { id: string }[],
+  reason: string,
+): { bodies: Record<string, unknown>[] } | { error: "needReason" | "needFact" } {
+  if (!chosen.length) return { error: "needFact" };
+  const why = reason.trim();
+  if (!why) return { error: "needReason" };
+  return { bodies: chosen.map((d) => ({ fact: d.id, action: "wrong", reason: why })) };
+}
+
+/**
+ * Review of beta.25: the one POST /api/links/corrections that says every chosen dependency is
+ * wrong (with why), all or none, or what is missing (a key of the copy).
+ */
+export function dependencyBatch(
+  chosen: readonly { repo: string; id: string }[],
+  reason: string,
+): { body: Api.LinkCorrectionsRequestT } | { error: "needReason" | "needFact" } {
+  const b = dependencyCorrections(chosen, reason);
+  if ("error" in b) return b;
+  return {
+    body: {
+      items: chosen.map((d) => ({ repo: d.repo, fact: d.id, action: "wrong" as const })),
+      reason: reason.trim(),
+    },
+  };
+}
+
 /** A join's coordinates in words (`group:name`), or its method and path for a call. */
 export const joinWhat = (j: Join): string =>
   j.dependency
-    ? `${j.dependency.group}:${j.dependency.name}`
+    ? [
+        ...new Set([
+          `${j.dependency.group}:${j.dependency.name}`,
+          // review of beta.25: every coordinate the link holds
+          ...(j.dependency.facts ?? []).flatMap((f) =>
+            f.group && f.name ? [`${f.group}:${f.name}`] : [],
+          ),
+        ]),
+      ].join(", ")
     : [j.method, j.path].filter(Boolean).join(" ");
 
 /** The ids a person can name as a call's target, from the views loaded: repos and components. */
