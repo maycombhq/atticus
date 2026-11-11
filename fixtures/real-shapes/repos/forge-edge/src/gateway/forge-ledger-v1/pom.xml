@@ -1,0 +1,20 @@
+<!-- Forge edge, an invented sample of the Atticus test corpus. Licensed under the Apache License,
+	Version 2.0, the licence of the repository it is part of. The shape mirrors a public
+	gateway-bundle build: a licence comment, then a start tag that spans three lines. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<parent>
+		<artifactId>parent-pom</artifactId>
+		<groupId>forge.edge</groupId>
+		<version>1.0</version>
+		<relativePath>../shared-pom.xml</relativePath>
+	</parent>
+
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>forge.edge</groupId>
+	<artifactId>forge-ledger-v1</artifactId>
+	<version>1.0</version>
+	<name>forge-ledger-v1</name>
+	<packaging>pom</packaging>
+</project>
