@@ -54,6 +54,7 @@ import {
 import { WORDS } from "./words.js";
 import { flash } from "../../app/flash.js";
 import { CorrectionsToApply } from "../../app/propose.js";
+import "./box-panel.css";
 
 const LENSES = ["architecture", "repo", "data", "integration", "infrastructure"] as const;
 type Lens = (typeof LENSES)[number];
@@ -1114,146 +1115,190 @@ export function Inspector({
   /** The box is on the canvas: it can open in place there. */
   here?: { open: boolean; toggle: () => void };
 }) {
+  const box = boxOf(node);
+  // The box's name is its heading: a "name" property saying the same again is left out.
+  const props = Object.entries(node.properties)
+    .filter(([k, v]) => !(k === "name" && v === node.label))
+    .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)] as [string, ReactNode]);
+  // What the box does here (open, focus, connect, own, declare), then where it leads.
+  const doing: ReactNode[] = [
+    node.childCount > 0 && !isCurrent && (
+      <button key="open" type="button" className="btn" onClick={() => onOpen(node.id)}>
+        {WORDS.open}
+      </button>
+    ),
+    node.childCount > 0 && here && (
+      <button key="here" type="button" className="btn" onClick={here.toggle}>
+        {here.open ? WORDS.closeHere : WORDS.openHere}
+      </button>
+    ),
+    node.kind !== "estate" && (lens === "data" || node.kind === "table") && (
+      <button key="focus" type="button" className="btn" onClick={() => onFocus(node.id)}>
+        {WORDS.focus}
+      </button>
+    ),
+    onConnect && (
+      <button key="connect" type="button" className="btn" onClick={onConnect}>
+        {COPY.connect.open}
+      </button>
+    ),
+    onOwner && (
+      <button key="owner" type="button" className="btn" onClick={onOwner}>
+        {COPY.owner.open}
+      </button>
+    ),
+    onDeclare && (
+      <button key="declare" type="button" className="btn" onClick={onDeclare}>
+        {COPY.declare.open}
+      </button>
+    ),
+  ].filter(Boolean);
+  const going: ReactNode[] = [
+    node.kind === "repo" && (
+      <a key="flows" className="btn" href={`#/flows?repo=${encodeURIComponent(node.label)}`}>
+        {COPY.flows.openFlows}
+      </a>
+    ),
+    node.kind === "repo" && (
+      <a key="trust" className="btn" href="#/trust">
+        {WORDS.repoCounts}
+      </a>
+    ),
+    // WP7.7: a system's page, its guide, questions and changes. Only a System record has a page:
+    // a system the manifest or a call names has none yet.
+    node.kind === "system" && node.id.startsWith("system:") && node.record && (
+      <a key="page" className="btn" href={systemHash(node.id.slice("system:".length))}>
+        {COPY.systems.openPage}
+      </a>
+    ),
+  ].filter(Boolean);
   return (
-    <div className="stack">
-      <h3 className="h">{node.label}</h3>
-      <Facts
-        rows={[
-          [WORDS.kind, node.kind],
-          [WORDS.stateLabel, WORDS.state[node.state]],
-          ...Object.entries(node.properties).map(
-            ([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)] as [string, string],
-          ),
-        ]}
-      />
-      <div className="row" style={{ gap: 6 }}>
-        {node.childCount > 0 && !isCurrent && (
-          <button type="button" className="btn" onClick={() => onOpen(node.id)}>
-            {WORDS.open}
-          </button>
-        )}
-        {node.childCount > 0 && here && (
-          <button type="button" className="btn" onClick={here.toggle}>
-            {here.open ? WORDS.closeHere : WORDS.openHere}
-          </button>
-        )}
-        {node.kind === "repo" && (
-          <a className="btn" href={`#/flows?repo=${encodeURIComponent(node.label)}`}>
-            {COPY.flows.openFlows}
-          </a>
-        )}
-        {node.kind === "repo" && (
-          <a className="btn" href="#/trust">
-            {WORDS.repoCounts}
-          </a>
-        )}
-        {onConnect && (
-          <button type="button" className="btn" onClick={onConnect}>
-            {COPY.connect.open}
-          </button>
-        )}
-        {onOwner && (
-          <button type="button" className="btn" onClick={onOwner}>
-            {COPY.owner.open}
-          </button>
-        )}
-        {onDeclare && (
-          <button type="button" className="btn" onClick={onDeclare}>
-            {COPY.declare.open}
-          </button>
-        )}
-        {/* WP7.7: a system's page, its guide, questions and changes. */}
-        {/* Only a System record has a page: a system the manifest or a call names has none yet. */}
-        {node.kind === "system" && node.id.startsWith("system:") && node.record && (
-          <a className="btn" href={systemHash(node.id.slice("system:".length))}>
-            {COPY.systems.openPage}
-          </a>
-        )}
-        {node.kind !== "estate" && (lens === "data" || node.kind === "table") && (
-          <button type="button" className="btn" onClick={() => onFocus(node.id)}>
-            {WORDS.focus}
-          </button>
-        )}
-      </div>
-      <h4 className="hud">{WORDS.gaps}</h4>
-      {node.gaps.length ? (
-        <ul>
-          {node.gaps.map((g) => (
-            <li key={g}>
-              {WORDS.gap[g] ?? g}
-              {WORDS.gapFix[g] && <span className="hud"> · {WORDS.gapFix[g]}</span>}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>{WORDS.noGaps}</p>
+    <div className="stack box-panel">
+      {/* Who the box is: its name (in its own case, wrapped, never cut), its kind and state. */}
+      <header className="box-head">
+        <h3 className="h box-name">{node.label}</h3>
+        <p className="box-tags">
+          <span className="chip">
+            <span className="sr">{WORDS.kind}: </span>
+            {WORDS.kindWord[node.kind] ?? node.kind}
+          </span>
+          <span className={`chip ${node.state === "current" ? "dim" : "warn"}`}>
+            <span className="sr">{WORDS.stateLabel}: </span>
+            {WORDS.state[node.state]}
+          </span>
+          {node.gaps.length > 0 && (
+            <span className="chip warn">{`${node.gaps.length} ${WORDS.gapsBadge(node.gaps.length)}`}</span>
+          )}
+        </p>
+        {props.length > 0 && <Facts rows={props} />}
+      </header>
+      {(doing.length > 0 || going.length > 0) && (
+        <div className="box-actions">
+          {doing.length > 0 && <div className="box-btns">{doing}</div>}
+          {going.length > 0 && <div className="box-btns box-go">{going}</div>}
+        </div>
       )}
-      {boxOf(node) && <BoxCorrections key={node.id} box={boxOf(node)!} />}
-      <h4 className="hud">{WORDS.evidence}</h4>
-      {node.evidence.length ? (
-        <ul>
-          {node.evidence.map((e) => (
-            <li key={`${e.repo ?? ""}:${e.at}`}>
-              {e.repo && <span className="mono">{e.repo}: </span>}
-              <Citation repo={e.repo} at={e.at} />
-              {e.repo && <OpenCode repo={e.repo} at={e.at} />}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>{WORDS.noEvidence}</p>
+      <section className="box-sec" aria-label={WORDS.gaps}>
+        <h4 className="hud">{WORDS.gaps}</h4>
+        {node.gaps.length ? (
+          <ul className="box-list">
+            {node.gaps.map((g) => (
+              <li key={g}>
+                <span className="box-gap">
+                  <span aria-hidden="true">⚠ </span>
+                  {WORDS.gap[g] ?? g}
+                </span>
+                {WORDS.gapFix[g] && <span className="box-why">{WORDS.gapFix[g]}</span>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="box-none">{WORDS.noGaps}</p>
+        )}
+      </section>
+      {box && (
+        <section className="box-sec">
+          <BoxCorrections key={node.id} box={box} />
+        </section>
       )}
-      <h4 className="hud">{COPY.evidence.links}</h4>
-      {links.length ? (
-        <ul>
-          {links.map((l) => (
-            <li key={l.id}>
-              {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type))}
-              {l.gaps.length > 0 &&
-                ` · ${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
-              {l.joins?.length ? (
-                // ADR 0135, C1: each call on the link, how it was joined and its lines.
-                <details>
-                  <summary>
-                    {COPY.why.openOf(
-                      COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type)),
-                    )}
-                  </summary>
-                  <WhyLinked
-                    link={l}
-                    {...(under ? { under } : {})}
-                    {...(above ? { above } : {})}
-                    {...(contracts ? { contracts } : {})}
-                  />
-                </details>
-              ) : (
-                l.evidence.length > 0 && (
-                  <ul>
-                    {l.evidence.map((e) => (
-                      <li key={`${e.repo ?? ""}:${e.at}`}>
-                        {e.repo && <span className="mono">{e.repo}: </span>}
-                        <Citation repo={e.repo} at={e.at} />
-                      </li>
-                    ))}
-                  </ul>
-                )
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>{COPY.evidence.noLinks}</p>
-      )}
+      <section className="box-sec" aria-label={WORDS.evidence}>
+        <h4 className="hud">{WORDS.evidence}</h4>
+        {node.evidence.length ? (
+          <ul className="box-list">
+            {node.evidence.map((e) => (
+              <li key={`${e.repo ?? ""}:${e.at}`} className="box-cite">
+                {e.repo && <span className="mono box-repo">{e.repo}</span>}
+                <Citation repo={e.repo} at={e.at} />
+                {e.repo && <OpenCode repo={e.repo} at={e.at} />}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="box-none">{WORDS.noEvidence}</p>
+        )}
+      </section>
+      <section className="box-sec" aria-label={COPY.evidence.links}>
+        <h4 className="hud">
+          {COPY.evidence.links}
+          {links.length > 0 && <span className="box-count"> · {links.length}</span>}
+        </h4>
+        {links.length ? (
+          <ul className="box-list box-links">
+            {links.map((l) => (
+              <li key={l.id}>
+                <span className="box-link-say">
+                  {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type))}
+                </span>
+                {l.gaps.length > 0 && (
+                  <span className="box-gap">
+                    <span aria-hidden="true">⚠ </span>
+                    {`${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
+                  </span>
+                )}
+                {l.joins?.length ? (
+                  // ADR 0135, C1: each call on the link, how it was joined and its lines.
+                  <details>
+                    <summary>
+                      {COPY.why.openOf(
+                        COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), linkTypeWord(l.type)),
+                      )}
+                    </summary>
+                    <WhyLinked
+                      link={l}
+                      {...(under ? { under } : {})}
+                      {...(above ? { above } : {})}
+                      {...(contracts ? { contracts } : {})}
+                    />
+                  </details>
+                ) : (
+                  l.evidence.length > 0 && (
+                    <ul className="box-list">
+                      {l.evidence.map((e) => (
+                        <li key={`${e.repo ?? ""}:${e.at}`} className="box-cite">
+                          {e.repo && <span className="mono box-repo">{e.repo}</span>}
+                          <Citation repo={e.repo} at={e.at} />
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="box-none">{COPY.evidence.noLinks}</p>
+        )}
+      </section>
       {node.next && (
-        <>
+        <section className="box-sec" aria-label={WORDS.next}>
           <h4 className="hud">{WORDS.next}</h4>
-          <p>{node.next.why}</p>
-          <div className="row" style={{ gap: 6 }}>
+          <p className="box-why">{node.next.why}</p>
+          <div className="box-cmd">
             <code className="mono">{node.next.command}</code>
             <CopyButton text={node.next.command} label={`${WORDS.copy}: ${node.next.command}`} />
           </div>
           <RunStep command={node.next.command} />
-        </>
+        </section>
       )}
     </div>
   );

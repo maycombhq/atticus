@@ -1,0 +1,139 @@
+# ADR 0193: three pass-through wrappers, each behind its own gateway proxy, all calling the
+# Northwind Pay gateway. The catalog a scan would give, written by hand. Invented throughout.
+- kind: System
+  schemaVersion: 2
+  id: forge
+  status: current
+  confidence: verified
+  evidence: [{ source: manual, by: forge-architecture }]
+  name: Forge
+  boundary: product
+  repos: [forge-accounts-wrapper, forge-accounts-proxy, forge-cards-wrapper, forge-cards-proxy, forge-limits-wrapper, forge-limits-proxy]
+- kind: System
+  schemaVersion: 2
+  id: northwind-pay
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: forge-architecture }]
+  name: Northwind Pay
+  boundary: vendor
+- kind: Component
+  schemaVersion: 2
+  id: forge-accounts-wrapper
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 1 }]
+  system: forge
+  repo: forge-accounts-wrapper
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-accounts-wrapper.get-accounts
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-accounts-wrapper, path: src/main/java/forge/accounts/AccountsController.java, line: 9 }]
+  component: forge-accounts-wrapper
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{id}
+  normalizedPath: /accounts/{}
+- kind: Component
+  schemaVersion: 2
+  id: forge-accounts-proxy
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-accounts-proxy, path: apiproxy/proxies/default.xml, line: 1 }]
+  system: forge
+  repo: forge-accounts-proxy
+  type: gateway
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-accounts-proxy.get-accounts
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-accounts-proxy, path: apiproxy/proxies/default.xml, line: 9 }]
+  component: forge-accounts-proxy
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{id}
+  normalizedPath: /accounts/{}
+- kind: Component
+  schemaVersion: 2
+  id: forge-cards-wrapper
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-cards-wrapper, path: src/main/java/forge/cards/CardsController.java, line: 1 }]
+  system: forge
+  repo: forge-cards-wrapper
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-cards-wrapper.get-cards
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-cards-wrapper, path: src/main/java/forge/cards/CardsController.java, line: 9 }]
+  component: forge-cards-wrapper
+  endpointType: rest
+  method: GET
+  pathOrTopic: /cards/{id}
+  normalizedPath: /cards/{}
+- kind: Component
+  schemaVersion: 2
+  id: forge-cards-proxy
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 1 }]
+  system: forge
+  repo: forge-cards-proxy
+  type: gateway
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-cards-proxy.get-cards
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 9 }]
+  component: forge-cards-proxy
+  endpointType: rest
+  method: GET
+  pathOrTopic: /cards/{id}
+  normalizedPath: /cards/{}
+- kind: Component
+  schemaVersion: 2
+  id: forge-limits-wrapper
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-limits-wrapper, path: src/main/java/forge/limits/LimitsController.java, line: 1 }]
+  system: forge
+  repo: forge-limits-wrapper
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-limits-wrapper.get-limits
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-limits-wrapper, path: src/main/java/forge/limits/LimitsController.java, line: 9 }]
+  component: forge-limits-wrapper
+  endpointType: rest
+  method: GET
+  pathOrTopic: /limits/{id}
+  normalizedPath: /limits/{}
+- kind: Component
+  schemaVersion: 2
+  id: forge-limits-proxy
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-limits-proxy, path: apiproxy/proxies/default.xml, line: 1 }]
+  system: forge
+  repo: forge-limits-proxy
+  type: gateway
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-limits-proxy.get-limits
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-limits-proxy, path: apiproxy/proxies/default.xml, line: 9 }]
+  component: forge-limits-proxy
+  endpointType: rest
+  method: GET
+  pathOrTopic: /limits/{id}
+  normalizedPath: /limits/{}

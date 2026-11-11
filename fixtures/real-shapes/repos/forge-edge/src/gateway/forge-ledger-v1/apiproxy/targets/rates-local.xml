@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<TargetEndpoint name="rates-local">
+    <Description>Chained to the rates proxy, in the same organisation</Description>
+    <LocalTargetConnection>
+        <Path>/forge/rates/v1</Path>
+    </LocalTargetConnection>
+</TargetEndpoint>

@@ -3,8 +3,11 @@ name: CI
 # Every push and pull request runs the check on Linux and Windows (Node 22): the definition of
 # done in CLAUDE.md needs both, and Windows is where most installs run. The full matrix adds
 # Node 24 and the offline bundle install, when started by hand (Actions > CI > Run workflow,
-# full: true) and before a release: hosted minutes on a private repo are limited, and Windows
-# minutes count double.
+# full: true) and before a release.
+#
+# The check is split into jobs that run at once, on each system: `lint` (deny-list, lint and
+# typecheck), `test` (every package's tests, in shards), and `speed` (the speed budgets, alone on
+# their runner). `check` waits for all of them and is the one result to require.
 on:
   push:
     branches: [main]
@@ -26,8 +29,14 @@ concurrency:
   # (the runs there are long, and pushes kept cancelling them); elsewhere the newest wins.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Kept between runs (actions/cache): the build's outputs, keyed by turbo's hash of each
+  # package's sources (turbo.json), so a package whose sources didn't change isn't built again.
+  TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/build
+
 jobs:
-  check:
+  lint:
     strategy:
       fail-fast: false
       matrix:
@@ -43,21 +52,169 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The role journeys drive the app in Chromium.
-      - run: pnpm --filter @maycombhq/journeys exec playwright install --with-deps chromium
+      - id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo/build
+          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
+          restore-keys: turbo-build-${{ runner.os }}-node${{ matrix.node }}-
       - run: pnpm build
+      # This job keeps the build for the next run, with only this build's entries in it, so the
+      # cache doesn't grow with every commit. The other jobs build too, from the same cache.
+      - if: steps.build-cache.outputs.cache-hit != 'true'
+        run: |
+          pnpm exec turbo run build --dry=json > "$RUNNER_TEMP/build.json"
+          node .github/scripts/ci-shard.mjs prune .turbo/build "$RUNNER_TEMP/build.json"
+        shell: bash
+      - if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/build
+          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
       - run: pnpm denylist
       - run: pnpm lint
       - run: pnpm typecheck
-      # Windows runners are slower; fewer packages testing at once keeps timing-sensitive tests honest.
-      # --continue: every package's tests run, so one run shows every failure, not the first.
-      - run: pnpm turbo run test --continue --filter=!@maycombhq/m5-exit --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
-      # The speed budgets (m5-exit) run alone, as `pnpm test` runs them: alongside every other
-      # package's tests they measure the machine's load, not Atticus.
-      - run: pnpm turbo run test --filter=@maycombhq/m5-exit --concurrency=1
-      # Home's speed (beta.23) alone too: beside the other tests a 2-CPU runner measured 2 s for
-      # a load that takes 0.3 s.
+
+  # Every package's tests but the speed budgets, split so no runner takes more than about ten
+  # minutes: `unit` shares the packages out, cli's test files and the role journeys are shared
+  # out by file, each by their measured times (.github/scripts/ci-shard.mjs, which takes in a new
+  # package or file by itself). Linux runs the tests in about half Windows' time, so it has fewer
+  # shards: 19 jobs in all, under the 20 an account's hosted runners run at once. Only the journey
+  # shards install Chromium.
+  test:
+    name: test (${{ matrix.plan.os }}, ${{ matrix.node }}, ${{ matrix.plan.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('[22,24]') || fromJSON('[22]') }}
+        # ubuntu-latest became 26.04, where Playwright 1.56 has no Chromium to install.
+        plan:
+          - { os: ubuntu-24.04, shard: unit 1/2 }
+          - { os: ubuntu-24.04, shard: unit 2/2 }
+          - { os: ubuntu-24.04, shard: cli 1/1 }
+          - { os: ubuntu-24.04, shard: journeys 1/3 }
+          - { os: ubuntu-24.04, shard: journeys 2/3 }
+          - { os: ubuntu-24.04, shard: journeys 3/3 }
+          - { os: windows-latest, shard: unit 1/3 }
+          - { os: windows-latest, shard: unit 2/3 }
+          - { os: windows-latest, shard: unit 3/3 }
+          - { os: windows-latest, shard: cli 1/2 }
+          - { os: windows-latest, shard: cli 2/2 }
+          - { os: windows-latest, shard: journeys 1/4 }
+          - { os: windows-latest, shard: journeys 2/4 }
+          - { os: windows-latest, shard: journeys 3/4 }
+          - { os: windows-latest, shard: journeys 4/4 }
+    runs-on: ${{ matrix.plan.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: shard
+        run: |
+          read -r kind part <<< "${{ matrix.plan.shard }}"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "i=${part%/*}" >> "$GITHUB_OUTPUT"
+          echo "n=${part#*/}" >> "$GITHUB_OUTPUT"
+          echo "name=$kind-${part%/*}-of-${part#*/}" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/build
+          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
+          restore-keys: turbo-build-${{ runner.os }}-node${{ matrix.node }}-
+      - if: steps.shard.outputs.kind == 'journeys'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.os == 'Windows' && '~/AppData/Local/ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('packages/journeys/package.json') }}
+      # The role journeys drive the app in Chromium.
+      - if: steps.shard.outputs.kind == 'journeys'
+        run: pnpm --filter @maycombhq/journeys exec playwright install --with-deps chromium
+      - run: pnpm build
+      # Test results are kept only for the same tree: tests read files across the repo (fixtures,
+      # docs, other packages) that turbo can't see, so a result from any other tree could hide a
+      # failure. A re-run, or a commit whose tree was tested before, runs only what didn't pass.
+      - id: test-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo/test
+          key: turbo-test-${{ runner.os }}-node${{ matrix.node }}-${{ steps.shard.outputs.name }}-${{ steps.shard.outputs.tree }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: turbo-test-${{ runner.os }}-node${{ matrix.node }}-${{ steps.shard.outputs.name }}-${{ steps.shard.outputs.tree }}-
+      # --only: the build ran above. --continue: every package's tests run, so one run shows
+      # every failure, not the first. Two packages at a time keeps timing-sensitive tests honest.
+      - id: tests
+        env:
+          TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/test
+        run: |
+          i=${{ steps.shard.outputs.i }}
+          n=${{ steps.shard.outputs.n }}
+          case "${{ steps.shard.outputs.kind }}" in
+            unit)
+              pnpm turbo run test --only --continue --concurrency=2 $(node .github/scripts/ci-shard.mjs unit "$i" "$n") ;;
+            cli)
+              pnpm turbo run test --only --filter=@maycombhq/cli -- $(node .github/scripts/ci-shard.mjs cli "$i" "$n") ;;
+            journeys)
+              pnpm turbo run test --only --filter=@maycombhq/journeys -- $(node .github/scripts/ci-shard.mjs journeys "$i" "$n") ;;
+          esac
+        shell: bash
+      # Kept when tests failed too: turbo stores only the packages that passed.
+      - if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/test
+          key: turbo-test-${{ runner.os }}-node${{ matrix.node }}-${{ steps.shard.outputs.name }}-${{ steps.shard.outputs.tree }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # The speed budgets run alone on their runner, as `pnpm test` runs them: beside other tests they
+  # measure the machine's load, not Atticus.
+  speed:
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest became 26.04, where Playwright 1.56 has no Chromium to install.
+        os: [ubuntu-24.04, windows-latest]
+        node: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('[22,24]') || fromJSON('[22]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/build
+          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
+          restore-keys: turbo-build-${{ runner.os }}-node${{ matrix.node }}-
+      - run: pnpm build
+      - id: tree
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+        shell: bash
+      # Kept for the same tree only, as in the test job.
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/test
+          key: turbo-test-${{ runner.os }}-node${{ matrix.node }}-speed-${{ steps.tree.outputs.tree }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: turbo-test-${{ runner.os }}-node${{ matrix.node }}-speed-${{ steps.tree.outputs.tree }}-
+      # The M5 exit's speed budgets (m5-exit).
+      - id: m5
+        env:
+          TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/test
+        run: pnpm turbo run test --only --filter=@maycombhq/m5-exit --concurrency=1
+      # Home's speed (beta.23): beside the other tests a 2-CPU runner measured 2 s for a load that
+      # takes 0.3 s.
       - run: pnpm --filter @maycombhq/cli run test:speed
+      - if: always() && steps.m5.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/test
+          key: turbo-test-${{ runner.os }}-node${{ matrix.node }}-speed-${{ steps.tree.outputs.tree }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   # The offline install bundle, built and installed the way a person would, on Linux and
   # Windows (install.sh and install.ps1), when the full matrix runs.
@@ -84,7 +241,7 @@ jobs:
         shell: bash
       # ADR 0116 addendum: the embedding model and this platform's onnxruntime, each checked
       # against its committed sha256, kept between runs so they are downloaded once. pnpm bundle
-      # --with-embeddings fills the packages from this cache; the check job never fetches them.
+      # --with-embeddings fills the packages from this cache; the other jobs never fetch them.
       - uses: actions/cache@v4
         with:
           path: .cache/pinned
@@ -108,3 +265,15 @@ jobs:
         with:
           name: atticus-offline-${{ matrix.os }}
           path: dist/*-offline*.zip*
+
+  # The one result to require: it fails unless every job above passed (the bundle may be skipped).
+  check:
+    if: always()
+    needs: [lint, test, speed, bundle]
+    runs-on: ubuntu-24.04
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "lint ${{ needs.lint.result }}, test ${{ needs.test.result }}, speed ${{ needs.speed.result }}, bundle ${{ needs.bundle.result }}"
+          exit 1
+      - run: echo "every job passed"

@@ -1,0 +1,15 @@
+# ADR 0193: the consolidation as a strokes file, applied in order by
+# atticus change sketch consolidate-wrappers --from strokes.yaml [--save]
+strokes:
+  - kind: absorb
+    component: forge-accounts-wrapper
+    into: { component: forge-api, runsOn: { type: service, platform: cloud-run } }
+    why: One API service instead of a wrapper each
+  - kind: absorb
+    component: forge-cards-wrapper
+    into: { component: forge-api }
+    why: One API service instead of a wrapper each
+  - kind: absorb
+    component: forge-limits-wrapper
+    into: { component: forge-api }
+    why: One API service instead of a wrapper each

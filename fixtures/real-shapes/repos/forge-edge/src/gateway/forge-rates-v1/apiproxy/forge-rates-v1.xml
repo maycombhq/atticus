@@ -1,0 +1,9 @@
+<APIProxy revision="1" name="forge-rates-v1">
+	<Basepaths>/forge/rates/v1</Basepaths>
+	<ProxyEndpoints>
+		<ProxyEndpoint>default</ProxyEndpoint>
+	</ProxyEndpoints>
+	<TargetEndpoints>
+		<TargetEndpoint>rates</TargetEndpoint>
+	</TargetEndpoints>
+</APIProxy>

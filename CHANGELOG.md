@@ -4,8 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.25 (unreleased)
 
+### Added
+
+- **`absorb`, a sketch stroke that folds a component into another.** Its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change. One Undo takes it all back. `into.prefix` puts the moved entries under a path, so components that serve the same paths can merge; absorbing again later takes only what is new in the repo since (ADR 0193).
+- **`atticus change sketch <change> --from strokes.yaml|.json`** reads the canvas's strokes from a file, applied in order, with the same preview and `--save`; an unknown component id gets the nearest ids as "Did you mean" (ADR 0193).
+
 ### Fixed
 
+- **The arrow's panel on the map is laid out, not jumbled.** A head with the arrow's name, its number of calls and Close stays in sight while its calls scroll; each call is a card (its method and path on one line, cut short when long with the whole text on hover, focus and Copy; its two ends; the verified or inferred chip beside them, never wrapped apart), its cited lines grouped under even labels, then This link is wrong and its form in place. The correction forms' choices keep each radio beside its words at every width. A declared topic's Undo is found on the system that declared it and lists only that topic's declaration; closing a correction form, or writing All calls on this arrow are wrong, keeps the keyboard focus (on the button that opened it, or on what was written).
+- **The map's details panel for a box, and its popups, are laid out so nothing spills.** A box's name keeps its own case, with its kind, state and gaps as tags; its actions wrap (a long label no longer squeezed into a column over the facts) in two groups, what it does here and the pages it leads to; each section has the same heading and spacing, its lists are rows, and a gap's fix is a sentence, not capitals. Connect to… names both ends, lists each loose call as a row (method and path in mono, cut to one line and whole on hover or focus) instead of a table wider than the panel, and keeps Preview and Write at its foot; it and the other popups (Owner and system, Declare a link, Add to the picture) are brought into view with focus on their heading, and give focus back on Close. The bar of corrections not applied yet puts Apply beside what waits.
 - **Trust's secrets check never shows a key that is a secret itself.** A credentials file's `AKIA…:…` line, an `.env` `AKIA…=…` line or a YAML `- AKIA…: x` took the access key id as the line's key, so Map › Trust and `facts/<repo>.verify.yaml` (committed) showed it. A key with a secret's shape, or a long random-looking run of letters and digits, is now said as "a key that looks like a secret" (`key: ""` in the report), and Trust scrubs an older report's too. Local API 3.11.0.
 - **A correction on file for a line the call has left no longer blocks a new one.** All calls on this arrow are wrong skipped an item as already on file when an older correction of the same fact said the same, even when it named the line the call cited before the code moved, so it met nothing, nothing was written and the arrow stayed after Apply. An item is skipped only when the correction its fact meets now (by its id and cite, as verify meets it) says the same; otherwise the new one is written and wins.
 - **An arrow of more than 200 calls can be corrected.** POST /api/links/corrections took at most 200 items while GET /api/graph/edge-calls gives every call; it takes up to 5000 now, still all or none, in a body of up to 16 MB. Local API 3.11.0.
@@ -15,6 +22,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Corrections to apply follows every write.** The bar above the map reads again after a request that failed but wrote some files (a 500 naming them in `written`; the arrow's callers' facts are read again too) and on the server's file events, so a correction the CLI or an assistant writes shows without a reload.
 - **Apply to every repo's map keeps its errors.** When it applied two repos of three (one with no clone here), the bar swapped it for the one repo's Apply and its error lines and Sync went with it; they stay now until dismissed or the next Apply.
 - The beta.24 entry for a link a gateway's routing made is corrected: it said the correction rests on the forwarding call's line at the hop, which beta.24 never does.
+
+### Changed
+
+- The change diagram marks a component retired when the change removes every flow it has today (ADR 0193).
+
+### Tests
+
+- **A real-shapes corpus** (`fixtures/real-shapes/`): invented Forge repos written after the shapes of public Apache-2.0 projects (spring-petclinic, gs-multi-module, the Apigee deploy and config plugins' samples, api-platform-samples, camel-spring-boot-examples, okhttp's Kotlin DSL and version catalog, `helm create`'s chart, Kubernetes manifests), quirks kept byte for byte: `<project>` start tags over several lines, CRLF, a BOM, CDATA, Spring's Gradle `dependencyManagement`, `config.json` tokens per environment, a LocalTargetConnection, TargetServers and KVMs, Camel `{{property}}` URIs and a Fuse blueprint. Tests run the build-coordinates reader, the settings and secrets checks and the verifier on it, the estate and dependency joins against hand-checked goldens, and seeded property tests for the pom and Gradle readers and placeholder resolution. Where today's code is wrong the test keeps the right expectation as `it.fails`, so each fix flips it.
 
 ## 2.0.0-beta.24 (2026-11-10)
 

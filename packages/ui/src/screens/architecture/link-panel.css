@@ -1,0 +1,357 @@
+/* The arrow's panel on the Architecture canvas (a link picked: Why is this linked, This link is
+   wrong, All calls on this arrow are wrong). Every rule is under an li- class of its own, and
+   every colour, font and line is a token of hud.css, so a theme or the box panel's own rules
+   never meet these. Rhythm: 4, 8, 12 and 16 px; words at 12 to 13 px, labels the HUD's 11 px. */
+
+/* ------------------------------------------------------------------ the panel and its head */
+
+.li {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* Its name, count and Close stay in sight while its calls scroll by in the details aside. */
+.li-head {
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -12px;
+  padding: 8px 12px 10px;
+  background: var(--box);
+  border-bottom: 1px solid var(--line);
+}
+.li-head-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.li-title {
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.li-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.li .btn.li-close {
+  flex: none;
+  height: 28px;
+}
+
+/* ------------------------------------------------------------------ the calls */
+
+.li-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.li-intro {
+  line-height: 1.5;
+}
+.li-arrow-actions:empty {
+  display: none;
+}
+.li-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.li-call {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover-soft);
+}
+.li-call p {
+  margin: 0;
+}
+
+/* Method and path on one line across the card, cut short when too long; whole on hover or focus. */
+.li-call-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.li-call-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.li-call-sub .li-ends {
+  min-width: 0;
+}
+.li-what {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.li-method {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent-soft);
+}
+.li-what code.li-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.li-call-head:hover .li-path,
+.li-call-head:focus-within .li-path {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.li-ends {
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow-wrap: break-word;
+}
+.li-scope {
+  color: var(--muted);
+}
+.li-call-tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.li-call-tools .chip {
+  white-space: nowrap;
+}
+.li-call-tools .btn {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+/* How it was joined: the words, then the AI's chip and Correct, the shared map's note. */
+.li-how {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.li-how .ev-say {
+  line-height: 1.5;
+}
+.li-also {
+  padding-left: 8px;
+  border-left: 2px solid var(--amber-line);
+}
+
+/* The lines cited at each end: a label, then each file:line with its repo before it. */
+.li-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.li-lines-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.li-lines-group dt {
+  font-size: 10.5px;
+}
+.li-lines-group dd {
+  margin: 0;
+}
+.li-cites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.li-cites li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.li-repo {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.li-at,
+.li-cites .ev-cite code {
+  overflow-wrap: anywhere;
+}
+.li-cites .ev-wrap {
+  min-width: 0;
+}
+
+/* A quote in a citation's tooltip or details: wrapped, and scrolled when it is long. */
+.li-call .ev-quote {
+  max-height: 10em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+/* What ends a call: its contract findings, then This link is wrong and its form. */
+.li-call-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.li-call-foot:empty {
+  display: none;
+}
+.li-contracts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.li-contracts .ev-list li {
+  margin-bottom: 2px;
+}
+.li-more {
+  padding: 8px 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+
+/* ------------------------------------------------------------------ corrections */
+
+.li-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn.li-fix-open {
+  align-self: flex-start;
+  height: 28px;
+}
+.li-note {
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+  background: var(--inset);
+  line-height: 1.5;
+}
+
+/* A form opens in place, in a box of its own, under the button that opened it. */
+.li-form.ev-correct {
+  margin-top: 0;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--box);
+}
+.li-form-title {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.li-form .ev-say {
+  line-height: 1.5;
+}
+.li-form .ev-choice {
+  flex-direction: column;
+  gap: 6px;
+}
+.li-form .ev-choice legend.hud {
+  margin-bottom: 4px;
+}
+/* A choice: its radio, then its words beside it, wrapped under the words and never the radio. */
+.li-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.li-choice input {
+  flex: none;
+  margin: 2px 0 0;
+}
+.li-choice code {
+  overflow-wrap: anywhere;
+}
+.li-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.li-field input,
+.li-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.li-field textarea {
+  resize: vertical;
+  min-height: 3.5em;
+}
+.li-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.li-form .state,
+.li-fix > .state {
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: 6px;
+}
+.li-form .state.error,
+.li-fix > .state.error {
+  background: var(--danger-bg);
+}
+/* What was written, and what to run next. */
+.li-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent);
+  background: var(--inset);
+  border-radius: 0 6px 6px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.li-result:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

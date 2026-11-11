@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { ReadRepo, WrittenNext } from "../../app/app-step.js";
 import { COPY } from "../../copy.js";
+import { usePopupFocus } from "./popup.js";
 import { AiChip } from "../../app/decisions.js";
 import { Diff } from "./Owner.js";
 
@@ -85,10 +86,11 @@ export function DeclarePanel(p: {
       setBusy(undefined);
     }
   };
+  const head = usePopupFocus<HTMLHeadingElement>();
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
-      <div className="row between">
-        <h4 id={`${id}-t`} className="h" style={{ fontSize: 14, margin: 0 }}>
+      <div className="box-pop-head">
+        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
           {D.title(p.label)}
         </h4>
         <button type="button" className="btn" onClick={p.onClose}>
@@ -307,10 +309,11 @@ export function AddBoxForm(p: {
       setBusy(undefined);
     }
   };
+  const head = usePopupFocus<HTMLHeadingElement>();
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
-      <div className="row between">
-        <h4 id={`${id}-t`} className="h" style={{ fontSize: 14, margin: 0 }}>
+      <div className="box-pop-head">
+        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
           {A.title}
         </h4>
         <button type="button" className="btn" onClick={p.onClose}>

@@ -46,6 +46,8 @@ export interface TargetFlows {
   records: CatalogRecord[];
   /** Every component today's specs name, catalog or not. */
   known: Set<string>;
+  /** ADR 0193: components whose every flow today the change removes (retired or absorbed). */
+  retired: Set<string>;
 }
 
 /** The change's target flows; undefined when there is no such change. */
@@ -76,10 +78,17 @@ export async function targetFlowsOf(
   // Catalog problems are the catalog's to report; the picture draws what reads.
   const { records } = await loadCatalog(root, { out: () => undefined, err: () => undefined });
   const known = new Set<string>();
+  const kept = new Set<string>();
+  const removed = new Set(deltas.filter((d) => d.change === "remove").map((d) => d.flow));
+  const gone = new Set<string>();
   for (const repo of repos) {
     const spec = specs.get(repo) ?? (await readRepoSpec(root, repo, { cacheRoot: root }));
-    for (const f of spec.flows) known.add(f.component);
+    for (const f of spec.flows) {
+      known.add(f.component);
+      (removed.has(f.id) ? gone : kept).add(f.component);
+    }
   }
+  const retired = new Set([...gone].filter((c) => !kept.has(c)));
   return {
     title,
     source: `${changesRelOf(root)}/${change}/${TARGET_DIR}`,
@@ -88,6 +97,7 @@ export async function targetFlowsOf(
     problems,
     records,
     known,
+    retired,
   };
 }
 
@@ -101,6 +111,7 @@ export async function changeMapOf(root: string, change: string): Promise<ChangeM
       { id: change, title: t.title, source: t.source },
       t.merged,
       t.known,
+      t.retired,
     ),
     title: t.title,
     source: t.source,

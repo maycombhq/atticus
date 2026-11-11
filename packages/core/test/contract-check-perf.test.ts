@@ -79,16 +79,17 @@ function estate() {
 }
 
 describe("the contract check on a 40-repo estate", () => {
-  it("checks 2,400 links well under a second", () => {
+  it("checks 2,400 links in well under the seconds a scan per link took", () => {
     const input = estate();
     expect(input.repos[0]!.facts).toHaveLength(2520);
     // CPU time, not the clock: a shared CI machine's other work doesn't count against it. A
-    // scan per link took several seconds here; indexed, it is a fraction of one.
+    // scan per link took several seconds here; indexed, it is a fraction of one (but 1.0 s of CPU
+    // on a hosted Windows runner beside another package's tests, so the budget is 2 s).
     const t = process.cpuUsage();
     const r = checkContracts(input);
     const used = process.cpuUsage(t);
     const ms = (used.user + used.system) / 1000;
     expect(r.counts).toMatchObject({ links: 2400, compared: 2400, mismatches: 240 });
-    expect(ms).toBeLessThan(1000);
+    expect(ms).toBeLessThan(2000);
   });
 });
