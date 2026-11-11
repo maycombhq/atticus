@@ -103,6 +103,16 @@ Still owed from before Atticus 2: CI on the hosted runners (A8), and the person 
 
 Every open item, in the order to take them. Check work by running the real flow on a real repo (scan → map → `change new` → `change draft` → `plan stories --draft` → `scan review`), not only the tests. Tick an item off here in the commit that does it.
 
+### 2.0.0-beta.27: the catalog built from source slots (ADR 0195, proposed)
+
+A scan or `verify --write` writes only its repo's slot (`catalog/sources/readers/<repo>.json`, or the facts snapshot `catalog/sources/facts/<repo>.jsonl` with its meta). A failed or partial read writes nothing. One pure build makes `catalog/generated/` from every slot and input, with the curated decisions applied last. This replaces beta.26's all-or-nothing safety stop. Phases: CS1 with CS4's harness, then CS2, then CS3 and CS5. Each ticket's definition of done is in [the ADR](adr/0195-the-catalog-is-built-from-source-slots.md#plan-for-beta27).
+
+- [ ] **CS1. Slot formats, slot writers and the upgrade.** Schemas and canonical serializer. The scan and `verify --write` write slots while still writing the catalog as today. `atticus upgrade` adopts `catalog/generated/` into labelled legacy slots once. Forge golden slots in `fixtures/forge/slots/`.
+- [ ] **CS4. Property tests** (with CS1, before CS2). fast-check `fc.commands` against a simple model, with nine invariants: equivalence with a full rebuild, locality, idempotence, order independence, failure neutrality, readers never destroy facts, curation survives, links are live, no silent loss. The failures they find in today's writers are pinned for CS2.
+- [ ] **CS2. The build, and the six writers made to call it.** `buildCatalog` and `writeBuiltCatalog`. `atticus catalog build [--check]`. The scan, `verify --write`, the glossary scan, the branch scan, the learning sandbox, and rename and upgrade all go through the build. Every carry is deleted, and scan's `--json` `kept` goes away. The empty-catalog and removal guards. The projection cache and the 40-repo budgets.
+- [ ] **CS3. The readers' cross-check in Map › Trust.** Readers found and disagree, from the readers slot against the facts projection, with promote to assert and dismiss. The additive C4 routes.
+- [ ] **CS5. Fixtures and journeys.** Tests that run a writer seed slots. Four new journeys: a repo not cloned, facts then a scan, a curated suppress surviving, and an upgrade from beta.26.
+
 ### A. Fix before pushing (main has unpushed local commits)
 
 - [x] **A1. CLI test hang under full load.** `packages/cli/test/learn-cli.test.ts` "defences scan" hung for 89 minutes in a full parallel `pnpm test`; two sandbox tests in the same file exited 1. It passes alone. Fixed: the sandbox ran git synchronously, so a git step stuck under load blocked the process and no test timeout could fire. Git is now asynchronous with a 120 s limit per step, runs no hooks and never prompts; the two sandbox tests have the file's 180 s limit. Passes with the scanner suite running alongside.
