@@ -1,0 +1,45 @@
+{
+  "invariant": "order-independence",
+  "note": "order-independence: {\"t\":\"verify-write\",\"slot\":0,\"ok\":true} then {\"t\":\"verify-write\",\"slot\":1,\"ok\":true} differs from the other order in catalog/generated/component/ledger-api.yaml, catalog/generated/system/ledger.yaml",
+  "seed": 7,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    },
+    {
+      "t": "verify-write",
+      "slot": 1,
+      "ok": true
+    }
+  ]
+}
