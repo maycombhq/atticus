@@ -697,6 +697,9 @@ Usage:
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
           [--curate]                   Make each a curated decision (an assert of what it changed, a suppress for a deleted one), then build with them
   atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
+  atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
+          [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)
+          [--undismiss <key>]          Take a dismissal back
   atticus catalog prune                List the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog); with --yes, remove exactly those [--json]
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
@@ -2988,6 +2991,19 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     );
   if (group === "catalog" && command === "migrate")
     return catalogMigrate(root, io, { dryRun: values["dry-run"] === true });
+  if (group === "catalog" && command === "crosscheck") {
+    const { catalogCrossCheck } = await import("./crosscheck-commands.js");
+    return catalogCrossCheck(
+      root,
+      {
+        ...(arg ? { repo: arg } : {}),
+        json: values.json === true,
+        ...(str(values.dismiss) !== undefined ? { dismiss: str(values.dismiss)! } : {}),
+        ...(str(values.undismiss) !== undefined ? { undismiss: str(values.undismiss)! } : {}),
+      },
+      io,
+    );
+  }
   if (
     group === "catalog" &&
     (command === "build" || command === "undo" || command === "prune" || command === "edits")

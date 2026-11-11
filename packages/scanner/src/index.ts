@@ -18,3 +18,4 @@ export * from "./build.js";
 export * from "./build-facts.js";
 export * from "./upgrade-slots.js";
 export * from "./scan-write.js";
+export * from "./crosscheck.js";
