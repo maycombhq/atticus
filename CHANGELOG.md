@@ -7,6 +7,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Changed
 
 - **The new shell's bottom panel holds the Console with Questions, Problems and Runs as tabs**: the shown run's live lines with follow, search, copy and Stop; the open questions, each linking to its answer; failed runs, blocking findings and repos whose facts the verifier rejected; and the recent runs, one pick showing it in the Console. Its top edge resizes by drag or arrow keys and keeps its height, Show in the Console opens it on that run, and Questions and Problems are read only when their tab is first shown.
+- **The app's new side panel has an Explorer**: the changes in flight with their stage (and which wait on you), the systems as a tree of their repos (marked lib, gw or outside) opening the map on each box, the open questions by repo, and pinned pages; each section folds, a filter narrows them all, it is a keyboard tree (arrows, Home, End, Enter, a letter), and a section reads its data only once it is open and the page's own requests are answered.
 
 ## 2.0.0-beta.25 (unreleased)
 

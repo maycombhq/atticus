@@ -6463,4 +6463,55 @@ export const COPY = {
         `${n} design finding${n === 1 ? " waits" : "s wait"} for the architect; ${n === 1 ? "it doesn't" : "they don't"} hold the brief.`,
     },
   },
+  // The IDE shell's side panel (beta.26): the estate as a tree, each item opening its page.
+  explorer: {
+    title: "Estate",
+    /** The side panel's name, for the shell's landmark around the Explorer. */
+    label: "Explorer",
+    filter: "Filter the explorer",
+    filterPlaceholder: "Filter",
+    sections: {
+      changes: "Changes in flight",
+      systems: "Systems",
+      questions: "Questions",
+      pinned: "Pinned",
+    },
+    empty: {
+      changes: "No changes in flight",
+      systems: "No systems read yet",
+      questions: "No open questions",
+      pinned: "Nothing pinned yet. Pin a page to keep it here.",
+    },
+    loading: (section: string) => `Loading ${section.toLowerCase()}…`,
+    couldntLoad: (why: string) => `Couldn't load: ${why}`,
+    retry: "Retry",
+    /** The section's count, read after its name. */
+    count: (n: number) => `${n}`,
+    repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
+    waitsOnYou: "waits on you",
+    /** A row's whole name for a screen reader, its parts joined. */
+    spoken: (...parts: string[]) => parts.join(", "),
+    items: (n: number) => `${n} item${n === 1 ? "" : "s"}`,
+    /** The kinds a box of the map is marked with. */
+    kinds: { lib: "lib", gw: "gw", outside: "outside" },
+    kindWords: { lib: "library", gw: "gateway", outside: "outside the estate" },
+    ownerQuestions: "Owner questions",
+    pin: "Pin",
+    /** The Pin button's name; pressed, the page is pinned and a press unpins it. */
+    pinHere: (page: string) => `Pin this page: ${page}`,
+    unpinHint: "Delete unpins it",
+    /** A pinned page's name: its section, its page and what it is about. */
+    pageLabel: (...parts: string[]) => parts.join(" › "),
+    stages: {
+      draft: "draft",
+      define: "define",
+      design: "design",
+      plan: "plan",
+      build: "build",
+      qa: "qa",
+      "release-ready": "release",
+      "post-release-review": "review",
+      returned: "returned",
+    } as Record<string, string>,
+  },
 } as const;
