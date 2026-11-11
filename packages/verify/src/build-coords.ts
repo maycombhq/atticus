@@ -16,6 +16,14 @@ import { factIdPart, type Fact, type FactOf } from "@maycombhq/core";
  * so only a line directly in a project's `dependencies { }` declares a dependency; a multi-project
  * build's subprojects publish under the names `settings.gradle` includes them by. A build file
  * in a module's folder is that module's (`buildModuleOf`).
+ *
+ * Review of beta.25: a module is a component only when repos.manifest.yaml lists it; a repo whose
+ * manifest entry lists no modules ships as one component, its manifest's, whatever folders its
+ * build has (never a component named for a folder). A module's parent pom is found through its
+ * `<relativePath>`, a pom whose `<modules>` lists it (`../cards-api` too), or `../pom.xml`, and a
+ * `${property}` resolves through the parents' `<properties>` as well. A root Gradle build's
+ * `subprojects { dependencies { } }` line is each subproject's dependency. What is read from a
+ * build file's lines is held per lines array, so a 3,000-dependency pom is read once.
  */
 
 /** A value as a build file writes it, and its line (1-based). */
@@ -50,6 +58,11 @@ export interface PomCoordinates {
   modules: At[];
   /** Beta.25: the project's own `<properties>`, by name, each with its line. */
   properties: Map<string, At>;
+  /**
+   * Review of beta.25: the `<parent>`'s `<relativePath>` as written; `""` for `<relativePath/>`
+   * (look the parent up in a repository, never in the folders).
+   */
+  parentRelativePath?: At;
 }
 
 /**
@@ -57,19 +70,31 @@ export interface PomCoordinates {
  * `parent-pom.xml`, `parent.pom.xml`), the name a `<relativePath>` gives one beside its modules.
  */
 const POM = /(^|\/)([^/]*[-_.])?pom\.xml$|\.pom$/i;
+/** Review of beta.25: poms a plugin generates (the shade and flatten plugins'), never written by hand. */
+const GENERATED_POM = /(^|\/)(dependency-reduced-pom\.xml|\.flattened-pom\.xml)$/i;
 const GRADLE_BUILD = /(^|\/)build\.gradle(\.kts)?$/i;
 const GRADLE_SETTINGS = /(^|\/)settings\.gradle(\.kts)?$/i;
 /** Beta.25: a Gradle version catalog, `gradle/libs.versions.toml` (or another in `gradle/`). */
 const VERSION_CATALOG = /(^|\/)gradle\/([\w-]+)\.versions\.toml$/i;
 const slash = (p: string) => p.replace(/\\/g, "/");
 
-export const isPomFile = (p: string) => POM.test(slash(p));
+export const isPomFile = (p: string) => POM.test(slash(p)) && !GENERATED_POM.test(slash(p));
 export const isGradleBuildFile = (p: string) => GRADLE_BUILD.test(slash(p));
 export const isGradleSettingsFile = (p: string) => GRADLE_SETTINGS.test(slash(p));
 export const isVersionCatalogFile = (p: string) => VERSION_CATALOG.test(slash(p));
 export const isGradleFile = (p: string) =>
   isGradleBuildFile(p) || isGradleSettingsFile(p) || isVersionCatalogFile(p);
 export const isBuildFile = (p: string) => isPomFile(p) || isGradleFile(p);
+
+/**
+ * Review of beta.25: a pom by its name (`isPomFile`), or a parent pom another pom of the files
+ * names by its `<relativePath>` (`parent/parent.xml`), as `pomFilesNamed` lists them.
+ */
+export const isPomFileIn = (p: string, named: ReadonlySet<string> | undefined) =>
+  isPomFile(p) || (!!named?.has(slash(p)) && !GENERATED_POM.test(slash(p)));
+/** A build file (`isBuildFile`), or a parent pom a `<relativePath>` names (`isPomFileIn`). */
+export const isBuildFileIn = (p: string, named: ReadonlySet<string> | undefined) =>
+  isBuildFile(p) || isPomFileIn(p, named);
 
 /** A coordinate as the facts schema takes it: resolved, no URL, no interpolation. */
 const COORDINATE = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
@@ -173,6 +198,17 @@ const leaf = (frame: Frame, name: string) => frame.leaves.get(name);
  * comments left out, CDATA read as its text, a tag split over lines read whole.
  */
 export function pomCoordinates(lines: readonly string[]): PomCoordinates {
+  const held = POMS.get(lines);
+  if (held) return held;
+  const out = readPom(lines);
+  POMS.set(lines, out);
+  return out;
+}
+
+/** Review of beta.25: a pom's reading, held per lines array (every fact citing it reads it once). */
+const POMS = new WeakMap<readonly string[], PomCoordinates>();
+
+function readPom(lines: readonly string[]): PomCoordinates {
   const out: PomCoordinates = { dependencies: [], modules: [], properties: new Map() };
   const text = lines
     .map((l, i) => {
@@ -193,7 +229,12 @@ export function pomCoordinates(lines: readonly string[]): PomCoordinates {
     }
     if (t.type !== "close") {
       if (top) top.children = true;
-      if (t.type === "self") continue;
+      if (t.type === "self") {
+        // `<relativePath/>`: the parent is looked up in a repository, not in the folders
+        if (t.name === "relativePath" && top?.name === "parent")
+          top.leaves.set("relativePath", { value: "", line: t.line });
+        continue;
+      }
       stack.push({ name: t.name, leaves: new Map(), children: false, text: "", textLine: t.line });
       continue;
     }
@@ -230,6 +271,7 @@ export function pomCoordinates(lines: readonly string[]): PomCoordinates {
       if (leaf(done, "groupId")) out.parentGroup = leaf(done, "groupId")!;
       if (leaf(done, "artifactId")) out.parentArtifact = leaf(done, "artifactId")!;
       if (leaf(done, "version")) out.parentVersion = leaf(done, "version")!;
+      if (leaf(done, "relativePath")) out.parentRelativePath = leaf(done, "relativePath")!;
     } else if (done.name === "project" && path.length === 1) {
       if (leaf(done, "groupId")) out.group = leaf(done, "groupId")!;
       if (leaf(done, "artifactId")) out.artifact = leaf(done, "artifactId")!;
@@ -241,21 +283,35 @@ export function pomCoordinates(lines: readonly string[]): PomCoordinates {
 
 const PROPERTY = /^\$\{([^}]+)\}$/;
 
+/** A pom read, and its path in the repo. */
+export interface PomIn {
+  file: string;
+  pom: PomCoordinates;
+}
+
+/** A line of a build file: where a value a fact rests on is written. */
+export interface LineAt {
+  file: string;
+  line: number;
+}
+
 /**
  * A pom value with a `${property}` resolved (ADR 0192: coordinates are written resolved, and the
  * line that writes the value is cited): the project's own coordinates (`project.groupId`), its
- * parent's (`project.parent.groupId`), or a `<properties>` entry of the pom, a property of a
- * property followed a few steps. `via` is the `<properties>` lines it resolves through, which a
- * fact must cite in `cite.with`; the project's and its `<parent>`'s own coordinates are elements
- * the verifier reads itself, so their lines needn't be (a careful reader of
- * `<groupId>${project.groupId}</groupId>` cites that line). `missing` names a property this pom
- * doesn't set.
+ * parent's (`project.parent.groupId`), or a `<properties>` entry of the pom or (review of
+ * beta.25) of a parent pom (`parents`, nearest first), a property of a property followed a few
+ * steps. `via` is the `<properties>` lines it resolves through (in `file`, the pom's own path, or
+ * a parent's), which a fact must cite in `cite.with`; the project's and its `<parent>`'s own
+ * coordinates are elements the verifier reads itself, so their lines needn't be (a careful reader
+ * of `<groupId>${project.groupId}</groupId>` cites that line). `missing` names a property neither
+ * the pom nor a parent of it sets.
  */
 export function resolvePomValue(
   at: At,
   pom: PomCoordinates,
+  o: { file?: string; parents?: readonly PomIn[] } = {},
   depth = 0,
-): { value: string; line: number; via?: number[] } | { missing: string } {
+): { value: string; line: number; via?: LineAt[] } | { missing: string } {
   const m = PROPERTY.exec(at.value.trim());
   if (!m) return { value: at.value, line: at.line };
   const key = m[1]!.trim();
@@ -266,19 +322,140 @@ export function resolvePomValue(
     "project.artifactId": pom.artifact,
     "pom.artifactId": pom.artifact,
     artifactId: pom.artifact,
+    "project.version": pom.version ?? pom.parentVersion,
+    "pom.version": pom.version ?? pom.parentVersion,
     "project.parent.groupId": pom.parentGroup,
     "parent.groupId": pom.parentGroup,
     "project.parent.artifactId": pom.parentArtifact,
     "parent.artifactId": pom.parentArtifact,
+    "project.parent.version": pom.parentVersion,
+    "parent.version": pom.parentVersion,
   };
   const builtin = Object.hasOwn(own, key);
-  const to = builtin ? own[key] : pom.properties.get(key);
+  let to: { at: At; file: string } | undefined;
+  if (builtin) {
+    const b = own[key];
+    if (b) to = { at: b, file: o.file ?? "" };
+  } else {
+    const mine = pom.properties.get(key);
+    if (mine) to = { at: mine, file: o.file ?? "" };
+    else
+      for (const p of o.parents ?? []) {
+        const theirs = p.pom.properties.get(key);
+        if (theirs) {
+          to = { at: theirs, file: p.file };
+          break;
+        }
+      }
+  }
   // One that resolves to itself, or past a few steps, is left unresolved.
-  if (!to || to === at || depth > 4) return { missing: key };
-  const next = resolvePomValue(to, pom, depth + 1);
+  if (!to || to.at === at || depth > 4) return { missing: key };
+  const next = resolvePomValue(to.at, pom, o, depth + 1);
   if ("missing" in next) return next;
-  const via = [...(builtin ? [] : [to.line]), ...(next.via ?? [])];
+  const via = [...(builtin ? [] : [{ file: to.file, line: to.at.line }]), ...(next.via ?? [])];
   return { value: next.value, line: at.line, ...(via.length ? { via } : {}) };
+}
+
+/** A `<relativePath>` or `<module>`'s target pom from the folder of the pom that writes it. */
+function pomTarget(dir: string, rel: string): string {
+  const to = joinDir(dir, rel.trim());
+  if (/\.(xml|pom)$/i.test(rel.trim())) return to;
+  return to ? `${to}/pom.xml` : "pom.xml";
+}
+
+/**
+ * Review of beta.25: the files of `files` that a pom's `<relativePath>` names as its parent and
+ * that no name says is a pom (`parent/parent.xml`), a parent's parent too. Held per files array.
+ */
+export function pomFilesNamed(files: readonly string[], linesOf: LinesOf): Set<string> {
+  const held = NAMED.get(files);
+  if (held) return held;
+  const all = new Set(files.map(slash));
+  const out = new Set<string>();
+  let next = files.map(slash).filter(isPomFile);
+  for (let round = 0; round < 5 && next.length; round++) {
+    const found: string[] = [];
+    for (const f of next) {
+      const lines = linesOf(f);
+      const rel = lines ? pomCoordinates(lines).parentRelativePath?.value.trim() : undefined;
+      if (!rel) continue;
+      const to = pomTarget(dirOf(f), rel);
+      if (all.has(to) && !isPomFile(to) && !out.has(to) && !GENERATED_POM.test(to)) {
+        out.add(to);
+        found.push(to);
+      }
+    }
+    next = found;
+  }
+  NAMED.set(files, out);
+  return out;
+}
+const NAMED = new WeakMap<readonly string[], Set<string>>();
+
+/** For each folder a pom's `<modules>` lists (`../cards-api` too), the pom that lists it. */
+function moduleParentsOf(files: readonly string[], linesOf: LinesOf): Map<string, string> {
+  const held = LISTED.get(files);
+  if (held) return held;
+  const named = pomFilesNamed(files, linesOf);
+  const out = new Map<string, string>();
+  for (const f of files.map(slash).sort()) {
+    if (!isPomFileIn(f, named)) continue;
+    const lines = linesOf(f);
+    if (!lines) continue;
+    for (const m of pomCoordinates(lines).modules) {
+      const dir = dirOf(pomTarget(dirOf(f), m.value));
+      if (!out.has(dir)) out.set(dir, f);
+    }
+  }
+  LISTED.set(files, out);
+  return out;
+}
+const LISTED = new WeakMap<readonly string[], Map<string, string>>();
+
+/**
+ * Review of beta.25: a pom's parent poms in the repo, nearest first: the file its `<parent>`'s
+ * `<relativePath>` names, else a pom whose `<modules>` lists its folder (`../cards-api` from a
+ * sibling `parent/` folder too), else `../pom.xml`; each only when its own `<artifactId>` is the
+ * one the `<parent>` names (a Spring Boot starter parent is no file of the repo).
+ * `<relativePath/>` says the parent is in a repository: none.
+ */
+export function pomParents(file: string, linesOf: LinesOf, files?: readonly string[]): PomIn[] {
+  const out: PomIn[] = [];
+  const seen = new Set([slash(file)]);
+  let at = slash(file);
+  let lines = linesOf(at);
+  for (let n = 0; n < 6 && lines; n++) {
+    const pom = pomCoordinates(lines);
+    if (!pom.parentArtifact) break;
+    const rel = pom.parentRelativePath?.value.trim();
+    if (rel === "") break;
+    const dir = dirOf(at);
+    const candidates = rel
+      ? [pomTarget(dir, rel)]
+      : [
+          ...(files ? [moduleParentsOf(files, linesOf).get(dir)] : []),
+          ...(dir ? [pomTarget(dir, "..")] : []),
+        ];
+    const want = pom.parentArtifact.value.trim();
+    let found: PomIn | undefined;
+    for (const c of candidates) {
+      if (!c || seen.has(c)) continue;
+      const ls = linesOf(c);
+      if (!ls) continue;
+      const theirs = pomCoordinates(ls);
+      const name = theirs.artifact?.value.trim();
+      if (name !== undefined && !PROPERTY.test(name) && !PROPERTY.test(want) && name !== want)
+        continue;
+      found = { file: c, pom: theirs };
+      break;
+    }
+    if (!found) break;
+    out.push(found);
+    seen.add(found.file);
+    at = found.file;
+    lines = linesOf(at);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------------------------- Gradle
@@ -293,14 +470,20 @@ export interface GradleDependency {
   scope: "compile" | "runtime" | "provided" | "test" | "import";
 }
 
-const QUOTED = `(['"])([^'"\\s]+)\\`;
+/**
+ * A line's configuration: `implementation`, or (review of beta.25) a Kotlin script's string one,
+ * `"implementation"(...)`, which a configuration a plugin adds without an accessor is written as.
+ * Groups: the quoted name (2), else the bare one (3).
+ */
+const CONFIGURATION = `(?:(["'])([A-Za-z]\\w*)\\1\\s*(?=\\()|([A-Za-z]\\w*))`;
 /** `implementation 'g:a:v'`, `api("g:a:v")`, `testImplementation(platform("g:a:v"))`. */
 const GRADLE_DEP = new RegExp(
-  `^\\s*([A-Za-z][\\w]*)\\s*\\(?\\s*(?:(platform|enforcedPlatform)\\s*\\(\\s*)?${QUOTED}3`,
+  `^\\s*${CONFIGURATION}\\s*\\(?\\s*(?:(platform|enforcedPlatform)\\s*\\(\\s*)?(['"])([^'"\\s]+)\\5`,
 );
 /** `implementation group: 'g', name: 'a', version: 'v'`. */
-const GRADLE_MAP_DEP =
-  /^\s*([A-Za-z]\w*)\s*\(?\s*group\s*[:=]\s*(['"])([^'"]+)\2\s*,\s*name\s*[:=]\s*(['"])([^'"]+)\4(?:\s*,\s*version\s*[:=]\s*(['"])([^'"]+)\6)?/;
+const GRADLE_MAP_DEP = new RegExp(
+  `^\\s*${CONFIGURATION}\\s*\\(?\\s*group\\s*[:=]\\s*(['"])([^'"]+)\\4\\s*,\\s*name\\s*[:=]\\s*(['"])([^'"]+)\\6(?:\\s*,\\s*version\\s*[:=]\\s*(['"])([^'"]+)\\8)?`,
+);
 /** Words a line can start with that take a quoted string and are no configuration. */
 const NOT_A_CONFIGURATION = new Set([
   "id",
@@ -358,7 +541,7 @@ const TOOL_CONFIGURATIONS: ReadonlySet<string> = new Set([
 
 /** A tool's configuration a Gradle line starts with (`checkstyle "g:a:v"`), else undefined. */
 export function gradleToolConfigurationOn(line: string): string | undefined {
-  const c = /^\s*([A-Za-z]\w*)\s*[\s(]/.exec(line)?.[1];
+  const c = /^\s*(["']?)([A-Za-z]\w*)\1\s*[\s(]/.exec(line)?.[2];
   return c && TOOL_CONFIGURATIONS.has(c) ? c : undefined;
 }
 
@@ -393,27 +576,29 @@ function scopeOfConfiguration(c: string, platform: boolean): GradleDependency["s
 export function gradleDependencyOn(line: string): GradleDependency | undefined {
   if (gradleToolConfigurationOn(line)) return undefined;
   const map = GRADLE_MAP_DEP.exec(line);
-  if (map && !NOT_A_CONFIGURATION.has(map[1]!)) {
-    if (!COORDINATE.test(map[3]!) || !COORDINATE.test(map[5]!)) return undefined;
+  const mapConf = map ? (map[2] ?? map[3]!) : "";
+  if (map && !NOT_A_CONFIGURATION.has(mapConf)) {
+    if (!COORDINATE.test(map[5]!) || !COORDINATE.test(map[7]!)) return undefined;
     return {
-      configuration: map[1]!,
-      group: map[3]!,
-      name: map[5]!,
-      ...(map[7] ? { version: map[7] } : {}),
-      scope: scopeOfConfiguration(map[1]!, false),
+      configuration: mapConf,
+      group: map[5]!,
+      name: map[7]!,
+      ...(map[9] ? { version: map[9] } : {}),
+      scope: scopeOfConfiguration(mapConf, false),
     };
   }
   const m = GRADLE_DEP.exec(line);
-  if (!m || NOT_A_CONFIGURATION.has(m[1]!)) return undefined;
-  const parts = m[4]!.split(":");
+  const conf = m ? (m[2] ?? m[3]!) : "";
+  if (!m || NOT_A_CONFIGURATION.has(conf)) return undefined;
+  const parts = m[6]!.split(":");
   if (parts.length < 2 || !COORDINATE.test(parts[0]!) || !COORDINATE.test(parts[1]!))
     return undefined;
   return {
-    configuration: m[1]!,
+    configuration: conf,
     group: parts[0]!,
     name: parts[1]!,
     ...(parts[2] ? { version: parts[2] } : {}),
-    scope: scopeOfConfiguration(m[1]!, !!m[2]),
+    scope: scopeOfConfiguration(conf, !!m[4]),
   };
 }
 
@@ -424,6 +609,17 @@ export function gradleDependencyOn(line: string): GradleDependency | undefined {
  * a block opened by a brace on its own line is named by the line before.
  */
 export function gradleBlocks(lines: readonly string[]): string[][] {
+  const held = BLOCKS.get(lines);
+  if (held) return held;
+  const out = readBlocks(lines);
+  BLOCKS.set(lines, out);
+  return out;
+}
+
+/** Review of beta.25: a Gradle build's blocks, held per lines array. */
+const BLOCKS = new WeakMap<readonly string[], string[][]>();
+
+function readBlocks(lines: readonly string[]): string[][] {
   const out: string[][] = [];
   const stack: string[] = [];
   let triple = "";
@@ -633,18 +829,18 @@ export interface GradleCatalogUse {
 
 /** The catalog alias a Gradle build line declares a dependency by, or undefined. */
 export function gradleCatalogUseOn(line: string): GradleCatalogUse | undefined {
-  const m =
-    /^\s*([A-Za-z]\w*)\s*\(?\s*(?:(platform|enforcedPlatform)\s*\(\s*)?([A-Za-z]\w*)\.([A-Za-z][\w.]*?)\s*\)?\s*\)?\s*(?:\{.*)?(?:\/\/.*)?\r?$/.exec(
-      line,
-    );
-  if (!m || NOT_A_CONFIGURATION.has(m[1]!) || TOOL_CONFIGURATIONS.has(m[1]!)) return undefined;
+  const m = new RegExp(
+    `^\\s*${CONFIGURATION}\\s*\\(?\\s*(?:(platform|enforcedPlatform)\\s*\\(\\s*)?([A-Za-z]\\w*)\\.([A-Za-z][\\w.]*?)\\s*\\)?\\s*\\)?\\s*(?:\\{.*)?(?:\\/\\/.*)?\\r?$`,
+  ).exec(line);
+  const conf = m ? (m[2] ?? m[3]!) : "";
+  if (!m || NOT_A_CONFIGURATION.has(conf) || TOOL_CONFIGURATIONS.has(conf)) return undefined;
   // a bundle is several libraries, a plugin or a version no dependency
-  if (/^(bundles|plugins|versions)\./.test(m[4]!) || m[3] === "project") return undefined;
+  if (/^(bundles|plugins|versions)\./.test(m[6]!) || m[5] === "project") return undefined;
   return {
-    configuration: m[1]!,
-    catalog: m[3]!,
-    accessor: m[4]!,
-    scope: scopeOfConfiguration(m[1]!, !!m[2]),
+    configuration: conf,
+    catalog: m[5]!,
+    accessor: m[6]!,
+    scope: scopeOfConfiguration(conf, !!m[4]),
   };
 }
 
@@ -683,6 +879,45 @@ export function gradleProjectsOn(line: string): GradleProject[] {
     name: m[2]!.split(":").pop()!,
   }));
 }
+
+/** A subproject settings.gradle includes or renames, with the line that names it (1-based). */
+export interface GradleProjectAt extends GradleProject {
+  line: number;
+}
+
+/**
+ * Review of beta.25: every subproject settings.gradle(.kts) includes, an `include` over several
+ * lines too (Kotlin's `include(\n ":a",\n ":b"\n)`, Groovy's `include 'a',\n 'b'`), each with
+ * the line its name is on, and every `project(':x').name = 'y'` rename. Held per lines array.
+ */
+export function gradleProjects(lines: readonly string[]): GradleProjectAt[] {
+  const held = PROJECTS.get(lines);
+  if (held) return held;
+  const out: GradleProjectAt[] = [];
+  let open: "" | "paren" | "comma" = "";
+  const names = (text: string, line: number) => {
+    for (const m of text.matchAll(/(['"]):?([^'"]+)\1/g))
+      out.push({ path: m[2]!, name: m[2]!.split(":").pop()!, line });
+  };
+  lines.forEach((raw, i) => {
+    const code = raw.replace(/\r$/, "").replace(/\s\/\/.*$|^\s*\/\/.*$/, "");
+    if (open) {
+      names(code, i + 1);
+      if (open === "paren" ? code.includes(")") : !/,\s*$/.test(code)) open = "";
+      return;
+    }
+    const rename = gradleProjectsOn(code);
+    if (rename.length && rename[0]!.renamed) return void out.push({ ...rename[0]!, line: i + 1 });
+    const inc = /^\s*include(?!\w)\s*(\(?)\s*(.*)$/.exec(code);
+    if (!inc) return;
+    names(inc[2]!, i + 1);
+    if (inc[1] === "(" && !inc[2]!.includes(")")) open = "paren";
+    else if (inc[1] !== "(" && /,\s*$/.test(inc[2]!)) open = "comma";
+  });
+  PROJECTS.set(lines, out);
+  return out;
+}
+const PROJECTS = new WeakMap<readonly string[], GradleProjectAt[]>();
 
 /** A subproject's folder (`a:b` → `a/b`), or the one settings.gradle sets for it. */
 function projectDirs(settings: readonly string[] | undefined): Map<string, string> {
@@ -730,14 +965,22 @@ const settingsOf = (linesOf: LinesOf) => {
 
 /** The module of the repo a build file is the build of (ADR 0192 addendum). */
 export interface BuildModule {
-  /** Its folder in the repo. */
+  /** Its folder in the repo (`""` for the repo's own component). */
   path: string;
-  /** The component its facts belong to: the manifest's, else its folder's name. */
-  component: string;
-  /** The names a fact may give it: the manifest's component, or its folder's and its own name. */
+  /**
+   * The component its facts belong to: the manifest module's, else the repo's own. Left out on a
+   * root Gradle build's `subprojects { }` line that is several components' dependency (`every`).
+   */
+  component?: string;
+  /** The names a fact may give it: the component's, or each component `every` line is of. */
   names: string[];
-  /** Where it was read: the manifest's `modules`, or a parent build's modules. */
-  from: "manifest" | "build";
+  /**
+   * Where it was read: a module repos.manifest.yaml lists, or (review of beta.25) the repo's own
+   * component, which every build file is of when the manifest lists no module of the repo.
+   */
+  from: "manifest" | "repo";
+  /** Review of beta.25: a root build's `subprojects { }` line, each of `names`' dependency. */
+  every?: true;
 }
 
 /**
@@ -749,6 +992,28 @@ function buildLineOf(f: Coordinates): { file: string; line: number } | undefined
   return (f.cite.with ?? []).find((p) => isGradleBuildFile(p.file));
 }
 
+/** A repo's settings.gradle and its subprojects' folders, read once per lines-reading function. */
+interface GradleEnv {
+  settings?: { file: string; lines: readonly string[] };
+  dirs: Map<string, string>;
+  projects: GradleProjectAt[];
+}
+const ENVS = new WeakMap<LinesOf, GradleEnv>();
+function gradleEnvOf(linesOf: LinesOf): GradleEnv {
+  const held = ENVS.get(linesOf);
+  if (held) return held;
+  const settings = settingsOf(linesOf);
+  const env: GradleEnv = {
+    ...(settings ? { settings } : {}),
+    dirs: projectDirs(settings?.lines),
+    projects: settings ? gradleProjects(settings.lines) : [],
+  };
+  ENVS.set(linesOf, env);
+  return env;
+}
+const projectDirOf = (env: GradleEnv, project: string) =>
+  env.dirs.get(project) ?? project.replace(/:/g, "/");
+
 /** A Gradle subproject's path from the line it's cited on, in settings.gradle or a root build. */
 function gradleProjectOf(
   f: Coordinates,
@@ -758,7 +1023,7 @@ function gradleProjectOf(
   const lines = linesOf(at.file);
   if (!lines) return undefined;
   if (isGradleSettingsFile(at.file)) {
-    const ps = gradleProjectsOn(lines[at.line - 1] ?? "");
+    const ps = gradleProjects(lines).filter((p) => p.line === at.line);
     return ps.find((p) => p.name === f.name)?.path ?? (ps.length === 1 ? ps[0]!.path : undefined);
   }
   if (f.kind === "dependency" && isGradleBuildFile(at.file)) {
@@ -769,82 +1034,88 @@ function gradleProjectOf(
 }
 
 /**
- * The module a coordinates fact's build file is the build of, from the folder the file is in
- * (or, for a Gradle subproject named in settings.gradle or a root build's `project(':x') { }`,
- * the subproject's folder): the manifest's module of that folder, else a module a parent pom's
- * `<modules>` or settings.gradle's `include` lists. Undefined for the repo's own build (its root)
- * or a folder no build lists: the fact's component is then the repo's, or what it says.
+ * The module a coordinates fact's build file is the build of (review of beta.25): the module of
+ * repos.manifest.yaml whose folder holds the file (or, for a Gradle subproject named in
+ * settings.gradle or a root build's `project(':x') { }`, the subproject's folder), else the repo's
+ * own component (`repoComponent`, the manifest's). A repo whose manifest entry lists no modules
+ * ships as that one component, every build file in it its own: a component is never made from a
+ * folder's name, so a multi-module build that ships as one service is drawn as that service. A
+ * root Gradle build's `subprojects { dependencies { } }` (or `allprojects`) line is each
+ * project's: one component when they are all of one, else `every` with each of their names.
+ * Undefined when neither the manifest's modules nor the repo's component is known.
  */
 export function buildModuleOf(
   f: Coordinates,
   linesOf: LinesOf,
   modules: readonly { path: string; component: string }[] = [],
+  repoComponent?: string,
 ): BuildModule | undefined {
+  const listed = modules
+    .map((m) => ({ path: normDir(m.path), component: m.component }))
+    .filter((m) => m.path)
+    .sort((a, b) => b.path.length - a.path.length);
+  const repo = (): BuildModule | undefined =>
+    repoComponent
+      ? { path: "", component: repoComponent, names: [repoComponent], from: "repo" }
+      : undefined;
+  const of = (dir: string): BuildModule | undefined => {
+    const m = listed.find((x) => dir === x.path || dir.startsWith(`${x.path}/`));
+    return m
+      ? { path: m.path, component: m.component, names: [m.component], from: "manifest" }
+      : repo();
+  };
   const at = buildLineOf(f);
-  if (!at) return undefined;
-  const settings = settingsOf(linesOf);
-  const dirs = projectDirs(settings?.lines);
-  const project = gradleProjectOf(f, at, linesOf);
-  const dir =
-    project !== undefined ? (dirs.get(project) ?? project.replace(/:/g, "/")) : dirOf(at.file);
-  if (!dir) return undefined;
-  const manifest = modules.find((m) => normDir(m.path) === dir);
-  if (manifest)
-    return {
-      path: dir,
-      component: manifest.component,
-      names: [manifest.component],
-      from: "manifest",
-    };
-  const base = dir.split("/").pop()!;
-  // A parent pom's <modules>, from the nearest folder up.
-  const parts = dir.split("/");
-  for (let n = parts.length - 1; n >= 0; n--) {
-    const up = parts.slice(0, n).join("/");
-    const pomLines = linesOf(up ? `${up}/pom.xml` : "pom.xml");
-    if (!pomLines) continue;
-    if (!pomCoordinates(pomLines).modules.some((m) => joinDir(up, m.value) === dir)) continue;
-    const own = linesOf(`${dir}/pom.xml`);
-    const name = own ? pomCoordinates(own).artifact?.value : undefined;
-    return {
-      path: dir,
-      component: base,
-      names: [...new Set([base, ...(name && !PROPERTY.test(name) ? [name] : [])])],
-      from: "build",
-    };
-  }
-  // settings.gradle's include.
-  if (settings) {
-    const projects = settings.lines.flatMap(gradleProjectsOn);
-    const p = projects.find(
-      (x) => !x.renamed && (dirs.get(x.path) ?? x.path.replace(/:/g, "/")) === dir,
-    );
-    if (p) {
-      const renamed = projects.find((x) => x.renamed && x.path === p.path)?.name;
-      return {
-        path: dir,
-        component: base,
-        names: [...new Set([base, p.name, ...(renamed ? [renamed] : [])])],
-        from: "build",
-      };
+  if (!at) return repo();
+  if (!listed.length) return repo();
+  const env = gradleEnvOf(linesOf);
+  // A root build's subprojects { } or allprojects { } dependency: every project's it is in.
+  if (f.kind === "dependency" && isGradleBuildFile(at.file) && dirOf(at.file) === "") {
+    const lines = linesOf(at.file);
+    const stack = lines ? (gradleBlocks(lines)[at.line - 1] ?? []) : [];
+    const sub = stack.includes("subprojects");
+    const all = stack.includes("allprojects");
+    if ((sub || all) && !stack.some((b) => projectOf(b) !== undefined)) {
+      const dirs = env.projects.length
+        ? env.projects.filter((p) => !p.renamed).map((p) => projectDirOf(env, p.path))
+        : listed.map((m) => m.path);
+      const mods = [...(all ? [""] : []), ...dirs].flatMap((d) => {
+        const m = of(d);
+        return m ? [m] : [];
+      });
+      const names = [...new Set(mods.map((m) => m.component!))].sort();
+      if (names.length === 1) return mods.find((m) => m.component === names[0])!;
+      if (names.length > 1) return { path: "", names, from: "manifest", every: true };
+      return repo();
     }
   }
-  return undefined;
+  const project = gradleProjectOf(f, at, linesOf);
+  return of(project !== undefined ? projectDirOf(env, project) : dirOf(at.file));
 }
 
 /**
  * Why a coordinates fact's `component` isn't the module whose build file it cites, or undefined
  * when it is, or when the file is no module's (ADR 0192 addendum). A fact that names none is
- * given the module's (`buildModuleOf(...).component`) by the verifier.
+ * given the manifest module's (`buildModuleOf(...).component`) by the verifier, or is the repo's.
  */
 export function buildModuleProblem(
   f: Coordinates,
   mod: BuildModule | undefined,
 ): string | undefined {
-  if (!mod || f.component === undefined) return undefined;
+  if (!mod) return undefined;
+  if (mod.every) {
+    const names = mod.names.join(", ");
+    if (f.component === undefined)
+      return `${f.kind} ${f.id} cites ${f.cite.file}:${f.cite.line}, a dependency every subproject's build takes (components ${names}): write one dependency fact for each, each naming its component`;
+    const c = factIdPart(f.component);
+    if (mod.names.some((n) => factIdPart(n) === c)) return undefined;
+    return `${f.kind} ${f.id} names component "${f.component}", and ${f.cite.file}:${f.cite.line} is a dependency of every subproject (components ${names}): name one of them`;
+  }
+  if (f.component === undefined) return undefined;
   const c = factIdPart(f.component);
   if (mod.names.some((n) => factIdPart(n) === c)) return undefined;
-  return `${f.kind} ${f.id} names component "${f.component}", and ${f.cite.file} is the build file of module ${mod.component} (${mod.path}/, ${mod.from === "manifest" ? "repos.manifest.yaml's modules" : "a module its parent build lists"}): a dependency belongs to the module whose build file declares it; name ${mod.component}, or leave component out`;
+  if (mod.from === "repo")
+    return `${f.kind} ${f.id} names component "${f.component}", and ${f.cite.file} is a build file of ${mod.component} (repos.manifest.yaml lists no module of the repo there, so it ships as ${mod.component}): a module is a component only when the manifest lists it; name ${mod.component}, or leave component out`;
+  return `${f.kind} ${f.id} names component "${f.component}", and ${f.cite.file} is the build file of module ${mod.component} (${mod.path}/, repos.manifest.yaml's modules): a dependency belongs to the module whose build file declares it; name ${mod.component}, or leave component out`;
 }
 
 // ------------------------------------------------------------------------------------- checks
@@ -861,13 +1132,27 @@ const citedLine = (f: Fact, file: string, line: number) =>
  * entry or a plugin's); the line that writes the group must be cited too, and say the same; a
  * dependency's scope must be the one declared.
  */
-export function buildCoordinatesProblem(f: Coordinates, linesOf: LinesOf): string | undefined {
+export function buildCoordinatesProblem(
+  f: Coordinates,
+  linesOf: LinesOf,
+  /**
+   * Review of beta.25: the repo's files, so a parent pom is found through a `<modules>` list
+   * (`../cards-api`) and a pom a `<relativePath>` names (`parent/parent.xml`) is read as one.
+   */
+  files?: readonly string[],
+): string | undefined {
   const file = f.cite.file;
   const label = `${f.kind} ${f.id}`;
   const lines = linesOf(file);
   if (!lines) return undefined; // the line check says the file is missing
   const where = `${file}:${f.cite.line}`;
-  if (isPomFile(file)) return pomProblem(f, label, where, pomCoordinates(lines));
+  const named = files ? pomFilesNamed(files, linesOf) : undefined;
+  if (isPomFileIn(file, named))
+    return pomProblem(f, label, where, {
+      file,
+      pom: pomCoordinates(lines),
+      parents: pomParents(file, linesOf, files),
+    });
   if (isGradleFile(file)) return gradleProblem(f, label, where, lines, linesOf);
   return `${label} cites ${file}, which is no build file Atticus reads coordinates from: cite the pom.xml, build.gradle or settings.gradle line that writes them`;
 }
@@ -876,38 +1161,67 @@ export function buildCoordinatesProblem(f: Coordinates, linesOf: LinesOf): strin
  * A pom value resolved, the line that writes it cited, or what is wrong: `what` says the value
  * in words (`the project's <groupId>`).
  */
+/** A pom being checked: its path, its reading and its parent poms in the repo (nearest first). */
+interface PomContext {
+  file: string;
+  pom: PomCoordinates;
+  parents: readonly PomIn[];
+}
+
 function pomValue(
   f: Coordinates,
   label: string,
   file: string,
   at: At,
-  pom: PomCoordinates,
+  ctx: PomContext,
   what: string,
 ): { value: string } | { problem: string } {
-  const r = resolvePomValue(at, pom);
+  const r = resolvePomValue(at, ctx.pom, { file: ctx.file, parents: ctx.parents });
   if ("missing" in r)
     return {
-      problem: `${label}: ${what} at ${file}:${at.line} is \${${r.missing}}, which no <properties> entry or <parent> of ${file} sets: Atticus can't say what it resolves to`,
+      problem: `${label}: ${what} at ${file}:${at.line} is \${${r.missing}}, which no <properties> entry or <parent> of ${file}${ctx.parents.length ? ` or of its parent poms (${ctx.parents.map((p) => p.file).join(", ")})` : ""} sets: Atticus can't say what it resolves to`,
     };
-  const uncited = (r.via ?? []).find((l) => !citedLine(f, file, l));
+  const uncited = (r.via ?? []).find((l) => !citedLine(f, l.file, l.line));
   if (uncited !== undefined)
     return {
-      problem: `${label}: ${what} at ${file}:${at.line} is ${at.value}, written as "${r.value}" through ${file}:${uncited}; cite that line in cite.with`,
+      problem: `${label}: ${what} at ${file}:${at.line} is ${at.value}, written as "${r.value}" through ${uncited.file}:${uncited.line}; cite that line in cite.with`,
     };
   return { value: r.value };
 }
+
+/** A pom's dependency whose `<artifactId>` is on a line, found by the line (held per pom). */
+const DEPS = new WeakMap<PomCoordinates, Map<number, PomDependency>>();
+function dependencyOnLine(pom: PomCoordinates, line: number): PomDependency | undefined {
+  let byLine = DEPS.get(pom);
+  if (!byLine) {
+    byLine = new Map();
+    for (const d of pom.dependencies)
+      if (d.artifact && !byLine.has(d.artifact.line)) byLine.set(d.artifact.line, d);
+    DEPS.set(pom, byLine);
+  }
+  return byLine.get(line);
+}
+
+/**
+ * A pom's declared scope as the facts schema takes it: Maven's `system` (a jar from a path on the
+ * machine, compiled against and never packaged) is recorded as `provided`, which is how it is
+ * drawn (review of beta.25: the facts schema stays at version 5).
+ */
+export const pomScopeOf = (declared: string | undefined): string =>
+  declared === undefined ? "compile" : declared.trim() === "system" ? "provided" : declared.trim();
 
 function pomProblem(
   f: Coordinates,
   label: string,
   where: string,
-  pom: PomCoordinates,
+  ctx: PomContext,
 ): string | undefined {
+  const pom = ctx.pom;
   const line = f.cite.line;
   const file = f.cite.file;
   if (f.kind === "artifact") {
     if (pom.artifact?.line !== line) {
-      const dep = pom.dependencies.find((d) => d.artifact?.line === line);
+      const dep = dependencyOnLine(pom, line);
       const what = dep
         ? `a dependency's <artifactId> (${dep.artifact!.value})`
         : pom.parentArtifact?.line === line
@@ -915,7 +1229,7 @@ function pomProblem(
           : "not the project's own <artifactId>";
       return `${label} says ${where} is the coordinates the build publishes, and that line is ${what}${pom.artifact ? `: the project's own is at line ${pom.artifact.line}` : ""}`;
     }
-    const name = pomValue(f, label, file, pom.artifact, pom, "the project's <artifactId>");
+    const name = pomValue(f, label, file, pom.artifact, ctx, "the project's <artifactId>");
     if ("problem" in name) return name.problem;
     if (name.value !== f.name)
       return `${label} names "${f.name}", and ${where} writes the project's artifactId as "${name.value}"`;
@@ -923,7 +1237,7 @@ function pomProblem(
     if (!at)
       return `${label} names group "${f.group}", and ${file} writes no groupId of the project or its <parent>`;
     const inherited = pom.group ? "" : " (the <parent>'s, which the project inherits)";
-    const group = pomValue(f, label, file, at, pom, `the group${inherited}`);
+    const group = pomValue(f, label, file, at, ctx, `the group${inherited}`);
     if ("problem" in group) return group.problem;
     if (group.value !== f.group)
       return `${label} names group "${f.group}", and ${file}:${at.line} writes "${group.value}"${inherited}`;
@@ -931,7 +1245,7 @@ function pomProblem(
       return `${label}: the group is written at ${file}:${at.line}${pom.group ? "" : " (the <parent>'s)"}; cite that line in cite.with`;
     return undefined;
   }
-  const dep = pom.dependencies.find((d) => d.artifact?.line === line);
+  const dep = dependencyOnLine(pom, line);
   if (!dep) {
     const what =
       pom.artifact?.line === line
@@ -945,20 +1259,20 @@ function pomProblem(
     return `${label} cites ${where}, a <dependencyManagement> entry, which only pins a version: cite the dependency where <dependencies> declares it`;
   if (dep.plugin)
     return `${label} cites ${where}, a dependency of a build plugin, not of the component: leave it out`;
-  const name = pomValue(f, label, file, dep.artifact!, pom, "the dependency's <artifactId>");
+  const name = pomValue(f, label, file, dep.artifact!, ctx, "the dependency's <artifactId>");
   if ("problem" in name) return name.problem;
   if (name.value !== f.name)
     return `${label} names "${f.name}", and ${where} declares "${name.value}"`;
   if (!dep.group) return `${label}: the <dependency> at ${where} writes no <groupId>`;
-  const group = pomValue(f, label, file, dep.group, pom, "the dependency's <groupId>");
+  const group = pomValue(f, label, file, dep.group, ctx, "the dependency's <groupId>");
   if ("problem" in group) return group.problem;
   if (group.value !== f.group)
     return `${label} names group "${f.group}", and the <dependency> at ${where} writes "${dep.group.value}"${group.value !== dep.group.value ? ` (${group.value})` : ""}`;
   if (!citedLine(f, file, dep.group.line))
     return `${label}: the dependency's group is written at ${file}:${dep.group.line}; cite that line in cite.with`;
-  const declared = dep.scope?.value ?? "compile";
+  const declared = pomScopeOf(dep.scope?.value);
   if (declared !== (f.scope ?? "compile"))
-    return `${label} says scope ${f.scope ?? "compile"}, and the <dependency> at ${where} declares ${declared}${dep.scope ? ` (${file}:${dep.scope.line})` : ""}`;
+    return `${label} says scope ${f.scope ?? "compile"}, and the <dependency> at ${where} declares ${dep.scope?.value.trim() === "system" ? "system, which is recorded as provided" : declared}${dep.scope ? ` (${file}:${dep.scope.line})` : ""}`;
   return undefined;
 }
 
@@ -997,17 +1311,16 @@ function gradleProblem(
     if (root !== undefined) {
       if (root !== f.name) return `${label} names "${f.name}", and ${where} sets "${root}"`;
     } else {
-      const ps = gradleProjectsOn(text);
+      const all = gradleProjects(lines);
+      const ps = all.filter((x) => x.line === f.cite.line);
       if (!ps.length)
         return `${label} says ${where} is the coordinates the build publishes, and that line sets no project name: cite rootProject.name, an include, or a project(':x').name line`;
       const p = ps.find((x) => x.name === f.name);
       if (!p)
         return `${label} names "${f.name}", and ${where} names ${ps.map((x) => `"${x.name}"`).join(", ")}`;
-      const renamed = lines
-        .map((l, i) => ({ p: gradleProjectsOn(l)[0], line: i + 1 }))
-        .find((x) => x.p?.renamed && x.p.path === p.path);
+      const renamed = all.find((x) => x.renamed && x.path === p.path);
       if (!p.renamed && renamed)
-        return `${label} names "${f.name}", and ${file}:${renamed.line} names that project "${renamed.p!.name}": cite that line`;
+        return `${label} names "${f.name}", and ${file}:${renamed.line} names that project "${renamed.name}": cite that line`;
       project = p.path;
     }
   } else {
@@ -1127,7 +1440,10 @@ export function buildUnrecorded(
   files: readonly string[],
   linesOf: LinesOf,
   kept: readonly Fact[],
+  /** Review of beta.25: the repo's files, for the parent poms a `<relativePath>` names. */
+  all?: readonly string[],
 ): BuildUnrecorded[] {
+  const named = all ? pomFilesNamed(all, linesOf) : undefined;
   const cited = new Set(
     kept
       .filter((f) => f.kind === "artifact" || f.kind === "dependency")
@@ -1140,11 +1456,12 @@ export function buildUnrecorded(
   for (const file of [...files].sort()) {
     const lines = linesOf(file);
     if (!lines) continue;
-    if (isPomFile(file)) {
+    if (isPomFileIn(file, named)) {
       const pom = pomCoordinates(lines);
+      const parents = pomParents(file, linesOf, all);
       const said = (at: At | undefined) => {
         if (!at) return "?";
-        const r = resolvePomValue(at, pom);
+        const r = resolvePomValue(at, pom, { file, parents });
         return "value" in r ? r.value : at.value;
       };
       if (pom.artifact)

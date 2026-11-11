@@ -5326,6 +5326,11 @@ export const COPY = {
       factsFailed: (why: string) => `Couldn't read the depending repo's facts: ${why}`,
       will: (from: string, to: string) =>
         `The dependency is left out: ${from} no longer depends on ${to} once atticus verify runs with --write, unless another line of its build declares it.`,
+      // Review of beta.25: the lines chosen are corrected in one write, all or none.
+      savedAll: (n: number, files: string) =>
+        `Written ${n} correction${n === 1 ? "" : "s"} to ${files}, in one go.`,
+      alreadyAll: "Every one of these corrections is on file already, so nothing new was written.",
+      skippedAll: (n: number) => `${n} ${n === 1 ? "was" : "were"} on file already.`,
     },
     // C2: this link is wrong
     wrong: "This link is wrong",

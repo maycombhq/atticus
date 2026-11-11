@@ -468,6 +468,47 @@ describe("every call on an arrow, all or none", () => {
     expect(await text("forge-teller")).toBeUndefined();
   });
 
+  it("marks a depends-on link's every dependency fact wrong in one batch, or none of them (beta.25)", async () => {
+    const LIB = join(import.meta.dirname, "../../../fixtures/library-deps/facts");
+    await writeFile(
+      join(r2, "facts/forge-wallets.jsonl"),
+      readFileSync(join(LIB, "forge-wallets.jsonl"), "utf8"),
+    );
+    const deps = [
+      {
+        repo: "forge-wallets",
+        fact: "dependency.wallets-api.forge-payments-common",
+        action: "wrong",
+      },
+      {
+        repo: "forge-wallets",
+        fact: "dependency.wallets-batch.forge-payments-common",
+        action: "wrong",
+      },
+    ];
+    // a fact not on file: refused before anything is written
+    const missing = await call2({
+      items: [...deps, { repo: "forge-wallets", fact: "dependency.nobody", action: "wrong" }],
+      reason: "a fork",
+    });
+    expect(missing.status).toBe(404);
+    expect(await text("forge-wallets")).toBeUndefined();
+    // the write fails: nothing is left written
+    failOn = (f) => f.endsWith("forge-wallets.corrections.jsonl");
+    const failed = await call2({ items: deps, reason: "a fork" });
+    failOn = () => false;
+    expect(failed.status).toBe(500);
+    expect(failed.body).toMatchObject({ written: [] });
+    expect(await text("forge-wallets")).toBeUndefined();
+    // and when it can be written, both lines in one write
+    const ok = await call2({ items: deps, reason: "a fork" });
+    expect(ok.status).toBe(200);
+    const lines = (await text("forge-wallets"))!.trim().split("\n");
+    expect(lines.map((l) => (JSON.parse(l) as { fact: string; action: string }).fact)).toEqual(
+      deps.map((d) => d.fact),
+    );
+  });
+
   it("writes none when a repo's corrections file can't be read", async () => {
     await writeFile(join(r2, "facts/forge-ledger.corrections.jsonl"), "");
     // A folder stands where forge-teller's corrections file goes.

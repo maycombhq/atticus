@@ -168,26 +168,26 @@ describe("a pom's ${property} resolved, its line cited (beta.25)", () => {
     ).toBeUndefined();
     expect(
       buildCoordinatesProblem(
-        dependency({ scope: "system", cite: cite(19, "${common.name}", 18, 6, 9, 10, 20) }),
+        dependency({ scope: "provided", cite: cite(19, "${common.name}", 18, 6, 9, 10, 20) }),
         linesOf,
       ),
     ).toBeUndefined();
     // the property's own line left out
     expect(
       buildCoordinatesProblem(
-        dependency({ scope: "system", cite: cite(19, "${common.name}", 18, 6, 9, 20) }),
+        dependency({ scope: "provided", cite: cite(19, "${common.name}", 18, 6, 9, 20) }),
         linesOf,
       ),
     ).toContain("pom.xml:10; cite that line in cite.with");
   });
 
-  it("records a system scope as declared, and refuses a property the pom doesn't set", () => {
+  it("records a system scope as provided (facts version 5), and refuses a property the pom doesn't set", () => {
     expect(
       buildCoordinatesProblem(
         dependency({ cite: cite(19, "${common.name}", 18, 6, 9, 10) }),
         linesOf,
       ),
-    ).toContain("declares system");
+    ).toContain("declares system, which is recorded as provided");
     expect(
       buildCoordinatesProblem(
         dependency({ name: "forge-y", cite: cite(24, "forge-y", 23) }),
@@ -267,7 +267,21 @@ describe("a Gradle build read with its blocks (beta.25)", () => {
 
 describe("a multi-project Gradle library's subprojects publish (beta.25)", () => {
   const source = dirSource(join(FIX, "repos", "forge-payments-kit"));
-  const run = (facts: Fact[]) => verifyFacts({ facts, source, commit: "1111aaa" });
+  const run = (facts: Fact[], modules?: { path: string; component: string }[]) =>
+    verifyFacts({
+      facts,
+      source,
+      commit: "1111aaa",
+      estate: {
+        components: ["forge-payments-kit", ...(modules ?? []).map((m) => m.component)],
+        repoComponent: { "forge-payments-kit": "forge-payments-kit" },
+        ...(modules ? { modules: { "forge-payments-kit": modules } } : {}),
+      },
+    });
+  const MODULES = [
+    { path: "kit-core", component: "kit-core" },
+    { path: "kit-batch", component: "kit-batch" },
+  ];
   const g = { file: "build.gradle", line: 11, value: "forge.payments" };
   const kit = (o: Partial<FactOf<"artifact">> & Pick<Fact, "cite" | "id">) =>
     ({
@@ -292,10 +306,11 @@ describe("a multi-project Gradle library's subprojects publish (beta.25)", () =>
       }),
     ]);
     expect(r.rejected.map((x) => x.message)).toEqual([]);
-    // each is its subproject's, named by its folder when the fact names none
+    // review of beta.25: the manifest lists no module of the repo, so both are the repo's own
+    // component (never one named for a subproject's folder)
     expect(r.accepted.map((f) => [f.id, f.component])).toEqual([
-      ["artifact.kit-batch", "kit-batch"],
-      ["artifact.kit-core", "kit-core"],
+      ["artifact.kit-batch", undefined],
+      ["artifact.kit-core", undefined],
     ]);
   });
 
@@ -343,11 +358,14 @@ describe("a multi-project Gradle library's subprojects publish (beta.25)", () =>
       value: "com.northwind.sdk:northwind-pay-client:2.1.0",
       quote: line(n),
     });
-    const r = await run([
-      dep({ id: "dependency.constraint", cite: at(31) }),
-      dep({ id: "dependency.batch", scope: "test", cite: at(43) }),
-      dep({ id: "dependency.wrong-module", component: "kit-core", scope: "test", cite: at(43) }),
-    ]);
+    const r = await run(
+      [
+        dep({ id: "dependency.constraint", cite: at(31) }),
+        dep({ id: "dependency.batch", scope: "test", cite: at(43) }),
+        dep({ id: "dependency.wrong-module", component: "kit-core", scope: "test", cite: at(43) }),
+      ],
+      MODULES,
+    );
     expect(r.rejected.map((x) => [x.fact.id, x.code])).toEqual([
       ["dependency.constraint", "build-coordinates"],
       ["dependency.wrong-module", "build-coordinates"],
@@ -370,18 +388,30 @@ describe("a module's build facts are its module's (beta.25)", () => {
   const source = dirSource(join(FIX, "repos", "forge-wallets"));
   const wallets = factsOf("forge-wallets");
   const id = "dependency.wallets-api.forge-payments-common";
+  // repos.manifest.yaml's forge-wallets: its two modules
+  const estate = {
+    components: ["wallets-api", "wallets-batch"],
+    repoComponent: { "forge-wallets": "wallets-api" },
+    modules: {
+      "forge-wallets": [
+        { path: "wallets-api", component: "wallets-api" },
+        { path: "wallets-batch", component: "wallets-batch" },
+      ],
+    },
+  };
 
   it("refuses a dependency of wallets-api's pom claimed for wallets-batch", async () => {
     const r = await verifyFacts({
       facts: wallets.map((f) => (f.id === id ? ({ ...f, component: "wallets-batch" } as Fact) : f)),
       source,
       commit: "2222bbb",
+      estate,
     });
     expect(r.rejected.map((x) => [x.fact.id, x.code])).toEqual([[id, "build-coordinates"]]);
     expect(r.rejected[0]!.message).toContain("module wallets-api");
   });
 
-  it("gives a fact that names no component its build file's module", async () => {
+  it("gives a fact that names no component its build file's module, as the manifest lists it", async () => {
     const r = await verifyFacts({
       facts: wallets.map((f) => {
         if (f.id !== id) return f;
@@ -390,6 +420,7 @@ describe("a module's build facts are its module's (beta.25)", () => {
       }),
       source,
       commit: "2222bbb",
+      estate,
     });
     expect(r.rejected).toEqual([]);
     expect(r.accepted.find((f) => f.id === id)?.component).toBe("wallets-api");

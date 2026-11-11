@@ -63,6 +63,95 @@ export function newerFactOf(json: unknown, line?: number): NewerFact | undefined
   };
 }
 
+/** A field's name as Atticus writes them (`authCite`), and an enum's value (`system`, `ai-run`). */
+const FIELD_NAME = /^[a-z][A-Za-z0-9]*$/;
+const ENUM_VALUE = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+
+/** The fields a kind's facts have, its citation's too: what a slip of a letter is measured from. */
+const FIELDS = new Map<string, readonly string[]>();
+function fieldsOf(kind: string): readonly string[] {
+  const held = FIELDS.get(kind);
+  if (held) return held;
+  const option = Fact.options.find((o) => o.shape.kind.safeParse(kind).success);
+  const out = [...Object.keys(option?.shape ?? {}), "file", "line", "value", "quote", "with"];
+  FIELDS.set(kind, out);
+  return out;
+}
+
+/** Whether two names are at most two letters apart (an edit distance of 2 or less). */
+function near(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 2) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(
+        prev[j]! + 1,
+        row[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    prev = row;
+  }
+  return prev[b.length]! <= 2;
+}
+
+/** A field name a letter or two from one the kind has: a slip, never a newer Atticus's field. */
+const nearFieldOf = (kind: string, key: string) =>
+  key.length > 3 &&
+  fieldsOf(kind).some((f) => f !== key && near(f.toLowerCase(), key.toLowerCase()));
+
+const valueAt = (json: unknown, path: readonly PropertyKey[]): unknown => {
+  let at: unknown = json;
+  for (const k of path) {
+    if (!at || typeof at !== "object") return undefined;
+    at = (at as Record<PropertyKey, unknown>)[k];
+  }
+  return at;
+};
+
+/**
+ * Review of beta.25: a fact of a kind this Atticus knows that a newer Atticus wrote: every reason
+ * it doesn't read is a field this Atticus doesn't know (a name as Atticus writes them) or a value
+ * of one of its lists it doesn't know (a lowercase word, as `scope: "shaded"`). Said as such, so
+ * the fact is left out on its own and kept as written; anything else wrong is a wrong fact.
+ */
+export function newerShapeOf(
+  json: unknown,
+  issues: readonly z.core.$ZodIssue[],
+  line?: number,
+): NewerFact | undefined {
+  if (!json || typeof json !== "object" || Array.isArray(json) || !issues.length) return undefined;
+  const { kind, id } = json as { kind?: unknown; id?: unknown };
+  if (typeof kind !== "string" || typeof id !== "string" || !KNOWN_KINDS.has(kind))
+    return undefined;
+  const said: string[] = [];
+  for (const i of issues) {
+    const where = i.path.map(String).join(".");
+    // a name a letter or two from one this kind has (`pathh`) is a slip, not a newer field
+    const near = i.code === "unrecognized_keys" && i.keys.some((k) => nearFieldOf(kind, k));
+    if (
+      i.code === "unrecognized_keys" &&
+      !near &&
+      i.keys.length &&
+      i.keys.every((k) => FIELD_NAME.test(k))
+    )
+      said.push(
+        ...i.keys.map((k) => `field ${where ? `${where}.` : ""}${k} is new to the ${kind} fact`),
+      );
+    else if (i.code === "invalid_value") {
+      const v = valueAt(json, i.path);
+      if (typeof v !== "string" || !ENUM_VALUE.test(v)) return undefined;
+      said.push(`${where} "${v}" is a value this Atticus doesn't know`);
+    } else return undefined;
+  }
+  return {
+    ...(line !== undefined ? { line } : {}),
+    factId: id,
+    kind,
+    message: `fact ${id} is written by a newer Atticus (${said.join("; ")}); install it to read this fact`,
+  };
+}
+
 export function parseFacts(text: string): ParseFactsResult {
   const trimmed = text.trim();
   const facts: Fact[] = [];
@@ -83,6 +172,7 @@ export function parseFacts(text: string): ParseFactsResult {
       if (n) return void newer.push(n);
       const r = Fact.safeParse(normalizeFactPaths(item));
       if (r.success) facts.push(r.data);
+      else if (newerShapeOf(item, r.error.issues)) newer.push(newerShapeOf(item, r.error.issues)!);
       else
         for (const iss of r.error.issues)
           issues.push({ code: iss.code, message: `${[i, ...iss.path].join(".")}: ${iss.message}` });
@@ -105,6 +195,8 @@ export function parseFacts(text: string): ParseFactsResult {
     if (n) return void newer.push(n);
     const r = Fact.safeParse(normalizeFactPaths(json));
     if (r.success) facts.push(r.data);
+    else if (newerShapeOf(json, r.error.issues, line))
+      newer.push(newerShapeOf(json, r.error.issues, line)!);
     else for (const iss of r.error.issues) issues.push({ line, ...issueOf(iss) });
   });
   const seen = new Map<string, number>();
@@ -152,10 +244,13 @@ export function parseFactLine(
   const newer = newerFactOf(json, line);
   if (newer) return { newer: { ...newer, raw } };
   const r = Fact.safeParse(normalizeFactPaths(json));
-  if (!r.success)
+  if (!r.success) {
+    const shape = newerShapeOf(json, r.error.issues, line);
+    if (shape) return { newer: { ...shape, raw } };
     return {
       bad: { line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) },
     };
+  }
   if (seen.has(r.data.id))
     return {
       bad: {

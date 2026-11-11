@@ -89,3 +89,47 @@ describe("a merged depends-on edge, every join on request (beta.25)", () => {
     expect(edge(true).joins?.map((j) => j.from)).toEqual(services);
   });
 });
+
+describe("two coordinates of one library component on one arrow (review of beta.25)", () => {
+  it("is one join listing each fact with its coordinates, and both publishing lines", () => {
+    const kitApi = end("forge-kit", "kit", "artifact.kit-api", "kit-api/pom.xml:7");
+    const kitCore = end("forge-kit", "kit", "artifact.kit-core", "kit-core/pom.xml:7");
+    const facts = [
+      {
+        ...end("forge-wallets", "wallets-api", "dependency.kit-api", "wallets-api/pom.xml:13"),
+        group: "forge.kit",
+        name: "kit-api",
+      },
+      {
+        ...end("forge-wallets", "wallets-api", "dependency.kit-core", "wallets-api/pom.xml:17"),
+        group: "forge.kit",
+        name: "kit-core",
+        scope: "runtime" as const,
+      },
+    ];
+    const l: DependencyLink = {
+      from: facts[0]!,
+      facts,
+      to: kitApi,
+      published: [kitApi, kitCore],
+      group: "forge.kit",
+      name: "kit-api",
+    };
+    const j = dependencyJoin(l);
+    expect(j.callee.map((e) => e.at)).toEqual(["kit-api/pom.xml:7", "kit-core/pom.xml:7"]);
+    expect(j.dependency?.facts?.map((f) => [f.fact, `${f.group}:${f.name}`, f.scope])).toEqual([
+      ["dependency.kit-api", "forge.kit:kit-api", undefined],
+      ["dependency.kit-core", "forge.kit:kit-core", "runtime"],
+    ]);
+    const est = buildEstate(
+      [component("wallets-api", "forge-wallets", "wallets"), component("kit", "forge-kit", "kit")],
+      { dependsOn: [l] },
+    );
+    const e = nodeView(est, "system:wallets", { lens: "architecture", depth: 2 }).edges.filter(
+      (x) => x.type === "depends-on",
+    );
+    expect(e.map((x) => [x.from, x.to, x.count, x.joins?.length])).toEqual([
+      ["component:wallets-api", "system:kit", 1, 1],
+    ]);
+  });
+});

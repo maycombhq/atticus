@@ -264,6 +264,11 @@ export async function estateComponentsOf(root: string): Promise<
       repoComponents: Record<string, string[]>;
       /** ADR 0192 addendum: each repo's manifest modules, so a module's build facts are its own. */
       modules: Record<string, { path: string; component: string }[]>;
+      /**
+       * Review of beta.25: each repo's own component (the manifest's, else its id), which every
+       * build file of a repo whose entry lists no modules is.
+       */
+      repoComponent: Record<string, string>;
     }
   | undefined
 > {
@@ -290,7 +295,9 @@ export async function estateComponentsOf(root: string): Promise<
   for (const r of repos)
     if (r.modules?.length)
       modules[r.id] = r.modules.map((m) => ({ path: m.path, component: m.component }));
-  return { components: [...new Set(components)].sort(), repoComponents, modules };
+  const repoComponent: Record<string, string> = {};
+  for (const r of repos) repoComponent[r.id] = r.component ?? r.id;
+  return { components: [...new Set(components)].sort(), repoComponents, modules, repoComponent };
 }
 
 /**
@@ -356,12 +363,25 @@ export async function writeVerifyFiles(
   // commit: it stays in the facts file (and is still refused), so a run on the wrong checkout
   // never empties the file and lets the next run write a catalog without that repo's records.
   const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").map((r) => r.fact);
+  // Review of beta.25: a newer Atticus's line is kept unless this run wrote a fact of its id.
+  const written = new Set([...report.accepted, ...otherCommit].map((f) => f.id));
+  const idOf = (l: string): unknown => {
+    try {
+      return (JSON.parse(l.charCodeAt(0) === 0xfeff ? l.slice(1) : l) as { id?: unknown }).id;
+    } catch {
+      return undefined;
+    }
+  };
   // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
   await writeFileAtomic(
     join(dir, `${repo}.jsonl`),
     serializeFacts([...report.accepted, ...otherCommit]) +
       [...newerLines]
         .map((l) => l.trim())
+        .filter((l) => {
+          const id = idOf(l);
+          return typeof id !== "string" || !written.has(id);
+        })
         .sort()
         .map((l) => `${l}\n`)
         .join(""),

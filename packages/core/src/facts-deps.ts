@@ -26,17 +26,37 @@ export interface DependencyEnd extends FactEnd {
   lines: string[];
 }
 
+/**
+ * Review of beta.25: one dependency fact a link rests on, with the coordinates it names (a link
+ * between two components holds every coordinate one builds on of the other's: `kit-api` and
+ * `kit-core` of component `kit` are one arrow).
+ */
+export interface DependencyFactEnd extends DependencyEnd {
+  group: string;
+  name: string;
+  version?: string;
+  /** Its scope, when not compile. */
+  scope?: DependencyScope;
+}
+
 export interface DependencyLink {
   /** The dependency fact, in the component that builds on the library (the first by id). */
   from: DependencyEnd;
   /**
    * Beta.25: every dependency fact the link rests on, `from` first, each with its lines: two
    * module poms of one component, a `<profile>`'s copy, `implementation` and `runtimeOnly` of the
-   * same coordinates. The link goes only once each of them is wrong.
+   * same coordinates, and (review of beta.25) every other coordinate of the same library
+   * component, each with its coordinates. The link goes only once each of them is wrong.
    */
-  facts?: DependencyEnd[];
+  facts?: (DependencyEnd &
+    Partial<Pick<DependencyFactEnd, "group" | "name" | "version" | "scope">>)[];
   /** The artifact fact, in the library's component, that publishes the coordinates. */
   to: DependencyEnd;
+  /**
+   * Review of beta.25: every artifact fact of the library's component a dependency on the link
+   * names, `to` first (one per coordinate).
+   */
+  published?: DependencyEnd[];
   group: string;
   name: string;
   /** The dependency's declared scope, when it says one other than compile. */
@@ -156,19 +176,31 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
       const from = endOf(r.repo, componentOf(r, f), f);
       const lib = to[0]!;
       if (from.repo === lib.repo && from.component === lib.component) continue;
-      const key = `${from.repo}\u0000${from.component}\u0000${lib.repo}\u0000${lib.component}\u0000${coordinates(f)}`;
+      const pub = facts.get(`${lib.repo}\u0000${lib.fact}`)!;
+      const fact: DependencyFactEnd = {
+        ...from,
+        group: pub.group,
+        name: pub.name,
+        ...(f.version ? { version: f.version } : {}),
+        ...(f.scope && f.scope !== "compile" ? { scope: f.scope } : {}),
+      };
+      // Review of beta.25: one link per pair of components, whatever coordinates it rests on, so
+      // a view's join (known by the pair) never stands for one coordinate and hides another.
+      const key = `${from.repo}\u0000${from.component}\u0000${lib.repo}\u0000${lib.component}`;
       const twin = seen.get(key);
       if (twin) {
-        // Beta.25: the same dependency on another line is on the link too, so marking one wrong
-        // never leaves the link standing on another unseen.
-        twin.facts!.push(from);
+        // Beta.25: the same dependency on another line, or another coordinate of the library, is
+        // on the link too, so marking one wrong never leaves the link standing on another unseen.
+        twin.facts!.push(fact);
+        if (!twin.published!.some((p) => p.repo === lib.repo && p.fact === lib.fact))
+          twin.published!.push(lib);
         continue;
       }
-      const pub = facts.get(`${lib.repo}\u0000${lib.fact}`)!;
       const link: DependencyLink = {
         from,
-        facts: [from],
+        facts: [fact],
         to: lib,
+        published: [lib],
         group: pub.group,
         name: pub.name,
         ...(f.scope && f.scope !== "compile" ? { scope: f.scope } : {}),
@@ -187,6 +219,9 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
   return { links, ambiguous, outside, test };
 }
 
-/** The id a "depends on" link is known by, for a view's join: stable across reads of one pom. */
+/**
+ * The id a "depends on" link is known by, for a view's join: stable across reads of one pom, and
+ * (review of beta.25) one per pair of components, as the join makes one link per pair.
+ */
 export const dependencyLinkId = (l: Pick<DependencyLink, "from" | "to">): string =>
   `depends-on:${l.from.repo}/${l.from.component}>${l.to.repo}/${l.to.component}`;

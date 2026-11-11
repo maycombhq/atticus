@@ -5243,7 +5243,7 @@
     "/api/links/corrections": {
       "post": {
         "operationId": "correctLinkCalls",
-        "summary": "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+        "summary": "This whole arrow is wrong (beta.24): one correction of every call on a link, or (beta.25) of every dependency fact a depends-on link rests on, each in its repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written, all or none. Returns each file, the git command that commits them all and the verify command per repo",
         "tags": [
           "workspace"
         ],
@@ -27333,6 +27333,18 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "group": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string"
                     }
                   },
                   "required": [

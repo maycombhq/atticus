@@ -296,13 +296,14 @@ export const DeployFact = z.strictObject({
  * 4 (ADR 0180): the `component` kind, what a component is.
  * 5 (ADR 0192): the `artifact` and `dependency` kinds, a component's build coordinates and what
  * it builds on. A version-4 file reads unchanged: both are new kinds, nothing else moved.
- * 6 (ADR 0192 addendum, beta.25): a dependency's `scope` may be `system` (a pom's
- * `<scope>system</scope>`). A version-5 file reads unchanged: nothing to migrate. A reader of
- * this version or later leaves a fact of a kind it doesn't know out of the file, said as written
- * by a newer Atticus (`parseFacts`' `newer`), rather than refusing the whole file; a reader of
- * 2.0.0-beta.24 or before still refuses a file holding one, so a team upgrades together.
+ *
+ * ADR 0192 addendum (beta.25), no version change: a pom's `<scope>system</scope>` is recorded as
+ * `provided` (it is drawn so), so 2.0.0-beta.24 reads every file 2.0.0-beta.25 writes. A reader of
+ * beta.25 or later leaves out, one fact at a time, a fact a newer Atticus wrote (a kind it doesn't
+ * know, or a known kind with a value or a field it doesn't), said as such (`parseFacts`' `newer`),
+ * rather than refusing the whole file, and `atticus verify --write` keeps that line as written.
  */
-export const FACTS_SCHEMA_VERSION = 6 as const;
+export const FACTS_SCHEMA_VERSION = 5 as const;
 
 export const SETTING_KINDS = [
   "timeout",
@@ -555,17 +556,11 @@ export const ArtifactFact = z.strictObject({
 });
 
 /**
- * A dependency's scope (ADR 0192): Maven's, or what a Gradle configuration means. `system`
- * (facts version 6) is a pom's jar from a path on the machine, drawn as `provided` is.
+ * A dependency's scope (ADR 0192): Maven's, or what a Gradle configuration means. A pom's
+ * `<scope>system</scope>` (a jar from a path on the machine) is recorded as `provided`, which is
+ * how it is drawn (ADR 0192 addendum).
  */
-export const DEPENDENCY_SCOPES = [
-  "compile",
-  "runtime",
-  "provided",
-  "test",
-  "import",
-  "system",
-] as const;
+export const DEPENDENCY_SCOPES = ["compile", "runtime", "provided", "test", "import"] as const;
 export type DependencyScope = (typeof DEPENDENCY_SCOPES)[number];
 
 /**

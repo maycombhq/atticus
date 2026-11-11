@@ -51,7 +51,11 @@ it("keeps a newer Atticus's fact in the facts file as written, and says so", asy
       commit: head,
       cite: { file: "package.json", line: 2, value: "forge-ledger-ui" },
     });
-    writeFileSync(facts, `${text.trim()}\n${newer}\n`);
+    // review of beta.25: a known kind with a value, or a field, this version doesn't know
+    const first = JSON.parse(text.split("\n")[0]!) as Record<string, unknown>;
+    const value = JSON.stringify({ ...first, id: "e-get-account-v2", entryType: "carrier-pigeon" });
+    const field = JSON.stringify({ ...first, id: "e-get-account-v3", rateLimit: "10/s" });
+    writeFileSync(facts, `${text.trim()}\n${newer}\n${value}\n${field}\n`);
     const err: string[] = [];
     const code = await verifyCommand(
       root,
@@ -64,8 +68,21 @@ it("keeps a newer Atticus's fact in the facts file as written, and says so", asy
     expect(err.join("\n")).toContain("fact package.forge-ledger-ui");
     const after = readFileSync(facts, "utf8").split("\n").filter(Boolean);
     expect(after).toContain(newer);
+    expect(after).toContain(value);
+    expect(after).toContain(field);
+    expect(err.join("\n")).toContain('entryType "carrier-pigeon"');
+    expect(err.join("\n")).toContain("field rateLimit is new to the entry fact");
+    // never moved to the rejected file
+    let rejected = "";
+    try {
+      rejected = readFileSync(join(root, "facts", `${REPO}.rejected.jsonl`), "utf8");
+    } catch {
+      // no rejected file: nothing was rejected
+    }
+    expect(rejected).not.toContain("e-get-account-v2");
+    expect(rejected).not.toContain("e-get-account-v3");
     // the facts this version reads are all still there too
-    expect(after.length).toBe(text.trim().split("\n").filter(Boolean).length + 1);
+    expect(after.length).toBe(text.trim().split("\n").filter(Boolean).length + 3);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

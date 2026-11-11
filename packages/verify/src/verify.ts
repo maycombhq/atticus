@@ -35,6 +35,8 @@ import {
   buildModuleProblem,
   buildUnrecorded,
   isBuildFile,
+  isBuildFileIn,
+  pomFilesNamed,
   isVersionCatalogFile,
   type BuildUnrecorded,
 } from "./build-coords.js";
@@ -420,6 +422,12 @@ export interface VerifyOptions {
      * coordinates fact cited in a module's build file belongs to that module's component.
      */
     modules?: Readonly<Record<string, readonly { path: string; component: string }[]>>;
+    /**
+     * Review of beta.25: each repo's own component, by repo id (the manifest's `component`, else
+     * its id): a repo whose manifest entry lists no modules ships as that one component, so each
+     * of its build files is that component's, whatever folder it is in.
+     */
+    repoComponent?: Readonly<Record<string, string>>;
   };
   /**
    * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
@@ -1178,11 +1186,19 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // Beta.25: and the fact's component is the module whose build file it cites, given it when
     // it names none.
     if ((f.kind === "artifact" || f.kind === "dependency") && !found.has(f.id)) {
-      const mod = buildModuleOf(f, linesOf, o.estate?.modules?.[f.repo] ?? []);
-      const bad = buildCoordinatesProblem(f, linesOf) ?? buildModuleProblem(f, mod);
+      const mod = buildModuleOf(
+        f,
+        linesOf,
+        o.estate?.modules?.[f.repo] ?? [],
+        o.estate?.repoComponent?.[f.repo],
+      );
+      const bad = buildCoordinatesProblem(f, linesOf, listed()) ?? buildModuleProblem(f, mod);
       if (bad) problem(f, "build-coordinates", bad);
       else {
-        if (mod && f.component === undefined) moduleOf.set(f.id, mod.component);
+        // A manifest module's fact is given its module; the repo's own stays the repo's (named
+        // by the manifest, so a renamed component needs no fact rewritten).
+        if (mod?.from === "manifest" && mod.component && f.component === undefined)
+          moduleOf.set(f.id, mod.component);
         // A version catalog's version.ref is resolved in buildCoordinatesProblem (beta.25).
         if (f.version !== undefined && !isVersionCatalogFile(f.cite.file))
           add(
@@ -1505,10 +1521,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   });
 
   // ADR 0192, the cross-check: what the build files read write that no kept fact records.
+  // the parent poms a <relativePath> names, read only when a build file was read
+  const namedPoms = [...touched].some((p) => isBuildFile(p))
+    ? pomFilesNamed(listed(), linesOf)
+    : undefined;
   const unrecorded = buildUnrecorded(
-    [...touched].filter((p) => isBuildFile(p) && insideRepo(p) && !isSecretPath(p)),
+    [...touched].filter((p) => isBuildFileIn(p, namedPoms) && insideRepo(p) && !isSecretPath(p)),
     (p) => linesOf(p),
     accepted,
+    listed(),
   );
 
   return {

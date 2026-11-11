@@ -379,11 +379,16 @@ export function dependencyJoin(l: DependencyLink): Join {
   const lines = (end: DependencyLink["from"]): Evidence[] =>
     end.lines.map((at) => ({ source: "code", repo: end.repo, at }));
   // Beta.25: every dependency fact on the link, each corrected under it.
-  const facts = l.facts?.length ? l.facts : [l.from];
+  const facts: NonNullable<DependencyLink["facts"]> = l.facts?.length ? l.facts : [l.from];
   const caller: Evidence[] = [];
   for (const f of facts)
     for (const e of lines(f))
       if (!caller.some((x) => x.repo === e.repo && x.at === e.at)) caller.push(e);
+  // Review of beta.25: every coordinate of the library's component the link rests on publishes.
+  const callee: Evidence[] = [];
+  for (const p of l.published?.length ? l.published : [l.to])
+    for (const e of lines(p))
+      if (!callee.some((x) => x.repo === e.repo && x.at === e.at)) callee.push(e);
   return {
     interface: dependencyLinkId(l),
     from: l.from.component,
@@ -393,7 +398,7 @@ export function dependencyJoin(l: DependencyLink): Join {
     // code at both ends, each claim checked on its line, and nobody had to guess
     verified: true,
     caller,
-    callee: lines(l.to),
+    callee,
     hops: [],
     other: [],
     dependency: {
@@ -401,7 +406,16 @@ export function dependencyJoin(l: DependencyLink): Join {
       name: l.name,
       ...(l.version ? { version: l.version } : {}),
       ...(l.scope ? { scope: l.scope } : {}),
-      facts: facts.map(({ repo, fact, at, lines: ls }) => ({ repo, fact, at, lines: ls })),
+      facts: facts.map((f) => ({
+        repo: f.repo,
+        fact: f.fact,
+        at: f.at,
+        lines: f.lines,
+        ...(f.group !== undefined ? { group: f.group } : {}),
+        ...(f.name !== undefined ? { name: f.name } : {}),
+        ...(f.version !== undefined ? { version: f.version } : {}),
+        ...(f.scope !== undefined ? { scope: f.scope } : {}),
+      })),
     },
   };
 }

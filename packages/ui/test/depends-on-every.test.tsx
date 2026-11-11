@@ -4,8 +4,13 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import type { FactsView } from "../src/app/evidence.js";
-import { dependencyCorrections, linkDependenciesOf } from "../src/screens/architecture/links.js";
-import { DependencyWrongForm } from "../src/screens/architecture/WhyLinked.js";
+import {
+  dependencyBatch,
+  dependencyCorrections,
+  joinWhat,
+  linkDependenciesOf,
+} from "../src/screens/architecture/links.js";
+import { DependencyWrongForm, saveDependencyBatch } from "../src/screens/architecture/WhyLinked.js";
 import { EveryDependencyView } from "../src/screens/architecture/EveryDependency.js";
 
 /**
@@ -105,6 +110,116 @@ describe("This link is wrong on a dependency that rests on several lines (beta.2
     expect(out).toContain(esc(D.pickFacts(2)));
     expect(out.match(/type="checkbox" checked=""/g)).toHaveLength(2);
     expect(out).toContain("wallets-api/pom.xml:31");
+  });
+});
+
+describe("This link is wrong in one batch, every coordinate shown (review of beta.25)", () => {
+  // component kit publishes kit-api and kit-core; wallets-api builds on both: one link
+  const KIT: Api.HierJoinT = {
+    ...JOIN,
+    interface: "depends-on:forge-wallets/wallets-api>forge-kit/kit",
+    to: "kit",
+    dependency: {
+      group: "forge.kit",
+      name: "kit-api",
+      facts: [
+        {
+          repo: "forge-wallets",
+          fact: "dependency.a",
+          at: "wallets-api/pom.xml:13",
+          lines: [],
+          group: "forge.kit",
+          name: "kit-api",
+        },
+        {
+          repo: "forge-wallets",
+          fact: "dependency.b",
+          at: "wallets-api/pom.xml:31",
+          lines: [],
+          group: "forge.kit",
+          name: "kit-core",
+        },
+      ],
+    },
+  };
+  const will = { kind: "dropped", from: "wallets-api", was: "kit" } as const;
+
+  it("shows each fact with the coordinates it names, and the link's every coordinate", () => {
+    expect(linkDependenciesOf(KIT, FACTS).map((d) => d.coordinates)).toEqual([
+      "forge.kit:kit-api",
+      "forge.kit:kit-core",
+    ]);
+    expect(joinWhat(KIT)).toBe("forge.kit:kit-api, forge.kit:kit-core");
+    const out = html(
+      <DependencyWrongForm join={KIT} facts={{ state: "ready", data: FACTS }} onClose={() => {}} />,
+    );
+    expect(out).toContain("forge.kit:kit-core");
+  });
+
+  it("asks for all of them in one POST /api/links/corrections, all or none", async () => {
+    const b = dependencyBatch(linkDependenciesOf(KIT, FACTS), " a fork ");
+    expect(b).toEqual({
+      body: {
+        items: [
+          { repo: "forge-wallets", fact: "dependency.a", action: "wrong" },
+          { repo: "forge-wallets", fact: "dependency.b", action: "wrong" },
+        ],
+        reason: "a fork",
+      },
+    });
+    if (!("body" in b)) return;
+    const posted: string[] = [];
+    const ok = await saveDependencyBatch(
+      async (path) => {
+        posted.push(path);
+        return {
+          files: [
+            {
+              repo: "forge-wallets",
+              file: "facts/forge-wallets.corrections.jsonl",
+              lines: ["{}", "{}"],
+              corrections: [],
+            },
+          ],
+          commit: "git add facts/forge-wallets.corrections.jsonl",
+          verify: ["atticus verify forge-wallets"],
+        };
+      },
+      b.body,
+      will,
+    );
+    expect(posted).toEqual(["/api/links/corrections"]);
+    expect(ok.state).toBe("done-all");
+    // a failure is one error and nothing said written: the route wrote none of it
+    const failed = await saveDependencyBatch(
+      async () => {
+        posted.push("again");
+        throw new Error("Atticus wrote none of it");
+      },
+      b.body,
+      will,
+    );
+    expect(posted).toEqual(["/api/links/corrections", "again"]);
+    expect(failed).toEqual({ state: "error", text: "Atticus wrote none of it" });
+    const shown = html(
+      <DependencyWrongForm
+        join={KIT}
+        facts={{ state: "ready", data: FACTS }}
+        saving={failed}
+        onClose={() => {}}
+      />,
+    );
+    expect(shown).toContain("Atticus wrote none of it");
+    expect(shown).not.toContain(esc(D.savedAll(2, "facts/forge-wallets.corrections.jsonl")));
+    const done = html(
+      <DependencyWrongForm
+        join={KIT}
+        facts={{ state: "ready", data: FACTS }}
+        saving={ok}
+        onClose={() => {}}
+      />,
+    );
+    expect(done).toContain(esc(D.savedAll(2, "facts/forge-wallets.corrections.jsonl")));
   });
 });
 

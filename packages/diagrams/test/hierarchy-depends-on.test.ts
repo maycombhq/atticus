@@ -158,6 +158,9 @@ describe("depends-on edges (ADR 0192)", () => {
               fact: "dependency.wallets-api.forge-payments-common",
               at: "wallets-api/pom.xml:13",
               lines: ["wallets-api/pom.xml:13", "wallets-api/pom.xml:12"],
+              // review of beta.25: the coordinates each fact names
+              group: "forge.payments",
+              name: "forge-payments-common",
             },
           ],
         },

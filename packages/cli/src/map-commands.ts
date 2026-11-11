@@ -32,6 +32,7 @@ import {
   type Conventions,
   orgPackDirOf,
   parseFacts,
+  parseFactsLines,
   runsDirOf,
   writeFileAtomic,
   type FrameworkModel,
@@ -635,6 +636,12 @@ async function readFactsFile(root: string, repo: string): Promise<Fact[] | strin
   const parsed = parseFacts(await readFile(file, "utf8"));
   if (parsed.ok) return parsed.facts;
   return `${factsRelOf(root)}/${repo}.jsonl does not read as facts (${parsed.issues[0]?.message ?? "?"}); fix it, or start again with --force after moving it aside.`;
+}
+
+/** Review of beta.25: the facts file's lines a newer Atticus wrote, kept as written on a write. */
+async function newerLinesOf(root: string, repo: string): Promise<string[]> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
+  return parseFactsLines(text).newer.flatMap((n) => (n.raw !== undefined ? [n.raw] : []));
 }
 
 /** What a re-read's prompts add to the protocol: only the changed files, rewrite or drop, keep the rest. */
@@ -1486,6 +1493,7 @@ async function takeAnswer(
     [],
     reviewedProblemsOf(reviewed.bad, report),
     answer.slips,
+    await newerLinesOf(root, s.repo),
   );
   // The one line the reader drafted about the repo (ADR 0128): kept as a draft, marked
   // unconfirmed wherever it is shown, for a person to confirm, edit or reject.

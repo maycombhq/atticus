@@ -183,9 +183,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // token and the deploy tool's file that replaces it per environment were told apart (beta.24),
     // and when only a token setting a URL, a host or a path was told to be recorded (beta.24 review),
     // and when the artifact and dependency facts were added, a build's coordinates and what it
-    // builds on (ADR 0192).
+    // builds on (ADR 0192), and when a pom's system scope was said to be provided, a build's folders no
+    // components and a root subprojects { } line each subproject's (review of beta.25).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "948588a14e34117604a7efd6c425195c48cc84b7aa0be37c21806b7b4e7638d2",
+      "d42f9f7a96cb6976f3309c1cc764f4b5f0d0119b3c62ed776c126f0a5f8a3c58",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -237,7 +238,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     expect(batch(["deploy", "config"], true)).toContain("- dependency: group: text, name: text");
     expect(batch(["deploy", "config"], true)).toContain("An `artifact` fact is the coordinates");
     expect(factsReference()).toMatch(
-      /- dependency: .*scope\?: compile\|runtime\|provided\|test\|import\|system/,
+      /- dependency: .*scope\?: compile\|runtime\|provided\|test\|import(,|$)/,
     );
     expect(batch()).toContain(factsReference());
     expect(factsReference()).toContain("- dependency:");

@@ -487,10 +487,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *
  * 3.11.0 (beta.25, a library's "depends on" arrows, ADR 0192 addendum): a `depends-on` join's
  *   `dependency` carries `facts`, every dependency fact the link rests on (its repo, id, cited
- *   line and every line it rests on), `caller` listing all their lines: This link is wrong marks
- *   each one chosen, so the arrow can't come back from another line. GET /api/graph/edge-calls
- *   gives every join merged into a `depends-on` edge too, not only the 20 a view lists. Facts
- *   version 6: a dependency's `scope` may be `system`. Additive only.
+ *   line and every line it rests on, and the coordinates it names), `caller` listing all their
+ *   lines and `callee` every publishing line: one link per pair of components, holding every
+ *   coordinate one builds on of the other's. This link is wrong marks each one chosen, so the
+ *   arrow can't come back from another line, in one POST /api/links/corrections (all or none,
+ *   for dependency facts as for calls). GET /api/graph/edge-calls gives every join merged into a
+ *   `depends-on` edge too, not only the 20 a view lists. The facts file stays at version 5 (a
+ *   pom's `system` scope is recorded as `provided`). Additive only.
  *   Review of beta.24's answer boxes (beta.25): GET /api/trust's `answerBoxes` are only what
  *   a person's own words made (answers whose words read as a sentence, and the system of a profile
  *   they made), never a system judged by the shape of its id, nor one an option, the picker or an
@@ -740,7 +743,10 @@ export const HierJoin = z.object({
       scope: z.string().optional(),
       /**
        * 3.11.0: every dependency fact the link rests on, the first (`caller`'s first line) first:
-       * its repo, its id, its cited line (`file:line`) and every line it rests on.
+       * its repo, its id, its cited line (`file:line`) and every line it rests on, and the
+       * coordinates it names (`group`, `name`, its `version` and `scope` when said): a link is
+       * one per pair of components, so it holds every coordinate one builds on of the other's
+       * (`group` and `name` above are the first's).
        */
       facts: z
         .array(
@@ -749,6 +755,10 @@ export const HierJoin = z.object({
             fact: z.string(),
             at: z.string(),
             lines: z.array(z.string()),
+            group: z.string().optional(),
+            name: z.string().optional(),
+            version: z.string().optional(),
+            scope: z.string().optional(),
           }),
         )
         .optional(),
@@ -6454,7 +6464,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "correctLinkCalls",
       summary:
-        "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+        "This whole arrow is wrong (beta.24): one correction of every call on a link, or (beta.25) of every dependency fact a depends-on link rests on, each in its repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written, all or none. Returns each file, the git command that commits them all and the verify command per repo",
       tag: "workspace",
       body: LinkCorrectionsRequest,
       ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },

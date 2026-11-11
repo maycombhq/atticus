@@ -320,8 +320,13 @@ function expectRead(seed: number, shape: Shape) {
       plugin: dep.section === "plugin",
     })),
   };
-  // the coordinates and dependencies only (a pom's modules and properties are tested elsewhere)
-  const { modules: _modules, properties: _properties, ...coords } = got;
+  // the coordinates and dependencies only (a pom's modules, properties and relativePath elsewhere)
+  const {
+    modules: _modules,
+    properties: _properties,
+    parentRelativePath: _relativePath,
+    ...coords
+  } = got;
   const plain = JSON.parse(
     JSON.stringify({ ...coords, dependencies: [...coords.dependencies].sort(byLine) }),
   );
