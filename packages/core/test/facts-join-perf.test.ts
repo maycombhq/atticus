@@ -73,7 +73,7 @@ const syntheticEstate = (nRepos: number, nEach: number): JoinRepo[] => {
 
 describe("the join at an estate's size", () => {
   it.skipIf(process.platform === "win32")(
-    "joins 40 repos of 250 entries and calls in under 10 seconds",
+    "joins 40 repos of 250 entries and calls in under a minute, even on a busy machine",
     () => {
       const repos = syntheticEstate(40, 250);
       const t = Date.now();
@@ -84,7 +84,9 @@ describe("the join at an estate's size", () => {
       expect(out.joins.length).toBe(32 * 250);
       expect(out.joins.every((j) => j.how === "base-path")).toBe(true);
       expect(out.asks.length).toBe(8 * 250);
-      expect(ms).toBeLessThan(10_000);
+      // About 2 s alone; 18 s on CI with ten suites at once. The join that looked at every entry
+      // for every call didn't finish in 10 minutes, so a minute still catches it.
+      expect(ms).toBeLessThan(60_000);
     },
     120_000,
   );

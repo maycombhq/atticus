@@ -126,7 +126,18 @@ describe("Home on a 40-repo estate (beta.23)", () => {
     console.log(
       `home-speed between cold and warm: heard ${heardSince.length}: ${heardSince.slice(0, 8).join(", ")}`,
     );
-    whyWorkedOut();
+    // beta.24, Windows CI: the first load can finish before the watcher follows the metarepo
+    // (its first walk of thousands of files takes longer there), and nothing is kept while no
+    // watcher follows. The load after it does is the one kept, so it is the one measured against.
+    const cold = whyWorkedOut();
+    if (cold.some((w) => w.endsWith("the server follows no folder"))) {
+      const t = Date.now();
+      while (srv.following.length === 0 && Date.now() - t < 30_000)
+        await new Promise((r) => setTimeout(r, 100));
+      console.log(`home-speed warm: the watcher followed after ${Date.now() - t} ms more`);
+      await home();
+      whyWorkedOut();
+    }
     const again = await home();
     stop();
     say("warm", again);
