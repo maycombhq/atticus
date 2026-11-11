@@ -1,5 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { acquireLock, catalogDirOf, LockHeldError } from "@maycombhq/core";
+import { acquireLock, catalogDirOf, factsDirOf, LockHeldError } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
+import { keepWhatTheReadersCantSee } from "./scan-keep.js";
 
 /** The lines a person reads for a catalog diff: + added, - removed, ~ changed (fields). */
 export function diffLines(d: CatalogDiff): string[] {
@@ -49,6 +51,59 @@ function driftLine(d: DriftAfterScan): string {
   if (d.round === undefined) return `${head}: no drift.`;
   const what = `${d.open} open finding${d.open === 1 ? "" : "s"}${d.blocking ? ` (${d.blocking} blocking)` : ""}`;
   return `${head}: ${what} in review/drift/${d.round}${d.unchanged ? ", nothing new" : ""}.`;
+}
+
+/** What a scan kept that its readers couldn't see, said before what changed. */
+export function keptLines(k: ReturnType<typeof keepWhatTheReadersCantSee>): string[] {
+  const out: string[] = [];
+  const n = (x: number, one: string) => `${x} ${one}${x === 1 ? "" : "s"}`;
+  if (k.keptUnread)
+    out.push(
+      `Kept ${n(k.keptUnread, "record")} of ${n(k.unread.length, "repo")} this scan couldn't read (${k.unread.join(", ")}): clone ${k.unread.length === 1 ? "it" : "them"} with atticus workspace sync to read ${k.unread.length === 1 ? "it" : "them"} again.`,
+    );
+  if (k.keptFacts)
+    out.push(
+      `Kept ${n(k.keptFacts, "record")} from your assistant's verified facts while the readers stand in: the readers' records are beside them, never over them, until atticus verify <repo> --write.`,
+    );
+  return out;
+}
+
+/**
+ * Beta.26 review: a scan's `--json` report said in words, for the app's Console (the job keeps
+ * the JSON as its result): what it read, what it kept, what it wrote, its problems and notes.
+ */
+export function scanSummaryLines(report: Record<string, unknown>): string[] {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const n = (x: number, one: string) => `${x} ${one}${x === 1 ? "" : "s"}`;
+  const s = (report.stats ?? {}) as Record<string, unknown>;
+  const out = [
+    `Scanned ${n(num(s.repos), "repo")}: ${n(num(s.records), "record")}, ${n(num(s.interfaces), "interface")} (${num(s.verified)} verified), ${n(num(s.unresolved), "loose end")}.`,
+  ];
+  const k = (report.kept ?? {}) as { unread?: unknown; records?: unknown; fromFacts?: unknown };
+  out.push(
+    ...keptLines({
+      records: [],
+      unread: Array.isArray(k.unread) ? k.unread.map(String) : [],
+      keptUnread: num(k.records),
+      keptFacts: num(k.fromFacts),
+    }),
+  );
+  const f = report.files as { written?: unknown; unchanged?: unknown; removed?: unknown } | null;
+  if (f)
+    out.push(
+      `catalog/generated: ${num(f.written)} written, ${num(f.unchanged)} unchanged, ${num(f.removed)} removed`,
+    );
+  for (const note of Array.isArray(report.notes) ? report.notes : [])
+    out.push(`note: ${String(note)}`);
+  for (const p of Array.isArray(report.problems) ? report.problems : []) {
+    const x = (p ?? {}) as { repo?: unknown; source?: unknown; message?: unknown };
+    out.push(
+      `${x.repo ? `${String(x.repo)}: ` : ""}${String(x.source ?? "")}: ${String(x.message ?? "")}`,
+    );
+  }
+  const w = Array.isArray(report.warnings) ? report.warnings.length : 0;
+  if (w) out.push(`${n(w, "warning")}: atticus scan --warnings lists ${w === 1 ? "it" : "them"}`);
+  return out;
 }
 
 /**
@@ -114,13 +169,32 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     ...(o.repos ? { repos: o.repos } : {}),
     ...(o.full ? { cache: null } : {}),
   });
-  const diff = diffCatalogs(before.records, scan.records);
-  const write = o.dryRun ? undefined : await writeCatalog(out, scan.records);
+  // Beta.26 review: the readers are a cross-check, so what they couldn't read stays: the records
+  // of a repo not read here (not cloned, not asked for), and those from verified facts while the
+  // readers stand in for their repo (scan-keep.ts).
+  const manifest = (await loadRepos(root)).map((r) => r.id);
+  const read = scan.repos.map((r) => r.repo);
+  const standIn: string[] = [];
+  for (const id of read)
+    if (scan.basis?.[id]?.from !== "facts") {
+      const text = await readFile(join(factsDirOf(root), `${id}.jsonl`), "utf8").catch(() => "");
+      if (text.trim()) standIn.push(id);
+    }
+  const kept = keepWhatTheReadersCantSee({
+    before: before.records,
+    scanned: scan.records,
+    manifest,
+    read,
+    standIn,
+  });
+  const records = kept.records;
+  const diff = diffCatalogs(before.records, records);
+  const write = o.dryRun ? undefined : await writeCatalog(out, records);
   // The drift check reads the catalog just written, so it runs only when one was.
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
   // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
   const hosts = write
-    ? await askHosts(root, scan.records, {
+    ? await askHosts(root, records, {
         command: "atticus scan",
         ...(o.askFrom ? { only: o.askFrom } : {}),
       })
@@ -157,6 +231,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           files: write ?? null,
           drift,
           questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
+          kept: { unread: kept.unread, records: kept.keptUnread, fromFacts: kept.keptFacts },
         },
         null,
         2,
@@ -207,6 +282,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
       io.out(
         `Framework model ${framework} read nothing in ${repos.join(", ")}, which import${repos.length === 1 ? "s" : ""} it; the framework may have changed. Have your assistant re-draft it: atticus onboard framework ${framework} --from <its source, JAR or package> --users ${repos.join(",")} (then onboard accept framework ${framework} --replace)`,
       );
+    for (const l of keptLines(kept)) io.out(l);
     for (const l of diffLines(diff)) io.out(l);
     if (write)
       io.out(

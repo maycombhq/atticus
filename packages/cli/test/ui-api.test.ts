@@ -237,6 +237,11 @@ describe("the write side of the local API runs the CLI's own commands", () => {
         removed: expect.any(Number),
         questions: expect.any(Number),
       });
+    // Beta.26 review: its Console lines read as words, never the command's JSON.
+    const lines = srv.jobs.linesOf(jobId)?.lines ?? [];
+    expect(lines.some((l) => /^\s*[{}[\]"]/.test(l))).toBe(false);
+    expect(lines.join("\n")).toMatch(/Scanned \d+ repos?: \d+ records?/);
+    expect(lines.join("\n")).toMatch(/The built-in readers added \d+ record/);
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });
 
