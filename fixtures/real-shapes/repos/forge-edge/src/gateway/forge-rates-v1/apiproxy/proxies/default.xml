@@ -1,0 +1,14 @@
+<ProxyEndpoint name="default">
+	<HTTPProxyConnection>
+		<BasePath>/forge/rates/v1</BasePath>
+		<VirtualHost>default</VirtualHost>
+	</HTTPProxyConnection>
+	<Flows>
+		<Flow name="GetRate">
+			<Condition>(proxy.pathsuffix MatchesPath "/rates/*") and (request.verb = "GET")</Condition>
+		</Flow>
+	</Flows>
+	<RouteRule name="default">
+		<TargetEndpoint>rates</TargetEndpoint>
+	</RouteRule>
+</ProxyEndpoint>

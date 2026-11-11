@@ -578,8 +578,9 @@ function lineLegend(marks: Set<StepMark>): Legend | undefined {
  * new component, entry or table, which the architecture stage checked against the catalog) or
  * it is a new flow's component the catalog hasn't; modify when its flows change, it gains an
  * entry, or a migration alters its columns; else context. A part the catalog lacks is unknown,
- * never new by that alone. A component is never marked retired: a removed flow says the flow
- * goes, not the component.
+ * never new by that alone. A removed flow says the flow goes, not the component: a component is
+ * marked retired only when the caller says the change removes every flow it has today (ADR 0193:
+ * a component retired or absorbed into another).
  */
 export function changeView(
   records: CatalogRecord[],
@@ -587,7 +588,10 @@ export function changeView(
   flows: ChangeFlowIn[],
   /** Components known besides the catalog's: those today's specs name. */
   known: Iterable<string> = [],
+  /** ADR 0193: components whose every flow today the change removes. */
+  retired: Iterable<string> = [],
 ): FlowView {
+  const gone = new Set(retired);
   const c = new Catalog(records);
   const inSpecs = new Set(known);
   const isKnown = (id: string) => c.components.has(id) || c.isSystem(id) || inSpecs.has(id);
@@ -652,6 +656,7 @@ export function changeView(
       }
     }
   }
+  for (const id of gone) if (comps.has(id)) legends.set(id, "retire");
   const withMark = (id: string) => {
     const l = legends.get(id);
     return l ? { legend: l } : {};

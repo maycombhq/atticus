@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+           xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="
+             http://www.osgi.org/xmlns/blueprint/v1.0.0 https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+             http://camel.apache.org/schema/blueprint http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+  <cm:property-placeholder persistent-id="forge.bridge" update-strategy="reload">
+    <cm:default-properties>
+      <cm:property name="ledger.host" value="ledger.forge.example"/>
+      <cm:property name="ledger.user" value="bridge"/>
+      <cm:property value="Br1dge-Ledger-7731" name="ledger.password"/>
+      <cm:property name="statements.password" value="St4tements-Bridge-0042"/>
+    </cm:default-properties>
+  </cm:property-placeholder>
+
+  <camelContext id="forge-bridge" xmlns="http://camel.apache.org/schema/blueprint">
+    <route id="statements-poll">
+      <from uri="timer:statements?period=60000"/>
+      <setBody>
+        <simple><![CDATA[{"since": "${date:now-1h:yyyy-MM-dd'T'HH:mm:ss}"}]]></simple>
+      </setBody>
+      <to uri="https4://{{ledger.host}}/ledger/statements?bridgeEndpoint=true&amp;authUsername={{ledger.user}}&amp;authPassword={{ledger.password}}"/>
+    </route>
+  </camelContext>
+
+</blueprint>

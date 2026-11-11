@@ -1,0 +1,15 @@
+[
+    {
+        "entry": [
+            {
+                "name": "ledger.backend.user",
+                "value": "edge-ledger"
+            },
+            {
+                "name": "ledger.backend.password",
+                "value": "Edg3-Ledger-Kvm-5521"
+            }
+        ],
+        "name": "forge-ledger-config"
+    }
+]

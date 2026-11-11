@@ -24,7 +24,10 @@ import { HOME_REQUESTS, homeChangeRequests, homeReloads, makeHomeEstate } from "
  * 55 s and 27 s).
  */
 const COLD_MS = 15_000;
-const WARM_MS = 1_000;
+// On Windows 1.5 s: a hosted Windows runner measured about 1.1 s alone, where a developer laptop
+// measures about 0.9 s; a load that worked everything out again took 4 s before beta.23, so 1.5 s
+// still catches it.
+const WARM_MS = process.platform === "win32" ? 1_500 : 1_000;
 const AFTER_CHANGE_MS = 3_000;
 const DOCTOR_MS = 5_000;
 
@@ -57,6 +60,7 @@ afterAll(async () => {
 let changes: string[] = [];
 let between: (() => void) | undefined;
 const heardSince: string[] = [];
+const heardDuringCold: string[] = [];
 
 /** Home's requests, six at a time as a browser sends them; each one's time, and the whole. */
 const home = async (paths?: string[]) => {
@@ -98,7 +102,13 @@ const heard = (path: string) =>
 
 describe("Home on a 40-repo estate (beta.23)", () => {
   it("loads first, cold, inside the budget, and never waits for the machine's checks", async () => {
+    // What the server hears while the first load runs (its first index build finishing, say)
+    // throws away the answers that load kept; said by the warm load.
+    const duringCold = srv.events.listen((e) =>
+      heardDuringCold.push(e.type === "file.changed" ? `file.changed ${String(e.path)}` : e.type),
+    );
     const first = await home();
+    duringCold();
     say("cold", first);
     // Everything heard from here until the warm load (a change heard then also throws away the
     // answers kept), said by the warm load.
@@ -126,16 +136,24 @@ describe("Home on a 40-repo estate (beta.23)", () => {
     console.log(
       `home-speed between cold and warm: heard ${heardSince.length}: ${heardSince.slice(0, 8).join(", ")}`,
     );
-    // beta.24, Windows CI: the first load can finish before the watcher follows the metarepo
-    // (its first walk of thousands of files takes longer there), and nothing is kept while no
-    // watcher follows. The load after it does is the one kept, so it is the one measured against.
+    // beta.24, Windows CI: every answer the first load worked out was gone by the next ("not
+    // asked before"): the server heard something while that load ran (its first index build
+    // finishing, on a slower machine), or no watcher followed yet, and either throws away or
+    // keeps nothing. That is once, after `atticus ui` starts; the load measured is the one after
+    // the first load whose answers stand.
     const cold = whyWorkedOut();
-    if (cold.some((w) => w.endsWith("the server follows no folder"))) {
+    console.log(
+      `home-speed during cold: heard ${heardDuringCold.length}: ${heardDuringCold.slice(0, 8).join(", ")}`,
+    );
+    if (
+      heardDuringCold.length > 0 ||
+      cold.some((w) => w.endsWith("the server follows no folder"))
+    ) {
       const t = Date.now();
       while (srv.following.length === 0 && Date.now() - t < 30_000)
         await new Promise((r) => setTimeout(r, 100));
-      console.log(`home-speed warm: the watcher followed after ${Date.now() - t} ms more`);
-      await home();
+      const primed = await home();
+      say(`primed (watcher followed after ${Date.now() - t} ms more)`, primed);
       whyWorkedOut();
     }
     const again = await home();

@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.25 (unreleased)
 
+### Added
+
+- **`absorb`, a sketch stroke that folds a component into another.** Its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change. One Undo takes it all back. `into.prefix` puts the moved entries under a path, so components that serve the same paths can merge; absorbing again later takes only what is new in the repo since (ADR 0193).
+- **`atticus change sketch <change> --from strokes.yaml|.json`** reads the canvas's strokes from a file, applied in order, with the same preview and `--save`; an unknown component id gets the nearest ids as "Did you mean" (ADR 0193).
+
 ### Fixed
 
 - **A library's "depends on" arrows are drawn from builds as people write them** (ADR 0192 addendum). A pom whose `<project xmlns=… xsi:schemaLocation=…>` start tag is written over two lines (the Spring Initializr and Maven archetype default) published nothing, so no service's arrow to it was drawn; a pom is now read as one text with its lines kept, so any tag, comment or CDATA section broken over lines reads, and a `${property}` in a group or name is resolved from the pom's `<properties>` or `<parent>` (every line it resolves through cited). `<scope>system</scope>` can be recorded (facts version 6, additive: a version-5 file reads unchanged).
@@ -12,6 +17,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **This link is wrong takes the arrow away.** A "depends on" link declared on more than one line (two module poms, a `<profile>`, `implementation` and `runtimeOnly`) offered only its first line, so the arrow came back after Apply; the form now lists every line, each chosen at first, and marks each chosen one wrong. An arrow merged from more than 20 dependencies shows them all (GET /api/graph/edge-calls). Local API 3.11.0: a `depends-on` join's `dependency.facts`.
 - **A facts file a newer Atticus wrote is read.** A fact of a kind this version doesn't know is left out and said ("written by a newer Atticus"), and `atticus verify` keeps it in the file as written, where the whole file was refused. Releases up to beta.24 still refuse such a file: a team upgrades together.
 - A batch prompt carries the build coordinates' rule and the `artifact` and `dependency` lines only when it holds a build file (pom.xml, build.gradle(.kts), settings.gradle(.kts)), not for every deploy file. The reading rules' words change, so their hash does; no rule set is added, so nothing is read again for it.
+- **The arrow's panel on the map is laid out, not jumbled.** A head with the arrow's name, its number of calls and Close stays in sight while its calls scroll; each call is a card (its method and path on one line, cut short when long with the whole text on hover, focus and Copy; its two ends; the verified or inferred chip beside them, never wrapped apart), its cited lines grouped under even labels, then This link is wrong and its form in place. The correction forms' choices keep each radio beside its words at every width. A declared topic's Undo is found on the system that declared it and lists only that topic's declaration; closing a correction form, or writing All calls on this arrow are wrong, keeps the keyboard focus (on the button that opened it, or on what was written).
+- **The map's details panel for a box, and its popups, are laid out so nothing spills.** A box's name keeps its own case, with its kind, state and gaps as tags; its actions wrap (a long label no longer squeezed into a column over the facts) in two groups, what it does here and the pages it leads to; each section has the same heading and spacing, its lists are rows, and a gap's fix is a sentence, not capitals. Connect to… names both ends, lists each loose call as a row (method and path in mono, cut to one line and whole on hover or focus) instead of a table wider than the panel, and keeps Preview and Write at its foot; it and the other popups (Owner and system, Declare a link, Add to the picture) are brought into view with focus on their heading, and give focus back on Close. The bar of corrections not applied yet puts Apply beside what waits.
+
+### Changed
+
+- The change diagram marks a component retired when the change removes every flow it has today (ADR 0193).
+
+### Tests
+
+- **A real-shapes corpus** (`fixtures/real-shapes/`): invented Forge repos written after the shapes of public Apache-2.0 projects (spring-petclinic, gs-multi-module, the Apigee deploy and config plugins' samples, api-platform-samples, camel-spring-boot-examples, okhttp's Kotlin DSL and version catalog, `helm create`'s chart, Kubernetes manifests), quirks kept byte for byte: `<project>` start tags over several lines, CRLF, a BOM, CDATA, Spring's Gradle `dependencyManagement`, `config.json` tokens per environment, a LocalTargetConnection, TargetServers and KVMs, Camel `{{property}}` URIs and a Fuse blueprint. Tests run the build-coordinates reader, the settings and secrets checks and the verifier on it, the estate and dependency joins against hand-checked goldens, and seeded property tests for the pom and Gradle readers and placeholder resolution. Where today's code is wrong the test keeps the right expectation as `it.fails`, so each fix flips it.
 
 ## 2.0.0-beta.24 (2026-11-10)
 
