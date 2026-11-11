@@ -4,6 +4,7 @@ import {
   JOIN_HOW_FLAGS,
   JOINED_BY_BASE_PATH,
   JOINED_BY_AI,
+  JOINED_BY_PATH,
   JOINED_BY_PATH_OVERLAP,
   JOINED_BY_PERSON,
   JOINED_TO_SHARED_MAP,
@@ -301,13 +302,17 @@ const GUESS_HOWS: ReadonlySet<Join["how"]> = new Set(
  */
 function alsoOf(i: RecordOf<"Interface">, how: Join["how"]): Join["how"][] {
   if (i.confidence !== "verified" || GUESS_HOWS.has(how)) return [];
+  const flags = i.flags ?? [];
+  // Beta.25 review: a join by a proxy's BasePath whose caller's host is unknown is a guess
+  // (`joined-by-path` beside `joined-by-base-path`): it was found by the BasePath, not by its path
+  // alone. A verified link whose own how is the BasePath keeps the path's words for a path guess.
+  const byBase = how !== "base-path" && flags.includes(JOINED_BY_BASE_PATH);
   return [
     ...new Set(
-      (i.flags ?? []).flatMap((f) =>
-        NOT_VERIFYING_FLAGS.has(f) && ALSO_OF_FLAG[f] && ALSO_OF_FLAG[f] !== how
-          ? [ALSO_OF_FLAG[f]!]
-          : [],
-      ),
+      flags.flatMap((f) => {
+        const also = byBase && f === JOINED_BY_PATH ? "base-path" : ALSO_OF_FLAG[f];
+        return NOT_VERIFYING_FLAGS.has(f) && also && also !== how ? [also] : [];
+      }),
     ),
   ];
 }

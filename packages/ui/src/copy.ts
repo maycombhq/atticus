@@ -5234,7 +5234,7 @@ export const COPY = {
       repo: "The call names the repo it goes to.",
       host: "The call's host is one the manifest lists for that repo.",
       "base-path":
-        "Nothing says the call's host, but its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path.",
+        "The gateway forwards the call with no host (a proxy chained to another), and its whole path starts with this proxy's base path: this is the one route under it with its method and path.",
       declared: "A person declared who calls this gateway route.",
       topic: "It publishes a topic the other side listens to.",
       path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
@@ -5256,6 +5256,11 @@ export const COPY = {
         "Its build file declares a dependency on the coordinates the other repo's build publishes: a library of the estate's own, both lines checked. It is a build dependency, not a call.",
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
+    } as Record<string, string>,
+    // Beta.25 review: an inferred join's own words where they differ from a verified one's.
+    howGuessed: {
+      "base-path":
+        "Joined by the proxy's BasePath; the caller's host is unknown. Its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path, but nothing says the call goes to this gateway, so this is a guess.",
     } as Record<string, string>,
     gateway: "It goes through a gateway on the way.",
     // ADR 0162 §6 (F8): a topic or queue a person named as an outside system's in the profile.
@@ -5286,6 +5291,7 @@ export const COPY = {
       person: "a person's pairing (their word)",
       ai: "the AI's pairing (no person has confirmed it)",
       path: "their path alone",
+      "base-path": "the proxy's BasePath, their host unknown",
       label: "their host's first part",
       "platform-setting": "a platform-wide setting",
       "folder-name": "the folder a setting is in",

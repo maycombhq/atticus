@@ -182,6 +182,50 @@ describe("a deploy tool's token, against its configuration", () => {
   });
 });
 
+describe("a config fact's value written another way it is the same", () => {
+  const files: Record<string, string> = {
+    "app.properties": [
+      "vendor.url = https://api.northwind.example/\\",
+      "    v1/accounts",
+      "vendor.escaped = https\\://api.northwind.example/v1",
+      "vendor.cut = https://api.northwind.example/\\",
+      "    v1.evil.example",
+    ].join("\n"),
+    "app.yml": [
+      "vendor:",
+      "  name: 'Northwind''s API'",
+      "  port: !!str 8443",
+      "  url: !!str https://api.northwind.example/v1",
+    ].join("\n"),
+  };
+  const linesOf = (p: string) => files[p]?.split("\n");
+  const problem = (key: string, value: string, file: string, line: number) =>
+    configLineProblem({ key, value, cite: { file, line } }, linesOf, () => Object.keys(files));
+
+  it("keeps a properties value continued on the next line (`\\`)", () => {
+    expect(
+      problem("vendor.url", "https://api.northwind.example/v1/accounts", "app.properties", 1),
+    ).toBeUndefined();
+  });
+  it("keeps a properties value with an escaped colon", () => {
+    expect(
+      problem("vendor.escaped", "https://api.northwind.example/v1", "app.properties", 3),
+    ).toBeUndefined();
+  });
+  it("still refuses a continued value that only starts the claim's", () => {
+    expect(
+      problem("vendor.cut", "https://api.northwind.example/v1", "app.properties", 4),
+    ).toBeDefined();
+  });
+  it("keeps a YAML value with a doubled single quote", () => {
+    expect(problem("vendor.name", "Northwind's API", "app.yml", 2)).toBeUndefined();
+  });
+  it("keeps a YAML value tagged !!str", () => {
+    expect(problem("vendor.port", "8443", "app.yml", 3)).toBeUndefined();
+    expect(problem("vendor.url", "https://api.northwind.example/v1", "app.yml", 4)).toBeUndefined();
+  });
+});
+
 describe("a deploy tool's token whose part carries the secret", () => {
   const X = "/AssignMessage/Set/Headers/Header[@name='x-api-key']";
   const FILES: Record<string, string> = {
@@ -208,7 +252,8 @@ describe("a deploy tool's token whose part carries the secret", () => {
     "apiproxy/policies/AM-Key.xml": "<AssignMessage/>",
   };
   it("is rejected on its own, never accepted", async () => {
-    // As a reader that skipped the schema would hand it over: the schema refuses it too.
+    // The schema accepts it, as beta.24's did (a verified facts file is read the same); the
+    // verifier refuses it (`secret-value`), never repeating it.
     const f = {
       kind: "config",
       id: "config.key",
@@ -228,11 +273,98 @@ describe("a deploy tool's token whose part carries the secret", () => {
       by: "assistant",
       conf: "declared",
     } as Fact;
-    expect(Fact.safeParse(f).success).toBe(false);
+    expect(Fact.safeParse(f).success).toBe(true);
     const r = await verifyFacts({ facts: [f], source: memory(FILES), commit: "abcdef1" });
     expect(r.accepted).toEqual([]);
     expect(r.rejected).toHaveLength(1);
+    expect(r.rejected.map((x) => x.code)).toContain("secret-value");
     expect(JSON.stringify(r.rejected)).not.toContain("q8Zt4LmN2vXy7RkP0sWd");
+  });
+
+  it("is rejected for a Basic token in its value, which the schema accepts as beta.24 did", async () => {
+    const A = "/AssignMessage/Set/Headers/Header[@name='Authorization']";
+    const files: Record<string, string> = {
+      "config.json": FILES["config.json"]!.replace(X, A).replace(
+        '"q8Zt4LmN2vXy7RkP0sWd"',
+        '"Basic Zm9yZ2U6czNjcmV0MTIzNDU2"',
+      ),
+      "apiproxy/policies/AM-Key.xml": "<AssignMessage/>",
+    };
+    const f = Fact.parse({
+      kind: "config",
+      id: "config.auth",
+      repo: "forge-wallets-proxy",
+      commit: "abcdef1",
+      key: A,
+      value: "Basic Zm9yZ2U6czNjcmV0MTIzNDU2",
+      target: "AM-Key.xml",
+      env: "prod",
+      cite: { file: "config.json", line: 10, value: "Header" },
+    });
+    const r = await verifyFacts({ facts: [f], source: memory(files), commit: "abcdef1" });
+    expect(r.accepted).toEqual([]);
+    expect(r.rejected.map((x) => x.code)).toContain("secret-value");
+    expect(JSON.stringify(r.rejected)).not.toContain("Zm9yZ2U6czNjcmV0MTIzNDU2");
+  });
+
+  it("keeps a Secret's name with a digit, cited as the assistant's rules say", async () => {
+    const files: Record<string, string> = {
+      "deploy/k8s/deployment.yaml": [
+        "spec:",
+        "  template:",
+        "    spec:",
+        "      containers:",
+        "        - name: forge-wallets",
+        "          env:",
+        "            - name: NORTHWIND_CLIENT_SECRET",
+        "              valueFrom:",
+        "                secretKeyRef:",
+        "                  name: northwind-oauth2",
+        "                  key: client-secret",
+      ].join("\n"),
+    };
+    const f = Fact.parse({
+      kind: "config",
+      id: "config.northwind-client-secret",
+      repo: "forge-wallets",
+      commit: "abcdef1",
+      key: "NORTHWIND_CLIENT_SECRET",
+      source: "secretKeyRef:northwind-oauth2/client-secret",
+      target: "forge-wallets",
+      cite: {
+        file: "deploy/k8s/deployment.yaml",
+        line: 7,
+        value: "NORTHWIND_CLIENT_SECRET",
+        with: [
+          { file: "deploy/k8s/deployment.yaml", line: 10, value: "northwind-oauth2" },
+          { file: "deploy/k8s/deployment.yaml", line: 11, value: "client-secret" },
+        ],
+      },
+    });
+    const r = await verifyFacts({ facts: [f], source: memory(files), commit: "abcdef1" });
+    expect(r.rejected.filter((x) => x.code === "secret-value")).toEqual([]);
+  });
+});
+
+describe("Trust's secrets check of files that aren't the product", () => {
+  it("leaves test resources and fixtures out, as beta.24 left a test's env file out", async () => {
+    const kvms =
+      '[\n  {\n    "entry": [\n      {\n        "name": "ledger.backend.password",\n        "value": "Edg3-Ledger-Kvm-5521"\n      }\n    ],\n    "name": "forge-ledger-config"\n  }\n]\n';
+    const files: Record<string, string> = {
+      "src/test/resources/application-test.yml":
+        "spring:\n  datasource:\n    password: Zx9vQ2mL7pR4tW\n",
+      "fixtures/wiremock/stub.json":
+        '{\n  "request": { "headers": { "Authorization": "Basic Zm9yZ2U6czNjcmV0MTIzNDU2" } },\n  "client_secret": "abcD3fGhij9KLmno"\n}\n',
+      "test/env/test/kvms.json": kvms,
+      "src/main/resources/application.yml":
+        "spring:\n  datasource:\n    password: ${DB_PASSWORD}\n",
+      "env/prod/kvms.json": kvms,
+      // An environment named `test` is the product's, not a test's.
+      "resources/edge/env/test/kvms.json": kvms,
+    };
+    const r = await verifyFacts({ facts: [], source: memory(files), commit: "abcdef1" });
+    const where = [...new Set((r.secrets ?? []).map((s) => s.file))].sort();
+    expect(where).toEqual(["env/prod/kvms.json", "resources/edge/env/test/kvms.json"]);
   });
 });
 

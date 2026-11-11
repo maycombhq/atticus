@@ -2073,37 +2073,38 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       })
     )
       return false;
-    const whole = configs.length
-      ? configs.map((x) => joinPaths(urlPathOf(x.value), call.fact.path))
-      : [fullPath ?? call.fact.path];
-    if ([...new Set(whole)].some((p) => !!p && servedSomewhere(call, p))) return false;
-    // A URL whose own path is the base path an estate service declares is that service's, for
-    // every route the proxy forwards to it, served or not.
-    return !configs.some((x) => {
-      const p = urlPathOf(x.value);
-      return !!p && isEstateBase(p);
-    });
-  };
-  const estateBaseSeen = new Map<string, boolean>();
-  /** Whether a path starts with a base path some service of the estate declares (`basesOf`). */
-  const isEstateBase = (p: string): boolean => {
-    const was = estateBaseSeen.get(p);
-    if (was !== undefined) return was;
-    const segs = rawSegs(p);
-    const done = new Set<string>();
-    let got = false;
-    for (const e of entries) {
-      const k = key(e.repo, e.component);
-      if (done.has(k)) continue;
-      done.add(k);
-      if (basesOf(e).some((b) => b.segs.length > 0 && startsWithSegs(segs, b.segs))) {
-        got = true;
-        break;
-      }
+    if (!configs.length) {
+      const p = fullPath ?? call.fact.path;
+      return !(p && servedSomewhere(call, p));
     }
-    estateBaseSeen.set(p, got);
-    return got;
+    // A service's declared base alone places nothing (beta.25 review: an unrelated service whose
+    // context path is `/v1` never makes a vendor's `https://api.northwind.example/v1` the
+    // estate's); an entry under it that serves a path the proxy sends to that URL does, and then
+    // the URL is that service's for every route the proxy forwards there, served or not.
+    const urls = [...new Set(configs.map((x) => x.value))].sort(cmp);
+    const k = `${call.repo}\u0000${bundleRootOf(call.fact.cite.file) ?? ""}\u0000${call.fact.host ?? ""}\u0000${call.fact.base ?? ""}\u0000${urls.join("\u0000")}`;
+    let served = targetServed.get(k);
+    if (served === undefined) {
+      const root = bundleRootOf(call.fact.cite.file);
+      served = nodes.some(
+        (n) =>
+          n.fact.kind === "call" &&
+          n.repo === call.repo &&
+          n.fact.callType === "rest" &&
+          (n.fact.host ?? "") === (call.fact.host ?? "") &&
+          (n.fact.base ?? "") === (call.fact.base ?? "") &&
+          bundleRootOf(n.fact.cite.file) === root &&
+          urls.some((u) => {
+            const p = joinPaths(urlPathOf(u), (n.fact as Call).path);
+            return !!p && servedSomewhere(n as Node & { fact: Call }, p);
+          }),
+      );
+      targetServed.set(k, served);
+    }
+    return !served;
   };
+  /** Whether a forwarding target URL serves some call sent to it (`outsideOfEstate`), by key. */
+  const targetServed = new Map<string, boolean>();
   /**
    * Whether an entry of the estate could serve a whole path: as it is, or under a base path its
    * service declares (the manifest's `basePath`, a Route's or an Ingress's path, a context path
@@ -3094,10 +3095,12 @@ export function joinFlagsOf(
   // The path suffix: a base path guessed by the overlap comes first, then how it was found.
   const overlap = isOverlapJoin(j) ? [JOINED_BY_PATH_OVERLAP] : [];
   const guessed = joinGuessesOf(j);
-  // Beta.25 review: a join by a BasePath whose caller's host is unknown is a guess by its path,
-  // and says it was found by the BasePath after the guess.
+  // Beta.25 review: a join by a BasePath whose caller's host is unknown is found by the BasePath
+  // (said first, so its how reads so) and a guess for the host (`joined-by-path`, after it).
   if (guessed.length)
-    return [...guessed, ...overlap, ...(j.how === "base-path" ? [JOINED_BY_BASE_PATH] : [])];
+    return j.how === "base-path"
+      ? [JOINED_BY_BASE_PATH, ...guessed, ...overlap]
+      : [...guessed, ...overlap];
   const HOW: Partial<Record<JoinHow, string>> = {
     answer: JOINED_BY_ANSWER,
     named: JOINED_BY_NAME,
@@ -3141,9 +3144,17 @@ export function sharedLinkFlags(flags: readonly string[], confidence: string): s
   const guesses = GUESS_ORDER.filter((f) => all.has(f));
   const hows = HOW_FLAG_ORDER.filter((f) => all.has(f));
   const rest = [...all].filter((f) => !guesses.includes(f) && !hows.includes(f)).sort(cmp);
-  return confidence === "verified"
-    ? [...hows, ...guesses, ...rest]
-    : [...guesses, ...hows, ...rest];
+  if (confidence === "verified") return [...hows, ...guesses, ...rest];
+  // Beta.25 review: a link joined by a proxy's BasePath whose only guess is the caller's unknown
+  // host (`joined-by-path`) says the BasePath first: that is how it was found.
+  if (all.has(JOINED_BY_BASE_PATH) && guesses.length === 1 && guesses[0] === JOINED_BY_PATH)
+    return [
+      JOINED_BY_BASE_PATH,
+      ...guesses,
+      ...hows.filter((f) => f !== JOINED_BY_BASE_PATH),
+      ...rest,
+    ];
+  return [...guesses, ...hows, ...rest];
 }
 
 /**

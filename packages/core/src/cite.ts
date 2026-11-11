@@ -226,12 +226,14 @@ const TOKEN_SHAPES = [
  * Whether a text holds a secret by its shape alone, whatever names it (beta.24 review): a URL's
  * password (`jdbc:postgresql://user:pass@host`), a bearer or Basic token or one of the well-known token
  * shapes `redactSecrets` takes out. A reference (`${X}`, `env:X`) in the password's place is none.
+ * `basic: false` leaves the Basic token out, as beta.24 released the check: the facts schema
+ * keeps it so (the verifier and Trust's secrets check take the Basic token).
  */
-export function hasSecretShape(text: string): boolean {
+export function hasSecretShape(text: string, o: { basic?: boolean } = {}): boolean {
   for (const m of text.matchAll(URL_CREDENTIALS)) if (!refersOnly(m[2]!)) return true;
   if (new RegExp(BEARER.source).test(text)) return true;
   // Beta.25 review: a Basic authorization value (`Basic dXNlcjpw…`) is a user and password.
-  if (new RegExp(BASIC.source).test(text)) return true;
+  if (o.basic !== false && new RegExp(BASIC.source).test(text)) return true;
   return TOKEN_SHAPES.some((re) => new RegExp(re.source).test(text));
 }
 

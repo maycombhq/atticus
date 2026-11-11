@@ -14,6 +14,7 @@ import {
   parseFactsLines,
   QuestionDraft,
   raiseQuestions,
+  redactFactLine,
   serializeFacts,
   type Fact,
   type FactCorrection,
@@ -354,7 +355,10 @@ export async function writeVerifyFiles(
     ...questionProblems.map((q) =>
       JSON.stringify({ code: "bad-question", message: q.message, question: JSON.parse(q.line) }),
     ),
-    ...badLines.map((b) => JSON.stringify({ code: "schema", message: b.message, raw: b.raw })),
+    // Beta.25 review: a line refused for its secret (or holding one) is kept with it redacted.
+    ...badLines.map((b) =>
+      JSON.stringify({ code: "schema", message: b.message, raw: redactFactLine(b.raw) }),
+    ),
     ...reviewedProblems.map((r) =>
       JSON.stringify({ code: "bad-reviewed", message: r.message, reviewed: r.raw }),
     ),

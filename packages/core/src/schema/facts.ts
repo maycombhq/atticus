@@ -363,20 +363,70 @@ const tokenLike = (t: string) =>
   !/^\/|\/[a-z][\w-]*\//i.test(t);
 
 /**
- * Beta.25 review: where a config fact carries its setting's secret by another field than its
- * value, the field that does (`source` or `cite.with`), or undefined: one shaped like a secret
- * whatever the key (`hasSecretShape`), or, under a key that names a secret, a literal that reads
- * as a credential and is no name of the fact's own (its key or a name in it, its target with or
- * without its extension, its env, its source). A quote is the verifier's to redact, as it always
- * was. The message never repeats the value.
+ * A name as people write them, digits and all (beta.25 review): UPPER_SNAKE (`DB2_PASSWORD`,
+ * `OAUTH2_CLIENT_SECRET`) or lower-kebab, snake or dotted (`northwind-oauth2`, `db2-credentials`,
+ * `forge-secrets-v2`, `secret1`), each word letters with at most three digits after, or a number.
+ */
+const NAME_LIKE = [
+  /^[A-Z]+[0-9]{0,3}(?:_(?:[A-Z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
+  /^[a-z]+[0-9]{0,3}(?:[-_.](?:[a-z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
+];
+
+/** Shannon entropy of a text, in bits per character. */
+const entropy = (t: string) => {
+  const n = new Map<string, number>();
+  for (const ch of t) n.set(ch, (n.get(ch) ?? 0) + 1);
+  let h = 0;
+  for (const c of n.values()) h -= (c / t.length) * Math.log2(c / t.length);
+  return h;
+};
+
+/**
+ * Whether a literal is strong enough to be a credential rather than a word: 16 characters or more
+ * of two kinds (lower, upper, digit, symbol), 8 or more of three, or 12 or more spread wide (3.5
+ * bits a character or more).
+ */
+const credentialStrength = (t: string) => {
+  const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(t)).length;
+  return (
+    (t.length >= 16 && kinds >= 2) ||
+    (t.length >= 8 && kinds >= 3) ||
+    (t.length >= 12 && entropy(t) >= 3.5)
+  );
+};
+
+/**
+ * Whether a literal under a secret's key reads as a credential (`configSecretField`): token-like,
+ * no name as people write them (`NAME_LIKE`), and strong enough (`credentialStrength`).
+ */
+export function credentialLike(t: string): boolean {
+  return tokenLike(t) && !NAME_LIKE.some((r) => r.test(t)) && credentialStrength(t);
+}
+
+/**
+ * Beta.25 review: where a config fact carries its setting's secret, the field that does
+ * (`value`, `source` or `cite.with`), or undefined. The verifier refuses such a fact
+ * (`secret-value`); the schema keeps only beta.24's value check, as released, so a facts file
+ * read before is read the same (ADR 0124 addendum A-gateway-outside-2).
+ *
+ * A value is one when its key names a secret (`looksLikeSecret`) or it is shaped like one
+ * (`hasSecretShape`, a Basic token too). A source or a part is one when it is shaped like a
+ * secret whatever the key, or, under a key that names a secret, a literal that reads as a
+ * credential (`credentialLike`) and is no name of the fact's own: its key or a name in it, its
+ * target with or without its extension, its env, or a name its source gives (the part
+ * `northwind-oauth2` of `secretKeyRef:northwind-oauth2/client-secret`). A quote is the
+ * verifier's to redact, as it always was. The answer never repeats the value.
  */
 export function configSecretField(c: {
   key: string;
+  value?: string | undefined;
   source?: string | undefined;
   target?: string | undefined;
   env?: string | undefined;
   cite: { with?: readonly { value: string }[] | undefined };
-}): string | undefined {
+}): "value" | "source" | "cite.with" | undefined {
+  if (c.value !== undefined && (looksLikeSecret(c.key, c.value) || hasSecretShape(c.value)))
+    return "value";
   const target = c.target?.trim();
   const own = new Set(
     [c.key, c.env, target, target?.replace(/\.[^.]*$/, "")]
@@ -384,16 +434,21 @@ export function configSecretField(c: {
       .map((x) => x.trim()),
   );
   const keyText = c.key.toLowerCase();
-  const secret = (v: string) => {
+  const source = c.source?.trim();
+  const secret = (v: string, isSource: boolean) => {
     const t = v.trim();
     if (!t) return false;
     if (hasSecretShape(t)) return true;
     return (
-      looksLikeSecret(c.key, t) && tokenLike(t) && !own.has(t) && !keyText.includes(t.toLowerCase())
+      looksLikeSecret(c.key, t) &&
+      credentialLike(t) &&
+      !own.has(t) &&
+      !keyText.includes(t.toLowerCase()) &&
+      (isSource || !source || !source.includes(t))
     );
   };
-  if (c.source !== undefined && secret(c.source)) return "source";
-  if ((c.cite.with ?? []).some((w) => secret(w.value) && w.value.trim() !== c.source?.trim()))
+  if (source !== undefined && secret(source, true)) return "source";
+  if ((c.cite.with ?? []).some((w) => typeof w?.value === "string" && secret(w.value, false)))
     return "cite.with";
   return undefined;
 }
@@ -420,7 +475,7 @@ export const ConfigFact = z
         path: ["value"],
         message: `"${c.key}" looks like a secret: give its source (env:NAME, vault:path), never its value`,
       });
-    } else if (c.value !== undefined && hasSecretShape(c.value)) {
+    } else if (c.value !== undefined && hasSecretShape(c.value, { basic: false })) {
       // Beta.24 review: a value shaped like a secret (an access key id, a URL's password, a
       // bearer token) is refused whatever its key, and the message never repeats it.
       ctx.addIssue({
@@ -429,13 +484,9 @@ export const ConfigFact = z
         message: `"${c.key}" has a value shaped like a secret: give its source (env:NAME, vault:path), never its value`,
       });
     }
-    const field = configSecretField(c);
-    if (field)
-      ctx.addIssue({
-        code: "custom",
-        path: field.split("."),
-        message: `"${c.key}" carries a secret in its ${field}: cite the line that names the setting and give its source (env:NAME, vault:path), never its value`,
-      });
+    // Beta.25 review: a source's, a part's and a Basic token's checks (`configSecretField`) are
+    // the verifier's (`secret-value`), never the schema's: refusing them here would read a
+    // verified beta.24 facts file as not read, a contract change without a version.
   });
 
 /**

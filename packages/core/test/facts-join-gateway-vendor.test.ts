@@ -227,7 +227,7 @@ describe("the callers to the proxy, by the gateway's host and the whole path", (
     const to = ifaces(repos).filter((i) => i.from === "wallets-api");
     for (const i of to) {
       expect(i.confidence).toBe("inferred");
-      expect(i.flags).toEqual([JOINED_BY_PATH, JOINED_BY_BASE_PATH]);
+      expect(i.flags).toEqual([JOINED_BY_BASE_PATH, JOINED_BY_PATH]);
     }
   });
 

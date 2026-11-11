@@ -73,12 +73,13 @@ import {
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
 
-/** A config fact with its source, its quote and every part's value redacted (`secret-value`). */
+/** A config fact with its value, source, quote and every part's value redacted (`secret-value`). */
 function withoutSecret(f: Fact): Fact {
   if (f.kind !== "config") return f;
   const { quote: _q, ...cite } = f.cite;
   return {
     ...f,
+    ...(f.value !== undefined ? { value: "<redacted>" } : {}),
     ...(f.source !== undefined ? { source: "<redacted>" } : {}),
     cite: {
       ...cite,
@@ -475,6 +476,17 @@ const SOURCE_EXT =
 const SOURCE_NAME = /(^|\/)(Dockerfile[^/]*|Makefile|Jenkinsfile|Procfile|Containerfile)$/;
 const LOCKFILE =
   /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Gemfile\.lock|Cargo\.lock|poetry\.lock|go\.sum|packages\.lock\.json)$/;
+
+/** A folder named for an environment under a folder of environments (`env/test/`, `overlays/qa/`). */
+const ENV_FOLDER = /(^|\/)(env|envs|environments?|overlays|stages?)\/[^/]+(?=\/)/gi;
+
+/**
+ * Beta.25 review: whether Trust's secrets check leaves a file out as a test's or a fixture's (the
+ * org pack's not-product folders): an environment's folder named `test` (the Apigee config
+ * plugin's `env/test/kvms.json`) is the product's, so it is never read as a test folder.
+ */
+const testFileOf = (rules: ReadRules, p: string) =>
+  rules.notProduct.test(p.replace(ENV_FOLDER, "$1$2/_"));
 
 /**
  * Files that hold no facts of what a repo serves, calls, stores or deploys, so coverage doesn't
@@ -1376,12 +1388,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // left, so it is scanned for the report too, by key and line. Its lines are read only into
     // this check and dropped; it stays no source, and no fact may cite it.
     if (isSecretPath(p)) {
-      if (
-        insideRepo(p) &&
-        isConfigFile(p) &&
-        !rules.notProduct.test(p) &&
-        !tooBigToRead(o.source, p)
-      ) {
+      if (insideRepo(p) && isConfigFile(p) && !testFileOf(rules, p) && !tooBigToRead(o.source, p)) {
         const text = o.source.read(p);
         const ls = text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n");
         if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
@@ -1391,9 +1398,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // Review round 49: by its path and size first, so a binary, a lock file or a file too big
     // to be source is never read just to be passed over.
     // Beta.25: a config file the source rules don't count (a deploy tool's `env/<env>/kvms.json`,
-    // a data file) is still scanned for the report, its lines read only into this check.
+    // a data file) is still scanned for the report, its lines read only into this check. A test's
+    // or a fixture's file (the org pack's not-product folders: `src/test/**`, `fixtures/**`) is
+    // not, as beta.24 left a test's env file out: its secrets are made up for the test.
     const scanOnly = () => {
-      if (!insideRepo(p) || !isConfigFile(p) || LOCKFILE.test(p) || tooBigToRead(o.source, p))
+      if (
+        !insideRepo(p) ||
+        !isConfigFile(p) ||
+        LOCKFILE.test(p) ||
+        testFileOf(rules, p) ||
+        tooBigToRead(o.source, p)
+      )
         return;
       const ls = readLines(p);
       if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
@@ -1406,7 +1421,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
     const ls = readLines(p) ?? [""];
     if (!isSourceFile(p, ls[0] ?? "", ls, rules)) {
-      if (isConfigFile(p) && !LOCKFILE.test(p) && !binaryLines(ls))
+      if (isConfigFile(p) && !LOCKFILE.test(p) && !testFileOf(rules, p) && !binaryLines(ls))
         secrets.push(...liveSecretsIn(p, ls));
       continue;
     }

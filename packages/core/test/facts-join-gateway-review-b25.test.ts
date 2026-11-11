@@ -94,6 +94,86 @@ describe("an outside host behind an estate service's base path", () => {
     expect(got.asked).toEqual([]);
     expect(new Set(got.outside)).toEqual(new Set(["accounts-svc.forge-apps.example"]));
   });
+
+  /** An estate service with a common base (`/v1`, `/api`) that serves none of the proxy's paths. */
+  const fx = (base: string): JoinRepo => ({
+    repo: "forge-fx",
+    component: "fx-api",
+    hosts: ["fx.forge.internal"],
+    facts: [
+      {
+        kind: "entry",
+        id: "entry.get.rates",
+        repo: "forge-fx",
+        commit: "bbbb222",
+        entryType: "rest",
+        method: "GET",
+        path: "/rates",
+        handler: "RatesController.list",
+        cite: { file: "src/main/java/forge/fx/RatesController.java", line: 9, value: "/rates" },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      } as Fact,
+      {
+        kind: "config",
+        id: "config.context-path",
+        repo: "forge-fx",
+        commit: "bbbb222",
+        settingKind: "config",
+        key: "server.servlet.context-path",
+        value: base,
+        cite: {
+          file: "src/main/resources/application.properties",
+          line: 1,
+          value: "server.servlet.context-path",
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      } as Fact,
+    ],
+  });
+
+  it.each([
+    ["/v1", "https://api.northwind.example/v1"],
+    ["/api", "https://api.northwind.example/api"],
+    ["/v1", "https://api.northwind.example/v1/payments"],
+  ])(
+    "goes outside though an unrelated service's base is %s: it serves none of the proxy's paths (%s)",
+    (base, url) => {
+      const got = fate(joinFacts({ repos: hostIs(url, [...estate(), fx(base)]) }));
+      expect(got.asked).toEqual([]);
+      expect(new Set(got.outside)).toEqual(new Set(["api.northwind.example"]));
+    },
+  );
+
+  it("is asked about when a service under that common base serves the proxy's path", () => {
+    let repos = hostIs("https://api.northwind.example/v1", [...estate(), fx("/v1")]);
+    repos = swap(repos, "forge-accounts", (fs) => [
+      ...fs,
+      {
+        kind: "config",
+        id: "config.context-path",
+        repo: "forge-accounts",
+        commit: "aaaa111",
+        settingKind: "config",
+        key: "server.servlet.context-path",
+        value: "/v1",
+        cite: {
+          file: "src/main/resources/application.properties",
+          line: 9,
+          value: "server.servlet.context-path",
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      } as Fact,
+    ]);
+    const got = fate(joinFacts({ repos }));
+    expect(got.outside).toEqual([]);
+    expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
+  });
 });
 
 describe("a host the outside rule can't place", () => {
@@ -185,8 +265,20 @@ describe("a join by BasePath whose caller's host is unknown", () => {
     expect(to).toHaveLength(3);
     for (const i of to) {
       expect(i.confidence).toBe("inferred");
-      expect(i.flags).toEqual([JOINED_BY_PATH, JOINED_BY_BASE_PATH]);
+      // Found by the BasePath, a guess for the caller's unknown host: the BasePath said first.
+      expect(i.flags).toEqual([JOINED_BY_BASE_PATH, JOINED_BY_PATH]);
     }
+  });
+
+  it("says the BasePath first on a link of such calls, a guess by path after", () => {
+    expect(sharedLinkFlags([JOINED_BY_PATH, JOINED_BY_BASE_PATH], "inferred")).toEqual([
+      JOINED_BY_BASE_PATH,
+      JOINED_BY_PATH,
+    ]);
+    // Any other guess beside it still comes first: the link rests on that.
+    expect(
+      sharedLinkFlags([JOINED_BY_PATH, JOINED_BY_BASE_PATH, "joined-by-label"], "inferred")[0],
+    ).toBe(JOINED_BY_PATH);
   });
 });
 

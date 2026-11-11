@@ -227,19 +227,36 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** A YAML line's value as written: a quoted scalar's text, else up to a comment. */
+/**
+ * A YAML line's value as written: a quoted scalar's text (a single-quoted one's `''` is one
+ * quote), else up to a comment; a tag in front (`!!str 8443`) is no part of it.
+ */
 function yamlScalar(rest: string): string {
-  const t = rest.trim();
+  const t = rest.trim().replace(/^!!?[\w/:.-]*\s+/, "");
   const q = /^(["'])((?:(?!\1).|\1\1)*)\1/.exec(t);
-  if (q) return q[2]!;
+  if (q) return q[1] === "'" ? q[2]!.replace(/''/g, "'") : q[2]!;
   return t.replace(/\s+#.*$/, "").trim();
 }
 
-/** A properties line's value: what follows its key and separator. */
-function propertiesValue(line: string, key: string): string {
-  return line
-    .slice(line.indexOf(key) + key.length)
-    .replace(/^\s*[=:]?\s*/, "")
+/**
+ * A properties line's value: what follows its key and separator, with the lines it continues on
+ * (a line ending in an odd number of `\`) joined, their leading spaces dropped, and an escaped
+ * character (`https\://`) read as itself.
+ */
+function propertiesValue(line: string, key: string, next: readonly string[] = []): string {
+  let v = line.slice(line.indexOf(key) + key.length).replace(/^\s*[=:]?\s*/, "");
+  for (let i = 0; /(^|[^\\])(\\\\)*\\$/.test(v) && i < next.length; i++)
+    v = v.slice(0, -1) + next[i]!.replace(/^\s+/, "");
+  return v
+    .replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, c: string) =>
+      c.length === 5
+        ? String.fromCharCode(parseInt(c.slice(1), 16))
+        : c === "t"
+          ? "\t"
+          : c === "n"
+            ? "\n"
+            : c,
+    )
     .trim();
 }
 
@@ -436,7 +453,7 @@ export function configLineProblem(
       if (k !== segs.join(".") && !k.endsWith(`.${segs.join(".")}`))
         return `${where} sets ${k}, not ${f.key}`;
       if (value !== undefined) {
-        if (!same(propertiesValue(at, k)))
+        if (!same(propertiesValue(at, k, lines.slice(f.cite.line))))
           return `${where} sets ${k} to something other than the value claimed`;
         return undefined;
       }
