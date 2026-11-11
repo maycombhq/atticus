@@ -1,0 +1,195 @@
+joins:
+  - call:
+      repo: forge-bridge
+      fact: call.get.ledger-accounts-id
+      component: forge-bridge
+      at: src/main/java/forge/bridge/BridgeRouter.java:31
+    entry:
+      repo: forge-ledger
+      fact: entry.get.accounts-id
+      component: ledger-service
+      at: ledger-service/src/main/java/forge/ledger/AccountsController.java:18
+    through:
+      - repo: forge-bridge
+        fact: config.ledger-base-uri
+        component: forge-bridge
+        at: src/main/resources/application.properties:8
+    how: host
+    callType: rest
+    method: GET
+    path: /accounts/{id}
+    interface: if-5b84b1fd35cc309f
+  - call:
+      repo: forge-edge
+      fact: call.ledger.target
+      component: forge-edge
+      at: src/gateway/forge-ledger-v1/apiproxy/targets/default.xml:16
+    entry:
+      repo: forge-ledger
+      fact: entry.get.accounts-id
+      component: ledger-service
+      at: ledger-service/src/main/java/forge/ledger/AccountsController.java:18
+    tie:
+      repo: forge-edge
+      fact: config.ledger-url-prod
+      component: forge-edge
+      at: src/gateway/forge-ledger-v1/config.json:77
+    through:
+      - repo: forge-edge
+        fact: config.ledger-url-test
+        component: forge-edge
+        at: src/gateway/forge-ledger-v1/config.json:41
+    how: host
+    forRoute:
+      repo: forge-edge
+      fact: entry.get.forge-ledger-v1-accounts
+      component: forge-edge
+      at: src/gateway/forge-ledger-v1/apiproxy/proxies/default.xml:26
+    callType: rest
+    method: GET
+    path: /accounts/{id}
+    interface: if-bd798d893ad01ba1
+  - call:
+      repo: forge-edge
+      fact: call.rates.target
+      component: forge-edge
+      at: src/gateway/forge-rates-v1/apiproxy/targets/rates.xml:6
+    entry:
+      repo: forge-rates
+      fact: entry.get.rates-currency
+      component: rates-service
+      at: rates-service/src/main/java/forge/rates/RatesController.java:10
+    tie:
+      repo: forge-edge
+      fact: config.ts-rates
+      component: forge-edge
+      at: resources/edge/env/test/targetServers.json:3
+    how: host
+    exposedBy:
+      - repo: forge-rates
+        fact: deploy.service.forge-rates
+        component: rates-service
+        at: deploy/k8s/service.yaml:4
+      - repo: forge-rates
+        fact: deploy.ingress.forge-rates
+        component: rates-service
+        at: deploy/helm/forge-rates/values.yaml:23
+    forRoute:
+      repo: forge-edge
+      fact: entry.get.forge-rates-v1-rates
+      component: forge-edge
+      at: src/gateway/forge-rates-v1/apiproxy/proxies/default.xml:8
+    base:
+      path: /rates
+      from: config
+      by:
+        - repo: forge-rates
+          fact: config.context-path
+          component: rates-service
+          at: rates-service/src/main/resources/application.properties:4
+    callType: rest
+    method: GET
+    path: /rates/{currency}
+    interface: if-c04e153e51549791
+  - call:
+      repo: forge-ledger
+      fact: call.get.rates-currency
+      component: ledger-service
+      at: ledger-service/src/main/java/forge/ledger/RatesClient.java:16
+    entry:
+      repo: forge-rates
+      fact: entry.get.rates-currency
+      component: rates-service
+      at: rates-service/src/main/java/forge/rates/RatesController.java:10
+    tie:
+      repo: forge-ledger
+      fact: config.rates-base-url
+      component: ledger-service
+      at: ledger-service/src/main/resources/application.yml:18
+    through:
+      - repo: forge-ledger
+        fact: config.rates-base-url-prod
+        component: ledger-service
+        at: ledger-service/src/main/resources/application.yml:37
+    how: host
+    exposedBy:
+      - repo: forge-rates
+        fact: deploy.service.forge-rates
+        component: rates-service
+        at: deploy/k8s/service.yaml:4
+      - repo: forge-rates
+        fact: deploy.ingress.forge-rates
+        component: rates-service
+        at: deploy/helm/forge-rates/values.yaml:23
+    callType: rest
+    method: GET
+    path: /rates/{currency}
+    interface: if-4affdce95564abb4
+  - call:
+      repo: forge-wallets
+      fact: call.get.ledger-account
+      component: wallets-api
+      at: wallets-api/src/main/kotlin/forge/wallets/LedgerClient.kt:14
+    entry:
+      repo: forge-ledger
+      fact: entry.get.accounts-id
+      component: ledger-service
+      at: ledger-service/src/main/java/forge/ledger/AccountsController.java:18
+    tie:
+      repo: forge-wallets
+      fact: config.gateway-base-url
+      component: wallets-api
+      at: wallets-api/src/main/resources/application.yaml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-edge
+          fact: entry.get.forge-ledger-v1-accounts
+          component: forge-edge
+          at: src/gateway/forge-ledger-v1/apiproxy/proxies/default.xml:26
+        call:
+          repo: forge-edge
+          fact: call.ledger.target
+          component: forge-edge
+          at: src/gateway/forge-ledger-v1/apiproxy/targets/default.xml:16
+        tie:
+          repo: forge-edge
+          fact: config.ledger-url-prod
+          component: forge-edge
+          at: src/gateway/forge-ledger-v1/config.json:77
+        through:
+          - repo: forge-edge
+            fact: config.ledger-url-test
+            component: forge-edge
+            at: src/gateway/forge-ledger-v1/config.json:41
+        route: gw-forge-edge-get-forge-ledger-v1-accounts-id
+    callType: rest
+    method: GET
+    path: /accounts/{id}
+    interface: if-941b4064c27fd746
+asks: []
+misses:
+  - call:
+      repo: forge-bridge
+      fact: call.post.ledger-statements
+      component: forge-bridge
+      at: src/main/resources/OSGI-INF/blueprint/routes.xml:24
+    target: forge-ledger
+    message: forge-bridge calls POST /ledger/statements on forge-ledger, and no
+      entry of forge-ledger the facts name serves it
+outside:
+  - call:
+      repo: forge-ledger
+      fact: call.get.payouts-id
+      component: ledger-service
+      at: ledger-service/src/main/java/forge/ledger/NorthwindClient.java:18
+    target: northwind-pay
+left:
+  - call:
+      repo: forge-bridge
+      fact: call.post.ledger-statements
+      component: forge-bridge
+      at: src/main/resources/OSGI-INF/blueprint/routes.xml:24
+    reason: host-no-route
+lineage: []
+gaps: []

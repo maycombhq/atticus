@@ -1,0 +1,114 @@
+links:
+  - from:
+      repo: forge-bridge
+      fact: dependency.ledger-api
+      component: forge-bridge
+      at: pom.xml:24
+      lines:
+        - pom.xml:24
+        - pom.xml:23
+    to:
+      repo: forge-ledger
+      fact: artifact.ledger-api
+      component: ledger-api
+      at: ledger-api/pom.xml:12
+      lines:
+        - ledger-api/pom.xml:12
+        - ledger-api/pom.xml:6
+    group: forge.ledger
+    name: ledger-api
+    version: 1.2.0
+  - from:
+      repo: forge-ledger
+      fact: dependency.ledger-service.ledger-api
+      component: ledger-service
+      at: ledger-service/pom.xml:28
+      lines:
+        - ledger-service/pom.xml:28
+        - ledger-service/pom.xml:27
+    to:
+      repo: forge-ledger
+      fact: artifact.ledger-api
+      component: ledger-api
+      at: ledger-api/pom.xml:12
+      lines:
+        - ledger-api/pom.xml:12
+        - ledger-api/pom.xml:6
+    group: forge.ledger
+    name: ledger-api
+  - from:
+      repo: forge-ledger
+      fact: dependency.ledger-service.rates-core
+      component: ledger-service
+      at: ledger-service/pom.xml:32
+      lines:
+        - ledger-service/pom.xml:32
+        - ledger-service/pom.xml:31
+    to:
+      repo: forge-rates
+      fact: artifact.rates-core
+      component: rates-core
+      at: settings.gradle:10
+      lines:
+        - settings.gradle:10
+        - build.gradle:7
+    group: forge.rates
+    name: rates-core
+  - from:
+      repo: forge-rates
+      fact: dependency.rates-service.ledger-api
+      component: rates-service
+      at: rates-service/build.gradle:23
+      lines:
+        - rates-service/build.gradle:23
+    to:
+      repo: forge-ledger
+      fact: artifact.ledger-api
+      component: ledger-api
+      at: ledger-api/pom.xml:12
+      lines:
+        - ledger-api/pom.xml:12
+        - ledger-api/pom.xml:6
+    group: forge.ledger
+    name: ledger-api
+    version: 1.2.0
+  - from:
+      repo: forge-wallets
+      fact: dependency.wallets-api.ledger-api
+      component: wallets-api
+      at: gradle/libs.versions.toml:7
+      lines:
+        - gradle/libs.versions.toml:7
+        - wallets-api/build.gradle.kts:7
+    to:
+      repo: forge-ledger
+      fact: artifact.ledger-api
+      component: ledger-api
+      at: ledger-api/pom.xml:12
+      lines:
+        - ledger-api/pom.xml:12
+        - ledger-api/pom.xml:6
+    group: forge.ledger
+    name: ledger-api
+    version: 1.2.0
+  - from:
+      repo: forge-wallets
+      fact: dependency.wallets-api.rates-core
+      component: wallets-api
+      at: wallets-api/build.gradle.kts:10
+      lines:
+        - wallets-api/build.gradle.kts:10
+    to:
+      repo: forge-rates
+      fact: artifact.rates-core
+      component: rates-core
+      at: settings.gradle:10
+      lines:
+        - settings.gradle:10
+        - build.gradle:7
+    group: forge.rates
+    name: rates-core
+    version: 0.4.0
+ambiguous: []
+outside: 5
+test: 0

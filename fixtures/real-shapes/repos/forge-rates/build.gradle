@@ -1,0 +1,28 @@
+plugins {
+    id 'org.springframework.boot' version '3.5.11' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
+}
+
+allprojects {
+    group = 'forge.rates'
+    version = '0.4.0'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+
+    dependencyManagement {
+        imports {
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+            mavenBom "org.apache.camel.springboot:camel-spring-boot-bom:${camelVersion}"
+        }
+        dependencies {
+            dependency 'com.northwind.pay:northwind-pay-client:4.2.1'
+        }
+    }
+}

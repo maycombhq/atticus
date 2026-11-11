@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Tests
+
+- **A real-shapes corpus** (`fixtures/real-shapes/`): invented Forge repos written after the shapes of public Apache-2.0 projects (spring-petclinic, gs-multi-module, the Apigee deploy and config plugins' samples, api-platform-samples, camel-spring-boot-examples, okhttp's Kotlin DSL and version catalog, `helm create`'s chart, Kubernetes manifests), quirks kept byte for byte: `<project>` start tags over several lines, CRLF, a BOM, CDATA, Spring's Gradle `dependencyManagement`, `config.json` tokens per environment, a LocalTargetConnection, TargetServers and KVMs, Camel `{{property}}` URIs and a Fuse blueprint. Tests run the build-coordinates reader, the settings and secrets checks and the verifier on it, the estate and dependency joins against hand-checked goldens, and seeded property tests for the pom and Gradle readers and placeholder resolution. Where today's code is wrong the test keeps the right expectation as `it.fails`, so each fix flips it.
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed

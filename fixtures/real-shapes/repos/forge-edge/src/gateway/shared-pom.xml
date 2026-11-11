@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>forge.edge</groupId>
+    <artifactId>parent-pom</artifactId>
+    <packaging>pom</packaging>
+    <version>1.0</version>
+    <properties>
+        <main.basedir>${project.basedir}</main.basedir>
+        <apigee.deploy.version>2.5.3</apigee.deploy.version>
+    </properties>
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>io.apigee.build-tools.enterprise4g</groupId>
+                    <artifactId>apigee-edge-maven-plugin</artifactId>
+                    <version>${apigee.deploy.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+    <profiles>
+        <profile>
+            <id>test</id>
+            <properties>
+                <apigee.env>test</apigee.env>
+                <apigee.options>override</apigee.options>
+            </properties>
+        </profile>
+        <profile>
+            <id>prod</id>
+            <properties>
+                <apigee.env>prod</apigee.env>
+                <apigee.options>override</apigee.options>
+            </properties>
+        </profile>
+    </profiles>
+</project>

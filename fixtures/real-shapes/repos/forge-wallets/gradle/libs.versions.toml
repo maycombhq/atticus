@@ -1,0 +1,13 @@
+[versions]
+forge-ledger = "1.2.0"
+spring-boot = "3.5.11"
+junit = "5.13.4"
+
+[libraries]
+forge-ledger-api = { module = "forge.ledger:ledger-api", version.ref = "forge-ledger" }
+northwind-pay-client = { group = "com.northwind.pay", name = "northwind-pay-client", version = "4.2.1" }
+spring-boot-starter-webflux = { module = "org.springframework.boot:spring-boot-starter-webflux" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
