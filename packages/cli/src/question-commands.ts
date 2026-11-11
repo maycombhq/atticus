@@ -11,6 +11,7 @@ import {
   answerByWords,
   answerWords,
   HOSTS_STEP,
+  IGNORE_REASON_MAX,
   listQuestions,
   TARGETS_STEP_ID,
   topicOfQuestion,
@@ -437,6 +438,13 @@ export async function questionsFiles(
     const reason = str(values.reason)?.trim() || undefined;
     if (reason && !ignore) {
       io.err("--reason goes with --ignore.");
+      return 2;
+    }
+    // Beta.25: as long as the app's API takes.
+    if (reason && reason.length > IGNORE_REASON_MAX) {
+      io.err(
+        `--reason is at most ${IGNORE_REASON_MAX} characters (this is ${reason.length}): say it in fewer words.`,
+      );
       return 2;
     }
     if (ignore && (opt !== undefined || text !== undefined || accept || target)) {

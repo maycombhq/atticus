@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.10.0",
+    "version": "3.11.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4810,7 +4810,7 @@
     "/api/trust/answer-boxes/ignore": {
       "post": {
         "operationId": "ignoreAnswerBox",
-        "summary": "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write is local, for Propose for review",
+        "summary": "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
         "tags": [
           "workspace"
         ],
@@ -4834,6 +4834,11 @@
                   "preview": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "stamp": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -4897,6 +4902,16 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Written only in part: the problem names exactly what was written",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4911,7 +4926,7 @@
     "/api/trust/answer-boxes/rename": {
       "post": {
         "operationId": "renameAnswerBox",
-        "summary": "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write is local, for Propose for review",
+        "summary": "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
         "tags": [
           "workspace"
         ],
@@ -4935,6 +4950,11 @@
                   "preview": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "stamp": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -4998,6 +5018,16 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Written only in part: the problem names exactly what was written",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26493,6 +26523,24 @@
               "repos"
             ],
             "additionalProperties": false
+          },
+          "written": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -44500,6 +44548,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "stamp": {
+            "type": "string"
           }
         },
         "required": [
