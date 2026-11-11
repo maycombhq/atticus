@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
+import { usePopupFocus } from "./popup.js";
 import { WrittenNext } from "../../app/app-step.js";
 
 /**
@@ -96,10 +97,11 @@ export function OwnerForm(p: {
       setBusy(undefined);
     }
   };
+  const head = usePopupFocus<HTMLHeadingElement>();
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
-      <div className="row between">
-        <h4 id={`${id}-t`} className="h" style={{ fontSize: 14, margin: 0 }}>
+      <div className="box-pop-head">
+        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
           {O.title(p.repo)}
         </h4>
         <button type="button" className="btn" onClick={p.onClose}>
