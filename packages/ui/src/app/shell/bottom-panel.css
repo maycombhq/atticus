@@ -72,16 +72,16 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--muted);
+  /* beta.26 CI: the stronger of the two greys, and no colour transition, so a check made just
+     after the theme changes never reads a colour halfway between the two themes. */
+  color: var(--text-2);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
-  transition:
-    color 0.12s ease,
-    border-color 0.12s ease;
+  transition: border-color 0.12s ease;
 }
 .bp-tab:hover {
   color: var(--text);
