@@ -2,6 +2,21 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Fixed
+
+- **A gateway's target that is an estate service is asked about, never sent outside.** A forwarding call's host in a public-looking domain went outside the estate when no service served its whole path exactly as it is, though a service serves it under its own base path (`https://accounts-svc.forge-apps.example/accounts-api` to a service whose context path is `/accounts-api`). The path is now tried under each service's declared base (the manifest's `basePath`, a Route's or Ingress's path, a context path setting), and a URL whose path is such a base is that service's: asked about (`unknown-host`).
+- **A Kubernetes namespace is no public domain.** `forge-wallets.qa:8080`, `forge-wallets.dev`, `forge-wallets.app` and `wallets.forge.int` went outside the estate as public names. A two-label host now counts as public only under a common generic name (`com`, `net`, `org`, `io`…) or `example`; a country code, `dev`, `app` and the like need three labels (`api.northwind.dev`); `int` and `api` place nothing. Anything else is asked about.
+- **A base URL whose host placeholder nothing sets keeps its path** (`https://${GATEWAY_HOST}/northwind-wallets/1.0`), so the proxy's BasePath joins the call, or a question is asked; the calls were left unasked.
+- **A join by a proxy's BasePath is verified only when the caller's host is the gateway's.** A call whose host nothing resolves is still joined by the BasePath, but as a guess (inferred, `joined-by-path` then `joined-by-base-path`), shown so and correctable; a gateway's forwarding call that names no host (a chained proxy) stays verified.
+- **A verified link that merged a pairing is shown by the code's how.** A link verified by its host with another call the AI or a person paired said "The AI paired this call…" as ✓ Verified; now its how is the verified call's, and the pairing is an "also". A link whose only how is a pairing is never shown verified.
+- **A deploy tool's token belongs to its own configuration and file.** The verifier refuses a token whose `env` or `target` isn't the configuration and file it sits in, and the join takes a token only for the file that writes the call's URL, whose element its XPath's root is (a `/ProxyEndpoint/...` token never replaces a target's URL). A `config.json` beside any of the org pack's `gatewayBundleFolders` (`sharedflowbundle` included) is read, not only `apiproxy/`.
+- **A config fact's value must be the line's whole value.** `https://api.northwind.example` was accepted on a line setting `https://api.northwind.example.evil.example/v1` (YAML, properties and tokens alike).
+- **A placeholder call must cite code that passes the key's segment.** A README line or a log message that only mentioned it (`log.warn("createWallet failed")`) was kept as the call.
+- **No secret gets past the schema in a token's part or source.** A config fact under a secret's key with the credential in `cite.with` or `source` was accepted; it is refused (the rest of the file kept), and the verifier refuses one handed over unparsed (`secret-value`), never repeating it. A `Basic` authorization value is a secret by its shape, in facts and in Trust's secrets check.
+- **An outside system the profile lists by its bare host takes a call whose host has a port** (`pay.northwind.example:8443`).
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed

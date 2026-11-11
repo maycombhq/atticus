@@ -5273,10 +5273,13 @@ export const COPY = {
     more: (n: number) =>
       `${n} more call${n === 1 ? "" : "s"} on this link. Open either end to see its calls one by one, or list the Interface records with atticus query "kind:interface".`,
     none: "This link isn't a call, so there is no join to explain: its lines are listed under it.",
-    // Beta.24 review: on a verified link, the guesses its other merged calls rest on.
+    // Beta.24 review: on a verified link, the guesses its other merged calls rest on (beta.25:
+    // and the pairings, a person's or the AI's word, which never verify a link).
     also: (how: string) =>
-      `Also: other calls merged into this link were joined by ${how}, a guess; open either end to see them one by one.`,
+      `Also: other calls merged into this link were joined by ${how}, not read from code at both ends; open either end to see them one by one.`,
     alsoHow: {
+      person: "a person's pairing (their word)",
+      ai: "the AI's pairing (no person has confirmed it)",
       path: "their path alone",
       label: "their host's first part",
       "platform-setting": "a platform-wide setting",

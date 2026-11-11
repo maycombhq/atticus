@@ -350,6 +350,54 @@ export function looksLikeSecret(key: string, value: string | undefined): boolean
   );
 }
 
+/**
+ * A literal that reads as a credential, not a name: one run of letters and digits (`-_+/=.~`
+ * allowed), six characters or more, with both, that is no file name or URL (`AM-Key.xml`,
+ * `config/app.yml`, `prod` and `v1` are names).
+ */
+const tokenLike = (t: string) =>
+  /^[A-Za-z0-9+/=_.~-]{6,}$/.test(t) &&
+  /[0-9]/.test(t) &&
+  /[A-Za-z]/.test(t) &&
+  !/\.[a-z]{2,5}$/i.test(t) &&
+  !/^\/|\/[a-z][\w-]*\//i.test(t);
+
+/**
+ * Beta.25 review: where a config fact carries its setting's secret by another field than its
+ * value, the field that does (`source` or `cite.with`), or undefined: one shaped like a secret
+ * whatever the key (`hasSecretShape`), or, under a key that names a secret, a literal that reads
+ * as a credential and is no name of the fact's own (its key or a name in it, its target with or
+ * without its extension, its env, its source). A quote is the verifier's to redact, as it always
+ * was. The message never repeats the value.
+ */
+export function configSecretField(c: {
+  key: string;
+  source?: string | undefined;
+  target?: string | undefined;
+  env?: string | undefined;
+  cite: { with?: readonly { value: string }[] | undefined };
+}): string | undefined {
+  const target = c.target?.trim();
+  const own = new Set(
+    [c.key, c.env, target, target?.replace(/\.[^.]*$/, "")]
+      .filter((x): x is string => !!x)
+      .map((x) => x.trim()),
+  );
+  const keyText = c.key.toLowerCase();
+  const secret = (v: string) => {
+    const t = v.trim();
+    if (!t) return false;
+    if (hasSecretShape(t)) return true;
+    return (
+      looksLikeSecret(c.key, t) && tokenLike(t) && !own.has(t) && !keyText.includes(t.toLowerCase())
+    );
+  };
+  if (c.source !== undefined && secret(c.source)) return "source";
+  if ((c.cite.with ?? []).some((w) => secret(w.value) && w.value.trim() !== c.source?.trim()))
+    return "cite.with";
+  return undefined;
+}
+
 export const ConfigFact = z
   .strictObject({
     kind: z.literal("config"),
@@ -381,6 +429,13 @@ export const ConfigFact = z
         message: `"${c.key}" has a value shaped like a secret: give its source (env:NAME, vault:path), never its value`,
       });
     }
+    const field = configSecretField(c);
+    if (field)
+      ctx.addIssue({
+        code: "custom",
+        path: field.split("."),
+        message: `"${c.key}" carries a secret in its ${field}: cite the line that names the setting and give its source (env:NAME, vault:path), never its value`,
+      });
   });
 
 /**

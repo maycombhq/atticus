@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_BUNDLE_FOLDERS } from "@maycombhq/core";
 import { isCommentLine } from "./skipped.js";
 
 /**
@@ -15,6 +16,11 @@ const SETTINGS_FILE =
   /\.(ya?ml|properties|json|xml|config|conf|ini|toml|cfg|env)$|(^|\/)\.env(\.[^/]*)?$/i;
 export const isSettingsFile = (path: string) => SETTINGS_FILE.test(path);
 const isYaml = (path: string) => /\.ya?ml$/i.test(path);
+/**
+ * Beta.25 review: a document, never code: prose that names a key's segment is no call (a README,
+ * an AsciiDoc page, a text or HTML page).
+ */
+const DOC_FILE = /\.(md|markdown|mdx|adoc|asciidoc|txt|text|rst|html?|textile|org|rtf|wiki)$/i;
 const isProperties = (path: string) => /\.properties$/i.test(path);
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -140,7 +146,7 @@ export function helperBuildsKey(
   cite: { file: string; line: number; with?: readonly Part[] },
   linesOf: (path: string) => readonly string[] | undefined,
 ): boolean {
-  if (isSettingsFile(cite.file)) return false;
+  if (isSettingsFile(cite.file) || DOC_FILE.test(cite.file)) return false;
   const segs = keySegments(key);
   if (segs.length < 2 || segs.join(".") !== key.trim()) return false;
   const last = segs[segs.length - 1]!;
@@ -151,7 +157,22 @@ export function helperBuildsKey(
   const code = isCommentLine(line)
     ? line
     : line.replace(/\/\*.*?\*\//g, "").replace(/(^|\s)\/\/.*$/, "");
-  if (!new RegExp(`(^|[^A-Za-z0-9_$-])${escape(last)}($|[^A-Za-z0-9_$-])`).test(code)) return false;
+  // Beta.25 review: the segment is a whole string literal the code passes (`url("createWallet")`)
+  // or an identifier outside any literal (`url(createWallet)`), never a word inside a longer
+  // literal (`log.warn("createWallet failed")`).
+  const literals: string[] = [];
+  const bare = code.replace(
+    /(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g,
+    (_all, _q: string, text: string) => {
+      literals.push(text);
+      return '""';
+    },
+  );
+  if (
+    !literals.includes(last) &&
+    !new RegExp(`(^|[^A-Za-z0-9_$-])${escape(last)}($|[^A-Za-z0-9_$-])`).test(bare)
+  )
+    return false;
   const parts = cite.with ?? [];
   const files = [...new Set(parts.map((p) => p.file))];
   return files.some((file) => {
@@ -196,6 +217,103 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+/** A YAML line's value as written: a quoted scalar's text, else up to a comment. */
+function yamlScalar(rest: string): string {
+  const t = rest.trim();
+  const q = /^(["'])((?:(?!\1).|\1\1)*)\1/.exec(t);
+  if (q) return q[2]!;
+  return t.replace(/\s+#.*$/, "").trim();
+}
+
+/** A properties line's value: what follows its key and separator. */
+function propertiesValue(line: string, key: string): string {
+  return line
+    .slice(line.indexOf(key) + key.length)
+    .replace(/^\s*[=:]?\s*/, "")
+    .trim();
+}
+
+/** A JSON line's `"value":` member, its string unescaped, else its bare literal. */
+function jsonValueOn(line: string): string | undefined {
+  const m = /"value"\s*:\s*("(?:[^"\\]|\\.)*"|[^,}\]\s]+)/.exec(line);
+  if (!m) return undefined;
+  if (!m[1]!.startsWith('"')) return m[1]!;
+  try {
+    return JSON.parse(m[1]!) as string;
+  } catch {
+    return m[1]!.slice(1, -1);
+  }
+}
+
+interface JsonFrame {
+  type: "{" | "[";
+  start: number;
+  end: number;
+  /** The member the container is the value of (an array's item: the array's). */
+  under?: string;
+  /** Its `"name"` member's string, for an object. */
+  name?: string;
+}
+
+/**
+ * The JSON containers of a text, each with the lines it spans, the member it sits under and its
+ * `"name"`: enough to tell which configuration and which file of a deploy tool's `config.json` a
+ * token is in. Unbalanced or not JSON: whatever was read.
+ */
+function jsonFrames(lines: readonly string[]): JsonFrame[] {
+  const out: JsonFrame[] = [];
+  const stack: (JsonFrame & { pending?: string; afterColon?: boolean })[] = [];
+  for (let ln = 0; ln < lines.length; ln++) {
+    const l = lines[ln]!;
+    for (let i = 0; i < l.length; i++) {
+      const ch = l[i]!;
+      const top = stack[stack.length - 1];
+      if (ch === '"') {
+        let j = i + 1;
+        let text = "";
+        for (; j < l.length && l[j] !== '"'; j++) {
+          if (l[j] === "\\" && j + 1 < l.length) j++;
+          text += l[j];
+        }
+        const isKey = top?.type === "{" && !top.afterColon && /^\s*:/.test(l.slice(j + 1));
+        if (top?.type === "{") {
+          if (isKey) top.pending = text;
+          else if (top.afterColon && top.pending === "name" && top.name === undefined)
+            top.name = text;
+        }
+        i = j;
+        continue;
+      }
+      if (ch === ":" && top?.type === "{") top.afterColon = true;
+      else if (ch === "," && top?.type === "{") {
+        top.afterColon = false;
+        top.pending = undefined;
+      } else if (ch === "{" || ch === "[") {
+        const under = top?.type === "{" ? top.pending : top?.under;
+        stack.push({ type: ch, start: ln + 1, end: lines.length, ...(under ? { under } : {}) });
+      } else if (ch === "}" || ch === "]") {
+        const f = stack.pop();
+        if (f) {
+          out.push({
+            type: f.type,
+            start: f.start,
+            end: ln + 1,
+            ...(f.under ? { under: f.under } : {}),
+            ...(f.name !== undefined ? { name: f.name } : {}),
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const noExt = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/\.[^.]*$/, "");
+
 /** The lines of the JSON object a line sits in, that object's `{` to its `}`. */
 function enclosingObject(lines: readonly string[], line: number): string[] | undefined {
   let depth = 0;
@@ -234,9 +352,16 @@ function enclosingObject(lines: readonly string[], line: number): string[] | und
  * in one token object.
  */
 export function configLineProblem(
-  f: { key: string; value?: string; cite: { file: string; line: number; with?: readonly Part[] } },
+  f: {
+    key: string;
+    value?: string | undefined;
+    target?: string | undefined;
+    env?: string | undefined;
+    cite: { file: string; line: number; with?: readonly Part[] | undefined };
+  },
   linesOf: (path: string) => readonly string[] | undefined,
   listed: () => readonly string[],
+  bundleFolders: readonly string[] = DEFAULT_GATEWAY_BUNDLE_FOLDERS,
 ): string | undefined {
   const lines = linesOf(f.cite.file);
   if (!lines) return undefined;
@@ -244,19 +369,40 @@ export function configLineProblem(
   const where = `${f.cite.file}:${f.cite.line}`;
   const segs = keySegments(f.key);
   const value = f.value === undefined ? undefined : norm(f.value);
+  // Beta.25 review: the value a line sets is the whole value, never a prefix of a longer one
+  // (`https://api.northwind.example` is not `https://api.northwind.example.evil.example/v1`).
+  const same = (v: string | undefined) =>
+    value !== undefined && v !== undefined && norm(v) === value;
+  // A line of free text (no key the check reads) holds the value somewhere in it.
   const has = (l: string) => value !== undefined && norm(l).includes(value);
 
   // a deploy tool's token: `{ "xpath": "<key>", "value": "<value>" }` in a bundle's config.json
   if (f.key.trim().startsWith("/") && /(^|\/)config\.json$/i.test(f.cite.file)) {
     const dir = f.cite.file.replace(/[^/]*$/, "");
-    if (!listed().some((p) => p.startsWith(`${dir}apiproxy/`)))
-      return `config ${where} is a config.json beside no gateway bundle (no ${dir}apiproxy/); a token's setting is read only from the bundle's own`;
+    // Beta.25 review: the bundle folders are the org pack's (`gatewayBundleFolders`).
+    if (!listed().some((p) => bundleFolders.some((b) => p.startsWith(`${dir}${b}/`))))
+      return `config ${where} is a config.json beside no gateway bundle (no ${bundleFolders.map((b) => `${dir}${b}/`).join(" or ")}); a token's setting is read only from the bundle's own`;
     const obj = enclosingObject(lines, f.cite.line);
     const xpathRe = new RegExp(`"xpath"\\s*:\\s*"${escape(f.key.trim())}"`);
     if (!obj || !obj.some((l) => xpathRe.test(l)))
       return `the token at ${where} has no "xpath" of ${f.key}`;
-    if (value !== undefined && !obj.some((l) => /"value"\s*:/.test(l) && has(l)))
+    if (value !== undefined && !obj.some((l) => same(jsonValueOn(l))))
       return `the token at ${where} sets no such value; cite the token whose "value" it is`;
+    // Beta.25 review: the token's environment and file are the configuration's and the file's
+    // it sits in (`configurations[].name`, `targets[]`/`policies[]`/`proxies[]` `.name`).
+    const around = jsonFrames(lines)
+      .filter((x) => x.type === "{" && x.start <= f.cite.line && x.end >= f.cite.line)
+      .sort((a, b) => b.start - a.start);
+    if (f.target !== undefined) {
+      const file = around.find((x) => /^(targets|policies|proxies)$/i.test(x.under ?? ""));
+      if (!file?.name || noExt(file.name) !== noExt(f.target))
+        return `the token at ${where} is ${file?.name ? `${file.name}'s` : "in no file's list"}, not ${f.target}'s; give the target the token's file is named`;
+    }
+    if (f.env !== undefined) {
+      const conf = around.find((x) => /^configurations$/i.test(x.under ?? ""));
+      if (!conf?.name || conf.name.trim() !== f.env.trim())
+        return `the token at ${where} is in ${conf?.name ? `the ${conf.name} configuration` : "no named configuration"}, not ${f.env}; give the env its configuration is named`;
+    }
     return undefined;
   }
 
@@ -268,7 +414,8 @@ export function configLineProblem(
       if (path.length < segs.length || !sameSegs(tail, segs))
         return `${where} sets ${path.join(".")}, not ${f.key}: the key's parents are not the lines above it`;
       if (value !== undefined && y.rest && !/^[|>]/.test(y.rest)) {
-        if (!has(y.rest)) return `${where} sets ${y.key} to something other than the value claimed`;
+        if (!same(yamlScalar(y.rest)))
+          return `${where} sets ${y.key} to something other than the value claimed`;
         return undefined;
       }
     }
@@ -279,7 +426,7 @@ export function configLineProblem(
       if (k !== segs.join(".") && !k.endsWith(`.${segs.join(".")}`))
         return `${where} sets ${k}, not ${f.key}`;
       if (value !== undefined) {
-        if (!has(at.slice(at.indexOf(k) + k.length)))
+        if (!same(propertiesValue(at, k)))
           return `${where} sets ${k} to something other than the value claimed`;
         return undefined;
       }

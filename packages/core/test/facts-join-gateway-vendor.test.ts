@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
   JOINED_BY_BASE_PATH,
+  JOINED_BY_PATH,
   joinFacts,
   joinRecords,
   parseFacts,
@@ -222,10 +223,11 @@ describe("the callers to the proxy, by the gateway's host and the whole path", (
       ["call.get.search-wallet", "entry.get.northwind-wallets", "base-path"],
       ["call.post.create-wallet", "entry.post.northwind-wallets", "base-path"],
     ]);
+    // Beta.25 review: the caller's host is unknown, so the link is kept as a guess, never verified.
     const to = ifaces(repos).filter((i) => i.from === "wallets-api");
     for (const i of to) {
-      expect(i.confidence).toBe("verified");
-      expect(i.flags).toEqual([JOINED_BY_BASE_PATH]);
+      expect(i.confidence).toBe("inferred");
+      expect(i.flags).toEqual([JOINED_BY_PATH, JOINED_BY_BASE_PATH]);
     }
   });
 

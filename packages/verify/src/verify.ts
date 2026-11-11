@@ -2,6 +2,7 @@ import {
   citedFiles,
   claimOnLines,
   clusterServiceAddress,
+  configSecretField,
   factIdPart,
   isPatternPath,
   plainPathPrefix,
@@ -72,6 +73,20 @@ import {
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
 
+/** A config fact with its source, its quote and every part's value redacted (`secret-value`). */
+function withoutSecret(f: Fact): Fact {
+  if (f.kind !== "config") return f;
+  const { quote: _q, ...cite } = f.cite;
+  return {
+    ...f,
+    ...(f.source !== undefined ? { source: "<redacted>" } : {}),
+    cite: {
+      ...cite,
+      ...(f.cite.with ? { with: f.cite.with.map((w) => ({ ...w, value: "<redacted>" })) } : {}),
+    },
+  } as Fact;
+}
+
 export type RejectCode =
   | "outside-repo"
   | "secret-path"
@@ -105,6 +120,12 @@ export type RejectCode =
    * (ADR 0124 addendum A-framework): a reader can't rename an artifact.
    */
   | "framework-name"
+  /**
+   * A config fact that carries its setting's secret by another field than its value: its
+   * source, a `cite.with` part or its quote (ADR 0124 addendum, beta.25). The fact is rejected
+   * with every part, its quote and its source redacted; the message never repeats the value.
+   */
+  | "secret-value"
   /** A deploy fact's host written as a template (`{{ .Values.host }}`, `${HOST}`) (ADR 0143). */
   | "exposure-template"
   /**
@@ -951,8 +972,18 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // line does (its YAML parents, its properties key, its token object); the join puts the
     // value into the catalog.
     if (f.kind === "config" && !found.has(f.id)) {
-      const bad = configLineProblem(f, linesOf, listed);
+      const bad = configLineProblem(f, linesOf, listed, rules.gatewayBundleFolders);
       if (bad) problem(f, "claim-not-on-line", `${label}: ${bad}`);
+    }
+    // Beta.25 review: a secret past the schema (a reader that skipped it) is refused here too.
+    if (f.kind === "config") {
+      const field = configSecretField(f);
+      if (field)
+        problem(
+          f,
+          "secret-value",
+          `${label}: "${f.key}" carries a secret in its ${field}; cite the line that names the setting and give its source (env:NAME, vault:path), never its value`,
+        );
     }
     // A-read, problem 4: an entry's auth rests on the line that sets it, checked as a part is.
     if (f.kind === "entry" && f.authCite)
@@ -1238,12 +1269,14 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   for (const f of facts) {
     const ps = found.get(f.id);
     if (!ps?.length) continue;
+    // A fact refused for the secret it carries is reported without it.
+    const shown = ps.some((p) => p.code === "secret-value") ? withoutSecret(f) : f;
     rejected.set(
       f.id,
       ps.length === 1
-        ? { fact: f, ...ps[0]! }
+        ? { fact: shown, ...ps[0]! }
         : {
-            fact: f,
+            fact: shown,
             code: ps[0]!.code,
             message: ps.map((p, i) => `(${i + 1}) ${p.message}`).join(" "),
             problems: ps,

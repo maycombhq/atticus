@@ -263,7 +263,8 @@ export const JOINED_BY_HOST = "joined-by-host";
 /**
  * A call whose host nothing resolves, joined to a gateway proxy's flow by its whole path: the one
  * proxy whose cited `<BasePath>` starts it, the one flow of its method under it. Code at both
- * ends: a how, never a guess.
+ * ends: a how, never a guess. Beta.25: verified only for a gateway's forwarding call that names
+ * no host (a chained proxy); a call whose host nothing resolves is inferred, `joined-by-path` first.
  */
 export const JOINED_BY_BASE_PATH = "joined-by-base-path";
 /**
@@ -379,6 +380,8 @@ export interface FactJoin {
    * A join by path (the join fallback): nobody named the callee, so it is inferred. `within`
    * says where the one entry that serves the call was found: the caller's own repo first, else
    * the estate; `named` is the target the call gave, when it named one the estate doesn't have.
+   * Beta.25: also a join by a proxy's BasePath (`how: "base-path"`) whose caller's host nothing
+   * resolves (`within: "estate"`): the path is code at both ends, the host a guess.
    */
   inferred?: { within: "repo" | "estate"; named?: string };
   /**
@@ -796,27 +799,59 @@ function urlPathOf(s: string | undefined): string | undefined {
 }
 
 /**
- * The public top-level names a host may end in for the outside rule to place it: the common
- * generic ones, the reserved `example` the fixtures use, and any two-letter country code. A name
- * ending in anything else (`.corp`, `.local`, `.internal`, `.lan`, `.intranet`, `.svc`,
- * `.cluster`, a Kubernetes namespace) is private, and asked about.
+ * Beta.25 review: the path a URL writes after its host, the host a placeholder or not
+ * (`https://${GATEWAY_HOST}/northwind-wallets/1.0`, `${GATEWAY_URL}/northwind-wallets/1.0`), when
+ * it writes one and no placeholder is left in it.
+ */
+function pathAroundPlaceholder(s: string | undefined): string | undefined {
+  const t = (s ?? "").trim();
+  const p =
+    urlPathOf(t) ??
+    (() => {
+      const ph = placeholderIn(t);
+      if (!ph || ph.before.trim()) return undefined;
+      const after = ph.after.split(/[?#]/, 1)[0] ?? "";
+      return after.startsWith("/") && after !== "/" ? after : undefined;
+    })();
+  return p && !placeholderIn(p) ? p : undefined;
+}
+
+/**
+ * The public top-level names a host may end in for the outside rule to place it by its last two
+ * labels (`northwind.com`): the generic ones in common use and the reserved `example` the
+ * fixtures use. Beta.25 review: a name ending in anything else is placed only as `PUBLIC_TLDS_3`
+ * says, or not at all (`.corp`, `.local`, `.internal`, `.lan`, `.svc`, `.int`, `.api`, a
+ * Kubernetes namespace such as `wallets.qa` or `wallets.payments`), and is asked about.
  */
 const PUBLIC_TLDS: ReadonlySet<string> = new Set([
   "com",
   "net",
   "org",
   "io",
-  "dev",
-  "app",
-  "cloud",
   "ai",
+  "co",
+  "cloud",
   "biz",
   "info",
-  "co",
   "tech",
+  "xyz",
+  "gov",
+  "edu",
+  "mil",
+  "example",
+]);
+/**
+ * Beta.25 review: public top-level names that are also words a team names a Kubernetes namespace
+ * or an environment by (`dev`, `app`, `bank`, `pay`, a two-letter code such as `qa`, `uk`, `de`).
+ * A host ending in one is placed only with three labels or more (a registrable domain and a host
+ * label, `api.northwind.dev`); with two (`forge-wallets.dev`, `wallets.qa:8080`) it is a Service
+ * and its namespace as likely as a public name, and asked about.
+ */
+const PUBLIC_TLDS_3: ReadonlySet<string> = new Set([
+  "dev",
+  "app",
   "online",
   "site",
-  "xyz",
   "pro",
   "services",
   "solutions",
@@ -831,12 +866,6 @@ const PUBLIC_TLDS: ReadonlySet<string> = new Set([
   "company",
   "network",
   "software",
-  "api",
-  "gov",
-  "edu",
-  "mil",
-  "int",
-  "example",
 ]);
 /** The common public suffixes of two labels: a registrable domain under them has three. */
 const TWO_PART_SUFFIXES: ReadonlySet<string> = new Set([
@@ -891,7 +920,8 @@ const TWO_PART_SUFFIXES: ReadonlySet<string> = new Set([
  * A host's registrable domain (`northwind.example` for `api.northwind.example`,
  * `northwind.co.uk` for `api.northwind.co.uk`), or undefined for a name the outside rule can't
  * place: one label, `localhost`, an address, a private or in-cluster name (`.corp`, `.svc`), a
- * Service and its namespace (`wallets.payments`). A wildcard and a port are left off.
+ * Service and its namespace (`wallets.payments`, `wallets.qa`, `forge-wallets.dev`: two labels
+ * whose last is no `PUBLIC_TLDS` name). A wildcard and a port are left off.
  */
 export function registrableDomain(host: string): string | undefined {
   const h = host.trim().toLowerCase().replace(/^\*\./, "").replace(/:\d+$/, "").replace(/\.$/, "");
@@ -899,10 +929,12 @@ export function registrableDomain(host: string): string | undefined {
   const ls = h.split(".");
   if (ls.length < 2 || ls.some((l) => !l)) return undefined;
   const tld = ls.at(-1)!;
-  if (!PUBLIC_TLDS.has(tld) && !/^[a-z]{2}$/.test(tld)) return undefined;
   if (TWO_PART_SUFFIXES.has(ls.slice(-2).join(".")))
     return ls.length >= 3 ? ls.slice(-3).join(".") : undefined;
-  return ls.slice(-2).join(".");
+  if (PUBLIC_TLDS.has(tld)) return ls.slice(-2).join(".");
+  if ((PUBLIC_TLDS_3.has(tld) || /^[a-z]{2}$/.test(tld)) && ls.length >= 3)
+    return ls.slice(-2).join(".");
+  return undefined;
 }
 
 const joinPaths = (base: string | undefined, path: string | undefined) =>
@@ -1529,6 +1561,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   };
 
   const outside = new Set((input.outside ?? []).map(factIdPart));
+  /**
+   * The outside system the profile lists by a host, as the host or, beta.25 review, as the host
+   * without its port (a system listed as `pay.northwind.example` takes `pay.northwind.example:8443`):
+   * the name the profile gives it, or undefined.
+   */
+  const outsideByHost = (h: string): string | undefined => {
+    if (outside.has(factIdPart(h))) return h;
+    const bare = h.replace(/:\d+$/, "");
+    return bare !== h && outside.has(factIdPart(bare)) ? bare : undefined;
+  };
   const joins: FactJoin[] = [];
   const asks: FactJoinAsk[] = [];
   const misses: FactJoinMiss[] = [];
@@ -1913,15 +1955,36 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * tool's token for one file of the repo, its `target` that file (by name, with or without its
    * extension) and its `key` the element's path in it (an XPath, `/TargetEndpoint/
    * HTTPTargetConnection/URL`, as the Apigee config plugin's `config.json` writes it). The file is
-   * one the call cites (its line or a `cite.with` part); the value is the whole URL. One resolver
+   * one the call cites (its line or a `cite.with` part) whose element the XPath's root is; the
+   * value is the whole URL. One resolver
    * among the others (a placeholder's setting by its name, a base's keyed setting): whatever the
    * file is called, only what the facts say is read.
    */
   const replacedFor = (call: Node & { fact: Call }): Resolved[] => {
-    const cited = [call.fact.cite, ...(call.fact.cite.with ?? [])].map((p) =>
-      (p.file.split("/").pop() ?? p.file).toLowerCase(),
-    );
-    const names = new Set(cited.flatMap((b) => [b, b.replace(/\.[^.]*$/, "")]));
+    // Beta.25 review: a token is for the file that writes the call's URL: the cited line or part
+    // that writes its host or base as the call gives it, when one does (a route's Condition line
+    // in `proxies/default.xml` writes no URL), and that file's element is the XPath's root. A
+    // bundle keeps each kind in its own folder (`targets/`, `proxies/`, `policies/`), so a
+    // `/ProxyEndpoint/...` token for `default.xml` is never the target `default.xml`'s.
+    const parts = [call.fact.cite, ...(call.fact.cite.with ?? [])];
+    const urlText = (call.fact.host ?? call.fact.base ?? "").trim();
+    const writing = urlText ? parts.filter((p) => p.value.trim() === urlText) : [];
+    const cited = (writing.length ? writing : parts).map((p) => p.file);
+    const rootFits = (file: string, xpath: string) => {
+      const root = /^\/([A-Za-z]+)/.exec(xpath.trim())?.[1]?.toLowerCase();
+      const folder = file.split("/").at(-2)?.toLowerCase();
+      if (folder === "targets") return root === "targetendpoint";
+      if (folder === "proxies") return root === "proxyendpoint";
+      if (folder === "policies") return root !== "targetendpoint" && root !== "proxyendpoint";
+      return true;
+    };
+    const forCited = (target: string, xpath: string) => {
+      const t = target.trim().toLowerCase();
+      return cited.some((file) => {
+        const b = (file.split("/").pop() ?? file).toLowerCase();
+        return (b === t || b.replace(/\.[^.]*$/, "") === t) && rootFits(file, xpath);
+      });
+    };
     // Review of beta.24: a bundle's tokens are its own. Two bundles in one repo may each have a
     // `targets/default.xml`; a token is the bundle's whose folder holds its file (the longest),
     // and one in no bundle's folder is the repo's one bundle's, else nobody's.
@@ -1941,7 +2004,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       .filter(
         (n) =>
           !!n.fact.target &&
-          names.has(n.fact.target.trim().toLowerCase()) &&
+          forCited(n.fact.target, n.fact.key) &&
           n.fact.key.trim().startsWith("/") &&
           /^[a-z][a-z0-9+.-]*:\/\//i.test((n.fact.value ?? "").trim()) &&
           !!hostIn(n.fact.value) &&
@@ -1971,7 +2034,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * Whether a gateway's forwarding call is to a system outside the estate, said by nobody: every
    * host its settings give (one per environment) is a public name (`registrableDomain`) in a
    * registrable domain none of the estate's hosts (the manifest's, the exposures') is in, and no
-   * entry of the estate serves the whole path it sends as it is. A host the rule can't place (one
+   * entry of the estate could serve the whole path it sends (as it is, or under a base path its
+   * service declares: `servedSomewhere`). A host the rule can't place (one
    * label, a Service and its namespace, a private or in-cluster name, an address) is asked about.
    */
   const outsideOfEstate = (
@@ -2001,8 +2065,57 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const whole = configs.length
       ? configs.map((x) => joinPaths(urlPathOf(x.value), call.fact.path))
       : [fullPath ?? call.fact.path];
-    return ![...new Set(whole)].some(
-      (p) => !!p && serving({ ...call, fact: { ...call.fact, path: p } }, () => true, true).length,
+    if ([...new Set(whole)].some((p) => !!p && servedSomewhere(call, p))) return false;
+    // A URL whose own path is the base path an estate service declares is that service's, for
+    // every route the proxy forwards to it, served or not.
+    return !configs.some((x) => {
+      const p = urlPathOf(x.value);
+      return !!p && isEstateBase(p);
+    });
+  };
+  const estateBaseSeen = new Map<string, boolean>();
+  /** Whether a path starts with a base path some service of the estate declares (`basesOf`). */
+  const isEstateBase = (p: string): boolean => {
+    const was = estateBaseSeen.get(p);
+    if (was !== undefined) return was;
+    const segs = rawSegs(p);
+    const done = new Set<string>();
+    let got = false;
+    for (const e of entries) {
+      const k = key(e.repo, e.component);
+      if (done.has(k)) continue;
+      done.add(k);
+      if (basesOf(e).some((b) => b.segs.length > 0 && startsWithSegs(segs, b.segs))) {
+        got = true;
+        break;
+      }
+    }
+    estateBaseSeen.set(p, got);
+    return got;
+  };
+  /**
+   * Whether an entry of the estate could serve a whole path: as it is, or under a base path its
+   * service declares (the manifest's `basePath`, a Route's or an Ingress's path, a context path
+   * setting), as the path suffix reads them (beta.25 review: a token's URL may be an estate
+   * service's own, its context path in front). A base nothing names is never taken off here.
+   */
+  const servedSomewhere = (call: Node & { fact: Call }, p: string): boolean => {
+    if (serving({ ...call, fact: { ...call.fact, path: p } }, () => true, true).length) return true;
+    if (call.fact.callType !== "rest") return false;
+    const segs = rawSegs(p);
+    return routeCandidates(p).some(
+      (e) =>
+        e.component !== call.component &&
+        SERVES.rest!.includes(e.fact.entryType) &&
+        sameMethod(call.fact.method, e.fact.method) &&
+        !isPassThrough(e.fact) &&
+        basesOf(e).some(
+          (b) =>
+            b.segs.length > 0 &&
+            b.segs.length < segs.length &&
+            startsWithSegs(segs, b.segs) &&
+            routeScore(toPath(segs.slice(b.segs.length)), e.fact.path) >= 400,
+        ),
     );
   };
   const gatewayRepos = new Set(repos.filter((r) => r.gateway).map((r) => r.repo));
@@ -2176,10 +2289,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       (used[0] ? hostIn(used[0].value) : undefined) ??
       (keyed.length ? undefined : hostIn(f.base));
     // The whole path the call sends: a base URL's own path (`https://host/forge/limits`) in front.
+    // Beta.25 review: with no host resolved, the path a base still writes around its host's
+    // placeholder (`https://${GATEWAY_HOST}/northwind-wallets/1.0`, `${GATEWAY_URL}/v1`): the
+    // keyed settings' as written when they agree, so a proxy's BasePath can join the call.
+    const unresolvedBase = () => {
+      if (host) return undefined;
+      if (!keyed.length) return pathAroundPlaceholder(f.host) ?? pathAroundPlaceholder(f.base);
+      const ps = new Set(keyed.map((t) => pathAroundPlaceholder(t.fact.value ?? t.fact.source)));
+      return ps.size === 1 ? [...ps][0] : undefined;
+    };
     const fullPath = joinPaths(
       urlPathOf(f.host) ??
         (used[0] ? urlPathOf(used[0].value) : undefined) ??
-        (keyed.length ? undefined : urlPathOf(f.base)),
+        (keyed.length ? undefined : urlPathOf(f.base)) ??
+        unresolvedBase(),
       f.path,
     );
 
@@ -2308,15 +2431,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       exposedBy = d.by;
       disputed = d.disputed;
       byServiceName = d.byServiceName;
-    } else if (
-      host &&
-      outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
-    ) {
+    } else if (host && outsideByHost(host.named ? `${host.host}:${host.named}` : host.host)) {
       // O1: an outside system the profile names by this host takes the call (J0: listed, so a
       // host only a placeholder's setting gives is said outside too).
       outsideCalls.push({
         call: end(call),
-        target: host.named ? `${host.host}:${host.named}` : host.host,
+        target: outsideByHost(host.named ? `${host.host}:${host.named}` : host.host)!,
       });
       continue;
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {
@@ -2331,7 +2451,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     } else if (
       host &&
       isForwarding(call) &&
-      (forwardHosts(configs, host).some((h) => outside.has(factIdPart(h))) ||
+      (forwardHosts(configs, host).some((h) => !!outsideByHost(h)) ||
         outsideOfEstate(call, configs, host, fullPath))
     ) {
       // A gateway's forwarding call to a host no repo or component of the estate lists: outside
@@ -2345,7 +2465,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const hosts = forwardHosts(configs, host);
       outsideCalls.push({
         call: end(call),
-        target: hosts.find((h) => outside.has(factIdPart(h))) ?? hosts[0]!,
+        target: hosts.map(outsideByHost).find((h) => !!h) ?? hosts[0]!,
       });
       continue;
     } else if (host) {
@@ -2407,6 +2527,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           entry: end(e),
           ...tie,
           how: "base-path",
+          // Beta.25 review: never verified on a guess. A gateway's forwarding call that names no
+          // host goes to its own gateway (a proxy chained to another), so the BasePath is all it
+          // takes; a call whose host nothing resolves may go to any host that serves the path,
+          // so the join is kept as a guess (by its path), shown so and correctable.
+          ...(namesHost ? { inferred: { within: "estate" as const } } : {}),
           callType: f.callType,
           ...(f.method || e.fact.method
             ? { method: (f.method ?? e.fact.method)!.toUpperCase() }
@@ -2954,7 +3079,10 @@ export function joinFlagsOf(
   // The path suffix: a base path guessed by the overlap comes first, then how it was found.
   const overlap = isOverlapJoin(j) ? [JOINED_BY_PATH_OVERLAP] : [];
   const guessed = joinGuessesOf(j);
-  if (guessed.length) return [...guessed, ...overlap];
+  // Beta.25 review: a join by a BasePath whose caller's host is unknown is a guess by its path,
+  // and says it was found by the BasePath after the guess.
+  if (guessed.length)
+    return [...guessed, ...overlap, ...(j.how === "base-path" ? [JOINED_BY_BASE_PATH] : [])];
   const HOW: Partial<Record<JoinHow, string>> = {
     answer: JOINED_BY_ANSWER,
     named: JOINED_BY_NAME,
@@ -2972,15 +3100,20 @@ type SharedLink = CatalogRecord & {
   evidence: EvidenceT[];
 };
 
-/** How a join nobody guessed found its callee, in the order a shared link lists them. */
+/**
+ * How a join nobody guessed found its callee, in the order a shared link lists them: the ways
+ * code at both ends (and a person's answer naming the target) verify first, then a pairing's,
+ * which is a person's or the AI's word and never verifies a link (beta.25 review: a verified link
+ * that merged a pairing says first how its verified call was found).
+ */
 const HOW_FLAG_ORDER: readonly string[] = [
-  JOINED_BY_PERSON,
-  JOINED_BY_AI,
   JOINED_BY_ANSWER,
   JOINED_BY_NAME,
   JOINED_BY_REPO,
   JOINED_BY_HOST,
   JOINED_BY_BASE_PATH,
+  JOINED_BY_PERSON,
+  JOINED_BY_AI,
 ];
 
 /**
