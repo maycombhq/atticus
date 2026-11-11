@@ -160,7 +160,7 @@ describe("atticus change sketch --from strokes.yaml (ADR 0193)", () => {
     expect(
       await changeSketchCommand(root, CHANGE, { from: file, save: true, by: "pat" }, again.io),
     ).toBe(1);
-    expect(again.out.join("\n")).toContain("changed in this change already");
+    expect(again.out.join("\n")).toContain("the map shows nothing new of it since");
 
     // The architecture stage keeps every drawn step: the sketch is its whole frame here.
     const estate = await loadEstate(root, (await targetFlowsOf(root, CHANGE))!.records);
