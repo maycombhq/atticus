@@ -92,6 +92,7 @@ import {
   serializeFactsSnapshot,
   serializeLegacyJoins,
   SLOT_VERSION,
+  BUILD_VERSION,
   sha256Of,
   sourcesDirOf,
   type BuildManifestT,
@@ -246,8 +247,11 @@ export function factsSlotOf(
   return { ok: true, meta: meta.slot, facts: facts.facts, sha: sha(text), metaSha: sha(metaText) };
 }
 
-export function readersSlotRead(text: string): ReadersSlotRead | { problem: string } {
-  const p = parseReadersSlot(text);
+export function readersSlotRead(
+  text: string,
+  repo?: string,
+): ReadersSlotRead | { problem: string } {
+  const p = parseReadersSlot(text, repo);
   if (!p.ok) return { problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
   return { slot: p.slot, sha: sha(text) };
 }
@@ -259,7 +263,8 @@ export async function readSlots(root: string): Promise<BuildSlots> {
   for (const n of (await readdir(join(dir, "readers")).catch(() => [] as string[])).sort()) {
     if (!n.endsWith(".json")) continue;
     const text = await readText(join(dir, "readers", n));
-    if (text !== undefined) readers.set(n.slice(0, -".json".length), readersSlotRead(text));
+    const repo = n.slice(0, -".json".length);
+    if (text !== undefined) readers.set(repo, readersSlotRead(text, repo));
   }
   const facts = new Map<string, FactsSlotRead>();
   const names = new Set(
@@ -865,7 +870,7 @@ function manifestOf(
       sources: srcs.filter((s) => !seen.has(s.path) && !!seen.add(s.path)),
     });
   }
-  return { version: 1, files: out };
+  return { version: 1, buildVersion: BUILD_VERSION, files: out };
 }
 
 // ------------------------------------------------------------------ the guards
@@ -1438,7 +1443,7 @@ export function slotsAfter(root: string, on: BuildSlots, writes: readonly SlotWr
     let m = /^readers\/(.+)\.json$/.exec(rel);
     if (m) {
       if (w.text === null) readers.delete(m[1]!);
-      else readers.set(m[1]!, readersSlotRead(w.text));
+      else readers.set(m[1]!, readersSlotRead(w.text, m[1]!));
       continue;
     }
     m = /^facts\/(.+?)(\.meta\.json|\.jsonl)$/.exec(rel);
