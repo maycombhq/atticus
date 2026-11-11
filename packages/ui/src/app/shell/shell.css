@@ -167,12 +167,9 @@
   text-align: center;
 }
 
-/* A tooltip with each icon's name, on hover and on keyboard focus. */
-.sh-act[data-tip]:hover::after,
-.sh-act[data-tip]:focus-visible::after,
-.sh-tool[data-tip]:hover::after,
-.sh-tool[data-tip]:focus-visible::after {
-  content: attr(data-tip);
+/* A tooltip with each icon's name, on hover and on keyboard focus (icons.tsx Tip). */
+.sh-tip {
+  display: none;
   position: absolute;
   z-index: 70;
   white-space: nowrap;
@@ -185,17 +182,26 @@
   font-weight: 400;
   pointer-events: none;
 }
-.sh-act[data-tip]::after {
+.sh-tip::before {
+  content: attr(data-tip);
+}
+.sh-act:hover > .sh-tip,
+.sh-act:focus-visible > .sh-tip,
+.sh-tool:hover > .sh-tip,
+.sh-tool:focus-visible > .sh-tip {
+  display: block;
+}
+.sh-act > .sh-tip {
   left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%);
 }
-.sh-tool[data-tip]::after {
+.sh-tool > .sh-tip {
   top: calc(100% + 4px);
   left: 0;
 }
 /* While More pages is open its own list says what it is. */
-.sh-act[aria-expanded="true"]::after {
+.sh-act[aria-expanded="true"] > .sh-tip {
   display: none;
 }
 
@@ -568,7 +574,7 @@ button.sh-status-item:hover {
   .sh-act[aria-expanded="true"] {
     box-shadow: inset 0 2px 0 var(--accent);
   }
-  .sh-act[data-tip]::after {
+  .sh-act > .sh-tip {
     left: 50%;
     top: auto;
     bottom: calc(100% + 6px);

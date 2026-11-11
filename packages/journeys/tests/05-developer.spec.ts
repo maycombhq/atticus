@@ -1,4 +1,4 @@
-import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
+import { accessible, ask, expect, forgeJourney, open, test } from "../support/app.js";
 
 /** Developer: runs a task with their assistant, and looks up the contracts it touches. */
 const app = forgeJourney();
@@ -36,8 +36,8 @@ test("reads a contract's evidence and who depends on it", async ({ page }) => {
 
 test("asks a question in plain words and sees the query", async ({ page }) => {
   await open(page, app(), "home");
-  await page.getByLabel("Ask Atticus").fill("who calls ledger-api?");
-  await page.getByRole("button", { name: "Ask" }).click();
+  // ADR 0194: the title bar's box opens Ctrl+K, whose Ask line asks it.
+  await ask(page, "who calls ledger-api?");
   await expect(page.getByText("kind:interface to:ledger-api").first()).toBeVisible();
   await accessible(page, "ask");
 });

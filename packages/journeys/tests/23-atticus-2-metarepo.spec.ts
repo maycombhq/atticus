@@ -49,11 +49,13 @@ test("the Ask box offers the catalog's own words, and a named outside system is 
   page,
 }) => {
   await open(page, app(), "home");
-  const ask = page.getByLabel("Ask Atticus");
-  await expect(ask).not.toHaveAttribute("placeholder", /ledger/);
-  await expect(ask).toHaveAttribute("placeholder", /studio-db\.note/);
-  await ask.fill("what calls the LLM?");
-  await page.getByRole("button", { name: "Ask" }).click();
+  // ADR 0194: the title bar's box opens Ctrl+K, which shows the catalog's own example.
+  await page.getByRole("button", { name: /^Search the estate, ask, or run a command/ }).click();
+  const box = page.getByRole("dialog", { name: "Go to anything" }).getByRole("combobox");
+  await expect(box).not.toHaveAttribute("placeholder", /ledger/);
+  await expect(box).toHaveAttribute("placeholder", /studio-db\.note/);
+  await page.keyboard.press("Escape");
+  await ask(page, "what calls the LLM?");
   await expect(page.getByText("kind:interface to:llm").first()).toBeVisible();
   await expect(page.getByText("api → llm POST /v1/messages").first()).toBeVisible();
   await expect(page.getByText("web → api POST /api/notes")).toHaveCount(0);
@@ -118,7 +120,7 @@ test("All changes shows the stage artifacts, and the OpenSpec-era ones only when
   await accessible(page, "all changes on an Atticus 2 change");
 });
 
-test("in an editor's panel (620 to 780 px wide) the menu stays beside the page", async ({
+test("in an editor's panel (620 to 780 px wide) the activity bar stays beside the page", async ({
   page,
 }) => {
   // VS Code's panel was about 780 px, less its scroll bar: the menu stacked above the page.
@@ -132,9 +134,10 @@ test("in an editor's panel (620 to 780 px wide) the menu stays beside the page",
     await open(page, app(), route);
     const nav = (await page.getByRole("navigation", { name: "Main" }).boundingBox())!;
     const main = (await page.locator("main").boundingBox())!;
-    // Side by side: the page starts where the menu ends, at the top, and takes the rest.
+    // Side by side (ADR 0194): the page starts where the activity bar ends, under the tabs, and
+    // takes the rest; the side panel lies over the page on a window this narrow, closed.
     expect(main.x, route).toBeGreaterThanOrEqual(nav.x + nav.width - 1);
-    expect(Math.abs(main.y - nav.y), route).toBeLessThan(2);
+    expect(main.y - nav.y, route).toBeLessThan(48);
     expect(main.width, route).toBeGreaterThan(width - nav.width - 24);
     const sideways = await page.evaluate<boolean>(
       "document.documentElement.scrollWidth > document.documentElement.clientWidth",

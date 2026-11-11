@@ -6,7 +6,15 @@ import { paletteItems } from "../src/app/palette.js";
 import { morePagesCount } from "../src/app/nav.js";
 import { screenOf } from "../src/app/screens.js";
 import { ActivityBar, activeEntry } from "../src/app/shell/ActivityBar.js";
-import { draftOf, fieldKey, keptField, putBack, type FieldLike } from "../src/app/shell/drafts.js";
+import {
+  draftOf,
+  fieldKey,
+  keptField,
+  openToggles,
+  putBack,
+  reopen,
+  type FieldLike,
+} from "../src/app/shell/drafts.js";
 import {
   clampSide,
   LAYOUT_KEY,
@@ -71,12 +79,16 @@ describe("the activity bar", () => {
       ["#/repos", "Set up"],
     ])
       expect(html).toMatch(
-        new RegExp(`href="${href}"[^>]*data-tip="${name}"><svg[^>]*aria-hidden="true"`),
+        new RegExp(
+          `href="${href}"[^>]*><span class="sh-tip" aria-hidden="true" data-tip="${name}"></span><svg[^>]*aria-hidden="true"`,
+        ),
       );
     // Each icon is named for a screen reader, as its tooltip says.
     expect(html).toContain('<span class="sr">Set up</span>');
     // Settings at the foot.
-    expect(html).toMatch(/href="#\/settings"[^>]*data-tip="Settings"/);
+    expect(html).toMatch(
+      /href="#\/settings"[^>]*><span class="sh-tip" aria-hidden="true" data-tip="Settings">/,
+    );
   });
 
   it("marks the section shown, and Settings on its own page", () => {
@@ -282,6 +294,10 @@ describe("what a tab keeps of a page while another is shown", () => {
     expect(fieldKey(brief, fields)).toBe("#brief-text");
     expect(fieldKey(repo, fields)).toBe("@repo");
     expect(fieldKey(plain, fields)).toBe("input:0");
+    // A field named by useId keeps its name when the page comes back with new ids.
+    const a = f({ tagName: "INPUT", type: "search", id: "_r_9_-f" });
+    const b = f({ tagName: "INPUT", type: "search", id: "_r_k_-f" });
+    expect(fieldKey(b, [a, b])).toBe("#~-f#1");
   });
 
   it("keeps only what the person changed, and the scroll", () => {
@@ -291,6 +307,43 @@ describe("what a tab keeps of a page while another is shown", () => {
       scroll: 420,
     });
     expect(draftOf(fields, new Set(), 0)).toBeUndefined();
+  });
+
+  it("opens again the disclosures that were open, by what they control, once each", () => {
+    const toggle = (controls: string | null, expanded: boolean) => {
+      const b = {
+        clicks: 0,
+        getAttribute: (n: string) =>
+          n === "aria-controls" ? controls : n === "aria-expanded" ? String(expanded) : null,
+        click: () => {
+          b.clicks++;
+          expanded = !expanded;
+        },
+      };
+      return b;
+    };
+    // React's ids (useId) are counted afresh on each mount: they are no part of the name.
+    const tools = toggle("_r_1a_-body", true);
+    const editor = toggle("brief-editor", false);
+    const nameless = toggle(null, true);
+    expect(openToggles([tools, editor, nameless])).toEqual(["~-body#0"]);
+    expect(draftOf([], new Set(), 0, ["~-body#0"])).toEqual({
+      fields: {},
+      scroll: 0,
+      open: ["~-body#0"],
+    });
+    // Back on the page, the tools are closed (and named anew): they open, once.
+    const again = toggle("_r_2f_-body", false);
+    const left = reopen(new Set(["~-body#0", "later"]), [again, editor]);
+    expect(again.clicks).toBe(1);
+    expect(editor.clicks).toBe(0);
+    expect([...left]).toEqual(["later"]);
+    expect(reopen(new Set(["~-body#0"]), [again]).size).toBe(0);
+    expect(again.clicks).toBe(1);
+    expect(openToggles([toggle("«r3»-x", true), toggle(":r4:-x", true)])).toEqual([
+      "~-x#0",
+      "~-x#1",
+    ]);
   });
 
   it("puts it back as the page's fields come in, as typing would", () => {

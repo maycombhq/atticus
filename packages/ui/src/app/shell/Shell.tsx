@@ -9,9 +9,18 @@ import { replayTour } from "../tour.js";
 import { readViewerRole } from "../../screens/RoleQuestions.js";
 import { ActivityBar, MoreFlyout } from "./ActivityBar.js";
 import { BottomPanel } from "./BottomPanel.js";
-import { draftOf, fieldKey, fieldsIn, keptField, restoreDraft, type Draft } from "./drafts.js";
+import {
+  draftOf,
+  fieldKey,
+  fieldsIn,
+  keptField,
+  openToggles,
+  restoreDraft,
+  togglesIn,
+  type Draft,
+} from "./drafts.js";
 import { Explorer } from "./Explorer.js";
-import { PinIcon, SearchIcon } from "./icons.js";
+import { PinIcon, SearchIcon, Tip } from "./icons.js";
 import { pinHash, togglePin, usePins } from "./pinned-pages.js";
 import {
   clampSide,
@@ -126,7 +135,12 @@ function useDrafts(
     const keep = () => {
       const next = draftKeyOf(location.hash);
       if (next === shown.current || !panel.current) return;
-      const d = draftOf(fieldsIn(panel.current), changed.current, scroller.current?.scrollTop ?? 0);
+      const d = draftOf(
+        fieldsIn(panel.current),
+        changed.current,
+        scroller.current?.scrollTop ?? 0,
+        openToggles(togglesIn(panel.current)),
+      );
       if (d) drafts.current.set(shown.current, d);
       else drafts.current.delete(shown.current);
       changed.current = new Set();
@@ -163,9 +177,9 @@ function PinTool({ hash, label }: { hash: string; label: string }) {
       className="sh-tool"
       aria-pressed={pinned}
       aria-label={name}
-      data-tip={name}
       onClick={() => togglePin(hash)}
     >
+      <Tip text={name} />
       <PinIcon filled={pinned} />
     </button>
   );
@@ -337,11 +351,28 @@ export function Shell({
       {COPY.glossary.link}
     </a>
   );
-  // A narrow window's side panel lies over the page: Escape closes it, back to its button.
+  // A narrow window's side panel lies over the page: opened, it takes the focus; Escape (from
+  // anywhere) closes it and gives the focus back to its button.
   const closeOverlay = () => {
     side.close();
     sideToggle.current?.querySelector<HTMLElement>("[aria-controls='sh-side']")?.focus();
   };
+  const overlay = side.overlay;
+  useEffect(() => {
+    if (!overlay) return;
+    document
+      .getElementById("sh-side")
+      ?.querySelector<HTMLElement>("a[href], button, input, [tabindex='0']")
+      ?.focus();
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector("[role=dialog]")) return;
+      e.preventDefault();
+      closeOverlay();
+    };
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+    // closeOverlay only closes and focuses: the overlay's being open decides it.
+  }, [overlay]);
   return (
     <div
       className={`sh${embedded ? " sh-embedded" : ""}${side.open ? " sh-side-open" : ""}${side.overlay ? " sh-overlay" : ""}`}
@@ -368,12 +399,6 @@ export function Shell({
           className="sh-side"
           aria-label={COPY.explorer.label}
           hidden={!side.open}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && side.overlay) {
-              e.stopPropagation();
-              closeOverlay();
-            }
-          }}
         >
           <Explorer
             current={hash}
@@ -411,9 +436,9 @@ export function Shell({
                         type="button"
                         className="sh-tool"
                         aria-label={T.search}
-                        data-tip={T.search}
                         onClick={openPalette}
                       >
+                        <Tip text={T.search} />
                         <SearchIcon size={16} />
                       </button>
                       <MoreFlyout current={current} hash={hash} className="sh-tool" />

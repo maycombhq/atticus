@@ -28,7 +28,10 @@ describe("first-run tour", () => {
     expect(TOUR[0]!.body).toMatch(/what needs a person/);
     expect(TOUR[0]!.body).toMatch(/read and trusted/);
     const change = TOUR.find((s) => s.title === "One change, a tab per stage")!;
-    expect(change.target).toBe('.nav a[href="#/changes"]');
+    // ADR 0194: the classic menu's entry, the IDE layout's activity bar or its side panel's.
+    expect(change.target).toBe(
+      '.nav a[href="#/changes"], .sh-activity a[href="#/changes"], .sh-side a[href="#/changes"]',
+    );
     expect(change.body).toMatch(/All changes.*At a glance.*feature.*architecture.*stories.*tasks/);
   });
 

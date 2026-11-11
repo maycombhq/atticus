@@ -119,3 +119,12 @@ export const PinIcon = ({ filled = false }: { filled?: boolean }) => (
     <path d="M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8" />
   </svg>
 );
+
+/**
+ * An icon button's tooltip, on hover and on keyboard focus: hidden from a screen reader, which
+ * hears the button's own name. Its words are CSS generated content of a hidden element, so they
+ * are neither part of the button's name nor of its text.
+ */
+export const Tip = ({ text }: { text: string }) => (
+  <span className="sh-tip" aria-hidden="true" data-tip={text} />
+);

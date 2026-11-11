@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { COPY } from "../../copy.js";
-import { SideIcon } from "./icons.js";
+import { SideIcon, Tip } from "./icons.js";
 import { HOME_KEY, tabLabel, type TabsState } from "./tabs-model.js";
 
 const T = COPY.ide;
@@ -77,9 +77,9 @@ export function TabStrip({
           aria-expanded={side.open}
           aria-controls="sh-side"
           aria-label={side.open ? T.sideHide : T.sideShow}
-          data-tip={side.open ? T.sideHide : T.sideShow}
           onClick={side.onToggle}
         >
+          <Tip text={side.open ? T.sideHide : T.sideShow} />
           <SideIcon />
         </button>
       )}

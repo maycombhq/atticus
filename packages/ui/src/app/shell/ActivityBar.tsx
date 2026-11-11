@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { COPY } from "../../copy.js";
 import { MorePagesList, morePagesCount } from "../nav.js";
 import { landingOf, sectionLabel, SECTIONS, type ScreenDef, type Section } from "../screens.js";
-import { MoreIcon, SectionIcon, SettingsIcon } from "./icons.js";
+import { MoreIcon, SectionIcon, SettingsIcon, Tip } from "./icons.js";
 
 const T = COPY.ide;
 
@@ -61,9 +61,9 @@ export function MoreFlyout({
         className={className}
         aria-expanded={open}
         aria-controls="more-pages"
-        data-tip={T.more}
         onClick={() => setOpen(!open)}
       >
+        <Tip text={T.more} />
         <MoreIcon />
         <span className="sr">
           {T.more} {count}
@@ -103,8 +103,8 @@ export function ActivityBar({
               className="sh-act"
               href={`#/${landingOf(s).id}`}
               aria-current={on === s ? "page" : undefined}
-              data-tip={label}
             >
+              <Tip text={label} />
               <SectionIcon section={s} />
               <span className="sr">
                 {label}
@@ -121,12 +121,8 @@ export function ActivityBar({
         <MoreFlyout current={current} hash={hash} />
       </div>
       <span className="sh-grow" aria-hidden="true" />
-      <a
-        className="sh-act"
-        href="#/settings"
-        aria-current={on === "settings" ? "page" : undefined}
-        data-tip={T.settings}
-      >
+      <a className="sh-act" href="#/settings" aria-current={on === "settings" ? "page" : undefined}>
+        <Tip text={T.settings} />
         <SettingsIcon />
         <span className="sr">{T.settings}</span>
       </a>

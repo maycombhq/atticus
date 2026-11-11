@@ -264,6 +264,37 @@ async function skipTour(page: Page): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
+/**
+ * ADR 0194: open the app in the classic layout (the menu on the left, one page at a time) for
+ * this page, as Settings › Layout keeps it; the IDE layout is the default.
+ */
+export async function classicLayout(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("atticus.layout", "classic");
+    } catch {
+      // No storage: the default layout.
+    }
+  });
+}
+
+/**
+ * Ask Atticus a question in plain words: the classic layout's Ask box, or in the IDE layout the
+ * title bar's box, which opens Ctrl+K, and its Ask line.
+ */
+export async function ask(page: Page, question: string): Promise<void> {
+  const box = page.locator("#ask");
+  if (await box.count()) {
+    await box.fill(question);
+    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    return;
+  }
+  await page.getByRole("button", { name: /^Search the estate, ask, or run a command/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Go to anything" });
+  await dialog.getByRole("combobox").fill(question);
+  await dialog.getByRole("option", { name: `Ask: ${question}` }).click();
+}
+
 /** WCAG 2.1 AA: no moderate, serious or critical axe violation on the page as it is now (WP5.6). */
 export async function accessible(page: Page, where: string): Promise<void> {
   const r = await new AxeBuilder({ page })

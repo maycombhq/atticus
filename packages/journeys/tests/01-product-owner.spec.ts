@@ -29,11 +29,12 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   // no tabs.
   const nav = page.getByRole("navigation", { name: "Main" });
   const main = nav.getByRole("group", { name: "Main" });
+  // ADR 0194: the activity bar's icons, each named; Questions with its count once loaded.
   await expect(main.getByRole("link")).toHaveText([
     "Home",
     "Map",
     "Change",
-    "Questions",
+    /^Questions(, \d+ open)?$/,
     "Knowledge",
     "Set up",
   ]);

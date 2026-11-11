@@ -1,4 +1,4 @@
-import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
+import { accessible, classicLayout, expect, forgeJourney, open, test } from "../support/app.js";
 
 /**
  * More pages (the ADR 0124 D-app addendum's follow-up, 2026-10-25): the product owner opened the
@@ -8,6 +8,10 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
  * a tab of Set up; Ctrl+K finds every page and the menu says so.
  */
 const app = forgeJourney();
+
+// ADR 0194: the classic layout's menu, kept for this release (the IDE layout's More pages, in
+// its activity bar, is 34-ide-shell's).
+test.beforeEach(async ({ page }) => classicLayout(page));
 
 // Beta.23: Manual steps, Release, Scans, Prompt history and the Brief became tabs (ADR 0188, 0191).
 const HIDDEN = 21;
