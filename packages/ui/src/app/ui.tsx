@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isOffline, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { PanelBar } from "./loading-bar.js";
@@ -19,6 +19,64 @@ export function escapeCloses(close: () => void) {
     e.stopPropagation();
     close();
   };
+}
+
+/** Input types a person types text into, where Esc and the arrow keys are the field's own. */
+const NOT_TEXT = new Set([
+  "checkbox",
+  "radio",
+  "range",
+  "button",
+  "submit",
+  "reset",
+  "color",
+  "file",
+  "image",
+]);
+
+/**
+ * Beta.26 review: the key's target takes text (a text or search field, a text area, an editable
+ * region), so a key it has a use for (Esc clears a search) stays its own. A checkbox, a radio, a
+ * select or a button doesn't: Esc there closes the drawer or dialog around it.
+ */
+export function takesText(
+  t: { tagName?: string; type?: string; isContentEditable?: boolean } | null | undefined,
+): boolean {
+  if (!t) return false;
+  if (t.isContentEditable) return true;
+  if (t.tagName === "TEXTAREA") return true;
+  return t.tagName === "INPUT" && !NOT_TEXT.has(String(t.type ?? "text").toLowerCase());
+}
+
+/**
+ * A file's lines in a figure, its caption naming them (a diff, a correction's line as written).
+ * A page whose `pre` scrolls (knowledge.css) can make them a scrolling box, so it is a region
+ * the keyboard reaches, named by its caption (axe: scrollable-region-focusable); a long line
+ * with no spaces (JSON) wraps instead of scrolling sideways.
+ */
+export function CodeFigure(p: { caption: string; children: ReactNode; fontSize?: number }) {
+  const id = useId();
+  return (
+    <figure style={{ margin: 0 }}>
+      <figcaption id={id} className="hud">
+        {p.caption}
+      </figcaption>
+      <pre
+        className="mono"
+        tabIndex={0}
+        role="region"
+        aria-labelledby={id}
+        style={{
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+          margin: 0,
+          ...(p.fontSize ? { fontSize: p.fontSize } : {}),
+        }}
+      >
+        <code>{p.children}</code>
+      </pre>
+    </figure>
+  );
 }
 
 /**

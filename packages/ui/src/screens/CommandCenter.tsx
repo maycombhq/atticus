@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminFold, nonAdminRoles } from "./HomeRoles.js";
 import {
   applyFirstRepos,
@@ -45,7 +45,7 @@ import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
 import { UpgradeOffer } from "../app/upgrade.js";
 import { TileGroup, toneOf, type Tile } from "./home/HomeTiles.js";
-import { HomeChanges, HomePanel, NeedsTop } from "./home/HomePanels.js";
+import { HomeChanges, HomePanel, NeedsTop, TOP } from "./home/HomePanels.js";
 
 /** ADR 0181: when the sample audit paused AI deciding, Home says why, with Map › Trust's link. */
 export function HomeDecidePaused() {
@@ -410,6 +410,57 @@ export function SetupChecklist(p: { setup?: SetupLoad } = {}) {
       </Panel>
     </div>
   );
+}
+
+/**
+ * Beta.26 review: an estate not set up yet, said in one line at the top of Home (the checklist
+ * is a fold at the foot, so Home doesn't scroll), with a button that opens the fold.
+ */
+export function SetupLine(p: { setup: SetupLoad; onShow: () => void }) {
+  if (p.setup.state !== "ready" || p.setup.data.baselined) return null;
+  const s = p.setup.data;
+  return (
+    <p className="hm-quiet-line hm-setup-line">
+      {H.setupLine(s.steps.filter((x) => x.done).length, s.steps.length)}{" "}
+      <button type="button" className="btn" onClick={p.onShow}>
+        {H.setupShow}
+      </button>
+    </p>
+  );
+}
+
+/** Opens a fold and puts the keyboard on its summary, so the person is where it opened. */
+export function openFold(
+  d: Pick<HTMLDetailsElement, "open" | "querySelector"> | null | undefined,
+): void {
+  if (!d) return;
+  d.open = true;
+  d.querySelector<HTMLElement>("summary")?.focus();
+}
+
+/**
+ * The status line at the top of Home (beta.26 review): it counts what the Blocking findings tile
+ * counts, so the two never disagree.
+ */
+export function homeStatus(
+  listState: "loading" | "error" | "ready",
+  blocking: number,
+): { text: string; bad: boolean } {
+  if (listState === "error") return { text: COPY.app.ccCantRead, bad: false };
+  if (listState === "loading") return { text: COPY.app.ccReading, bad: false };
+  return blocking > 0
+    ? { text: T.thingsNeedAttention(blocking), bad: true }
+    : { text: T.nothingIsBlockedRight, bad: false };
+}
+
+/** The top few of a count by name, the most first: "96 Interface · 30 Table · 12 System". */
+export function topCounts(counts: Iterable<[string, number]>, n = 3): string {
+  return [...counts]
+    .filter(([, c]) => c > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([what, c]) => H.count(c, what))
+    .join(" · ");
 }
 
 interface DigestResult {
@@ -841,6 +892,12 @@ export function CommandCenter() {
   const plan = useApi<Plan>("/api/propose?scope=work");
   const [text, setText] = useState("");
   const [whole, setWhole] = useState(false);
+  // Beta.26 review: the whole list, opened by its button, takes the keyboard to its heading.
+  const focusWhole = useRef(false);
+  const setupFold = useRef<HTMLDetailsElement | null>(null);
+  // Set-up, once seen not done, stays a fold for this visit (its accepted note, Propose).
+  const [setupShown, setSetupShown] = useState(false);
+  if (!setupShown && setup.state === "ready" && !setup.data.baselined) setSetupShown(true);
   const [bulkNote, setBulkNote] = useState<string | undefined>();
   const { me } = useMe();
   // ADR 0191: the person's roles on each change in flight (its owners, else their pick).
@@ -909,7 +966,6 @@ export function CommandCenter() {
     (f) => f.severity === "blocking" && holdsPhase(f.asks, stateOf.get(f.change)),
   );
   const notMine = open.filter((f) => levels && f.asks && !levels.includes(f.asks)).length;
-  const gaps = atLevel.filter((f) => f.severity === "gap");
   const questions = qs.state === "ready" ? qs.data.open : 0;
   const waitingQs = waitingQuestions(
     asked.state === "ready" ? asked.data.questions.length : undefined,
@@ -946,7 +1002,7 @@ export function CommandCenter() {
   const problems =
     (onboarding.state === "ready" ? onboarding.data.problems.length : 0) +
     (trust.state === "ready" ? trust.data.problems.length : 0);
-  const blocks = blocking.length + gaps.length;
+  const status = homeStatus(listState, blocking.length);
   const wait = waitingTiles({
     questions: waitingQs.n,
     questionsHref: waitingQs.href,
@@ -965,15 +1021,7 @@ export function CommandCenter() {
   return (
     <div className="hm">
       <header className="hm-head">
-        <p className={`hm-status${blocks > 0 && listState === "ready" ? " bad" : ""}`}>
-          {listState === "error"
-            ? COPY.app.ccCantRead
-            : listState === "loading"
-              ? COPY.app.ccReading
-              : blocks > 0
-                ? T.thingsNeedAttention(blocks)
-                : T.nothingIsBlockedRight}
-        </p>
+        <p className={`hm-status${status.bad ? " bad" : ""}`}>{status.text}</p>
         <p className="hm-who">
           {H.live}
           {me ? ` · ${H.you(me.user, role || undefined)}` : ""}
@@ -985,7 +1033,8 @@ export function CommandCenter() {
         <OwnInstall setup={setup} />
       ) : (
         <>
-          <SetupChecklist setup={setup} />
+          {/* Beta.26 review: one line here; the checklist is a fold at the foot. */}
+          <SetupLine setup={setup} onShow={() => openFold(setupFold.current)} />
           {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
           <UpgradeOffer />
         </>
@@ -1040,10 +1089,11 @@ export function CommandCenter() {
           <HomePanel id="hm-next" title={H.next}>
             <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
             <div className="hm-rest">
-              <PendingProposals plan={plan} />
-              {/* ADR 0181 part 4: each role answers its own questions on a change. */}
+              <PendingProposals plan={plan} max={TOP} />
+              {/* ADR 0181 part 4: each role answers its own questions on a change. Beta.26
+                  review: its top few, the rest one link to Questions. */}
               {changes.state === "ready" && (
-                <YourRoleQuestions compact changes={changes.data} onRoles={setRolesBy} />
+                <YourRoleQuestions compact max={TOP} changes={changes.data} onRoles={setRolesBy} />
               )}
               {/* Round 36 (Windows review): where a person comes back after their PR merged. */}
               <BringIn />
@@ -1071,7 +1121,10 @@ export function CommandCenter() {
                   className="btn"
                   aria-expanded={whole}
                   {...(whole ? { "aria-controls": "hm-whole" } : {})}
-                  onClick={() => setWhole((w) => !w)}
+                  onClick={() => {
+                    focusWhole.current = !whole;
+                    setWhole((w) => !w);
+                  }}
                 >
                   {whole ? H.hideWholeList : H.wholeList(waiting)}
                 </button>
@@ -1115,30 +1168,37 @@ export function CommandCenter() {
       </div>
 
       {whole && (
-        <div id="hm-whole" className="bento">
-          <Panel title={H.wholeListTitle} span="1 / -1">
-            <WaitingList
-              onBulk={async (items, action, note) => {
-                const failed: string[] = [];
-                const calls = bulkCalls(items, action, note);
-                for (const c of calls)
-                  await api(c.path, { method: "POST", body: c.body }).catch((e: unknown) => {
-                    failed.push(e instanceof Error ? e.message : String(e));
-                  });
-                setBulkNote(T.bulkDone(calls.length - failed.length, failed.length, failed));
-                needs.reload();
-                todo.reload();
-              }}
-              items={inbox}
-              changes={changes.state === "ready" ? changes.data : []}
-              text={text}
-              onText={setText}
-              partial={partial}
-              {...(listError ? { error: listError } : {})}
-              state={listState}
-            />
-          </Panel>
-        </div>
+        <HomePanel
+          sectionId="hm-whole"
+          id="hm-whole-t"
+          title={H.wholeListTitle}
+          headRef={(el) => {
+            if (!el || !focusWhole.current) return;
+            focusWhole.current = false;
+            el.focus();
+          }}
+        >
+          <WaitingList
+            onBulk={async (items, action, note) => {
+              const failed: string[] = [];
+              const calls = bulkCalls(items, action, note);
+              for (const c of calls)
+                await api(c.path, { method: "POST", body: c.body }).catch((e: unknown) => {
+                  failed.push(e instanceof Error ? e.message : String(e));
+                });
+              setBulkNote(T.bulkDone(calls.length - failed.length, failed.length, failed));
+              needs.reload();
+              todo.reload();
+            }}
+            items={inbox}
+            changes={changes.state === "ready" ? changes.data : []}
+            text={text}
+            onText={setText}
+            partial={partial}
+            {...(listError ? { error: listError } : {})}
+            state={listState}
+          />
+        </HomePanel>
       )}
 
       <div className="hm-folds">
@@ -1148,9 +1208,39 @@ export function CommandCenter() {
               <HowStepsRun />
               <SetupChecklist setup={setup} />
               <UpgradeOffer part="pending" />
-              <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
             </AdminFold>
           )}
+          {!fold && setupShown && (
+            <details className="hm-fold" ref={setupFold}>
+              <summary>{T.setUpAtticus}</summary>
+              <SetupChecklist setup={setup} />
+            </details>
+          )}
+          {/* Beta.26 review: what is read and trusted, for every role: the top kinds in the
+              catalog, the open findings by lens, coverage and trust. One line until opened. */}
+          <details className="hm-fold">
+            <summary>{COPY.work.estate}</summary>
+            <div className="stack" style={{ gap: 8 }}>
+              {kinds.state === "ready" && kinds.data.length > 0 && (
+                <p className="hm-quiet-line">
+                  {H.topKinds(topCounts(kinds.data.map((k) => [k.kind, k.count])))}{" "}
+                  <a href="#/explore">{H.seeCatalog}</a>
+                </p>
+              )}
+              {open.length > 0 && (
+                <p className="hm-quiet-line">
+                  {H.byLens(topCounts(byLens))}{" "}
+                  <a href="#/changes?across=findings">{H.seeFindings}</a>
+                </p>
+              )}
+              <HomeEstate
+                onboarding={onboarding}
+                trust={trust}
+                changes={changes}
+                withInFlight={false}
+              />
+            </div>
+          </details>
           {/* beta.26: the slash commands' reference, one click away instead of a screen long. */}
           <details className="hm-fold">
             <summary>{H.assistant}</summary>

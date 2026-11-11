@@ -36,6 +36,7 @@ import {
   ZOOM,
   neighbourhood,
   useAvailableHeight,
+  useFitOnResize,
   useFullScreen,
   type ViewerAction,
 } from "../../app/viewer.js";
@@ -417,6 +418,16 @@ export function ArchitectureCanvas(p: {
   const [focusMode, setFocusMode] = useState(!!p.initialFocus);
   const [zoom, setZoom] = useState(1);
   const height = useAvailableHeight(frame, p.height !== undefined ? { fixed: p.height } : {});
+  // Beta.26 review: the picture fits the measured height (not the guess before it), and again
+  // as that height changes, until the person pans or zooms it themselves.
+  const moved = useRef(false);
+  useFitOnResize(rf, {
+    height,
+    ready: state.state === "ready" && nodes.length > 0,
+    full,
+    moved,
+    minZoom: FIT_MIN_ZOOM,
+  });
 
   // Lay out again when the boxes or links change, or on Tidy up; not when a box is dragged.
   const shape = useMemo(
@@ -457,6 +468,8 @@ export function ArchitectureCanvas(p: {
         setEdges(el.edges);
         setState({ state: "ready" });
         latest.current.onLaid(laid);
+        // A new layout is fitted again, whatever the person did with the last one.
+        moved.current = false;
         // Fit, but never so small the words can't be read: a bigger picture pans instead.
         requestAnimationFrame(
           () => void rf.current?.fitView({ padding: 0.08, duration: 200, minZoom: FIT_MIN_ZOOM }),
@@ -523,6 +536,9 @@ export function ArchitectureCanvas(p: {
   const act = (a: ViewerAction) => {
     const i = rf.current;
     const d = { duration: 200 };
+    // The person's own zoom or pan is kept as the height changes; Fit hands it back to fitting.
+    if (a === "fit") moved.current = false;
+    else if (!["focus", "full-screen", "leave", "search"].includes(a)) moved.current = true;
     switch (a) {
       case "zoom-in":
         void i?.zoomIn(d);
@@ -561,6 +577,7 @@ export function ArchitectureCanvas(p: {
     }
   };
   const find = (id: string) => {
+    moved.current = true;
     p.onSelect(id);
     requestAnimationFrame(
       () => void rf.current?.fitView({ nodes: [{ id }], maxZoom: 1, duration: 250 }),
@@ -620,6 +637,10 @@ export function ArchitectureCanvas(p: {
               setZoom(i.getZoom());
             }}
             onMove={(_, v) => setZoom(v.zoom)}
+            // A move the person started (a wheel, a drag, a pinch) has its event; a fit has none.
+            onMoveStart={(e) => {
+              if (e) moved.current = true;
+            }}
             onNodeClick={(_, n) => p.onSelect(n.id)}
             // ADR 0181: a link clicked opens it in the inspector (the keyboard's way is the
             // inspector's links and the Detected by AI list in the tools).

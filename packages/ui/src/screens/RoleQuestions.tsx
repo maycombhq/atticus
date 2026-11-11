@@ -206,6 +206,10 @@ function ChangeRoleQuestions(p: {
   onRoles?: (change: string, roles: Role[]) => void;
   /** beta.26: one row, and only when the person's roles have a question open on it. */
   compact?: boolean;
+  /** Beta.26 review: at most this many rows (Home's top few); the rest are counted. */
+  limit?: number;
+  /** Tells Home how many rows this change has, so it shows its top few and says the rest. */
+  onOpen?: (change: string, rows: number) => void;
 }) {
   const q = useApi<Api.QuestionListT>(
     `/api/questions?state=open&change=${encodeURIComponent(p.change)}`,
@@ -221,6 +225,19 @@ function ChangeRoleQuestions(p: {
   useEffect(() => {
     if (roles !== undefined) onRoles?.(change, roles ? (roles.split(",") as Role[]) : []);
   }, [roles, change, onRoles]);
+  // The roles with a question open here: one row each on Home.
+  const openRoles =
+    q.state === "ready"
+      ? yourRole(q.data.yourRoles, p.picked).roles.filter(
+          (r) => (q.data.counts?.byRole?.[r]?.open ?? 0) > 0,
+        )
+      : [];
+  const whoFrom = q.state === "ready" ? yourRole(q.data.yourRoles, p.picked).from : "none";
+  const rowCount = whoFrom === "none" ? 0 : openRoles.length;
+  const { onOpen } = p;
+  useEffect(() => {
+    if (q.state === "ready") onOpen?.(change, rowCount);
+  }, [q.state, rowCount, change, onOpen]);
   if (q.state === "loading") return null;
   if (q.state === "error")
     return p.compact ? (
@@ -235,7 +252,7 @@ function ChangeRoleQuestions(p: {
   const who = yourRole(q.data.yourRoles, p.picked);
   if (who.from === "none") return null;
   if (p.compact) {
-    const open = who.roles.filter((r) => (q.data.counts?.byRole?.[r]?.open ?? 0) > 0);
+    const open = openRoles.slice(0, p.limit ?? openRoles.length);
     if (!open.length) return null;
     return (
       <>
@@ -293,8 +310,16 @@ export function YourRoleQuestions(p: {
    * (none when nothing waits), and the picker; no heading of its own.
    */
   compact?: boolean;
+  /** Beta.26 review: compact, at most this many rows; "+N more" links to Questions. */
+  max?: number;
 }) {
   const [picked, setPicked] = useState<Role | undefined>(() => readViewerRole());
+  // Beta.26 review: each change's rows, so Home shows its top few and counts the rest.
+  const [rowsBy, setRowsBy] = useState<Record<string, number>>({});
+  const [onOpen] = useState(
+    () => (change: string, n: number) =>
+      setRowsBy((o) => (o[change] === n ? o : { ...o, [change]: n })),
+  );
   // Ninth UX walk: which changes name the person, so the picker shows only where it is used.
   const [named, setNamed] = useState<Record<string, boolean>>({});
   const [onNamed] = useState(
@@ -334,24 +359,41 @@ export function YourRoleQuestions(p: {
       }}
     />
   );
-  if (p.compact)
+  if (p.compact) {
+    // Each change gets what is left of the cap after the changes before it.
+    let left = p.max ?? Infinity;
+    const limits = live.map((c) => {
+      const l = Math.max(0, left);
+      left -= rowsBy[c.id] ?? 0;
+      return l;
+    });
+    const total = live.reduce((a, c) => a + (rowsBy[c.id] ?? 0), 0);
+    const more = p.max === undefined ? 0 : total - p.max;
     return (
       <>
         <ul className="hm-list" aria-label={R.homeTitle}>
-          {live.map((c) => (
+          {live.map((c, k) => (
             <ChangeRoleQuestions
               key={c.id}
               change={c.id}
               picked={picked}
               onNamed={onNamed}
               onRoles={onChangeRoles}
+              onOpen={onOpen}
               compact
+              {...(p.max !== undefined ? { limit: limits[k]! } : {})}
             />
           ))}
         </ul>
+        {more > 0 && (
+          <p className="hm-quiet-line">
+            <a href="#/questions">{COPY.commandCenter.home.more(more)}</a>
+          </p>
+        )}
         {pick}
       </>
     );
+  }
   return (
     <section className="panel stack" aria-labelledby="your-role-questions" style={{ gap: 8 }}>
       <p id="your-role-questions" className="hud" style={{ margin: 0 }}>

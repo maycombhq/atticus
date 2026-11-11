@@ -4,6 +4,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
+import { CodeFigure } from "./ui.js";
 
 /**
  * After any correction the app writes (Correct this, This link is wrong; plan item C4, ADR 0149):
@@ -115,14 +116,7 @@ export function CorrectionNextPanel(p: {
         {N.title}
       </h4>
       <p className="ev-say">{N.onlyWrote(p.file)}</p>
-      {p.line && (
-        <figure style={{ margin: 0 }}>
-          <figcaption className="hud">{N.fileDiff(p.file)}</figcaption>
-          <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-            <code>{`+ ${p.line}`}</code>
-          </pre>
-        </figure>
-      )}
+      {p.line && <CodeFigure caption={N.fileDiff(p.file)}>{`+ ${p.line}`}</CodeFigure>}
       {p.repo && <ApplyAndPropose scope="corrections" repo={p.repo} />}
       <h5 className="hud">{N.stepsTitle}</h5>
       {p.preview.state === "loading" && (

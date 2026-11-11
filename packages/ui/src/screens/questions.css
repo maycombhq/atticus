@@ -255,11 +255,13 @@
   align-items: start;
   min-width: 0;
 }
-/* Each side scrolls on its own, in the view, so the title and the filters stay in sight. */
+/* Each side scrolls on its own, in the view, so the title and the filters stay in sight. As tall
+   as the page that scrolls them has left (--qs-pane-h, measured by the split as the map's canvas
+   is): in the IDE layout that page ends above the bottom panel, not at the window's foot. */
 .panel.qs-pane {
   position: sticky;
   top: 0;
-  max-height: calc(100dvh - 150px);
+  max-height: var(--qs-pane-h, 560px);
   overflow: auto;
   padding: 12px;
   border-radius: 8px;

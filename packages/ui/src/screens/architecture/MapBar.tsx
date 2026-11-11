@@ -10,7 +10,7 @@ import "./map-bar.css";
  * canvas: the lens as a segmented control, where you are, the tools as icon buttons named in
  * words (each with a tooltip of the same words), and at its right the picture's own controls
  * (zoom, fit, focus, full screen, find), which the canvas puts there. The legend lies over a
- * corner of the canvas and folds, remembered in this browser.
+ * corner of the canvas, folded until it is opened, remembered in this browser.
  */
 
 const V = COPY.viewer;
@@ -113,7 +113,8 @@ export function MapBar(p: {
           type="button"
           className={`btn viewer-btn arch-tools-toggle${t.open ? " primary" : ""}`}
           aria-expanded={t.open}
-          aria-controls={t.bodyId}
+          // Beta.26 review: the drawer isn't there while closed, so nothing is pointed at then.
+          {...(t.open ? { "aria-controls": t.bodyId } : {})}
           aria-label={t.open ? T.hide : T.show}
           title={t.open ? T.hide : T.show}
           onClick={t.onToggle}
@@ -143,12 +144,15 @@ function storage(): Store | undefined {
   }
 }
 
-/** Open unless it was folded in this browser; open where storage refuses. */
+/**
+ * Folded unless it was opened in this browser (beta.26 review: open, it covered a box of the
+ * estate at 1440 by 900); folded where storage refuses.
+ */
 export function readLegendOpen(s: Pick<Store, "getItem"> | undefined = storage()): boolean {
   try {
-    return s?.getItem(LEGEND_KEY) !== "closed";
+    return s?.getItem(LEGEND_KEY) === "open";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -178,7 +182,7 @@ export function CanvasLegend(p: {
         type="button"
         className="btn arch-legend-btn"
         aria-expanded={open}
-        aria-controls={`${id}-legend`}
+        {...(open ? { "aria-controls": `${id}-legend` } : {})}
         onClick={() => {
           setOpen(!open);
           saveLegendOpen(!open);

@@ -101,8 +101,10 @@ it("keeps every former action of Home reachable", () => {
   const menu = all(t).find((e) => e.type === "details" && e.props.className === "hm-menu")!;
   expect(all(menu.props.children).some((e) => e.type === CC.DigestButtons)).toBe(true);
   const folds = all(t).filter((e) => e.type === "details" && e.props.className === "hm-fold");
-  expect(text(folds[0]!.props.children)).toContain(H.assistant);
-  expect(all(folds[0]!.props.children).some((e) => e.type === SlashCommands)).toBe(true);
+  const assistant = folds.find((f) => text(f.props.children).includes(H.assistant))!;
+  expect(all(assistant.props.children).some((e) => e.type === SlashCommands)).toBe(true);
+  // Beta.26 review: what is read and trusted is a fold too, for every role.
+  expect(folds.some((f) => text(f.props.children).includes(COPY.work.estate))).toBe(true);
   // See all questions goes to the Questions page.
   expect(
     all(t).some(

@@ -117,6 +117,31 @@ const NO_FINDINGS: readonly Api.ContractMismatchViewT[] = [];
 export const contractsPathWhen = (o: { ready: boolean; drawn: boolean }): string | undefined =>
   o.ready && o.drawn ? "/api/contracts" : undefined;
 
+/**
+ * What opens the details again when it changes: a panel asked for (Add, Connect, Declare,
+ * Owner), a link picked, and (beta.26 review) a box the person picked, never one the address
+ * or a load selected.
+ */
+export function revealOf(o: {
+  adding: boolean;
+  connecting: { from: string } | undefined;
+  declaring: { system: string } | undefined;
+  owning: string | undefined;
+  pickedLink: { id: string } | undefined;
+  pickedBox: string | undefined;
+}): string {
+  return [
+    o.adding ? "add" : "",
+    o.pickedBox ? `box:${o.pickedBox}` : "",
+    o.connecting?.from ?? "",
+    o.declaring?.system ?? "",
+    o.owning ?? "",
+    o.pickedLink?.id ?? "",
+  ]
+    .filter(Boolean)
+    .join("|");
+}
+
 /** An answer that came after the picture started again: not an error anyone sees. */
 class StalePicture extends Error {}
 
@@ -168,6 +193,13 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [current, setCurrent] = useState("estate");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["estate"]));
   const [selected, setSelected] = useState<string | undefined>();
+  // Beta.26 review: the box the person picked (the canvas, the outline, the tools), which opens
+  // the details again; a box the address or a load selects doesn't.
+  const [pickedBox, setPickedBox] = useState<string | undefined>();
+  const pick = (id: string) => {
+    setSelected(id);
+    setPickedBox(id);
+  };
   // G1 (ADR 0174): connecting a repo's box to another, call by call.
   const [connecting, setConnecting] = useState<{ from: string; initial?: BoxChoice } | undefined>();
   // G2 (ADR 0174): setting a repo's owner and system.
@@ -223,6 +255,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     setCurrent("estate");
     setExpanded(new Set(["estate"]));
     setSelected(undefined);
+    setPickedBox(undefined);
     setPickedLink(undefined);
     setCorrected(false);
     setFocus(undefined);
@@ -555,7 +588,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     if ("focus" in step) rowRefs.current.get(step.focus)?.focus();
     else if ("open" in step) void open(step.open);
     else if ("close" in step) close(step.close);
-    else setSelected(step.select);
+    else pick(step.select);
   };
 
   const sel = selected ? find(selected) : undefined;
@@ -620,16 +653,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     graph.boxes.length > 0 &&
     arrangement.state === "ready" &&
     arrangement.key === key;
-  // A panel asked for (Add, Connect, Declare, Owner, a link picked) opens the details again.
-  const reveal = [
-    adding ? "add" : "",
-    connecting?.from ?? "",
-    declaring?.system ?? "",
-    owning ?? "",
-    pickedLink?.id ?? "",
-  ]
-    .filter(Boolean)
-    .join("|");
+  const reveal = revealOf({ adding, connecting, declaring, owning, pickedLink, pickedBox });
 
   return (
     <div className="bento">
@@ -821,7 +845,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 state={tools}
                 onChange={setTools}
                 {...(selected ? { selected } : {})}
-                onSelect={setSelected}
+                onSelect={pick}
                 onPickLink={(id) => {
                   setPickedLink({ id, keyboard: true });
                   setCorrected(false);
@@ -882,7 +906,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   pinned={pinned}
                   tidy={tidy}
                   {...(selected ? { selected } : {})}
-                  onSelect={(id) => setSelected(id)}
+                  onSelect={pick}
                   onToggle={(id) => void toggleHere(id)}
                   onMoved={(id, at) =>
                     setArrangement((a) =>
@@ -1042,7 +1066,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                       else rowRefs.current.delete(r.node.id);
                     }}
                     onKeyDown={(e) => onKey(r.node.id, e)}
-                    onClick={() => setSelected(r.node.id)}
+                    onClick={() => pick(r.node.id)}
                     onDoubleClick={() => void (r.expanded ? close(r.node.id) : open(r.node.id))}
                   >
                     <span className="hud">{r.node.kind}</span> {r.node.label}

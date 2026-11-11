@@ -324,7 +324,14 @@ export function useAvailableHeight(
     measure();
     window.addEventListener("resize", measure);
     const ro = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
-    if (ro && ref.current?.parentElement) ro.observe(ref.current.parentElement);
+    // Beta.26 review: what is above the picture changing (the map's bar wrapping, a note shown
+    // above its panel) moves the picture's top without resizing the scroller: every box round
+    // it, up to the scroller, is watched too, so the height follows.
+    if (ro)
+      for (let a = ref.current?.parentElement; a && a !== scroller && a !== document.body;) {
+        ro.observe(a);
+        a = a.parentElement;
+      }
     if (ro && scroller) ro.observe(scroller);
     return () => {
       window.removeEventListener("resize", measure);
@@ -332,6 +339,26 @@ export function useAvailableHeight(
     };
   }, [ref, min, o.fixed]);
   return o.fixed ?? h;
+}
+
+/**
+ * Beta.26 review: fit the picture again once its frame has its measured height (the first fit
+ * ran on the height guessed before measuring, so a tall estate opened at 100 % with its lower
+ * boxes cut off), and whenever that height changes or full screen is left, until the person
+ * moves the view themselves (`moved`, set from a move they started).
+ */
+export function useFitOnResize(
+  rf: RefObject<{ fitView(o?: { padding?: number; minZoom?: number }): unknown } | undefined>,
+  o: { height: number; ready: boolean; full: boolean; moved: RefObject<boolean>; minZoom?: number },
+) {
+  const { height, ready, full, moved } = o;
+  const minZoom = o.minZoom ?? 0.6;
+  useEffect(() => {
+    if (!ready || moved.current || typeof requestAnimationFrame === "undefined") return;
+    // After the frame takes the height (the next paint), so the fit uses it.
+    const f = requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08, minZoom }));
+    return () => cancelAnimationFrame(f);
+  }, [height, ready, full, rf, moved, minZoom]);
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -512,10 +539,18 @@ export function DiagramFrame(p: {
     toggled.current = false;
     (open ? closeRef : showRef).current?.focus();
   }, [open, p.asideBeside]);
-  // A panel asked for inside the details (a new `reveal`) opens them again.
-  useEffect(() => {
-    if (p.reveal) setOpen(true);
-  }, [p.reveal]);
+  // A panel asked for inside the details (a new `reveal`) opens them again, in this very render
+  // (beta.26 review): the panel's own effect (a link's heading taking the focus) then runs on
+  // details already shown, not hidden ones opened an effect later.
+  const [revealed, setRevealed] = useState(p.reveal);
+  let shown = open;
+  if (p.reveal !== revealed) {
+    setRevealed(p.reveal);
+    if (p.reveal && !open) {
+      setOpen(true);
+      shown = true;
+    }
+  }
   const toolbarOut = p.toolbarIn && !p.full ? p.toolbarIn : undefined;
   // Leaving full screen gives focus back to its button (review 17), wherever the toolbar is.
   const wasFull = useRef(p.full);
@@ -587,7 +622,7 @@ export function DiagramFrame(p: {
         {p.children}
         {p.aside && p.asideBeside && (
           <>
-            {!open && (
+            {!shown && (
               <button
                 ref={showRef}
                 type="button"
@@ -599,7 +634,7 @@ export function DiagramFrame(p: {
                 {T.showDetails}
               </button>
             )}
-            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!open}>
+            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!shown}>
               <button
                 ref={closeRef}
                 type="button"
@@ -621,13 +656,13 @@ export function DiagramFrame(p: {
             <button
               type="button"
               className="btn viewer-aside-toggle"
-              aria-expanded={open}
+              aria-expanded={shown}
               aria-controls={asideId}
               onClick={() => setOpen((o) => !o)}
             >
-              {open ? T.hideDetails : T.showDetails}
+              {shown ? T.hideDetails : T.showDetails}
             </button>
-            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!open}>
+            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!shown}>
               {p.aside}
             </aside>
           </>

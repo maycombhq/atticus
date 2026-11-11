@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
+import { CodeFigure } from "../../app/ui.js";
 import { usePopupFocus } from "./popup.js";
 import { WrittenNext } from "../../app/app-step.js";
 
@@ -231,19 +232,14 @@ export function Diff({
   return (
     <div className="stack">
       {r.files.map((f) => (
-        <figure key={f.file} style={{ margin: 0 }}>
-          <figcaption className="hud">{O.diffOf(f.file)}</figcaption>
-          <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-            <code>
-              {f.changes
-                .flatMap((c) => [
-                  ...(c.was !== undefined ? [`- ${c.was}`] : []),
-                  ...(c.now !== undefined ? [`+ ${c.now}`] : []),
-                ])
-                .join("\n")}
-            </code>
-          </pre>
-        </figure>
+        <CodeFigure key={f.file} caption={O.diffOf(f.file)}>
+          {f.changes
+            .flatMap((c) => [
+              ...(c.was !== undefined ? [`- ${c.was}`] : []),
+              ...(c.now !== undefined ? [`+ ${c.now}`] : []),
+            ])
+            .join("\n")}
+        </CodeFigure>
       ))}
     </div>
   );

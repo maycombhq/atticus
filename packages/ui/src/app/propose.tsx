@@ -556,6 +556,8 @@ export function PendingProposals(
   p: {
     /** beta.26: Home's own load of the plan (its tile counts it too), so it is asked for once. */
     plan?: Loaded<Plan> & { reload: () => void };
+    /** Beta.26 review: at most this many repos' Apply (Home's top few); the rest on the map. */
+    max?: number;
   } = {},
 ) {
   const own = useApi<Plan>(p.plan ? undefined : "/api/propose?scope=work");
@@ -590,9 +592,14 @@ export function PendingProposals(
           </p>
           {/* Several repos corrected (lines drawn on the map join two): one Apply for them all. */}
           {repos.length > 1 && <ApplyAll noPropose />}
-          {repos.map((r) => (
+          {repos.slice(0, p.max ?? repos.length).map((r) => (
             <ApplyAndPropose key={r} scope="corrections" repo={r} noPropose />
           ))}
+          {p.max !== undefined && repos.length > p.max && (
+            <p className="work-say" style={{ margin: 0 }}>
+              <a href="#/canvas">{COPY.commandCenter.home.more(repos.length - p.max)}</a>
+            </p>
+          )}
         </>
       )}
       <Propose
