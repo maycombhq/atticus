@@ -1,0 +1,598 @@
+/* ADR 0194: the IDE layout. Every colour is one of hud.css's tokens, so the light and dark
+   themes (and VS Code's) follow without a rule of their own here. The page scrolls inside
+   <main>; the bars around it stay. */
+
+.sh {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------ title bar */
+
+.sh-title {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 12px;
+  background: var(--nav);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sh-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+.sh-metarepo {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sh-mono {
+  font-family: var(--mono);
+}
+.sh-search-wrap {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+.sh-search {
+  width: min(520px, 100%);
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  background: var(--input);
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sh-search:hover {
+  border-color: var(--accent-soft);
+  color: var(--text);
+}
+.sh-search-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.sh-search kbd {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-input);
+  border-radius: 4px;
+}
+.sh-title-right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------ body */
+
+.sh-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The activity bar: the sections as icons, Settings at the foot. */
+.sh-activity {
+  flex: none;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  background: var(--nav);
+  border-right: 1px solid var(--line-soft);
+  z-index: 30;
+}
+.sh-activity-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.sh-grow {
+  flex: 1;
+}
+.sh-act {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nav-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+.sh-act:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.sh-act[aria-current="page"],
+.sh-act[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--picked);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.sh-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--amber);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* A tooltip with each icon's name, on hover and on keyboard focus. */
+.sh-act[data-tip]:hover::after,
+.sh-act[data-tip]:focus-visible::after,
+.sh-tool[data-tip]:hover::after,
+.sh-tool[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 70;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-dark);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  pointer-events: none;
+}
+.sh-act[data-tip]::after {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.sh-tool[data-tip]::after {
+  top: calc(100% + 4px);
+  left: 0;
+}
+/* While More pages is open its own list says what it is. */
+.sh-act[aria-expanded="true"]::after {
+  display: none;
+}
+
+/* More pages, beside the activity bar. */
+.sh-more {
+  position: relative;
+}
+.sh-flyout {
+  position: fixed;
+  left: 54px;
+  top: 48px;
+  bottom: 32px;
+  width: 270px;
+  max-width: calc(100vw - 70px);
+  overflow-y: auto;
+  padding: 6px 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-dark);
+  box-shadow: var(--shadow);
+  z-index: 60;
+}
+.sh-flyout[hidden] {
+  display: none;
+}
+.sh-embedded .sh-flyout {
+  left: auto;
+  right: 8px;
+  top: 40px;
+}
+.sh-flyout a {
+  display: block;
+  padding: 4px 10px 4px 20px;
+  border-radius: 6px;
+  color: var(--nav-text);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+.sh-flyout a:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sh-flyout a[aria-current="page"] {
+  background: var(--picked);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.sh-flyout .more-group,
+.sh-flyout .more-phase {
+  display: block;
+  padding: 10px 10px 2px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sh-flyout .more-phase {
+  padding: 6px 10px 0 20px;
+  letter-spacing: 0.08em;
+}
+
+/* The side panel, its handle, and on a narrow window the veil behind it. */
+.sh-side {
+  flex: none;
+  width: var(--sh-side, 260px);
+  min-height: 0;
+  overflow: auto;
+  background: var(--nav);
+  border-right: 1px solid var(--line-soft);
+}
+.sh-side[hidden] {
+  display: none;
+}
+.sh-explorer-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 6px;
+}
+.sh-explorer-list a {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--nav-text);
+  font-size: 13px;
+  text-decoration: none;
+}
+.sh-explorer-list a:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sh-explorer-list a[aria-current] {
+  background: var(--picked);
+  color: var(--text);
+}
+.sh-resizer {
+  flex: none;
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.sh-resizer:hover,
+.sh-resizer:focus-visible {
+  background: var(--accent);
+}
+.sh-overlay .sh-side {
+  position: absolute;
+  left: 48px;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(var(--sh-side, 260px), calc(100vw - 64px));
+  box-shadow: var(--shadow);
+}
+.sh-embedded.sh-overlay .sh-side {
+  left: 0;
+}
+.sh-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  background: var(--backdrop);
+}
+
+/* ------------------------------------------------------------ the page's column */
+
+.sh-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sh-tabbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  min-height: 36px;
+  background: var(--nav);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sh-tool {
+  position: relative;
+  flex: none;
+  width: 36px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nav-text);
+  cursor: pointer;
+}
+.sh-tool:hover,
+.sh-tool[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--hover);
+}
+.sh-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.sh-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 0 8px 0 14px;
+  border: 0;
+  border-top: 2px solid transparent;
+  border-right: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sh-tab:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.sh-tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--picked);
+  border-top-color: var(--accent);
+}
+.sh-tab:focus-visible {
+  outline-offset: -3px;
+}
+.sh-tab-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sh-tab-x {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+.sh-tab-x:hover {
+  color: var(--text);
+  background: var(--hover-soft);
+  outline: 1px solid var(--line-2);
+}
+.sh-tabtools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 2px;
+  border-left: 1px solid var(--line-soft);
+}
+.sh-tabtools .btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.sh-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.sh-page {
+  min-width: 0;
+  padding: 14px 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sh-bottom {
+  flex: none;
+  max-height: 45%;
+  overflow: auto;
+  border-top: 1px solid var(--line-soft);
+  background: var(--panel-dark);
+}
+.sh-bottom .run-strip {
+  margin: 6px 12px 0;
+}
+/* The Console sits in the column here, not fixed over the page. */
+.sh .run-console {
+  position: static;
+  border-top: 0;
+}
+
+/* ------------------------------------------------------------ status bar */
+
+.sh-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+  padding: 0 12px;
+  overflow: hidden;
+  background: var(--nav);
+  border-top: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--picked-strong);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.sh-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  text-decoration: none;
+}
+a.sh-status-item,
+button.sh-status-item {
+  cursor: pointer;
+}
+a.sh-status-item:hover,
+button.sh-status-item:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.sh-spin {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: sh-pulse 1.2s ease-in-out infinite;
+}
+@keyframes sh-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sh-spin {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------ narrower windows */
+
+@media (max-width: 999px) {
+  .sh-metarepo {
+    display: none;
+  }
+  .sh-page {
+    padding: 12px 12px 20px;
+  }
+}
+
+/* A phone's width: the activity bar is a bar at the foot, the title bar wraps. */
+@media (max-width: 599px) {
+  .sh-title {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 6px 10px;
+  }
+  .sh-search-wrap {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .sh-title-right {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+  .sh-body {
+    flex-direction: column;
+  }
+  .sh-activity {
+    order: 3;
+    width: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 2px 4px;
+    border-right: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .sh-activity-group {
+    flex: 1;
+    flex-direction: row;
+    justify-content: space-around;
+  }
+  .sh-activity > .sh-grow {
+    display: none;
+  }
+  .sh-act {
+    width: 40px;
+  }
+  .sh-act[aria-current="page"],
+  .sh-act[aria-expanded="true"] {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .sh-act[data-tip]::after {
+    left: 50%;
+    top: auto;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+  }
+  .sh-column {
+    order: 2;
+  }
+  .sh-overlay .sh-side {
+    left: 0;
+    width: min(var(--sh-side, 260px), calc(100vw - 32px));
+  }
+  .sh-flyout {
+    left: 8px;
+    right: 8px;
+    top: 56px;
+    bottom: 84px;
+    width: auto;
+    max-width: none;
+  }
+  .sh-status {
+    gap: 10px;
+  }
+  .sh-status .sh-low {
+    display: none;
+  }
+}

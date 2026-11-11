@@ -19,12 +19,12 @@ const T = COPY.menu;
  * Atticus's mark: Atticus Finch's glasses (docs/brand/glasses.svg), a small curved glint at the
  * outer top of each lens like an eyebrow, in the theme's accent.
  */
-function Logo() {
+export function Logo({ size = 26 }: { size?: number }) {
   return (
     <svg
       aria-hidden="true"
-      width="26"
-      height="26"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="var(--accent)"
@@ -78,7 +78,7 @@ export function paletteKeys(platform: string | undefined): string {
   return /Mac|iPhone|iPad|iPod/.test(platform ?? "") ? T.keysMac : T.keys;
 }
 
-function platformName(): string | undefined {
+export function platformName(): string | undefined {
   try {
     const n = globalThis.navigator as
       (Navigator & { userAgentData?: { platform?: string } }) | undefined;
@@ -95,24 +95,72 @@ function platformName(): string | undefined {
  * choose, it opens with `atticus ui --full` and on a page it holds. A page about a change keeps
  * the change in the address, else it opens as from Ctrl+K.
  */
-function MorePages({ current, hash, full }: { current: ScreenDef; hash: string; full: boolean }) {
-  const [choice, setChoice] = useState<boolean | undefined>(() => readMore());
-  const button = useRef<HTMLButtonElement>(null);
-  const groups = morePages();
-  const count = groups.reduce((n, g) => n + g.pages.length, 0);
+/** How many pages More pages holds. */
+export const morePagesCount = (): number => morePages().reduce((n, g) => n + g.pages.length, 0);
+
+/** Whether a page is under More pages. */
+export function holdsPage(current: ScreenDef): boolean {
   const shown = current.under ?? current.id;
-  const holds = groups.some((g) => g.pages.some((p) => p.id === shown));
-  const open = choice ?? (full || holds);
+  return morePages().some((g) => g.pages.some((p) => p.id === shown));
+}
+
+/**
+ * More pages' list, by section (Change's by phase): in the menu, and in the IDE layout's
+ * activity bar (ADR 0194). A page about a change keeps the change in the address.
+ */
+export function MorePagesList({
+  current,
+  hash,
+  id = "more-pages",
+  hidden = false,
+  className = "more-pages",
+}: {
+  current: ScreenDef;
+  hash: string;
+  id?: string;
+  hidden?: boolean;
+  className?: string;
+}) {
+  const groups = morePages();
+  const shown = current.under ?? current.id;
   const change = changeOf(hash);
-  const set = (o: boolean) => {
-    setChoice(o);
-    saveMore(o);
-  };
   const link = (p: ScreenDef) => (
     <a key={p.id} href={tabHref(p, change)} aria-current={p.id === shown ? "page" : undefined}>
       {p.label}
     </a>
   );
+  return (
+    <div id={id} className={className} hidden={hidden}>
+      {groups.map((g) => (
+        <div key={g.section} role="group" aria-label={sectionLabel(g.section)}>
+          <span className="more-group" aria-hidden="true">
+            {sectionLabel(g.section)}
+          </span>
+          {g.phases
+            ? g.phases.map((ph) => (
+                <div key={ph.phase} role="group" aria-label={groupLabel(ph.phase)}>
+                  <span className="more-phase" aria-hidden="true">
+                    {groupLabel(ph.phase)}
+                  </span>
+                  {ph.pages.map(link)}
+                </div>
+              ))
+            : g.pages.map(link)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MorePages({ current, hash, full }: { current: ScreenDef; hash: string; full: boolean }) {
+  const [choice, setChoice] = useState<boolean | undefined>(() => readMore());
+  const button = useRef<HTMLButtonElement>(null);
+  const count = morePagesCount();
+  const open = choice ?? (full || holdsPage(current));
+  const set = (o: boolean) => {
+    setChoice(o);
+    saveMore(o);
+  };
   return (
     <div
       className="more"
@@ -137,25 +185,7 @@ function MorePages({ current, hash, full }: { current: ScreenDef; hash: string; 
         <span>{T.morePages}</span>
         <span className="more-count">{count}</span>
       </button>
-      <div id="more-pages" className="more-pages" hidden={!open}>
-        {groups.map((g) => (
-          <div key={g.section} role="group" aria-label={sectionLabel(g.section)}>
-            <span className="more-group" aria-hidden="true">
-              {sectionLabel(g.section)}
-            </span>
-            {g.phases
-              ? g.phases.map((ph) => (
-                  <div key={ph.phase} role="group" aria-label={groupLabel(ph.phase)}>
-                    <span className="more-phase" aria-hidden="true">
-                      {groupLabel(ph.phase)}
-                    </span>
-                    {ph.pages.map(link)}
-                  </div>
-                ))
-              : g.pages.map(link)}
-          </div>
-        ))}
-      </div>
+      <MorePagesList current={current} hash={hash} hidden={!open} />
     </div>
   );
 }

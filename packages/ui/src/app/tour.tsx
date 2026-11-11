@@ -17,7 +17,12 @@ interface Step {
   target?: string;
 }
 
-const link = (screen: string) => `.nav a[href="#/${screen}"]`;
+/**
+ * A section's entry: the classic menu's, else the IDE layout's activity bar, else (in an editor's
+ * panel) its side panel's (ADR 0194).
+ */
+const link = (screen: string) =>
+  [".nav", ".sh-activity", ".sh-side"].map((w) => `${w} a[href="#/${screen}"]`).join(", ");
 
 export const TOUR: Step[] = [
   {
@@ -26,7 +31,7 @@ export const TOUR: Step[] = [
   },
   {
     ...T.steps.ask,
-    target: ".ask-form",
+    target: ".ask-form, .sh-search",
   },
   {
     ...T.steps.change,

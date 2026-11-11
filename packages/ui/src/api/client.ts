@@ -227,6 +227,41 @@ async function call<T>(
   return body as T;
 }
 
+/**
+ * ADR 0194: the last answer to a few GET calls a page made, kept for the IDE layout's badges and
+ * status bar (open questions, repos), so the shell shows counts the app already loaded and never
+ * asks the server for them (Home's requests stay the same). Only the paths something watches are
+ * kept, one answer each.
+ */
+const watched = new Map<string, Set<(v: unknown) => void>>();
+const answers = new Map<string, unknown>();
+
+function remember(path: string, data: unknown): void {
+  const fns = watched.get(path);
+  if (!fns) return;
+  answers.set(path, data);
+  for (const f of fns) f(data);
+}
+
+/** The last answer the app had to a GET call, as pages load it; never a request of its own. */
+export function useLastAnswer<T>(path: string): T | undefined {
+  const [v, set] = useState<T | undefined>(() => answers.get(path) as T | undefined);
+  useEffect(() => {
+    const f = (d: unknown) => set(d as T);
+    const fns = watched.get(path) ?? new Set();
+    fns.add(f);
+    watched.set(path, fns);
+    if (answers.has(path)) set(answers.get(path) as T);
+    return () => {
+      fns.delete(f);
+    };
+  }, [path]);
+  return v;
+}
+
+/** For tests: what a call answered, as useApi records it. */
+export const rememberAnswer = remember;
+
 export type Loaded<T> =
   | { state: "loading" }
   /** `status`: the HTTP status when the server answered (404: the thing isn't there). */
@@ -263,7 +298,9 @@ export function useApi<T>(
     api<T>(path, { signal: ctl.signal })
       .then(
         (data) => {
-          if (!ctl.signal.aborted) set({ state: "ready", data }, view!);
+          if (ctl.signal.aborted) return;
+          set({ state: "ready", data }, view!);
+          remember(path, data);
         },
         (e: unknown) => {
           if (ctl.signal.aborted) return;
