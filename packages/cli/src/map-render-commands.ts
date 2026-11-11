@@ -687,8 +687,9 @@ export async function writeFactsIntoCatalog(
       commit: snapshotCommit,
     };
     const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
-    if (o.verbose || w.removals.length || w.undo !== undefined)
-      for (const l of buildLines(root, built).slice(1)) io.err(l);
+    // ADR 0195 point 4: the removals the build wrote, each with what explains it, are said.
+    for (const l of buildLines(root, built).filter((l) => !l.startsWith("slots: ")).slice(1))
+      if (o.verbose || w.removals.length) io.out(l);
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
     // have are removed. A drafted flow (another template) is left alone.

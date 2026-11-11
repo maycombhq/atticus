@@ -347,7 +347,9 @@ export async function loadBuildInputs(
   // What explains a removal besides a slot (point 4; the owner's decision of 2026-11-11): each
   // build input other than a slot, hashed by its folder or file.
   const inputHashes = new Map<string, string>();
-  const put = (rel: string, h: string | undefined) => h && inputHashes.set(rel, h);
+  // Each kind of input is listed even when it has nothing yet, so the first answer, decision or
+  // pairing changes a hash a record's sources recorded.
+  const put = (rel: string, h: string | undefined) => inputHashes.set(rel, h ?? sha(""));
   put(relOf(root, orgPackDir), await treeHash(orgPackDir));
   put(relOf(root, curatedDir), await treeHash(curatedDir));
   // The answers, not the questions: a question raised or refreshed while open changes no build.
@@ -356,9 +358,13 @@ export async function loadBuildInputs(
   ).questions
     .filter((q) => q.answer !== undefined)
     .sort((a, b) => cmpText(a.id, b.id));
-  if (answeredQs.length) put(questionsRelOf(root), sha(JSON.stringify(answeredQs)));
-  for (const [repo, text] of corrections)
-    put(`${factsRelOf(root)}/${repo}.corrections.jsonl`, sha(text));
+  put(questionsRelOf(root), answeredQs.length ? sha(JSON.stringify(answeredQs)) : undefined);
+  put(
+    `${factsRelOf(root)}/*.corrections.jsonl`,
+    corrections.size
+      ? sha([...corrections].map(([repo, text]) => `${repo}\u0000${sha(text)}`).join("\n"))
+      : undefined,
+  );
   put(tRel, await treeHash(tDir));
   put(sharedRelOf(root), await treeHash(sharedDirOf(root)));
   if (inputsDir) put(relOf(root, inputsDir), await treeHash(inputsDir));
@@ -428,6 +434,8 @@ export interface Build {
   /** build.json for these files. */
   manifest: BuildManifestT;
   sources: RepoSource[];
+  /** Every repo the manifests list, archived ones too (an empty catalog is fine only when none). */
+  listed: string[];
   /** Repos whose slots are on disk but the manifests no longer list, or list archived (point 4). */
   orphaned: { repo: string; why: "not-listed" | "archived"; files: string[] }[];
   facts: Map<string, FactsRepoBuild>;
@@ -774,6 +782,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     files,
     manifest,
     sources,
+    listed: [...listed].sort(cmpText),
     orphaned,
     facts,
     retired,
@@ -874,6 +883,20 @@ function manifestOf(
 }
 
 // ------------------------------------------------------------------ the guards
+
+/** What a changed source of a removed record was, in words: a slot, its repo's new source, an input. */
+function sourceWords(path: string, b: Build): string {
+  const m = /sources\/(readers|facts)\/(.+?)(\.meta\.json|\.jsonl|\.json)$/.exec(path);
+  if (m) {
+    const now = b.sources.find((s) => s.repo === m[2]);
+    const was = m[1] === "facts" ? "facts snapshot" : "readers slot";
+    if (now?.slot && now.slot !== path && m[3] !== ".meta.json")
+      return `${m[2]} is built from ${now.source === "facts" ? "its facts snapshot" : now.source === "legacy" ? "a legacy slot" : "its readers slot"} now (${now.slot})`;
+    return `${m[2]}'s ${was} changed (${path})`;
+  }
+  if (path.endsWith("joins.json")) return "a legacy join was derived again, or left";
+  return `an input changed (${path})`;
+}
 
 /** The two limits of point 4: built in, not settings (a setting would be a C6 change). */
 export const REMOVAL_LIMITS = { share: 0.1, count: 200 } as const;
@@ -1078,9 +1101,14 @@ export async function guardBuild(
       const id = r?.id ?? (file ?? "").replace(/\.ya?ml$/, "");
       const repos = r ? repoOfEvidence(r) : [];
       const why = new Set<string>();
+      let estate = false;
       for (const s of f.sources)
-        if (!nowSources.has(`${s.path}\u0000${s.sha256}`))
-          why.add(s.path === ALL_SLOTS ? "a slot of the estate" : s.path);
+        if (!nowSources.has(`${s.path}\u0000${s.sha256}`)) {
+          if (s.path === ALL_SLOTS) estate = true;
+          else why.add(sourceWords(s.path, b));
+        }
+      // Only the estate's slots as a whole changed: a join with another repo no longer forms.
+      if (estate && !why.size) why.add("another repo's slot changed (a join with it)");
       for (const repo of repos) if (repoGone(repo)) why.add(`${repo} isn't listed, or is archived`);
       if (b.curated.suppressed.includes(id)) why.add("a curated suppress");
       const removal: Removal = {
@@ -1117,7 +1145,9 @@ export async function guardBuild(
       const per = big.map(([repo, n]) => `${n} of ${repo}'s ${had.get(repo) ?? 0}`);
       lines.push(
         `This would remove ${removals.length} ${removals.length === 1 ? "record" : "records"}${per.length ? ` (${per.join(", ")})` : ""}, more than ${REMOVAL_LIMITS.share * 100}% of a repo's records or ${REMOVAL_LIMITS.count} in one build, so ${removals.length === 1 ? "it waits" : "they wait"} for you to confirm:`,
-        ...removals.slice(0, 20).map((x) => `  - ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...removals
+          .slice(0, 20)
+          .map((x) => `  would remove ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
         ...(removals.length > 20 ? [`  and ${removals.length - 20} more`] : []),
         `Confirm exactly these: ${again(`--allow-removals ${removals.length}`)}.`,
       );
@@ -1133,7 +1163,7 @@ export async function guardBuild(
   const hadCode = last.manifest
     ? (await readCatalog(target.generated, { cacheRoot: root })).records.some(fromCode)
     : false;
-  if (hadCode && !b.records.some(fromCode) && b.sources.length > 0) {
+  if (hadCode && !b.records.some(fromCode) && b.listed.length > 0) {
     reasons.push("empty");
     lines.push(
       `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again.`,
@@ -1625,7 +1655,9 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
           by.set(repo, (by.get(repo) ?? 0) + 1);
       out.push(
         `Removed ${w.removals.length} ${w.removals.length === 1 ? "record" : "records"} (${[...by].map(([k, n]) => `${n} of ${k}`).join(", ")}):`,
-        ...w.removals.slice(0, 20).map((x) => `  - ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...w.removals
+          .slice(0, 20)
+          .map((x) => `  removed ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
         ...(w.removals.length > 20 ? [`  and ${w.removals.length - 20} more`] : []),
       );
     }

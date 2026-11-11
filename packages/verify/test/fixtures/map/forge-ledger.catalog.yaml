@@ -1,4 +1,32 @@
 schemaVersion: 5
+kind: Capability
+id: feature.accounts
+status: current
+confidence: inferred
+entryPoints:
+  - ledger-api.get-account
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 18
+    path: src/main/java/forge/ledger/AccountController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+externalRefs: []
+name: Accounts
+namedBy: detected
+records:
+  - if-0bb6f0b5cb457f7f
+  - if-3bbb3af22ed63158
+  - ledger-api
+  - ledger-api.get-account
+  - ledger-db.account
+  - northwind-fx
+  - notify-api
+tags: []
+---
+schemaVersion: 5
 kind: Column
 id: ledger-db.entry.account_id
 status: current
@@ -11,6 +39,7 @@ evidence:
     path: src/main/resources/db/migration/V2__create_entry.sql
     repo: forge-ledger
     source: migration
+glossaryTerm: term.account
 name: account_id
 nullable: false
 table: ledger-db.entry
@@ -31,6 +60,7 @@ evidence:
     source: migration
   - by: dana.okafor
     source: manual
+glossaryTerm: term.amount
 name: amount
 nullable: false
 table: ledger-db.entry
@@ -198,6 +228,113 @@ method: POST
 normalizedPath: /notify
 pathOrTopic: /notify
 schemaRefs: []
+---
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.account
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-api.get-account, ledger-api.post-entry, ledger-db.account, ledger-db.entry.account_id."
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 18
+    path: src/main/java/forge/ledger/AccountController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 22
+    path: src/main/java/forge/ledger/EntryController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 12
+    path: src/main/java/forge/ledger/AccountRepository.java
+    repo: forge-ledger
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 3
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+fields:
+  - ledger-db.entry.account_id
+flags:
+  - undefined
+term: Account
+---
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.amount
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-api.post-entry.request#amount, ledger-db.entry.amount."
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 7
+    path: src/main/java/forge/ledger/EntryRequest.java
+    repo: forge-ledger
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 4
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+fields:
+  - ledger-api.post-entry.request#amount
+  - ledger-db.entry.amount
+flags:
+  - undefined
+term: Amount
+---
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.entry
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-api.post-entry, ledger-db.entry."
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 22
+    path: src/main/java/forge/ledger/EntryController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 8
+    path: src/main/java/forge/ledger/EntryRepository.java
+    repo: forge-ledger
+    source: code
+fields: []
+flags:
+  - undefined
+term: Entry
+---
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.outbox
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: notify-db.outbox."
+evidence:
+  - commit: 9f8e7d6
+    line: 1
+    path: src/main/resources/db/migration/V1__outbox.sql
+    repo: forge-notify
+    source: migration
+fields: []
+flags:
+  - undefined
+term: Outbox
 ---
 schemaVersion: 5
 kind: Interface
