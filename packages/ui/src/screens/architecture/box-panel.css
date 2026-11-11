@@ -1,0 +1,351 @@
+/*
+ * The map's details panel for a box, and the popups that open in it (Connect to…, Owner and
+ * system, Declare a link…, Add to the picture…). Only the app's tokens (hud.css); every class
+ * here starts box- or is scoped under one, so the arrow's panel and the rest of the app are
+ * left as they are.
+ */
+
+/* One rhythm: 12px between sections, 6px inside one, a hairline between sections. */
+.box-panel {
+  gap: 12px;
+  min-width: 0;
+}
+.box-panel > * {
+  min-width: 0;
+}
+
+/* The box's name in its own case, wrapped (a repo's name is never cut), then its tags. */
+.box-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.h.box-name {
+  font-size: 17px;
+  line-height: 1.25;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+.box-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+.box-head .run-facts {
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  gap: 4px 12px;
+}
+.box-head .run-facts dd {
+  overflow-wrap: anywhere;
+}
+
+/* Actions: what the box does here, then (after a hairline) the pages it leads to. A label wraps
+   inside its button, which grows; it never spills over the next row. */
+.box-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.box-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.box-btns > :not(.btn) {
+  flex-basis: 100%;
+}
+.box-panel .box-btns .btn,
+.connect-panel .box-btns .btn,
+.connect-panel .box-foot .btn {
+  height: auto;
+  min-height: 32px;
+  padding: 6px 11px;
+  line-height: 1.3;
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.box-btns a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.box-go {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* Sections: the same heading, the same spacing, a hairline above each. */
+.box-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.box-sec h4,
+.box-sec > .stack > h4 {
+  margin: 0;
+}
+.box-sec > .stack {
+  gap: 6px;
+}
+.box-sec p {
+  margin: 0;
+}
+/* Open in your editor, beside a cite: a link in words, not a capitalised label. */
+.box-cite .hud {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 11.5px;
+}
+.box-count {
+  color: var(--text-2);
+}
+.box-none {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+/* Lists as rows: no bullets, no browser indent. */
+.box-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.box-list > li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.box-list .box-list {
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+  gap: 4px;
+}
+.box-list > li.box-cite {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+.box-repo {
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.box-gap {
+  color: var(--amber-text);
+}
+.box-why {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.box-links > li {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.box-links > li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.box-links summary {
+  cursor: pointer;
+  color: var(--accent-soft);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.box-cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.box-cmd code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+
+/* A popup in the panel: a card of its own, its title and Close on one line (the title wraps,
+   Close keeps its size), the two ends named, its actions at the foot. */
+.connect-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.box-pop-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.box-pop-head > .btn {
+  flex: 0 0 auto;
+}
+.h.box-pop-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  padding-top: 7px;
+  overflow-wrap: anywhere;
+}
+.box-pop-title:focus {
+  outline: none;
+}
+.box-pop-title:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+.box-ends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+}
+.box-ends .chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.connect-panel .field {
+  width: 100%;
+}
+.hud.box-sub {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.box-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.box-check input {
+  margin-top: 2px;
+}
+.box-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* A loose call as a row: tick, method and path (one line, whole on hover or focus), where it
+   is, what it is now; then the API to pair it with across the row. */
+.box-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.box-call {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.box-call + .box-call {
+  border-top: 1px solid var(--line);
+}
+.box-call-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+.box-call-head input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+.box-call-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.box-path,
+.box-at {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.box-path code {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.box-at {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.box-call:hover .box-path,
+.box-call:hover .box-at,
+.box-call:focus-within .box-path,
+.box-call:focus-within .box-at,
+.box-call:hover .box-path code,
+.box-call:focus-within .box-path code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.box-method {
+  display: inline-block;
+  margin-right: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent-soft);
+}
+.box-now {
+  flex: 0 0 auto;
+}
+
+/* The bar above the map (corrections not applied yet): what waits, and Apply beside it on a wide
+   window, under it on a narrow one; an amber edge, as the map marks what waits. */
+.panel.box-bar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 16px;
+  row-gap: 8px;
+  border-left: 3px solid var(--amber-line);
+}
+.box-bar > p {
+  flex: 1 1 320px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.box-bar > .stack {
+  flex: 0 1 auto;
+  max-width: 100%;
+}

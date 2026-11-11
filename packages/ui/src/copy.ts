@@ -4796,6 +4796,8 @@ export const COPY = {
   connect: {
     open: "Connect to…",
     title: (from: string) => `Connect ${from} to another box`,
+    /** The two ends of the line, as a screen reader says them (the panel draws from → to). */
+    ends: (from: string, to: string) => `From ${from} to ${to}`,
     dropNeedsRepo:
       "A line connects a repo's calls to another box: start or end it on a repo, a component in one, or a system that holds one repo. A system with several repos: open it (double-click) and draw from the repo. Two outside systems can't be connected here: declare the link on the system's box instead.",
     dropSameRepo:

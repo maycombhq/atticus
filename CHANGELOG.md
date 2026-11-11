@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Fixed
+
+- **The map's details panel for a box, and its popups, are laid out so nothing spills.** A box's name keeps its own case, with its kind, state and gaps as tags; its actions wrap (a long label no longer squeezed into a column over the facts) in two groups, what it does here and the pages it leads to; each section has the same heading and spacing, its lists are rows, and a gap's fix is a sentence, not capitals. Connect to… names both ends, lists each loose call as a row (method and path in mono, cut to one line and whole on hover or focus) instead of a table wider than the panel, and keeps Preview and Write at its foot; it and the other popups (Owner and system, Declare a link, Add to the picture) are brought into view with focus on their heading, and give focus back on Close. The bar of corrections not applied yet puts Apply beside what waits.
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed

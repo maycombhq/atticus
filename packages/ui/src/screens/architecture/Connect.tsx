@@ -8,6 +8,7 @@ import { Command } from "../work/RunNext.js";
 import { COPY } from "../../copy.js";
 import { MatchWithCopilot, type MatchIo } from "./Match.js";
 import { AiMark, readyView, useDecisions } from "../../app/decisions.js";
+import { usePopupFocus } from "./popup.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call. From a repo's box, pick the other box (by
@@ -87,16 +88,29 @@ export function ConnectPanel(p: {
   const boxes = boxesWith(p.boxes, p.initial);
   const box = boxes.find((b) => key(b.box) === to)?.box;
   const cands = useApi<Api.LinkCandidatesViewT>(box ? candidatesPath(p.from, box) : undefined);
+  const head = usePopupFocus<HTMLHeadingElement>();
+  const toLabel = boxes.find((b) => key(b.box) === to)?.label;
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
-      <div className="row between">
-        <h4 id={`${id}-t`} className="h" style={{ fontSize: 14, margin: 0 }}>
+      <div className="box-pop-head">
+        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
           {C.title(p.from)}
         </h4>
         <button type="button" className="btn" onClick={p.onClose}>
           {C.close}
         </button>
       </div>
+      {/* The two ends of the line, named: the repo it starts from and the box picked. */}
+      <p className="box-ends">
+        <span className="sr">{C.ends(p.from, toLabel ?? C.pickBoxNone)}</span>
+        <span aria-hidden="true" className="chip mono">
+          {p.from}
+        </span>
+        <span aria-hidden="true">→</span>
+        <span aria-hidden="true" className={`chip mono ${toLabel ? "" : "dim"}`}>
+          {toLabel ?? C.pickBoxNone}
+        </span>
+      </p>
       <p className="ev-say">{C.intro}</p>
       <label htmlFor={`${id}-to`} className="hud">
         {C.pickBox}
@@ -175,6 +189,7 @@ export function Pairing(p: {
   }, [v]);
   const loose = useMemo(() => v?.calls.filter((c) => c.status !== "paired") ?? [], [v]);
   const [find, setFind] = useState("");
+  const callsId = useId();
   const tally = useMemo(
     () => ({
       confident: loose.filter((c) => c.confident).length,
@@ -292,7 +307,7 @@ export function Pairing(p: {
       {loose.length > 0 && d.apis.length > 0 && (
         <>
           <p className="ev-say">{C.tally(tally.confident, tally.suggested, tally.none)}</p>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="box-btns">
             {tally.confident > 0 && (
               <button type="button" className="btn" onClick={() => tick("confident")}>
                 {C.tickConfident(tally.confident)}
@@ -320,7 +335,7 @@ export function Pairing(p: {
                   placeholder={C.findApi}
                   value={find}
                   onChange={(e) => setFind(e.target.value)}
-                  style={{ minWidth: 240 }}
+                  style={{ flex: "1 1 100%", minWidth: 0 }}
                 />
               </>
             )}
@@ -328,24 +343,19 @@ export function Pairing(p: {
         </>
       )}
       {loose.length > 0 && d.apis.length > 0 && (
-        <table className="run-table">
-          <caption className="hud" style={{ textAlign: "left" }}>
+        // One row per loose call, stacked to fit the details panel: the call (method and path in
+        // mono, cut to one line, whole on hover or while its row has focus), where it is, what
+        // it is now, and the API to pair it with across the row's width.
+        <div className="stack" style={{ gap: 6 }}>
+          <p id={`${callsId}-c`} className="hud box-sub">
             {C.caption(d.from, d.toName)}
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">{C.col.pick}</th>
-              <th scope="col">{C.col.call}</th>
-              <th scope="col">{C.col.status}</th>
-              <th scope="col">{C.col.api}</th>
-            </tr>
-          </thead>
-          <tbody>
+          </p>
+          <ul className="box-calls" aria-labelledby={`${callsId}-c`}>
             {loose.map((c) => {
               const label = `${c.method ?? ""} ${c.path}`.trim();
               return (
-                <tr key={c.fact}>
-                  <td>
+                <li key={c.fact} className="box-call">
+                  <label className="box-call-head" title={`${label}\n${c.at}`}>
                     <input
                       type="checkbox"
                       aria-label={`${C.col.pick}: ${label}`}
@@ -359,68 +369,68 @@ export function Pairing(p: {
                         })
                       }
                     />
-                  </td>
-                  <th scope="row" style={{ fontWeight: "normal" }}>
-                    <code className="mono">{label}</code>
-                    <div className="hud">{c.at}</div>
-                  </th>
-                  <td>
-                    {C.status[c.status]}
-                    {c.why ? ` (${C.leftWhy[c.why] ?? c.why})` : ""}
-                  </td>
-                  <td>
-                    <select
-                      className="field"
-                      aria-label={`${C.col.api}: ${label}`}
-                      value={picked[c.fact] ?? ""}
-                      onChange={(e) => {
-                        const api0 = e.target.value;
-                        setPicked((x) => ({ ...x, [c.fact]: api0 }));
-                        if (api0) setTicked((t) => new Set(t).add(c.fact));
-                      }}
-                    >
-                      <option value="">{C.pickApi}</option>
-                      {/* The likely ones first; then every API, narrowed by the search box. */}
-                      {c.suggestions?.length ? (
-                        <optgroup label={C.likely}>
-                          {c.suggestions.map((s) => {
-                            const a = d.apis.find((x) => x.id === s.api);
-                            return a ? (
-                              <option key={a.id} value={a.id}>
-                                {`${a.method ?? ""} ${a.path}`.trim()} · {C.why[s.why] ?? s.why}
-                              </option>
-                            ) : null;
-                          })}
-                        </optgroup>
-                      ) : null}
-                      <optgroup label={C.allApis}>
-                        {d.apis
-                          .filter((a) => {
-                            const q = find.trim().toLowerCase();
-                            if (!q) return true;
-                            const text =
-                              `${a.method ?? ""} ${a.path} ${a.words ?? ""}`.toLowerCase();
-                            return (
-                              q.split(/\s+/).every((w) => text.includes(w)) ||
-                              a.id === picked[c.fact]
-                            );
-                          })
-                          .map((a) => (
+                    <span className="box-call-what">
+                      <span className="box-path">
+                        {c.method && <span className="box-method">{c.method}</span>}
+                        <code className="mono">{c.path}</code>
+                      </span>
+                      <span className="box-at mono">{c.at}</span>
+                    </span>
+                    <span className="chip dim box-now">
+                      <span className="sr">{C.col.status}: </span>
+                      {C.status[c.status]}
+                    </span>
+                  </label>
+                  {c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>}
+                  <select
+                    className="field"
+                    aria-label={`${C.col.api}: ${label}`}
+                    value={picked[c.fact] ?? ""}
+                    onChange={(e) => {
+                      const api0 = e.target.value;
+                      setPicked((x) => ({ ...x, [c.fact]: api0 }));
+                      if (api0) setTicked((t) => new Set(t).add(c.fact));
+                    }}
+                  >
+                    <option value="">{C.pickApi}</option>
+                    {/* The likely ones first; then every API, narrowed by the search box. */}
+                    {c.suggestions?.length ? (
+                      <optgroup label={C.likely}>
+                        {c.suggestions.map((s) => {
+                          const a = d.apis.find((x) => x.id === s.api);
+                          return a ? (
                             <option key={a.id} value={a.id}>
-                              {`${a.method ?? ""} ${a.path}`.trim()}
+                              {`${a.method ?? ""} ${a.path}`.trim()} · {C.why[s.why] ?? s.why}
                             </option>
-                          ))}
+                          ) : null;
+                        })}
                       </optgroup>
-                    </select>
-                    {c.suggestion && picked[c.fact] === c.suggestion.api && (
-                      <div className="hud">{C.suggested(C.why[c.suggestion.why]!)}</div>
-                    )}
-                  </td>
-                </tr>
+                    ) : null}
+                    <optgroup label={C.allApis}>
+                      {d.apis
+                        .filter((a) => {
+                          const q = find.trim().toLowerCase();
+                          if (!q) return true;
+                          const text = `${a.method ?? ""} ${a.path} ${a.words ?? ""}`.toLowerCase();
+                          return (
+                            q.split(/\s+/).every((w) => text.includes(w)) || a.id === picked[c.fact]
+                          );
+                        })
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {`${a.method ?? ""} ${a.path}`.trim()}
+                          </option>
+                        ))}
+                    </optgroup>
+                  </select>
+                  {c.suggestion && picked[c.fact] === c.suggestion.api && (
+                    <span className="box-why">{C.suggested(C.why[c.suggestion.why]!)}</span>
+                  )}
+                </li>
               );
             })}
-          </tbody>
-        </table>
+          </ul>
+        </div>
       )}
       {loose.length > 0 && d.apis.length > 0 && (
         <MatchWithCopilot
@@ -438,7 +448,7 @@ export function Pairing(p: {
         />
       )}
       {d.rule && (
-        <label className="row" style={{ gap: 6 }}>
+        <label className="box-check">
           <input type="checkbox" checked={rule} onChange={(e) => setRule(e.target.checked)} />
           {C.rule(d.rule.calls)}
         </label>
@@ -449,7 +459,7 @@ export function Pairing(p: {
         </p>
       )}
       {(loose.length > 0 || d.rule) && (
-        <div className="row" style={{ gap: 8 }}>
+        <div className="box-foot">
           <button
             type="button"
             className="btn"
@@ -491,17 +501,19 @@ export function Pairing(p: {
             commit={written.commit}
           />
           {written.lines.length > 0 && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void undo()}
-              disabled={undoing}
-              aria-busy={undoing}
-            >
-              {C.undo}
-            </button>
+            <div className="box-btns">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void undo()}
+                disabled={undoing}
+                aria-busy={undoing}
+              >
+                {C.undo}
+              </button>
+              <MakeRule repo={p.from} line={written.lines[0]!} />
+            </div>
           )}
-          {written.lines.length > 0 && <MakeRule repo={p.from} line={written.lines[0]!} />}
         </div>
       )}
       {undone && (
