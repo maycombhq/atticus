@@ -95,8 +95,17 @@ export function redactFactLine(raw: string): string {
   try {
     json = JSON.parse(text);
   } catch {
-    return redactSecrets(raw).replace(/"((?:[^"\\]|\\.){6,})"/g, (all, v: string) =>
+    const out = redactSecrets(raw).replace(/"((?:[^"\\]|\\.){6,})"/g, (all, v: string) =>
       credentialLike(v) || hasSecretShape(v) ? `"${REDACTED}"` : all,
+    );
+    // Beta.25 review, second round: a broken line whose key names a secret has its value,
+    // source, parts and quote redacted, however weak (`"value":"hunter22" BROKEN`), its last
+    // string too when the line ends inside it.
+    const key = /"key"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(out)?.[1];
+    if (key === undefined || !looksLikeSecret(key, "x")) return out;
+    return out.replace(
+      /("(?:value|source|quote)"\s*:\s*)"(?:[^"\\]|\\.)*("|$)/g,
+      (_, head: string, end: string) => `${head}"${REDACTED}${end}`,
     );
   }
   if (!json || typeof json !== "object" || Array.isArray(json)) return raw;

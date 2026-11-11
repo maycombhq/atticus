@@ -2082,6 +2082,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     // estate's); an entry under it that serves a path the proxy sends to that URL does, and then
     // the URL is that service's for every route the proxy forwards there, served or not.
     const urls = [...new Set(configs.map((x) => x.value))].sort(cmp);
+    // Beta.25 review, second round: a URL whose own path is the base a service of the estate
+    // declares, one no unrelated service would share (`/ledger-api`, not `/v1` or `/api`), is
+    // that service's, though none of its routes is one the proxy sends.
+    if (
+      urls.some((u) => {
+        const p = urlPathOf(u);
+        return !!p && isOwnBase(call.component, p);
+      })
+    )
+      return false;
     const k = `${call.repo}\u0000${bundleRootOf(call.fact.cite.file) ?? ""}\u0000${call.fact.host ?? ""}\u0000${call.fact.base ?? ""}\u0000${urls.join("\u0000")}`;
     let served = targetServed.get(k);
     if (served === undefined) {
@@ -2105,30 +2115,65 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   };
   /** Whether a forwarding target URL serves some call sent to it (`outsideOfEstate`), by key. */
   const targetServed = new Map<string, boolean>();
+  /** A base any service may declare (`/`, `/v1`, `/api`, `/rest`, `/services`, `/api/v2`). */
+  const genericBase = (segs: readonly string[]) =>
+    segs.every((s) => /^(v\d+|api|rest|services)$/i.test(s));
+  const ownBaseSeen = new Map<string, boolean>();
+  /**
+   * Whether a path is, whole, a base path another component of the estate declares (`basesOf`)
+   * that is no common one (`genericBase`).
+   */
+  const isOwnBase = (component: string, p: string): boolean => {
+    const segs = rawSegs(p);
+    if (genericBase(segs)) return false;
+    const k = `${component}\u0000${segs.join("/").toLowerCase()}`;
+    const was = ownBaseSeen.get(k);
+    if (was !== undefined) return was;
+    const done = new Set<string>();
+    let got = false;
+    for (const e of entries) {
+      if (e.component === component) continue;
+      const ek = key(e.repo, e.component);
+      if (done.has(ek)) continue;
+      done.add(ek);
+      if (basesOf(e).some((b) => b.segs.length === segs.length && startsWithSegs(segs, b.segs))) {
+        got = true;
+        break;
+      }
+    }
+    ownBaseSeen.set(k, got);
+    return got;
+  };
   /**
    * Whether an entry of the estate could serve a whole path: as it is, or under a base path its
    * service declares (the manifest's `basePath`, a Route's or an Ingress's path, a context path
    * setting), as the path suffix reads them (beta.25 review: a token's URL may be an estate
    * service's own, its context path in front). A base nothing names is never taken off here.
+   * Under its base a service's catch-all route (`GET /accounts/**`) serves what it starts; a
+   * gateway's route serves only a path of its own shape, never by its pass-through.
    */
   const servedSomewhere = (call: Node & { fact: Call }, p: string): boolean => {
     if (serving({ ...call, fact: { ...call.fact, path: p } }, () => true, true).length) return true;
     if (call.fact.callType !== "rest") return false;
     const segs = rawSegs(p);
-    return routeCandidates(p).some(
-      (e) =>
-        e.component !== call.component &&
-        SERVES.rest!.includes(e.fact.entryType) &&
-        sameMethod(call.fact.method, e.fact.method) &&
-        !isPassThrough(e.fact) &&
-        basesOf(e).some(
-          (b) =>
-            b.segs.length > 0 &&
-            b.segs.length < segs.length &&
-            startsWithSegs(segs, b.segs) &&
-            routeScore(toPath(segs.slice(b.segs.length)), e.fact.path) >= 400,
-        ),
-    );
+    return routeCandidates(p).some((e) => {
+      if (
+        e.component === call.component ||
+        !SERVES.rest!.includes(e.fact.entryType) ||
+        !sameMethod(call.fact.method, e.fact.method)
+      )
+        return false;
+      const gatewayRoute = gatewayRepos.has(e.repo) || !!bundleRootOf(e.fact.cite.file);
+      if (gatewayRoute && isPassThrough(e.fact)) return false;
+      const least = gatewayRoute ? 400 : 100;
+      return basesOf(e).some(
+        (b) =>
+          b.segs.length > 0 &&
+          b.segs.length < segs.length &&
+          startsWithSegs(segs, b.segs) &&
+          routeScore(toPath(segs.slice(b.segs.length)), e.fact.path) >= least,
+      );
+    });
   };
   const gatewayRepos = new Set(repos.filter((r) => r.gateway).map((r) => r.repo));
   /** A gateway's forwarding call: a REST call in a gateway bundle, or of a repo the manifest types gateway. */

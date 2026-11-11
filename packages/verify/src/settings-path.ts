@@ -239,14 +239,20 @@ function yamlScalar(rest: string): string {
 }
 
 /**
- * A properties line's value: what follows its key and separator, with the lines it continues on
- * (a line ending in an odd number of `\`) joined, their leading spaces dropped, and an escaped
- * character (`https\://`) read as itself.
+ * A properties line's value, both ways it may be claimed (beta.25 review, second round): what
+ * follows its key and separator, with the lines it continues on (a line ending in an odd number
+ * of `\`) joined and their leading spaces dropped, as written (`https\://`, `C:\\data`) and
+ * read, an escaped character as itself (`https://`, `C:\data`).
  */
-function propertiesValue(line: string, key: string, next: readonly string[] = []): string {
+function propertiesValues(line: string, key: string, next: readonly string[] = []): string[] {
   let v = line.slice(line.indexOf(key) + key.length).replace(/^\s*[=:]?\s*/, "");
   for (let i = 0; /(^|[^\\])(\\\\)*\\$/.test(v) && i < next.length; i++)
     v = v.slice(0, -1) + next[i]!.replace(/^\s+/, "");
+  return [v.trim(), decodeProperties(v)];
+}
+
+/** A properties value's escapes read: `\uXXXX`, `\t`, `\n`, and any other `\c` as `c`. */
+function decodeProperties(v: string): string {
   return v
     .replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, c: string) =>
       c.length === 5
@@ -453,7 +459,7 @@ export function configLineProblem(
       if (k !== segs.join(".") && !k.endsWith(`.${segs.join(".")}`))
         return `${where} sets ${k}, not ${f.key}`;
       if (value !== undefined) {
-        if (!same(propertiesValue(at, k, lines.slice(f.cite.line))))
+        if (!propertiesValues(at, k, lines.slice(f.cite.line)).some(same))
           return `${where} sets ${k} to something other than the value claimed`;
         return undefined;
       }

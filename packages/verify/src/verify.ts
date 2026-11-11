@@ -3,7 +3,10 @@ import {
   claimOnLines,
   clusterServiceAddress,
   configSecretField,
+  credentialLike,
   factIdPart,
+  hasSecretShape,
+  looksLikeSecret,
   isPatternPath,
   plainPathPrefix,
   lineNamesClaim,
@@ -72,6 +75,40 @@ import {
  * are forgiven, and every fact a fact names exists and holds. What it proves: every fact rests on
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
+
+/**
+ * Whether a config fact's text is never quoted (beta.25 review, second round): its key names a
+ * secret, or its value, source, a part or its quote carries one or reads as a credential. Its
+ * messages say what is wrong without the text (`checkCite`'s `quiet`), are scrubbed of it
+ * (`scrubbed`), and a rejection shows it redacted (`withoutSecret`).
+ */
+function quietFact(f: Fact): boolean {
+  if (f.kind !== "config") return false;
+  if (looksLikeSecret(f.key, "x") || configSecretField(f)) return true;
+  return [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)].some(
+    (t) => t !== undefined && (hasSecretShape(t) || credentialLike(t) || redactSecrets(t) !== t),
+  );
+}
+
+/**
+ * A message of a quiet config fact with every text of the fact's own that may be its secret (its
+ * value, source, quote and parts) taken out; its key, target, env and the files it cites stay.
+ */
+function scrubbed(f: Fact, message: string): string {
+  if (f.kind !== "config") return message;
+  const names = new Set(
+    [f.key, f.target, f.env, f.cite.file, ...(f.cite.with ?? []).map((w) => w.file)].filter(
+      (x): x is string => x !== undefined,
+    ),
+  );
+  const texts = [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)]
+    .flatMap((t) => (t === undefined ? [] : [t, t.trim()]))
+    .filter((t) => t.length >= 3 && !names.has(t))
+    .sort((a, b) => b.length - a.length);
+  let out = message;
+  for (const t of texts) out = out.split(t).join("<redacted>");
+  return out;
+}
 
 /** A config fact with its value, source, quote and every part's value redacted (`secret-value`). */
 function withoutSecret(f: Fact): Fact {
@@ -777,6 +814,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     withHint = true,
     /** A rule of the cited file's own that names the claim (an Apigee pass-through path). */
     alsoHolds?: (lines: readonly string[], line: number) => boolean,
+    /** Never quote a part, the quote or the line: they may be a secret (`quietFact`). */
+    quiet = false,
   ): Problem | undefined => {
     const where = `${cite.file}:${cite.line}`;
     if (!insideRepo(cite.file))
@@ -836,7 +875,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       )
         return {
           code: "claim-not-on-line",
-          message: `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
+          message: quiet
+            ? `${pl} is not written at ${p.file}:${p.line} (or the line either side); cite the line that writes it (its text is not repeated here: it may be a secret)`
+            : `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
         };
       partLines.push(...near(ls, p.line));
     }
@@ -900,7 +941,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (!near.some((l) => quoteMatches(l, cite.quote)))
         return {
           code: "quote-mismatch",
-          message: `${label} quotes "${cite.quote}", but ${where} reads "${line.trim().slice(0, 200)}"`,
+          message: quiet
+            ? `${label}'s quote is not what ${where} (or the line either side) reads; neither is repeated here, as either may hold a secret`
+            : `${label} quotes "${cite.quote}", but ${where} reads "${line.trim().slice(0, 200)}"`,
         };
     }
     return undefined;
@@ -984,6 +1027,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 PLACEHOLDER_KEY.test(f.path.trim()) &&
                 helperBuildsKey(PLACEHOLDER_KEY.exec(f.path.trim())![1]!, f.cite, linesOf))
           : undefined,
+        quietFact(f),
       ),
     );
     // Beta.24 review: a config fact's value is what its line sets, and its key sits where the
@@ -1285,10 +1329,14 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
 
   const rejected = new Map<string, Rejected>();
   for (const f of facts) {
-    const ps = found.get(f.id);
+    let ps = found.get(f.id);
     if (!ps?.length) continue;
-    // A fact refused for the secret it carries is reported without it.
-    const shown = ps.some((p) => p.code === "secret-value") ? withoutSecret(f) : f;
+    // A fact refused for the secret it carries is reported without it, in its fields and in
+    // every message of its, whatever else is wrong with it (beta.25 review, second round); so
+    // is a config fact whose text may be a secret (`quietFact`), under a secret's key.
+    const quiet = ps.some((p) => p.code === "secret-value") || quietFact(f);
+    if (quiet) ps = ps.map((p) => ({ ...p, message: scrubbed(f, p.message) }));
+    const shown = quiet ? withoutSecret(f) : f;
     rejected.set(
       f.id,
       ps.length === 1

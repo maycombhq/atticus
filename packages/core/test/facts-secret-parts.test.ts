@@ -281,3 +281,124 @@ describe("a refused fact's line, as rejected.jsonl keeps it", () => {
     expect(out).not.toContain(SECRET);
   });
 });
+
+/**
+ * Beta.25 review, second round: under a key that names a secret, a source is a reference
+ * (`env:`, `vault:`, `${NAME}`, `secretKeyRef:`, `file:`, `kvm:`, a scheme then a name or a path)
+ * or a name as people write one (`DB2_PASSWORD`, `forge-secrets-v2`, `clientSecretV2`); any
+ * other literal is the secret, however weak. A placeholder's literal default under such a key
+ * is the secret too, and a credential with a `/` in it (an AWS secret access key) is no path.
+ */
+describe("a source under a secret's key", () => {
+  const db = (over: Record<string, unknown>, withs: { value: string }[] = []) => ({
+    kind: "config",
+    id: "config.db-password",
+    repo: "forge-wallets",
+    commit: "abcdef1",
+    key: "spring.datasource.password",
+    cite: {
+      file: "src/main/resources/application.yml",
+      line: 4,
+      value: "password",
+      ...(withs.length
+        ? { with: withs.map((w, i) => ({ file: "deploy/values.yaml", line: 2 + i, ...w })) }
+        : {}),
+    },
+    ...over,
+  });
+
+  it.each(["hunter22", "p4ssw0rd", "changeme123", "Summer2024!", "changeme", "Password1"])(
+    "is the secret when it is a literal, whatever its strength: %s",
+    (v) => {
+      expect(field(db({ source: v }))).toBe("source");
+    },
+  );
+
+  it.each([
+    "env:DB_PASSWORD",
+    "vault:kv/forge/ledger",
+    "${DB2_PASSWORD}",
+    "${DB_PASSWORD:}",
+    "${DB_PASSWORD:${VAULT_DB_PASSWORD}}",
+    "{{ db_password }}",
+    "secretKeyRef:db2-credentials/password",
+    "configMapKeyRef:forge-db/password",
+    "file:/run/secrets/db-password",
+    "kvm:northwind-keys-v2",
+    "aws-sm:arn:aws:secretsmanager:us-east-1:123456789012:secret:forge-db",
+    "DB2_PASSWORD",
+    "PASSWORD",
+    "forge-secrets-v2",
+    "ledger.db.password",
+    "clientSecretV2",
+    "Db2Credentials",
+    "config/app.yml",
+    "src/main/java/forge/Creds.java",
+    "application-prod.yml",
+    "the Kubernetes Secret forge-db",
+  ])("is no secret when it is a reference or a name: %s", (v) => {
+    expect(field(db({ source: v }))).toBeUndefined();
+  });
+
+  it.each([
+    "${DB_PASSWORD:hunter22}",
+    "${DB_PASSWORD:-changeme}",
+    "${A:${B:q8Zt4LmN2vXy7RkP0sWd}}",
+  ])("is the secret when a placeholder's default is a literal: %s", (v) => {
+    expect(field(db({ source: v }))).toBe("source");
+    expect(field(db({ value: v }))).toBe("value");
+  });
+
+  it("leaves a placeholder's literal default alone under a key that names no secret", () => {
+    expect(
+      field(db({ key: "forge.ledger.url", value: "${LEDGER_URL:http://localhost:8081}" })),
+    ).toBeUndefined();
+  });
+
+  it("is read by the schema as beta.24 read it: the verifier refuses it", () => {
+    expect(Fact.safeParse(db({ source: "hunter22" })).success).toBe(true);
+    expect(Fact.safeParse(db({ value: "${DB_PASSWORD:hunter22}" })).success).toBe(true);
+  });
+
+  it("finds an AWS secret access key with a / in it in a part", () => {
+    const f = db({ key: "forge.aws.secret-access-key", source: "env:AWS_SECRET_ACCESS_KEY" }, [
+      { value: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" },
+    ]);
+    expect(field(f)).toBe("cite.with");
+  });
+
+  it("finds a password by its marks in a part (`Summer2024!`)", () => {
+    expect(field(db({ source: "env:DB_PASSWORD" }, [{ value: "Summer2024!" }]))).toBe("cite.with");
+  });
+
+  it("keeps a part that is a path of names", () => {
+    expect(
+      field(
+        db({ source: "vault:secret/data/forge-ledger" }, [{ value: "secret/data/forge-ledger2" }]),
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("a facts line that isn't JSON, under a secret's key", () => {
+  it.each([
+    ['{"kind":"config","key":"db.password","value":"hunter22" BROKEN', "hunter22"],
+    ['{"kind":"config","key":"db.password","source":"p4ssw0rd","x":', "p4ssw0rd"],
+    ['{"kind":"config","key":"db.password","value":"changeme123', "changeme123"],
+    [
+      '{"kind":"config","key":"db.password","cite":{"with":[{"file":"a.yml","line":2,"value":"Summer2024!"}]',
+      "Summer2024!",
+    ],
+    ['{"kind":"config","value":"hunter22","key":"db.password" BROKEN', "hunter22"],
+  ])("has its value redacted, however weak: %s", (line, secret) => {
+    const out = redactFactLine(line);
+    expect(out).not.toContain(secret);
+    expect(out).toContain("<redacted>");
+    expect(out).toContain('"key":"db.password"');
+  });
+
+  it("keeps a broken line's value when its key names no secret", () => {
+    const raw = '{"kind":"config","key":"forge.url","value":"https://x.forge.example" BROKEN';
+    expect(redactFactLine(raw)).toBe(raw);
+  });
+});

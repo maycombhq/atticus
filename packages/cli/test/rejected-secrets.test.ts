@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseFactsLines } from "@maycombhq/core";
 import { verifyFacts, type FileSource, type VerifyReport } from "@maycombhq/verify";
 import { writeVerifyFiles } from "../src/facts-files.js";
+import { verifyCommand } from "../src/verify-commands.js";
 
 /**
  * Beta.25 review: a fact refused for the secret it carries never puts the secret in
@@ -104,6 +105,95 @@ describe("<repo>.rejected.jsonl and a secret", () => {
       expect(out).toContain('\\"id\\":\\"config.value\\"');
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Beta.25 review, second round: a fact refused for its secret and for something else (a part
+ * not on its line, a quote that doesn't match) never has the secret said, in any file or output
+ * of `atticus verify`: `<repo>.rejected.jsonl`, the `rejections` of `<repo>.verify.yaml`, the
+ * terminal, and the report `--json` prints.
+ */
+describe("atticus verify and a secret", () => {
+  const WEAK = "hunter22";
+  const lines = [
+    // a strong secret as a part on the wrong line, and as the source
+    config(
+      { id: "config.part-wrong-line", source: SECRET },
+      { with: [{ file: "config.json", line: 2, value: SECRET }] },
+    ),
+    // a weak password as the source, its quote holding it, on a line that doesn't read so
+    config({ id: "config.weak-source", source: WEAK }, { quote: `"value": "${WEAK}"` }),
+    // a weak password as a part on the wrong line, under a secret's key
+    config(
+      { id: "config.weak-part", source: "env:NORTHWIND_KEY" },
+      { with: [{ file: "config.json", line: 2, value: WEAK }] },
+    ),
+    // the secret's own line cited with a quote that doesn't match it
+    config(
+      { id: "config.quote-mismatch", source: "env:NORTHWIND_KEY" },
+      { line: 11, value: "value", quote: '"value": "nope"' },
+    ),
+  ].map((f) => JSON.stringify(f));
+  const adopted = async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-secret-cli-"));
+    await mkdir(join(root, ".atticus", "org-pack"), { recursive: true });
+    await mkdir(join(root, ".atticus", "facts"), { recursive: true });
+    await mkdir(join(root, "apiproxy", "policies"), { recursive: true });
+    for (const [p, t] of Object.entries(FILES)) await writeFile(join(root, p), t);
+    await writeFile(
+      join(root, ".atticus", "facts", "forge-wallets-proxy.jsonl"),
+      lines.join("\n") + "\n",
+    );
+    return root;
+  };
+  const run = async (root: string, json: boolean) => {
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    await verifyCommand(
+      root,
+      "forge-wallets-proxy",
+      { commit: "abcdef1", ...(json ? { json: true } : {}) },
+      io,
+    );
+    return { lines: said, said: said.join("\n") };
+  };
+
+  it("says it nowhere: rejected.jsonl, verify.yaml, the terminal and --json", async () => {
+    // two checkouts: a run keeps only the facts it kept in the facts file
+    const root = await adopted();
+    const other = await adopted();
+    try {
+      const text = await run(root, false);
+      expect(text.said).toMatch(/0 facts kept, 4 rejected/);
+      const facts = join(root, ".atticus", "facts");
+      const rejected = await readFile(join(facts, "forge-wallets-proxy.rejected.jsonl"), "utf8");
+      const yaml = await readFile(join(facts, "forge-wallets-proxy.verify.yaml"), "utf8");
+      const json = await run(other, true);
+      const report = JSON.parse(json.lines.find((l) => l.startsWith("{"))!) as {
+        rejections: { id: string }[];
+      };
+      expect(report.rejections.map((r) => r.id).sort()).toEqual([
+        "config.part-wrong-line",
+        "config.quote-mismatch",
+        "config.weak-part",
+        "config.weak-source",
+      ]);
+      for (const [where, t] of Object.entries({
+        rejected,
+        yaml,
+        terminal: text.said,
+        json: json.said,
+      })) {
+        expect(t, where).not.toContain(SECRET);
+        expect(t, where).not.toContain(WEAK);
+      }
+      expect(rejected).toContain("carries a secret in its source");
+      expect(rejected).toContain("<redacted>");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(other, { recursive: true, force: true });
     }
   });
 });

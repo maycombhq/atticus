@@ -364,3 +364,135 @@ describe("a verified link that merged a pairing", () => {
     ]);
   });
 });
+
+/**
+ * Beta.25 review, second round: an estate service whose route under its context path is a
+ * catch-all (`GET /accounts/**` under `/ledger-api`) serves the proxy's paths sent to its URL; a
+ * gateway's pass-through route still places nothing. And a target URL whose path is a service's
+ * own declared base, one no other service would share (not `/`, `/v1`, `/api`, `/rest`,
+ * `/services`), is that service's though none of its routes is one the proxy sends.
+ */
+describe("a target URL an estate service may serve under its base", () => {
+  const LEDGER_URL = "https://ledger.forge-cloud.example/ledger-api";
+  /** The estate without the two services that serve the vendor's paths themselves. */
+  const bare = () =>
+    estate().map((r) =>
+      r.repo === PROXY ? r : { ...r, facts: r.facts.filter((f) => f.kind !== "entry") },
+    );
+  const ledger = (
+    paths: readonly string[],
+    base: string,
+    o: { gateway?: boolean; file?: string } = {},
+  ): JoinRepo => ({
+    repo: "forge-ledger",
+    component: "ledger-api",
+    hosts: ["ledger.forge.internal"],
+    ...(o.gateway ? { gateway: true } : {}),
+    facts: [
+      ...paths.map(
+        (path, i) =>
+          ({
+            kind: "entry",
+            id: `entry.get.ledger-${i}`,
+            repo: "forge-ledger",
+            commit: "cccc333",
+            entryType: "rest",
+            method: "GET",
+            path,
+            handler: "LedgerController.get",
+            cite: {
+              file: o.file ?? "src/main/java/forge/ledger/LedgerController.java",
+              line: 9 + i,
+              value: path,
+            },
+            verified: "line",
+            by: "assistant",
+            conf: "declared",
+          }) as Fact,
+      ),
+      {
+        kind: "config",
+        id: "config.context-path",
+        repo: "forge-ledger",
+        commit: "cccc333",
+        settingKind: "config",
+        key: "server.servlet.context-path",
+        value: base,
+        cite: {
+          file: "src/main/resources/application.properties",
+          line: 1,
+          value: "server.servlet.context-path",
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      } as Fact,
+    ],
+  });
+
+  it("is asked about when the service's route under its context path is a catch-all", () => {
+    const got = fate(
+      joinFacts({
+        repos: hostIs(LEDGER_URL, [...bare(), ledger(["/accounts/**"], "/ledger-api")]),
+      }),
+    );
+    expect(got.outside).toEqual([]);
+    expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
+  });
+
+  it("is asked about when a catch-all under the base takes the URL's own path too", () => {
+    const got = fate(
+      joinFacts({
+        repos: hostIs(`${LEDGER_URL}/v9`, [...bare(), ledger(["/v9/**"], "/ledger-api")]),
+      }),
+    );
+    expect(got.outside).toEqual([]);
+    expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
+  });
+
+  it("goes outside when the catch-all is another gateway's pass-through route", () => {
+    const got = fate(
+      joinFacts({
+        repos: hostIs(`${LEDGER_URL}/v9`, [
+          ...bare(),
+          ledger(["/v9/**"], "/ledger-api", {
+            gateway: true,
+            file: "apiproxy/proxies/default.xml",
+          }),
+        ]),
+      }),
+    );
+    expect(got.asked).toEqual([]);
+    expect(new Set(got.outside)).toEqual(new Set(["ledger.forge-cloud.example"]));
+  });
+
+  it("is asked about when the URL's path is the service's own base, though no route matches", () => {
+    const got = fate(
+      joinFacts({ repos: hostIs(LEDGER_URL, [...bare(), ledger(["/customers"], "/ledger-api")]) }),
+    );
+    expect(got.outside).toEqual([]);
+    expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
+  });
+
+  it.each([
+    ["/v1", "https://api.northwind.example/v1"],
+    ["/api", "https://api.northwind.example/api/"],
+    ["/rest", "https://api.northwind.example/rest"],
+    ["/services", "https://api.northwind.example/services"],
+    ["/api/v2", "https://api.northwind.example/api/v2"],
+  ])("goes outside when that base is a common one (%s, %s)", (base, url) => {
+    const got = fate(joinFacts({ repos: hostIs(url, [...bare(), ledger(["/customers"], base)]) }));
+    expect(got.asked).toEqual([]);
+    expect(new Set(got.outside)).toEqual(new Set(["api.northwind.example"]));
+  });
+
+  it("goes outside when the URL only starts with the service's base", () => {
+    const got = fate(
+      joinFacts({
+        repos: hostIs(`${LEDGER_URL}/v9`, [...bare(), ledger(["/customers"], "/ledger-api")]),
+      }),
+    );
+    expect(got.asked).toEqual([]);
+    expect(new Set(got.outside)).toEqual(new Set(["ledger.forge-cloud.example"]));
+  });
+});

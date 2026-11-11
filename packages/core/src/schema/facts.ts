@@ -360,7 +360,24 @@ const tokenLike = (t: string) =>
   /[0-9]/.test(t) &&
   /[A-Za-z]/.test(t) &&
   !/\.[a-z]{2,5}$/i.test(t) &&
-  !/^\/|\/[a-z][\w-]*\//i.test(t);
+  !pathOfNames(t);
+
+/**
+ * A path of names (`kv/forge/ledger`, `/run/secrets/db`), not a credential with a `/` in it
+ * (beta.25 review: an AWS secret access key, `wJalrXUtnFEMI/K7MDENG/…`): it starts with `/`, or
+ * each of its segments is a name as people write one (`NAME_LIKE`, `identifierName`).
+ */
+const pathOfNames = (t: string) =>
+  t.startsWith("/") ||
+  (t.includes("/") &&
+    t
+      .split("/")
+      .every(
+        (s) => s === "" || NAME_LIKE.some((r) => r.test(s)) || identifierName(s) || fileName(s),
+      ));
+
+/** A file's name with its extension (`application.yml`, `Creds.java`). */
+const fileName = (t: string) => /^[A-Za-z][\w.-]*\.[A-Za-z]{2,5}$/.test(t);
 
 /**
  * A name as people write them, digits and all (beta.25 review): UPPER_SNAKE (`DB2_PASSWORD`,
@@ -371,6 +388,79 @@ const NAME_LIKE = [
   /^[A-Z]+[0-9]{0,3}(?:_(?:[A-Z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
   /^[a-z]+[0-9]{0,3}(?:[-_.](?:[a-z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
 ];
+
+/**
+ * A name as code writes one, stricter than `NAME_LIKE` (beta.25 review, second round): one a
+ * source under a secret's key may be, where a word with digits (`hunter22`, `changeme123`) is
+ * the password itself. UPPER_SNAKE with an underscore or no digit (`DB2_PASSWORD`, `PASSWORD`,
+ * not `HUNTER22`), two lower words or more joined by `-`, `_` or `.` (`forge-secrets-v2`,
+ * `ledger.db.password`), or camelCase or PascalCase of two words or more (`clientSecretV2`,
+ * `Db2Credentials`, not `Password1`).
+ */
+function identifierName(t: string): boolean {
+  return (
+    (NAME_LIKE[0]!.test(t) && (t.includes("_") || !/[0-9]/.test(t))) ||
+    (NAME_LIKE[1]!.test(t) && t.split(/[-_.]/).filter((w) => /[a-z]/.test(w)).length >= 2) ||
+    /^[A-Za-z][a-z]+[0-9]{0,3}(?:[A-Z][a-z]+[0-9]{0,3}|[A-Z][0-9]{1,3})+$/.test(t)
+  );
+}
+
+/** A default that names no value (`${X:none}`), as a flag or a mode does. */
+const NO_DEFAULT = /^(true|false|yes|no|on|off|none|null)$/i;
+
+/**
+ * Whether a text's placeholder has a literal default (`${DB_PASSWORD:hunter22}`,
+ * `${DB_PASSWORD:-changeme}`, the inner one of `${A:${B:x}}`): under a secret's key, that
+ * default is the secret (beta.25 review, second round). An empty default, or one that is
+ * itself a placeholder (`${A:${B}}`), is none.
+ */
+function literalDefault(t: string): boolean {
+  for (const m of t.matchAll(/\$\{[^}:$]*:-?([^}$]*)/g)) {
+    const d = m[1]!.trim();
+    if (d && !NO_DEFAULT.test(d)) return true;
+  }
+  return false;
+}
+
+/** The schemes a source names where a secret lives by (the assistant's rules give these). */
+const REFERENCE_SCHEMES = new Set([
+  "env",
+  "vault",
+  "secret",
+  "ref",
+  "secretkeyref",
+  "configmapkeyref",
+  "file",
+  "kvm",
+]);
+
+/**
+ * Whether a source refers to where its secret lives rather than holding it: a placeholder with
+ * no literal default and nothing beside it (`${DB_PASSWORD}`, `{{ db_password }}`), or a
+ * scheme and what it names: one of `REFERENCE_SCHEMES` (`env:X`, `secretKeyRef:name/key`), or
+ * any scheme then a path, a resource name or a name (`aws-sm:arn:…`, `ssm:/forge/db`), never a
+ * word with digits (`admin:hunter22`).
+ */
+function isReference(t: string): boolean {
+  if (/^(\$\{|\{\{)/.test(t)) {
+    if (literalDefault(t)) return false;
+    let rest = t;
+    for (let was = ""; was !== rest;) {
+      was = rest;
+      rest = rest.replace(/\$\{[^{}]*\}|\{\{[^{}]*\}\}/g, "");
+    }
+    return rest.trim() === "";
+  }
+  const m = /^([A-Za-z][A-Za-z0-9-]*):(.+)$/.exec(t);
+  if (!m) return false;
+  const rest = m[2]!.trim();
+  return (
+    REFERENCE_SCHEMES.has(m[1]!.toLowerCase()) ||
+    /[/:]/.test(rest) ||
+    identifierName(rest) ||
+    (/^(\$\{|\{\{)/.test(rest) && isReference(rest))
+  );
+}
 
 /** Shannon entropy of a text, in bits per character. */
 const entropy = (t: string) => {
@@ -411,11 +501,17 @@ export function credentialLike(t: string): boolean {
  *
  * A value is one when its key names a secret (`looksLikeSecret`) or it is shaped like one
  * (`hasSecretShape`, a Basic token too). A source or a part is one when it is shaped like a
- * secret whatever the key, or, under a key that names a secret, a literal that reads as a
- * credential (`credentialLike`) and is no name of the fact's own: its key or a name in it, its
- * target with or without its extension, its env, or a name its source gives (the part
- * `northwind-oauth2` of `secretKeyRef:northwind-oauth2/client-secret`). A quote is the
- * verifier's to redact, as it always was. The answer never repeats the value.
+ * secret whatever the key. Under a key that names a secret, a value, a source or a part with a
+ * placeholder whose default is a literal (`${DB_PASSWORD:hunter22}`) is one; a source is one
+ * when it is no reference (`isReference`), no name as code writes one (`identifierName`) and no
+ * name of the fact's own, however weak (`hunter22`, `Summer2024!`); and a part is one when it
+ * is a literal that reads as a credential (`credentialLike`) or a password by its marks
+ * (`Summer2024!`; a weak word with digits, `hunter22`, is shaped as a hash or a version is, so
+ * a part like it is not refused here, and the verifier's messages never quote it) and is no
+ * name of the fact's own:
+ * its key or a name in it, its target with or without its extension, its env, or a name its
+ * source gives (the part `northwind-oauth2` of `secretKeyRef:northwind-oauth2/client-secret`).
+ * A quote is the verifier's to redact, as it always was. The answer never repeats the value.
  */
 export function configSecretField(c: {
   key: string;
@@ -425,7 +521,14 @@ export function configSecretField(c: {
   env?: string | undefined;
   cite: { with?: readonly { value: string }[] | undefined };
 }): "value" | "source" | "cite.with" | undefined {
-  if (c.value !== undefined && (looksLikeSecret(c.key, c.value) || hasSecretShape(c.value)))
+  // a key that names a secret (`looksLikeSecret` of a value that is none of its exceptions)
+  const secretKey = looksLikeSecret(c.key, "x");
+  if (
+    c.value !== undefined &&
+    (looksLikeSecret(c.key, c.value) ||
+      hasSecretShape(c.value) ||
+      (secretKey && literalDefault(c.value)))
+  )
     return "value";
   const target = c.target?.trim();
   const own = new Set(
@@ -435,16 +538,34 @@ export function configSecretField(c: {
   );
   const keyText = c.key.toLowerCase();
   const source = c.source?.trim();
+  const ownName = (t: string) => own.has(t) || keyText.includes(t.toLowerCase());
   const secret = (v: string, isSource: boolean) => {
     const t = v.trim();
     if (!t) return false;
     if (hasSecretShape(t)) return true;
+    if (secretKey && literalDefault(t)) return true;
+    // Beta.25 review, second round: under a secret's key a source is a reference or a name;
+    // any other literal is the secret, however weak (`hunter22`, `Summer2024!`).
+    if (isSource)
+      return (
+        secretKey &&
+        !isReference(t) &&
+        !identifierName(t) &&
+        // the file it is read from (`config/app.yml`, `src/Creds.java`)
+        !pathOfNames(t) &&
+        !fileName(t) &&
+        !NOT_A_SECRET.test(t) &&
+        !ownName(t) &&
+        // where it lives said in words (`the Kubernetes Secret forge-db`)
+        t.split(/\s+/).filter((w) => /^[A-Za-z]{2,}$/.test(w)).length < 2
+      );
     return (
       looksLikeSecret(c.key, t) &&
-      credentialLike(t) &&
-      !own.has(t) &&
-      !keyText.includes(t.toLowerCase()) &&
-      (isSource || !source || !source.includes(t))
+      // a credential, or a password by its marks (`Summer2024!`): no name, version or hash has one
+      (credentialLike(t) ||
+        (/^\S+$/.test(t) && /[A-Za-z]/.test(t) && /[0-9]/.test(t) && /[!#%^&*?]/.test(t))) &&
+      !ownName(t) &&
+      (!source || !source.includes(t))
     );
   };
   if (source !== undefined && secret(source, true)) return "source";

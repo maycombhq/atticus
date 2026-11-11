@@ -190,6 +190,7 @@ describe("a config fact's value written another way it is the same", () => {
       "vendor.escaped = https\\://api.northwind.example/v1",
       "vendor.cut = https://api.northwind.example/\\",
       "    v1.evil.example",
+      "forge.data-dir = C:\\\\data\\\\ledger",
     ].join("\n"),
     "app.yml": [
       "vendor:",
@@ -211,6 +212,14 @@ describe("a config fact's value written another way it is the same", () => {
     expect(
       problem("vendor.escaped", "https://api.northwind.example/v1", "app.properties", 3),
     ).toBeUndefined();
+  });
+  it("keeps a properties value claimed exactly as written, its escapes and all", () => {
+    expect(
+      problem("vendor.escaped", "https\\://api.northwind.example/v1", "app.properties", 3),
+    ).toBeUndefined();
+    expect(problem("forge.data-dir", "C:\\\\data\\\\ledger", "app.properties", 6)).toBeUndefined();
+    expect(problem("forge.data-dir", "C:\\data\\ledger", "app.properties", 6)).toBeUndefined();
+    expect(problem("forge.data-dir", "C:\\data\\other", "app.properties", 6)).toBeDefined();
   });
   it("still refuses a continued value that only starts the claim's", () => {
     expect(
@@ -343,6 +352,63 @@ describe("a deploy tool's token whose part carries the secret", () => {
     });
     const r = await verifyFacts({ facts: [f], source: memory(files), commit: "abcdef1" });
     expect(r.rejected.filter((x) => x.code === "secret-value")).toEqual([]);
+  });
+
+  /**
+   * Beta.25 review, second round: a refused fact's messages never quote its secret. A part not on
+   * its line, a quote that doesn't match and the line it was matched against are said without
+   * their text for a config fact under a secret's key, and every message of a fact refused for a
+   * secret is redacted, whatever else is wrong with it.
+   */
+  const cfg = (over: Record<string, unknown>, cite: Record<string, unknown>) =>
+    Fact.parse({
+      kind: "config",
+      id: "config.key",
+      repo: "forge-wallets-proxy",
+      commit: "abcdef1",
+      key: X,
+      target: "AM-Key.xml",
+      env: "prod",
+      cite: { file: "config.json", line: 10, value: "Header", ...cite },
+      ...over,
+    });
+  it.each([
+    [
+      "a strong part on the wrong line, refused for the secret too",
+      cfg({}, { with: [{ file: "config.json", line: 2, value: "q8Zt4LmN2vXy7RkP0sWd" }] }),
+      "q8Zt4LmN2vXy7RkP0sWd",
+    ],
+    [
+      "a strong source and a part on the wrong line",
+      cfg(
+        { source: "q8Zt4LmN2vXy7RkP0sWd" },
+        { with: [{ file: "config.json", line: 2, value: "q8Zt4LmN2vXy7RkP0sWd" }] },
+      ),
+      "q8Zt4LmN2vXy7RkP0sWd",
+    ],
+    [
+      "a weak part on the wrong line",
+      cfg(
+        { source: "env:NORTHWIND_KEY" },
+        { with: [{ file: "config.json", line: 2, value: "hunter22" }] },
+      ),
+      "hunter22",
+    ],
+    [
+      "a quote that doesn't match the secret's line",
+      cfg({ source: "env:NORTHWIND_KEY" }, { line: 11, value: "value", quote: '"value": "nope"' }),
+      "q8Zt4LmN2vXy7RkP0sWd",
+    ],
+    [
+      "a weak source and a quote holding it",
+      cfg({ source: "hunter22" }, { quote: '"value": "hunter22"' }),
+      "hunter22",
+    ],
+  ])("never says the secret: %s", async (_, f, secret) => {
+    const r = await verifyFacts({ facts: [f], source: memory(FILES), commit: "abcdef1" });
+    expect(r.accepted).toEqual([]);
+    expect(r.rejected).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain(secret);
   });
 });
 
