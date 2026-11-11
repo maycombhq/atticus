@@ -32,6 +32,14 @@ export interface PaletteCommand {
  * first once something is typed that names them (ADR 0194), never on an empty box, so Enter on
  * opening it never runs one. Exported for tests.
  */
+/**
+ * An item's React key. beta.26 CI: the label is part of it, since the bottom panel's commands share
+ * their kind, detail and (empty) address; with equal keys React left a stale option on the list
+ * ("Open the Console" stayed first after "governance" was typed). Exported for tests.
+ */
+export const itemKey = (i: Pick<Item, "kind" | "label" | "detail" | "href">): string =>
+  `${i.kind}/${i.label}/${i.detail}/${i.href}`;
+
 export function paletteItems(
   text: string,
   changes: { id: string; title: string; state: string }[],
@@ -224,7 +232,7 @@ export function CommandPalette({
         <ul id="palette-list" role="listbox" aria-label={T.results}>
           {items.map((i, k) => (
             <li
-              key={`${i.kind}/${i.detail}/${i.href}`}
+              key={itemKey(i)}
               id={`palette-${k}`}
               role="option"
               aria-selected={k === sel}
