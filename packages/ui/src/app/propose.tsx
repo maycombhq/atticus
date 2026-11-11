@@ -371,7 +371,7 @@ export function CorrectionsToApply() {
   if (!repos.length && !applied) return null;
   return (
     <section
-      className="panel stack"
+      className="panel stack box-bar"
       style={{ gap: 6, gridColumn: "1 / -1" }}
       aria-label={COPY.appStep.applyAll}
     >
