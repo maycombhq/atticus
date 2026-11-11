@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
-import { jobNote, scanAdded } from "../src/screens/know/Know.js";
+import { jobNote, scanAdded, scanRefused } from "../src/screens/know/Know.js";
 
 /**
  * App-only audit (Set up › Scans): the scan is a cross-check with the built-in readers, said as
@@ -10,9 +10,59 @@ import { jobNote, scanAdded } from "../src/screens/know/Know.js";
 const T = COPY.know;
 
 describe("Set up › Scans (app-only audit)", () => {
-  it("names the scan as the built-in readers' cross-check", () => {
+  it("names the scan as the built-in readers' cross-check, and says it writes only a whole read", () => {
     expect(T.scanNow).toBe("Check with the built-in readers");
     expect(T.scanCrossCheck).toMatch(/^A cross-check, not how the map is made/);
+    // Beta.26: what it does now, exactly.
+    expect(T.scanCrossCheck).toMatch(
+      /writes the catalog only when every repo is cloned here and read in full; otherwise it writes nothing and says which repos and why/,
+    );
+  });
+
+  it("says a refused scan plainly: nothing written, each repo and why, what to do (beta.26)", () => {
+    const job = {
+      state: "failed",
+      result: {
+        written: false,
+        refused: {
+          repos: [
+            { repo: "forge-ledger", why: "not-cloned", message: "x" },
+            { repo: "forge-events", why: "unreadable", message: "x" },
+            {
+              repo: "forge-gateway",
+              why: "run-failed",
+              message: "x",
+              runs: [{ extractor: "northwind-reader", error: "stopped" }],
+            },
+            { repo: "forge-infra", why: "not-asked", message: "x" },
+          ],
+          message: "Nothing written: …",
+        },
+      },
+    };
+    const r = scanRefused(job)!;
+    expect(r.title).toBe("Nothing written: the catalog is as it was.");
+    expect(r.lines).toEqual([
+      "forge-ledger: not cloned here. Sync repos, then check again.",
+      "forge-events: its clone can't be read. Sync repos to clone it again.",
+      "forge-gateway: the run of northwind-reader failed (stopped), so its read is short of what that run reads.",
+      "forge-infra: left out of this scan, and a scan of some repos would replace the catalog with them alone.",
+    ]);
+    expect(r.todo).toBe(T.scanRefusedTodo);
+    expect(T.scanRefusedTodo).toMatch(/Sync repos/);
+    expect(T.scanRefusedTodo).toMatch(/atticus verify <repo> --write/);
+    expect(T.scanRefusedState).toBe("Nothing written");
+    // A scan that read every repo and found nothing in code where the catalog has records.
+    expect(
+      scanRefused({
+        state: "failed",
+        result: { refused: { repos: [], empty: { before: 40 }, message: "x" } },
+      })!.lines,
+    ).toEqual(["The scan found no records in any repo's code, and the catalog has 40."]);
+    // A scan that wrote, or one still running, says nothing of it.
+    expect(scanRefused({ state: "done", result: { added: 1 } })).toBeUndefined();
+    expect(scanRefused({ state: "running" })).toBeUndefined();
+    expect(scanRefused(undefined)).toBeUndefined();
   });
 
   it("says what the readers added, changed and removed, and the questions open", () => {

@@ -136,8 +136,8 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
-  atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
-          [--repos a,b]                Only these repos
+  atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated, only when every production repo was read in full (cloned, readable, no reader run failed); otherwise write nothing, name each repo and why, and exit 1
+          [--repos a,b]                Only these repos: a check that writes nothing (a scan of some repos would replace the catalog with them alone; put one repo in from its facts with atticus verify <repo> --write)
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
           [--warnings]                 List what the scan left out or couldn't read, not just how many

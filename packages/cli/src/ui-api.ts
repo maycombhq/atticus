@@ -77,7 +77,7 @@ import {
 } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { partStates } from "./runs-view.js";
-import { scanCommand } from "./scan-commands.js";
+import { scanCommand, scanSummaryLines, type ScanRefusal } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
@@ -193,14 +193,18 @@ interface Ran {
   err: string[];
 }
 
-async function run(f: (io: Output) => Promise<number>): Promise<Ran> {
+async function run(
+  f: (io: Output) => Promise<number>,
+  /** A command asked for --json keeps its JSON out of the Console (the job says it in words). */
+  o: { jsonOut?: boolean } = {},
+): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
   // ADR 0187: inside a job, each line also goes to its Console entry as it is printed.
   const code = await f({
     out: (l) => {
       out.push(l);
-      printToCurrent(l);
+      if (!o.jsonOut) printToCurrent(l);
     },
     err: (l) => {
       err.push(l);
@@ -1770,19 +1774,21 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                     .filter((f) => f?.facts)
                     .map((f) => f!.repo),
                 );
-            const res = await run((io) =>
-              scanCommand(
-                root,
-                {
-                  ...(b.repos ? { repos: b.repos } : {}),
-                  full: b.full,
-                  json: true,
-                  // ADR 0123: another branch, scanned beside the baseline.
-                  ...(b.ref ? { ref: b.ref } : {}),
-                  ...(askFrom ? { askFrom } : {}),
-                },
-                io,
-              ),
+            const res = await run(
+              (io) =>
+                scanCommand(
+                  root,
+                  {
+                    ...(b.repos ? { repos: b.repos } : {}),
+                    full: b.full,
+                    json: true,
+                    // ADR 0123: another branch, scanned beside the baseline.
+                    ...(b.ref ? { ref: b.ref } : {}),
+                    ...(askFrom ? { askFrom } : {}),
+                  },
+                  io,
+                ),
+              { jsonOut: true },
             );
             c.progress(1, 1, "Scanned");
             const parsed = (() => {
@@ -1792,7 +1798,17 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 return {};
               }
             })();
+            // Beta.26: the report in words in the Console, never its JSON.
+            for (const l of scanSummaryLines(parsed)) printToCurrent(l);
             const problems = (parsed.problems as unknown[] | undefined)?.length ?? 0;
+            // Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. The
+            // job says which repos and why, and what to do, in words; the catalog is unchanged.
+            const refusal = parsed.refused as ScanRefusal | undefined;
+            if (refusal)
+              return {
+                result: { stats: parsed.stats, problems, written: false, refused: refusal },
+                errors: refusal.message.split("\n"),
+              };
             ctx.events.publish({
               type: "index.rebuilt",
               records: Number((parsed.stats as { records?: number } | undefined)?.records ?? 0),

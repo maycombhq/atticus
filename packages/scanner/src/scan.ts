@@ -121,6 +121,21 @@ export interface ScanProblem {
   message: string;
 }
 
+/**
+ * A production repo (ADR 0133) the scan didn't read in full, and why (beta.26 safety stop): its
+ * clone isn't here, its clone can't be read, a reader, dialect or plugin run failed on it (the
+ * runner keeps none of that run's records), or `repos` left it out. A scan replaces the whole
+ * catalog, so `atticus scan` writes nothing while any repo is listed here.
+ */
+export interface UnreadRepo {
+  repo: string;
+  why: "not-cloned" | "unreadable" | "run-failed" | "not-asked";
+  /** For `unreadable`: what reading the clone said. */
+  detail?: string;
+  /** For `run-failed`: each run that failed, by its extractor id (a dialect is `dialect-<name>`). */
+  runs?: { extractor: string; error: string }[];
+}
+
 export interface RepoCoverage {
   repo: string;
   /** Interfaces from this repo's components. */
@@ -192,6 +207,11 @@ export interface EstateScan {
    * changed source files no fact covers yet, or the built-in readers.
    */
   basis?: Record<string, FactBasis>;
+  /**
+   * The production repos not read in full, in manifest order (beta.26): empty when every one was.
+   * Archived repos and prototypes are never listed.
+   */
+  unread: UnreadRepo[];
 }
 
 async function isDir(p: string): Promise<boolean> {
@@ -427,6 +447,11 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   // A prototype is read and compared with the estate, never scanned into the catalog (ADR 0133).
   const repos = productionRepos(op, o.repos);
   const results: RepoScan[] = [];
+  // Beta.26 safety stop: every production repo this scan doesn't read in full, and why.
+  const unreadOf = new Map<string, UnreadRepo>();
+  if (o.repos)
+    for (const r of productionRepos(op))
+      if (!o.repos.includes(r.id)) unreadOf.set(r.id, { repo: r.id, why: "not-asked" });
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
   const basis: Record<string, FactBasis> = {};
   /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
@@ -450,6 +475,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: "workspace",
         message: "isn't cloned here yet; run atticus workspace sync",
       });
+      unreadOf.set(r.id, { repo: r.id, why: "not-cloned" });
       continue;
     }
     try {
@@ -460,6 +486,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: "workspace",
         message: `can't read the base clone (${(e as Error).message}); run atticus workspace sync`,
       });
+      unreadOf.set(r.id, { repo: r.id, why: "unreadable", detail: (e as Error).message });
       continue;
     }
     const extractors: Extractor[] = off.has("readers")
@@ -550,8 +577,16 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     } finally {
       parsed.dispose();
     }
-    for (const run of scan.runs.filter((x) => x.status === "failed"))
+    const failedRuns = scan.runs.filter((x) => x.status === "failed");
+    for (const run of failedRuns)
       problems.push({ repo: r.id, source: run.extractor, message: run.error ?? "failed" });
+    // The runner drops a failed run's records, so the repo's read is short of them.
+    if (failedRuns.length)
+      unreadOf.set(r.id, {
+        repo: r.id,
+        why: "run-failed",
+        runs: failedRuns.map((x) => ({ extractor: x.extractor, error: x.error ?? "failed" })),
+      });
     for (const rej of scan.rejected)
       problems.push({
         repo: r.id,
@@ -759,5 +794,9 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     notes,
     ...(federated ? { federated } : {}),
     basis,
+    unread: productionRepos(op).flatMap((r) => {
+      const u = unreadOf.get(r.id);
+      return u ? [u] : [];
+    }),
   };
 }

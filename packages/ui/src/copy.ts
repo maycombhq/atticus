@@ -3001,7 +3001,26 @@ export const COPY = {
     /** App-only audit: the old built-in readers are a cross-check, never how the map is made. */
     scanNow: "Check with the built-in readers",
     scanCrossCheck:
-      "A cross-check, not how the map is made: the built-in readers read the cloned repos' files and add what they find beside your assistant's facts. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+      "A cross-check, not how the map is made: the built-in readers read every repo's files and add what they find beside your assistant's facts. A scan replaces the whole catalog, so it writes the catalog only when every repo is cloned here and read in full; otherwise it writes nothing and says which repos and why. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+    /** Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. */
+    scanRefusedTitle: "Nothing written: the catalog is as it was.",
+    scanRefusedState: "Nothing written",
+    scanRefusedList: "Repos the scan didn't read in full",
+    scanRefusedWhy: {
+      "not-cloned": (repo: string) => `${repo}: not cloned here. Sync repos, then check again.`,
+      unreadable: (repo: string) =>
+        `${repo}: its clone can't be read. Sync repos to clone it again.`,
+      "not-asked": (repo: string) =>
+        `${repo}: left out of this scan, and a scan of some repos would replace the catalog with them alone.`,
+    } as Record<string, (repo: string) => string>,
+    scanRefusedRun: (repo: string, runs: string) =>
+      `${repo}: ${runs}, so its read is short of what that run reads.`,
+    scanRefusedRunOne: (extractor: string, error: string) =>
+      `the run of ${extractor} failed (${error})`,
+    scanRefusedEmpty: (before: number) =>
+      `The scan found no records in any repo's code, and the catalog has ${before}.`,
+    scanRefusedTodo:
+      "Sync repos, then check again, or put one repo's read in the catalog from its facts: atticus verify <repo> --write (Map › Trust). A failed reader run is in the Console.",
     scanAskAll: "Also ask about the repos your assistant hasn't read",
     scanAdded: (added: number, changed: number, removed: number, questions: number) =>
       `The built-in readers added ${added} ${added === 1 ? "record" : "records"}, changed ${changed} and removed ${removed}. ${questions === 1 ? "1 host question is" : `${questions} host questions are`} open.`,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -38,6 +38,19 @@ async function forgeRoot(): Promise<string> {
 
 let root: string;
 let srv: RunningServer;
+
+/** Every record file under catalog/generated, with its bytes. */
+async function catalogFiles(at: string): Promise<Record<string, string>> {
+  const dir = join(at, "catalog/generated");
+  const out: Record<string, string> = {};
+  for (const f of (await readdir(dir, { recursive: true, withFileTypes: true })).filter((e) =>
+    e.isFile(),
+  )) {
+    const p = join(f.parentPath, f.name);
+    out[relative(dir, p)] = await readFile(p, "utf8");
+  }
+  return out;
+}
 const gh = new MockGitHost([{ repo: REPO }]);
 
 async function call(path: string, o: { method?: string; body?: unknown } = {}) {
@@ -220,23 +233,45 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect([404, 422]).toContain(missing.status);
   });
 
-  it("runs a scan as a job: 202, then done, with its progress", async () => {
+  it("runs a scan as a job: 202, then its progress; with no repo cloned it writes nothing, said in words", async () => {
+    const catalogBefore = await catalogFiles(root);
+    expect(Object.keys(catalogBefore).length).toBeGreaterThan(20);
     const r = await call("/api/scan", { method: "POST", body: {} });
     expect(r.status).toBe(202);
     const { jobId } = Api.JobAccepted.parse(r.body);
     const job = await srv.jobs.settle(jobId);
     expect(job.kind).toBe("scan");
-    expect(["done", "failed"]).toContain(job.state);
     const read = Api.Job.parse((await call(`/api/jobs/${jobId}`)).body);
     expect(read.progress).toEqual({ done: 1, total: 1, message: "Scanned" });
-    // App-only audit: what the built-in readers added, changed and removed, and its questions.
-    if (job.state === "done")
-      expect(read.result).toMatchObject({
-        added: expect.any(Number),
-        changed: expect.any(Number),
-        removed: expect.any(Number),
-        questions: expect.any(Number),
-      });
+    // Beta.26 safety stop: no repo is cloned here, so the scan wrote nothing; the job ends with
+    // problems, its result names each repo and why, and its errors say what to do, in words.
+    expect(job.state).toBe("failed");
+    const refused = (read.result as { refused: { repos: { repo: string; why: string }[] } })
+      .refused;
+    expect(read.result).toMatchObject({ written: false });
+    expect(refused.repos.map((x) => x.repo).sort()).toEqual([
+      "forge-events",
+      "forge-gateway",
+      "forge-infra",
+      "forge-ledger",
+      "forge-portal-bff",
+      "forge-portal-ui",
+      "forge-reports-job",
+    ]);
+    expect(refused.repos.every((x) => x.why === "not-cloned")).toBe(true);
+    expect(read.errors[0]).toMatch(/^Nothing written: catalog\/generated is as it was/);
+    expect(read.errors).toContain(
+      "  forge-ledger: not cloned here; clone it with atticus workspace sync",
+    );
+    expect(read.errors.join("\n")).not.toMatch(/^\s*[{}[\]"]/m);
+    // The catalog is as it was, byte for byte.
+    expect(await catalogFiles(root)).toEqual(catalogBefore);
+    // Its Console lines read as words, never the command's JSON, the refusal among them.
+    const lines = srv.jobs.linesOf(jobId)?.lines ?? [];
+    expect(lines.some((l) => /^\s*[{}[\]"]/.test(l))).toBe(false);
+    expect(lines.join("\n")).toMatch(/Scanned 0 repos: \d+ records?/);
+    expect(lines.join("\n")).toMatch(/Nothing written: catalog\/generated is as it was/);
+    expect(lines.join("\n")).toMatch(/forge-ledger: not cloned here/);
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });
 

@@ -135,12 +135,9 @@ describe("onboarding a repo", () => {
       flags: { "--repos": "forge-web" },
     });
     expect(s[1]!.run).toEqual({ kind: "cli", id: "scan survey", args: ["forge-web"], flags: {} });
-    expect(s[2]!.run).toEqual({
-      kind: "cli",
-      id: "scan",
-      args: [],
-      flags: { "--repos": "forge-web" },
-    });
+    // Beta.26: a scan of one repo never writes the shared catalog, so the stage scans them all.
+    expect(s[2]!.run).toEqual({ kind: "cli", id: "scan", args: [], flags: {} });
+    expect(s[2]!.detail).toMatch(/^atticus scan: reads every repo's files/);
   });
 
   it("checks the scan again after every scan, and asks a repo's questions", () => {

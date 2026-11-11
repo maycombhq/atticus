@@ -5,6 +5,7 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 ## 0.7.26 (pre-release, with Atticus 2.0.0-beta.26)
 
 - **Ships with Atticus 2.0.0-beta.26, and needs it.** The app in its tab is laid out as an editor (ADR 0194), without its own title, activity and status bars, since VS Code has them: tabs for the pages you open, Ctrl+K, the Explorer and the bottom panel with the Console, Questions, Problems and Runs. The local API is unchanged (3.11).
+- **A repo's onboarding scans every repo.** Its _Scan it_ step ran `atticus scan --repos <repo>`, which beta.26 no longer writes to the catalog (a scan of some repos would replace it with them alone); the step runs `atticus scan`, which writes once every repo is cloned and read in full, and says which repos it couldn't read.
 
 ## 0.7.25 (pre-release, with Atticus 2.0.0-beta.25)
 

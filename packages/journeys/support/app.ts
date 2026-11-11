@@ -1,8 +1,8 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type Page } from "@playwright/test";
@@ -37,6 +37,24 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../../..");
 const FIXTURES = join(REPO, "fixtures");
 const BIN = join(REPO, "packages/cli/dist/bin.js");
+
+/**
+ * Every file of a metarepo's catalog/generated with its bytes: what a journey compares to say a
+ * scan that wrote nothing left the catalog as it was (beta.26 safety stop).
+ */
+export function catalogFiles(root: string): Record<string, string> {
+  const dir = join(root, "catalog", "generated");
+  const out: Record<string, string> = {};
+  const walk = (d: string) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else out[relative(dir, p)] = readFileSync(p, "utf8");
+    }
+  };
+  if (existsSync(dir)) walk(dir);
+  return out;
+}
 
 /** Run the atticus command line against a metarepo, as a person would from a terminal. */
 export function atticus(root: string, ...args: string[]): string {

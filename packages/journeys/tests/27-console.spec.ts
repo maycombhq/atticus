@@ -1,6 +1,7 @@
 import {
   accessible,
   atticus,
+  catalogFiles,
   classicLayout,
   expect,
   forgeJourney,
@@ -31,6 +32,7 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   await expect(consoleBox.getByText("Nothing has run yet on this metarepo.")).toBeVisible();
   await accessible(page, "the empty Console");
 
+  const before = catalogFiles(app().root);
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
   const list = consoleBox.getByRole("tablist", { name: "What ran" });
   const scan = list.getByRole("tab", { name: /Scan/ }).first();
@@ -38,10 +40,19 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   await expect(scan).toContainText("from this app");
   await scan.click();
   await expect(scan).toHaveAttribute("aria-selected", "true");
-  // The scan's own lines (it prints its report), and how it ended.
+  // The scan's own lines (its report in words, never its JSON), and how it ended.
   const log = consoleBox.getByRole("log");
   await expect(log).not.toHaveText("Nothing printed yet.", { timeout: 60_000 });
-  await expect(scan).toContainText(/done|failed/, { timeout: 60_000 });
+  await expect(scan).toContainText(/failed/, { timeout: 60_000 });
+  // Beta.26 safety stop: no repo is cloned on this metarepo, so the scan wrote nothing, and its
+  // lines and the page say which repos and what to do; the catalog is as it was.
+  await expect(log).toContainText("Nothing written: catalog/generated is as it was");
+  await expect(log).toContainText(
+    "forge-ledger: not cloned here; clone it with atticus workspace sync",
+  );
+  await expect(log).not.toContainText('"stats"');
+  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible();
+  expect(catalogFiles(app().root)).toEqual(before);
   await accessible(page, "the Console with a scan");
 });
 

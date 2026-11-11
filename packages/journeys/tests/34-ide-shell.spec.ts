@@ -1,4 +1,4 @@
-import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
+import { accessible, catalogFiles, expect, forgeJourney, open, test } from "../support/app.js";
 
 /**
  * ADR 0194 (beta.26): the IDE layout. A title bar whose box opens Ctrl+K; an activity bar of the
@@ -134,10 +134,37 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
     "true",
   );
   await accessible(page, "the bottom panel open on the Console");
+  const before = catalogFiles(app().root);
+  expect(Object.keys(before).length).toBeGreaterThan(20);
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
+  // Beta.26 safety stop: no repo is cloned here, so the scan writes nothing and says so in the
+  // page, each repo with why and what to do; the catalog is as it was.
+  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(
+    page.getByRole("list", { name: "Repos the scan didn't read in full" }).getByRole("listitem"),
+  ).toHaveCount(7);
+  await expect(
+    page.getByText("forge-ledger: not cloned here. Sync repos, then check again."),
+  ).toBeVisible();
+  expect(catalogFiles(app().root)).toEqual(before);
   await tabs.getByRole("tab", { name: /^Runs/ }).click();
-  await expect(panel.getByRole("list", { name: "Recent runs" })).toContainText(/Scan/);
+  const runs = panel.getByRole("list", { name: "Recent runs" });
+  await expect(runs).toContainText(/Scan/);
   await accessible(page, "the bottom panel's runs");
+  // The run keeps its lines: picked, the Console shows the refusal in words.
+  await runs.getByRole("button", { name: /Scan/ }).first().click();
+  await expect(tabs.getByRole("tab", { name: /^Console/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(panel.getByRole("log")).toContainText(
+    "Nothing written: catalog/generated is as it was",
+  );
+  await expect(panel.getByRole("log")).toContainText(
+    "forge-ledger: not cloned here; clone it with atticus workspace sync",
+  );
   await panel.getByRole("button", { name: "Hide the panel" }).click();
 });
 

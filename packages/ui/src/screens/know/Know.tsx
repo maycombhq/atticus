@@ -1274,6 +1274,38 @@ export function scanAdded(job: Pick<Job, "state" | "result"> | undefined): strin
   return T.scanAdded(added, n("changed") ?? 0, n("removed") ?? 0, n("questions") ?? 0);
 }
 
+interface Refused {
+  repos: {
+    repo: string;
+    why: string;
+    message: string;
+    runs?: { extractor: string; error: string }[];
+  }[];
+  empty?: { before: number };
+}
+
+/**
+ * Beta.26 safety stop: a finished check with the built-in readers that wrote nothing, said in
+ * the page's words (each repo and why, and what to do); undefined for any other job.
+ */
+export function scanRefused(
+  job: Pick<Job, "state" | "result"> | undefined,
+): { title: string; lines: string[]; todo: string } | undefined {
+  if (!job || job.state === "running" || job.state === "queued") return undefined;
+  const r = job.result?.refused as Refused | undefined;
+  if (!r || !Array.isArray(r.repos)) return undefined;
+  const lines = r.repos.map((x) =>
+    x.why === "run-failed"
+      ? T.scanRefusedRun(
+          x.repo,
+          (x.runs ?? []).map((u) => T.scanRefusedRunOne(u.extractor, u.error)).join("; "),
+        )
+      : (T.scanRefusedWhy[x.why]?.(x.repo) ?? `${x.repo}: ${x.message}`),
+  );
+  if (r.empty) lines.push(T.scanRefusedEmpty(r.empty.before));
+  return { title: T.scanRefusedTitle, lines, todo: T.scanRefusedTodo };
+}
+
 /**
  * App-only audit: the note beside a job's state. "Scan started." next to DONE said two things at
  * once: once the job has ended its state says what happened, so a note that it started goes; a
@@ -1328,6 +1360,7 @@ export function Scans() {
   // ends, its state says what happened and the note that it started goes.
   const note = jobNote(job, act.note);
   const added = scanAdded(job);
+  const refusedScan = scanRefused(job);
   const cancel = (id: string) => {
     setStopping(true);
     // A job that ended meanwhile says so with 409; its end arrives as job.done either way.
@@ -1383,7 +1416,7 @@ export function Scans() {
           {job && (
             <div className="stack" role="status" aria-live="polite">
               <span className="hud" style={{ fontSize: 10 }}>
-                {T.jobState[job.state] ?? job.state}
+                {refusedScan ? T.scanRefusedState : (T.jobState[job.state] ?? job.state)}
                 {job.state === "running" ? ` · ${job.progress.message}` : ""}
               </span>
               <Bar
@@ -1392,6 +1425,21 @@ export function Scans() {
                 label={T.jobProgress}
               />
               {added && <span>{added}</span>}
+              {refusedScan && (
+                <div className="stack" style={{ gap: 4 }}>
+                  <strong>{refusedScan.title}</strong>
+                  <ul aria-label={T.scanRefusedList} style={{ margin: 0, paddingLeft: 18 }}>
+                    {refusedScan.lines.map((l) => (
+                      <li key={l} style={{ overflowWrap: "anywhere" }}>
+                        {l}
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {refusedScan.todo}
+                  </span>
+                </div>
+              )}
               {/* ADR 0187: what it printed, in the Console. */}
               <ShowInConsole id={job.id} />
               {job.state === "running" && (
@@ -1410,7 +1458,7 @@ export function Scans() {
                   </span>
                 </div>
               )}
-              {job.errors.length > 0 && (
+              {job.errors.length > 0 && !refusedScan && (
                 <ul
                   aria-label={T.jobProblems}
                   style={{ margin: 0, paddingLeft: 18, color: "var(--magenta-text)" }}

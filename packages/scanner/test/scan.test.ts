@@ -269,3 +269,78 @@ describe("a repo that isn't cloned yet", () => {
     ]);
   });
 });
+
+describe("what a scan didn't read in full (beta.26 safety stop)", () => {
+  const base = (root: string) => ({
+    root,
+    orgPack: join(FORGE, "metarepo/org-pack"),
+    scannedAt: "2026-10-18T09:00:00Z",
+    inputsDir: null,
+    cache: null,
+  });
+
+  it("lists each production repo by why: not cloned, or left out by repos", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-scan-"));
+    const scan = await scanEstate({
+      ...base(root),
+      repoDir: (id) =>
+        id === "forge-ledger" ? join(root, "workspace", "base", id) : join(FORGE, "repos", id),
+      repos: ["forge-ledger", "forge-events"],
+    });
+    expect(scan.unread).toEqual([
+      { repo: "forge-portal-ui", why: "not-asked" },
+      { repo: "forge-portal-bff", why: "not-asked" },
+      { repo: "forge-ledger", why: "not-cloned" },
+      { repo: "forge-reports-job", why: "not-asked" },
+      { repo: "forge-gateway", why: "not-asked" },
+      { repo: "forge-infra", why: "not-asked" },
+    ]);
+  });
+
+  it("lists a repo whose clone can't be read, with what reading it said", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-scan-"));
+    const scan = await scanEstate({
+      ...base(root),
+      repoDir: (id) => join(FORGE, "repos", id),
+      repoState: async (id) => {
+        if (id === "forge-events") throw new Error("not a git repository");
+        return { commit: "a".repeat(40), dirty: false };
+      },
+    });
+    expect(scan.unread).toEqual([
+      { repo: "forge-events", why: "unreadable", detail: "not a git repository" },
+    ]);
+  });
+
+  it("lists a repo a reader's run failed on, by the run's extractor (the runner kept none of it)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-scan-"));
+    const scan = await scanEstate({
+      ...base(root),
+      repoDir: (id) => join(FORGE, "repos", id),
+      repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
+      extractors: [
+        {
+          id: "northwind-reader",
+          version: "1.0.0",
+          claims: ["**/*"],
+          // eslint-disable-next-line require-yield
+          async *scan(repo) {
+            if (repo.name === "forge-gateway") throw new Error("stopped on a policy file");
+          },
+        },
+      ],
+    });
+    expect(scan.unread).toEqual([
+      {
+        repo: "forge-gateway",
+        why: "run-failed",
+        runs: [{ extractor: "northwind-reader", error: "stopped on a policy file" }],
+      },
+    ]);
+  });
+
+  it("lists nothing when every production repo was read", async () => {
+    const { scan } = await scanForge({ cache: null });
+    expect(scan.unread).toEqual([]);
+  });
+});

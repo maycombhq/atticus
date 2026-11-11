@@ -24,7 +24,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   {
     name: "scan",
     usage: "atticus scan [--repos a,b] [--full] [--dry-run] [--json]",
-    what: "Reads every repo's code and config (never runs it) and writes what it finds as catalog records: systems, components, endpoints, interfaces, tables, settings.",
+    what: "Reads every repo's code and config (never runs it) and writes what it finds as catalog records: systems, components, endpoints, interfaces, tables, settings. It writes only when every repo is cloned and read in full; otherwise it writes nothing and names each repo and why, so --repos is a check that writes nothing.",
     who: ["developer", "architect", "platform-lead"],
     changes: "catalog/generated (the records found in code)",
     related: ["catalog diff", "index rebuild"],

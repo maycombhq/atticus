@@ -152,8 +152,10 @@ export function onboardingStages(r: RepoState, o: { flows: number; questions: nu
     {
       id: "scan",
       label: "Scan it",
-      detail: `atticus scan --repos ${id}: reads its files only, no network, no AI${r.lastScan ? ` (last scan: ${r.lastScan.records} records)` : ""}`,
-      run: cli("scan", [], { "--repos": id }),
+      // Beta.26: a scan writes the catalog only when it has read every repo in full, so a scan
+      // of this one repo (--repos) would write nothing: the stage scans them all.
+      detail: `atticus scan: reads every repo's files (this one with them), no network, no AI; it writes the catalog only once every repo is cloned${r.lastScan ? ` (last scan: ${r.lastScan.records} records)` : ""}`,
+      run: cli("scan"),
     },
     {
       id: "verify",
