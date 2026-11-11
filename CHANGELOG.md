@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.26 (unreleased)
+
+### Changed
+
+- **The app's new side panel has an Explorer**: the changes in flight with their stage (and which wait on you), the systems as a tree of their repos (marked lib, gw or outside) opening the map on each box, the open questions by repo, and pinned pages; each section folds, a filter narrows them all, it is a keyboard tree (arrows, Home, End, Enter, a letter), and a section reads its data only once it is open and the page's own requests are answered.
+
 ## 2.0.0-beta.25 (unreleased)
 
 ### Added

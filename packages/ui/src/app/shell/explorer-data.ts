@@ -1,0 +1,117 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, BUSY_EVENT, requestsInFlight } from "../../api/client.js";
+
+/**
+ * The Explorer's reads (beta.26). Each is a GET the app already makes (Home's /api/changes and
+ * /api/questions?state=open, the map's estate view), so the server answers from what it keeps.
+ * The side panel is on every page, Home included, and Home's first load is measured
+ * (packages/cli/test/home-speed.test.ts), so a section reads nothing until it is open, and a
+ * section open when the panel first shows waits until the page's own requests are answered
+ * (the loading bar's count back at nought for a moment). A section a person opens reads at once.
+ * An answer is kept for the page's life: the panel shown again shows it without asking; file
+ * events read it again.
+ */
+
+export type Lazy<T> =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "error"; error: string; notYet?: boolean }
+  | { state: "ready"; data: T };
+
+const kept = new Map<string, unknown>();
+
+/** Forget every kept answer (tests, and a server that came back). */
+export const forgetExplorerAnswers = () => kept.clear();
+
+/** How long the page must be quiet before a deferred read goes, and the longest it waits. */
+export const QUIET_MS = 300;
+export const LONGEST_MS = 5000;
+
+/**
+ * Runs `go` once no request is in flight for `QUIET_MS` (or after `LONGEST_MS` whatever happens).
+ * Returns a cancel.
+ */
+export function whenQuiet(go: () => void, quietMs = QUIET_MS, longestMs = LONGEST_MS): () => void {
+  let done = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const fire = () => {
+    if (done) return;
+    done = true;
+    stop();
+    go();
+  };
+  const arm = (n: number) => {
+    clearTimeout(timer);
+    timer = n === 0 ? setTimeout(fire, quietMs) : undefined;
+  };
+  const on = (e: Event) => arm(Number((e as CustomEvent<number>).detail) || 0);
+  const cap = setTimeout(fire, longestMs);
+  const stop = () => {
+    clearTimeout(timer);
+    clearTimeout(cap);
+    if (typeof removeEventListener === "function") removeEventListener(BUSY_EVENT, on);
+  };
+  if (typeof addEventListener === "function") addEventListener(BUSY_EVENT, on);
+  arm(requestsInFlight());
+  return () => {
+    done = true;
+    stop();
+  };
+}
+
+/**
+ * A GET read only while `want`; `defer` (a section open from the start) waits for the page to
+ * be quiet first. `reload()` reads again a path that was read.
+ */
+export function useLazyApi<T>(
+  path: string,
+  want: boolean,
+  defer: boolean,
+): Lazy<T> & { reload: () => void } {
+  const [s, set] = useState<Lazy<T>>(() =>
+    kept.has(path) ? { state: "ready", data: kept.get(path) as T } : { state: "idle" },
+  );
+  const [tick, setTick] = useState(0);
+  const deferRef = useRef(defer);
+  deferRef.current = defer;
+  const asked = useRef(false);
+  const reload = useCallback(() => {
+    if (asked.current) setTick((t) => t + 1);
+  }, []);
+  useEffect(() => {
+    if (!want) return;
+    if (tick === 0 && kept.has(path)) {
+      asked.current = true;
+      set({ state: "ready", data: kept.get(path) as T });
+      return;
+    }
+    let live = true;
+    const ctl = new AbortController();
+    // A read again keeps what is shown until the answer comes.
+    set((o) => (o.state === "ready" ? o : { state: "loading" }));
+    const go = () => {
+      asked.current = true;
+      api<T>(path, { signal: ctl.signal }).then(
+        (data) => {
+          kept.set(path, data);
+          if (live) set({ state: "ready", data });
+        },
+        (e: unknown) => {
+          if (!live || ctl.signal.aborted) return;
+          set({
+            state: "error",
+            error: e instanceof Error ? e.message : String(e),
+            ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
+          });
+        },
+      );
+    };
+    const cancel = tick === 0 && deferRef.current ? whenQuiet(go) : (go(), () => undefined);
+    return () => {
+      live = false;
+      cancel();
+      ctl.abort();
+    };
+  }, [path, want, tick]);
+  return { ...s, reload };
+}
