@@ -5,6 +5,7 @@ import { ApplyAndPropose } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "../know/common.js";
 import { DiffLines } from "../setup/EditPreview.js";
+import "../questions.css";
 
 /**
  * Beta.24 review: on Map › Trust, the boxes an answer's words made ("ignore this, its cicd
@@ -84,25 +85,19 @@ export function AnswerBoxRow({ box }: { box: Box }) {
   const preview = () => (mode ? look1(mode, body(true)) : undefined);
   const head = `${id}-h`;
   return (
-    <section aria-labelledby={head} className="stack" style={{ gap: 6 }}>
-      <h4 id={head} className="h" style={{ fontSize: 13, margin: 0 }}>
+    <section aria-labelledby={head} className="panel qs-card qs-box">
+      <h4 id={head} className="qs-q">
         {B.box(box.name)}
       </h4>
-      {box.profile && (
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          {B.inProfile(box.profile)}
-        </p>
-      )}
+      {box.profile && <p className="qs-card-line">{B.inProfile(box.profile)}</p>}
       {box.questions.length > 0 && (
         <>
-          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-            {B.answeredIn(box.questions.length)}
-          </p>
-          <ul style={{ margin: 0 }}>
+          <p className="qs-card-line">{B.answeredIn(box.questions.length)}</p>
+          <ul className="qs-box-qs">
             {box.questions.map((q) => (
               <li key={q.id}>
                 <a href={`#/questions/${q.id}`}>{q.question}</a>{" "}
-                <span className="muted mono" style={{ fontSize: 12 }}>
+                <span className="qs-cmd mono">
                   {q.repo} · {q.id}
                 </span>
               </li>
@@ -111,7 +106,7 @@ export function AnswerBoxRow({ box }: { box: Box }) {
         </>
       )}
       {done ? (
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="qs-done">
           <p role="status" className="work-say" style={{ margin: 0 }}>
             {B.written(done.repos.join(", "))}
           </p>
@@ -122,7 +117,7 @@ export function AnswerBoxRow({ box }: { box: Box }) {
         </div>
       ) : (
         <>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <div className="qs-group-btns">
             <button
               type="button"
               className="btn"
@@ -146,8 +141,8 @@ export function AnswerBoxRow({ box }: { box: Box }) {
             </button>
           </div>
           {mode === "rename" && !plan && (
-            <div className="stack" style={{ gap: 4 }}>
-              <label htmlFor={`${id}-name`} className="hud" style={{ fontSize: 10 }}>
+            <div className="qs-field">
+              <label htmlFor={`${id}-name`} className="qs-field-label">
                 {B.nameLabel}
               </label>
               <input
@@ -158,10 +153,10 @@ export function AnswerBoxRow({ box }: { box: Box }) {
                 aria-describedby={`${id}-name-d`}
                 onChange={(e) => setName(e.target.value)}
               />
-              <span id={`${id}-name-d`} className="muted" style={{ fontSize: 12 }}>
+              <span id={`${id}-name-d`} className="qs-hint">
                 {B.nameHint}
               </span>
-              <div>
+              <div className="qs-group-btns">
                 <button
                   type="button"
                   className="btn"
@@ -180,9 +175,9 @@ export function AnswerBoxRow({ box }: { box: Box }) {
           )}
           {look.note && !look.note.ok && <Note note={look.note} />}
           {plan && mode && (
-            <div className="stack" style={{ gap: 6 }}>
+            <div className="qs-answered">
               <AnswerBoxChanges r={plan} {...(mode === "rename" ? { rename: name.trim() } : {})} />
-              <div className="row" style={{ gap: 6 }}>
+              <div className="qs-group-btns">
                 <button
                   type="button"
                   className="btn primary"
@@ -221,7 +216,7 @@ export function AnswerBoxRow({ box }: { box: Box }) {
 export function AnswerBoxes({ boxes }: { boxes: readonly Box[] | undefined }) {
   if (!boxes?.length) return null;
   return (
-    <div className="stack" role="group" aria-label={B.title(boxes.length)} style={{ gap: 10 }}>
+    <div className="qs-boxes" role="group" aria-label={B.title(boxes.length)}>
       <p className="work-say" style={{ margin: 0 }}>
         <span aria-hidden="true">⚠ </span>
         {B.title(boxes.length)}

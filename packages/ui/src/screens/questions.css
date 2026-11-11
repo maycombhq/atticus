@@ -1,0 +1,844 @@
+/* The Questions page (beta.26), in the IDE shell's look: a title and its kind, one line of
+   filters, the counts and Ask AI side by side, then the list on the left and the picked question
+   on the right, each scrolling on its own so the page's head stays in sight. A question reads as
+   a card: the question as its heading, where it was asked in muted monospace, the lines it read,
+   the options as one column of radios with each label beside its control, then what it covers,
+   and the reason and Save grouped at its foot. Every class starts qs-, and every colour, font and
+   line is a token of hud.css, as the map's arrow and box panels and Home do. Rhythm: 4, 8, 12
+   and 16 px; words at 12 to 13 px, labels 12 px sentence case, secondary lines muted monospace. */
+
+.qs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.qs p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ head, filters, intro */
+
+.qs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.qs-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+/* A grouped switch: the buttons touch, one border round the group. */
+.qs .run-choice {
+  gap: 0;
+  flex-wrap: wrap;
+}
+.qs .run-choice > .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 0;
+}
+.qs .run-choice > .btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.qs .run-choice > .btn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.qs .run-choice > .btn + .btn {
+  margin-left: -1px;
+}
+.qs .run-choice > .btn:only-child {
+  border-radius: 6px;
+}
+
+/* The filters: one line, each field's label above it, the switches at the end. */
+.qs-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.qs-tools > * {
+  min-width: 0;
+}
+.qs-tools label.hud,
+.qs-tools .hud {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.qs-tools .field {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+.qs-tools input.field {
+  width: 220px;
+  max-width: 100%;
+}
+.qs-tools select.field {
+  min-width: 140px;
+  max-width: 220px;
+}
+.qs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qs-intro {
+  max-width: 96ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.qs-intro a {
+  margin-left: 4px;
+}
+.qs-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ counts and Ask AI */
+
+.qs-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+.qs-summary:has(> .qs-counts:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.qs-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.qs .q-stats {
+  margin: 0;
+  gap: 6px;
+}
+.qs .q-stat {
+  min-width: 72px;
+  padding: 6px 10px;
+  gap: 0;
+  border-color: var(--line);
+  background: var(--hover-soft);
+}
+.qs .q-stat-count {
+  border-color: transparent;
+  background: transparent;
+}
+.qs .q-stat-n {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+}
+.qs .q-stat.done .q-stat-n {
+  color: var(--text);
+}
+.qs .q-stat-label {
+  font-family: var(--font);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.qs .q-progress {
+  flex: 1 1 140px;
+  font-size: 11.5px;
+}
+.qs .q-progress .muted {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.qs .q-progress-bar {
+  height: 4px;
+  background: var(--inset);
+  border-color: var(--line);
+}
+.qs-counts .hud {
+  font-family: var(--font);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+
+/* Ask AI to propose answers: a compact card, its commands short lines with Copy beside. */
+/* Its words across; then each "where" beside its command, two columns, so it stays short. */
+.qs-ai {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover-soft);
+}
+.qs-ai > :not(.work-say):not(.work-cmd) {
+  grid-column: 1 / -1;
+}
+/* Its button beside its title, so the card is a line shorter. */
+.qs-ai > h2 {
+  grid-column: 1;
+  grid-row: 1;
+}
+.qs-ai > .qs-group-btns {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+.qs-ai-why {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.qs-ai .work-say {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.qs-ai .work-cmd {
+  justify-content: flex-end;
+}
+.qs .work-cmd {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.qs .work-cmd code {
+  flex: 0 1 auto;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  border-color: var(--line);
+}
+.qs .work-cmd .btn,
+.qs-ai .btn,
+.qs-actions .btn,
+.qs-group-btns .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.qs-ai pre {
+  max-height: 12em;
+  overflow: auto;
+}
+
+/* ------------------------------------------------------------------ the list and the question */
+
+.qs-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 5fr) minmax(0, 7fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+/* Each side scrolls on its own, in the view, so the title and the filters stay in sight. */
+.panel.qs-pane {
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - 150px);
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+}
+.qs-pane > .row.between:first-child {
+  margin-bottom: 6px !important;
+}
+.qs-pane > .row.between:first-child > .h {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+.qs-pane .state {
+  padding: 10px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+.qs-pane .state.error {
+  background: var(--danger-bg);
+}
+
+/* The list: rows of the question, a muted monospace line, the few words about it. */
+.qs .q-group-head {
+  margin: 6px 0 2px;
+  padding: 4px 6px;
+  background: var(--box);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.qs a.q-item {
+  gap: 2px;
+  padding: 6px 8px;
+}
+.qs .q-title {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.qs .q-meta {
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.qs .q-about {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.qs .q-check {
+  margin-top: 9px;
+}
+
+/* The question, as a card. */
+.qs-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* The opened question takes the focus for a screen reader; it is not a control, so no ring. */
+.qs-focus:focus,
+.qs-focus:focus-visible {
+  outline: none;
+}
+.qs-q {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.qs-meta {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.qs-meta code.mono {
+  white-space: nowrap;
+}
+.qs-meta .btn {
+  margin-left: 6px;
+  vertical-align: baseline;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.qs-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 8px;
+}
+.qs-route .field {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+.qs-route .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.qs-route-note {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+/* A section of the card: its small label, then what it holds. */
+.qs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.qs-label,
+.qs-section > legend {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.qs-section > legend {
+  margin-bottom: 6px;
+}
+
+/* The lines it read: the file and line, then the lines round it, the cited one marked. */
+.qs-excerpts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.qs-excerpt {
+  margin: 0;
+  min-width: 0;
+}
+.qs-excerpt figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+}
+.qs-excerpt figcaption code {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.qs-excerpt figcaption .muted {
+  font-size: 11.5px;
+}
+.qs-code {
+  margin: 4px 0 0;
+  padding: 6px 0;
+  max-height: 16em;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--inset);
+  color: var(--text-2);
+}
+.qs-code:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.qs-code > span {
+  padding: 0 10px 0 0;
+  white-space: pre;
+}
+.qs-code > span[aria-current="true"] {
+  background: var(--picked-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
+.qs-code mark {
+  background: none;
+  color: inherit;
+}
+.qs-refs {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+/* An answer given: one compact box, who and when, then the answer. */
+.qs-answered {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+  border-radius: 0 6px 6px 0;
+  background: var(--inset);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.qs-cites {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.qs-cites .mono {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The form: options, what it covers, the rule, then the error and Save at the foot. */
+.qs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.qs-opts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+/* One option: its radio, then its words beside it; the words wrap under the words, never the radio. */
+.qs-opt {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.qs-opt:first-child {
+  border-top: 0;
+}
+.qs-opt:hover {
+  background: var(--hover);
+}
+.qs-opt:has(> input:checked) {
+  background: var(--picked);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.qs-opt > input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.qs-opt > label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  cursor: pointer;
+}
+.qs-opt-label {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.qs-opt-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.qs-opt-d {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* What opens under an option (the picker, Ignore's reason, the words): in line with its words. */
+.qs-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 10px 10px 34px;
+}
+.qs-opt:has(> input:checked) + .qs-sub {
+  background: var(--picked);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.qs-sub .qs-label,
+.qs-tools .qs-field-label,
+.qs-field-label {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.qs-sub .field,
+.qs-fieldset .field,
+.qs-form .field {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+}
+.qs-sub textarea.field,
+.qs-form textarea.field {
+  max-width: 640px;
+  resize: vertical;
+}
+.qs-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.qs-check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  font-size: 12.5px;
+}
+.qs-check > input {
+  margin: 2px 0 0;
+}
+/* What it covers: two short radios on one column, each label beside its control. */
+.qs-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qs-radio {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.qs-radio > input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.qs-radio > label {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.qs-field {
+  gap: 4px;
+}
+.qs-form .field.mono {
+  font-size: 12px;
+}
+
+/* The foot: what is missing, then Save; grouped and compact. */
+.qs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.qs-actions .state.error,
+.qs-form > .state.error {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12.5px;
+  border-radius: 6px;
+}
+.qs-group-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* An answer given: Change the answer opens the form in place, under the answer. */
+.qs-change {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qs-change > summary {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--btn-text);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--hover-soft);
+  cursor: pointer;
+  list-style: none;
+}
+.qs-change > summary::-webkit-details-marker {
+  display: none;
+}
+.qs-change > summary:hover {
+  background: var(--hover);
+}
+.qs-change > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.qs-change[open] > summary {
+  border-color: var(--accent);
+}
+
+/* What happened after Save: a short result box, its next step, the command folded. */
+.qs-done {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: var(--inset);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.qs-done:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.qs-detail .work-terminal {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* An AI's proposal: a bordered box above the options. */
+.qs-proposal {
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--hover-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Several picked: the list of them, then one answer for all. */
+.qs .q-bulk-list {
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ owner questions */
+
+.qs-owner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.panel.qs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+}
+.qs-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.qs-card-head .qs-q {
+  font-size: 13.5px;
+}
+.qs-card-head .chip {
+  flex: none;
+}
+.qs-card-line {
+  max-width: 96ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.qs-card .qs-form {
+  gap: 6px;
+  padding-top: 8px;
+}
+.qs-card .qs-actions {
+  padding-top: 0;
+  border-top: 0;
+}
+.qs-cmd {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.qs-card .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ Map › Trust's answer boxes */
+
+.qs-boxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.qs-boxes > .work-why {
+  max-width: 96ch;
+  font-size: 12.5px;
+}
+.panel.qs-box {
+  background: var(--hover-soft);
+  box-shadow: none;
+}
+.panel.qs-box::before {
+  display: none;
+}
+.qs-box-qs {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.qs-box .qs-field .field {
+  width: 100%;
+  max-width: 360px;
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------------ narrow */
+
+@media (max-width: 1000px) {
+  .qs-summary,
+  .qs-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* One column: the panes are the page's, not each its own scroll. */
+  .panel.qs-pane {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+@media (max-width: 599px) {
+  .qs-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .qs-tools input.field,
+  .qs-tools select.field {
+    width: 100%;
+    max-width: none;
+  }
+  .qs-sub {
+    padding-left: 10px;
+  }
+}
