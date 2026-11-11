@@ -34,8 +34,13 @@ const { WORDS } = await import("../src/screens/architecture/words.js");
 type AiSettings = Parameters<typeof AiSettingsForm>[0]["data"];
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+// A button by its name: its words, or (beta.26, the map's icon buttons) the label it is named by.
 const byLabel = (tree: unknown, label: string) =>
-  all(tree).find((e) => e.type === "button" && text(e.props.children) === label);
+  all(tree).find(
+    (e) =>
+      (e.type === "button" && text(e.props.children) === label) ||
+      (typeof e.props.onClick === "function" && e.props.label === label),
+  );
 
 describe("the bulk bar follows the selection", () => {
   const need = { kind: "need", title: "n", detail: "", href: "#", id: "n1", change: "c" } as const;

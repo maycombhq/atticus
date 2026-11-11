@@ -45,16 +45,26 @@
   margin-top: 6px;
 }
 
-.ex-head {
+/* A section's head row: its heading (the fold button alone) and, for Pinned, Pin beside it. */
+.ex-headrow {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin: 0;
   padding: 0 6px 0 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+.ex-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
 .ex-head-btn {

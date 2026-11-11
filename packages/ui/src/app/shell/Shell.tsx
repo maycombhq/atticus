@@ -32,7 +32,7 @@ import {
   SIDE_MIN,
   type SidePrefs,
 } from "./layout.js";
-import { StatusBar, type StatusFacts } from "./StatusBar.js";
+import { healthFacts, StatusBar, type StatusFacts } from "./StatusBar.js";
 import { PANEL_ID, TabStrip, tabId } from "./TabStrip.js";
 import {
   activeHash,
@@ -317,14 +317,7 @@ export function Shell({
   const first = running[0];
   const role = readViewerRole();
   const facts: StatusFacts = {
-    ...(health
-      ? {
-          root: health.root,
-          version: health.version,
-          ...(health.apiVersion ? { apiVersion: health.apiVersion } : {}),
-          user: me?.user ?? health.user,
-        }
-      : {}),
+    ...(health ? healthFacts(health, me ?? undefined) : {}),
     ...(role ? { role: COPY.roles.names[role] ?? role } : {}),
     ...counts,
     ...(first

@@ -42,7 +42,9 @@ When `runtime.yaml` says `decide: { links: auto, questions: auto }`, Atticus app
 
 ## Working on the canvas
 
-**Layers, filters and tools** above the canvas (ADR 0175) choose what is drawn and help you find your way; none of them changes the map.
+The canvas takes most of the page. Its controls are one bar above it: the lens, where you are, **Add to the picture**, the tools' button, **Keep this arrangement**, **Tidy up** and **Reset** (icons, each named in a tooltip), and at the right the zoom, fit, focus, full screen and Find. The legend (how many links, and how each kind of line is drawn) folds in the canvas's lower left corner, and stays folded in this browser; the details of the box or link you pick are a panel at the canvas's right that **Hide details** closes and **Show details** opens again (it opens by itself when you add, connect, declare or pick a link).
+
+**Layers, filters and tools** (ADR 0175), the bar's tools button, open as a drawer over the canvas's left (Esc or its × closes it); they choose what is drawn and help you find your way, and none of them changes the map.
 
 - **Layers**: read and cited, guesses and gaps, declared, paired by a person, outside systems, topics, or only the links whose two sides disagree.
 - **Filter**: `team:team-ledger`, `system:ledger`, `type:spring-boot`, `path:/accounts/**`, or words; the boxes that match and what they link to.

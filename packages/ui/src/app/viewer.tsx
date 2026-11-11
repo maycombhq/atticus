@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { COPY } from "../copy.js";
 
 /**
@@ -273,9 +274,33 @@ export function availableHeight(windowHeight: number, top: number, min = 420): n
 }
 
 /**
- * `availableHeight`, kept as the window or the IDE panel the app is embedded in is resized.
- * `fixed` (a test, or a caller that knows) skips the measuring. In full screen the stage fills
- * the frame by CSS, so this is not used.
+ * The height a picture gets inside the area that scrolls it (beta.26: the IDE layout's page,
+ * between its tabs and its bottom panel; the classic layout's is the window): the area's height
+ * less where the picture starts in it, that start counted no lower than `MAX_TOP`; never under
+ * `min`.
+ */
+export function availableHeightIn(
+  view: { top: number; bottom: number },
+  top: number,
+  min = 420,
+): number {
+  return availableHeight(view.bottom - view.top, top - view.top, min);
+}
+
+/** The nearest ancestor that scrolls its content, if any; else the window does. */
+function scrollerOf(el: HTMLElement): HTMLElement | undefined {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if (o === "auto" || o === "scroll") return p;
+  }
+  return undefined;
+}
+
+/**
+ * `availableHeightIn` the area that scrolls the picture (the window, or the IDE layout's page),
+ * kept as the window or the IDE panel the app is embedded in is resized, and as the IDE layout's
+ * bottom panel opens or closes. `fixed` (a test, or a caller that knows) skips the measuring. In
+ * full screen the stage fills the frame by CSS, so this is not used.
  */
 export function useAvailableHeight(
   ref: RefObject<HTMLElement | null>,
@@ -285,14 +310,22 @@ export function useAvailableHeight(
   const [h, setH] = useState(o.fixed ?? Math.max(min, 560));
   useEffect(() => {
     if (o.fixed !== undefined || typeof window === "undefined") return;
+    const scroller = ref.current ? scrollerOf(ref.current) : undefined;
     const measure = () => {
       const el = ref.current;
-      if (el) setH(availableHeight(window.innerHeight, el.getBoundingClientRect().top, min));
+      if (!el) return;
+      const area = scroller?.getBoundingClientRect();
+      const view = {
+        top: Math.max(0, area?.top ?? 0),
+        bottom: Math.min(window.innerHeight, area?.bottom ?? window.innerHeight),
+      };
+      setH(availableHeightIn(view, el.getBoundingClientRect().top, min));
     };
     measure();
     window.addEventListener("resize", measure);
     const ro = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
     if (ro && ref.current?.parentElement) ro.observe(ref.current.parentElement);
+    if (ro && scroller) ro.observe(scroller);
     return () => {
       window.removeEventListener("resize", measure);
       ro?.disconnect();
@@ -315,6 +348,7 @@ const ICON = {
   focus: "M7 4 A3 3 0 1 1 6.99 4 M1 7 H2.5 M11.5 7 H13",
   full: "M2 5 V2 H5 M9 2 H12 V5 M12 9 V12 H9 M5 12 H2 V9 M5 5 L9 9 M9 5 L5 9",
   leave: "M5 2 V5 H2 M9 2 V5 H12 M12 9 H9 V12 M2 9 H5 V12",
+  close: "M3.5 3.5 L10.5 10.5 M10.5 3.5 L3.5 10.5",
 };
 
 /**
@@ -444,6 +478,19 @@ export function DiagramFrame(p: {
   children: ReactNode;
   /** Details beside the picture: an overlay at its right edge. */
   aside?: ReactNode;
+  /**
+   * Beta.26: the details as a right-hand panel beside the picture (the picture narrower, none of
+   * it hidden), closed by its own button and opened again by Show details. Under 1000 px wide it
+   * lies over the picture, as the overlay does.
+   */
+  asideBeside?: boolean;
+  /** Changed to something, the details open again: a panel was asked for in them. */
+  reveal?: string;
+  /**
+   * Beta.26: where the toolbar goes when not in full screen (the page's own bar, so the picture's
+   * controls share one row with the page's); in full screen it is in the frame.
+   */
+  toolbarIn?: HTMLElement | null;
   onKeyAction: (a: ViewerAction) => void;
   className?: string;
 }) {
@@ -451,10 +498,29 @@ export function DiagramFrame(p: {
   const asideId = useId();
   const own = useRef<HTMLDivElement | null>(null);
   const ref = p.frameRef ?? own;
-  // Leaving full screen gives focus back to its button (review 17).
+  // Beside the picture, closing the details gives the focus to Show details, and opening them to
+  // their close button, so it is never left on a button that went away.
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const showRef = useRef<HTMLButtonElement | null>(null);
+  const toggled = useRef(false);
+  const toggle = (o: boolean) => {
+    toggled.current = true;
+    setOpen(o);
+  };
+  useEffect(() => {
+    if (!toggled.current || !p.asideBeside) return;
+    toggled.current = false;
+    (open ? closeRef : showRef).current?.focus();
+  }, [open, p.asideBeside]);
+  // A panel asked for inside the details (a new `reveal`) opens them again.
+  useEffect(() => {
+    if (p.reveal) setOpen(true);
+  }, [p.reveal]);
+  const toolbarOut = p.toolbarIn && !p.full ? p.toolbarIn : undefined;
+  // Leaving full screen gives focus back to its button (review 17), wherever the toolbar is.
   const wasFull = useRef(p.full);
   useEffect(() => {
-    if (wasFull.current && !p.full) returnFocus(ref.current);
+    if (wasFull.current && !p.full) returnFocus(p.toolbarIn ?? ref.current);
     wasFull.current = p.full;
     if (!p.full || typeof document === "undefined") return;
     // Focus that lands outside the frame (a click behind it) is brought back in.
@@ -488,8 +554,8 @@ export function DiagramFrame(p: {
     const t = e.target as HTMLElement;
     if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
     if (t.isContentEditable) return;
-    // Keys inside the details panel are the panel's own.
-    if (t.closest?.(".viewer-aside")) return;
+    // Keys inside the details panel, or a control laid over the picture, are their own.
+    if (t.closest?.(".viewer-aside, .viewer-own")) return;
     const a = keyAction(e);
     if (!a) return;
     // Arrows on a box the canvas lets you move are the box's (React Flow moves it).
@@ -508,15 +574,49 @@ export function DiagramFrame(p: {
       onKeyDown={onKeyDown}
       {...(p.full ? { "aria-modal": true } : {})}
     >
-      {p.toolbar}
+      {toolbarOut ? createPortal(p.toolbar, toolbarOut) : p.toolbar}
       {p.full && (
         <p className="sr" role="status">
           {T.fullScreenOn}
         </p>
       )}
-      <div className="viewer-stage" style={p.full ? undefined : { height: p.height }}>
+      <div
+        className={`viewer-stage${p.aside && p.asideBeside ? " beside" : ""}`}
+        style={p.full ? undefined : { height: p.height }}
+      >
         {p.children}
-        {p.aside && (
+        {p.aside && p.asideBeside && (
+          <>
+            {!open && (
+              <button
+                ref={showRef}
+                type="button"
+                className="btn viewer-aside-toggle"
+                aria-expanded={false}
+                aria-controls={asideId}
+                onClick={() => toggle(true)}
+              >
+                {T.showDetails}
+              </button>
+            )}
+            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!open}>
+              <button
+                ref={closeRef}
+                type="button"
+                className="btn viewer-btn viewer-aside-close"
+                aria-expanded={true}
+                aria-controls={asideId}
+                aria-label={T.hideDetails}
+                title={T.hideDetails}
+                onClick={() => toggle(false)}
+              >
+                <Icon d={ICON.close} />
+              </button>
+              {p.aside}
+            </aside>
+          </>
+        )}
+        {p.aside && !p.asideBeside && (
           <>
             <button
               type="button"

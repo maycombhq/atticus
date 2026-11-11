@@ -236,4 +236,103 @@ test("in an editor's panel there is no second activity bar, and every page is st
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Show the side panel" }).click();
   await expect(page.getByRole("complementary", { name: "Explorer" })).toBeVisible();
+  // The side panel lies over the page this narrow: Esc closes it.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("complementary", { name: "Explorer" })).toBeHidden();
+
+  // Ctrl+K from the keyboard, as the tab strip's search button opens it.
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Go to anything" });
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).toHaveCount(0);
+
+  // The AI chip is in the tab strip's tools when AI is limited here, as it is in the title bar.
+  const me = (await (await page.request.get(`${app().url}/api/me`)).json()) as { ai?: string };
+  await expect(tools.getByText(/^(AI OFF|TEXT-ONLY AI)$/)).toHaveCount(
+    me.ai && me.ai !== "on" ? 1 : 0,
+  );
+
+  // Words opens the glossary; Help replays the tour.
+  await tools.getByRole("link", { name: "Words" }).click();
+  await expect(page).toHaveURL(/#\/words$/);
+  await tools.getByRole("button", { name: "Help" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Skip the tour" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // The bottom panel opens, switches tabs and closes.
+  const panel = page.getByRole("region", { name: "Panel" });
+  await panel.getByRole("button", { name: "Show the panel" }).click();
+  const panelTabs = panel.getByRole("tablist", { name: "Panel tabs" });
+  await expect(panelTabs.getByRole("tab", { name: /^Console/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await panelTabs.getByRole("tab", { name: /^Questions/ }).click();
+  await expect(panelTabs.getByRole("tab", { name: /^Questions/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await accessible(page, "the bottom panel in an editor's panel");
+  await panel.getByRole("button", { name: "Hide the panel" }).click();
+  await expect(panel.getByRole("button", { name: "Show the panel" })).toBeVisible();
+
+  // The map in an editor's panel: its one bar of controls, the details over the canvas.
+  await open(page, app(), "canvas");
+  const bar = page.getByRole("group", { name: "Map controls" });
+  await expect(bar.getByRole("tab", { name: "Architecture" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(bar.getByRole("button", { name: "Zoom in" })).toBeVisible();
+  await expect(page.locator(".viewer-aside")).toBeVisible();
+  expect(await sideways(page)).toBe(false);
+  await accessible(page, "the map in an editor's panel");
+});
+
+test("the map gives its canvas the height: one bar, the legend folds and stays folded", async ({
+  page,
+}) => {
+  await open(page, app(), "canvas");
+  const bar = page.getByRole("group", { name: "Map controls" });
+  const canvas = page.locator(".react-flow").first();
+  await expect(canvas).toBeVisible();
+  // The controls are one row: lens, tools and the picture's own zoom and find.
+  const lens = (await bar.getByRole("tablist", { name: "Lens" }).boundingBox())!;
+  const zoom = (await bar.getByRole("button", { name: "Zoom in" }).boundingBox())!;
+  expect(Math.abs(zoom.y + zoom.height / 2 - (lens.y + lens.height / 2))).toBeLessThan(6);
+  // The canvas ends inside the page, above the bottom panel, and takes most of its height.
+  const main = (await page.locator("main").boundingBox())!;
+  const box = (await canvas.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(main.y + main.height);
+  expect(box.height).toBeGreaterThan(main.height * 0.7);
+
+  // The tools open as a drawer over the canvas, and close back to their button.
+  await bar.getByRole("button", { name: "Show the tools" }).click();
+  const drawer = page.getByRole("region", { name: "Layers, filters and tools" });
+  await expect(drawer).toBeVisible();
+  await accessible(page, "the map's tools as a drawer");
+  await drawer.getByRole("button", { name: "Hide the tools" }).click();
+  await expect(drawer).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Show the tools" })).toBeFocused();
+
+  // The details close to give the canvas the width, and open again.
+  await page.getByRole("button", { name: "Hide details" }).click();
+  await expect(page.locator(".viewer-aside")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Show details" })).toBeFocused();
+  await page.getByRole("button", { name: "Show details" }).click();
+  await expect(page.locator(".viewer-aside")).toBeVisible();
+
+  // The legend folds, and stays folded on the next visit in this browser.
+  const legend = page.getByRole("button", { name: "Legend" });
+  await expect(legend).toHaveAttribute("aria-expanded", "true");
+  await legend.click();
+  await expect(legend).toHaveAttribute("aria-expanded", "false");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Legend" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await accessible(page, "the map with its legend folded");
 });

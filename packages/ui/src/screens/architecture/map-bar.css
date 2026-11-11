@@ -1,0 +1,233 @@
+/* Beta.26: the map gives its canvas most of the space. One panel: a slim bar of controls, the
+   canvas under it filling the height left, the tools a drawer over its left, the legend in its
+   lower left corner, the details a panel at its right that can be closed. */
+.arch-work {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.arch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 34px;
+}
+.arch-bar-tools,
+.arch-arrange {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.arch-bar .viewer-btn {
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0 6px;
+}
+.arch-bar-count,
+.arch-arrange .hud {
+  white-space: nowrap;
+}
+.arch-bar-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+/* The picture's own controls (zoom, fit, focus, full screen, find), put here by the canvas. */
+.arch-bar-view {
+  margin-left: auto;
+  min-width: 0;
+}
+.arch-bar-view:empty {
+  display: none;
+}
+.arch-bar-view .viewer-bar {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.arch-bar-view .viewer-group {
+  gap: 2px;
+}
+.arch-bar-view .viewer-zoom {
+  min-width: 52px;
+  font-size: 10px;
+}
+/* Find is short until it is used. */
+.arch-bar-view .viewer-find .field {
+  height: 30px;
+  width: 130px;
+  transition: width 0.12s ease;
+}
+.arch-bar-view .viewer-find .field:focus,
+.arch-bar-view .viewer-find .field:not(:placeholder-shown) {
+  width: min(240px, 40vw);
+}
+
+/* The lens: one segmented control. */
+.arch-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.arch-seg-btn {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--btn-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.arch-seg-btn:first-child {
+  border-left: 0;
+}
+.arch-seg-btn:hover {
+  background: var(--hover);
+}
+.arch-seg-btn.on {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.arch-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 4px var(--panel);
+}
+
+/* Where you are: short, on the bar. */
+.arch-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.arch-crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.arch-crumbs .btn {
+  height: 26px;
+  padding: 0 8px;
+}
+
+/* The canvas and what lies over it. */
+.arch-stage-wrap {
+  position: relative;
+  min-width: 0;
+}
+.arch-tools-drawer {
+  position: absolute;
+  z-index: 8;
+  top: 8px;
+  left: 8px;
+  /* Above the legend's button (and the keys' line under the canvas): both stay reachable. */
+  bottom: 76px;
+  width: min(360px, calc(100% - 16px));
+  margin: 0;
+  overflow: auto;
+  background: var(--box);
+  border-color: var(--line-2);
+  box-shadow: var(--shadow);
+}
+.arch-stage-wrap.flat .arch-tools-drawer {
+  position: static;
+  width: auto;
+  margin-bottom: 8px;
+}
+.arch-tools-head {
+  gap: 8px;
+  align-items: center;
+}
+.arch-tools-close {
+  margin-left: auto;
+}
+.arch-tools-drawer .canvas-tools-body {
+  grid-template-columns: 1fr;
+}
+
+.arch-legend {
+  position: absolute;
+  z-index: 6;
+  left: 8px;
+  bottom: 8px;
+  max-width: min(520px, calc(100% - 16px));
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 6px;
+}
+.arch-legend-btn {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--box);
+}
+.arch-legend-body {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--box);
+}
+.arch-legend-body .hud {
+  margin: 0 0 4px;
+}
+
+/* The details beside the picture: the picture narrower, none of it hidden. */
+.viewer-stage.beside {
+  display: flex;
+  gap: 8px;
+}
+.viewer-stage.beside > .arch-canvas {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.viewer-stage.beside > .viewer-aside {
+  position: static;
+  flex: 0 0 min(340px, 40%);
+  width: auto;
+}
+.viewer-stage.beside > .viewer-aside-toggle {
+  top: 8px;
+  right: 8px;
+}
+.viewer-aside-close {
+  float: right;
+  margin: -4px -4px 4px 8px;
+}
+/* Under 1000 px wide (a narrow window, an editor's panel) the details lie over the picture. */
+@media (max-width: 999px) {
+  .viewer-stage.beside > .viewer-aside {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: min(340px, calc(100% - 16px));
+  }
+}
+.arch-legend-body .work-say {
+  margin: 0;
+  font-size: inherit;
+}
+/* The kinds of line one under another: a short legend, not a row across the canvas. */
+.arch-legend-body .link-legend {
+  flex-direction: column;
+  align-items: flex-start;
+  /* Over the list's own inline gap, which is for a row. */
+  row-gap: 2px !important;
+}

@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi } from "../../api/client.js";
 import { hostBridge } from "../../api/bridge.js";
@@ -131,9 +131,15 @@ export function CanvasTools(p: {
   snapshot?: Snapshot;
   onSnapshot(): void;
   name: string;
+  /**
+   * Beta.26: a drawer over the canvas, opened from the map's bar (whose button controls
+   * `bodyId`): nothing while closed, its own close button (and Esc) while open.
+   */
+  drawer?: { open: boolean; bodyId: string; onClose(): void };
 }) {
   const id = useId();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOpen] = useState(false);
+  const open = p.drawer ? p.drawer.open : ownOpen;
   const [viewName, setViewName] = useState("");
   const [saved, setSaved] = useState<string | undefined>();
   const [exported, setExported] = useState<string | undefined>();
@@ -179,23 +185,66 @@ export function CanvasTools(p: {
       setKeeping(false);
     }
   };
+  const drawer = p.drawer;
+  if (drawer && !open) return null;
   return (
-    <section className="canvas-tools" aria-labelledby={`${id}-t`}>
-      <div className="row" style={{ gap: 8, alignItems: "center" }}>
-        <h3 id={`${id}-t`} className="hud" style={{ margin: 0 }}>
-          {T.title}
-        </h3>
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={open}
-          aria-controls={`${id}-body`}
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? T.hide : T.show}
-        </button>
-        <span className="work-say">{T.filtered(p.graph.boxes.length, p.allBoxes)}</span>
-      </div>
+    <section
+      {...(drawer ? { id: drawer.bodyId } : {})}
+      className={drawer ? "canvas-tools arch-tools-drawer" : "canvas-tools"}
+      aria-labelledby={`${id}-t`}
+      {...(drawer
+        ? {
+            onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+              // Esc closes the drawer, unless a field takes it (a search box clears itself).
+              const t = e.target as HTMLElement;
+              if (e.key !== "Escape" || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+              e.preventDefault();
+              drawer.onClose();
+            },
+          }
+        : {})}
+    >
+      {drawer ? (
+        <div className="row arch-tools-head">
+          <h3 id={`${id}-t`} className="hud" style={{ margin: 0 }}>
+            {T.title}
+          </h3>
+          <span className="work-say">{T.filtered(p.graph.boxes.length, p.allBoxes)}</span>
+          <button
+            type="button"
+            className="btn viewer-btn arch-tools-close"
+            aria-label={T.hide}
+            title={T.hide}
+            onClick={drawer.onClose}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+              <path
+                d="M3.5 3.5 L10.5 10.5 M10.5 3.5 L3.5 10.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <div className="row" style={{ gap: 8, alignItems: "center" }}>
+          <h3 id={`${id}-t`} className="hud" style={{ margin: 0 }}>
+            {T.title}
+          </h3>
+          <button
+            type="button"
+            className="btn"
+            aria-expanded={open}
+            aria-controls={`${id}-body`}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? T.hide : T.show}
+          </button>
+          <span className="work-say">{T.filtered(p.graph.boxes.length, p.allBoxes)}</span>
+        </div>
+      )}
       {open && (
         <div id={`${id}-body`} className="canvas-tools-body">
           <fieldset>

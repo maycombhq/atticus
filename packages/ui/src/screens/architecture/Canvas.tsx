@@ -377,8 +377,16 @@ export function ArchitectureCanvas(p: {
   height?: number;
   /** ADR 0180: how each component type is drawn, by id. */
   types?: TypeDraws;
-  /** Details laid over the picture's right edge (the inspector), never beside it. */
+  /** Details laid over the picture's right edge (the inspector), or beside it (`asideBeside`). */
   aside?: ReactNode;
+  /** Beta.26: the details as a right-hand panel beside the picture, which can be closed. */
+  asideBeside?: boolean;
+  /** Beta.26: changed to something, the details open again (a panel was asked for in them). */
+  reveal?: string;
+  /** Beta.26: laid over the picture itself (the legend, in a corner). */
+  overlay?: ReactNode;
+  /** Beta.26: where the picture's controls go outside full screen (the map's bar). */
+  toolbarIn?: HTMLElement | null;
   /** Tests: open in full screen, or in focus mode. */
   initialFull?: boolean;
   initialFocus?: boolean;
@@ -573,6 +581,9 @@ export function ArchitectureCanvas(p: {
       frameRef={frame}
       onKeyAction={act}
       {...(p.aside ? { aside: p.aside } : {})}
+      {...(p.asideBeside ? { asideBeside: true } : {})}
+      {...(p.reveal ? { reveal: p.reveal } : {})}
+      {...(p.toolbarIn ? { toolbarIn: p.toolbarIn } : {})}
       toolbar={
         <ViewerToolbar
           zoom={zoom}
@@ -656,6 +667,7 @@ export function ArchitectureCanvas(p: {
             )}
           </ReactFlow>
         )}
+        {p.overlay}
       </div>
     </DiagramFrame>
   );

@@ -307,20 +307,24 @@ export function ExplorerView(p: ExplorerViewProps): JSX.Element {
           const title = E.sections[s.id];
           return (
             <section key={s.id} className="ex-section" aria-labelledby={`ex-head-${s.id}`}>
-              <h2 className="ex-head">
-                <button
-                  type="button"
-                  className="ex-head-btn"
-                  aria-expanded={s.open}
-                  aria-controls={`ex-body-${s.id}`}
-                  onClick={() => p.onToggleSection(s.id)}
-                >
-                  <Chevron open={s.open} />
-                  <span id={`ex-head-${s.id}`} className="ex-head-name">
-                    {title}
-                  </span>
-                  {s.count && <span className="ex-head-count">{s.count}</span>}
-                </button>
+              {/* The heading holds its fold button only; Pin stands beside it, so the heading's
+                  name is the section's, not "Pinned Pin this page: …". */}
+              <div className="ex-headrow">
+                <h2 className="ex-head">
+                  <button
+                    type="button"
+                    className="ex-head-btn"
+                    aria-expanded={s.open}
+                    aria-controls={`ex-body-${s.id}`}
+                    onClick={() => p.onToggleSection(s.id)}
+                  >
+                    <Chevron open={s.open} />
+                    <span id={`ex-head-${s.id}`} className="ex-head-name">
+                      {title}
+                    </span>
+                    {s.count && <span className="ex-head-count">{s.count}</span>}
+                  </button>
+                </h2>
                 {s.id === "pinned" && (
                   <button
                     type="button"
@@ -333,7 +337,7 @@ export function ExplorerView(p: ExplorerViewProps): JSX.Element {
                     {E.pin}
                   </button>
                 )}
-              </h2>
+              </div>
               <div id={`ex-body-${s.id}`} className="ex-body" hidden={!s.open}>
                 {s.open && <SectionBody {...p} s={s} title={title} />}
               </div>

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -20,7 +21,8 @@ import { CopyButton, Facts } from "../run/shared.js";
 import { ConnectPanel, type BoxChoice } from "./Connect.js";
 import { OwnerPanel } from "./Owner.js";
 import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
-import { CanvasTools, LinkKinds, type ToolsState } from "./Tools.js";
+import { CanvasTools, type ToolsState } from "./Tools.js";
+import { CanvasLegend, IconButton, MapBar } from "./MapBar.js";
 import { OpenCode } from "./OpenCode.js";
 import {
   ALL_LAYERS,
@@ -406,6 +408,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     overlay: "none",
   });
   const [snapshot, setSnapshot] = useState<Snapshot | undefined>();
+  // Beta.26: the map's bar. The tools' drawer, its button (focus comes back to it), and the place
+  // at the bar's right where the canvas puts its own controls.
+  const uid = useId();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsButton = useRef<HTMLButtonElement | null>(null);
+  const [viewSlot, setViewSlot] = useState<HTMLDivElement | null>(null);
   // ADR 0180: how the organisation's component types are drawn (badge, colour), by id.
   const typeList = useApi<Api.ComponentTypesViewT>("/api/component-types");
   const types = useMemo<TypeDraws | undefined>(
@@ -605,94 +613,156 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       />
     );
   const crumbs = view ? [...view.path, view.node] : [];
+  // Beta.26: the canvas is drawn (not loading, failing or empty): the tools lie over it.
+  const canvasShown =
+    status.state === "ready" &&
+    !!view &&
+    graph.boxes.length > 0 &&
+    arrangement.state === "ready" &&
+    arrangement.key === key;
+  // A panel asked for (Add, Connect, Declare, Owner, a link picked) opens the details again.
+  const reveal = [
+    adding ? "add" : "",
+    connecting?.from ?? "",
+    declaring?.system ?? "",
+    owning ?? "",
+    pickedLink?.id ?? "",
+  ]
+    .filter(Boolean)
+    .join("|");
 
   return (
     <div className="bento">
       {/* Corrections drawn here and not yet applied: Apply for them all, on the map itself. */}
       <CorrectionsToApply />
-      <Panel title={WORDS.title} span="1 / -1">
-        <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-          <div role="tablist" aria-label={WORDS.lens} className="row" style={{ gap: 6 }}>
-            {LENSES.map((l) => (
-              <button
-                key={l}
-                type="button"
-                role="tab"
-                aria-selected={l === lens}
-                className={`btn ${l === lens ? "primary" : ""}`}
-                onClick={() => setQueryParam(screen, "lens", l, { drop: ["node"] })}
-              >
-                {WORDS.lenses[l]}
-              </button>
-            ))}
-          </div>
-          <nav aria-label={WORDS.breadcrumbs}>
-            <ol className="row" style={{ gap: 4, listStyle: "none", margin: 0, padding: 0 }}>
-              {crumbs.map((c, i) => (
-                <li key={c.id} className="row" style={{ gap: 4 }}>
-                  {i > 0 && <span aria-hidden="true">/</span>}
-                  {/* Where you are is no button: clicking it would do nothing. */}
-                  {i === crumbs.length - 1 && !focus ? (
-                    <span className="chip" aria-current="location">
-                      {c.label}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-current={i === crumbs.length - 1 ? "location" : undefined}
-                      onClick={() => {
-                        if (c.id !== current) setInPlace(new Set());
-                        setCurrent(c.id);
-                        dropFocus();
-                      }}
-                    >
-                      {c.label}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </nav>
-        </div>
-      </Panel>
+      {/* Beta.26: one panel, the canvas taking most of it: one slim bar of controls above it,
+          the tools a drawer over it, the legend in its corner, the details beside it. */}
+      <section
+        className="panel arch-work"
+        aria-labelledby={`${uid}-h`}
+        style={{ gridColumn: "1 / -1" }}
+      >
+        <h2 id={`${uid}-h`} className="sr">
+          {WORDS.title}
+        </h2>
+        <MapBar
+          lenses={LENSES.map((l) => ({ id: l, label: WORDS.lenses[l] }))}
+          lens={lens}
+          onLens={(l) => setQueryParam(screen, "lens", l, { drop: ["node"] })}
+          crumbs={
+            <nav aria-label={WORDS.breadcrumbs} className="arch-crumbs">
+              <ol>
+                {crumbs.map((c, i) => (
+                  <li key={c.id}>
+                    {i > 0 && <span aria-hidden="true">/</span>}
+                    {/* Where you are is no button: clicking it would do nothing. */}
+                    {i === crumbs.length - 1 && !focus ? (
+                      <span className="chip" aria-current="location">
+                        {c.label}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-current={i === crumbs.length - 1 ? "location" : undefined}
+                        onClick={() => {
+                          if (c.id !== current) setInPlace(new Set());
+                          setCurrent(c.id);
+                          dropFocus();
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          }
+          onAdd={() => setAdding(true)}
+          tools={{
+            open: toolsOpen,
+            bodyId: `${uid}-tools`,
+            onToggle: () => setToolsOpen((o) => !o),
+            shown: graph.boxes.length,
+            all: whole.boxes.length,
+            buttonRef: toolsButton,
+          }}
+          {...(status.state === "ready" && view
+            ? {
+                arrangement: (
+                  <ArrangementBar
+                    ready={arrangement.state === "ready"}
+                    saving={keeping.state === "saving"}
+                    moved={arrangement.state === "ready" ? arrangement.moved : 0}
+                    {...(focus ? { onFocusOff: () => dropFocus() } : {})}
+                    onKeep={() => {
+                      if (!Object.keys(pinned).length)
+                        setKeeping({ state: "error", text: WORDS.keptNothing });
+                      else void keep(pinned, "");
+                    }}
+                    onTidy={() => setTidy((t) => t + 1)}
+                    onReset={() =>
+                      void keep({}, WORDS.resetDone).then((ok) => ok && setTidy((t) => t + 1))
+                    }
+                  />
+                ),
+              }
+            : {})}
+          status={
+            <>
+              {/* The contract check after the picture: what it is doing, or why it couldn't. */}
+              {drawn && contracts.state === "loading" && (
+                <span className="hud" role="status" aria-live="polite">
+                  {WORDS.joiningEstate}
+                </span>
+              )}
+              {contracts.state === "error" && (
+                <span className="hud" role="status">
+                  {WORDS.contractsFailed(contracts.error)}
+                </span>
+              )}
+              {keeping.state === "done" && (
+                <span className="hud" role="status">
+                  {keeping.text}
+                </span>
+              )}
+            </>
+          }
+          viewSlot={setViewSlot}
+        />
 
-      {status.state === "loading" && (
-        <Panel span="1 / -1">
+        {status.state === "loading" && (
           <div className="stack" aria-busy="true" aria-live="polite">
             <p className="hud">{WORDS.readingEstate}</p>
             <div className="skeleton" style={{ width: "80%" }} />
             <div className="skeleton" style={{ width: "60%" }} />
           </div>
-        </Panel>
-      )}
-      {status.state === "error" && (
-        <Panel span="1 / -1">
-          {status.notYet ? (
+        )}
+        {status.state === "error" &&
+          (status.notYet ? (
             <CatalogEmpty text={WORDS.emptyEstate} />
           ) : (
             <div className="state error" role="alert">
               {WORDS.loadFailed(status.error)}
             </div>
-          )}
-        </Panel>
-      )}
+          ))}
 
-      {status.state === "ready" && stepError && (
-        <div className="state error" role="alert" style={{ marginBottom: 8 }}>
-          {WORDS.stepFailed(stepError)}{" "}
-          <button type="button" className="link" onClick={() => setStepError(undefined)}>
-            {WORDS.dismiss}
-          </button>
-        </div>
-      )}
-      {status.state === "ready" && view && (
-        <>
-          <Panel
-            title={WORDS.canvas}
-            span="1 / -1"
-            meta={WORDS.edges(graph.links.length, focus ? 0 : view.hiddenEdges)}
-          >
+        {status.state === "ready" && stepError && (
+          <div className="state error" role="alert" style={{ marginBottom: 8 }}>
+            {WORDS.stepFailed(stepError)}{" "}
+            <button type="button" className="link" onClick={() => setStepError(undefined)}>
+              {WORDS.dismiss}
+            </button>
+          </div>
+        )}
+        {keeping.state === "error" && (
+          <p className="state error" role="alert">
+            {keeping.text}
+          </p>
+        )}
+        {status.state === "ready" && view && (
+          <>
             {notice && (
               <div className="state arch-notice" role="status">
                 <p>
@@ -718,103 +788,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 )}
               </div>
             )}
-            {/* The contract check after the picture: what it is doing, or why it couldn't. */}
-            {drawn && contracts.state === "loading" && (
-              <p className="hud" role="status" aria-live="polite">
-                {WORDS.joiningEstate}
-              </p>
-            )}
-            {contracts.state === "error" && (
-              <p className="hud" role="status">
-                {WORDS.contractsFailed(contracts.error)}
-              </p>
-            )}
             {graph.shared && graph.shared.length > 0 && (
               <p className="arch-shared">
                 <span aria-hidden="true">⚠ </span>
                 {WORDS.sharedGaps(graph.shared.map((g) => WORDS.gap[g] ?? g).join("; "))}
               </p>
             )}
-            <div className="row" style={{ gap: 8 }}>
-              <button type="button" className="btn" onClick={() => setAdding(true)}>
-                {COPY.addBox.open}
-              </button>
-            </div>
-            <CanvasTools
-              graph={graph}
-              {...(types ? { types } : {})}
-              allBoxes={whole.boxes.length}
-              state={tools}
-              onChange={setTools}
-              {...(selected ? { selected } : {})}
-              onSelect={setSelected}
-              onPickLink={(id) => {
-                setPickedLink({ id, keyboard: true });
-                setCorrected(false);
-              }}
-              labelOf={(id) => find(id)?.label ?? id}
-              placed={(id) => laid?.boxes[id]}
-              lens={lens}
-              node={shown}
-              {...(tools.overlay === "questions" && openQuestions.state !== "ready"
-                ? {
-                    overlayNote:
-                      openQuestions.state === "error"
-                        ? COPY.canvasTools.overlayFailed(openQuestions.error)
-                        : COPY.canvasTools.overlayLoading,
-                  }
-                : {})}
-              onOpenView={(l, n) => {
-                // Another lens is another picture (the address); in this one, the box is opened.
-                if (l !== lens) {
-                  const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
-                  q.set("lens", l);
-                  q.set("node", n);
-                  window.location.hash = `#/${screen}?${q.toString()}`;
-                } else void openDeep(n);
-              }}
-              {...(tools.compareWith
-                ? (() => {
-                    const c = compare(tools.compareWith, whole);
-                    return { compared: { added: c.added.length, removed: c.removed } };
-                  })()
-                : {})}
-              {...(snapshot ? { snapshot } : {})}
-              onSnapshot={() => {
-                const snap = snapshotOf(whole, new Date().toLocaleTimeString());
-                setSnapshot(snap);
-                // Compare, when on, is against the newest snapshot.
-                setTools((t) => (t.compareWith ? { ...t, compareWith: snap } : t));
-              }}
-              name={key}
-            />
-            <ArrangementBar
-              ready={arrangement.state === "ready"}
-              saving={keeping.state === "saving"}
-              moved={arrangement.state === "ready" ? arrangement.moved : 0}
-              {...(focus ? { onFocusOff: () => dropFocus() } : {})}
-              onKeep={() => {
-                if (!Object.keys(pinned).length)
-                  setKeeping({ state: "error", text: WORDS.keptNothing });
-                else void keep(pinned, "");
-              }}
-              onTidy={() => setTidy((t) => t + 1)}
-              onReset={() =>
-                void keep({}, WORDS.resetDone).then((ok) => ok && setTidy((t) => t + 1))
-              }
-            />
-            {keeping.state === "done" && (
-              <p className="hud" role="status">
-                {keeping.text}
-              </p>
-            )}
-            {keeping.state === "error" && (
-              <p className="state error" role="alert">
-                {keeping.text}
-              </p>
-            )}
-            {/* ADR 0181: the links drawn, from code, by a person and by AI, and how each looks. */}
-            <LinkKinds links={graph.links} />
             {isOnlyAi(tools.layers) && !graph.links.length && graph.boxes.length > 0 && (
               <p className="state" role="status">
                 {COPY.canvasAi.noneOnly}
@@ -824,140 +803,219 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             <p className="sr" role="status" aria-live="polite">
               {corrected ? COPY.canvasAi.corrected : ""}
             </p>
-            {!graph.boxes.length ? (
-              <div className="state">{WORDS.empty}</div>
-            ) : arrangement.state === "error" ? (
-              <div className="state error" role="alert">
-                {WORDS.loadFailed(arrangement.error)}
-              </div>
-            ) : arrangement.state === "loading" || arrangement.key !== key ? (
-              <div className="stack" aria-busy="true" aria-live="polite">
-                <p className="hud">{WORDS.layingOutBoxes(graph.boxes.length)}</p>
-                <div className="skeleton" style={{ width: "70%" }} />
-              </div>
-            ) : (
-              <ArchitectureCanvas
-                key={key}
+            {/* The tools' drawer stays put while the picture comes and goes (a filter that leaves
+                nothing): over the canvas while it is drawn, in the page's flow otherwise. */}
+            <div className={`arch-stage-wrap${canvasShown ? "" : " flat"}`}>
+              <CanvasTools
+                drawer={{
+                  open: toolsOpen,
+                  bodyId: `${uid}-tools`,
+                  onClose: () => {
+                    setToolsOpen(false);
+                    toolsButton.current?.focus();
+                  },
+                }}
                 graph={graph}
                 {...(types ? { types } : {})}
-                direction={directionFor(lens)}
-                pinned={pinned}
-                tidy={tidy}
+                allBoxes={whole.boxes.length}
+                state={tools}
+                onChange={setTools}
                 {...(selected ? { selected } : {})}
-                onSelect={(id) => setSelected(id)}
-                onToggle={(id) => void toggleHere(id)}
-                onMoved={(id, at) =>
-                  setArrangement((a) =>
-                    a.state === "ready"
-                      ? {
-                          ...a,
-                          pinned: { ...a.pinned, [id]: { x: at.x, y: at.y } },
-                          moved: a.moved + (a.pinned[id] ? 0 : 1),
-                        }
-                      : a,
-                  )
-                }
-                onLaid={setLaid}
-                {...(radius ? { lit: radius } : {})}
-                onSelectLink={(id) => {
-                  setPickedLink({ id, keyboard: false });
+                onSelect={setSelected}
+                onPickLink={(id) => {
+                  setPickedLink({ id, keyboard: true });
                   setCorrected(false);
                 }}
-                {...(pickedLink ? { selectedLink: pickedLink.id } : {})}
-                onConnect={(a, b) => {
-                  const c = connectDrawn(find(a), find(b));
-                  // Said, not silently dropped: why a line connects nothing.
-                  if ("say" in c) return flash({ text: c.say });
-                  setConnecting(c);
+                labelOf={(id) => find(id)?.label ?? id}
+                placed={(id) => laid?.boxes[id]}
+                lens={lens}
+                node={shown}
+                {...(tools.overlay === "questions" && openQuestions.state !== "ready"
+                  ? {
+                      overlayNote:
+                        openQuestions.state === "error"
+                          ? COPY.canvasTools.overlayFailed(openQuestions.error)
+                          : COPY.canvasTools.overlayLoading,
+                    }
+                  : {})}
+                onOpenView={(l, n) => {
+                  // Another lens is another picture (the address); in this one, the box is opened.
+                  if (l !== lens) {
+                    const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+                    q.set("lens", l);
+                    q.set("node", n);
+                    window.location.hash = `#/${screen}?${q.toString()}`;
+                  } else void openDeep(n);
                 }}
-                aside={
-                  <div className="stack">
-                    <h2 className="h">{WORDS.inspector}</h2>
-                    {pickedLink && (
-                      <LinkInspector
-                        key={pickedLink.id}
-                        link={pickedEdge}
-                        labelOf={(id) => find(id)?.label ?? id}
-                        under={under}
-                        above={above}
-                        contracts={findings}
-                        autoFocus={pickedLink.keyboard}
-                        onClose={() => setPickedLink(undefined)}
-                        onCorrected={() => {
-                          // The decisions reload themselves; the picture is read again here.
-                          reloadViews();
-                          setCorrected(true);
-                        }}
-                      />
-                    )}
-                    {sel ? (
-                      <Inspector
-                        node={sel}
-                        isCurrent={sel.id === current}
-                        onOpen={open}
-                        onFocus={showFocus}
-                        lens={lens}
-                        links={(focus?.edges ?? view.edges).filter(
-                          (e) => e.from === sel.id || e.to === sel.id,
-                        )}
-                        labelOf={(id) => find(id)?.label ?? id}
-                        under={under}
-                        above={above}
-                        contracts={findings}
-                        {...(boxOf(sel)?.repo
-                          ? {
-                              onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
-                              onOwner: () => setOwning(boxOf(sel)!.repo!),
-                            }
-                          : boxOf(sel)?.system
+                {...(tools.compareWith
+                  ? (() => {
+                      const c = compare(tools.compareWith, whole);
+                      return { compared: { added: c.added.length, removed: c.removed } };
+                    })()
+                  : {})}
+                {...(snapshot ? { snapshot } : {})}
+                onSnapshot={() => {
+                  const snap = snapshotOf(whole, new Date().toLocaleTimeString());
+                  setSnapshot(snap);
+                  // Compare, when on, is against the newest snapshot.
+                  setTools((t) => (t.compareWith ? { ...t, compareWith: snap } : t));
+                }}
+                name={key}
+              />
+              {!graph.boxes.length ? (
+                <div className="state">{WORDS.empty}</div>
+              ) : arrangement.state === "error" ? (
+                <div className="state error" role="alert">
+                  {WORDS.loadFailed(arrangement.error)}
+                </div>
+              ) : arrangement.state === "loading" || arrangement.key !== key ? (
+                <div className="stack" aria-busy="true" aria-live="polite">
+                  <p className="hud">{WORDS.layingOutBoxes(graph.boxes.length)}</p>
+                  <div className="skeleton" style={{ width: "70%" }} />
+                </div>
+              ) : (
+                <ArchitectureCanvas
+                  key={key}
+                  graph={graph}
+                  {...(types ? { types } : {})}
+                  direction={directionFor(lens)}
+                  pinned={pinned}
+                  tidy={tidy}
+                  {...(selected ? { selected } : {})}
+                  onSelect={(id) => setSelected(id)}
+                  onToggle={(id) => void toggleHere(id)}
+                  onMoved={(id, at) =>
+                    setArrangement((a) =>
+                      a.state === "ready"
+                        ? {
+                            ...a,
+                            pinned: { ...a.pinned, [id]: { x: at.x, y: at.y } },
+                            moved: a.moved + (a.pinned[id] ? 0 : 1),
+                          }
+                        : a,
+                    )
+                  }
+                  onLaid={setLaid}
+                  {...(radius ? { lit: radius } : {})}
+                  onSelectLink={(id) => {
+                    setPickedLink({ id, keyboard: false });
+                    setCorrected(false);
+                  }}
+                  {...(pickedLink ? { selectedLink: pickedLink.id } : {})}
+                  onConnect={(a, b) => {
+                    const c = connectDrawn(find(a), find(b));
+                    // Said, not silently dropped: why a line connects nothing.
+                    if ("say" in c) return flash({ text: c.say });
+                    setConnecting(c);
+                  }}
+                  aside={
+                    <div className="stack">
+                      <h2 className="h">{WORDS.inspector}</h2>
+                      {pickedLink && (
+                        <LinkInspector
+                          key={pickedLink.id}
+                          link={pickedEdge}
+                          labelOf={(id) => find(id)?.label ?? id}
+                          under={under}
+                          above={above}
+                          contracts={findings}
+                          autoFocus={pickedLink.keyboard}
+                          onClose={() => setPickedLink(undefined)}
+                          onCorrected={() => {
+                            // The decisions reload themselves; the picture is read again here.
+                            reloadViews();
+                            setCorrected(true);
+                          }}
+                        />
+                      )}
+                      {sel ? (
+                        <Inspector
+                          node={sel}
+                          isCurrent={sel.id === current}
+                          onOpen={open}
+                          onFocus={showFocus}
+                          lens={lens}
+                          links={(focus?.edges ?? view.edges).filter(
+                            (e) => e.from === sel.id || e.to === sel.id,
+                          )}
+                          labelOf={(id) => find(id)?.label ?? id}
+                          under={under}
+                          above={above}
+                          contracts={findings}
+                          {...(boxOf(sel)?.repo
                             ? {
-                                onDeclare: () =>
-                                  setDeclaring({ system: boxOf(sel)!.system!, label: sel.label }),
+                                onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
+                                onOwner: () => setOwning(boxOf(sel)!.repo!),
+                              }
+                            : boxOf(sel)?.system
+                              ? {
+                                  onDeclare: () =>
+                                    setDeclaring({ system: boxOf(sel)!.system!, label: sel.label }),
+                                }
+                              : {})}
+                          {...(!focus && graph.boxes.some((b) => b.id === sel.id)
+                            ? {
+                                here: {
+                                  open: inPlace.has(sel.id),
+                                  toggle: () => void toggleHere(sel.id),
+                                },
                               }
                             : {})}
-                        {...(!focus && graph.boxes.some((b) => b.id === sel.id)
-                          ? {
-                              here: {
-                                open: inPlace.has(sel.id),
-                                toggle: () => void toggleHere(sel.id),
-                              },
-                            }
-                          : {})}
-                      />
-                    ) : (
-                      <p>{WORDS.pick}</p>
-                    )}
-                    {connecting && (
-                      <ConnectPanel
-                        key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
-                        from={connecting.from}
-                        boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
-                        {...(connecting.initial ? { initial: connecting.initial } : {})}
-                        onClose={() => setConnecting(undefined)}
-                      />
-                    )}
-                    {declaring && (
-                      <DeclarePanel
-                        key={declaring.system}
-                        system={declaring.system}
-                        label={declaring.label}
-                        onClose={() => setDeclaring(undefined)}
-                      />
-                    )}
-                    {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
-                    {owning && (
-                      <OwnerPanel key={owning} repo={owning} onClose={() => setOwning(undefined)} />
-                    )}
-                    {watched && <WhatMoved moved={moved} />}
-                  </div>
-                }
-              />
-            )}
+                        />
+                      ) : (
+                        <p>{WORDS.pick}</p>
+                      )}
+                      {connecting && (
+                        <ConnectPanel
+                          key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
+                          from={connecting.from}
+                          boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
+                          {...(connecting.initial ? { initial: connecting.initial } : {})}
+                          onClose={() => setConnecting(undefined)}
+                        />
+                      )}
+                      {declaring && (
+                        <DeclarePanel
+                          key={declaring.system}
+                          system={declaring.system}
+                          label={declaring.label}
+                          onClose={() => setDeclaring(undefined)}
+                        />
+                      )}
+                      {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
+                      {owning && (
+                        <OwnerPanel
+                          key={owning}
+                          repo={owning}
+                          onClose={() => setOwning(undefined)}
+                        />
+                      )}
+                      {watched && <WhatMoved moved={moved} />}
+                    </div>
+                  }
+                  asideBeside
+                  reveal={reveal}
+                  toolbarIn={viewSlot}
+                  overlay={
+                    // ADR 0181: the links drawn, from code, by a person and by AI, and how each
+                    // looks: in the canvas's corner, folding.
+                    <CanvasLegend
+                      meta={WORDS.edges(graph.links.length, focus ? 0 : view.hiddenEdges)}
+                      links={graph.links}
+                    />
+                  }
+                />
+              )}
+            </div>
             <p className="hud" style={{ marginTop: 8 }}>
               {WORDS.canvasHelp}
             </p>
-          </Panel>
+          </>
+        )}
+      </section>
 
+      {status.state === "ready" && view && (
+        <>
           <Panel title={WORDS.outline} span="1 / -1">
             <p className="hud" id="outline-help">
               {WORDS.outlineHelp}
@@ -1310,7 +1368,10 @@ export function Inspector({
   );
 }
 
-/** Keep this arrangement, Tidy up and Reset (ADR 0081): what a person does with the layout. */
+/**
+ * Keep this arrangement, Tidy up and Reset (ADR 0081): what a person does with the layout. In the
+ * map's bar (beta.26) each is an icon button named in words, Keep marked once boxes were moved.
+ */
 export function ArrangementBar(p: {
   ready: boolean;
   saving: boolean;
@@ -1323,23 +1384,21 @@ export function ArrangementBar(p: {
   // Reset drops the kept arrangement for everyone: a second click says so first.
   const [confirmReset, setConfirmReset] = useState(false);
   return (
-    <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+    <div className="arch-arrange">
       {p.onFocusOff && (
         <button type="button" className="btn" onClick={p.onFocusOff}>
           {WORDS.focusOff}
         </button>
       )}
-      <button
-        type="button"
-        className="btn primary"
+      <IconButton
+        label={p.saving ? WORDS.keeping : WORDS.keep}
+        icon="keep"
+        primary={p.moved > 0}
+        busy={p.saving}
         disabled={!p.ready || p.saving}
         onClick={p.onKeep}
-      >
-        {p.saving ? WORDS.keeping : WORDS.keep}
-      </button>
-      <button type="button" className="btn" disabled={!p.ready} onClick={p.onTidy}>
-        {WORDS.tidy}
-      </button>
+      />
+      <IconButton label={WORDS.tidy} icon="tidy" disabled={!p.ready} onClick={p.onTidy} />
       {confirmReset ? (
         <>
           <span className="hud" role="status">
@@ -1361,14 +1420,12 @@ export function ArrangementBar(p: {
           </button>
         </>
       ) : (
-        <button
-          type="button"
-          className="btn"
+        <IconButton
+          label={WORDS.reset}
+          icon="reset"
           disabled={!p.ready || p.saving}
           onClick={() => setConfirmReset(true)}
-        >
-          {WORDS.reset}
-        </button>
+        />
       )}
       {p.moved > 0 && <span className="hud">{WORDS.moved(p.moved)}</span>}
     </div>

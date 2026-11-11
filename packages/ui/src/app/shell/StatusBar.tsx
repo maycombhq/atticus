@@ -1,4 +1,5 @@
 import { COPY } from "../../copy.js";
+import type { Health } from "../chrome.js";
 
 const T = COPY.ide;
 
@@ -22,6 +23,23 @@ export interface StatusFacts {
   questions?: number;
   /** The first thing running (the Console's), how far it is, and how many more run. */
   running?: { id: string; title: string; done?: number; total?: number; more: number };
+}
+
+/**
+ * What the bar says from /api/health: the metarepo, the version and the local API's, and who you
+ * are. The version is the server's (the CLI's VERSION, as `atticus --version` prints it), the
+ * same field the classic top bar shows: the app never spells a version of its own.
+ */
+export function healthFacts(
+  health: Pick<Health, "root" | "version" | "apiVersion" | "user">,
+  me?: { user?: string },
+): Pick<StatusFacts, "root" | "version" | "apiVersion" | "user"> {
+  return {
+    root: health.root,
+    version: health.version,
+    ...(health.apiVersion ? { apiVersion: health.apiVersion } : {}),
+    user: me?.user ?? health.user,
+  };
 }
 
 /**

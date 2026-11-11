@@ -16,6 +16,7 @@ import {
   type SectionModel,
 } from "../src/app/shell/explorer-model.js";
 import { PINS_KEY, readPins, togglePin } from "../src/app/shell/pinned-pages.js";
+import { COPY } from "../src/copy.js";
 
 // The side panel's Explorer (the IDE shell, beta.26): changes in flight, the systems' tree,
 // the open questions by repo and the pinned pages, each a section with a real tree. The data are
@@ -214,6 +215,26 @@ describe("the Explorer's sections, from the data the app already reads", () => {
     expect(h).toContain(">outside<");
     expect(h).toContain("waits on you");
     expect(h).toContain(">Map › Trust<");
+  });
+
+  it("keeps Pin beside the Pinned heading, not in it: the heading's name is the section's alone", () => {
+    const h = html();
+    // Each section heading holds its fold button only (WCAG 1.3.1, 2.4.6): a heading whose name
+    // took in "Pin this page: …" read as one long, wrong heading.
+    const heads = [...h.matchAll(/<h2 class="ex-head">([\s\S]*?)<\/h2>/g)].map((m) => m[1]!);
+    expect(heads).toHaveLength(4);
+    for (const head of heads) {
+      expect(head).not.toContain("ex-pin");
+      expect(head).not.toContain(`>${COPY.explorer.pin}<`);
+      expect(head.match(/<button/g)).toHaveLength(1);
+    }
+    const pinnedHead = heads.find((x) => x.includes('id="ex-head-pinned"'))!;
+    expect(pinnedHead).toContain(">Pinned<");
+    // The Pin button sits right after the heading, in the same row, with its own name.
+    const row = h.split('<div class="ex-headrow">').find((x) => x.includes('id="ex-head-pinned"'))!;
+    const after = row.split("</h2>")[1]!;
+    expect(after.startsWith('<button type="button" class="ex-pin"')).toBe(true);
+    expect(after).toContain(`aria-label="${COPY.explorer.pinHere("Home")}"`);
   });
 
   it("has a tree's roles and states: levels, groups, expanded, and one tab stop per tree", () => {

@@ -4322,6 +4322,9 @@ export const COPY = {
     details: "Details",
     hideDetails: "Hide details",
     showDetails: "Show details",
+    /** Beta.26: the map's one bar of controls, and its legend folded over a corner. */
+    mapControls: "Map controls",
+    legend: "Legend",
   },
   /** Topics and queues on the picture (F10): who owns each, and what the estate lacks on it. */
   topics: {

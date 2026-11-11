@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
@@ -29,7 +32,8 @@ import {
   SIDE_MIN,
   SIDE_KEY,
 } from "../src/app/shell/layout.js";
-import { folderOf, StatusBar } from "../src/app/shell/StatusBar.js";
+import { Person } from "../src/app/chrome.js";
+import { folderOf, healthFacts, StatusBar } from "../src/app/shell/StatusBar.js";
 import { TabStrip, tabId } from "../src/app/shell/TabStrip.js";
 import { initialTabs, openTab } from "../src/app/shell/tabs-model.js";
 import { TitleBar } from "../src/app/shell/TitleBar.js";
@@ -181,6 +185,8 @@ describe("the tab strip", () => {
   });
 });
 
+const SRC = join(dirname(fileURLToPath(import.meta.url)), "../src");
+
 describe("the status bar", () => {
   const html = renderToStaticMarkup(
     <StatusBar
@@ -214,6 +220,31 @@ describe("the status bar", () => {
     expect(bare).not.toContain("questions");
     expect(bare).not.toContain("running");
     expect(bare).toContain(">pat<");
+  });
+
+  it("reads the version from /api/health, as the classic bar does: never a version of its own", () => {
+    // The server's health answers with the CLI's VERSION (atticus --version); before the merge
+    // of beta.25 the bar read beta.24 because the build did. Both layouts show the same field.
+    const health = {
+      version: "2.0.0-beta.25",
+      apiVersion: "3.11.0",
+      root: "/work/forge-metarepo",
+      user: "pat",
+    };
+    const f = healthFacts(health, { user: "pat" });
+    expect(f).toEqual({
+      root: "/work/forge-metarepo",
+      version: "2.0.0-beta.25",
+      apiVersion: "3.11.0",
+      user: "pat",
+    });
+    expect(renderToStaticMarkup(<StatusBar facts={f} />)).toContain(">v2.0.0-beta.25<");
+    expect(renderToStaticMarkup(<Person health={health} />)).toContain(" · v2.0.0-beta.25");
+    // Nothing in the app's source spells a version out.
+    for (const file of readdirSync(SRC, { recursive: true, encoding: "utf8" })) {
+      if (!/\.(ts|tsx)$/.test(file)) continue;
+      expect(readFileSync(join(SRC, file), "utf8"), file).not.toMatch(/["'`]v?\d+\.\d+\.\d+-beta/);
+    }
   });
 
   it("names a metarepo by its folder, on Windows too", () => {
