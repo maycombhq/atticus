@@ -55,8 +55,16 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.25";
+const release = "2.0.0-beta.26";
 const news = [
+  {
+    body: "The app is laid out like an editor: a title bar with Ctrl+K, an activity bar, an Explorer of changes, systems and questions, a tab for each page you open, and the Console, Questions, Problems and Runs in a bottom panel.",
+    link: "/guide/roles.html",
+  },
+  {
+    body: "Home fits one screen as a control screen, the map's canvas takes the page, and Questions, Knowledge, Set up and a change's pages are laid out cleanly, with nothing lost: every page and address still opens.",
+    link: "/guide/roles.html",
+  },
   {
     body: "The map's side panels are laid out: an arrow's calls as cards with their lines, a box's actions in two groups, and when one line holds several calls, All calls on this arrow are wrong asks which.",
     link: "/guide/correcting-the-map.html",

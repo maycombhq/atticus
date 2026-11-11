@@ -62,7 +62,7 @@ const TOKEN_GIVEN = /session token isn't printed/;
 /** How long atticus ui may take to say its address and token before the start is given up. */
 const START_TIMEOUT_MS = 30_000;
 /** The oldest atticus this extension's flags and pages work with (atticus ui --embed, --parent). */
-export const MIN_CLI = "2.0.0-beta.25";
+export const MIN_CLI = "2.0.0-beta.26";
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 

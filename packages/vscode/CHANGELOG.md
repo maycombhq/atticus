@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.26 (pre-release, with Atticus 2.0.0-beta.26)
+
+- **Ships with Atticus 2.0.0-beta.26, and needs it.** The app in its tab is laid out as an editor (ADR 0194), without its own title, activity and status bars, since VS Code has them: tabs for the pages you open, Ctrl+K, the Explorer and the bottom panel with the Console, Questions, Problems and Runs. The local API is unchanged (3.11).
+
 ## 0.7.25 (pre-release, with Atticus 2.0.0-beta.25)
 
 - **Ships with Atticus 2.0.0-beta.25, and needs it.** The app in its tab reads beta.25's local API (3.11): the arrow's panel and the box's panel laid out, "All calls on this arrow are wrong" asking which calls when a line holds several, the boxes made from an answer's words put right, and depends-on arrows with every coordinate they rest on.
