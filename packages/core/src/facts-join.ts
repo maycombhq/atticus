@@ -1004,43 +1004,54 @@ const TOKEN_FORMS: readonly RegExp[] = [
   /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
 ];
 
+/**
+ * Beta.25: a Camel Simple expression (`${header.id}`, `${body}`, `${exchangeProperty.x}`) is the
+ * route's message, read at run time, never a setting.
+ */
+const CAMEL_SIMPLE =
+  /^(headers?|body|in\.(headers?|body)|out\.(headers?|body)|exchangeProperty|exchangeId|camelContext|routeId|messageTimestamp)(\.|$|\[)/;
+
 export function placeholderIn(
   s: string | undefined,
 ): { name: string; fallback?: string; before: string; after: string } | undefined {
   const t = (s ?? "").trim();
   const env = /^env:([A-Za-z_][A-Za-z0-9_.-]*)$/i.exec(t);
   if (env) return { name: env[1]!, before: "", after: "" };
-  const i = t.indexOf("${");
-  if (i < 0) {
-    // The token forms, each set by the same config facts by its name: the first in the value.
-    const found = TOKEN_FORMS.flatMap((re) => {
-      const m = re.exec(t);
-      return m ? [m] : [];
-    }).sort((a, b) => a.index - b.index)[0];
-    if (!found) return undefined;
-    return {
-      name: found[1]!,
-      before: t.slice(0, found.index),
-      after: t.slice(found.index + found[0].length),
-    };
-  }
-  let depth = 0;
-  let j = i + 2;
-  for (; j < t.length; j++) {
-    if (t[j] === "{") depth++;
-    else if (t[j] === "}") {
-      if (depth === 0) break;
-      depth--;
+  type Found = { at: number; end: number; name: string; fallback?: string };
+  // Beta.25 review: the first placeholder by position, whatever its form
+  // (`{{forge.ledger.base-uri}}/accounts/${header.id}` names `forge.ledger.base-uri`).
+  let dollar: Found | undefined;
+  for (let i = t.indexOf("${"); i >= 0 && !dollar; i = t.indexOf("${", i + 2)) {
+    let depth = 0;
+    let j = i + 2;
+    for (; j < t.length; j++) {
+      if (t[j] === "{") depth++;
+      else if (t[j] === "}") {
+        if (depth === 0) break;
+        depth--;
+      }
     }
+    if (j >= t.length) break;
+    const inner = t.slice(i + 2, j);
+    const colon = inner.indexOf(":");
+    const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name) || CAMEL_SIMPLE.test(name)) continue;
+    const fallback = colon < 0 ? undefined : inner.slice(colon + 1).trim();
+    dollar = { at: i, end: j + 1, name, ...(fallback ? { fallback } : {}) };
   }
-  if (j >= t.length) return undefined;
-  const inner = t.slice(i + 2, j);
-  const after = t.slice(j + 1);
-  const colon = inner.indexOf(":");
-  const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
-  if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name)) return undefined;
-  const fallback = colon < 0 ? undefined : inner.slice(colon + 1).trim();
-  return { name, ...(fallback ? { fallback } : {}), before: t.slice(0, i), after };
+  // The token forms, each set by the same config facts by its name: the first in the value.
+  const token = TOKEN_FORMS.flatMap((re) => {
+    const m = re.exec(t);
+    return m ? [{ at: m.index, end: m.index + m[0].length, name: m[1]! } as Found] : [];
+  }).sort((a, b) => a.at - b.at)[0];
+  const first = [dollar, token].filter((x): x is Found => !!x).sort((a, b) => a.at - b.at)[0];
+  if (!first) return undefined;
+  return {
+    name: first.name,
+    ...(first.fallback ? { fallback: first.fallback } : {}),
+    before: t.slice(0, first.at),
+    after: t.slice(first.end),
+  };
 }
 
 /**
@@ -2165,9 +2176,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const first = segKey(segs[0]!);
     const pool =
       first === "{}" ? all : [...(byFirst.get(first) ?? []), ...(byFirst.get("{}") ?? [])];
+    // Beta.25: each proxy (bundle) owns its routes, so a proxy chains to a sibling of its own
+    // repo (and component), never to itself.
+    const ownBundle = bundleRootOf(c.fact.cite.file);
     const under = pool.filter(
       (x) =>
-        x.r.component !== c.component &&
+        (x.r.component !== c.component ||
+          (!!ownBundle && proxyOf(x.r) !== key(c.repo, ownBundle))) &&
         x.base.length < segs.length &&
         startsWithSegs(segs, x.base),
     );

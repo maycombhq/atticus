@@ -33,6 +33,8 @@ const KEY_VALUE =
 const XML_ELEMENT = /<([A-Za-z_][\w.-]*)>([^<]+)<\/\1>/g;
 /** An XML element that names its value: `<add key="ApiKey" value="x" />`. */
 const XML_NAMED = /\b(?:key|name)\s*=\s*"([^"]+)"\s+value\s*=\s*"([^"]*)"/g;
+/** Beta.25: the same, its value first: `<cm:property value="x" name="ledger.password"/>`. */
+const XML_NAMED_AFTER = /\bvalue\s*=\s*"([^"]*)"\s+(?:key|name)\s*=\s*"([^"]+)"/g;
 /** A connection string's pairs: `Server=db;User Id=forge;Password=x;`. */
 const CONNECTION_PAIR = /(?:^|[;"'])\s*([A-Za-z][A-Za-z0-9 _.-]*?)\s*=\s*([^;"'<>\s][^;"'<>]*)/g;
 /** A deploy tool's token (the Apigee config plugin's `config.json`) names its value elsewhere. */
@@ -71,6 +73,26 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
   return undefined;
 }
 
+/**
+ * Beta.25: the name a YAML list item gives the `value:` under it (`- name: NORTHWIND_CLIENT_SECRET`
+ * then `value: "…"`, a container's env): the item's `name:` or `key:` line above, in the same item.
+ */
+function itemNameAbove(lines: readonly string[], i: number): string | undefined {
+  const col = /^\s*/.exec(lines[i]!)![0].length;
+  for (let j = i - 1; j >= 0 && i - j <= 6; j--) {
+    const l = lines[j]!;
+    if (!l.trim()) continue;
+    const lead = /^\s*/.exec(l)![0].length;
+    const item = /^(\s*)-\s+(.*)$/.exec(l);
+    const keyCol = item ? item[1]!.length + (l.length - item[1]!.length - item[2]!.length) : lead;
+    if (keyCol !== col) return undefined;
+    const m = /^(?:\s*-\s+|\s*)(name|key)\s*:\s*["']?([^"'\s#]+)["']?\s*$/.exec(l);
+    if (m) return m[2]!;
+    if (item) return undefined;
+  }
+  return undefined;
+}
+
 /** The lines of a config file that hold what looks like a live secret. */
 export function liveSecretsIn(file: string, lines: readonly string[]): SecretLine[] {
   if (!isConfigFile(file)) return [];
@@ -80,11 +102,16 @@ export function liveSecretsIn(file: string, lines: readonly string[]): SecretLin
     const pairs: { key: string; value: string }[] = [];
     const kv = KEY_VALUE.exec(text);
     if (kv) {
-      const key = TOKEN_VALUE_KEY.test(kv[1]!) ? (tokenKeyNear(lines, i) ?? kv[1]!) : kv[1]!;
+      const key = TOKEN_VALUE_KEY.test(kv[1]!)
+        ? (tokenKeyNear(lines, i) ??
+          (/\.ya?ml$/i.test(file) ? itemNameAbove(lines, i) : undefined) ??
+          kv[1]!)
+        : kv[1]!;
       pairs.push({ key, value: unquote(kv[2]!) });
     }
     for (const m of text.matchAll(XML_ELEMENT)) pairs.push({ key: m[1]!, value: m[2]!.trim() });
     for (const m of text.matchAll(XML_NAMED)) pairs.push({ key: m[1]!, value: m[2]!.trim() });
+    for (const m of text.matchAll(XML_NAMED_AFTER)) pairs.push({ key: m[2]!, value: m[1]!.trim() });
     if (text.includes(";"))
       for (const m of text.matchAll(CONNECTION_PAIR))
         pairs.push({ key: m[1]!.trim(), value: m[2]!.trim() });

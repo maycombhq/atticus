@@ -51,6 +51,55 @@ joins:
     interface: if-bd798d893ad01ba1
   - call:
       repo: forge-edge
+      fact: call.rates.local
+      component: forge-edge
+      at: src/gateway/forge-ledger-v1/apiproxy/targets/rates-local.xml:5
+    entry:
+      repo: forge-rates
+      fact: entry.get.rates-currency
+      component: rates-service
+      at: rates-service/src/main/java/forge/rates/RatesController.java:10
+    how: base-path
+    gateway:
+      - entry:
+          repo: forge-edge
+          fact: entry.get.forge-rates-v1-rates
+          component: forge-edge
+          at: src/gateway/forge-rates-v1/apiproxy/proxies/default.xml:8
+        call:
+          repo: forge-edge
+          fact: call.rates.target
+          component: forge-edge
+          at: src/gateway/forge-rates-v1/apiproxy/targets/rates.xml:6
+        tie:
+          repo: forge-edge
+          fact: config.ts-rates
+          component: forge-edge
+          at: resources/edge/env/test/targetServers.json:3
+        exposedBy:
+          - repo: forge-rates
+            fact: deploy.service.forge-rates
+            component: rates-service
+            at: deploy/k8s/service.yaml:4
+          - repo: forge-rates
+            fact: deploy.ingress.forge-rates
+            component: rates-service
+            at: deploy/helm/forge-rates/values.yaml:23
+        route: gw-forge-edge-get-forge-rates-v1-rates-currency
+        base:
+          path: /rates
+          from: config
+          by:
+            - repo: forge-rates
+              fact: config.context-path
+              component: rates-service
+              at: rates-service/src/main/resources/application.properties:4
+    callType: rest
+    method: GET
+    path: /rates/{currency}
+    interface: if-c04e153e51549791
+  - call:
+      repo: forge-edge
       fact: call.rates.target
       component: forge-edge
       at: src/gateway/forge-rates-v1/apiproxy/targets/rates.xml:6

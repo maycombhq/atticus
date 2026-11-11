@@ -66,7 +66,10 @@ export function yamlPathAt(lines: readonly string[], line: number): string[] | u
   if (!at?.key) return undefined;
   const path = [at.key];
   let col = at.item ? at.lead : at.col;
-  for (let j = line - 2; j >= 0 && col > 0; j--) {
+  // Beta.25: in a list item, its sequence's key may sit at the dash's own indentation
+  // (`containers:` then `- name:`, as Kubernetes manifests write them).
+  let seq = at.item;
+  for (let j = line - 2; j >= 0 && (col > 0 || seq); j--) {
     const l = lines[j]!;
     if (/^\s*(---|\.\.\.)\s*$/.test(l)) break;
     const y = yamlLine(l);
@@ -74,9 +77,16 @@ export function yamlPathAt(lines: readonly string[], line: number): string[] | u
     // the start of the list item the mapping we are in belongs to
     if (y.item && y.col === col) {
       col = y.lead;
+      seq = true;
+      continue;
+    }
+    if (seq && !y.item && y.col === col && y.key && !y.rest) {
+      path.unshift(y.key);
+      seq = false;
       continue;
     }
     if (y.col >= col) continue;
+    seq = false;
     if (!y.key || y.rest) return undefined;
     path.unshift(y.key);
     col = y.lead;
@@ -435,7 +445,19 @@ export function configLineProblem(
   if (value === undefined || value === "") return undefined;
   const near = [f.cite.line - 1, f.cite.line, f.cite.line + 1].map((n) => lines[n - 1] ?? "");
   const partLines = (f.cite.with ?? []).map((p) => linesOf(p.file)?.[p.line - 1] ?? "");
-  if (![...near, ...partLines].some(has))
-    return `${where} (or the line either side) and its parts don't write the value claimed`;
-  return undefined;
+  if ([...near, ...partLines].some(has)) return undefined;
+  // Beta.25: a host and port written as two fields (an Apigee TargetServer's `"host"` and
+  // `"port"`), each a part whose line writes it: the value is `host:port`.
+  const hp = /^([^\s:/]+):(\d{1,5})$/.exec(f.value!.trim());
+  if (hp) {
+    const parts = f.cite.with ?? [];
+    const written = (want: string) =>
+      parts.some((p) => {
+        if (p.value.trim() !== want) return false;
+        const l = linesOf(p.file)?.[p.line - 1] ?? "";
+        return new RegExp(`(^|[^A-Za-z0-9.-])${escape(want)}($|[^A-Za-z0-9.-])`).test(l);
+      });
+    if (written(hp[1]!) && written(hp[2]!)) return undefined;
+  }
+  return `${where} (or the line either side) and its parts don't write the value claimed`;
 }

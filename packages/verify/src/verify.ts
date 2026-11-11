@@ -561,8 +561,14 @@ function claimsOf(f: Fact): Claim[] {
     // A call whose path is a setting's placeholder a helper puts together is checked apart
     // (`helperBuildsKey`): its bare key is never a claim, or a settings line would be a call.
     case "entry":
-    case "call":
       return [routeOrWord(f.path)];
+    case "call":
+      // Beta.25: a call to a whole URL that writes no path (a target's `<URL>` a deploy token
+      // replaces, `https://replaced_by_config_json`) sends `/`, which its line writes as the URL.
+      return f.path.trim() === "/" &&
+        /^[a-z][a-z0-9+.-]*:\/\/[^/\s?#]+\/?$/i.test(f.cite.value.trim())
+        ? [routeOrWord(f.path), { kind: "word", value: f.cite.value.trim() }]
+        : [routeOrWord(f.path)];
     case "store":
       return [
         { kind: "word", value: f.name },
@@ -1384,11 +1390,26 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     // Review round 49: by its path and size first, so a binary, a lock file or a file too big
     // to be source is never read just to be passed over.
-    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) continue;
+    // Beta.25: a config file the source rules don't count (a deploy tool's `env/<env>/kvms.json`,
+    // a data file) is still scanned for the report, its lines read only into this check.
+    const scanOnly = () => {
+      if (!insideRepo(p) || !isConfigFile(p) || LOCKFILE.test(p) || tooBigToRead(o.source, p))
+        return;
+      const ls = readLines(p);
+      if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
+    };
+    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) {
+      scanOnly();
+      continue;
+    }
     // A-room: every file of the repo passes through here, and only to ask whether it counts as
     // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
     const ls = readLines(p) ?? [""];
-    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) continue;
+    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) {
+      if (isConfigFile(p) && !LOCKFILE.test(p) && !binaryLines(ls))
+        secrets.push(...liveSecretsIn(p, ls));
+      continue;
+    }
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else {
       sources.push(p);
