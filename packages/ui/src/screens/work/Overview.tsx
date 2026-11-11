@@ -17,7 +17,7 @@ import {
   type ChangeRow,
   type OnboardingData,
 } from "./next.js";
-import { Command, Problems, RunNextPanel } from "./RunNext.js";
+import { Command, Problems, RunNextRow } from "./RunNext.js";
 import { hasAction, StepAction } from "./step-action.js";
 
 const T = COPY.dashboardExtra;
@@ -197,7 +197,10 @@ export function together(
   };
 }
 
-/** Run next on Home: the one step, onboarding first, then a change, then starting one. */
+/**
+ * Run next on Home: the one step, onboarding first, then a change, then starting one. beta.26:
+ * as one row with its button, the command folded (RunNextRow).
+ */
 export function HomeNext(p: {
   onboarding: Loaded<OnboardingData>;
   changes: Loaded<ChangeRow[]>;
@@ -223,7 +226,7 @@ export function HomeNext(p: {
   return (
     <View of={of}>
       {(d) => (
-        <RunNextPanel
+        <RunNextRow
           step={dashboardStep(
             d.onboarding,
             // Eighth UX walk: the map's questions; a change's own are its step's.

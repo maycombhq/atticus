@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.26 (unreleased)
+
+### Changed
+
+- **Home fits one screen, as a control screen.** A line of status with who you are and your role; six tiles, each a number with one place to go, quiet at nothing and loading or failing on its own: what waits on you (the open needs and manual steps, said apart under it), the questions to answer, the changes in flight by stage, corrections to apply on the map, blocking findings (with the open findings by source), and the facts in the catalog (with interfaces and repos trusted). Then three short panels with their top few and See all: Next for you (Run next in one row with its button, the command folded; what to propose; your role's questions; Bring in what merged), what needs a person by section with counts (the whole list, with its filter and bulk actions, opens under it on a click; the digest is in its menu), and your changes with the current one's gate pipeline, whom each waits on, and the map one link away. Setting up Atticus and the slash commands are folds at the foot. The whole page is in view at 1440 by 900 (5,650 px tall before; about 550 px of Home now, which also fits the IDE shell's Home tab), with a short scroll at 1024 by 768 and one column on a phone. The embedded system map, the catalog's bars and the findings' charts left Home, so it asks for no graph or diagram, and for set-up and the work to propose once each (41 requests to 37 on a 12-repo estate).
+
 ## 2.0.0-beta.25 (unreleased)
 
 ### Added

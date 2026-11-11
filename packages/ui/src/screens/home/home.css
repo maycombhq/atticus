@@ -1,0 +1,548 @@
+/* Home as one screen (beta.26): a line of status, one strip of six tiles, then three short panels
+   side by side, each with its top few and See all; it fits the view at 1440 by 900 and the IDE
+   shell's Home tab (about 1130 by 600). Colour only for what needs someone (amber waits, magenta
+   blocks); the rest in the text tokens. Every class starts hm-, and every colour, font and
+   line is a token of hud.css, as the map's arrow and box panels do. Rhythm: 4, 8, 12 and 16 px;
+   words at 12 to 13 px, labels 11 px, secondary lines muted monospace. */
+
+.hm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ the status line */
+
+.hm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
+}
+.hm-status {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.hm-status.bad {
+  color: var(--magenta-text);
+}
+.hm-who {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ the tiles */
+
+.hm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* A small sentence-case label, as the arrow panel's sections have. */
+.hm-label {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+.hm-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 8px;
+}
+.hm-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover-soft);
+}
+.hm-tile:hover {
+  border-color: var(--line-2);
+  background: var(--hover);
+}
+.hm-tile:focus-within {
+  border-color: var(--accent);
+}
+/* The whole tile is its link: the link's box covers it, its words are the label and number
+   (in that order, so it is named "Questions to answer 36"), the number shown first. */
+.hm-tile-link {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+.hm-tile-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+}
+.hm-tile-link:focus-visible {
+  outline: none;
+}
+.hm-tile-link:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hm-tile-label {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-2);
+}
+.hm-tile-n {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.05;
+  color: var(--text);
+}
+.hm-tile.quiet .hm-tile-n {
+  color: var(--muted);
+}
+.hm-tile.warn .hm-tile-n {
+  color: var(--amber);
+}
+.hm-tile.bad .hm-tile-n {
+  color: var(--magenta-text);
+}
+/* Done is said in words, not colour: colour is for what needs someone. */
+.hm-tile.ok .hm-tile-n {
+  color: var(--text);
+}
+.hm-tile-n .skeleton {
+  display: block;
+  width: 36px;
+  height: 18px;
+  margin: 4px 0 2px;
+}
+.hm-tile-sub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  /* Two lines at most, so every tile in a strip is the same short height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hm-tile.error .hm-tile-sub {
+  display: block;
+  color: var(--magenta-text);
+}
+
+/* ------------------------------------------------------------------ the panels */
+
+.hm-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 4fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.hm-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* The columns end on one line: each column's last panel takes what is left. */
+.hm-col > .hm-panel:last-child {
+  flex: 1;
+}
+.panel.hm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.hm-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.hm-panel-head .hm-label {
+  font-size: 13px;
+  color: var(--text);
+}
+.hm-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hm-panel p {
+  margin: 0;
+}
+.hm-panel .state {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12.5px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+.hm-panel .state.error {
+  background: var(--danger-bg);
+}
+
+/* A list of one-line rows: its words, a muted monospace line under them, chips at the end. */
+.hm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hm-list:empty {
+  display: none;
+}
+.hm-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.hm-list > li:last-child {
+  border-bottom: 0;
+}
+.hm-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hm-row-title {
+  font-size: 12.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-row-sub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-row-end {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hm-row-end .chip {
+  font-size: 10.5px;
+}
+.hm-list a {
+  min-width: 0;
+}
+
+/* Next for you: the step first, its words then its button; what else waits under it. */
+.hm-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--inset);
+  min-width: 0;
+}
+.hm-step-why {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.hm-step-aside {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.hm-step-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.hm-step-act > * {
+  max-width: 100%;
+}
+.hm-step .work-terminal,
+.hm-panel .work-terminal {
+  margin: 0;
+  font-size: 12px;
+}
+.hm-rest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hm-rest > * {
+  min-width: 0;
+}
+.hm-rest .work-say {
+  margin: 0;
+  font-size: 12px;
+}
+.hm-quiet-line {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The gates, as a row of small steps. */
+.hm-gates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+.hm-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  text-align: center;
+}
+.hm-gate-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--step-off);
+  font-size: 11px;
+  color: var(--muted);
+}
+.hm-gate.done .hm-gate-dot {
+  border-color: var(--btn-text);
+  color: var(--btn-text);
+}
+.hm-gate.now .hm-gate-dot {
+  border-color: var(--accent);
+  background: var(--picked-on);
+  color: var(--text);
+}
+.hm-gate-name {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hm-gate.now .hm-gate-name {
+  color: var(--accent-soft);
+  font-weight: 600;
+}
+
+/* A panel's foot: See all, then a few compact actions grouped. */
+.hm-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.hm-foot .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+/* A small menu: its summary a compact button, what it holds under it. */
+.hm-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: var(--hover-soft);
+  color: var(--btn-text);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.hm-menu > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hm-menu[open] {
+  flex-basis: 100%;
+}
+
+/* A button in a row of words (Bring in what merged) keeps its label on one line. */
+.hm-rest .row > .btn {
+  flex: none;
+}
+/* The current change: its name, then its gates, set apart from the list under it. */
+.hm-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--inset);
+}
+.hm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.hm-gate-change {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ the folds at the foot */
+
+/* The folds at the foot share one line until one is opened; Setting up Atticus (a panel
+   elsewhere) reads as a line like the others here. */
+.hm-fold-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 20px;
+}
+.hm-fold-row > details[open] {
+  flex-basis: 100%;
+}
+.hm-fold-row > details.panel {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.hm-fold-row > details.panel::before {
+  display: none;
+}
+.hm-fold-row > details > summary.hud {
+  font-family: var(--font);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.hm-fold-row > details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hm-folds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hm-fold > summary {
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.hm-fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hm-fold[open] > summary {
+  margin-bottom: 8px;
+}
+.hm-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ narrower windows */
+
+/* A smaller laptop (1024 to 1200 px): the two strips one over the other, the three columns kept,
+   a row's chips going under its words. */
+@media (max-width: 1200px) {
+  .hm-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  /* A row in two lines: its words across, then the muted line with the chips at its end. */
+  .hm-list > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+  .hm-list > li > .hm-row-main {
+    display: contents;
+  }
+  .hm-list > li .hm-row-title {
+    grid-column: 1 / -1;
+  }
+  .hm-list > li .hm-row-sub {
+    grid-column: 1;
+  }
+  .hm-list > li > .hm-row-end {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  /* A gate's name stays in its column, cut short when it can't fit (its words are read whole). */
+  .hm-gate-name {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 9.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+/* An editor's panel (720 to 1000 px): Next for you across, the other two side by side. */
+@media (max-width: 1000px) {
+  .hm-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .hm-grid > .hm-col:first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 720px) {
+  .hm-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hm-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hm-row-title,
+  .hm-row-sub {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

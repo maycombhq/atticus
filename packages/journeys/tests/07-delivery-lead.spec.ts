@@ -31,6 +31,8 @@ test("sees the releases across changes and their digest on Home", async ({ page 
     "add-transfer-limit",
   );
   await open(page, app(), "home");
+  // beta.26: the digest is in Needs a person's menu.
+  await page.locator("main details.hm-menu > summary", { hasText: "Digest" }).click();
   await page.getByRole("button", { name: "Show my digest" }).click();
   await expect(page.getByRole("status").filter({ hasText: /^Atticus: / })).toBeVisible();
   await accessible(page, "home with the digest");

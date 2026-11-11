@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
-import { AdminFold, nonAdminRoles, YourChanges } from "./HomeRoles.js";
-import { BringIn, PendingProposals, workChanged } from "../app/propose.js";
+import { AdminFold, nonAdminRoles } from "./HomeRoles.js";
+import {
+  applyFirstRepos,
+  BringIn,
+  PendingProposals,
+  waitingFiles,
+  workChanged,
+  type Plan,
+} from "../app/propose.js";
 import { COPY } from "../copy.js";
-import { CatalogEmpty } from "../app/app-step.js";
 import {
   api,
   ApiError,
@@ -12,10 +18,9 @@ import {
   useApi,
   useFileChanges,
   useLiveEvents,
+  type Loaded,
 } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
-import { FlowCanvas, type FlowViewData } from "../app/flow.js";
-import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
 import type { Api } from "@maycombhq/core";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat } from "../app/filter.js";
@@ -28,17 +33,19 @@ import {
   type InboxItem,
   type WaitingSection,
 } from "../app/inbox.js";
-import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
+import { Panel } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 import type { QuestionListView } from "./Questions.js";
 import { waitingQuestions } from "./OwnerQuestions.js";
 import { Propose } from "../app/propose.js";
-import type { OnboardingData } from "./work/next.js";
+import { stageOf, type OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 import { Command } from "./work/RunNext.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
 import { UpgradeOffer } from "../app/upgrade.js";
+import { TileGroup, toneOf, type Tile } from "./home/HomeTiles.js";
+import { HomeChanges, HomePanel, NeedsTop } from "./home/HomePanels.js";
 
 /** ADR 0181: when the sample audit paused AI deciding, Home says why, with Map › Trust's link. */
 export function HomeDecidePaused() {
@@ -47,6 +54,7 @@ export function HomeDecidePaused() {
 }
 
 const T = COPY.commandCenter;
+const H = T.home;
 
 interface ChangeSummary {
   id: string;
@@ -79,14 +87,7 @@ interface KindCount {
 }
 
 const PHASES = ["define", "design", "plan", "build", "qa", "release-ready"] as const;
-const PHASE_LABEL: Record<string, string> = {
-  define: T.define,
-  design: T.design,
-  plan: T.plan,
-  build: T.build,
-  qa: "QA",
-  "release-ready": T.release,
-};
+/** The states a change is in flight in: its phases, sent back, and its review after release. */
 const ACTIVE = new Set<string>([...PHASES, "returned", "post-release-review"]);
 
 /**
@@ -108,6 +109,8 @@ interface Setup {
     checking?: boolean;
   }[];
 }
+/** beta.26: Home loads /api/setup once, for the checklist and the person's own install both. */
+type SetupLoad = Loaded<Setup> & { reload: () => void };
 
 /**
  * beta.23: while the machine's checks run, wait for them here (GET /api/doctor answers when they
@@ -265,8 +268,9 @@ function OpenMachine() {
  * outside the fold, since it is about the person's own install: a failing machine step, and the
  * alert that a newer Atticus upgraded this metarepo. The rest of setting up stays folded.
  */
-export function OwnInstall() {
-  const setup = useApi<Setup>("/api/setup");
+export function OwnInstall(p: { setup?: SetupLoad } = {}) {
+  const own = useApi<Setup>(p.setup ? undefined : "/api/setup");
+  const setup = p.setup ?? own;
   useFileChanges(() => setup.reload(), FILE_QUIET_MS, { jobs: true });
   const machine =
     setup.state === "ready" && !setup.data.baselined
@@ -300,8 +304,9 @@ export function OwnInstall() {
 }
 
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
-export function SetupChecklist() {
-  const setup = useApi<Setup>("/api/setup");
+export function SetupChecklist(p: { setup?: SetupLoad } = {}) {
+  const own = useApi<Setup>(p.setup ? undefined : "/api/setup");
+  const setup = p.setup ?? own;
   // Beta.23 review: read again when files change or a step's job ends (a Sync clones into
   // workspace/, which no event names), so a step done in the app is ticked here.
   useFileChanges(() => setup.reload(), FILE_QUIET_MS, { jobs: true });
@@ -464,49 +469,60 @@ export function DigestButtons({ to }: { to?: string }) {
   );
 }
 
+/** A count still loading, or why it didn't load. */
+type CountStatus = { state: "loading" } | { state: "error"; error: string } | undefined;
+
 /**
- * What waits on you, by kind (ADR 0105): questions, needs still open across every change,
- * manual steps and blocking findings, each with its count and a link to where it is acted on.
- * A count not loaded shows a dash, never a 0 that reads as "none".
+ * What waits on you, by kind (ADR 0105), as Home's first tiles (beta.26): what waits on you
+ * (the open needs across every change and the manual steps, said apart under it), the questions
+ * to answer, and the blocking findings (with the open findings by source under it), each linking
+ * to where it is acted on. A count not loaded shows a dash, never a 0 that reads as "none".
  */
-export function WaitingSections(p: {
+export function waitingTiles(p: {
   questions: number | undefined;
   /** Where Questions to answer opens: the owner questions when only they wait. */
-  questionsHref?: string;
+  questionsHref?: string | undefined;
   needs: number | undefined;
   steps: number | undefined;
   blocking: number | undefined;
-}) {
-  const rows = [
-    { label: T.waitQuestions, n: p.questions, href: p.questionsHref ?? "#/questions" },
-    { label: T.waitNeeds, n: p.needs, href: "#/changes?across=needs" },
-    { label: T.waitSteps, n: p.steps, href: "#/todo" },
-    { label: T.waitBlocking, n: p.blocking, href: "#/changes?across=findings" },
-  ];
-  return (
-    <ul
-      className="row"
-      style={{ listStyle: "none", margin: 0, padding: 0, gap: 8, flexWrap: "wrap" }}
-    >
-      {rows.map((r) => (
-        <li key={r.href}>
-          <a href={r.href} className="btn">
-            {r.label}{" "}
-            <span className={`chip ${r.n ? "warn" : "dim"}`}>
-              {r.n === undefined ? (
-                <>
-                  <span aria-hidden="true">–</span>
-                  <span className="sr">{COPY.app.notLoaded}</span>
-                </>
-              ) : (
-                r.n
-              )}
-            </span>
-          </a>
-        </li>
-      ))}
-    </ul>
-  );
+  status?: Partial<Record<"questions" | "needs" | "steps" | "blocking", CountStatus>>;
+  /** What the open findings are (Findings by lens folded into the tile). */
+  blockingSub?: string | undefined;
+}): { wait: Tile; questions: Tile; blocking: Tile } {
+  const of = (s: CountStatus): Pick<Tile, "state" | "error"> =>
+    s?.state === "error" ? { state: "error", error: s.error } : { state: s?.state ?? "ready" };
+  const both = p.needs !== undefined && p.steps !== undefined ? p.needs + p.steps : undefined;
+  const ns = p.status?.needs;
+  const ss = p.status?.steps;
+  return {
+    wait: {
+      id: "wait",
+      label: H.waitOnYou,
+      // The needs when any are open (Change › Needs across changes), else Home › Manual steps.
+      href: p.needs ? "#/changes?across=needs" : "#/todo",
+      value: both,
+      ...of(ns?.state === "error" ? ns : ss?.state === "error" ? ss : (ns ?? ss)),
+      ...(both !== undefined ? { sub: H.waitOnYouSub(p.needs!, p.steps!) } : {}),
+      tone: toneOf(both, "waits"),
+    },
+    questions: {
+      id: "questions",
+      label: T.waitQuestions,
+      href: p.questionsHref ?? "#/questions",
+      value: p.questions,
+      ...of(p.status?.questions),
+      tone: toneOf(p.questions, "waits"),
+    },
+    blocking: {
+      id: "blocking",
+      label: T.waitBlocking,
+      href: "#/changes?across=findings",
+      value: p.blocking,
+      ...of(p.status?.blocking),
+      tone: toneOf(p.blocking, "blocks"),
+      ...(p.blockingSub ? { sub: p.blockingSub } : {}),
+    },
+  };
 }
 
 const SECTION: Record<WaitingSection["kind"], (s: WaitingSection) => string> = {
@@ -797,11 +813,16 @@ export function WaitingList(p: {
 }
 
 /**
- * Home: one page (the product owner, 2026-10-24). What needs you first (setup, the step to run
- * next, Waiting on you, Needs a person), then the estate (what is read and trusted) and the
- * changes in flight with the stage each is at, then the numbers, the gates, the map and the
- * findings. The Overview is merged in: its panels share Home's loads of /api/changes and
- * /api/questions, and add /api/onboarding and /api/trust.
+ * Home: one screen (beta.26, the product owner: "make it concise, like a dashboard or control
+ * screen"; the whole of it in the view at 1440 by 900, and in the IDE shell's Home tab). A line
+ * of status; six tiles, each a number with one place to go (what waits on you, the questions to
+ * answer, the changes in flight by stage, corrections to apply on the map, blocking findings with
+ * the open findings by source, the facts in the catalog with interfaces and repos trusted); then
+ * three short panels with their top few and See all: Next for you (Run next, what to propose,
+ * your role's questions, Bring in what merged), what needs a person (the whole list one click
+ * away, with its filter and bulk actions, and the digest in its menu), and your changes with the
+ * current one's gate pipeline and the map's link. The slash commands and setting up are folds at
+ * the foot. /api/setup and /api/propose are asked for once each, and no graph or diagram.
  */
 export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
@@ -815,7 +836,11 @@ export function CommandCenter() {
   const onboarding = useApi<OnboardingData>("/api/onboarding");
   const trust = useApi<Api.TrustViewT>("/api/trust");
   const knowledge = useApi<Api.KnowledgeItemListT>("/api/knowledge/items");
+  // beta.26: one load each for a tile and the panel it sums up.
+  const setup = useApi<Setup>("/api/setup");
+  const plan = useApi<Plan>("/api/propose?scope=work");
   const [text, setText] = useState("");
+  const [whole, setWhole] = useState(false);
   const [bulkNote, setBulkNote] = useState<string | undefined>();
   const { me } = useMe();
   // ADR 0191: the person's roles on each change in flight (its owners, else their pick).
@@ -847,40 +872,13 @@ export function CommandCenter() {
         }
       : {}),
   });
-  // beta.23: the map is the heaviest panel; it is asked for once what needs you has come, so it
-  // never holds up the panels above it (a browser asks a server only a few things at a time).
-  const firstDone = changes.state !== "loading" && findings.state !== "loading";
-  const graph = useApi<Graph>(firstDone ? "/api/graph" : undefined);
-  // The map is the estate's context view; with one system, that system's components and links.
-  const systems =
-    graph.state === "ready"
-      ? [
-          ...new Set(
-            graph.data.nodes.map((n) => n.system ?? (n.kind === "System" ? n.id : undefined)),
-          ),
-        ]
-          .filter((x): x is string => !!x)
-          .sort()
-      : [];
-  const map = useApi<{ view: FlowViewData }>(
-    graph.state !== "ready" || graph.data.nodes.length === 0
-      ? undefined
-      : systems.length === 1
-        ? `/api/diagram/container/graph?focus=${encodeURIComponent(systems[0]!)}`
-        : "/api/diagram/context/graph",
-  );
-  // beta.23: a burst of file events is read once, and the catalog's panels (the counts, the
-  // graph, the map) only when the burst can change the catalog.
-  // Beta.23 review: a step's job that ended is heard too (a Sync clones into workspace/, which
-  // isn't watched), and Home reads what it shows again as for files.
+  // beta.23: a burst of file events is read once, and the catalog's counts only when the burst
+  // can change the catalog. Beta.23 review: a step's job that ended is heard too (a Sync clones
+  // into workspace/, which isn't watched), and Home reads what it shows again as for files.
   useFileChanges(
     (events) => {
       const files = events.some((e) => e.type === "file.changed" || e.type === "job.done");
-      if (catalogMayHaveChanged(events)) {
-        kinds.reload();
-        graph.reload();
-        map.reload();
-      }
+      if (catalogMayHaveChanged(events)) kinds.reload();
       if (files || events.some((e) => e.type === "index.rebuilt")) {
         changes.reload();
         findings.reload();
@@ -918,352 +916,291 @@ export function CommandCenter() {
     qs.state === "ready" ? questions : undefined,
   );
   const facts = kinds.state === "ready" ? kinds.data.reduce((a, k) => a + k.count, 0) : 0;
-  const interfaces =
-    kinds.state === "ready" ? (kinds.data.find((k) => k.kind === "Interface")?.count ?? 0) : 0;
-  const focus = inFlight[0];
+  const countOf = (kind: string) =>
+    kinds.state === "ready" ? (kinds.data.find((k) => k.kind === kind)?.count ?? 0) : 0;
+  // Findings by lens and by where they come from, folded into the Blocking findings tile.
   const byLens = new Map<string, number>();
   for (const f of open) byLens.set(f.lens ?? "checks", (byLens.get(f.lens ?? "checks") ?? 0) + 1);
-  const lensMax = Math.max(1, ...byLens.values());
+  const topLens = [...byLens.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const ai = open.filter((f) => f.layer === "ai").length;
+  const role = viewerRoles.map((r) => COPY.roles.who[r] ?? r).join(", ");
+  const waiting = inbox.filter((x) => x.kind !== "phase").length;
+  const listState: "loading" | "error" | "ready" =
+    changes.state === "loading" || findings.state === "loading"
+      ? "loading"
+      : changes.state === "error" || findings.state === "error"
+        ? "error"
+        : "ready";
+  const listError =
+    changes.state === "error" ? changes.error : findings.state === "error" ? findings.error : "";
+  const partial = [
+    ...(needs.state === "ready"
+      ? needs.data.filter((r) => r.error).map((r) => T.needsOfFailed(r.change, r.error!))
+      : needs.state === "error"
+        ? [T.needsFailed(needs.error)]
+        : []),
+    ...(todo.state === "error" ? [T.stepsFailed(todo.error)] : []),
+    ...(qs.state === "error" ? [T.questionsFailed(qs.error)] : []),
+    ...(triage.state === "error" ? [T.triageFailed(triage.error)] : []),
+  ];
+  const problems =
+    (onboarding.state === "ready" ? onboarding.data.problems.length : 0) +
+    (trust.state === "ready" ? trust.data.problems.length : 0);
+  const blocks = blocking.length + gaps.length;
+  const wait = waitingTiles({
+    questions: waitingQs.n,
+    questionsHref: waitingQs.href,
+    needs: needs.state === "ready" ? allNeeds.filter((n) => n.status === "open").length : undefined,
+    steps: todo.state === "ready" ? todo.data.steps.length : undefined,
+    blocking: findings.state === "ready" ? blocking.length : undefined,
+    status: {
+      questions: tileStatus(asked, qs),
+      needs: tileStatus(needs),
+      steps: tileStatus(todo),
+      blocking: tileStatus(findings),
+    },
+    blockingSub: open.length ? H.findingsSub(open.length - ai, ai, topLens) : undefined,
+  });
 
   return (
-    <>
-      <div className="row between" style={{ flexWrap: "wrap" }}>
-        <p className="n" style={{ margin: 0, fontSize: 24, letterSpacing: "0.02em" }}>
-          {changes.state === "error" || findings.state === "error"
+    <div className="hm">
+      <header className="hm-head">
+        <p className={`hm-status${blocks > 0 && listState === "ready" ? " bad" : ""}`}>
+          {listState === "error"
             ? COPY.app.ccCantRead
-            : changes.state !== "ready" || findings.state !== "ready"
+            : listState === "loading"
               ? COPY.app.ccReading
-              : blocking.length + gaps.length > 0
-                ? T.thingsNeedAttention(blocking.length + gaps.length)
+              : blocks > 0
+                ? T.thingsNeedAttention(blocks)
                 : T.nothingIsBlockedRight}
         </p>
-        <span className="hud">
-          {me ? T.liveFromYourMetarepo(me.user) : T.liveFromYourMetarepo2}
-        </span>
-      </div>
-      {/* ADR 0191: for a product owner or business analyst, set-up is folded away. */}
-      {/* One fold for all of it (it was three, one of them empty with no upgrade waiting). */}
-      {/* Beta.23 review: what the person's own install needs is never folded away. */}
+        <p className="hm-who">
+          {H.live}
+          {me ? ` · ${H.you(me.user, role || undefined)}` : ""}
+        </p>
+      </header>
+      {/* ADR 0191: for a product owner or business analyst, set-up is folded away (at the foot);
+          what the person's own install needs is never folded away (beta.23 review). */}
       {fold ? (
-        <>
-          <OwnInstall />
-          <AdminFold fold>
-            <HowStepsRun />
-            <SetupChecklist />
-            <UpgradeOffer part="pending" />
-            <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
-          </AdminFold>
-        </>
+        <OwnInstall setup={setup} />
       ) : (
         <>
-          <HowStepsRun />
-          <SetupChecklist />
+          <SetupChecklist setup={setup} />
+          {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
+          <UpgradeOffer />
         </>
       )}
-      {/* ADR 0191: the changes the person is on, and whom each waits on, first. */}
-      {changes.state === "ready" && viewerRoles.length > 0 && (
-        <YourChanges
-          changes={changes.data.filter((c) => ACTIVE.has(c.state))}
-          yours={Object.entries(rolesBy)
-            .filter(([, r]) => r.length)
-            .map(([c]) => c)}
-          role={viewerRoles.map((r) => COPY.roles.who[r] ?? r).join(", ")}
-          me={me?.user}
-        />
-      )}
-      <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
-      {/* Ninth UX walk: the upgrade the metarepo waits on, run here on the person's click. */}
-      {!fold && <UpgradeOffer />}
       <HomeDecidePaused />
-      {/* ADR 0181 part 4: each role answers its own questions on a change. */}
-      {changes.state === "ready" && (
-        <YourRoleQuestions changes={changes.data} onRoles={setRolesBy} />
-      )}
-      {notMine > 0 && levels && !levels.includes("design") && (
-        <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          {COPY.roleWork.home.designWaits(notMine)}
+      {problems > 0 && (
+        <p className="state error" role="alert" style={{ margin: 0, textAlign: "left" }}>
+          {H.problems} <a href="#/trust">{COPY.work.openTrust}</a>
         </p>
       )}
-      <div className="bento">
-        <Panel title={T.waitingOnYou} span="1 / -1">
-          <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
-            {T.waitingIntro}
-          </p>
-          <WaitingSections
-            questions={waitingQs.n}
-            questionsHref={waitingQs.href}
-            needs={
-              needs.state === "ready"
-                ? allNeeds.filter((n) => n.status === "open").length
-                : undefined
-            }
-            steps={todo.state === "ready" ? todo.data.steps.length : undefined}
-            blocking={findings.state === "ready" ? blocking.length : undefined}
-          />
-          {/* Round 36 (Windows review): where a person comes back after their PR merged. */}
-          <PendingProposals />
-          <BringIn />
-        </Panel>
-        <Panel
-          title={T.needsAPerson}
-          span="1 / -1"
-          meta={inbox.filter((x) => x.kind !== "phase").length || undefined}
-        >
-          <WaitingList
-            onBulk={async (items, action, note) => {
-              const failed: string[] = [];
-              const calls = bulkCalls(items, action, note);
-              for (const c of calls)
-                await api(c.path, { method: "POST", body: c.body }).catch((e: unknown) => {
-                  failed.push(e instanceof Error ? e.message : String(e));
-                });
-              setBulkNote(T.bulkDone(calls.length - failed.length, failed.length, failed));
-              needs.reload();
-              todo.reload();
-            }}
-            items={inbox}
-            changes={changes.state === "ready" ? changes.data : []}
-            text={text}
-            onText={setText}
-            partial={[
-              ...(needs.state === "ready"
-                ? needs.data.filter((r) => r.error).map((r) => T.needsOfFailed(r.change, r.error!))
-                : needs.state === "error"
-                  ? [T.needsFailed(needs.error)]
-                  : []),
-              ...(todo.state === "error" ? [T.stepsFailed(todo.error)] : []),
-              ...(qs.state === "error" ? [T.questionsFailed(qs.error)] : []),
-              ...(triage.state === "error" ? [T.triageFailed(triage.error)] : []),
-            ]}
-            {...(changes.state === "error"
-              ? { error: changes.error }
-              : findings.state === "error"
-                ? { error: findings.error }
-                : {})}
-            state={
-              changes.state === "loading" || findings.state === "loading"
-                ? "loading"
-                : changes.state === "error" || findings.state === "error"
-                  ? "error"
-                  : "ready"
-            }
-          />
-          {bulkNote && (
-            <p role="status" className="muted" style={{ margin: "6px 0 0" }}>
-              {bulkNote}
-            </p>
-          )}
-          {me && <DigestButtons {...(me.notify?.to ? { to: me.notify.to } : {})} />}
-        </Panel>
-      </div>
-      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        {T.approvingIsThePull}
-      </p>
 
-      {!fold && <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />}
+      <TileGroup
+        id="hm-glance"
+        title={H.glance}
+        quiet
+        tiles={[
+          wait.wait,
+          wait.questions,
+          {
+            id: "in-flight",
+            label: H.inFlight,
+            href: "#/changes",
+            ...loadOf(changes),
+            value: inFlight.length,
+            sub: inFlight.length ? byStage(inFlight) : H.inFlightNone,
+            tone: inFlight.length ? "plain" : "quiet",
+          },
+          correctionsTile(plan),
+          wait.blocking,
+          {
+            id: "catalog",
+            label: H.catalog,
+            href: "#/trust",
+            ...loadOf(kinds),
+            value: facts,
+            sub: H.catalogSub(
+              countOf("Interface"),
+              trust.state === "ready" && trust.data.repos.length
+                ? H.trusted(
+                    trust.data.repos.filter((r) => r.state === "trusted").length,
+                    trust.data.repos.length,
+                  )
+                : undefined,
+            ),
+            tone: facts ? "plain" : "quiet",
+          },
+        ]}
+      />
 
-      <div className="bento" role="list" aria-label={T.keyNumbers}>
-        {[
-          // A count not loaded shows a dash, never a 0 that reads as "none". Eighth UX walk: the
-          // changes in flight are counted once, on their panel above.
-          {
-            label: T.blockingFindings,
-            value: findings.state === "ready" ? blocking.length : undefined,
-            color: blocking.length ? "var(--magenta)" : "var(--text)",
-          },
-          {
-            label: T.openOwnerQuestions,
-            value: qs.state === "ready" ? questions : undefined,
-            color: questions ? "var(--amber)" : "var(--text)",
-          },
-          {
-            label: T.factsInTheCatalog,
-            value: kinds.state === "ready" ? facts : undefined,
-            color: "var(--accent)",
-          },
-        ].map((k) => (
-          <div key={k.label} role="listitem" className="panel" style={{ gridColumn: "span 4" }}>
-            <div className="hud" style={{ fontSize: 10 }}>
-              {k.label}
+      <div className="hm-grid">
+        <div className="hm-col">
+          <HomePanel id="hm-next" title={H.next}>
+            <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
+            <div className="hm-rest">
+              <PendingProposals plan={plan} />
+              {/* ADR 0181 part 4: each role answers its own questions on a change. */}
+              {changes.state === "ready" && (
+                <YourRoleQuestions compact changes={changes.data} onRoles={setRolesBy} />
+              )}
+              {/* Round 36 (Windows review): where a person comes back after their PR merged. */}
+              <BringIn />
+              {!fold && <HowStepsRun />}
             </div>
-            <div className="n" style={{ fontSize: 30, color: k.color }}>
-              {k.value === undefined ? (
-                <>
-                  <span aria-hidden="true">–</span>
-                  <span className="sr">{COPY.app.notLoaded}</span>
-                </>
-              ) : (
-                k.value.toLocaleString()
+          </HomePanel>
+        </div>
+        <div className="hm-col">
+          <HomePanel id="hm-needs" title={T.needsAPerson} meta={waiting || undefined}>
+            {notMine > 0 && levels && !levels.includes("design") && (
+              <p className="hm-quiet-line">{COPY.roleWork.home.designWaits(notMine)}</p>
+            )}
+            <NeedsTop
+              items={inbox}
+              changes={changes.state === "ready" ? changes.data : []}
+              state={listState}
+              error={listError}
+              partial={partial}
+            />
+            <div className="hm-foot">
+              <a href={waitingQs.href ?? "#/questions"}>{H.seeAllQuestions}</a>
+              {listState === "ready" && waiting > 0 && (
+                <button
+                  type="button"
+                  className="btn"
+                  aria-expanded={whole}
+                  {...(whole ? { "aria-controls": "hm-whole" } : {})}
+                  onClick={() => setWhole((w) => !w)}
+                >
+                  {whole ? H.hideWholeList : H.wholeList(waiting)}
+                </button>
+              )}
+              {me && (
+                <details className="hm-menu">
+                  <summary>{H.digest}</summary>
+                  <DigestButtons {...(me.notify?.to ? { to: me.notify.to } : {})} />
+                </details>
               )}
             </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="bento">
-        <Panel title={focus ? T.gatePipeline(focus.id) : T.gatePipeline2} span="span 5">
-          <View of={changes} empty={() => !focus} emptyText={T.noChangeInFlight}>
-            {() => {
-              const at = PHASES.indexOf(focus!.state as (typeof PHASES)[number]);
-              return (
-                <div className="row between" style={{ gap: 6 }}>
-                  {PHASES.map((p, i) => (
-                    <div key={p} className="stack" style={{ alignItems: "center", gap: 6 }}>
-                      {i === at ? (
-                        <Ring
-                          value={i + 1}
-                          max={PHASES.length}
-                          size={48}
-                          label={T.currentPhase(PHASE_LABEL[p] ?? "")}
-                        />
-                      ) : (
-                        <span
-                          aria-label={`${PHASE_LABEL[p]}: ${i < at ? T.done2 : T.toCome}`}
-                          role="img"
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: "50%",
-                            border: `1.5px solid ${i < at ? "var(--btn-text)" : "var(--step-off)"}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: i < at ? "var(--btn-text)" : "var(--muted)",
-                          }}
-                        >
-                          {i < at ? "✓" : ""}
-                        </span>
-                      )}
-                      <span
-                        className="hud"
-                        style={{ fontSize: 10, color: i === at ? "var(--accent)" : undefined }}
-                      >
-                        {PHASE_LABEL[p]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            }}
-          </View>
-        </Panel>
-
-        <Panel title={T.catalog} span="span 4">
-          <View of={kinds} empty={(k) => k.length === 0} emptyText={T.noFactsYet}>
-            {(k) => {
-              const top = [...k].sort((a, b) => b.count - a.count).slice(0, 5);
-              const max = Math.max(1, ...top.map((x) => x.count));
-              return (
-                <div className="stack">
-                  {top.map((x) => (
-                    <div key={x.kind} className="row" style={{ gap: 8 }}>
-                      <span className="hud" style={{ width: 110, fontSize: 10 }}>
-                        {x.kind}
-                      </span>
-                      <div style={{ flex: 1 }}>
-                        <Bar value={x.count} max={max} label={T.records(x.kind)} />
-                      </div>
-                      <span className="n" style={{ fontSize: 14 }}>
-                        {x.count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            }}
-          </View>
-        </Panel>
-
-        <Panel title={T.interfaces} kind="dark" span="span 3">
-          <View of={kinds}>
-            {() => (
-              <div className="stack">
-                <span className="big">{interfaces}</span>
-                <span className="hud" style={{ fontSize: 10 }}>
-                  {T.interfacesInTheCatalog}
-                </span>
-              </div>
+            {bulkNote && (
+              <p role="status" className="hm-quiet-line">
+                {bulkNote}
+              </p>
             )}
-          </View>
-        </Panel>
-
-        <Panel
-          title={T.systemMap}
-          kind="hero"
-          span="1 / -1"
-          meta={<a href="#/explore">{T.explore}</a>}
-        >
-          <View
-            of={graph}
-            empty={(g) => g.nodes.length === 0}
-            emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
+          </HomePanel>
+        </div>
+        <div className="hm-col">
+          {/* ADR 0191: the changes the person is on, and whom each waits on; the current one's
+              gate pipeline first. */}
+          <HomePanel
+            id="hm-changes"
+            title={viewerRoles.length ? H.changes : H.inFlight}
+            meta={role || undefined}
           >
-            {() => (
-              <View
-                of={map}
-                empty={(m) => m.view.nodes.length === 0}
-                emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
-              >
-                {(m) => <FlowCanvas view={m.view} height={420} />}
-              </View>
-            )}
-          </View>
-        </Panel>
-
-        <Panel title={T.findingsByLens} span="span 4">
-          <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindings}>
-            {() => (
-              <div className="stack">
-                {[...byLens.entries()]
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([lens, n]) => (
-                    <div key={lens} className="row" style={{ gap: 8 }}>
-                      <span className="hud" style={{ width: 96, fontSize: 10 }}>
-                        {lens}
-                      </span>
-                      <div style={{ flex: 1 }}>
-                        <Bar value={n} max={lensMax} label={T.findings(lens)} />
-                      </div>
-                      <span className="n" style={{ fontSize: 14 }}>
-                        {n}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </View>
-        </Panel>
-
-        <Panel title={T.whereFindingsComeFrom} kind="dark" span="span 4">
-          <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindings}>
-            {(f) => (
-              <Donut
-                title={T.openFindingsBySource}
-                parts={[
-                  {
-                    label: T.checksFromCode,
-                    value: f.filter((x) => x.layer !== "ai").length,
-                    color: "var(--accent)",
-                  },
-                  {
-                    label: T.aiLenses,
-                    value: f.filter((x) => x.layer === "ai").length,
-                    color: "var(--magenta)",
-                  },
-                ]}
-              />
-            )}
-          </View>
-        </Panel>
+            <HomeChanges
+              changes={changes}
+              inFlight={inFlight}
+              yours={
+                viewerRoles.length
+                  ? Object.entries(rolesBy)
+                      .filter(([, r]) => r.length)
+                      .map(([c]) => c)
+                  : undefined
+              }
+              me={me?.user}
+            />
+          </HomePanel>
+        </div>
       </div>
-      <div className="bento">
-        <Panel title={COPY.work.slashTitle} span="1 / -1">
-          <SlashCommands />
-        </Panel>
+
+      {whole && (
+        <div id="hm-whole" className="bento">
+          <Panel title={H.wholeListTitle} span="1 / -1">
+            <WaitingList
+              onBulk={async (items, action, note) => {
+                const failed: string[] = [];
+                const calls = bulkCalls(items, action, note);
+                for (const c of calls)
+                  await api(c.path, { method: "POST", body: c.body }).catch((e: unknown) => {
+                    failed.push(e instanceof Error ? e.message : String(e));
+                  });
+                setBulkNote(T.bulkDone(calls.length - failed.length, failed.length, failed));
+                needs.reload();
+                todo.reload();
+              }}
+              items={inbox}
+              changes={changes.state === "ready" ? changes.data : []}
+              text={text}
+              onText={setText}
+              partial={partial}
+              {...(listError ? { error: listError } : {})}
+              state={listState}
+            />
+          </Panel>
+        </div>
+      )}
+
+      <div className="hm-folds">
+        <div className="hm-fold-row">
+          {fold && (
+            <AdminFold fold>
+              <HowStepsRun />
+              <SetupChecklist setup={setup} />
+              <UpgradeOffer part="pending" />
+              <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
+            </AdminFold>
+          )}
+          {/* beta.26: the slash commands' reference, one click away instead of a screen long. */}
+          <details className="hm-fold">
+            <summary>{H.assistant}</summary>
+            <SlashCommands />
+          </details>
+        </div>
+        <p className="hm-note">
+          {T.approvingIsThePull} {T.aPersonApprovesEvery}
+        </p>
       </div>
-      <p className="hud" style={{ textAlign: "center", fontSize: 10, color: "var(--faint)" }}>
-        {T.aPersonApprovesEvery}
-      </p>
-    </>
+    </div>
   );
+}
+
+/** A tile's state from its loads: loading while any is, the first error, else ready. */
+function tileStatus(
+  ...of: Loaded<unknown>[]
+): { state: "loading" } | { state: "error"; error: string } | undefined {
+  const err = of.find((l) => l.state === "error");
+  if (err?.state === "error") return { state: "error", error: err.error };
+  return of.some((l) => l.state === "loading") ? { state: "loading" } : undefined;
+}
+
+/** A tile's state and error from one load. */
+function loadOf(l: Loaded<unknown>): Pick<Tile, "state" | "error"> {
+  return l.state === "error" ? { state: "error", error: l.error } : { state: l.state };
+}
+
+/** The changes in flight by stage, in the stages' order: "2 feature · 1 tasks". */
+export function byStage(changes: readonly { state: string }[]): string {
+  const order = ["feature", "architecture", "stories", "tasks", "release", "done"] as const;
+  const n = new Map<string, number>();
+  for (const c of changes) n.set(stageOf(c.state), (n.get(stageOf(c.state)) ?? 0) + 1);
+  return order
+    .filter((s) => n.has(s))
+    .map((s) => H.inStage(n.get(s)!, COPY.work.stage[s]))
+    .join(" · ");
+}
+
+/** Corrections saved and not applied yet, by repo (the map's bar has Apply), and files to propose. */
+export function correctionsTile(plan: Loaded<Plan>): Tile {
+  const repos = plan.state === "ready" ? applyFirstRepos(plan.data).length : 0;
+  const files = plan.state === "ready" ? waitingFiles(plan.data) : 0;
+  return {
+    id: "corrections",
+    label: H.corrections,
+    href: "#/canvas",
+    ...loadOf(plan),
+    value: repos,
+    sub: H.toPropose(files),
+    tone: repos ? "warn" : "quiet",
+  };
 }

@@ -204,6 +204,8 @@ function ChangeRoleQuestions(p: {
   onNamed?: (change: string, named: boolean) => void;
   /** ADR 0191: tells Home the person's roles on this change (the owners', else the pick). */
   onRoles?: (change: string, roles: Role[]) => void;
+  /** beta.26: one row, and only when the person's roles have a question open on it. */
+  compact?: boolean;
 }) {
   const q = useApi<Api.QuestionListT>(
     `/api/questions?state=open&change=${encodeURIComponent(p.change)}`,
@@ -221,13 +223,42 @@ function ChangeRoleQuestions(p: {
   }, [roles, change, onRoles]);
   if (q.state === "loading") return null;
   if (q.state === "error")
-    return (
+    return p.compact ? (
+      <li>
+        <span className="hm-quiet-line">{R.cantRead(p.change)}</span>
+      </li>
+    ) : (
       <span className="muted" style={{ fontSize: 12 }}>
         {R.cantRead(p.change)}
       </span>
     );
   const who = yourRole(q.data.yourRoles, p.picked);
   if (who.from === "none") return null;
+  if (p.compact) {
+    const open = who.roles.filter((r) => (q.data.counts?.byRole?.[r]?.open ?? 0) > 0);
+    if (!open.length) return null;
+    return (
+      <>
+        {open.map((r) => (
+          <li key={r}>
+            <span className="hm-row-main">
+              <span className="hm-row-title">
+                {R.line(p.change, R.who[r] ?? r, q.data.counts?.byRole?.[r]?.open ?? 0)}
+              </span>
+              <span className="hm-row-sub">
+                {who.from === "owners" ? R.fromOwners : R.fromPicker}
+              </span>
+            </span>
+            <span className="hm-row-end">
+              <a className="btn" href={roleQuestionsHref(p.change, r)}>
+                {R.open}
+              </a>
+            </span>
+          </li>
+        ))}
+      </>
+    );
+  }
   return (
     <RoleQuestionsLine
       change={p.change}
@@ -257,6 +288,11 @@ export function YourRoleQuestions(p: {
   changes: readonly { id: string; state: string; yourRoles?: readonly string[] | undefined }[];
   /** ADR 0191: the person's roles on each change in flight, for Home to show by role. */
   onRoles?: (byChange: Readonly<Record<string, Role[]>>) => void;
+  /**
+   * beta.26: Home's Next for you: a row per change whose questions wait on the person's role
+   * (none when nothing waits), and the picker; no heading of its own.
+   */
+  compact?: boolean;
 }) {
   const [picked, setPicked] = useState<Role | undefined>(() => readViewerRole());
   // Ninth UX walk: which changes name the person, so the picker shows only where it is used.
@@ -288,6 +324,34 @@ export function YourRoleQuestions(p: {
   const live = inFlight.slice(0, SHOWN);
   if (!live.length) return null;
   const picker = pickerFor(live.map((c) => (c.yourRoles ? c.yourRoles.some(isRole) : named[c.id])));
+  const pick = picker.show && (
+    <RolePicker
+      value={picked}
+      hint={picker.hint}
+      onChange={(r) => {
+        setPicked(r);
+        saveViewerRole(r);
+      }}
+    />
+  );
+  if (p.compact)
+    return (
+      <>
+        <ul className="hm-list" aria-label={R.homeTitle}>
+          {live.map((c) => (
+            <ChangeRoleQuestions
+              key={c.id}
+              change={c.id}
+              picked={picked}
+              onNamed={onNamed}
+              onRoles={onChangeRoles}
+              compact
+            />
+          ))}
+        </ul>
+        {pick}
+      </>
+    );
   return (
     <section className="panel stack" aria-labelledby="your-role-questions" style={{ gap: 8 }}>
       <p id="your-role-questions" className="hud" style={{ margin: 0 }}>
@@ -305,16 +369,7 @@ export function YourRoleQuestions(p: {
           onRoles={onChangeRoles}
         />
       ))}
-      {picker.show && (
-        <RolePicker
-          value={picked}
-          hint={picker.hint}
-          onChange={(r) => {
-            setPicked(r);
-            saveViewerRole(r);
-          }}
-        />
-      )}
+      {pick}
     </section>
   );
 }

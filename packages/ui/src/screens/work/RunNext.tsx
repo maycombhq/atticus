@@ -152,6 +152,67 @@ export function RunNextPanel({ step }: { step: Step }) {
   );
 }
 
+/**
+ * beta.26: Run next as Home's first row: the step's words and its button, and everything else
+ * (the command, the slash command, what comes after) folded under "Or in a terminal". The same
+ * step and the same actions as RunNextPanel, in a fraction of its height.
+ */
+export function RunNextRow({ step }: { step: Step }) {
+  const action = hasAction(step);
+  const inApp = action || !!step.link;
+  return (
+    <div className="hm-step">
+      <p className="hm-step-why">{step.why}</p>
+      {step.aside && (
+        <p className="hm-step-aside">
+          {step.aside.text} <a href={step.aside.link.href}>{step.aside.link.label}</a>
+        </p>
+      )}
+      {inApp ? (
+        <div className="hm-step-act">
+          {action && <StepAction {...step} />}
+          {step.link && (
+            <a className={action ? "btn" : "btn primary"} href={step.link.href}>
+              {step.link.label}
+            </a>
+          )}
+        </div>
+      ) : (
+        <Command text={step.command} label={R.copy} />
+      )}
+      <details className="work-terminal">
+        <summary>{R.orTerminal}</summary>
+        {inApp && (
+          <>
+            <p className="work-say">{R.terminal}</p>
+            <Command text={step.command} label={R.copy} noRun />
+          </>
+        )}
+        {step.slash ? (
+          <SlashLine slash={step.slash} />
+        ) : (
+          !inApp && <p className="work-say">{R.noSlash}</p>
+        )}
+        <p className="work-say">{R.whatNext}</p>
+        {step.after && step.after.length > 0 && (
+          <>
+            <p className="work-say">{R.after}</p>
+            <ol>
+              {step.after.map((a) => (
+                <li key={a.command}>
+                  <p className="work-say">{a.why}</p>
+                  <Command text={a.command} label={R.copy} />
+                  {a.slash && <SlashLine slash={a.slash} />}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+      </details>
+    </div>
+  );
+}
+
 /** Run next while its data loads, fails or is ready: never a blank where the command goes. */
 export function RunNext<T>({ of, step }: { of: Loaded<T>; step: (d: T) => Step }) {
   return <View of={of}>{(d) => <RunNextPanel step={step(d)} />}</View>;
