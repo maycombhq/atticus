@@ -1,0 +1,29 @@
+# 0194. The app is laid out as an IDE: activity bar, side panel, tabs, bottom panel, status bar
+
+- Status: accepted (pending review by the product owner)
+- Date: 2026-11-10
+- Release: 2.0.0-beta.26
+- Builds on: ADR 0073 (one app for everyone), ADR 0097 (the app in a VS Code panel), ADR 0119 and the ADR 0124 D-app addendum (the six sections, their tabs, More pages), ADR 0187 (the Console), ADR 0188 (a tab for every daily page)
+- Contracts: none. The app's layout is not one of C1 to C6: no schema, API or org-pack change, and no route is added, removed or renamed. The shell shows counts from answers pages already loaded and asks the local API for nothing of its own, so Home's first load sends the same requests (`packages/cli/test/home-speed.test.ts`).
+
+## Context
+
+The app grew to 57 pages under six sections, More pages and Ctrl+K. People work across several of them at once (a change's stories, the map, the open questions) and lost their place each time they moved: one page at a time, the menu on the left, and the Console fixed over the foot of the page. They asked for the layout of the editor they spend the day in: the product owner approved the "IDE" mock-up (option 1).
+
+## Decision
+
+1. **The layout** (`packages/ui/src/app/shell/`): a title bar (the logo, the metarepo, a box in the middle that opens Ctrl+K to search, go to a page, ask or run a command, then the AI chip, the theme, Help, the words and who you are); below it the **activity bar** (48 px: Home, Map, Change, Questions with its count of open questions, Knowledge, Set up, More pages, and Settings at the foot), the **side panel** (the Explorer: changes in flight, systems, questions, pinned pages; 180 to 480 px, resizable by drag or the arrow keys, hidden or shown, kept per browser) and the page's column (the **tab strip**, the page in the one `<main id="main">`, and the **bottom panel**: the Console with Questions, Problems and Runs); a **status bar** at the foot (the metarepo, repos, open questions, what runs, the local API's version, you and your role, the version). A section's own tabs and where you are stay above its page, as before.
+2. **Tabs follow the address.** The hash (`#/…`) stays the page shown, so deep links, bookmarks, Back and Forward work as they did; opening a page from anywhere (the activity bar, the Explorer, Ctrl+K, a link, the address) opens its tab or focuses the one open. A page has one tab, which remembers its last address; a change's pages share the change's tab (its stages move within it). Home is always the first tab and has no close; at most 12 are open, the least recently used closing first. The tabs and the one shown are kept per browser (localStorage, ignored where storage refuses) and come back on a reload. The strip is a tablist: arrows, Home and End move, Enter or Space shows, Delete closes, Ctrl+Shift+Left or Right moves a tab; picking a tab keeps the focus on it, any other way to a page moves it to the page as before.
+3. **Only the tab shown is mounted.** A page left mounted behind another would keep polling and listening, and two pages' element ids would clash (a label pointing at the hidden page's field). What a tab keeps instead, for this page load and in memory only: the text typed into its fields (text boxes, text areas, pickers; never a password), the disclosures it had open (a button with `aria-expanded` and `aria-controls`, such as the map's tools or an editor's Edit), how far it was scrolled, and its address (its filters and picks in the query). Going back puts them back as the page comes in, as typing would.
+4. **In an editor's panel** (VS Code, ADR 0097) the title bar, activity bar and status bar are left out: VS Code has its own, and two activity bars would be one too many. The tab strip carries Ctrl+K, More pages, the AI chip, Help and the words; the side panel and Ctrl+K reach every page.
+5. **Narrow windows.** Under 1000 px the side panel lies over the page when opened (it takes the focus; Escape closes it and gives the focus back); under 600 px the activity bar is a bar at the foot and the title bar wraps. Nothing scrolls sideways.
+6. **The classic layout stays, for this release.** Settings › Layout (per browser) and Ctrl+K's "Switch to the classic layout" bring back the menu on the left, one page at a time, exactly as before; "Switch to the IDE layout" returns. The IDE layout is the default. Both are tested to reach and render every page (`packages/ui/test/shell-pages.test.tsx`).
+7. **Accessibility** (WCAG 2.1 AA, both themes): a skip link; one `main`; the activity bar is the `Main` navigation, each icon named for a screen reader with a tooltip on hover and focus (generated content of a hidden element, so never part of the name), `aria-current` on the section shown; the side panel is the `Explorer` region; the status bar the `Status` region; the tab strip a tablist whose tab panel is labelled by its tab; visible focus; no motion under `prefers-reduced-motion`.
+
+## Consequences
+
+- Every page has an entry point in both layouts: a section's first page from the activity bar (or menu), the other daily pages from their section's tabs, every other page from More pages, and each page by name from Ctrl+K; pages reached by a link from another (a change's picture, a system's page, the words) are in Ctrl+K too. No page was without one.
+- The journeys run in the IDE layout; the classic menu's own journey (24) runs in the classic layout. Typing a question into the Ask box becomes the title bar's box and Ctrl+K's Ask line (the box shows the catalog's own example).
+- A page's state other than what point 3 keeps (an open popover, a half-made selection on the canvas) is gone when its tab is left, as it was when moving between pages before.
+- The status bar shows no Git branch: the app has no request for it, and the shell adds none.
+- The classic layout is removed in a later release, with its own note in the changelog.

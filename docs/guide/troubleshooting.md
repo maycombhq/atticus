@@ -51,7 +51,7 @@ Start with `atticus doctor` in the metarepo: most problems are on the machine, a
 
 ## Where to see what Atticus is doing
 
-Open the **Console** at the foot of the app (**Open the Console**; it is there on every page, in a browser and in the VS Code and IntelliJ panels). It lists everything Atticus is doing or did lately on this metarepo, newest first, wherever it was started:
+Open the **Console** at the foot of the app (in the bottom panel, under the page; in the classic layout **Open the Console**; it is there on every page, in a browser and in the VS Code and IntelliJ panels). It lists everything Atticus is doing or did lately on this metarepo, newest first, wherever it was started:
 
 - what you started in the app: a scan, a sync, Apply, Propose, Bring in, an AI step, the critic, a wiki's sync, a team's tool, a run's Done, a Copilot run (with its tab per session);
 - the long commands run in a terminal, by VS Code or IntelliJ, or by a Copilot session: `atticus map` (and `map --all`), `verify`, `scan`, `workspace sync`, `task run`, `task run-ready`, `knowledge scan`, `upgrade`, `handoff done`, `index rebuild`, `reconcile`;
