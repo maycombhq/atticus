@@ -52,15 +52,23 @@ export interface PomCoordinates {
   properties: Map<string, At>;
 }
 
-const POM = /(^|\/)pom\.xml$|\.pom$/i;
+/**
+ * A pom: `pom.xml`, `*.pom`, and (beta.25) a parent pom named for what it is (`shared-pom.xml`,
+ * `parent-pom.xml`, `parent.pom.xml`), the name a `<relativePath>` gives one beside its modules.
+ */
+const POM = /(^|\/)([^/]*[-_.])?pom\.xml$|\.pom$/i;
 const GRADLE_BUILD = /(^|\/)build\.gradle(\.kts)?$/i;
 const GRADLE_SETTINGS = /(^|\/)settings\.gradle(\.kts)?$/i;
+/** Beta.25: a Gradle version catalog, `gradle/libs.versions.toml` (or another in `gradle/`). */
+const VERSION_CATALOG = /(^|\/)gradle\/([\w-]+)\.versions\.toml$/i;
 const slash = (p: string) => p.replace(/\\/g, "/");
 
 export const isPomFile = (p: string) => POM.test(slash(p));
 export const isGradleBuildFile = (p: string) => GRADLE_BUILD.test(slash(p));
 export const isGradleSettingsFile = (p: string) => GRADLE_SETTINGS.test(slash(p));
-export const isGradleFile = (p: string) => isGradleBuildFile(p) || isGradleSettingsFile(p);
+export const isVersionCatalogFile = (p: string) => VERSION_CATALOG.test(slash(p));
+export const isGradleFile = (p: string) =>
+  isGradleBuildFile(p) || isGradleSettingsFile(p) || isVersionCatalogFile(p);
 export const isBuildFile = (p: string) => isPomFile(p) || isGradleFile(p);
 
 /** A coordinate as the facts schema takes it: resolved, no URL, no interpolation. */
@@ -237,8 +245,11 @@ const PROPERTY = /^\$\{([^}]+)\}$/;
  * A pom value with a `${property}` resolved (ADR 0192: coordinates are written resolved, and the
  * line that writes the value is cited): the project's own coordinates (`project.groupId`), its
  * parent's (`project.parent.groupId`), or a `<properties>` entry of the pom, a property of a
- * property followed a few steps. `via` is the lines that write what it resolves through, when
- * they aren't the value's own; `missing` names a property this pom doesn't set.
+ * property followed a few steps. `via` is the `<properties>` lines it resolves through, which a
+ * fact must cite in `cite.with`; the project's and its `<parent>`'s own coordinates are elements
+ * the verifier reads itself, so their lines needn't be (a careful reader of
+ * `<groupId>${project.groupId}</groupId>` cites that line). `missing` names a property this pom
+ * doesn't set.
  */
 export function resolvePomValue(
   at: At,
@@ -260,12 +271,14 @@ export function resolvePomValue(
     "project.parent.artifactId": pom.parentArtifact,
     "parent.artifactId": pom.parentArtifact,
   };
-  const to = Object.hasOwn(own, key) ? own[key] : pom.properties.get(key);
+  const builtin = Object.hasOwn(own, key);
+  const to = builtin ? own[key] : pom.properties.get(key);
   // One that resolves to itself, or past a few steps, is left unresolved.
   if (!to || to === at || depth > 4) return { missing: key };
   const next = resolvePomValue(to, pom, depth + 1);
   if ("missing" in next) return next;
-  return { value: next.value, line: at.line, via: [to.line, ...(next.via ?? [])] };
+  const via = [...(builtin ? [] : [to.line]), ...(next.via ?? [])];
+  return { value: next.value, line: at.line, ...(via.length ? { via } : {}) };
 }
 
 // ------------------------------------------------------------------------------------- Gradle
@@ -322,7 +335,37 @@ const NOT_A_CONFIGURATION = new Set([
   "description",
 ]);
 
-/** Configurations of tests: `testImplementation`, `integrationTestImplementation`, `testFixturesApi`... */
+/**
+ * Beta.25: configurations a build tool's plugin adds for its own class path (a linter, a coverage
+ * agent, a compiler plugin): what they name runs the tool, never ships in the component.
+ */
+const TOOL_CONFIGURATIONS: ReadonlySet<string> = new Set([
+  "checkstyle",
+  "pmd",
+  "spotbugs",
+  "spotbugsPlugins",
+  "spotbugsSlf4j",
+  "jacocoAgent",
+  "jacocoAnt",
+  "detekt",
+  "detektPlugins",
+  "ktlint",
+  "ktlintRuleset",
+  "codenarc",
+  "errorprone",
+  "pitest",
+]);
+
+/** A tool's configuration a Gradle line starts with (`checkstyle "g:a:v"`), else undefined. */
+export function gradleToolConfigurationOn(line: string): string | undefined {
+  const c = /^\s*([A-Za-z]\w*)\s*[\s(]/.exec(line)?.[1];
+  return c && TOOL_CONFIGURATIONS.has(c) ? c : undefined;
+}
+
+/**
+ * Configurations of tests: `testImplementation`, a test suite's or source set's
+ * (`integrationTestImplementation`, `functionalTestRuntimeOnly`), `testFixturesApi`...
+ */
 const TEST_CONFIGURATION =
   /^(test|testFixtures|\w+Test)(Implementation|Api|CompileOnly|RuntimeOnly|Compile|Runtime|AnnotationProcessor|CompileClasspath|RuntimeClasspath)$/;
 
@@ -335,7 +378,9 @@ function scopeOfConfiguration(c: string, platform: boolean): GradleDependency["s
     )
   )
     return "provided";
-  if (/^(runtimeOnly|runtime)$/.test(c)) return "runtime";
+  // Spring Boot's developmentOnly (devtools) is on bootRun's class path only, as an Initializr
+  // pom's `<scope>runtime</scope><optional>true</optional>` is: never compiled against.
+  if (/^(runtimeOnly|runtime|developmentOnly|testAndDevelopmentOnly)$/.test(c)) return "runtime";
   return "compile";
 }
 
@@ -346,6 +391,7 @@ function scopeOfConfiguration(c: string, platform: boolean): GradleDependency["s
  * `url 'https://...'` or a `"$group:x"` declares none.
  */
 export function gradleDependencyOn(line: string): GradleDependency | undefined {
+  if (gradleToolConfigurationOn(line)) return undefined;
   const map = GRADLE_MAP_DEP.exec(line);
   if (map && !NOT_A_CONFIGURATION.has(map[1]!)) {
     if (!COORDINATE.test(map[3]!) || !COORDINATE.test(map[5]!)) return undefined;
@@ -463,6 +509,19 @@ export function gradleDependencyAt(
   { dependency: GradleDependency; project?: string; all?: boolean } | { none: string } | undefined {
   const d = gradleDependencyOn(lines[line - 1] ?? "");
   if (!d) return undefined;
+  const at = projectDependenciesAt(blocks, line);
+  return "none" in at ? at : { dependency: d, ...at };
+}
+
+/**
+ * Whether line `line` (1-based) sits directly in a project's `dependencies { }`, and which
+ * project's (a root build's `project(':x') { }`, or every project's under `subprojects` or
+ * `allprojects`), or the blocks it is in instead.
+ */
+function projectDependenciesAt(
+  blocks: readonly string[][],
+  line: number,
+): { project?: string; all?: boolean } | { none: string } {
   const stack = blocks[line - 1] ?? [];
   const outer = stack.slice(0, -1);
   if (stack[stack.length - 1] !== "dependencies" || !outer.every(PROJECT_BLOCK)) {
@@ -471,9 +530,118 @@ export function gradleDependencyAt(
   }
   const proj = outer.map(projectOf).find((x) => x !== undefined);
   return {
-    dependency: d,
     ...(proj !== undefined ? { project: proj } : {}),
     ...(outer.some((b) => b === "subprojects" || b === "allprojects") ? { all: true } : {}),
+  };
+}
+
+// ------------------------------------------------------------------------- version catalogs
+
+/** A `[libraries]` entry of a Gradle version catalog (beta.25). */
+export interface CatalogLibrary {
+  /** The alias as the catalog writes it (`forge-ledger-api`). */
+  alias: string;
+  /** What a build names it by after the catalog's name (`forge.ledger.api`). */
+  accessor: string;
+  group: string;
+  name: string;
+  /** A version written on the entry (`version = "1.2.0"`, or the string's third part). */
+  version?: string;
+  /** The `[versions]` entry its `version.ref` names. */
+  versionRef?: string;
+}
+
+/** A catalog's `[versions]`, each a plain string (`forge-ledger = "1.2.0"`) with its line. */
+export function catalogVersions(lines: readonly string[]): Map<string, At> {
+  const out = new Map<string, At>();
+  let section = "";
+  lines.forEach((raw, i) => {
+    const l = raw.replace(/\r$/, "");
+    const s = /^\s*\[\s*([^\]]+?)\s*\]\s*(#.*)?$/.exec(l);
+    if (s) return void (section = s[1]!);
+    if (section !== "versions") return;
+    const m = /^\s*(["']?)([A-Za-z][\w.-]*)\1\s*=\s*(["'])([^"']+)\3\s*(#.*)?$/.exec(l);
+    if (m) out.set(m[2]!, { value: m[4]!, line: i + 1 });
+  });
+  return out;
+}
+
+/** The catalog's name a build's accessor starts with: the file's (`libs.versions.toml` → `libs`). */
+export const catalogNameOf = (file: string): string | undefined =>
+  VERSION_CATALOG.exec(slash(file))?.[2];
+
+/** Gradle's accessor of an alias: `-`, `_` and `.` all separate its parts. */
+const accessorOf = (alias: string) => alias.replace(/[-_.]+/g, ".");
+
+/**
+ * The library a version catalog's line `line` (1-based) declares in `[libraries]`, or undefined:
+ * `alias = "g:a:v"`, `alias = { module = "g:a", version.ref = "x" }` or
+ * `alias = { group = "g", name = "a", version = "v" }`.
+ */
+export function catalogLibraryAt(lines: readonly string[], line: number): CatalogLibrary | undefined {
+  let section = "";
+  for (let i = 0; i < line && i < lines.length; i++) {
+    const m = /^\s*\[\s*([^\]]+?)\s*\]\s*(#.*)?$/.exec((lines[i] ?? "").replace(/\r$/, ""));
+    if (m) section = m[1]!;
+  }
+  if (section !== "libraries") return undefined;
+  const text = (lines[line - 1] ?? "").replace(/\r$/, "");
+  const m = /^\s*(["']?)([A-Za-z][\w.-]*)\1\s*=\s*(.+)$/.exec(text);
+  if (!m) return undefined;
+  const alias = m[2]!;
+  const body = m[3]!.replace(/\s+#.*$/, "").trim();
+  const str = (key: string) =>
+    new RegExp(`(?:^|[{,\\s])${key.replace(".", "\\.")}\\s*=\\s*(["'])([^"']+)\\1`).exec(body)?.[2];
+  let group: string | undefined;
+  let name: string | undefined;
+  let version: string | undefined;
+  const whole = /^(["'])([^"']+)\1$/.exec(body);
+  if (whole) [group, name, version] = whole[2]!.split(":");
+  else if (body.startsWith("{")) {
+    const module = str("module");
+    if (module) [group, name] = module.split(":");
+    else {
+      group = str("group");
+      name = str("name");
+    }
+    version = str("version");
+  }
+  const versionRef = body.startsWith("{") ? str("version.ref") : undefined;
+  if (!group || !name || !COORDINATE.test(group) || !COORDINATE.test(name)) return undefined;
+  return {
+    alias,
+    accessor: accessorOf(alias),
+    group,
+    name,
+    ...(version ? { version } : {}),
+    ...(versionRef ? { versionRef } : {}),
+  };
+}
+
+/** A Gradle line declaring a dependency by a catalog's alias: `implementation(libs.forge.ledger.api)`. */
+export interface GradleCatalogUse {
+  configuration: string;
+  /** The catalog's name (`libs`). */
+  catalog: string;
+  /** The accessor after it (`forge.ledger.api`). */
+  accessor: string;
+  scope: GradleDependency["scope"];
+}
+
+/** The catalog alias a Gradle build line declares a dependency by, or undefined. */
+export function gradleCatalogUseOn(line: string): GradleCatalogUse | undefined {
+  const m =
+    /^\s*([A-Za-z]\w*)\s*\(?\s*(?:(platform|enforcedPlatform)\s*\(\s*)?([A-Za-z]\w*)\.([A-Za-z][\w.]*?)\s*\)?\s*\)?\s*(?:\{.*)?(?:\/\/.*)?\r?$/.exec(
+      line,
+    );
+  if (!m || NOT_A_CONFIGURATION.has(m[1]!) || TOOL_CONFIGURATIONS.has(m[1]!)) return undefined;
+  // a bundle is several libraries, a plugin or a version no dependency
+  if (/^(bundles|plugins|versions)\./.test(m[4]!) || m[3] === "project") return undefined;
+  return {
+    configuration: m[1]!,
+    catalog: m[3]!,
+    accessor: m[4]!,
+    scope: scopeOfConfiguration(m[1]!, !!m[2]),
   };
 }
 
@@ -569,17 +737,30 @@ export interface BuildModule {
   from: "manifest" | "build";
 }
 
+/**
+ * The build line a coordinates fact rests on for its module: its own, or for a dependency cited on
+ * a version catalog's entry (beta.25), the first Gradle build line in `cite.with` (the alias's).
+ */
+function buildLineOf(f: Coordinates): { file: string; line: number } | undefined {
+  if (!isVersionCatalogFile(f.cite.file)) return f.cite;
+  return (f.cite.with ?? []).find((p) => isGradleBuildFile(p.file));
+}
+
 /** A Gradle subproject's path from the line it's cited on, in settings.gradle or a root build. */
-function gradleProjectOf(f: Coordinates, linesOf: LinesOf): string | undefined {
-  const lines = linesOf(f.cite.file);
+function gradleProjectOf(
+  f: Coordinates,
+  at: { file: string; line: number },
+  linesOf: LinesOf,
+): string | undefined {
+  const lines = linesOf(at.file);
   if (!lines) return undefined;
-  if (isGradleSettingsFile(f.cite.file)) {
-    const ps = gradleProjectsOn(lines[f.cite.line - 1] ?? "");
+  if (isGradleSettingsFile(at.file)) {
+    const ps = gradleProjectsOn(lines[at.line - 1] ?? "");
     return ps.find((p) => p.name === f.name)?.path ?? (ps.length === 1 ? ps[0]!.path : undefined);
   }
-  if (f.kind === "dependency" && isGradleBuildFile(f.cite.file)) {
-    const at = gradleDependencyAt(lines, f.cite.line);
-    return at && "dependency" in at ? at.project : undefined;
+  if (f.kind === "dependency" && isGradleBuildFile(at.file)) {
+    const d = projectDependenciesAt(gradleBlocks(lines), at.line);
+    return "project" in d ? d.project : undefined;
   }
   return undefined;
 }
@@ -596,11 +777,13 @@ export function buildModuleOf(
   linesOf: LinesOf,
   modules: readonly { path: string; component: string }[] = [],
 ): BuildModule | undefined {
+  const at = buildLineOf(f);
+  if (!at) return undefined;
   const settings = settingsOf(linesOf);
   const dirs = projectDirs(settings?.lines);
-  const project = gradleProjectOf(f, linesOf);
+  const project = gradleProjectOf(f, at, linesOf);
   const dir =
-    project !== undefined ? (dirs.get(project) ?? project.replace(/:/g, "/")) : dirOf(f.cite.file);
+    project !== undefined ? (dirs.get(project) ?? project.replace(/:/g, "/")) : dirOf(at.file);
   if (!dir) return undefined;
   const manifest = modules.find((m) => normDir(m.path) === dir);
   if (manifest)
@@ -785,8 +968,13 @@ function gradleProblem(
 ): string | undefined {
   const text = lines[f.cite.line - 1] ?? "";
   const file = f.cite.file;
+  if (f.kind === "dependency" && isVersionCatalogFile(file))
+    return catalogProblem(f, label, where, lines, linesOf);
   if (f.kind === "dependency") {
     const at = isGradleBuildFile(file) ? gradleDependencyAt(lines, f.cite.line) : undefined;
+    const tool = gradleToolConfigurationOn(text);
+    if (!at && tool)
+      return `${label} cites ${where}, the ${tool} tool's own configuration: what it names runs the tool, and is no dependency of the component`;
     if (!at)
       return `${label} says ${where} declares a dependency, and that line declares none: cite the line in dependencies { } that names it`;
     if ("none" in at)
@@ -863,6 +1051,55 @@ function gradleProblem(
   if (g.group !== f.group)
     return `${label} names group "${f.group}", and ${g.file}:${g.line} sets "${g.group}"`;
   return undefined;
+}
+
+/**
+ * Beta.25: a dependency cited on a version catalog's `[libraries]` entry: the entry must give the
+ * coordinates claimed, and a line `cite.with` names must declare it by its alias directly in a
+ * project's `dependencies { }` (`implementation(libs.forge.ledger.api)`), with the scope claimed.
+ */
+function catalogProblem(
+  f: FactOf<"dependency">,
+  label: string,
+  where: string,
+  lines: readonly string[],
+  linesOf: LinesOf,
+): string | undefined {
+  const lib = catalogLibraryAt(lines, f.cite.line);
+  if (!lib)
+    return `${label} cites ${where}, which is no [libraries] entry of the version catalog: cite the entry that gives its coordinates`;
+  if (lib.group !== f.group || lib.name !== f.name)
+    return `${label} names "${f.group}:${f.name}", and ${where} gives ${lib.alias} as "${lib.group}:${lib.name}"`;
+  // The version: the entry's own, or the [versions] entry its version.ref names (the catalog's
+  // own structure, read here, as a pom's <parent> is).
+  if (f.version !== undefined) {
+    const v = lib.version ?? (lib.versionRef ? catalogVersions(lines).get(lib.versionRef)?.value : undefined);
+    if (v !== f.version)
+      return `${label} says version ${f.version}, and ${where} gives ${v === undefined ? "no version Atticus can read" : `"${v}"`}${lib.versionRef ? ` (version.ref = "${lib.versionRef}")` : ""}`;
+  }
+  const catalog = catalogNameOf(f.cite.file)!;
+  const use = `${catalog}.${lib.accessor}`;
+  let problem: string | undefined;
+  for (const p of f.cite.with ?? []) {
+    if (!isGradleBuildFile(p.file)) continue;
+    const ls = linesOf(p.file);
+    const u = ls ? gradleCatalogUseOn(ls[p.line - 1] ?? "") : undefined;
+    if (!ls || !u || u.catalog !== catalog || u.accessor !== lib.accessor) continue;
+    const at = projectDependenciesAt(gradleBlocks(ls), p.line);
+    if ("none" in at) {
+      problem ??= `${label}: ${p.file}:${p.line} is in ${at.none}, not a project's dependencies { }: a version pinned, a constraint or the build's own class path is no dependency of the component`;
+      continue;
+    }
+    if (u.scope !== (f.scope ?? "compile")) {
+      problem ??= `${label} says scope ${f.scope ?? "compile"}, and ${p.file}:${p.line} declares it with ${u.configuration} (${u.scope})`;
+      continue;
+    }
+    return undefined;
+  }
+  return (
+    problem ??
+    `${label}: ${where} is the catalog's entry, which only names the library; cite the build line in dependencies { } that declares it (${use}) in cite.with`
+  );
 }
 
 /** Coordinates a read build file writes that no kept fact records (the cross-check). */

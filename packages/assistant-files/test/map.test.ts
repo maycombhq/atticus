@@ -185,7 +185,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when the artifact and dependency facts were added, a build's coordinates and what it
     // builds on (ADR 0192).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "1c4299062995aad662d74b9d58f22085061dbc41d0158ac757f875ba8f29ca42",
+      "948588a14e34117604a7efd6c425195c48cc84b7aa0be37c21806b7b4e7638d2",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

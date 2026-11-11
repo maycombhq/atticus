@@ -35,6 +35,7 @@ import {
   buildModuleProblem,
   buildUnrecorded,
   isBuildFile,
+  isVersionCatalogFile,
   type BuildUnrecorded,
 } from "./build-coords.js";
 import { lineOfValue, securityLineKind } from "./call-security-lines.js";
@@ -1182,7 +1183,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (bad) problem(f, "build-coordinates", bad);
       else {
         if (mod && f.component === undefined) moduleOf.set(f.id, mod.component);
-        if (f.version !== undefined)
+        // A version catalog's version.ref is resolved in buildCoordinatesProblem (beta.25).
+        if (f.version !== undefined && !isVersionCatalogFile(f.cite.file))
           add(
             f,
             checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false),

@@ -5,12 +5,16 @@ import { parseFacts, type Fact, type FactOf } from "@maycombhq/core";
 import {
   buildCoordinatesProblem,
   buildModuleOf,
+  buildUnrecorded,
+  catalogLibraryAt,
   dirSource,
   gradleBlocks,
+  gradleCatalogUseOn,
   gradleDependencyAt,
   gradleDependencyOn,
   gradleGroupOn,
   gradleProjectsOn,
+  isPomFile,
   pomCoordinates,
   verifyFacts,
 } from "../src/index.js";
@@ -407,5 +411,182 @@ describe("a module's build facts are its module's (beta.25)", () => {
       estate: { components: ["wallets-http", "wallets-batch"], modules },
     });
     expect(r.rejected.map((x) => x.fact.id)).toEqual(["artifact.wallets-api", id]);
+  });
+});
+
+describe("parent poms, tool configurations and version catalogs (beta.25)", () => {
+  it("takes a parent pom named for what it is for a pom, and nothing else", () => {
+    expect(isPomFile("src/gateway/shared-pom.xml")).toBe(true);
+    expect(isPomFile("parent-pom.xml")).toBe(true);
+    expect(isPomFile("build/parent.pom.xml")).toBe(true);
+    expect(isPomFile("pom.xml")).toBe(true);
+    expect(isPomFile("src/main/resources/pomegranate.xml")).toBe(false);
+    expect(isPomFile("src/main/resources/web.xml")).toBe(false);
+  });
+
+  it("takes a ${project.groupId} for the group the module inherits, its line cited", () => {
+    const linesOf = of({
+      "pom.xml": [
+        "<project>", // 1
+        "  <parent>", // 2
+        "    <groupId>forge.payments</groupId>", // 3
+        "    <artifactId>forge-parent</artifactId>", // 4
+        "  </parent>", // 5
+        "  <artifactId>forge-x</artifactId>", // 6
+        "  <dependencies>", // 7
+        "    <dependency>", // 8
+        "      <groupId>${project.groupId}</groupId>", // 9
+        "      <artifactId>forge-payments-common</artifactId>", // 10
+        "    </dependency>", // 11
+        "  </dependencies>", // 12
+        "</project>", // 13
+      ].join("\n"),
+    });
+    const f = dependency({
+      cite: {
+        file: "pom.xml",
+        line: 10,
+        value: "forge-payments-common",
+        with: [{ file: "pom.xml", line: 9, value: "${project.groupId}" }],
+      },
+    });
+    // the <parent>'s own element is read here; only a <properties> entry's line must be cited
+    expect(buildCoordinatesProblem(f, linesOf)).toBeUndefined();
+    expect(buildCoordinatesProblem({ ...f, group: "forge.other" }, linesOf)).toContain(
+      "(forge.payments)",
+    );
+  });
+
+  it("leaves a tool's configuration out, and says so of a fact citing one", () => {
+    for (const c of ["checkstyle", "pmd", "spotbugs", "jacocoAgent", "detekt", "ktlint"])
+      expect(gradleDependencyOn(`    ${c} "com.example.tools:${c}:1.0"`), c).toBeUndefined();
+    expect(gradleDependencyOn("    detektPlugins('com.example.tools:rules:1.0')")).toBeUndefined();
+    const linesOf = of({
+      "build.gradle": "dependencies {\n  checkstyle 'com.example.tools:checkstyle:10'\n}",
+    });
+    expect(
+      buildCoordinatesProblem(
+        dependency({
+          group: "com.example.tools",
+          name: "checkstyle",
+          cite: { file: "build.gradle", line: 2, value: "com.example.tools:checkstyle:10" },
+        }),
+        linesOf,
+      ),
+    ).toContain("the checkstyle tool's own configuration");
+    expect(buildUnrecorded(["build.gradle"], linesOf, [])).toEqual([]);
+  });
+
+  it("reads developmentOnly as runtime, never compile", () => {
+    expect(gradleDependencyOn("  developmentOnly 'org.example:devtools'")?.scope).toBe("runtime");
+  });
+
+  const CATALOG = [
+    "[versions]", // 1
+    'common = "1.4.0"', // 2
+    "", // 3
+    "[libraries]", // 4
+    'forge-payments-common = { module = "forge.payments:forge-payments-common", version.ref = "common" }', // 5
+    'northwind_pay = { group = "com.northwind.sdk", name = "northwind-pay-client", version = "2.1.0" }', // 6
+    'forge-x = "forge.payments:forge-x:3.0.0"', // 7
+    "", // 8
+    "[plugins]", // 9
+    'boot = { id = "org.example.boot", version = "1.0" }', // 10
+  ].join("\n");
+  const BUILD = [
+    "dependencies {", // 1
+    "  implementation(libs.forge.payments.common)", // 2
+    "  testImplementation(libs.northwind.pay)", // 3
+    "  implementation(platform(libs.forge.x))", // 4
+    "}", // 5
+    "dependencyManagement {", // 6
+    "  dependencies {", // 7
+    "    implementation(libs.forge.payments.common)", // 8
+    "  }", // 9
+    "}", // 10
+  ].join("\n");
+  const catalogOf = of({
+    "gradle/libs.versions.toml": CATALOG,
+    "kit-core/build.gradle.kts": BUILD,
+  });
+  const viaCatalog = (line: number, use: number, o: Partial<FactOf<"dependency">> = {}) =>
+    dependency({
+      cite: {
+        file: "gradle/libs.versions.toml",
+        line,
+        value: "forge-payments-common",
+        with: [{ file: "kit-core/build.gradle.kts", line: use, value: "libs" }],
+      },
+      ...o,
+    });
+
+  it("reads a version catalog's libraries in each notation, and a build line's alias", () => {
+    const lines = CATALOG.split("\n");
+    expect(catalogLibraryAt(lines, 5)).toEqual({
+      alias: "forge-payments-common",
+      accessor: "forge.payments.common",
+      group: "forge.payments",
+      name: "forge-payments-common",
+      versionRef: "common",
+    });
+    expect(catalogLibraryAt(lines, 6)).toMatchObject({
+      accessor: "northwind.pay",
+      version: "2.1.0",
+    });
+    expect(catalogLibraryAt(lines, 7)).toMatchObject({ name: "forge-x", version: "3.0.0" });
+    expect(catalogLibraryAt(lines, 2)).toBeUndefined(); // a version
+    expect(catalogLibraryAt(lines, 10)).toBeUndefined(); // a plugin
+    expect(gradleCatalogUseOn("  implementation(libs.forge.payments.common)")).toEqual({
+      configuration: "implementation",
+      catalog: "libs",
+      accessor: "forge.payments.common",
+      scope: "compile",
+    });
+    expect(gradleCatalogUseOn("  implementation(libs.bundles.forge)")).toBeUndefined();
+    expect(gradleCatalogUseOn("  implementation project(':kit-core')")).toBeUndefined();
+  });
+
+  it("keeps a dependency cited on its catalog entry with the line that declares its alias", () => {
+    expect(
+      buildCoordinatesProblem(viaCatalog(5, 2, { version: "1.4.0" }), catalogOf),
+    ).toBeUndefined();
+    expect(
+      buildCoordinatesProblem(
+        viaCatalog(6, 3, {
+          group: "com.northwind.sdk",
+          name: "northwind-pay-client",
+          scope: "test",
+        }),
+        catalogOf,
+      ),
+    ).toBeUndefined();
+    expect(
+      buildCoordinatesProblem(viaCatalog(7, 4, { name: "forge-x", scope: "import" }), catalogOf),
+    ).toBeUndefined();
+    // the module is the alias line's build file's
+    expect(
+      buildModuleOf(viaCatalog(5, 2), catalogOf, [{ path: "kit-core", component: "kit-core" }]),
+    ).toMatchObject({ component: "kit-core", from: "manifest" });
+  });
+
+  it("refuses a catalog entry with no alias line, a wrong version or scope, or a management line", () => {
+    expect(
+      buildCoordinatesProblem(
+        dependency({
+          cite: { file: "gradle/libs.versions.toml", line: 5, value: "forge-payments-common" },
+        }),
+        catalogOf,
+      ),
+    ).toContain("libs.forge.payments.common");
+    expect(buildCoordinatesProblem(viaCatalog(5, 2, { version: "9.9.9" }), catalogOf)).toContain(
+      'gives "1.4.0" (version.ref = "common")',
+    );
+    expect(buildCoordinatesProblem(viaCatalog(5, 2, { scope: "test" }), catalogOf)).toContain(
+      "declares it with implementation",
+    );
+    expect(buildCoordinatesProblem(viaCatalog(5, 8), catalogOf)).toContain(
+      "dependencyManagement { dependencies { }",
+    );
+    expect(buildCoordinatesProblem(viaCatalog(2, 2), catalogOf)).toContain("no [libraries] entry");
   });
 });

@@ -7,6 +7,14 @@ links:
       lines:
         - pom.xml:24
         - pom.xml:23
+    facts:
+      - repo: forge-bridge
+        fact: dependency.ledger-api
+        component: forge-bridge
+        at: pom.xml:24
+        lines:
+          - pom.xml:24
+          - pom.xml:23
     to:
       repo: forge-ledger
       fact: artifact.ledger-api
@@ -26,6 +34,14 @@ links:
       lines:
         - ledger-service/pom.xml:28
         - ledger-service/pom.xml:27
+    facts:
+      - repo: forge-ledger
+        fact: dependency.ledger-service.ledger-api
+        component: ledger-service
+        at: ledger-service/pom.xml:28
+        lines:
+          - ledger-service/pom.xml:28
+          - ledger-service/pom.xml:27
     to:
       repo: forge-ledger
       fact: artifact.ledger-api
@@ -44,6 +60,14 @@ links:
       lines:
         - ledger-service/pom.xml:32
         - ledger-service/pom.xml:31
+    facts:
+      - repo: forge-ledger
+        fact: dependency.ledger-service.rates-core
+        component: ledger-service
+        at: ledger-service/pom.xml:32
+        lines:
+          - ledger-service/pom.xml:32
+          - ledger-service/pom.xml:31
     to:
       repo: forge-rates
       fact: artifact.rates-core
@@ -61,6 +85,13 @@ links:
       at: rates-service/build.gradle:23
       lines:
         - rates-service/build.gradle:23
+    facts:
+      - repo: forge-rates
+        fact: dependency.rates-service.ledger-api
+        component: rates-service
+        at: rates-service/build.gradle:23
+        lines:
+          - rates-service/build.gradle:23
     to:
       repo: forge-ledger
       fact: artifact.ledger-api
@@ -80,6 +111,14 @@ links:
       lines:
         - gradle/libs.versions.toml:7
         - wallets-api/build.gradle.kts:7
+    facts:
+      - repo: forge-wallets
+        fact: dependency.wallets-api.ledger-api
+        component: wallets-api
+        at: gradle/libs.versions.toml:7
+        lines:
+          - gradle/libs.versions.toml:7
+          - wallets-api/build.gradle.kts:7
     to:
       repo: forge-ledger
       fact: artifact.ledger-api
@@ -98,6 +137,13 @@ links:
       at: wallets-api/build.gradle.kts:10
       lines:
         - wallets-api/build.gradle.kts:10
+    facts:
+      - repo: forge-wallets
+        fact: dependency.wallets-api.rates-core
+        component: wallets-api
+        at: wallets-api/build.gradle.kts:10
+        lines:
+          - wallets-api/build.gradle.kts:10
     to:
       repo: forge-rates
       fact: artifact.rates-core

@@ -86,8 +86,16 @@ export async function repoReadOf(root: string, repo: string): Promise<RepoRead> 
   let facts: Fact[] = [];
   if (raw !== undefined && raw.trim()) {
     const parsed = parseFacts(raw);
-    if (parsed.ok) facts = parsed.facts;
-    else why.push(`its facts file doesn't read as facts`);
+    if (parsed.ok) {
+      facts = parsed.facts;
+      // Beta.25 (ADR 0192 addendum): a fact of a kind this version doesn't know is a newer
+      // Atticus's, left out and said, as the catalog says of a record a newer one wrote.
+      const newer = parsed.newer ?? [];
+      if (newer.length)
+        why.push(
+          `${plural(newer.length, "fact")} ${newer.length === 1 ? "is" : "are"} written by a newer Atticus (fact kind ${[...new Set(newer.map((n) => n.kind))].sort().join(", ")}); install it to read ${newer.length === 1 ? "it" : "them"}`,
+        );
+    } else why.push(`its facts file doesn't read as facts`);
   }
   let report:
     { rejected?: unknown; commit?: unknown; coverage?: { unknown?: unknown } } | null | undefined;

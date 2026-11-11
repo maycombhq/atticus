@@ -88,7 +88,13 @@ const normDir = (p: string) => p.replace(/\\/g, "/").replace(/^\.\//, "").replac
  */
 function buildComponentOf(r: JoinRepo, f: Fact): string {
   if (f.component) return f.component;
-  const dir = dirOf(f.cite.file);
+  // A dependency cited on a Gradle version catalog's entry is the module's whose build line names
+  // its alias (`cite.with`'s build.gradle(.kts) line).
+  const catalog = /(^|\/)gradle\/[\w-]+\.versions\.toml$/i.test(f.cite.file.replace(/\\/g, "/"));
+  const build = catalog
+    ? (f.cite.with ?? []).find((p) => /(^|[/\\])build\.gradle(\.kts)?$/i.test(p.file))?.file
+    : f.cite.file;
+  const dir = dirOf(build ?? f.cite.file);
   const mod = [...(r.moduleDirs ?? [])]
     .map((m) => ({ ...m, path: normDir(m.path) }))
     .filter((m) => m.path && (dir === m.path || dir.startsWith(`${m.path}/`)))
