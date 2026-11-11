@@ -6,7 +6,7 @@ import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
-import { escapeCloses, Panel, View } from "../app/ui.js";
+import { escapeCloses, ExternalLink, Panel, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
 import { ChangeInputs } from "./ChangeInputs.js";
@@ -154,7 +154,7 @@ const LABEL: Record<string, string> = {
 
 // One button that runs an action and shows its outcome in words: know/common.tsx.
 
-function ChangeList({
+export function ChangeList({
   list,
   current,
   across,
@@ -187,7 +187,8 @@ function ChangeList({
           return (
             <div className="stack" style={{ gap: 10, marginTop: 8 }}>
               <div className="cw-list-tools">
-                <label htmlFor="change-filter" className="sr">
+                {/* beta.26 review: the field's name in view, not only its placeholder. */}
+                <label htmlFor="change-filter" className="cw-label">
                   {T.findAChange}
                 </label>
                 <input
@@ -221,9 +222,9 @@ function ChangeList({
                     key={c.id}
                     href={`#/changes/${c.id}`}
                     aria-current={!across && c.id === current ? "page" : undefined}
+                    // beta.26 review: the title wraps to two lines and the id wraps, so no hover
+                    // title repeats what the link already says.
                     className="cw-row"
-                    // The title and id are cut short in the list; their whole words on hover.
-                    title={`${c.title} (${c.id})`}
                   >
                     <span className="cw-row-main">
                       <span className="cw-row-title">{c.title}</span>
@@ -566,6 +567,32 @@ export function FindingActions({
   );
 }
 
+/**
+ * beta.26 review: a change's hand-off as a chip. Its PR is a short link ("PR #42") whose target is
+ * the whole address, so a narrow panel (VS Code's, about 780 px) doesn't scroll sideways.
+ */
+export function HandoffChip({
+  handoff,
+}: {
+  handoff: { phase: string; state: string; pr?: string | undefined };
+}) {
+  const phase = handoff.phase.toUpperCase();
+  if (handoff.pr && isManualLink(handoff.pr))
+    return <span className="chip">{T.handOffManual(phase)}</span>;
+  const number = handoff.pr ? /(\d+)\/?(?:[?#].*)?$/.exec(handoff.pr)?.[1] : undefined;
+  return (
+    <span className="chip">
+      {T.handOff(phase, handoff.state.toUpperCase(), "")}
+      {handoff.pr && (
+        <>
+          {" · "}
+          <ExternalLink href={handoff.pr}>{CW.prShort(number)}</ExternalLink>
+        </>
+      )}
+    </span>
+  );
+}
+
 function Detail({ id }: { id: string }) {
   const aiOn = useAiOn();
   const detail = useApi<ChangeDetail>(`/api/changes/${id}`);
@@ -628,17 +655,7 @@ function Detail({ id }: { id: string }) {
                         {T.risk(s.risk.level.toUpperCase())}
                       </span>
 
-                      {d.handoff && (
-                        <span className="chip">
-                          {isManualLink(d.handoff.pr)
-                            ? T.handOffManual(d.handoff.phase.toUpperCase())
-                            : T.handOff(
-                                d.handoff.phase.toUpperCase(),
-                                d.handoff.state.toUpperCase(),
-                                d.handoff.pr ? ` · ${d.handoff.pr}` : "",
-                              )}
-                        </span>
-                      )}
+                      {d.handoff && <HandoffChip handoff={d.handoff} />}
                     </div>
                     {d.handoff?.unpushed && d.handoff.branch && (
                       <PushAgain change={d.id} branch={d.handoff.branch} onDone={reloadAll} />
@@ -877,7 +894,8 @@ function Detail({ id }: { id: string }) {
                   <div key={r.runId} className="list-row" style={{ alignItems: "flex-start" }}>
                     <span className="cw-row-main">
                       <span style={{ fontSize: 12.5 }}>{r.agent}</span>
-                      <span className="cw-row-sub" title={r.promptPath ?? r.runId}>
+                      {/* beta.26 review: the prompt's path wraps whole, not cut to a hover title. */}
+                      <span className="cw-row-sub">
                         {r.runtime} · {r.promptPath ?? r.runId}
                       </span>
                       {r.errors.length > 0 && (

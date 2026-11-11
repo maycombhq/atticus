@@ -179,7 +179,10 @@ export function TaskList({ change, tasks }: { change: string; tasks: TaskRow[] }
                 </span>
                 {/* beta.26: the commands folded under the board's link, not stacked open. */}
                 <details className="work-terminal">
-                  <summary>{W.fromTerminal}</summary>
+                  {/* beta.26 review: each task's fold named by its task, the words seen the same. */}
+                  <summary aria-label={COPY.changeWork.fromTerminalFor(t.id)}>
+                    {W.fromTerminal}
+                  </summary>
                   <Command text={s.command} label={R.copy} />
                   <Command text={s.slash!.command} label={R.copySlash} />
                 </details>
@@ -313,7 +316,10 @@ export function StagePage(p: {
                     page (2026-10-27); here, a line saying so, so it isn't shown twice. */}
                 {p.stage === "feature" && (
                   <Panel title={COPY.changeKnowledge.title}>
-                    <Explain text={COPY.changeKnowledge.onFeature} />
+                    <Explain
+                      text={COPY.changeKnowledge.onFeature}
+                      about={COPY.changeKnowledge.title}
+                    />
                     <p className="work-say" style={{ margin: 0 }}>
                       <a href={`#/change-knowledge?change=${encodeURIComponent(c.id)}`}>
                         {COPY.changeKnowledge.openPage}

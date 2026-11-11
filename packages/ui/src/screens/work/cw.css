@@ -101,14 +101,26 @@
   text-decoration: none;
 }
 
-/* Headings inside what a panel shows (a drawn feature.md, a story): a step under the panel's. */
+/* Headings inside what a panel shows (a drawn feature.md, a story): a step under the panel's,
+   each level still a step smaller than the one above it, so the document's outline shows. */
 .cw .panel h1,
 .cw .panel h2:not(.h),
 .cw .panel h3:not(.hud):not(.h),
 .cw .panel h4 {
   margin: 8px 0 4px;
-  font-size: 13.5px;
   line-height: 1.35;
+}
+.cw .panel h1 {
+  font-size: 16px;
+}
+.cw .panel h2:not(.h) {
+  font-size: 14.5px;
+}
+.cw .panel h3:not(.hud):not(.h) {
+  font-size: 13.5px;
+}
+.cw .panel h4 {
+  font-size: 12.5px;
 }
 /* A table beside the work: no minimum width, its long paths wrap instead. */
 .cw-cols > .cw-col:last-child table {
@@ -267,9 +279,7 @@
   line-height: 1.2;
   letter-spacing: 0.02em;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .cw-head-sub {
   display: flex;
@@ -456,21 +466,24 @@
   gap: 1px;
   min-width: 0;
 }
+/* A row's title to two lines at most (its words whole in the link's name); its id and other
+   monospace lines wrap whole, a long path broken anywhere. */
 .cw-row-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .cw-row-sub {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .cw-row .chip {
   flex: none;
@@ -598,6 +611,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+/* A chip here (the hand-off and its PR) wraps inside the panel rather than push it sideways. */
+.cw-chips > .chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* A group of buttons, the primary first. */
 .cw-actions {
@@ -722,11 +742,13 @@
   display: flex;
   flex-direction: column;
 }
+/* A stage and its progress side by side, its progress under it when the side column is narrow. */
 .cw-stages > li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
   padding: 4px 0;
   border-bottom: 1px solid var(--line);
@@ -735,8 +757,21 @@
 .cw-stages > li:last-child {
   border-bottom: 0;
 }
+.cw-stages > li > .chip {
+  max-width: 100%;
+  white-space: normal;
+}
 .cw-stages .cw-row-sub {
-  flex: none;
+  min-width: 0;
+  white-space: normal;
+}
+/* What an earlier change asked, whole, in the words' face. */
+.cw-past-summary {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
 }
 .cw-links > li {
   justify-content: flex-start;
@@ -835,10 +870,6 @@
   }
   .cw-gate-name {
     font-size: 9.5px;
-  }
-  .cw-title {
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
 }
 @container cw (max-width: 480px) {

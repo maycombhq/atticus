@@ -112,9 +112,9 @@ function List({ list, current }: { list: Loaded<ReleaseItem[]>; current?: string
                 key={c.id}
                 href={`#/release/${c.id}`}
                 aria-current={c.id === current ? "page" : undefined}
+                // beta.26 review: the title wraps to two lines and the id wraps, as on All
+                // changes, so no hover title repeats what the link already says.
                 className="cw-row"
-                // beta.26: cut short in the list, whole on hover, as on All changes.
-                title={`${c.title} (${c.id})`}
               >
                 <span className="cw-row-main">
                   <span className="cw-row-title">{c.title}</span>
