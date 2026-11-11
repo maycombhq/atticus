@@ -2,6 +2,17 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Added
+
+- **`absorb`, a sketch stroke that folds a component into another.** Its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change. One Undo takes it all back (ADR 0193).
+- **`atticus change sketch <change> --from strokes.yaml|.json`** reads the canvas's strokes from a file, applied in order, with the same preview and `--save`; an unknown component id gets the nearest ids as "Did you mean" (ADR 0193).
+
+### Changed
+
+- The change diagram marks a component retired when the change removes every flow it has today (ADR 0193).
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed
