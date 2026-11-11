@@ -21,8 +21,8 @@ import {
  * `expected/deps.yaml` are the join and the dependency join, checked by hand.
  *
  * The forge-edge proxy chain (`call.rates.local`, a LocalTargetConnection from forge-ledger-v1 to
- * forge-rates-v1 in the same repo) is left out of the golden: today's join gets it wrong in two
- * ways, each an `it.fails` below with the right expectation.
+ * forge-rates-v1 in the same repo) is in the golden since beta.25, which joins it; the two ways
+ * the join got it wrong before are tested below.
  */
 const DIR = join(__dirname, "..", "..", "..", "fixtures", "real-shapes");
 const read = (repo: string): Fact[] => {
@@ -58,19 +58,6 @@ const golden = (name: string, got?: unknown) => {
   return parse(readFileSync(join(DIR, "expected", name), "utf8"));
 };
 const CHAIN = "call.rates.local";
-/** The join with the proxy chain's call taken out of every list (see the header). */
-const withoutChain = (out: FactsJoinResult): FactsJoinResult => {
-  const keep = (x: { call: { repo: string; fact: string } }) =>
-    !(x.call.repo === "forge-edge" && x.call.fact === CHAIN);
-  return {
-    ...out,
-    joins: out.joins.filter(keep),
-    asks: out.asks.filter(keep),
-    misses: out.misses.filter(keep),
-    ...(out.outside ? { outside: out.outside.filter(keep) } : {}),
-    ...(out.left ? { left: out.left.filter(keep) } : {}),
-  };
-};
 const joinsOf = (out: FactsJoinResult, repo: string, call: string) =>
   out.joins.filter((j) => j.call.repo === repo && j.call.fact === call);
 const named = (out: FactsJoinResult, repo: string, call: string) => [
@@ -83,7 +70,8 @@ const named = (out: FactsJoinResult, repo: string, call: string) => [
 
 describe("the real-shapes estate's join (golden)", () => {
   it("gives the golden join", () => {
-    const got = plain(withoutChain(run()));
+    // Beta.25: the proxy chain joins (forge-ledger-v1 to forge-rates-v1 to rates-service).
+    const got = plain(run());
     expect(got).toEqual(golden("join.yaml", got));
   });
 
@@ -175,34 +163,28 @@ describe("what the join reads from real shapes", () => {
     expect(d.ambiguous).toEqual([]);
   });
 
-  // known bug: a token is matched to a call by its file's base name, so `targets/default.xml`'s URL token is taken for a call that cites `proxies/default.xml` (both default.xml, as Apigee names them), and the LocalTargetConnection call is tied to the ledger
-  it.fails(
-    "never gives a call the URL token of another TargetEndpoint that shares its file name",
-    () => {
-      const out = run();
-      expect(named(out, "forge-edge", CHAIN)).not.toContain("forge-ledger");
-      expect(
-        joinsOf(out, "forge-edge", CHAIN).flatMap((j) => [
-          j.tie?.fact,
-          ...(j.through ?? []).map((t) => t.fact),
-        ]),
-      ).not.toContain("config.ledger-url-test");
-    },
-  );
+  // Beta.25: a token is the file's whose element its XPath's root is, not any file of its name
+  it("never gives a call the URL token of another TargetEndpoint that shares its file name", () => {
+    const out = run();
+    expect(named(out, "forge-edge", CHAIN)).not.toContain("forge-ledger");
+    expect(
+      joinsOf(out, "forge-edge", CHAIN).flatMap((j) => [
+        j.tie?.fact,
+        ...(j.through ?? []).map((t) => t.fact),
+      ]),
+    ).not.toContain("config.ledger-url-test");
+  });
 
-  // known bug: byBasePath skips routes of the caller's own component, so a LocalTargetConnection to another proxy of the same gateway repo is never joined
-  it.fails(
-    "joins a LocalTargetConnection to the other proxy of the same repo whose base path it names",
-    () => {
-      // the call cited on its <Path> line alone, so the token bug above is out of the way
-      const repos = swap(estate(), "forge-edge", (fs) =>
-        fs.map((f) => (f.id === CHAIN ? { ...f, cite: { ...f.cite, with: undefined } } : f)),
-      );
-      const out = run(repos);
-      const js = joinsOf(out, "forge-edge", CHAIN);
-      expect(js).toHaveLength(1);
-      const reached = [js[0]!.entry.fact, ...(js[0]!.gateway ?? []).map((h) => h.entry.fact)];
-      expect(reached).toContain("entry.get.forge-rates-v1-rates");
-    },
-  );
+  // Beta.25: each proxy of a gateway repo owns its routes, so one chains to a sibling
+  it("joins a LocalTargetConnection to the other proxy of the same repo whose base path it names", () => {
+    // the call cited on its <Path> line alone, so the token bug above is out of the way
+    const repos = swap(estate(), "forge-edge", (fs) =>
+      fs.map((f) => (f.id === CHAIN ? { ...f, cite: { ...f.cite, with: undefined } } : f)),
+    );
+    const out = run(repos);
+    const js = joinsOf(out, "forge-edge", CHAIN);
+    expect(js).toHaveLength(1);
+    const reached = [js[0]!.entry.fact, ...(js[0]!.gateway ?? []).map((h) => h.entry.fact)];
+    expect(reached).toContain("entry.get.forge-rates-v1-rates");
+  });
 });

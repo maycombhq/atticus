@@ -104,8 +104,8 @@ describe("placeholderIn on generated real-world values", () => {
       expect(placeholderIn(v), v).toBeUndefined();
   });
 
-  // known bug: placeholderIn looks for `${` before any other form, so in Camel's `{{base}}/accounts/${header.id}` it takes the simple expression `${header.id}`, not the first placeholder, `{{base}}`
-  it.fails("takes the first placeholder of a value that mixes forms", () => {
+  // Beta.25: the first placeholder by position, a Camel Simple expression no setting
+  it("takes the first placeholder of a value that mixes forms", () => {
     expect(placeholderIn("{{forge.ledger.base-uri}}/accounts/${header.id}")).toEqual({
       name: "forge.ledger.base-uri",
       before: "",

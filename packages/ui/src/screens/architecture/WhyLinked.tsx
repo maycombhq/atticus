@@ -210,7 +210,9 @@ export function JoinView({
             ? W.declaredTopic
             : ai
               ? COPY.decisions.whyLinked
-              : (W.how[join.how] ?? W.how.unknown)}
+              : ((!join.verified ? W.howGuessed[join.how] : undefined) ??
+                W.how[join.how] ??
+                W.how.unknown)}
           {join.gateway && ` ${W.gateway}`}
           {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
         </p>

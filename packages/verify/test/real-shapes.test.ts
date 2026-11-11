@@ -271,8 +271,8 @@ describe("settings files as public projects write them", () => {
     expect(yamlPathAt(values, 25)).toEqual(["ingress", "hosts", "paths", "path"]);
   });
 
-  // known bug: a sequence written at its key's own indentation (`containers:` then `- name:`, as Kubernetes manifests and Spring Cloud Gateway routes do) loses its key from the path
-  it.fails("reads a key's path in a list written at its key's indentation (a Deployment)", () => {
+  // Beta.25: a sequence written at its key's own indentation (`containers:` then `- name:`)
+  it("reads a key's path in a list written at its key's indentation (a Deployment)", () => {
     const d = lines("forge-rates", "deploy/k8s/deployment.yaml");
     expect(yamlPathAt(d, 17)).toEqual(["spec", "template", "spec", "containers", "name"]);
     expect(yamlPathAt(d, 20)).toEqual([
@@ -381,8 +381,8 @@ describe("settings files as public projects write them", () => {
     ).toBeUndefined();
   });
 
-  // known bug: a TargetServer writes its host and port as two JSON fields, and a config value is checked on one line only, so `host:port` can't be claimed
-  it.fails("keeps a TargetServer's host and port, cited on their two lines", () => {
+  // Beta.25: a TargetServer writes its host and port as two JSON fields, each a part
+  it("keeps a TargetServer's host and port, cited on their two lines", () => {
     const f = fact<"config">("forge-edge", "config.ts-rates");
     expect(configLineProblem(f, linesIn("forge-edge"), () => [])).toBeUndefined();
   });
@@ -416,16 +416,16 @@ describe("live secrets in settings files as public projects write them", () => {
     expect(out).not.toContain("nw-live");
   });
 
-  // known bug: XML_NAMED wants `name="…"` before `value="…"`, so a blueprint property written value-first is read past
-  it.fails("finds a blueprint property's password whichever attribute comes first", () => {
+  // Beta.25: a blueprint property written value-first
+  it("finds a blueprint property's password whichever attribute comes first", () => {
     expect(secrets("forge-bridge", "src/main/resources/OSGI-INF/blueprint/routes.xml")).toEqual([
       "13 ledger.password",
       "14 statements.password",
     ]);
   });
 
-  // known bug: a YAML `- name: X` / `value: v` pair (a container's env) is read as the key `value`, so the secret its name says is read past
-  it.fails("finds a container env variable's secret by the name above its value", () => {
+  // Beta.25: a YAML `- name: X` / `value: v` pair (a container's env) is said by its name
+  it("finds a container env variable's secret by the name above its value", () => {
     expect(secrets("forge-rates", "deploy/k8s/deployment.yaml")).toEqual([
       "31 NORTHWIND_CLIENT_SECRET",
     ]);
@@ -453,9 +453,6 @@ const KNOWN: Record<string, Record<string, string>> = {
   },
   "forge-edge": {
     "artifact.forge-ledger-v1": "a <project> start tag over three lines is never opened",
-    "call.ledger.target":
-      "a target whose whole URL a deploy token replaces has path /, which no line writes",
-    "config.ts-rates": "a TargetServer's host and port are two JSON lines; a value is read on one",
   },
   "forge-bridge": {
     "artifact.forge-bridge": "a <project> start tag ending on a line of its own is never opened",
@@ -519,16 +516,14 @@ describe("the corpus verified end to end", () => {
       "src/gateway/forge-ledger-v1/config.json:20 /BasicAuthentication/Password",
     );
   });
-  // known bug: the scan reads only what the source rules count as source, and the Apigee config plugin's resources/edge/env/<env>/kvms.json isn't, so a KVM entry's password is never said
-  it.fails("says forge-edge's live secret in a KVM file of the config plugin", async () => {
+  // Beta.25: a config file the source rules don't count is still scanned for the report
+  it("says forge-edge's live secret in a KVM file of the config plugin", async () => {
     expect(await secretsOf("forge-edge")).toEqual(SECRETS["forge-edge"]);
   });
-  // known bug: a container env `- name:`/`value:` pair's secret is read past
-  it.fails("says forge-rates' live secret in its Deployment's env", async () => {
+  it("says forge-rates' live secret in its Deployment's env", async () => {
     expect(await secretsOf("forge-rates")).toEqual(SECRETS["forge-rates"]);
   });
-  // known bug: a blueprint property written value-first is read past
-  it.fails("says both of forge-bridge's blueprint passwords", async () => {
+  it("says both of forge-bridge's blueprint passwords", async () => {
     expect(await secretsOf("forge-bridge")).toEqual(SECRETS["forge-bridge"]);
   });
 });

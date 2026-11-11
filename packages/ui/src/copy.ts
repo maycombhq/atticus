@@ -5243,7 +5243,7 @@ export const COPY = {
       repo: "The call names the repo it goes to.",
       host: "The call's host is one the manifest lists for that repo.",
       "base-path":
-        "Nothing says the call's host, but its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path.",
+        "The gateway forwards the call with no host (a proxy chained to another), and its whole path starts with this proxy's base path: this is the one route under it with its method and path.",
       declared: "A person declared who calls this gateway route.",
       topic: "It publishes a topic the other side listens to.",
       path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
@@ -5266,6 +5266,11 @@ export const COPY = {
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,
+    // Beta.25 review: an inferred join's own words where they differ from a verified one's.
+    howGuessed: {
+      "base-path":
+        "Joined by the proxy's BasePath; the caller's host is unknown. Its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path, but nothing says the call goes to this gateway, so this is a guess.",
+    } as Record<string, string>,
     gateway: "It goes through a gateway on the way.",
     // ADR 0162 §6 (F8): a topic or queue a person named as an outside system's in the profile.
     declared: "Declared in the profile",
@@ -5287,11 +5292,15 @@ export const COPY = {
     more: (n: number) =>
       `${n} more call${n === 1 ? "" : "s"} on this link. Open either end to see its calls one by one, or list the Interface records with atticus query "kind:interface".`,
     none: "This link isn't a call, so there is no join to explain: its lines are listed under it.",
-    // Beta.24 review: on a verified link, the guesses its other merged calls rest on.
+    // Beta.24 review: on a verified link, the guesses its other merged calls rest on (beta.25:
+    // and the pairings, a person's or the AI's word, which never verify a link).
     also: (how: string) =>
-      `Also: other calls merged into this link were joined by ${how}, a guess; open either end to see them one by one.`,
+      `Also: other calls merged into this link were joined by ${how}, not read from code at both ends; open either end to see them one by one.`,
     alsoHow: {
+      person: "a person's pairing (their word)",
+      ai: "the AI's pairing (no person has confirmed it)",
       path: "their path alone",
+      "base-path": "the proxy's BasePath, their host unknown",
       label: "their host's first part",
       "platform-setting": "a platform-wide setting",
       "folder-name": "the folder a setting is in",

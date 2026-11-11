@@ -4,7 +4,15 @@ import type { CatalogRecord } from "./catalog.js";
 import { interfaceId, normalizePath, slugify } from "./identity.js";
 import { canonicalize } from "./serialize.js";
 import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
-import { Fact, FactsFile, type FactOf } from "./schema/facts.js";
+import {
+  configSecretField,
+  credentialLike,
+  Fact,
+  FactsFile,
+  looksLikeSecret,
+  type FactOf,
+} from "./schema/facts.js";
+import { hasSecretShape, redactSecrets } from "./cite.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 import { migrationOf, type MigrationFile } from "./migration-files.js";
 import { normalizeFactPaths } from "./fact-paths.js";
@@ -70,6 +78,83 @@ export function parseFacts(text: string): ParseFactsResult {
 
 function issueOf(i: z.core.$ZodIssue): FactIssue {
   return { code: i.code, message: `${i.path.join(".") || "(root)"}: ${i.message}` };
+}
+
+const REDACTED = "<redacted>";
+
+/**
+ * A facts file's line as it may be kept where people read it (`<repo>.rejected.jsonl`), beta.25
+ * review: a config fact any of whose fields carries a secret (`configSecretField`, beta.24's value
+ * check included, or a quote `redactSecrets` changes) has its value, source, parts and quote
+ * redacted, the rest kept as written. A line that isn't JSON is redacted as a line of code is,
+ * and any quoted literal that reads as a credential goes too. Anything else is kept as it is.
+ */
+export function redactFactLine(raw: string): string {
+  const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    const out = redactSecrets(raw).replace(/"((?:[^"\\]|\\.){6,})"/g, (all, v: string) =>
+      credentialLike(v) || hasSecretShape(v) ? `"${REDACTED}"` : all,
+    );
+    // Beta.25 review, second round: a broken line whose key names a secret has its value,
+    // source, parts and quote redacted, however weak (`"value":"hunter22" BROKEN`), its last
+    // string too when the line ends inside it.
+    const key = /"key"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(out)?.[1];
+    if (key === undefined || !looksLikeSecret(key, "x")) return out;
+    return out.replace(
+      /("(?:value|source|quote)"\s*:\s*)"(?:[^"\\]|\\.)*("|$)/g,
+      (_, head: string, end: string) => `${head}"${REDACTED}${end}`,
+    );
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) return raw;
+  const f = json as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const cite =
+    f.cite && typeof f.cite === "object" && !Array.isArray(f.cite)
+      ? (f.cite as Record<string, unknown>)
+      : {};
+  const withs = Array.isArray(cite.with) ? (cite.with as unknown[]) : [];
+  const parts = withs.map((w) =>
+    w && typeof w === "object" ? str((w as Record<string, unknown>).value) : undefined,
+  );
+  const key = str(f.key);
+  const strings = [str(f.value), str(f.source), ...parts].filter((x): x is string => !!x);
+  const quote = str(cite.quote);
+  // A quote under a secret's key holding a credential-like word (`"value": "q8Zt…"`).
+  const quoteHolds =
+    quote !== undefined &&
+    key !== undefined &&
+    looksLikeSecret(key, "x") &&
+    quote.split(/[\s"'`:=,;{}()<>[\]]+/).some((w) => credentialLike(w));
+  const secret =
+    (key !== undefined &&
+      !!configSecretField({
+        key,
+        value: str(f.value),
+        source: str(f.source),
+        target: str(f.target),
+        env: str(f.env),
+        cite: { with: parts.flatMap((v) => (v === undefined ? [] : [{ value: v }])) },
+      })) ||
+    strings.some((s) => hasSecretShape(s)) ||
+    quoteHolds ||
+    (quote !== undefined && redactSecrets(quote) !== quote);
+  if (!secret) return raw;
+  const out: Record<string, unknown> = { ...f };
+  if (str(f.value) !== undefined) out.value = REDACTED;
+  if (str(f.source) !== undefined) out.source = REDACTED;
+  if (Object.keys(cite).length) {
+    const c: Record<string, unknown> = { ...cite };
+    if (c.quote !== undefined) c.quote = REDACTED;
+    if (withs.length)
+      c.with = withs.map((w) =>
+        w && typeof w === "object" ? { ...(w as object), value: REDACTED } : REDACTED,
+      );
+    out.cite = c;
+  }
+  return JSON.stringify(out);
 }
 
 /** A line of a facts file that isn't a fact, with its number, its text and what is wrong. */

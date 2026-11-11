@@ -419,5 +419,7 @@ describe("a gateway's forwarding call that names no host", () => {
       how: "base-path",
       entry: { repo: "auth-proxy", fact: "entry.post.token" },
     });
+    // Beta.25: a hostless forwarding call goes to its own gateway, so the join is no guess.
+    expect(j!.inferred).toBeUndefined();
   });
 });

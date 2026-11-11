@@ -67,6 +67,30 @@ export const LINK: Api.HierEdgeT = {
   joins: [HOST, GUESS],
 };
 
+describe("a join by a proxy's BasePath (beta.25 review)", () => {
+  const BASE: Api.HierJoinT = { ...GUESS, interface: "if-2", how: "base-path", gateway: false };
+  const one = (j: Api.HierJoinT) => html(<WhyLinked link={{ ...LINK, joins: [j] }} />);
+
+  it("says a guessed one was found by the BasePath, the caller's host unknown", () => {
+    const page = one(BASE);
+    expect(page).toContain(esc(W.howGuessed["base-path"]!));
+    expect(page).not.toContain(esc(W.how["base-path"]!));
+    expect(page).not.toContain(esc(W.how.path!));
+    expect(page).toContain(W.inferred);
+  });
+
+  it("says a verified one (a chained proxy) in its own words", () => {
+    const page = one({ ...BASE, verified: true });
+    expect(page).toContain(esc(W.how["base-path"]!));
+    expect(page).not.toContain(esc(W.howGuessed["base-path"]!));
+  });
+
+  it("lists a merged BasePath guess as the BasePath's also", () => {
+    const page = one({ ...HOST, also: ["base-path"] });
+    expect(page).toContain(esc(W.also(W.alsoHow["base-path"]!)));
+  });
+});
+
 describe("why is this linked", () => {
   it("says how each call was joined, verified or inferred, with its lines at both ends", () => {
     const page = html(<WhyLinked link={LINK} />);

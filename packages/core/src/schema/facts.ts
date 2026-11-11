@@ -350,6 +350,282 @@ export function looksLikeSecret(key: string, value: string | undefined): boolean
   );
 }
 
+/**
+ * A literal that reads as a credential, not a name: one run of letters and digits (`-_+/=.~`
+ * allowed), six characters or more, with both, that is no file name or URL (`AM-Key.xml`,
+ * `config/app.yml`, `prod` and `v1` are names).
+ */
+const tokenLike = (t: string) =>
+  /^[A-Za-z0-9+/=_.~-]{6,}$/.test(t) &&
+  /[0-9]/.test(t) &&
+  /[A-Za-z]/.test(t) &&
+  !/\.[a-z]{2,5}$/i.test(t) &&
+  !pathOfNames(t);
+
+/**
+ * A path of names (`kv/forge/ledger`, `/run/secrets/db`), not a credential with a `/` in it
+ * (beta.25 review: an AWS secret access key, `wJalrXUtnFEMI/K7MDENG/…`): it starts with `/`, or
+ * each of its segments is a name as people write one (`NAME_LIKE`, `identifierName`).
+ */
+const pathOfNames = (t: string) =>
+  t.startsWith("/") ||
+  (t.includes("/") &&
+    t
+      .split("/")
+      .every(
+        (s) => s === "" || NAME_LIKE.some((r) => r.test(s)) || identifierName(s) || fileName(s),
+      ));
+
+/** A file's name with its extension (`application.yml`, `Creds.java`). */
+const fileName = (t: string) => /^[A-Za-z][\w.-]*\.[A-Za-z]{2,5}$/.test(t);
+
+/**
+ * A name as people write them, digits and all (beta.25 review): UPPER_SNAKE (`DB2_PASSWORD`,
+ * `OAUTH2_CLIENT_SECRET`) or lower-kebab, snake or dotted (`northwind-oauth2`, `db2-credentials`,
+ * `forge-secrets-v2`, `secret1`), each word letters with at most three digits after, or a number.
+ */
+const NAME_LIKE = [
+  /^[A-Z]+[0-9]{0,3}(?:_(?:[A-Z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
+  /^[a-z]+[0-9]{0,3}(?:[-_.](?:[a-z]+[0-9]{0,3}|[0-9]{1,4}))*$/,
+];
+
+/**
+ * A name as code writes one, stricter than `NAME_LIKE` (beta.25 review, second round): one a
+ * source under a secret's key may be, where a word with digits (`hunter22`, `changeme123`) is
+ * the password itself. UPPER_SNAKE with an underscore or no digit (`DB2_PASSWORD`, `PASSWORD`,
+ * not `HUNTER22`), two lower words or more joined by `-`, `_` or `.` (`forge-secrets-v2`,
+ * `ledger.db.password`), or camelCase or PascalCase of two words or more (`clientSecretV2`,
+ * `Db2Credentials`, not `Password1`).
+ */
+function identifierName(t: string): boolean {
+  return (
+    (NAME_LIKE[0]!.test(t) && (t.includes("_") || !/[0-9]/.test(t))) ||
+    (NAME_LIKE[1]!.test(t) && t.split(/[-_.]/).filter((w) => /[a-z]/.test(w)).length >= 2) ||
+    /^[A-Za-z][a-z]+[0-9]{0,3}(?:[A-Z][a-z]+[0-9]{0,3}|[A-Z][0-9]{1,3})+$/.test(t)
+  );
+}
+
+/** A default that names no value (`${X:none}`), as a flag or a mode does. */
+const NO_DEFAULT = /^(true|false|yes|no|on|off|none|null)$/i;
+
+/** The schemes a source names where a secret lives by (the assistant's rules give these). */
+const REFERENCE_SCHEMES = new Set([
+  "env",
+  "vault",
+  "secret",
+  "ref",
+  "secretkeyref",
+  "configmapkeyref",
+  "file",
+  "kvm",
+]);
+
+/**
+ * Schemes a placeholder names a store by (`${env:X}`, `${ssm:/forge/db}`), never a variable
+ * with a default (beta.25 review, third round).
+ */
+const PLACEHOLDER_SCHEMES = new Set([
+  ...REFERENCE_SCHEMES,
+  "ssm",
+  "sm",
+  "secretsmanager",
+  "aws",
+  "azure",
+  "keyvault",
+  "gcp",
+  "k8s",
+  "cf",
+  "opt",
+  "self",
+  "sys",
+  "param",
+]);
+
+/**
+ * Whether a text's placeholder has a literal default (`${DB_PASSWORD:hunter22}`,
+ * `${DB_PASSWORD:-changeme}`, the inner one of `${A:${B:x}}`): under a secret's key, that
+ * default is the secret (beta.25 review, second round). Third round: only a plain variable's
+ * (letters, digits, `_`, `.`, `-`, no scheme of `PLACEHOLDER_SCHEMES`, no `(`), after `:` or
+ * `:-`; `${env:X}`, `${ssm:/p}`, `${file(./s.yml):db}`, `${X:?message}` and `${X:+alt}` have
+ * none. An empty default, or one that is itself a placeholder (`${A:${B}}`), is none.
+ */
+function literalDefault(t: string): boolean {
+  for (const m of t.matchAll(/\$\{([^{}:$]*):(-?)([^}$]*)/g)) {
+    const name = m[1]!.trim();
+    if (!/^[A-Za-z0-9_.-]+$/.test(name) || PLACEHOLDER_SCHEMES.has(name.toLowerCase())) continue;
+    const d = m[3]!.trim();
+    if (!m[2] && /^[?+]/.test(d)) continue;
+    if (d && !NO_DEFAULT.test(d)) return true;
+  }
+  return false;
+}
+
+/**
+ * A reference written as a CI or shell variable, or an expression (beta.25 review, third round):
+ * `${{ secrets.X }}`, `$X`, `${X}`, `%X%`, `#{…}`.
+ */
+const VARIABLE_REFERENCE = [
+  /^\$\{\{[^{}]*\}\}$/,
+  /^\$[A-Za-z_][A-Za-z0-9_]*$/,
+  /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}$/,
+  /^%[A-Za-z_][A-Za-z0-9_]*%$/,
+  /^#\{[^{}]*\}$/,
+];
+
+/**
+ * The assistant's own form for a secret written as a literal (`literal:<file>`, its rules say):
+ * `literal:` then a file's name or path: a name with an extension (`App.config`, `Creds.java`), a
+ * dot file (`.npmrc`), one a tool names `…file` (`Dockerfile`, `Jenkinsfile`) or any path with a
+ * folder (`deploy/creds`); never a bare word (`literal:hunter22`, `literal:changeme`).
+ */
+const LITERAL_FILE =
+  /^literal:\s*(?:(?:[\w.-]+\/)+[\w.-]+|[\w-][\w.-]*\.[A-Za-z0-9]{1,10}|\.[\w.-]+|[A-Za-z][\w-]*file)$/i;
+
+/**
+ * Whether a source refers to where its secret lives rather than holding it: a placeholder with
+ * no literal default and nothing beside it (`${DB_PASSWORD}`, `{{ db_password }}`), or a
+ * scheme and what it names: one of `REFERENCE_SCHEMES` (`env:X`, `secretKeyRef:name/key`), or
+ * any scheme then a path, a resource name or a name (`aws-sm:arn:…`, `ssm:/forge/db`), never a
+ * word with digits (`admin:hunter22`). Third round: a CI or shell variable or an expression
+ * (`VARIABLE_REFERENCE`), the assistant's `literal:<file>` (`LITERAL_FILE`), and a Basic
+ * credential only by a reference after its scheme (`basic:env:X`, not `basic:admin:hunter22`).
+ */
+function isReference(t: string): boolean {
+  if (VARIABLE_REFERENCE.some((r) => r.test(t)) && !literalDefault(t)) return true;
+  if (LITERAL_FILE.test(t)) return true;
+  if (/^basic:/i.test(t)) return isReference(t.slice("basic:".length).trim());
+  if (/^(\$\{|\{\{)/.test(t)) {
+    if (literalDefault(t)) return false;
+    let rest = t;
+    for (let was = ""; was !== rest;) {
+      was = rest;
+      rest = rest.replace(/\$\{[^{}]*\}|\{\{[^{}]*\}\}/g, "");
+    }
+    return rest.trim() === "";
+  }
+  const m = /^([A-Za-z][A-Za-z0-9-]*):(.+)$/.exec(t);
+  if (!m) return false;
+  const rest = m[2]!.trim();
+  return (
+    REFERENCE_SCHEMES.has(m[1]!.toLowerCase()) ||
+    /[/:]/.test(rest) ||
+    identifierName(rest) ||
+    (/^(\$\{|\{\{)/.test(rest) && isReference(rest))
+  );
+}
+
+/** Shannon entropy of a text, in bits per character. */
+const entropy = (t: string) => {
+  const n = new Map<string, number>();
+  for (const ch of t) n.set(ch, (n.get(ch) ?? 0) + 1);
+  let h = 0;
+  for (const c of n.values()) h -= (c / t.length) * Math.log2(c / t.length);
+  return h;
+};
+
+/**
+ * Whether a literal is strong enough to be a credential rather than a word: 16 characters or more
+ * of two kinds (lower, upper, digit, symbol), 8 or more of three, or 12 or more spread wide (3.5
+ * bits a character or more).
+ */
+const credentialStrength = (t: string) => {
+  const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(t)).length;
+  return (
+    (t.length >= 16 && kinds >= 2) ||
+    (t.length >= 8 && kinds >= 3) ||
+    (t.length >= 12 && entropy(t) >= 3.5)
+  );
+};
+
+/**
+ * Whether a literal under a secret's key reads as a credential (`configSecretField`): token-like,
+ * no name as people write them (`NAME_LIKE`), and strong enough (`credentialStrength`).
+ */
+export function credentialLike(t: string): boolean {
+  return tokenLike(t) && !NAME_LIKE.some((r) => r.test(t)) && credentialStrength(t);
+}
+
+/**
+ * Beta.25 review: where a config fact carries its setting's secret, the field that does
+ * (`value`, `source` or `cite.with`), or undefined. The verifier refuses such a fact
+ * (`secret-value`); the schema keeps only beta.24's value check, as released, so a facts file
+ * read before is read the same (ADR 0124 addendum A-gateway-outside-2).
+ *
+ * A value is one when its key names a secret (`looksLikeSecret`) or it is shaped like one
+ * (`hasSecretShape`, a Basic token too). A source or a part is one when it is shaped like a
+ * secret whatever the key. Under a key that names a secret, a value, a source or a part with a
+ * placeholder whose default is a literal (`${DB_PASSWORD:hunter22}`) is one; a source is one
+ * when it is no reference (`isReference`), no name as code writes one (`identifierName`) and no
+ * name of the fact's own, however weak (`hunter22`, `Summer2024!`); and a part is one when it
+ * is a literal that reads as a credential (`credentialLike`) or a password by its marks
+ * (`Summer2024!`; a weak word with digits, `hunter22`, is shaped as a hash or a version is, so
+ * a part like it is not refused here, and the verifier's messages never quote it) and is no
+ * name of the fact's own:
+ * its key or a name in it, its target with or without its extension, its env, or a name its
+ * source gives (the part `northwind-oauth2` of `secretKeyRef:northwind-oauth2/client-secret`).
+ * A quote is the verifier's to redact, as it always was. The answer never repeats the value.
+ */
+export function configSecretField(c: {
+  key: string;
+  value?: string | undefined;
+  source?: string | undefined;
+  target?: string | undefined;
+  env?: string | undefined;
+  cite: { with?: readonly { value: string }[] | undefined };
+}): "value" | "source" | "cite.with" | undefined {
+  // a key that names a secret (`looksLikeSecret` of a value that is none of its exceptions)
+  const secretKey = looksLikeSecret(c.key, "x");
+  if (
+    c.value !== undefined &&
+    (looksLikeSecret(c.key, c.value) ||
+      hasSecretShape(c.value) ||
+      (secretKey && literalDefault(c.value)))
+  )
+    return "value";
+  const target = c.target?.trim();
+  const own = new Set(
+    [c.key, c.env, target, target?.replace(/\.[^.]*$/, "")]
+      .filter((x): x is string => !!x)
+      .map((x) => x.trim()),
+  );
+  const keyText = c.key.toLowerCase();
+  const source = c.source?.trim();
+  const ownName = (t: string) => own.has(t) || keyText.includes(t.toLowerCase());
+  const secret = (v: string, isSource: boolean) => {
+    const t = v.trim();
+    if (!t) return false;
+    if (hasSecretShape(t)) return true;
+    if (secretKey && literalDefault(t)) return true;
+    // Beta.25 review, second round: under a secret's key a source is a reference or a name;
+    // any other literal is the secret, however weak (`hunter22`, `Summer2024!`).
+    if (isSource)
+      return (
+        secretKey &&
+        !isReference(t) &&
+        !identifierName(t) &&
+        // the file it is read from (`config/app.yml`, `src/Creds.java`)
+        !pathOfNames(t) &&
+        !fileName(t) &&
+        !NOT_A_SECRET.test(t) &&
+        !ownName(t) &&
+        // where it lives said in words (`the Kubernetes Secret forge-db`)
+        t.split(/\s+/).filter((w) => /^[A-Za-z]{2,}$/.test(w)).length < 2
+      );
+    return (
+      looksLikeSecret(c.key, t) &&
+      // a credential, or a password by its marks (`Summer2024!`): no name, version or hash has one
+      (credentialLike(t) ||
+        (/^\S+$/.test(t) && /[A-Za-z]/.test(t) && /[0-9]/.test(t) && /[!#%^&*?]/.test(t))) &&
+      !ownName(t) &&
+      (!source || !source.includes(t))
+    );
+  };
+  if (source !== undefined && secret(source, true)) return "source";
+  if ((c.cite.with ?? []).some((w) => typeof w?.value === "string" && secret(w.value, false)))
+    return "cite.with";
+  return undefined;
+}
+
 export const ConfigFact = z
   .strictObject({
     kind: z.literal("config"),
@@ -372,7 +648,7 @@ export const ConfigFact = z
         path: ["value"],
         message: `"${c.key}" looks like a secret: give its source (env:NAME, vault:path), never its value`,
       });
-    } else if (c.value !== undefined && hasSecretShape(c.value)) {
+    } else if (c.value !== undefined && hasSecretShape(c.value, { basic: false })) {
       // Beta.24 review: a value shaped like a secret (an access key id, a URL's password, a
       // bearer token) is refused whatever its key, and the message never repeats it.
       ctx.addIssue({
@@ -381,6 +657,9 @@ export const ConfigFact = z
         message: `"${c.key}" has a value shaped like a secret: give its source (env:NAME, vault:path), never its value`,
       });
     }
+    // Beta.25 review: a source's, a part's and a Basic token's checks (`configSecretField`) are
+    // the verifier's (`secret-value`), never the schema's: refusing them here would read a
+    // verified beta.24 facts file as not read, a contract change without a version.
   });
 
 /**

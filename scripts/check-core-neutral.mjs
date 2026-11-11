@@ -166,6 +166,12 @@ export const ALLOW = [
       "review round 49: the first line of a Git LFS pointer file is the LFS spec's URL (git-lfs.github.com), the same whatever host the repo is on; it tells an un-smudged pointer from source, never a branch on a vendor",
   },
   {
+    file: "packages/core/src/schema/facts.ts",
+    names: ["aws", "azure", "gcp"],
+    reason:
+      "beta.25 review, third round: the scheme words a placeholder names a secret store by (`${aws:…}`, `${azure:…}`, `${gcp:…}`), so a reference is never read as a variable's literal default (the secret); it names no vendor's branch",
+  },
+  {
     file: "packages/core/src/schema/orgpack.ts",
     names: ["gcp", "aws", "elastic"],
     reason:

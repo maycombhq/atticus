@@ -2,7 +2,11 @@ import {
   citedFiles,
   claimOnLines,
   clusterServiceAddress,
+  configSecretField,
+  credentialLike,
   factIdPart,
+  hasSecretShape,
+  looksLikeSecret,
   isPatternPath,
   plainPathPrefix,
   lineNamesClaim,
@@ -72,6 +76,187 @@ import {
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
 
+/** `key: value`, `key = value`, `"key": "value"`, `export KEY=value`: a line's key and value. */
+const LINE_KEY_VALUE =
+  /^\s*(?:-\s+)?(?:export\s+)?["']?([A-Za-z0-9_.\-[\]]+)["']?\s*[:=]\s*(.*?)\s*,?\s*$/;
+/** An XML element that holds its value (`<password>x</password>`), or names it (`name="k" value="x"`). */
+const LINE_XML = [
+  /<([A-Za-z_][\w.-]*)>([^<]+)<\/\1>/g,
+  /\b(?:key|name)\s*=\s*"([^"]+)"\s+value\s*=\s*"([^"]*)"/g,
+];
+const unquoted = (v: string) => v.replace(/^["'`]|["'`]$/g, "").trim();
+
+/**
+ * The key and value pairs a line writes (`LINE_KEY_VALUE`, `LINE_XML`), for `lineSecrets`.
+ */
+function pairsOf(t: string): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
+  const kv = LINE_KEY_VALUE.exec(t);
+  if (kv) out.push({ key: kv[1]!, value: unquoted(kv[2]!) });
+  for (const re of LINE_XML)
+    for (const m of t.matchAll(re)) out.push({ key: m[1]!, value: unquoted(m[2]!) });
+  return out;
+}
+
+/**
+ * Beta.25 review, third round: the texts of a line of code that are never said in a message,
+ * none when it holds no secret. A line holds one when a key it writes names a secret, whatever
+ * its value (`token: ${FORGE_TOKEN:changeme9}`), or it holds a value shaped like one: a text
+ * `redactSecrets` takes out, a URL's password, a quoted literal beside a secret word, or a word
+ * that reads as a credential (`Hunter22wx`). Its texts are the line itself (as a message quotes
+ * it, trimmed and cut at 200 characters), each value it writes and each literal on it.
+ */
+function lineSecrets(line: string): string[] {
+  const t = line.trim();
+  if (!t) return [];
+  const pairs = pairsOf(t);
+  const words = t
+    .split(/[\s"'`=:,;()<>{}[\]/@]+/)
+    .filter((w) => w.length >= 6 && credentialLike(w));
+  const holds =
+    redactSecrets(t) !== t ||
+    hasSecretShape(t) ||
+    quoteHoldsSecret(t) ||
+    words.length > 0 ||
+    pairs.some((p) => looksLikeSecret(p.key, "x") || (p.value && credentialLike(p.value)));
+  if (!holds) return [];
+  const literals = [...t.matchAll(/(["'`])((?:(?!\1).){3,})\1/g)].map((m) => m[2]!);
+  return [t, t.slice(0, 200), ...pairs.map((p) => p.value), ...literals, ...words].filter(
+    (s) => s.length >= 3,
+  );
+}
+
+/** Every citation in a fact, wherever it sits (its cite, parts, authCite, steps, error paths). */
+function citesIn(x: unknown, out: { file: string; line: number; quote?: string }[] = []) {
+  if (Array.isArray(x)) for (const v of x) citesIn(v, out);
+  else if (x && typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    if (typeof o.file === "string" && typeof o.line === "number")
+      out.push(o as { file: string; line: number; quote?: string });
+    for (const v of Object.values(o)) if (v && typeof v === "object") citesIn(v, out);
+  }
+  return out;
+}
+
+/**
+ * Whether a config fact's text is never quoted (beta.25 review, second and third rounds): its key
+ * names a secret, its value, source, a part or its quote carries one or reads as a credential,
+ * or a line it cites holds a secret (`lineSecrets`), whatever key the fact claims. Its messages
+ * say what is wrong without the text (`checkCite`'s `quiet`), are scrubbed of it (`scrubbed`),
+ * and a rejection shows it redacted (`withoutSecret`).
+ */
+function quietFact(f: Fact, lineAt?: (file: string, line: number) => string | undefined): boolean {
+  if (f.kind !== "config") return false;
+  if (looksLikeSecret(f.key, "x") || configSecretField(f)) return true;
+  if (
+    [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)].some(
+      (t) => t !== undefined && (hasSecretShape(t) || credentialLike(t) || redactSecrets(t) !== t),
+    )
+  )
+    return true;
+  return (
+    lineAt !== undefined &&
+    [f.cite, ...(f.cite.with ?? [])].some((c) => lineSecrets(lineAt(c.file, c.line) ?? "").length)
+  );
+}
+
+/**
+ * Beta.25 review, third round: the one choke point every message of a rejection passes, whichever
+ * way it is shown (`rejected.jsonl`, `verify.yaml`, `--json`, the terminal). Secrets are
+ * redacted (`redactSecrets`); every secret text of a line the fact cites, or a line either side
+ * (`lineSecrets`), and any quoted text that holds one, is `<redacted>`; and a quiet fact's own
+ * texts (`scrubbed`) are taken out.
+ */
+function sanitised(
+  f: Fact,
+  message: string,
+  lineAt: (file: string, line: number) => string | undefined,
+  quiet: boolean,
+): string {
+  let out = redactSecrets(message);
+  const texts = new Set<string>();
+  for (const c of citesIn(f))
+    for (const n of [c.line - 1, c.line, c.line + 1])
+      for (const s of lineSecrets(lineAt(c.file, n) ?? "")) texts.add(s);
+  for (const t of [...texts].sort((a, b) => b.length - a.length))
+    out = out.split(t).join("<redacted>");
+  out = out.replace(/"([^"]*)"/g, (all, inner: string) =>
+    lineSecrets(inner).length ? '"<redacted>"' : all,
+  );
+  return quiet ? scrubbed(f, out) : out;
+}
+
+/**
+ * A rejected fact as its rejection shows it: a quiet one redacted (`withoutSecret`), any other
+ * with each quote that holds a secret, or a secret text of the line it cites, left out.
+ */
+function shownFact(
+  f: Fact,
+  quiet: boolean,
+  lineAt: (file: string, line: number) => string | undefined,
+): Fact {
+  if (quiet) return withoutSecret(f);
+  const cites = citesIn(f).filter((c) => c.quote !== undefined);
+  const bad = (c: { file: string; line: number; quote?: string }) => {
+    const q = c.quote!;
+    if (lineSecrets(q).length) return true;
+    return [c.line - 1, c.line, c.line + 1].some((n) =>
+      lineSecrets(lineAt(c.file, n) ?? "").some((s) => s !== "" && q.includes(s)),
+    );
+  };
+  if (!cites.some(bad)) return f;
+  const strip = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(strip);
+    if (!x || typeof x !== "object") return x;
+    const o = Object.fromEntries(Object.entries(x).map(([k, v]) => [k, strip(v)]));
+    const c = x as { file?: unknown; line?: unknown; quote?: unknown };
+    if (
+      typeof c.file === "string" &&
+      typeof c.line === "number" &&
+      typeof c.quote === "string" &&
+      bad(c as { file: string; line: number; quote: string })
+    )
+      delete o.quote;
+    return o;
+  };
+  return strip(f) as Fact;
+}
+
+/**
+ * A message of a quiet config fact with every text of the fact's own that may be its secret (its
+ * value, source, quote and parts) taken out; its key, target, env and the files it cites stay.
+ */
+function scrubbed(f: Fact, message: string): string {
+  if (f.kind !== "config") return message;
+  const names = new Set(
+    [f.key, f.target, f.env, f.cite.file, ...(f.cite.with ?? []).map((w) => w.file)].filter(
+      (x): x is string => x !== undefined,
+    ),
+  );
+  const texts = [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)]
+    .flatMap((t) => (t === undefined ? [] : [t, t.trim()]))
+    .filter((t) => t.length >= 3 && !names.has(t))
+    .sort((a, b) => b.length - a.length);
+  let out = message;
+  for (const t of texts) out = out.split(t).join("<redacted>");
+  return out;
+}
+
+/** A config fact with its value, source, quote and every part's value redacted (`secret-value`). */
+function withoutSecret(f: Fact): Fact {
+  if (f.kind !== "config") return f;
+  const { quote: _q, ...cite } = f.cite;
+  return {
+    ...f,
+    ...(f.value !== undefined ? { value: "<redacted>" } : {}),
+    ...(f.source !== undefined ? { source: "<redacted>" } : {}),
+    cite: {
+      ...cite,
+      ...(f.cite.with ? { with: f.cite.with.map((w) => ({ ...w, value: "<redacted>" })) } : {}),
+    },
+  } as Fact;
+}
+
 export type RejectCode =
   | "outside-repo"
   | "secret-path"
@@ -105,6 +290,12 @@ export type RejectCode =
    * (ADR 0124 addendum A-framework): a reader can't rename an artifact.
    */
   | "framework-name"
+  /**
+   * A config fact that carries its setting's secret by another field than its value: its
+   * source, a `cite.with` part or its quote (ADR 0124 addendum, beta.25). The fact is rejected
+   * with every part, its quote and its source redacted; the message never repeats the value.
+   */
+  | "secret-value"
   /** A deploy fact's host written as a template (`{{ .Values.host }}`, `${HOST}`) (ADR 0143). */
   | "exposure-template"
   /**
@@ -455,6 +646,17 @@ const SOURCE_NAME = /(^|\/)(Dockerfile[^/]*|Makefile|Jenkinsfile|Procfile|Contai
 const LOCKFILE =
   /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Gemfile\.lock|Cargo\.lock|poetry\.lock|go\.sum|packages\.lock\.json)$/;
 
+/** A folder named for an environment under a folder of environments (`env/test/`, `overlays/qa/`). */
+const ENV_FOLDER = /(^|\/)(env|envs|environments?|overlays|stages?)\/[^/]+(?=\/)/gi;
+
+/**
+ * Beta.25 review: whether Trust's secrets check leaves a file out as a test's or a fixture's (the
+ * org pack's not-product folders): an environment's folder named `test` (the Apigee config
+ * plugin's `env/test/kvms.json`) is the product's, so it is never read as a test folder.
+ */
+const testFileOf = (rules: ReadRules, p: string) =>
+  rules.notProduct.test(p.replace(ENV_FOLDER, "$1$2/_"));
+
 /**
  * Files that hold no facts of what a repo serves, calls, stores or deploys, so coverage doesn't
  * count them (feedback from the A4 run): tests, build-tool wrappers, Java package docs, and
@@ -540,8 +742,14 @@ function claimsOf(f: Fact): Claim[] {
     // A call whose path is a setting's placeholder a helper puts together is checked apart
     // (`helperBuildsKey`): its bare key is never a claim, or a settings line would be a call.
     case "entry":
-    case "call":
       return [routeOrWord(f.path)];
+    case "call":
+      // Beta.25: a call to a whole URL that writes no path (a target's `<URL>` a deploy token
+      // replaces, `https://replaced_by_config_json`) sends `/`, which its line writes as the URL.
+      return f.path.trim() === "/" &&
+        /^[a-z][a-z0-9+.-]*:\/\/[^/\s?#]+\/?$/i.test(f.cite.value.trim())
+        ? [routeOrWord(f.path), { kind: "word", value: f.cite.value.trim() }]
+        : [routeOrWord(f.path)];
     case "store":
       return [
         { kind: "word", value: f.name },
@@ -728,6 +936,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     return lines;
   };
   const deriveEnv: DeriveEnv = { lines: linesOf, files: listed };
+  /** One line of a file, as `sanitised` and `quietFact` read the lines a fact cites. */
+  const lineAt = (file: string, n: number) => (n >= 1 ? linesOf(file)?.[n - 1] : undefined);
 
   /** One citation checked against its file: undefined when it holds, else why not. */
   const checkCite = (
@@ -738,6 +948,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     withHint = true,
     /** A rule of the cited file's own that names the claim (an Apigee pass-through path). */
     alsoHolds?: (lines: readonly string[], line: number) => boolean,
+    /** Never quote a part, the quote or the line: they may be a secret (`quietFact`). */
+    quiet = false,
   ): Problem | undefined => {
     const where = `${cite.file}:${cite.line}`;
     if (!insideRepo(cite.file))
@@ -797,7 +1009,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       )
         return {
           code: "claim-not-on-line",
-          message: `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
+          message: quiet
+            ? `${pl} is not written at ${p.file}:${p.line} (or the line either side); cite the line that writes it (its text is not repeated here: it may be a secret)`
+            : `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
         };
       partLines.push(...near(ls, p.line));
     }
@@ -861,7 +1075,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (!near.some((l) => quoteMatches(l, cite.quote)))
         return {
           code: "quote-mismatch",
-          message: `${label} quotes "${cite.quote}", but ${where} reads "${line.trim().slice(0, 200)}"`,
+          message: quiet
+            ? `${label}'s quote is not what ${where} (or the line either side) reads; neither is repeated here, as either may hold a secret`
+            : `${label} quotes "${cite.quote}", but ${where} reads "${line.trim().slice(0, 200)}"`,
         };
     }
     return undefined;
@@ -945,14 +1161,25 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 PLACEHOLDER_KEY.test(f.path.trim()) &&
                 helperBuildsKey(PLACEHOLDER_KEY.exec(f.path.trim())![1]!, f.cite, linesOf))
           : undefined,
+        quietFact(f, lineAt),
       ),
     );
     // Beta.24 review: a config fact's value is what its line sets, and its key sits where the
     // line does (its YAML parents, its properties key, its token object); the join puts the
     // value into the catalog.
     if (f.kind === "config" && !found.has(f.id)) {
-      const bad = configLineProblem(f, linesOf, listed);
+      const bad = configLineProblem(f, linesOf, listed, rules.gatewayBundleFolders);
       if (bad) problem(f, "claim-not-on-line", `${label}: ${bad}`);
+    }
+    // Beta.25 review: a secret past the schema (a reader that skipped it) is refused here too.
+    if (f.kind === "config") {
+      const field = configSecretField(f);
+      if (field)
+        problem(
+          f,
+          "secret-value",
+          `${label}: "${f.key}" carries a secret in its ${field}; cite the line that names the setting and give its source (env:NAME, vault:path), never its value`,
+        );
     }
     // A-read, problem 4: an entry's auth rests on the line that sets it, checked as a part is.
     if (f.kind === "entry" && f.authCite)
@@ -1236,14 +1463,31 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
 
   const rejected = new Map<string, Rejected>();
   for (const f of facts) {
-    const ps = found.get(f.id);
+    let ps = found.get(f.id);
     if (!ps?.length) continue;
+    // A fact refused for the secret it carries is reported without it, in its fields and in
+    // every message of its, whatever else is wrong with it (beta.25 review, second round); so
+    // is a config fact whose text may be a secret, or that cites a line holding one
+    // (`quietFact`). Every message passes `sanitised`, the one choke point (third round). A fact
+    // of another commit is written back to the facts file as it was read (`writeVerifyFiles`),
+    // so its record is redacted only when it carries a secret itself; its lines aren't this
+    // commit's, so they make it quiet in no other way.
+    const isOther = other.has(f.id);
+    const quiet =
+      ps.some((p) => p.code === "secret-value") || quietFact(f, isOther ? undefined : lineAt);
+    ps = ps.map((p) => ({ ...p, message: sanitised(f, p.message, lineAt, quiet) }));
+    const shown = isOther
+      ? (f.kind === "config" && configSecretField(f)) ||
+        citesIn(f).some((c) => c.quote && lineSecrets(c.quote).length)
+        ? withoutSecret(f)
+        : f
+      : shownFact(f, quiet, lineAt);
     rejected.set(
       f.id,
       ps.length === 1
-        ? { fact: f, ...ps[0]! }
+        ? { fact: shown, ...ps[0]! }
         : {
-            fact: f,
+            fact: shown,
             code: ps[0]!.code,
             message: ps.map((p, i) => `(${i + 1}) ${p.message}`).join(" "),
             problems: ps,
@@ -1256,10 +1500,16 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (rejected.has(f.id)) continue;
       const r = refsOf(f).find((x) => rejected.has(x.id));
       if (r) {
+        const quiet = quietFact(f, lineAt);
         rejected.set(f.id, {
-          fact: f,
+          fact: shownFact(f, quiet, lineAt),
           code: "ref-rejected",
-          message: `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
+          message: sanitised(
+            f,
+            `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
+            lineAt,
+            quiet,
+          ),
         });
         changed = true;
       }
@@ -1337,12 +1587,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // left, so it is scanned for the report too, by key and line. Its lines are read only into
     // this check and dropped; it stays no source, and no fact may cite it.
     if (isSecretPath(p)) {
-      if (
-        insideRepo(p) &&
-        isConfigFile(p) &&
-        !rules.notProduct.test(p) &&
-        !tooBigToRead(o.source, p)
-      ) {
+      if (insideRepo(p) && isConfigFile(p) && !testFileOf(rules, p) && !tooBigToRead(o.source, p)) {
         const text = o.source.read(p);
         const ls = text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n");
         if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
@@ -1351,11 +1596,34 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     // Review round 49: by its path and size first, so a binary, a lock file or a file too big
     // to be source is never read just to be passed over.
-    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) continue;
+    // Beta.25: a config file the source rules don't count (a deploy tool's `env/<env>/kvms.json`,
+    // a data file) is still scanned for the report, its lines read only into this check. A test's
+    // or a fixture's file (the org pack's not-product folders: `src/test/**`, `fixtures/**`) is
+    // not, as beta.24 left a test's env file out: its secrets are made up for the test.
+    const scanOnly = () => {
+      if (
+        !insideRepo(p) ||
+        !isConfigFile(p) ||
+        LOCKFILE.test(p) ||
+        testFileOf(rules, p) ||
+        tooBigToRead(o.source, p)
+      )
+        return;
+      const ls = readLines(p);
+      if (ls && !binaryLines(ls)) secrets.push(...liveSecretsIn(p, ls));
+    };
+    if (!isSourceFile(p, "", undefined, rules) || tooBigToRead(o.source, p)) {
+      scanOnly();
+      continue;
+    }
     // A-room: every file of the repo passes through here, and only to ask whether it counts as
     // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
     const ls = readLines(p) ?? [""];
-    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) continue;
+    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) {
+      if (isConfigFile(p) && !LOCKFILE.test(p) && !testFileOf(rules, p) && !binaryLines(ls))
+        secrets.push(...liveSecretsIn(p, ls));
+      continue;
+    }
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else {
       sources.push(p);
