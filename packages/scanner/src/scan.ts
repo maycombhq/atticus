@@ -1,8 +1,6 @@
 import { stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { featuresForScan } from "@maycombhq/features";
-import { glossaryForScan } from "@maycombhq/glossary";
 import {
   configHash,
   createParseCache,
@@ -16,21 +14,13 @@ import {
   type ScanCache,
 } from "@maycombhq/sdk";
 import {
-  joinConventions,
-  applyCurated,
-  declaredCallsOf,
-  joinCallers,
-  joinFacts,
   loadOrgPack,
-  mergeCatalog,
   throwIfCancelled,
   type CatalogRecord,
   type Dialect,
-  type Fact,
   type FrameworkModel,
   type OrgPack,
   type ScannerPlugin,
-  helperOn,
   stackHelpersOff,
   cmpText,
   canonicalize,
@@ -51,19 +41,11 @@ import {
   type RepoImports,
   type UnmodelledFramework,
 } from "@maycombhq/extractors";
-import { listIngestors } from "@maycombhq/ingestors";
-import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
+import { type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState, inPlaceDir, type GitRunner } from "@maycombhq/workspace";
-import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
-import {
-  curatedDirOf,
-  estateMergeInput,
-  productionRepos,
-  prototypeScanNotes,
-} from "./merge-input.js";
-import { factsForScan, type FactBasis } from "./facts-scan.js";
-import { applyFactJoins, joinReposOf, outsideSystems } from "./facts-catalog.js";
+import { productionRepos, prototypeScanNotes } from "./merge-input.js";
+import { type FactBasis } from "./facts-scan.js";
 import {
   applyClients,
   applyPrefixes,
@@ -72,7 +54,21 @@ import {
   withExcludes,
 } from "./scan-settings.js";
 import { pluginApplies, usablePlugins, withPluginScan } from "./plugins.js";
-import { factsSlotStaleness, sha256Of, SLOT_VERSION, type ReadersObservation } from "./slots.js";
+import {
+  factsSlotStaleness,
+  serializeReadersSlot,
+  sha256Of,
+  SLOT_VERSION,
+  type ReadersObservation,
+  type ReadersSlotT,
+} from "./slots.js";
+import {
+  buildCatalog,
+  loadBuildInputs,
+  readersSlotRead,
+  type Build,
+  type BuildSlots,
+} from "./build.js";
 
 export interface ScanOptions {
   /** The metarepo root (holds org-pack/, catalog/, workspace/). */
@@ -106,6 +102,11 @@ export interface ScanOptions {
    * absorb keeps under the state folder's `absorbed/<id>/`.
    */
   federated?: { id: string; dir: string }[];
+  /**
+   * ADR 0195: the slots the build reads besides this scan's reads, from the ones on disk (a
+   * branch's catalog: the baseline's slots with the branch's in place of its repos').
+   */
+  slots?: (onDisk: BuildSlots) => BuildSlots;
 }
 
 /** What each federated metarepo contributed. */
@@ -224,6 +225,11 @@ export interface EstateScan {
    * files changed since (never written here: `atticus verify <repo> --write` refreshes it).
    */
   observations: ReadersObservation[];
+  /**
+   * The build of ADR 0195 point 2, in memory: every slot, this scan's full reads in place of
+   * their repos' slots. `atticus scan` guards it and writes it with the slots.
+   */
+  build: Build;
 }
 
 async function isDir(p: string): Promise<boolean> {
@@ -249,7 +255,7 @@ export async function orgPackDirFor(root: string): Promise<{ dir: string; adopte
  * read-only, so the parses of their record files are kept in **our** root (`cacheRoot`, ADR 0119
  * addendum) — never beside their files.
  */
-async function federate(
+export async function federate(
   local: CatalogRecord[],
   sources: { id: string; dir: string }[],
   problems: ScanProblem[],
@@ -295,7 +301,7 @@ const REMOTE_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
 const SCP_URL = /^[^/]+@[^:/]+:/;
 
 /** Default federation sources from sources.yaml: atticus format, link mode, on this machine. */
-async function federationSources(
+export async function federationSources(
   root: string,
   stateDir: string,
   op: OrgPack,
@@ -357,7 +363,10 @@ async function usableDialects(
  * or has an entry no test exercises, is left out with a problem, so a wrong draft can't
  * quietly shape the catalog. A model with no tests loads as before.
  */
-async function usableFrameworks(op: OrgPack, problems: ScanProblem[]): Promise<FrameworkModel[]> {
+export async function usableFrameworks(
+  op: OrgPack,
+  problems: ScanProblem[],
+): Promise<FrameworkModel[]> {
   const ok: FrameworkModel[] = [];
   for (const m of op.frameworks) {
     const failures = await runFrameworkTests(m).catch((e: Error) => [
@@ -504,8 +513,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       }
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
   const basis: Record<string, FactBasis> = {};
-  /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
-  const factRepos: { repo: string; facts: Fact[]; targets: Record<string, string> }[] = [];
   /** Each repo's structured files, to tell which no record cites. */
   const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
@@ -698,127 +705,42 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         },
         ...stale,
       });
-    // ADR 0124 §3: a repo the assistant has read takes its verified facts over its readers'
-    // records; the readers stay as a cross-check, said as a note. Facts of an earlier commit are
-    // carried where the files they cite are unchanged (addendum A-incremental); the readers stand
-    // in only when the two commits can't be compared.
-    const fromFacts = await factsForScan(o.root, op, r.id, state.commit, readerRecords, {
-      dir,
-      ...(o.git ? { git: o.git } : {}),
-    });
-    if (fromFacts.note) factNotes.push(fromFacts.note);
-    basis[r.id] = fromFacts.records && fromFacts.basis ? fromFacts.basis : { from: "readers" };
-    if (fromFacts.facts)
-      factRepos.push({ repo: r.id, facts: fromFacts.facts, targets: fromFacts.targets ?? {} });
-    results.push({ ...scan, records: fromFacts.records ?? readerRecords });
+    results.push({ ...scan, records: readerRecords });
     o.onProgress?.(++done, repos.length, r.id);
   }
 
-  const mergeInput = (records: CatalogRecord[]) =>
-    estateMergeInput(op, repos, records, (id) => modulesOf.get(id) ?? []);
-  // What the org's pipeline templates and library steps do, on the pipelines using them (ADR 0062).
-  let codeRecords = applyPipelineModels(
-    results.flatMap((s) => s.records),
-    frameworks,
-  );
-  // The repos read from their facts join each other's entries, as verify --write joins them.
-  if (factRepos.length) {
-    const joinRepos = joinReposOf(op, factRepos);
-    const join = joinFacts({
-      repos: joinRepos,
-      targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
-      outside: outsideSystems(op),
-      ...joinConventions(op),
-      walkGateways: helperOn("gateway-walk"),
-    });
-    codeRecords = applyFactJoins(codeRecords, join, joinRepos, {
-      callers: joinCallers({
-        repos: joinRepos,
-        join,
-        declared: declaredCallsOf(op.profiles),
-        ...joinConventions(op),
-      }),
-      join,
-    });
-  }
-  let merged = mergeCatalog(mergeInput(codeRecords));
-  const curatedDir = o.curatedDir ?? curatedDirOf(o.root, op);
-  const curated = await readCatalog(curatedDir, { cacheRoot: o.root });
-  for (const p of curated.problems)
-    problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
-
-  // Documents in inputs/ (partner specs, diagrams, payloads) come after the code, so code wins in merge.
-  let inputs: ScanInputsResult | undefined;
-  if (o.inputsDir !== null) {
-    inputs = await scanInputs({
-      root: o.root,
-      orgPack: op,
-      inputsDir: o.inputsDir ?? join(stateDir, "inputs"),
-      records: [...merged.records, ...curated.records],
-      ingestors: listIngestors(),
-      scannedAt,
-    });
-    for (const p of inputs.problems)
-      problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
-    if (inputs.records.length > 0)
-      merged = mergeCatalog(mergeInput([...codeRecords, ...inputs.records]));
-  }
-  // Features found in code (ADR 0031) join the catalog before curated decisions, so people's
-  // names, tags, merges and splits apply over detection on every scan.
-  const found = await featuresForScan({
-    records: merged.records,
-    decisions: curated.records,
-    proposalsDir: join(dirname(curatedDir), "proposals"),
-  });
-  for (const p of found.problems)
-    problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
-  // Federated metarepos (link mode) add their records last, before curated decisions: local
-  // records win, and their records never become features of ours.
-  const fedSources = o.federated ?? (await federationSources(o.root, stateDir, op));
-  let federated: FederatedContribution[] | undefined;
-  let fedRecords: CatalogRecord[] = [];
-  if (fedSources.length) {
-    const fed = await federate(
-      [...merged.records, ...found.features],
-      fedSources,
-      problems,
-      o.root,
-    );
-    // Their loose ends go through merge against our raw facts; local code still wins.
-    const placed = resolveFederatedLooseEnds({
-      local: merged.records,
-      raw: [...codeRecords, ...(inputs?.records ?? [])],
-      federated: fed.records,
-      merge: (records) => mergeCatalog(mergeInput(records)),
-    });
-    fedRecords = placed.federated;
-    federated = fed.contributions.map((c) =>
-      placed.resolved.get(c.id) ? { ...c, resolved: placed.resolved.get(c.id)! } : c,
-    );
-  }
-  // The business glossary: terms from wikis and code, column links, AI proposals; before curated decisions.
-  const glossary = await glossaryForScan({
-    root: o.root,
-    orgPack: op,
-    records: [...merged.records, ...found.features],
-    decisions: curated.records,
-    proposalsDir: join(dirname(curatedDir), "proposals"),
+  // ADR 0195 point 2: the catalog is the build of every slot, with this scan's full reads in
+  // place of their repos' slots and every other repo's last good read kept. The scan reads no
+  // facts: a repo with a current facts snapshot is built from it, whatever its readers found.
+  const fresh = new Map<string, ReadersSlotT>();
+  for (const x of observed.values()) if (x.full) fresh.set(x.repo, x.slot);
+  const inputs = await loadBuildInputs(o.root, {
+    op,
     orgPackDir,
+    stateDir,
+    slots: (disk) => {
+      const on = o.slots ? o.slots(disk) : disk;
+      const readers = new Map(on.readers);
+      for (const [repo, slot] of fresh)
+        readers.set(repo, readersSlotRead(serializeReadersSlot(slot)));
+      return { ...on, readers };
+    },
+    ...(o.curatedDir ? { curatedDir: o.curatedDir } : {}),
+    ...(o.inputsDir === null ? { inputsDir: null } : o.inputsDir ? { inputsDir: o.inputsDir } : {}),
+    ...(o.federated ? { federated: o.federated } : {}),
   });
-  // The glossary is an enrichment: what it can't read (a missing wiki folder) is a note, not a scan failure.
-  const notes = [...factNotes, ...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`)];
-  const withFeatures = [...glossary.records, ...fedRecords].sort((a, b) =>
-    a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind),
-  );
-  const applied = applyCurated(withFeatures, curated.records);
-  for (const p of applied.problems)
-    problems.push({ source: "curated", message: JSON.stringify(p) });
-  merged = { ...merged, records: applied.records };
-  for (const i of merged.invalid)
-    problems.push({
-      source: "merge",
-      message: `invalid record: ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
-    });
+  const build = await buildCatalog(inputs);
+  problems.push(...build.problems.filter((p) => !p.source.startsWith("org-pack/")));
+  for (const s of build.sources)
+    if (s.source === "facts" && repos.some((r) => r.id === s.repo)) {
+      basis[s.repo] = { from: "facts", unread: [] };
+      factNotes.push(
+        `${s.repo}: read from its facts snapshot (commit ${s.commit?.slice(0, 7) ?? "unknown"}); its readers' read is kept beside it as the cross-check, never merged.`,
+      );
+    } else if (results.some((x) => x.repo === s.repo)) basis[s.repo] = { from: "readers" };
+  const merged = { records: build.records, stats: build.stats, invalid: build.invalid };
+  const applied = build.curated;
+  const notes = [...factNotes, ...build.notes];
   const runs = results.flatMap((s) => s.runs);
   // House frameworks with no model, and models that read nothing where they're imported (ADR 0066).
   const unmodelled = unmodelledFrameworks(
@@ -883,18 +805,18 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       repos: results.length,
       cachedRuns: runs.filter((r) => r.status === "cached").length,
       ranRuns: runs.filter((r) => r.status === "ran").length,
-      records: merged.records.length,
       ...merged.stats,
       // A file several extractors left out is one warning.
       warnings: new Set(
         results.flatMap((s) => s.warnings.map((w) => JSON.stringify([s.repo, w.path, w.message]))),
       ).size,
     },
-    ...(inputs ? { inputs } : {}),
+    ...(build.inputs ? { inputs: build.inputs } : {}),
     curated: { applied: applied.applied, suppressed: applied.suppressed },
     notes,
-    ...(federated ? { federated } : {}),
+    ...(build.federated ? { federated: build.federated } : {}),
     basis,
+    build,
     unread: productionRepos(op).flatMap((r) => {
       const u = unreadOf.get(r.id);
       return u ? [u] : [];

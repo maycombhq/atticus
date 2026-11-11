@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { catalogDirOf, orgPackDirOf, stateDirOf } from "@maycombhq/core";
-import { scanEstate, writeCatalog } from "@maycombhq/scanner";
+import { orgPackDirOf, stateDirOf } from "@maycombhq/core";
+import { scanIntoCatalog } from "@maycombhq/scanner";
 import { runCheck, type CheckResult } from "./checks.js";
 import { loadLessons, type Lesson, type LessonStep } from "./lessons.js";
 import { isSandbox } from "./sandbox.js";
@@ -110,9 +110,13 @@ export async function startLesson(
   if (!resumed) {
     for (const s of lesson.setup) {
       if (s === "scan") {
-        const scan = await scanEstate({ root });
-        await writeCatalog(join(catalogDirOf(root), "generated"), scan.records);
-        setup.push(`Scanned the sandbox: ${scan.records.length} records in catalog/generated.`);
+        // ADR 0195: the sandbox's readers slots, then the build, as atticus scan writes them.
+        const { scan, result } = await scanIntoCatalog({ root, command: "atticus learn start" });
+        setup.push(
+          result?.write
+            ? `Scanned the sandbox: ${scan.records.length} records in catalog/generated.`
+            : `Scanned the sandbox, but wrote nothing: ${result?.guard.refused?.message.split("\n")[0] ?? "it read no repo in full"}`,
+        );
       }
     }
     p.lessons[lesson.id] = { startedAt: iso(o.now ?? new Date()), steps: {} };

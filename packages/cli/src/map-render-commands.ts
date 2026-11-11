@@ -44,18 +44,23 @@ import {
   type ExposureFinding,
   type JoinHow,
   type Question,
-  readSharedMaps,
+  ContractsFile,
+  sharedJoinAbout,
   type SharedJoinResult,
 } from "@maycombhq/core";
 import {
   answeredQuestionOfCall,
   answerReconfirmed,
   answerRuleOffers,
-  catalogWithFacts,
+  buildAndWrite,
+  buildCatalog,
+  buildLines,
   diffCatalogs,
+  factsSnapshotWrites,
+  loadBuildInputs,
+  withSlotWrites,
   diffIsEmpty,
   estateFacts,
-  pairsOfRepo,
   estateRepos,
   isPrototypeRepo,
   prototypeLeftOut,
@@ -69,12 +74,10 @@ import {
   staleTargetQuestions,
   staleTopicQuestions,
   targetQuestionFor,
-  targetsFromAnswers,
   TARGETS_STEP,
   topicQuestionDrafts,
-  writeCatalog,
-  writeFactsSlot,
   sourcesRelOf,
+  type BuildAndWrite,
   type CatalogDiff,
 } from "@maycombhq/scanner";
 import { readNotSettled, repoOfTarget } from "./answer-reopen.js";
@@ -94,7 +97,7 @@ import { checkoutOf } from "./facts-files.js";
 import {
   linkEvidenceAbout,
   linkEvidenceLines,
-  loadLinkEvidence,
+  repoContractsOf,
   writeRepoContracts,
 } from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
@@ -486,67 +489,54 @@ export async function projectFactsIntoCatalog(
     cache?: boolean;
     /** G1 (ADR 0174): pairings not written yet, a preview's, added to those on file. */
     extraPairs?: Readonly<Record<string, PersonPair>>;
+    /** The commit verify checked the facts at (the snapshot's). */
+    commit?: string;
   } = {},
 ) {
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
   const cacheOpts = given.cache === false ? {} : { cacheRoot: root };
   const existing =
     given.existing ?? (await readCatalog(join(catalogDirOf(root), "generated"), cacheOpts)).records;
-  const curated = await readCatalog(join(catalogDirOf(root), "curated"), cacheOpts);
   const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
   const answered = everyTarget.filter((q) => q.repo === repo);
-  // ADR 0153 (Q2): an answer's rule, from this repo's questions or another repo's whose scope
-  // is this repo's type, covers every call it matches.
   const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
   const targetsOpts = repoType ? { repoType } : {};
-  // ADR 0181: the calls an AI answer named, so their links are the AI's, never a person's.
-  const aiTargets: Record<string, { runtime: string; run: string }> = {};
-  // Beta.24 review: the hosts questions too, whose Ignore leaves the calls on their host.
-  const hostsAsked = (await listQuestions(root, { step: HOSTS_STEP })).questions;
-  const targets = targetsFromAnswers(repo, facts, [...everyTarget, ...hostsAsked], {
-    ...targetsOpts,
-    ai: aiTargets,
-  });
   const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
-  // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
-  // join the entries that serve them and their calls into this repo are joined again.
+  // The other repos' facts as the assistant's files hold them: for the questions' suggestions.
   const estate = await estateFacts(root, op, repo);
-  // ADR 0151: every repo's contract files kept beside its facts, and the traffic aggregates
-  // people imported. The write refreshes this repo's contracts first; a preview reads them from
-  // the checkout in memory (`given.contracts`), so it says what the write will and writes nothing.
-  const onFile = await loadLinkEvidence(root);
-  const evidence = given.contracts
-    ? {
-        ...onFile,
-        contracts: [
-          ...onFile.contracts.filter((c) => c.repo !== repo),
-          ...(given.contracts.entries.length ? [given.contracts] : []),
-          // In the companions' file order, as `loadLinkEvidence` reads them.
-        ].sort((a, b) => {
-          const [x, y] = [`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`];
-          return x < y ? -1 : x > y ? 1 : 0;
-        }),
-      }
-    : onFile;
-  // ADR 0160 (O3): the maps other teams share, read-only, under shared/<team>/.
-  const shared = await readSharedMaps(root);
-  const result = catalogWithFacts({
-    repo,
-    facts,
-    existing: [...existing],
-    op,
-    decisions: curated.records,
-    targets,
-    estate: estate.repos,
-    estateTargets: estate.targets,
-    // G1 (ADR 0174): the pairings people made on the canvas, this repo's and the others'.
-    pairs: { ...(await pairsOfRepo(root, repo, facts)), ...given.extraPairs },
-    estatePairs: estate.pairs,
-    aiTargets,
-    estateAiTargets: estate.aiTargets,
-    linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
-    ...(shared.maps.length ? { shared: shared.maps } : {}),
+  // ADR 0195 (CS2): the build with this repo's facts snapshot in place of its slot, every other
+  // repo from its own slot (facts or readers), nothing read from the catalog it replaces. The
+  // contract files ride in the snapshot's meta (ADR 0151); a preview passes the checkout's.
+  const contracts =
+    given.contracts ??
+    ((await readContractsCompanion(root, repo)) as ContractsFileT | undefined) ??
+    null;
+  const snap = factsSnapshotWrites(root, repo, facts, {
+    commit: given.commit ?? snapshotCommitOf(facts),
+    contracts: contracts && contracts.entries.length ? contracts : null,
   });
+  const inputs = await loadBuildInputs(root, { op });
+  const build = await buildCatalog({
+    ...inputs,
+    slots: await withSlotWrites(root, inputs.slots, snap),
+    ...(given.extraPairs ? { extraPairs: new Map([[repo, given.extraPairs]]) } : {}),
+  });
+  const mine = build.facts.get(repo);
+  const result = {
+    records: build.records,
+    flows: mine?.flows ?? [],
+    unresolved: mine?.unresolved ?? [],
+    curated: build.curated,
+    projectionIssues: mine?.projectionIssues ?? [],
+    invalid: build.invalid,
+    notes: build.notes,
+    ...(mine ? { join: mine.join } : {}),
+    ...(build.linkEvidence ? { linkEvidence: build.linkEvidence } : {}),
+    ...(build.shared ? { shared: sharedJoinAbout(build.shared, repo) } : {}),
+    ...(build.terms ? { terms: build.terms } : {}),
+    ...(mine?.answerMisses.length ? { answerMisses: mine.answerMisses } : {}),
+  };
+  const targets = mine?.targets ?? {};
   const diff = diffCatalogs([...existing], result.records);
   const links = linkChanges(repo, result.join, existing, result.records);
   return {
@@ -560,9 +550,31 @@ export async function projectFactsIntoCatalog(
     result,
     diff,
     links,
-    evidenceProblems: [...evidence.problems, ...shared.problems.map((p) => p.message)],
-    sharedMaps: shared.maps,
+    build,
+    snap,
+    evidenceProblems: build.problems.filter((p) => p.source === "build").map((p) => p.message),
+    sharedMaps: inputs.shared.maps,
   };
+}
+
+/** The commit a snapshot is of when verify didn't say: the facts' own, when they agree. */
+function snapshotCommitOf(facts: readonly Fact[]): string {
+  const commits = [...new Set(facts.map((f) => f.commit))];
+  return commits.length === 1 ? commits[0]! : "unknown";
+}
+
+/** A repo's contract companion on file (`facts/<repo>.contracts.yaml`), when it reads. */
+async function readContractsCompanion(root: string, repo: string) {
+  const text = await readFile(join(factsDirOf(root), `${repo}.contracts.yaml`), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return undefined;
+  try {
+    const p = ContractsFile.safeParse(parse(text));
+    return p.success ? p.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function writeFactsIntoCatalog(
@@ -577,6 +589,11 @@ export async function writeFactsIntoCatalog(
     verbose?: boolean;
     /** The commit verify checked the facts at (the snapshot's commit); default the facts' own. */
     commit?: string;
+    /** `--allow-removals <count>` and `--discard-edits <count>` (ADR 0195 point 4). */
+    allowRemovals?: number;
+    discardEdits?: number;
+    /** Told the refused build, when a guard refused it (the app's and --json's report). */
+    onRefused?: (r: BuildAndWrite) => void;
   },
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
@@ -615,10 +632,10 @@ export async function writeFactsIntoCatalog(
       };
     }
     const rerun = `atticus verify ${repo} --write`;
-    // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
-    const contracts = await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
-    // ADR 0164: this repo's specs (OpenAPI, .proto, Avro, JSON Schema, AsyncAPI), kept the same way.
-    await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
+    // ADR 0151: this repo's contract files, read at the facts' commit; kept beside its facts and
+    // in the snapshot's meta, written only once the build passes its guards.
+    const contracts = await repoContractsOf(root, repo, o.dir, facts, (n) => io.err(n));
+    const snapshotCommit = o.commit ?? snapshotCommitOf(facts);
     const {
       answered,
       everyTarget,
@@ -630,32 +647,48 @@ export async function writeFactsIntoCatalog(
       links,
       evidenceProblems,
       sharedMaps,
-    } = await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
+      build,
+      snap,
+    } = await projectFactsIntoCatalog(root, repo, facts, {
+      op,
+      existing: existing.records,
+      contracts,
+      commit: snapshotCommit,
+    });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
       io.err(
         `A merged record isn't valid C1 (a bug): ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
       );
-    // ADR 0195 (CS1): the facts snapshot, taken only by a --write that succeeded (this one): the
-    // kept facts as verify wrote them, at the commit checked, with the contract companion read
-    // beside them. Written before the catalog, which is still written as it was.
-    const snapshotCommit = o.commit ?? facts.map((f) => f.commit).sort()[0] ?? "unknown";
-    const slot = await writeFactsSlot(root, {
-      repo,
-      commit: snapshotCommit,
-      facts,
-      contracts: contracts.entries.length ? contracts : null,
+    // ADR 0195 (CS2): the facts snapshot, then the build from every slot, its guards, and only
+    // then the write: a refused build writes nothing, the snapshot and the companions included.
+    const built = await buildAndWrite(root, {
+      command: rerun,
+      build,
+      slots: snap,
+      ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+      ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
     });
+    if (built.guard.refused) {
+      for (const l of buildLines(root, built)) io.err(l);
+      o.onRefused?.(built);
+      return undefined;
+    }
+    // ADR 0151, 0164: the contract companion and this repo's specs, kept beside its facts.
+    await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
+    await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
+    const w = built.write!;
     const snapshot = {
       path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
-      status:
-        slot.facts === "written" || slot.meta === "written"
-          ? ("written" as const)
-          : ("unchanged" as const),
-      facts: slot.count,
+      status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))
+        ? ("written" as const)
+        : ("unchanged" as const),
+      facts: facts.length,
       commit: snapshotCommit,
     };
-    const written = await writeCatalog(generated, result.records);
+    const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
+    if (o.verbose || w.removals.length || w.undo !== undefined)
+      for (const l of buildLines(root, built).slice(1)) io.err(l);
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
     // have are removed. A drafted flow (another template) is left alone.

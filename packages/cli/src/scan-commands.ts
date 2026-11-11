@@ -1,21 +1,21 @@
 import { join } from "node:path";
-import {
-  acquireLock,
-  catalogDirOf,
-  LockHeldError,
-  throwIfCancelled,
-  type CatalogRecord,
-} from "@maycombhq/core";
+import { acquireLock, catalogDirOf, LockHeldError, throwIfCancelled } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
+  buildAndWrite,
+  buildLines,
   diffCatalogs,
   diffIsEmpty,
   readCatalog,
+  readersSlotPath,
   scanEstate,
+  serializeReadersSlot,
   sourcesRelOf,
-  writeCatalog,
   writeReadersSlots,
+  type BuildAndWrite,
+  type BuildRefusal,
+  type SlotWrite,
   type CatalogDiff,
   type EstateScan,
   type FactsStaleness,
@@ -38,20 +38,22 @@ export function diffLines(d: CatalogDiff): string[] {
 }
 
 /**
- * Why a scan wrote nothing (beta.26 safety stop): each production repo it didn't read in full,
- * with what to do, and, when it read them all, that it found no records where the catalog has
- * some (as Backstage's rejectEmptySourceCollections). `--json` prints it under `refused`.
+ * Why a scan wrote nothing (ADR 0195 point 4): it read no repo in full (beta.26's safety stop,
+ * kept as a guard: each production repo it couldn't read, with what to do), or the build it
+ * made was refused by a guard (`reasons` and the lists, as `atticus catalog build` says them).
+ * `--json` prints it under `refused`.
  */
 export interface ScanRefusal {
+  reasons: string[];
   repos: { repo: string; why: UnreadRepo["why"]; message: string; runs?: UnreadRepo["runs"] }[];
-  /** The scan read every repo and found nothing, while catalog/generated has this many records. */
-  empty?: { before: number };
   /** The whole refusal in words, what to do included. */
   message: string;
+  removals?: BuildRefusal["removals"];
+  unexplained?: BuildRefusal["unexplained"];
+  allowRemovals?: number;
+  edits?: BuildRefusal["edits"];
+  discardEdits?: number;
 }
-
-const FACTS_PATH =
-  "Scan every repo (atticus scan, after atticus workspace sync), or put one repo's read in the catalog from its facts: atticus verify <repo> --write.";
 
 /** What a person reads for one repo not read in full. */
 function unreadMessage(u: UnreadRepo): string {
@@ -69,51 +71,35 @@ function unreadMessage(u: UnreadRepo): string {
   }
 }
 
-/** A record read from a repo's code (its evidence names the repo), not from a profile or inputs/. */
-const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
-
 /**
- * Whether a scan may replace catalog/generated: undefined when it may, else why not. It may only
- * when every production repo (archived repos and prototypes aren't) was read in full, and when it
- * found something in the repos' code or the catalog holds nothing from code (a scan that read no
- * code would take every repo's records out; the profiles' systems alone don't count).
+ * A scan that read no repo in full writes nothing (ADR 0195 point 4, beta.26's stop as a guard):
+ * no slot and no build. Undefined when it read at least one, or the manifests list none.
  */
 export function scanRefusal(
-  scan: Pick<EstateScan, "unread" | "records">,
-  before: readonly CatalogRecord[],
+  scan: Pick<EstateScan, "unread" | "observations">,
 ): ScanRefusal | undefined {
+  if (!scan.observations.length || scan.observations.some((o) => o.full)) return undefined;
   const unread = scan.unread;
-  if (unread.length) {
-    const asked = unread.filter((u) => u.why === "not-asked");
-    const lines = unread
-      .filter((u) => u.why !== "not-asked")
-      .map((u) => `${u.repo}: ${unreadMessage(u)}`);
-    if (asked.length)
+  const lines = unread.map((u) => `${u.repo}: ${unreadMessage(u)}`);
+  for (const o of scan.observations)
+    if (!o.full && !unread.some((u) => u.repo === o.repo))
       lines.push(
-        `${asked.map((u) => u.repo).join(", ")}: left out by --repos; a scan of only some repos would replace the catalog with them alone, so it isn't written`,
+        `${o.repo}: ${keptWhy({ reason: o.why, ...(o.detail ? { detail: o.detail } : {}) })}`,
       );
-    return {
-      repos: unread.map((u) => ({
-        repo: u.repo,
-        why: u.why,
-        message: unreadMessage(u),
-        ...(u.runs ? { runs: u.runs } : {}),
-      })),
-      message: [
-        `Nothing written: catalog/generated is as it was. A scan replaces the whole catalog, so it writes only when it has read every repo in full, and it didn't read ${unread.length === 1 ? "this one" : `these ${unread.length}`}:`,
-        ...lines.map((l) => `  ${l}`),
-        FACTS_PATH,
-      ].join("\n"),
-    };
-  }
-  const had = before.filter(fromCode).length;
-  if (had > 0 && !scan.records.some(fromCode))
-    return {
-      repos: [],
-      empty: { before: had },
-      message: `Nothing written: the scan found no records in any repo's code, and catalog/generated has ${had}, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then scan again.`,
-    };
-  return undefined;
+  return {
+    reasons: ["nothing-read"],
+    repos: unread.map((u) => ({
+      repo: u.repo,
+      why: u.why,
+      message: unreadMessage(u),
+      ...(u.runs ? { runs: u.runs } : {}),
+    })),
+    message: [
+      "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were:",
+      ...lines.map((l) => `  ${l}`),
+      "Clone the repos (atticus workspace sync) or fix what stopped their read, then scan again.",
+    ].join("\n"),
+  };
 }
 
 /**
@@ -299,6 +285,10 @@ export interface ScanCommandOptions {
   repos?: string[];
   full?: boolean;
   dryRun?: boolean;
+  /** `--allow-removals <count>`: confirms the large removals a refused build listed (ADR 0195 point 4). */
+  allowRemovals?: number;
+  /** `--discard-edits <count>`: discards the hand edits a refused build listed. */
+  discardEdits?: number;
   json?: boolean;
   /** Skip the drift check for open changes in build or qa that runs after the catalog is written. */
   noDrift?: boolean;
@@ -385,21 +375,59 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     ...(o.repos ? { repos: o.repos } : {}),
     ...(o.full ? { cache: null } : {}),
   });
-  // Beta.26 safety stop: a scan that didn't read every repo in full writes nothing (nor runs
-  // the drift check or asks about hosts, which read what it would have written).
-  const refused = scanRefusal(scan, before.records);
+  // A scan the app stopped writes nothing, not even a slot (ADR 0195 point 1).
+  throwIfCancelled();
+  const command = `atticus scan${o.repos?.length ? ` --repos ${o.repos.join(",")}` : ""}`;
+  // ADR 0195 point 4: a scan that read no repo in full writes nothing (no slot, no build).
+  const unreadAll = scanRefusal(scan);
+  // ADR 0195 (CS2): the readers slot of each repo read in full, then the build, its guards, and
+  // only then the write. Every other repo keeps its last good read.
+  const slotWrites: SlotWrite[] = scan.observations.flatMap((x) =>
+    x.full ? [{ path: readersSlotPath(root, x.repo), text: serializeReadersSlot(x.slot) }] : [],
+  );
+  const built: BuildAndWrite | undefined = unreadAll
+    ? undefined
+    : await buildAndWrite(root, {
+        command,
+        build: scan.build,
+        slots: slotWrites,
+        ...(o.dryRun ? { check: true } : {}),
+        ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+        ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+      });
+  const guardRefused = built && !o.dryRun ? built.guard.refused : undefined;
+  const refused: ScanRefusal | undefined =
+    unreadAll ??
+    (guardRefused
+      ? {
+          reasons: guardRefused.reasons,
+          repos: [],
+          message: guardRefused.message,
+          ...(guardRefused.removals ? { removals: guardRefused.removals } : {}),
+          ...(guardRefused.unexplained ? { unexplained: guardRefused.unexplained } : {}),
+          ...(guardRefused.allowRemovals !== undefined
+            ? { allowRemovals: guardRefused.allowRemovals }
+            : {}),
+          ...(guardRefused.edits ? { edits: guardRefused.edits } : {}),
+          ...(guardRefused.discardEdits !== undefined
+            ? { discardEdits: guardRefused.discardEdits }
+            : {}),
+        }
+      : undefined);
+  const w = built?.write;
   const diff = refused
     ? { added: [], removed: [], changed: [], evidenceOnly: [] }
     : diffCatalogs(before.records, scan.records);
-  // A scan the app stopped writes nothing, not even a slot (ADR 0195 point 1).
-  throwIfCancelled();
-  // ADR 0195 (CS1): the readers slot of each repo read in full, written before the catalog;
-  // every other repo's slot is left byte for byte. A scan that writes nothing writes no slot.
-  const slots = await writeReadersSlots(root, scan.observations, {
-    ...(refused ? { hold: "refused" as const } : o.dryRun ? { hold: "dry-run" as const } : {}),
+  // What each repo's readers slot is now: written, unchanged, or its last good read kept.
+  const planned = await writeReadersSlots(root, scan.observations, { hold: "dry-run" });
+  const slots: ReadersSlotOutcome[] = planned.map((x) => {
+    if (x.reason !== "dry-run") return x;
+    const obs = scan.observations.find((y) => y.repo === x.repo);
+    if (w && obs?.full) return { repo: x.repo, slot: "written", commit: obs.slot.commit };
+    return { ...x, reason: o.dryRun ? "dry-run" : "refused" };
   });
   const sources = scanSources(scan, slots);
-  const write = o.dryRun || refused ? undefined : await writeCatalog(out, scan.records);
+  const write = w ? { written: w.written, unchanged: w.unchanged, removed: w.removed } : undefined;
   // The drift check reads the catalog just written, so it runs only when one was.
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
   // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
@@ -440,6 +468,14 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           written: write !== undefined,
           files: write ?? null,
           sources,
+          removed: (w?.removals ?? []).map((x) => ({
+            kind: x.kind,
+            id: x.id,
+            repos: x.repos,
+            explainedBy: x.explainedBy,
+          })),
+          retired: scan.build.retired,
+          ...(w?.undo !== undefined ? { undo: w.undo } : {}),
           drift,
           questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
           ...(refused ? { refused } : {}),
@@ -494,10 +530,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
         `Framework model ${framework} read nothing in ${repos.join(", ")}, which import${repos.length === 1 ? "s" : ""} it; the framework may have changed. Have your assistant re-draft it: atticus onboard framework ${framework} --from <its source, JAR or package> --users ${repos.join(",")} (then onboard accept framework ${framework} --replace)`,
       );
     if (!refused) for (const l of diffLines(diff)) io.out(l);
-    if (write)
-      io.out(
-        `catalog/generated: ${write.written} written, ${write.unchanged} unchanged, ${write.removed} removed`,
-      );
+    if (built && w) for (const l of buildLines(root, built)) io.out(l);
     else if (!refused) io.out("Dry run: nothing written.");
     for (const l of sourceLines(sourcesRelOf(root), sources, write !== undefined)) io.out(l);
     for (const d of drift) io.out(driftLine(d));

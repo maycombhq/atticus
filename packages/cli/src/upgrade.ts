@@ -453,7 +453,10 @@ const stampIgnored = (text: string) =>
 function catalogStep(id: string, summary: string, versions: readonly number[]): Migration {
   const run = async (root: string, dryRun: boolean) => {
     const out: string[] = [];
-    for (const sub of ["generated", "curated"]) {
+    // ADR 0195: once the catalog is built from slots, catalog/generated is the build's output,
+    // never rewritten in place (a file the build didn't write is a hand edit).
+    const built = await exists(join(catalogDirOf(root), "sources", "build.json"));
+    for (const sub of built ? ["curated"] : ["generated", "curated"]) {
       // A dry run asks only what is to do: a file at another version isn't read as YAML (doctor
       // and the Set up screen ask this on every metarepo, of every record).
       const r = await migrateCatalog(join(catalogDirOf(root), sub), {
@@ -704,11 +707,42 @@ export async function upgradeCommand(
     now?: Date;
     /** Also make the metarepo an OpenSpec store (beta, ADR 0126). */
     openspecStore?: boolean;
+    /** ADR 0195 point 6: apply the step that adopts the catalog into source slots. */
+    yes?: boolean;
   },
   io: Output,
   version = VERSION,
 ): Promise<number> {
   const c = await upgradeCheck(root, version);
+  const { planUpgradeToSlots, applyUpgradeToSlots } = await import("@maycombhq/scanner");
+  const slots = await planUpgradeToSlots(root);
+  const slotsJson = () =>
+    slots.pending
+      ? {
+          slots: {
+            pending: true,
+            records: slots.records,
+            write: slots.slots,
+            verifiable: slots.verifiable,
+            firstBuildChanges: slots.differs,
+          },
+        }
+      : {};
+  const slotsLines = (): string[] => [
+    `Adopt the catalog into source slots (ADR 0195): ${slots.records} records, nothing lost:`,
+    ...slots.slots.map(
+      (x) =>
+        `  ${x.path}: ${x.records} record${x.records === 1 ? "" : "s"}${x.repo ? ` (${x.repo}, legacy)` : " (joined and evidence-less records, legacy)"}`,
+    ),
+    `  catalog/sources/legacy/generated-before-upgrade/: a copy of catalog/generated as it is`,
+    slots.differs.length
+      ? `  The first build would change ${slots.differs.length} record file${slots.differs.length === 1 ? "" : "s"}, so this step refuses and writes nothing: ${slots.differs.slice(0, 10).join(", ")}${slots.differs.length > 10 ? ` and ${slots.differs.length - 10} more` : ""}`
+      : "  The first build changes nothing: catalog/generated stays byte for byte.",
+    ...slots.verifiable.map(
+      (r) =>
+        `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them in its facts slot.`,
+    ),
+  ];
   if (c.newer) {
     io.err(newerWords(c));
     if (o.json) io.out(JSON.stringify(c, null, 2));
@@ -723,8 +757,15 @@ export async function upgradeCommand(
     return 1;
   }
   if (o.check || o.dryRun) {
-    const steps = c.pending.length + (store?.action === "create" ? 1 : 0);
-    if (o.json) io.out(JSON.stringify(store ? { ...c, openspecStore: store } : c, null, 2));
+    const steps = c.pending.length + (store?.action === "create" ? 1 : 0) + (slots.pending ? 1 : 0);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          { ...c, ...(store ? { openspecStore: store } : {}), ...slotsJson() },
+          null,
+          2,
+        ),
+      );
     else if (!steps) {
       io.out(`Up to date for Atticus ${version}.`);
       if (store) io.out(storeLine(store));
@@ -735,6 +776,7 @@ export async function upgradeCommand(
       if (store?.action === "create")
         io.out(`  Make this metarepo the OpenSpec store ${store.id} (beta): ${STORE_MARKER}`);
       else if (store) io.out(storeLine(store));
+      if (slots.pending) for (const l of slotsLines()) io.out(`  ${l}`);
     }
     return o.check && steps ? 1 : 0;
   }
@@ -799,6 +841,30 @@ export async function upgradeCommand(
     });
     changed.push(STORE_MARKER);
   }
+  // ADR 0195 point 6: the catalog adopted into source slots, shown first, applied with --yes.
+  let slotsDone: number | undefined | "refused" | "shown" = undefined;
+  if (slots.pending) {
+    if (!o.yes || slots.differs.length) slotsDone = o.yes ? "refused" : "shown";
+    else {
+      const { acquireLock, LockHeldError } = await import("@maycombhq/core");
+      let lock;
+      try {
+        lock = await acquireLock(root, "scan", "atticus upgrade --yes");
+      } catch (e) {
+        if (e instanceof LockHeldError) {
+          io.err(e.message);
+          return 1;
+        }
+        throw e;
+      }
+      try {
+        slotsDone = (await applyUpgradeToSlots(root, slots)) ?? 0;
+        changed.push(...slots.writes.map((w) => relative(root, w.path).split(sep).join("/")));
+      } finally {
+        await lock.release();
+      }
+    }
+  }
   if (o.json)
     io.out(
       JSON.stringify(
@@ -807,6 +873,12 @@ export async function upgradeCommand(
           files: changed,
           stamp,
           ...(store ? { openspecStore: store } : {}),
+          ...(slots.pending
+            ? {
+                ...slotsJson(),
+                slotsStep: typeof slotsDone === "number" ? "applied" : (slotsDone ?? "none"),
+              }
+            : {}),
         },
         null,
         2,
@@ -822,6 +894,17 @@ export async function upgradeCommand(
     io.out(
       `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
     );
+    if (slots.pending) {
+      for (const l of slotsLines()) (slotsDone === "refused" ? io.err : io.out)(l);
+      if (slotsDone === "shown")
+        io.out("Nothing of it written yet: atticus upgrade --yes applies this step.");
+      else if (slotsDone === "refused")
+        io.err("Nothing of it written: the first build must give the catalog as it is.");
+      else
+        io.out(
+          "Done: the catalog is adopted into catalog/sources/ (atticus catalog undo takes it back).",
+        );
+    }
   }
-  return 0;
+  return slotsDone === "refused" ? 1 : 0;
 }

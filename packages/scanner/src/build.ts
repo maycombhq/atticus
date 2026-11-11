@@ -1,0 +1,1647 @@
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
+import { featuresForScan } from "@maycombhq/features";
+import { glossaryForScan } from "@maycombhq/glossary";
+import {
+  applyCurated,
+  applyLinkEvidence,
+  applySharedMaps,
+  catalogDirOf,
+  cmpText,
+  evidenceDirOf,
+  evidenceRelOf,
+  FACTS_SCHEMA_VERSION,
+  factsDirOf,
+  factsRelOf,
+  joinSharedMaps,
+  linkEvidenceOf,
+  loadOrgPack,
+  mergeCatalog,
+  listQuestions,
+  questionsRelOf,
+  readSharedMaps,
+  readTrafficFile,
+  recordPath,
+  serializeRecord,
+  sharedDirOf,
+  sharedRelOf,
+  stripSharedMaps,
+  writeFileAtomic,
+  type CatalogRecord,
+  type ContractsFileT,
+  type CuratedProblem,
+  type FactJoinMiss,
+  type FactsJoinResult,
+  type FlowRecord,
+  type LinkEvidenceResult,
+  type OrgPack,
+  type PersonPair,
+  type Question,
+  type SharedJoinResult,
+  type TrafficOnFile,
+  sharedJoinAbout,
+  type TermsResult,
+} from "@maycombhq/core";
+import { applyPipelineModels } from "@maycombhq/extractors";
+import { listIngestors } from "@maycombhq/ingestors";
+import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
+import {
+  answerMissesOf,
+  factsEstateAfterMerge,
+  factsEstateRecords,
+  withFactsEstateJoins,
+  withoutHeardListeners,
+  type FactsEstateProjection,
+  type FactsEstateRepo,
+} from "./build-facts.js";
+import {
+  outsideProfileSystems as outsideProfileSystemsOf,
+  targetsFromAnswers,
+} from "./facts-catalog.js";
+import { pairsOfRepo } from "./facts-scan.js";
+import { readCatalog, writeCatalog } from "./files.js";
+import { resolveFederatedLooseEnds } from "./federate-loose.js";
+import { joinAnswerQuestions } from "./join-host-questions.js";
+import {
+  curatedDirOf,
+  estateMergeInput,
+  estateRepos,
+  isPrototypeRepo,
+  productionRepos,
+} from "./merge-input.js";
+import {
+  federate,
+  federationSources,
+  orgPackDirFor,
+  usableFrameworks,
+  type FederatedContribution,
+  type ScanProblem,
+} from "./scan.js";
+import {
+  buildManifestPath,
+  factsSlotPaths,
+  legacyJoinsPath,
+  parseBuildManifest,
+  parseFactsSlotMeta,
+  parseFactsSnapshot,
+  parseLegacyJoins,
+  parseReadersSlot,
+  readersSlotPath,
+  serializeBuildManifest,
+  serializeFactsSlotMeta,
+  serializeFactsSnapshot,
+  serializeLegacyJoins,
+  SLOT_VERSION,
+  sha256Of,
+  sourcesDirOf,
+  type BuildManifestT,
+  type FactsSlotMetaT,
+  type LegacyJoinsSlotT,
+  type ReadersSlotT,
+} from "./slots.js";
+
+/**
+ * The build (ADR 0195 point 2): `catalog/generated` made from the source slots and the build
+ * inputs, every time, in a fixed order. `loadBuildInputs` reads what a build reads (the org pack,
+ * the slots, the curated decisions, the answers, the pairings, the traffic, the shared maps);
+ * `buildCatalog` reads no clone and calls no model, adapter or network (the passes that read
+ * files of the metarepo itself, inputs/, catalog/proposals and the wiki folders, read only them);
+ * `guardBuild` runs the guards of point 4 on the build in memory; `writeBuiltCatalog` takes the
+ * undo copy, writes the slots a command changed, the record files and `build.json` last, and is
+ * the only caller of `writeCatalog` (a check fails on any other import). A refused build writes
+ * nothing.
+ */
+
+// ------------------------------------------------------------------ paths
+
+const posix = (p: string) => p.split(sep).join("/");
+const relOf = (root: string, p: string) => posix(relative(root, p));
+const short = (c: string) => (/^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : c);
+
+/** `catalog/generated` (or the branch's), relative to the root. */
+export function generatedDirOf(root: string): string {
+  return join(catalogDirOf(root), "generated");
+}
+
+/** Where a metarepo keeps its undo copies (ADR 0195 point 7): local, git-ignored. */
+export function buildUndoDirOf(root: string, stateDir = root): string {
+  return join(stateDir, ".index", "build-undo");
+}
+
+/** The upgrade's copy of the catalog before it (point 6), never read by the build. */
+export function generatedBeforeUpgradeDirOf(root: string): string {
+  return join(sourcesDirOf(root), "legacy", "generated-before-upgrade");
+}
+
+// ------------------------------------------------------------------ inputs
+
+/** A repo's facts slot, read and checked (point 2.1, "current"), or why it isn't used. */
+export type FactsSlotRead =
+  | {
+      ok: true;
+      meta: FactsSlotMetaT;
+      facts: import("@maycombhq/core").Fact[];
+      sha: string;
+      metaSha: string;
+    }
+  | { ok: false; problem: string };
+
+export interface ReadersSlotRead {
+  slot: ReadersSlotT;
+  sha: string;
+}
+
+/** The slots a build reads, by repo id; a command passes the ones it is about to write. */
+export interface BuildSlots {
+  readers: Map<string, ReadersSlotRead | { problem: string }>;
+  facts: Map<string, FactsSlotRead>;
+  legacy?: { slot: LegacyJoinsSlotT; sha: string } | { problem: string };
+}
+
+export interface BuildInputs {
+  root: string;
+  op: OrgPack;
+  orgPackDir: string;
+  stateDir: string;
+  slots: BuildSlots;
+  curated: { records: CatalogRecord[]; problems: { file: string; message: string }[] };
+  /** The targets and hosts questions, whose answers name where calls go. */
+  questions: Question[];
+  /** Each repo's corrections file text (G1 pairings), by repo. */
+  corrections: Map<string, string>;
+  traffic: TrafficOnFile[];
+  shared: Awaited<ReturnType<typeof readSharedMaps>>;
+  federated: { id: string; dir: string }[];
+  /** inputs/ (intake), or null to leave it out (a branch's catalog). */
+  inputsDir: string | null;
+  /** The hash of each non-slot input, by its metarepo-relative path (what explains a removal). */
+  inputHashes: Map<string, string>;
+  curatedDir: string;
+  /** Pairings not written yet (a preview's), by repo, over those on file. */
+  extraPairs?: Map<string, Record<string, PersonPair>>;
+  problems: string[];
+}
+
+const sha = (text: string) => sha256Of(text);
+
+/** A folder's files, hashed in path order: one hash for the folder, or none when it has none. */
+async function treeHash(dir: string, skip?: (rel: string) => boolean): Promise<string | undefined> {
+  const lines: string[] = [];
+  async function walk(d: string, rel: string) {
+    let entries;
+    try {
+      entries = await readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (skip?.(r)) continue;
+      if (e.isDirectory()) await walk(join(d, e.name), r);
+      else if (e.isFile()) {
+        const text = await readFile(join(d, e.name), "utf8").catch(() => "");
+        lines.push(`${r}\u0000${sha(text.replace(/\r\n?/g, "\n"))}`);
+      }
+    }
+  }
+  await walk(dir, "");
+  return lines.length ? sha(lines.join("\n")) : undefined;
+}
+
+async function readText(path: string): Promise<string | undefined> {
+  return readFile(path, "utf8").then(
+    (t) => t.replace(/\r\n?/g, "\n"),
+    () => undefined,
+  );
+}
+
+/** A repo's facts slot from its two files, checked as point 2.1 says ("current"). */
+export function factsSlotOf(
+  repo: string,
+  text: string | undefined,
+  metaText: string | undefined,
+): FactsSlotRead | undefined {
+  if (text === undefined && metaText === undefined) return undefined;
+  if (text === undefined || metaText === undefined)
+    return {
+      ok: false,
+      problem: `has ${text === undefined ? "a meta and no facts" : "facts and no meta"}`,
+    };
+  const meta = parseFactsSlotMeta(metaText);
+  if (!meta.ok)
+    return {
+      ok: false,
+      problem: `its meta doesn't read (${meta.issues[0]?.message ?? "invalid"})`,
+    };
+  if (meta.slot.repo !== repo)
+    return { ok: false, problem: `its meta names another repo (${meta.slot.repo})` };
+  if (sha(text) !== meta.slot.factsHash)
+    return { ok: false, problem: "its facts aren't the ones its meta hashed" };
+  const facts = parseFactsSnapshot(text);
+  if (!facts.ok)
+    return {
+      ok: false,
+      problem: `its facts don't read (${facts.issues[0]?.message ?? "invalid"})`,
+    };
+  return { ok: true, meta: meta.slot, facts: facts.facts, sha: sha(text), metaSha: sha(metaText) };
+}
+
+export function readersSlotRead(text: string): ReadersSlotRead | { problem: string } {
+  const p = parseReadersSlot(text);
+  if (!p.ok) return { problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
+  return { slot: p.slot, sha: sha(text) };
+}
+
+/** Every slot file on disk under catalog/sources, by repo (orphaned ones too). */
+export async function readSlots(root: string): Promise<BuildSlots> {
+  const dir = sourcesDirOf(root);
+  const readers = new Map<string, ReadersSlotRead | { problem: string }>();
+  for (const n of (await readdir(join(dir, "readers")).catch(() => [] as string[])).sort()) {
+    if (!n.endsWith(".json")) continue;
+    const text = await readText(join(dir, "readers", n));
+    if (text !== undefined) readers.set(n.slice(0, -".json".length), readersSlotRead(text));
+  }
+  const facts = new Map<string, FactsSlotRead>();
+  const names = new Set(
+    (await readdir(join(dir, "facts")).catch(() => [] as string[]))
+      .filter((n) => n.endsWith(".jsonl") || n.endsWith(".meta.json"))
+      .map((n) => n.replace(/\.meta\.json$|\.jsonl$/, "")),
+  );
+  for (const repo of [...names].sort()) {
+    const p = factsSlotPaths(root, repo);
+    const f = factsSlotOf(repo, await readText(p.facts), await readText(p.meta));
+    if (f) facts.set(repo, f);
+  }
+  const legacyText = await readText(legacyJoinsPath(root));
+  let legacy: BuildSlots["legacy"];
+  if (legacyText !== undefined) {
+    const p = parseLegacyJoins(legacyText);
+    legacy = p.ok
+      ? { slot: p.slot, sha: sha(legacyText) }
+      : { problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
+  }
+  return { readers, facts, ...(legacy ? { legacy } : {}) };
+}
+
+/** The org pack's folder and the state folder of a metarepo (an adopted repo keeps both in .atticus/). */
+async function packOf(root: string): Promise<{ orgPackDir: string; stateDir: string }> {
+  const pack = await orgPackDirFor(root);
+  return { orgPackDir: pack.dir, stateDir: pack.adopted ? join(root, ".atticus") : root };
+}
+
+/**
+ * Everything a build reads (point 2), from the metarepo's files. `slots` replaces what is on
+ * disk with what a command is about to write (a scan's new reads, a verify's snapshot, a
+ * rename's new ids), so the build and its guards run before anything is written.
+ */
+export async function loadBuildInputs(
+  root: string,
+  o: {
+    op?: OrgPack;
+    orgPackDir?: string;
+    stateDir?: string;
+    slots?: (on: BuildSlots) => BuildSlots;
+    curated?: CatalogRecord[];
+    curatedDir?: string;
+    inputsDir?: string | null;
+    federated?: { id: string; dir: string }[];
+  } = {},
+): Promise<BuildInputs> {
+  const pack = await packOf(root);
+  const orgPackDir = o.orgPackDir ?? pack.orgPackDir;
+  const stateDir = o.stateDir ?? pack.stateDir;
+  const op = o.op ?? (await loadOrgPack(orgPackDir));
+  const problems: string[] = [];
+  const onDisk = await readSlots(root);
+  const slots = o.slots ? o.slots(onDisk) : onDisk;
+  const curatedDir = o.curatedDir ?? curatedDirOf(root, op);
+  const curated = o.curated
+    ? { records: o.curated, problems: [] }
+    : await readCatalog(curatedDir, { cacheRoot: root });
+  const questions = await joinAnswerQuestions(root);
+  const corrections = new Map<string, string>();
+  for (const n of (await readdir(factsDirOf(root)).catch(() => [] as string[])).sort())
+    if (n.endsWith(".corrections.jsonl")) {
+      const t = await readText(join(factsDirOf(root), n));
+      if (t !== undefined) corrections.set(n.slice(0, -".corrections.jsonl".length), t);
+    }
+  const traffic: TrafficOnFile[] = [];
+  const tDir = join(evidenceDirOf(root), "traffic");
+  const tRel = `${evidenceRelOf(root)}/traffic`;
+  for (const n of (await readdir(tDir).catch(() => [] as string[])).sort()) {
+    if (!/\.ya?ml$/.test(n)) continue;
+    const r = readTrafficFile(`${tRel}/${n}`, await readFile(join(tDir, n), "utf8"));
+    if (r.ok) traffic.push(r.traffic);
+    else problems.push(`${r.message}; it is left out.`);
+  }
+  const shared = await readSharedMaps(root);
+  for (const p of shared.problems) problems.push(p.message);
+  const federated = o.federated ?? (await federationSources(root, stateDir, op));
+  const inputsDir = o.inputsDir === undefined ? join(stateDir, "inputs") : o.inputsDir;
+
+  // What explains a removal besides a slot (point 4; the owner's decision of 2026-11-11): each
+  // build input other than a slot, hashed by its folder or file.
+  const inputHashes = new Map<string, string>();
+  const put = (rel: string, h: string | undefined) => h && inputHashes.set(rel, h);
+  put(relOf(root, orgPackDir), await treeHash(orgPackDir));
+  put(relOf(root, curatedDir), await treeHash(curatedDir));
+  // The answers, not the questions: a question raised or refreshed while open changes no build.
+  const answeredQs = (
+    await listQuestions(root).catch(() => ({ questions: [] as Question[] }))
+  ).questions
+    .filter((q) => q.answer !== undefined)
+    .sort((a, b) => cmpText(a.id, b.id));
+  if (answeredQs.length) put(questionsRelOf(root), sha(JSON.stringify(answeredQs)));
+  for (const [repo, text] of corrections)
+    put(`${factsRelOf(root)}/${repo}.corrections.jsonl`, sha(text));
+  put(tRel, await treeHash(tDir));
+  put(sharedRelOf(root), await treeHash(sharedDirOf(root)));
+  if (inputsDir) put(relOf(root, inputsDir), await treeHash(inputsDir));
+  const proposals = join(dirname(curatedDir), "proposals");
+  put(relOf(root, proposals), await treeHash(proposals));
+  for (const f of federated)
+    put(`federated/${f.id}`, await treeHash(f.dir, (r) => r.startsWith(".") || r === "workspace"));
+  return {
+    root,
+    op,
+    orgPackDir,
+    stateDir,
+    slots,
+    curated: { records: curated.records, problems: curated.problems },
+    questions,
+    corrections,
+    traffic,
+    shared,
+    federated,
+    inputsDir,
+    inputHashes,
+    curatedDir,
+    problems,
+  };
+}
+
+// ------------------------------------------------------------------ the build
+
+/** Where one repo's records came from in a build (point 5; `--json`'s `sources`). */
+export interface RepoSource {
+  repo: string;
+  source: "facts" | "readers" | "legacy" | "none";
+  commit?: string;
+  /** The slot file the records came from, relative to the root. */
+  slot?: string;
+  /** A slot that is there but isn't used, and why (a snapshot that doesn't read, say). */
+  problem?: string;
+}
+
+/** A repo read from its facts in the build: what verify --write reports and files about it. */
+export interface FactsRepoBuild {
+  repo: string;
+  flows: FlowRecord[];
+  /** Its calls still loose after the build: a host no repo lists, or no target at all. */
+  unresolved: { factId: string; id: string; unresolvedKind: string; raw: string }[];
+  join: FactsJoinResult;
+  answerMisses: FactJoinMiss[];
+  /** The targets named for its calls (people's answers and the AI's), by call fact id. */
+  targets: Readonly<Record<string, string>>;
+  projectionIssues: { factId?: string; code: string; message: string }[];
+}
+
+/** A legacy join the build derived again, so it left joins.json (point 6). */
+export interface RetiredJoin {
+  kind: string;
+  id: string;
+  /** Fields where the derived record differs from the legacy copy. */
+  fields: string[];
+}
+
+export interface Build {
+  root: string;
+  /** The catalog, sorted by kind then id: what catalog/generated holds after the write. */
+  records: CatalogRecord[];
+  /** The record files, by path under catalog/generated, with their canonical text. */
+  files: Map<string, string>;
+  /** build.json for these files. */
+  manifest: BuildManifestT;
+  sources: RepoSource[];
+  /** Repos whose slots are on disk but the manifests no longer list, or list archived (point 4). */
+  orphaned: { repo: string; why: "not-listed" | "archived"; files: string[] }[];
+  facts: Map<string, FactsRepoBuild>;
+  retired: RetiredJoin[];
+  /** joins.json as it is after this build (the retired entries out), when it changed. */
+  legacyJoins?: string;
+  curated: { applied: string[]; suppressed: string[]; problems: CuratedProblem[] };
+  /** Curated decisions whose target isn't in the build: kept in catalog/curated, applied when it returns. */
+  orphanedDecisions: string[];
+  linkEvidence?: LinkEvidenceResult;
+  shared?: SharedJoinResult;
+  terms?: TermsResult;
+  inputs?: ScanInputsResult;
+  federated?: FederatedContribution[];
+  invalid: { record: unknown; issues: { path: string; message: string }[] }[];
+  notes: string[];
+  problems: ScanProblem[];
+  stats: { records: number; interfaces: number; verified: number; unresolved: number };
+}
+
+const byKindId = (a: CatalogRecord, b: CatalogRecord) =>
+  a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind);
+
+const repoOfEvidence = (r: CatalogRecord): string[] =>
+  [...new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort(cmpText);
+
+/** One repo's slot files on disk, relative to the root (for prune and the orphan report). */
+function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
+  const out: string[] = [];
+  if (slots.readers.has(repo)) out.push(relOf(root, readersSlotPath(root, repo)));
+  if (slots.facts.has(repo)) {
+    const p = factsSlotPaths(root, repo);
+    out.push(relOf(root, p.facts), relOf(root, p.meta));
+  }
+  return out;
+}
+
+/**
+ * Build the catalog from the slots and the build inputs (point 2), in this order:
+ *
+ * 1. Per repo, one source: its facts slot when current, else its readers slot (`read` or
+ *    `legacy`), else none. The choice is by repo; reader records are never matched against fact
+ *    records.
+ * 2. The framework models over the code records, then the estate join over every facts slot at
+ *    once (answers, pairings, the AI's targets, gateway callers, term grants).
+ * 3. The merge of every repo's records with intake's records of inputs/; the features found in
+ *    code; the federated catalogs; the glossary.
+ * 4. The link evidence of the contract files and traffic, and the shared maps.
+ * 5. The legacy records (point 6), as they are, where no current source has taken over.
+ * 6. The curated decisions, once, last, so a person's suppress always wins.
+ *
+ * Nothing the build wrote is read back as an input: build.json is read only by the guards.
+ */
+export async function buildCatalog(i: BuildInputs): Promise<Build> {
+  const { op, root } = i;
+  const problems: ScanProblem[] = [];
+  const notes: string[] = [];
+  for (const p of i.problems) problems.push({ source: "build", message: p });
+  for (const p of op.problems)
+    problems.push({
+      source: `org-pack/${p.file}`,
+      message: `${p.path ? `${p.path}: ` : ""}${p.message}`,
+    });
+  for (const p of i.curated.problems)
+    problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
+  const listed = new Set(op.profiles.flatMap((p) => (p.repos?.repos ?? []).map((r) => r.id)));
+  const archived = new Set(
+    op.profiles.flatMap((p) => (p.repos?.repos ?? []).filter((r) => r.archived).map((r) => r.id)),
+  );
+  const repos = productionRepos(op);
+  const live = new Set(repos.map((r) => r.id));
+
+  // ---- 1. per repo, one source
+  const sources: RepoSource[] = [];
+  const readerRecords: CatalogRecord[] = [];
+  const legacyRecords: CatalogRecord[] = [];
+  const factRepos: FactsEstateRepo[] = [];
+  const contracts: ContractsFileT[] = [];
+  /** Each repo's slot as used, for build.json: path and hash. */
+  const used = new Map<string, { path: string; sha256: string }[]>();
+  for (const r of repos) {
+    const f = i.slots.facts.get(r.id);
+    const x = i.slots.readers.get(r.id);
+    const xr = x && "slot" in x ? x : undefined;
+    const problem =
+      f && !f.ok
+        ? `its facts snapshot ${f.problem}, so it isn't used: atticus verify ${r.id} --write`
+        : x && !xr
+          ? `its readers slot ${(x as { problem: string }).problem}, so it isn't used: atticus scan --repos ${r.id}`
+          : undefined;
+    if (problem) problems.push({ repo: r.id, source: "catalog/sources", message: problem });
+    if (f?.ok) {
+      const p = factsSlotPaths(root, r.id);
+      used.set(r.id, [
+        { path: relOf(root, p.facts), sha256: f.sha },
+        { path: relOf(root, p.meta), sha256: f.metaSha },
+      ]);
+      const pairs: Record<string, PersonPair> = {};
+      const corr = i.corrections.get(r.id);
+      if (corr !== undefined) Object.assign(pairs, await pairsFrom(root, r.id, f.facts));
+      Object.assign(pairs, i.extraPairs?.get(r.id) ?? {});
+      const ai: Record<string, { runtime: string; run: string }> = {};
+      const targets = targetsFromAnswers(r.id, f.facts, i.questions, { repoType: r.type, ai });
+      factRepos.push({ repo: r.id, facts: f.facts, targets, pairs, aiTargets: ai });
+      if (f.meta.contracts) contracts.push(f.meta.contracts);
+      sources.push({
+        repo: r.id,
+        source: "facts",
+        commit: f.meta.commit,
+        slot: relOf(root, p.facts),
+        ...(problem ? { problem } : {}),
+      });
+      continue;
+    }
+    if (xr) {
+      used.set(r.id, [{ path: relOf(root, readersSlotPath(root, r.id)), sha256: xr.sha }]);
+      const legacy = xr.slot.status === "legacy";
+      (legacy ? legacyRecords : readerRecords).push(...xr.slot.records);
+      sources.push({
+        repo: r.id,
+        source: legacy ? "legacy" : "readers",
+        commit: xr.slot.commit,
+        slot: relOf(root, readersSlotPath(root, r.id)),
+        ...(problem ? { problem } : {}),
+      });
+      continue;
+    }
+    sources.push({ repo: r.id, source: "none", ...(problem ? { problem } : {}) });
+  }
+  // Slots of repos the manifests no longer list, or list archived: kept on disk, not built from.
+  const orphaned: Build["orphaned"] = [];
+  for (const repo of [...new Set([...i.slots.readers.keys(), ...i.slots.facts.keys()])].sort()) {
+    if (live.has(repo) || isPrototypeRepo(op, repo)) continue;
+    orphaned.push({
+      repo,
+      why: archived.has(repo) && listed.has(repo) ? "archived" : "not-listed",
+      files: slotFilesOf(root, i.slots, repo),
+    });
+  }
+  // A contract file is read in the facts' order of their companions (`<repo>.contracts.yaml`).
+  contracts.sort((a, b) => cmpText(`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`));
+
+  // ---- 2. framework models, then the estate join over every facts slot at once
+  const frameworks = await usableFrameworks(op, problems);
+  let projection: FactsEstateProjection | undefined;
+  let code: CatalogRecord[];
+  if (factRepos.length) {
+    projection = factsEstateRecords(op, factRepos);
+    code = applyPipelineModels([...readerRecords, ...projection.records], frameworks);
+    code = withFactsEstateJoins(code, op, projection);
+  } else code = applyPipelineModels(readerRecords, frameworks);
+
+  // ---- 3. the merge, intake, features, federation, the glossary
+  const read = new Set(factRepos.filter((x) => x.facts.length > 0).map((x) => x.repo));
+  const mergeInput = (records: CatalogRecord[]) =>
+    estateMergeInput(op, estateRepos(op), [...records].sort(byKindId), undefined, read);
+  let merged = mergeCatalog(mergeInput(code));
+  let inputs: ScanInputsResult | undefined;
+  if (i.inputsDir !== null) {
+    inputs = await scanInputs({
+      root,
+      orgPack: op,
+      inputsDir: i.inputsDir,
+      records: [...merged.records, ...i.curated.records],
+      ingestors: listIngestors(),
+      // Intake stamps what it read; the build gives it no clock of its own (point 8).
+      scannedAt: "1970-01-01T00:00:00.000Z",
+    });
+    for (const p of inputs.problems)
+      problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
+    if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
+  }
+  let records = withoutHeardListeners(merged.records, projection);
+  let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;
+  if (projection) {
+    afterFacts = factsEstateAfterMerge(records, projection);
+    records = afterFacts.records;
+  }
+  const curatedDir = i.curatedDir;
+  const proposalsDir = join(dirname(curatedDir), "proposals");
+  const found = await featuresForScan({
+    records,
+    decisions: i.curated.records,
+    proposalsDir,
+  });
+  for (const p of found.problems)
+    problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
+  let federated: FederatedContribution[] | undefined;
+  let fedRecords: CatalogRecord[] = [];
+  if (i.federated.length) {
+    const fed = await federate([...records, ...found.features], i.federated, problems, root);
+    const placed = resolveFederatedLooseEnds({
+      local: records,
+      raw: [...code, ...(inputs?.records ?? [])],
+      federated: fed.records,
+      merge: (rs) => mergeCatalog(mergeInput(rs)),
+    });
+    fedRecords = placed.federated;
+    federated = fed.contributions.map((c) =>
+      placed.resolved.get(c.id) ? { ...c, resolved: placed.resolved.get(c.id)! } : c,
+    );
+  }
+  const glossary = await glossaryForScan({
+    root,
+    orgPack: op,
+    records: [...records, ...found.features],
+    decisions: i.curated.records,
+    proposalsDir,
+    orgPackDir: i.orgPackDir,
+  });
+  notes.push(...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`));
+  records = [...glossary.records, ...fedRecords];
+
+  // ---- 4. link evidence and shared maps, before the curated decisions (point 2.4)
+  let linkEvidence: LinkEvidenceResult | undefined;
+  let shared: SharedJoinResult | undefined;
+  if (projection) {
+    linkEvidence = linkEvidenceOf({
+      join: projection.whole,
+      repos: projection.repos,
+      contracts,
+      traffic: i.traffic,
+    });
+    records = applyLinkEvidence(records, linkEvidence.marks);
+    const systems = outsideProfileSystemsOf(op);
+    shared = i.shared.maps.length
+      ? joinSharedMaps({
+          outside: projection.whole.outside ?? [],
+          repos: projection.repos,
+          maps: i.shared.maps,
+          systems,
+        })
+      : undefined;
+    records = shared ? applySharedMaps(records, shared, systems) : stripSharedMaps(records);
+  }
+
+  // ---- 5. the legacy records, as they are, until a current source takes over (point 6)
+  const retired: RetiredJoin[] = [];
+  let legacyJoins: string | undefined;
+  const legacySlot = i.slots.legacy && "slot" in i.slots.legacy ? i.slots.legacy : undefined;
+  if (i.slots.legacy && !legacySlot)
+    problems.push({
+      source: "catalog/sources/legacy/joins.json",
+      message: `${(i.slots.legacy as { problem: string }).problem}; its records aren't used`,
+    });
+  const byKey = new Map(records.map((r) => [`${r.kind}/${r.id}`, r]));
+  for (const r of legacyRecords) byKey.set(`${r.kind}/${r.id}`, r);
+  if (legacySlot) {
+    const changedSince = Object.entries(legacySlot.slot.inputs).some(([path, h]) => {
+      const now = currentHashOf(path, i, used);
+      return now !== h;
+    });
+    const keep: CatalogRecord[] = [];
+    for (const r of legacySlot.slot.records) {
+      const key = `${r.kind}/${r.id}`;
+      const derived = byKey.get(key);
+      const gone = repoOfEvidence(r).some((x) => !live.has(x));
+      if (gone) {
+        // One of its repos was removed or archived: it leaves, through the removal guard.
+        keep.push(r);
+        continue;
+      }
+      if (derived && changedSince && !legacyRecords.includes(derived)) {
+        retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
+        continue;
+      }
+      keep.push(r);
+      byKey.set(key, r);
+    }
+    if (retired.length)
+      legacyJoins = serializeLegacyJoins({
+        ...legacySlot.slot,
+        records: keep,
+      });
+  }
+  records = [...byKey.values()].filter(
+    (r) => !(legacySlot && isLegacyGone(r, legacySlot.slot, live)),
+  );
+
+  // ---- 6. the curated decisions, once, last
+  const sorted = [...records].sort(byKindId);
+  const applied = applyCurated(sorted, i.curated.records);
+  const present = new Set(sorted.map((r) => r.id));
+  const orphanedDecisions = i.curated.records
+    .filter(
+      (d): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
+        d.kind === "CuratedDecision" && d.status === "current",
+    )
+    .filter((d) => d.action !== "alias" && !present.has(d.target))
+    .map((d) => d.id)
+    .sort(cmpText);
+  for (const p of applied.problems)
+    if (!orphanedDecisions.includes(p.decision))
+      problems.push({ source: "curated", message: JSON.stringify(p) });
+  for (const inv of merged.invalid)
+    problems.push({
+      source: "merge",
+      message: `invalid record: ${inv.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
+    });
+  const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
+
+  // ---- per fact repo: flows, loose calls, the join about it
+  const facts = new Map<string, FactsRepoBuild>();
+  if (projection && afterFacts) {
+    const loose = new Map(out.filter((r) => r.kind === "Unresolved").map((r) => [r.id, r]));
+    for (const [repo, x] of afterFacts.repos) {
+      const p = projection.per.get(repo)!;
+      const unresolved: FactsRepoBuild["unresolved"] = [];
+      for (const [id, factId] of x.looseFact) {
+        const r = loose.get(id) as Extract<CatalogRecord, { kind: "Unresolved" }> | undefined;
+        if (r) unresolved.push({ factId, id, unresolvedKind: r.unresolvedKind, raw: r.raw });
+      }
+      unresolved.sort((a, b) => cmpText(a.factId, b.factId));
+      facts.set(repo, {
+        repo,
+        flows: x.flows,
+        unresolved,
+        join: x.join,
+        answerMisses: answerMissesOf(projection, repo),
+        targets: p.targets,
+        projectionIssues: p.projected.issues.filter((iss) => iss.code !== "unresolved-target"),
+      });
+    }
+  }
+
+  // ---- the files and build.json
+  const files = new Map<string, string>();
+  for (const r of out) files.set(recordPath(r), serializeRecord(r));
+  const manifest = manifestOf(root, out, files, i, used, legacySlot ? legacySlot.sha : undefined);
+  const stats = {
+    records: out.length,
+    interfaces: out.filter((r) => r.kind === "Interface").length,
+    verified: out.filter((r) => r.kind === "Interface" && r.confidence === "verified").length,
+    unresolved: out.filter((r) => r.kind === "Unresolved").length,
+  };
+  for (const r of sources)
+    if (r.source === "legacy")
+      notes.push(
+        `${r.repo}: its records are kept from before the upgrade (a legacy slot); scan or verify this repo to replace it.`,
+      );
+  return {
+    root,
+    records: out,
+    files,
+    manifest,
+    sources,
+    orphaned,
+    facts,
+    retired,
+    ...(legacyJoins !== undefined ? { legacyJoins } : {}),
+    curated: {
+      applied: applied.applied,
+      suppressed: applied.suppressed,
+      problems: applied.problems,
+    },
+    orphanedDecisions,
+    ...(linkEvidence ? { linkEvidence } : {}),
+    ...(shared ? { shared } : {}),
+    ...(projection ? { terms: projection.terms } : {}),
+    ...(inputs ? { inputs } : {}),
+    ...(federated ? { federated } : {}),
+    invalid: merged.invalid,
+    notes,
+    problems,
+    stats,
+  };
+}
+
+/** The part of a build's shared-map join about one repo (ADR 0160), for its verify report. */
+export function sharedAbout(b: Build, repo: string): SharedJoinResult | undefined {
+  return b.shared ? sharedJoinAbout(b.shared, repo) : undefined;
+}
+
+async function pairsFrom(
+  root: string,
+  repo: string,
+  facts: readonly import("@maycombhq/core").Fact[],
+): Promise<Record<string, PersonPair>> {
+  return pairsOfRepo(root, repo, facts);
+}
+
+/** A legacy record whose repos the manifests no longer list (or list archived): it leaves. */
+function isLegacyGone(r: CatalogRecord, slot: LegacyJoinsSlotT, live: Set<string>): boolean {
+  if (!slot.records.some((x) => x.kind === r.kind && x.id === r.id)) return false;
+  return repoOfEvidence(r).some((x) => !live.has(x));
+}
+
+function differingFields(a: CatalogRecord, b: CatalogRecord): string[] {
+  const x = a as unknown as Record<string, unknown>;
+  const y = b as unknown as Record<string, unknown>;
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])]
+    .filter((k) => k !== "evidence" && JSON.stringify(x[k]) !== JSON.stringify(y[k]))
+    .sort(cmpText);
+}
+
+/** The hash a path of joins.json's `inputs` has now: a slot's, or a build input's. */
+function currentHashOf(
+  path: string,
+  i: BuildInputs,
+  used: Map<string, { path: string; sha256: string }[]>,
+): string | undefined {
+  for (const xs of used.values()) for (const x of xs) if (x.path === path) return x.sha256;
+  return i.inputHashes.get(path);
+}
+
+/** The single hash of every slot the build used (what a join with any repo may rest on). */
+const ALL_SLOTS = "catalog/sources";
+
+function manifestOf(
+  root: string,
+  records: readonly CatalogRecord[],
+  files: Map<string, string>,
+  i: BuildInputs,
+  used: Map<string, { path: string; sha256: string }[]>,
+  legacySha: string | undefined,
+): BuildManifestT {
+  const all = [...used.values()].flat().sort((a, b) => cmpText(a.path, b.path));
+  if (legacySha) all.push({ path: relOf(root, legacyJoinsPath(root)), sha256: legacySha });
+  const allSlots = sha(all.map((x) => `${x.path}\u0000${x.sha256}`).join("\n"));
+  const inputs = [...i.inputHashes].map(([path, sha256]) => ({ path, sha256 }));
+  const legacyKeys = new Set(
+    legacySha && i.slots.legacy && "slot" in i.slots.legacy
+      ? i.slots.legacy.slot.records.map((r) => `${r.kind}/${r.id}`)
+      : [],
+  );
+  const genRel = relOf(root, generatedDirOf(root));
+  const out: BuildManifestT["files"] = [];
+  for (const r of records) {
+    const path = recordPath(r);
+    const text = files.get(path)!;
+    const srcs: { path: string; sha256: string }[] = [];
+    for (const repo of repoOfEvidence(r)) srcs.push(...(used.get(repo) ?? []));
+    if (legacySha && legacyKeys.has(`${r.kind}/${r.id}`))
+      srcs.push({ path: relOf(root, legacyJoinsPath(root)), sha256: legacySha });
+    srcs.push({ path: ALL_SLOTS, sha256: allSlots }, ...inputs);
+    const seen = new Set<string>();
+    out.push({
+      path: `${genRel}/${path}`,
+      sha256: sha(text),
+      sources: srcs.filter((s) => !seen.has(s.path) && !!seen.add(s.path)),
+    });
+  }
+  return { version: 1, files: out };
+}
+
+// ------------------------------------------------------------------ the guards
+
+/** The two limits of point 4: built in, not settings (a setting would be a C6 change). */
+export const REMOVAL_LIMITS = { share: 0.1, count: 200 } as const;
+
+export interface Removal {
+  /** The record file, relative to the root. */
+  path: string;
+  kind: string;
+  id: string;
+  /** The repos its evidence names. */
+  repos: string[];
+  /** What explains it: the slots or inputs that changed since the last build, or why else. */
+  explainedBy: string[];
+}
+
+export interface HandEdit {
+  path: string;
+  how: "changed" | "added" | "deleted";
+}
+
+export type RefusalReason =
+  | "nothing-read"
+  | "empty"
+  | "unexplained-removals"
+  | "large-removals"
+  | "hand-edits"
+  | "not-upgraded";
+
+/** Why a build wrote nothing (point 4): every reason at once, with its list, and how to go on. */
+export interface BuildRefusal {
+  reasons: RefusalReason[];
+  /** The whole refusal in words, what to do included. */
+  message: string;
+  removals?: Removal[];
+  unexplained?: Removal[];
+  /** The count `--allow-removals` must name to confirm these removals. */
+  allowRemovals?: number;
+  edits?: HandEdit[];
+  /** The count `--discard-edits` must name to discard these edits. */
+  discardEdits?: number;
+  /** For a scan that read nothing: each repo and why. */
+  unread?: { repo: string; why: string }[];
+}
+
+export interface GuardResult {
+  /** Removals the build writes (explained, and confirmed when large). */
+  removals: Removal[];
+  /** Hand edits a confirmed discard replaces. */
+  edits: HandEdit[];
+  refused?: BuildRefusal;
+}
+
+/** The last build.json, when there is one that reads. */
+export async function readBuildManifest(
+  path: string,
+): Promise<{ manifest?: BuildManifestT; text?: string; problem?: string }> {
+  const text = await readText(path);
+  if (text === undefined) return {};
+  const p = parseBuildManifest(text);
+  return p.ok
+    ? { manifest: p.slot, text }
+    : { text, problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
+}
+
+/** Every record file under a catalog folder, with the hash of its bytes (line endings aside). */
+async function hashFiles(dir: string): Promise<Map<string, { sha: string; text: string }>> {
+  const out = new Map<string, { sha: string; text: string }>();
+  async function walk(d: string, rel: string) {
+    let entries;
+    try {
+      entries = await readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(join(d, e.name), r);
+      else if (/\.ya?ml$/.test(e.name)) {
+        const text = (await readFile(join(d, e.name), "utf8")).replace(/\r\n?/g, "\n");
+        out.set(r, { sha: sha(text), text });
+      }
+    }
+  }
+  await walk(dir, "");
+  return out;
+}
+
+/** Where a command writes (the baseline's catalog, or a branch's beside it). */
+export interface CatalogTarget {
+  /** catalog/generated (or catalog/branches/<b>/generated). */
+  generated: string;
+  /** build.json for it. */
+  manifest: string;
+}
+
+export function baselineTarget(root: string): CatalogTarget {
+  return { generated: generatedDirOf(root), manifest: buildManifestPath(root) };
+}
+
+/**
+ * The manifest of a build that was cut short (point 2): the latest undo copy's manifest of the
+ * build it was taking, when build.json isn't it. A file that matches it is a build's output.
+ */
+async function interruptedManifest(
+  undoDir: string,
+  current: string | undefined,
+): Promise<BuildManifestT | undefined> {
+  const latest = (await listUndo(undoDir))[0];
+  if (!latest) return undefined;
+  const next = await readText(join(undoDir, String(latest.n), "next-build.json"));
+  if (next === undefined || next === current) return undefined;
+  const p = parseBuildManifest(next);
+  return p.ok ? p.slot : undefined;
+}
+
+/**
+ * The guards of point 4, on the build in memory, before any file is written. `changed` are the
+ * slot files this command writes (a scan's reads, a verify's snapshot): a removal they explain is
+ * the command's own result.
+ */
+export async function guardBuild(
+  b: Build,
+  o: {
+    target?: CatalogTarget;
+    undoDir: string;
+    /** `--allow-removals <count>`: confirms exactly the removals listed with this count. */
+    allowRemovals?: number;
+    /** `--discard-edits <count>`: confirms exactly the hand edits listed with this count. */
+    discardEdits?: number;
+    /** The command, for the words of what to run again. */
+    command: string;
+    /** Whether the manifests list any production repo (an empty catalog over a full one is fine then not). */
+  },
+): Promise<GuardResult> {
+  const root = b.root;
+  const target = o.target ?? baselineTarget(root);
+  const genRel = relOf(root, target.generated);
+  const last = await readBuildManifest(target.manifest);
+  const onDisk = await hashFiles(target.generated);
+  const reasons: RefusalReason[] = [];
+  const lines: string[] = [];
+  const again = (flag: string) => `${o.command} ${flag}`;
+
+  // ---- hand edits (and a catalog from before the slots)
+  const edits: HandEdit[] = [];
+  const known = new Map<string, string>(); // path under generated -> sha
+  const strip = (p: string) => (p.startsWith(`${genRel}/`) ? p.slice(genRel.length + 1) : p);
+  for (const f of last.manifest?.files ?? []) known.set(strip(f.path), f.sha256);
+  const interrupted = await interruptedManifest(o.undoDir, last.text);
+  const alt = new Map<string, string>();
+  for (const f of interrupted?.files ?? []) alt.set(strip(f.path), f.sha256);
+  const before = !last.manifest && onDisk.size > 0;
+  if (!before) {
+    for (const [p, f] of onDisk) {
+      const want = b.files.get(p);
+      // A file holding what this build writes loses nothing (an edit made curated, say).
+      if (want !== undefined && sha(want) === f.sha) continue;
+      if (known.get(p) === f.sha || alt.get(p) === f.sha) continue;
+      edits.push({ path: `${genRel}/${p}`, how: known.has(p) || alt.has(p) ? "changed" : "added" });
+    }
+    // A file deleted by hand is an edit, unless an interrupted build had removed it.
+    for (const p of known.keys())
+      if (!onDisk.has(p) && !(interrupted && !alt.has(p)))
+        edits.push({ path: `${genRel}/${p}`, how: "deleted" });
+  }
+  edits.sort((a, c) => cmpText(a.path, c.path));
+  if (before) {
+    reasons.push("not-upgraded");
+    lines.push(
+      `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}): run atticus upgrade to adopt its ${onDisk.size} record files into legacy slots (it shows what it would do first; atticus upgrade --yes applies it), or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}.`,
+    );
+  } else if (edits.length && o.discardEdits !== edits.length) {
+    reasons.push("hand-edits");
+    lines.push(
+      `${edits.length} ${edits.length === 1 ? "file" : "files"} under ${genRel} ${edits.length === 1 ? "was" : "were"} changed by hand since the last build, so nothing is overwritten:`,
+      ...edits.slice(0, 20).map((e) => `  ${e.how}: ${e.path}`),
+      ...(edits.length > 20 ? [`  and ${edits.length - 20} more`] : []),
+      `Make ${edits.length === 1 ? "it" : "them"} curated decisions, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
+    );
+    if (o.discardEdits !== undefined)
+      lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
+  }
+  const discardCount = before ? onDisk.size : edits.length;
+
+  // ---- removals: what the last build wrote and this one wouldn't
+  const removals: Removal[] = [];
+  const unexplained: Removal[] = [];
+  if (last.manifest) {
+    const nowSources = new Set<string>();
+    for (const f of b.manifest.files)
+      for (const s of f.sources) nowSources.add(`${s.path}\u0000${s.sha256}`);
+    const oldRecords = new Map<string, CatalogRecord>();
+    const cat = await readCatalog(target.generated, { cacheRoot: root });
+    for (const r of cat.records) oldRecords.set(recordPath(r), r);
+    const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
+    for (const f of last.manifest.files) {
+      const p = strip(f.path);
+      if (b.files.has(p)) continue;
+      // A file deleted by hand isn't a removal of this build's: the edits above list it.
+      const r = oldRecords.get(p);
+      const [kind, file] = p.split("/");
+      const id = r?.id ?? (file ?? "").replace(/\.ya?ml$/, "");
+      const repos = r ? repoOfEvidence(r) : [];
+      const why = new Set<string>();
+      for (const s of f.sources)
+        if (!nowSources.has(`${s.path}\u0000${s.sha256}`))
+          why.add(s.path === ALL_SLOTS ? "a slot of the estate" : s.path);
+      for (const repo of repos) if (repoGone(repo)) why.add(`${repo} isn't listed, or is archived`);
+      if (b.curated.suppressed.includes(id)) why.add("a curated suppress");
+      const removal: Removal = {
+        path: f.path,
+        kind: r?.kind ?? kind ?? "",
+        id,
+        repos,
+        explainedBy: [...why].sort(cmpText),
+      };
+      (removal.explainedBy.length ? removals : unexplained).push(removal);
+    }
+    // The records each repo had in the last build, for the share.
+    const had = new Map<string, number>();
+    for (const r of oldRecords.values())
+      for (const repo of repoOfEvidence(r)) had.set(repo, (had.get(repo) ?? 0) + 1);
+    if (unexplained.length) {
+      reasons.push("unexplained-removals");
+      lines.push(
+        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or curated decision explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
+        ...unexplained
+          .slice(0, 20)
+          .map((x) => `  ${x.kind}/${x.id}${x.repos.length ? ` (${x.repos.join(", ")})` : ""}`),
+        ...(unexplained.length > 20 ? [`  and ${unexplained.length - 20} more`] : []),
+      );
+    }
+    const gone = new Map<string, number>();
+    for (const x of removals) for (const repo of x.repos) gone.set(repo, (gone.get(repo) ?? 0) + 1);
+    const big = [...gone].filter(([repo, n]) => n > (had.get(repo) ?? 0) * REMOVAL_LIMITS.share);
+    if (
+      (big.length || removals.length > REMOVAL_LIMITS.count) &&
+      o.allowRemovals !== removals.length
+    ) {
+      reasons.push("large-removals");
+      const per = big.map(([repo, n]) => `${n} of ${repo}'s ${had.get(repo) ?? 0}`);
+      lines.push(
+        `This would remove ${removals.length} ${removals.length === 1 ? "record" : "records"}${per.length ? ` (${per.join(", ")})` : ""}, more than ${REMOVAL_LIMITS.share * 100}% of a repo's records or ${REMOVAL_LIMITS.count} in one build, so ${removals.length === 1 ? "it waits" : "they wait"} for you to confirm:`,
+        ...removals.slice(0, 20).map((x) => `  - ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...(removals.length > 20 ? [`  and ${removals.length - 20} more`] : []),
+        `Confirm exactly these: ${again(`--allow-removals ${removals.length}`)}.`,
+      );
+      if (o.allowRemovals !== undefined)
+        lines.push(
+          `--allow-removals ${o.allowRemovals} doesn't name the ${removals.length} listed.`,
+        );
+    }
+  }
+
+  // ---- no empty catalog over a full one
+  const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
+  const hadCode = last.manifest
+    ? (await readCatalog(target.generated, { cacheRoot: root })).records.some(fromCode)
+    : false;
+  if (hadCode && !b.records.some(fromCode) && b.sources.length > 0) {
+    reasons.push("empty");
+    lines.push(
+      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again.`,
+    );
+  }
+
+  if (reasons.length) {
+    return {
+      removals,
+      edits,
+      refused: {
+        reasons,
+        message: [`Nothing written: ${genRel} and every slot are as they were.`, ...lines].join(
+          "\n",
+        ),
+        ...(removals.length ? { removals, allowRemovals: removals.length } : {}),
+        ...(unexplained.length ? { unexplained } : {}),
+        ...(edits.length || before ? { edits, discardEdits: discardCount } : {}),
+      },
+    };
+  }
+  return {
+    removals,
+    edits: before
+      ? [...onDisk.keys()].map((p) => ({ path: `${genRel}/${p}`, how: "added" as const }))
+      : edits,
+  };
+}
+
+// ------------------------------------------------------------------ the write, and undo
+
+/** One file a command writes besides the records: a slot, or its removal (`text: null`). */
+export interface SlotWrite {
+  /** Absolute path. */
+  path: string;
+  text: string | null;
+}
+
+export interface WriteResult {
+  written: number;
+  unchanged: number;
+  removed: number;
+  /** The slot files written or removed. */
+  slots: string[];
+  /** The undo copy taken, when anything changed. */
+  undo?: number;
+  removals: Removal[];
+  discarded: HandEdit[];
+}
+
+export const UNDO_KEEP = 5;
+
+interface UndoEntry {
+  version: 1;
+  n: number;
+  command: string;
+  commit: string | null;
+  at: string;
+  /** Each file the command touched, relative to the root, and whether it was there before. */
+  files: { path: string; before: "file" | "absent" }[];
+}
+
+/** The undo copies, newest first. */
+export async function listUndo(undoDir: string): Promise<UndoEntry[]> {
+  const out: UndoEntry[] = [];
+  for (const n of await readdir(undoDir).catch(() => [] as string[])) {
+    if (!/^\d+$/.test(n)) continue;
+    const t = await readText(join(undoDir, n, "undo.json"));
+    if (t === undefined) continue;
+    try {
+      out.push(JSON.parse(t) as UndoEntry);
+    } catch {
+      // A copy cut short is no copy.
+    }
+  }
+  return out.sort((a, b) => b.n - a.n);
+}
+
+/** The metarepo's commit, read from .git without running git (undo copies say it). */
+async function headOf(root: string): Promise<string | null> {
+  const head = await readText(join(root, ".git", "HEAD"));
+  if (!head) return null;
+  const ref = /^ref: (.+)$/m.exec(head)?.[1];
+  if (!ref) return head.trim() || null;
+  return ((await readText(join(root, ".git", ...ref.split("/")))) ?? "").trim() || null;
+}
+
+/**
+ * Take an undo copy (point 7) of the files a command is about to touch: their bytes now (or that
+ * they aren't there), the command, the metarepo's commit and the time. Only the last five are
+ * kept. Nothing is copied when nothing would change.
+ */
+export async function takeUndoCopy(
+  root: string,
+  undoDir: string,
+  command: string,
+  touched: readonly { path: string; text: string | null }[],
+  extra: { nextManifest?: string; now?: Date } = {},
+): Promise<number | undefined> {
+  const changes: { path: string; before: string | null }[] = [];
+  for (const t of touched) {
+    const cur = await readText(t.path);
+    if ((cur ?? null) === t.text) continue;
+    changes.push({ path: t.path, before: cur ?? null });
+  }
+  if (!changes.length) return undefined;
+  const list = await listUndo(undoDir);
+  const n = (list[0]?.n ?? 0) + 1;
+  const dir = join(undoDir, String(n));
+  await mkdir(join(dir, "files"), { recursive: true });
+  for (const c of changes)
+    if (c.before !== null) {
+      const to = join(dir, "files", ...relOf(root, c.path).split("/"));
+      await mkdir(dirname(to), { recursive: true });
+      await writeFile(to, c.before, "utf8");
+    }
+  if (extra.nextManifest !== undefined)
+    await writeFile(join(dir, "next-build.json"), extra.nextManifest, "utf8");
+  const entry: UndoEntry = {
+    version: 1,
+    n,
+    command,
+    commit: await headOf(root),
+    at: (extra.now ?? new Date()).toISOString(),
+    files: changes
+      .map((c) => ({
+        path: relOf(root, c.path),
+        before: c.before === null ? ("absent" as const) : ("file" as const),
+      }))
+      .sort((a, b) => cmpText(a.path, b.path)),
+  };
+  await writeFile(join(dir, "undo.json"), JSON.stringify(entry, null, 2) + "\n", "utf8");
+  for (const old of list.slice(UNDO_KEEP - 1))
+    await rm(join(undoDir, String(old.n)), { recursive: true, force: true });
+  return n;
+}
+
+/**
+ * Write a build that passed its guards (point 2: compute, guard, then write): the undo copy
+ * first, then the slots the command changed, then the record files (each atomically), then
+ * build.json last. Building again with nothing changed writes no file.
+ */
+export async function writeBuiltCatalog(
+  b: Build,
+  o: {
+    target?: CatalogTarget;
+    undoDir: string;
+    command: string;
+    slots?: readonly SlotWrite[];
+    guard: GuardResult;
+    now?: Date;
+  },
+): Promise<WriteResult> {
+  if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
+  const root = b.root;
+  const target = o.target ?? baselineTarget(root);
+  const manifestText = serializeBuildManifest(b.manifest);
+  const slots = [...(o.slots ?? [])];
+  if (b.legacyJoins !== undefined && !slots.some((s) => s.path === legacyJoinsPath(root)))
+    slots.push({ path: legacyJoinsPath(root), text: b.legacyJoins });
+  // What changes: each record file, each slot, build.json.
+  const onDisk = await hashFiles(target.generated);
+  const touched: { path: string; text: string | null }[] = [];
+  for (const [p, text] of b.files)
+    if (onDisk.get(p)?.text !== text)
+      touched.push({ path: join(target.generated, ...p.split("/")), text });
+  for (const p of onDisk.keys())
+    if (!b.files.has(p))
+      touched.push({ path: join(target.generated, ...p.split("/")), text: null });
+  for (const s of slots) touched.push(s);
+  touched.push({ path: target.manifest, text: manifestText });
+  const undo = await takeUndoCopy(root, o.undoDir, o.command, touched, {
+    nextManifest: manifestText,
+    ...(o.now ? { now: o.now } : {}),
+  });
+  const wrote: string[] = [];
+  for (const s of slots) {
+    const cur = await readText(s.path);
+    if (s.text === null) {
+      if (cur !== undefined) {
+        await rm(s.path, { force: true });
+        wrote.push(relOf(root, s.path));
+      }
+    } else if (cur !== s.text) {
+      await writeFileAtomic(s.path, s.text);
+      wrote.push(relOf(root, s.path));
+    }
+  }
+  const w = await writeCatalog(target.generated, b.records);
+  if ((await readText(target.manifest)) !== manifestText)
+    await writeFileAtomic(target.manifest, manifestText);
+  return {
+    ...w,
+    slots: wrote.sort(cmpText),
+    ...(undo !== undefined ? { undo } : {}),
+    removals: o.guard.removals,
+    discarded: o.guard.edits,
+  };
+}
+
+export interface UndoPlan {
+  /** The copies taken back, newest first. */
+  copies: UndoEntry[];
+  /** Each file and what it goes back to. */
+  files: { path: string; to: "file" | "absent"; from: number }[];
+}
+
+/** What `atticus catalog undo [<n>]` would restore: before copy n (default the latest). */
+export async function planUndo(
+  undoDir: string,
+  n?: number,
+): Promise<UndoPlan | { problem: string }> {
+  const list = await listUndo(undoDir);
+  if (!list.length)
+    return {
+      problem:
+        "There is nothing to undo: no build has been written here yet (undo copies are kept on this machine only).",
+    };
+  const upTo = n ?? list[0]!.n;
+  if (!list.some((x) => x.n === upTo))
+    return {
+      problem: `There is no undo copy ${upTo}; the copies kept are ${list.map((x) => x.n).join(", ")}.`,
+    };
+  const copies = list.filter((x) => x.n >= upTo);
+  const files = new Map<string, { path: string; to: "file" | "absent"; from: number }>();
+  // The oldest copy that touched a file knows what it was before them all.
+  for (const c of [...copies].reverse())
+    for (const f of c.files)
+      if (!files.has(f.path)) files.set(f.path, { path: f.path, to: f.before, from: c.n });
+  return { copies, files: [...files.values()].sort((a, b) => cmpText(a.path, b.path)) };
+}
+
+/** Restore what a plan lists, keeping what it replaces as a new undo copy (an undo can be undone). */
+export async function applyUndo(
+  root: string,
+  undoDir: string,
+  plan: UndoPlan,
+  command: string,
+  now?: Date,
+): Promise<{ restored: string[]; undo?: number }> {
+  const target: { path: string; text: string | null }[] = [];
+  for (const f of plan.files) {
+    const abs = join(root, ...f.path.split("/"));
+    const text =
+      f.to === "absent"
+        ? null
+        : ((await readText(join(undoDir, String(f.from), "files", ...f.path.split("/")))) ?? null);
+    target.push({ path: abs, text });
+  }
+  const undo = await takeUndoCopy(root, undoDir, command, target, now ? { now } : {});
+  const restored: string[] = [];
+  for (const t of target) {
+    const cur = await readText(t.path);
+    if ((cur ?? null) === t.text) continue;
+    if (t.text === null) await rm(t.path, { force: true });
+    else await writeFileAtomic(t.path, t.text);
+    restored.push(relOf(root, t.path));
+  }
+  await pruneEmptyDirs(generatedDirOf(root));
+  return { restored, ...(undo !== undefined ? { undo } : {}) };
+}
+
+async function pruneEmptyDirs(dir: string): Promise<void> {
+  for (const e of await readdir(dir, { withFileTypes: true }).catch(() => []))
+    if (e.isDirectory()) {
+      const d = join(dir, e.name);
+      await pruneEmptyDirs(d);
+      if (!(await readdir(d).catch(() => ["x"])).length)
+        await rm(d, { recursive: true, force: true });
+    }
+}
+
+/** Every file of a folder, for the upgrade's copy and prune's list. */
+export async function filesUnder(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(d: string) {
+    for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) await walk(p);
+      else out.push(p);
+    }
+  }
+  await walk(dir);
+  return out.sort(cmpText);
+}
+
+export async function exists(p: string): Promise<boolean> {
+  return stat(p).then(
+    () => true,
+    () => false,
+  );
+}
+
+export { short as shortCommit };
+
+// ------------------------------------------------------------------ one writer's path
+
+/** The slots on disk with a command's writes in their place (what the build reads before they are written). */
+export function slotsAfter(root: string, on: BuildSlots, writes: readonly SlotWrite[]): BuildSlots {
+  const readers = new Map(on.readers);
+  const facts = new Map(on.facts);
+  let legacy = on.legacy;
+  const dir = sourcesDirOf(root);
+  const factsTexts = new Map<string, { facts?: string | null; meta?: string | null }>();
+  for (const w of writes) {
+    const rel = relOf(dir, w.path);
+    let m = /^readers\/(.+)\.json$/.exec(rel);
+    if (m) {
+      if (w.text === null) readers.delete(m[1]!);
+      else readers.set(m[1]!, readersSlotRead(w.text));
+      continue;
+    }
+    m = /^facts\/(.+?)(\.meta\.json|\.jsonl)$/.exec(rel);
+    if (m) {
+      const e = factsTexts.get(m[1]!) ?? {};
+      if (m[2] === ".jsonl") e.facts = w.text;
+      else e.meta = w.text;
+      factsTexts.set(m[1]!, e);
+      continue;
+    }
+    if (rel === "legacy/joins.json") {
+      if (w.text === null) legacy = undefined;
+      else {
+        const p = parseLegacyJoins(w.text);
+        legacy = p.ok
+          ? { slot: p.slot, sha: sha(w.text) }
+          : { problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
+      }
+    }
+  }
+  return { readers, facts, ...(legacy ? { legacy } : {}), pending: factsTexts } as BuildSlots & {
+    pending: typeof factsTexts;
+  };
+}
+
+/**
+ * The two files of a repo's facts snapshot (ADR 0195 point 1) as a command writes them: the kept
+ * facts, then the meta with their hash, at the commit verify checked.
+ */
+export function factsSnapshotWrites(
+  root: string,
+  repo: string,
+  facts: readonly import("@maycombhq/core").Fact[],
+  o: { commit: string; contracts: ContractsFileT | null },
+): SlotWrite[] {
+  const p = factsSlotPaths(root, repo);
+  const text = serializeFactsSnapshot(facts);
+  return [
+    { path: p.facts, text },
+    {
+      path: p.meta,
+      text: serializeFactsSlotMeta({
+        slotVersion: SLOT_VERSION,
+        kind: "facts",
+        repo,
+        commit: o.commit,
+        factsSchemaVersion: FACTS_SCHEMA_VERSION,
+        factsHash: sha(text),
+        contracts: o.contracts,
+      }),
+    },
+  ];
+}
+
+/** The slots on disk with a command's writes in their place, its facts snapshots read whole. */
+export async function withSlotWrites(
+  root: string,
+  on: BuildSlots,
+  writes: readonly SlotWrite[],
+): Promise<BuildSlots> {
+  return withFactsWrites(root, slotsAfter(root, on, writes));
+}
+
+/** The facts slots with a command's snapshot writes put in (each read with its other file from disk when not written). */
+async function withFactsWrites(root: string, s: BuildSlots): Promise<BuildSlots> {
+  const pending = (
+    s as BuildSlots & {
+      pending?: Map<string, { facts?: string | null; meta?: string | null }>;
+    }
+  ).pending;
+  if (!pending?.size) return s;
+  const facts = new Map(s.facts);
+  for (const [repo, e] of pending) {
+    const p = factsSlotPaths(root, repo);
+    const text = e.facts !== undefined ? (e.facts ?? undefined) : await readText(p.facts);
+    const meta = e.meta !== undefined ? (e.meta ?? undefined) : await readText(p.meta);
+    const f = factsSlotOf(repo, text, meta);
+    if (f) facts.set(repo, f);
+    else facts.delete(repo);
+  }
+  return { readers: s.readers, facts, ...(s.legacy ? { legacy: s.legacy } : {}) };
+}
+
+export interface BuildAndWrite {
+  build: Build;
+  guard: GuardResult;
+  /** Undefined when refused, or with `check`. */
+  write?: WriteResult;
+  /** With `check`: whether catalog/generated is what the slots build. */
+  upToDate?: boolean;
+}
+
+/**
+ * Every writer's path (ADR 0195 point 2: "update my slot, then build"): the build with the
+ * command's slot writes in place of what is on disk, the guards, and only then the write (the
+ * undo copy, the slots, the records, build.json). A refused build writes nothing, no slot either.
+ * The caller holds the scan's lock.
+ */
+export async function buildAndWrite(
+  root: string,
+  o: {
+    command: string;
+    slots?: readonly SlotWrite[];
+    op?: OrgPack;
+    curated?: CatalogRecord[];
+    allowRemovals?: number;
+    discardEdits?: number;
+    /** `catalog build --check`: build and compare, write nothing. */
+    check?: boolean;
+    /** A build already made (a scan's), with these slot writes in it. */
+    build?: Build;
+    target?: CatalogTarget;
+    inputsDir?: string | null;
+    federated?: { id: string; dir: string }[];
+    now?: Date;
+  },
+): Promise<BuildAndWrite> {
+  const pack = await packOf(root);
+  const undoDir = buildUndoDirOf(root, pack.stateDir);
+  const build =
+    o.build ??
+    (await buildCatalog(
+      await loadBuildInputs(root, {
+        ...(o.op ? { op: o.op } : {}),
+        ...(o.curated ? { curated: o.curated } : {}),
+        ...(o.inputsDir !== undefined ? { inputsDir: o.inputsDir } : {}),
+        ...(o.federated ? { federated: o.federated } : {}),
+      }).then(async (i) => ({
+        ...i,
+        slots: await withFactsWrites(root, slotsAfter(root, i.slots, o.slots ?? [])),
+      })),
+    ));
+  const guard = await guardBuild(build, {
+    undoDir,
+    command: o.command,
+    ...(o.target ? { target: o.target } : {}),
+    ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+    ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+  });
+  if (o.check) {
+    const target = o.target ?? baselineTarget(root);
+    const onDisk = await hashFiles(target.generated);
+    const same =
+      onDisk.size === build.files.size &&
+      [...build.files].every(([p, t]) => onDisk.get(p)?.sha === sha(t)) &&
+      (await readText(target.manifest)) === serializeBuildManifest(build.manifest);
+    return { build, guard, upToDate: same };
+  }
+  if (guard.refused) return { build, guard };
+  const write = await writeBuiltCatalog(build, {
+    undoDir,
+    command: o.command,
+    guard,
+    ...(o.slots ? { slots: o.slots } : {}),
+    ...(o.target ? { target: o.target } : {}),
+    ...(o.now ? { now: o.now } : {}),
+  });
+  return { build, guard, write };
+}
+
+/** The undo folder of a metarepo (its state folder's `.index/build-undo`). */
+export async function undoDirOf(root: string): Promise<string> {
+  return buildUndoDirOf(root, (await packOf(root)).stateDir);
+}
+
+/** What a build wrote or refused, in the words a person reads (the CLI and the Console). */
+export function buildLines(root: string, r: BuildAndWrite): string[] {
+  const genRel = relOf(root, generatedDirOf(root));
+  if (r.guard.refused) return r.guard.refused.message.split("\n");
+  const out: string[] = [];
+  const w = r.write;
+  if (w) {
+    out.push(`${genRel}: ${w.written} written, ${w.unchanged} unchanged, ${w.removed} removed`);
+    if (w.slots.length) out.push(`slots: ${w.slots.join(", ")}`);
+    if (w.removals.length) {
+      const by = new Map<string, number>();
+      for (const x of w.removals)
+        for (const repo of x.repos.length ? x.repos : ["no repo"])
+          by.set(repo, (by.get(repo) ?? 0) + 1);
+      out.push(
+        `Removed ${w.removals.length} ${w.removals.length === 1 ? "record" : "records"} (${[...by].map(([k, n]) => `${n} of ${k}`).join(", ")}):`,
+        ...w.removals.slice(0, 20).map((x) => `  - ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...(w.removals.length > 20 ? [`  and ${w.removals.length - 20} more`] : []),
+      );
+    }
+    if (w.discarded.length)
+      out.push(
+        `Discarded ${w.discarded.length} hand ${w.discarded.length === 1 ? "edit" : "edits"} (kept in the undo copy): ${w.discarded.map((e) => e.path).join(", ")}`,
+      );
+    if (w.undo !== undefined)
+      out.push(`atticus catalog undo takes this back (undo copy ${w.undo}, on this machine).`);
+  }
+  for (const x of r.build.retired)
+    out.push(
+      `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
+    );
+  for (const x of r.build.orphaned)
+    out.push(
+      `${x.repo}: ${x.why === "archived" ? "archived" : "no longer in the manifests"}, so its slots aren't built from; they are kept (${x.files.join(", ")}). atticus catalog prune lists them to remove.`,
+    );
+  for (const d of r.build.orphanedDecisions)
+    out.push(
+      `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
+    );
+  return out;
+}

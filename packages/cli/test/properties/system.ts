@@ -5,6 +5,7 @@ import { main } from "../../src/main.js";
 import { git, renderFacts } from "./estate.js";
 import { fault } from "./fault.js";
 import type { Model } from "./model.js";
+import { cs2Writers } from "./system-cs2.js";
 
 /**
  * The system under test, behind one small interface (ticket CS4). Today it is the writers
@@ -162,5 +163,5 @@ export const todaysWriters: CatalogSystem = {
   },
 };
 
-/** The one place the system under test is chosen. CS2: the slot writers and `buildCatalog`. */
-export const SYSTEM: CatalogSystem = todaysWriters;
+/** The one place the system under test is chosen: CS2, the slot writers and `buildCatalog`. */
+export const SYSTEM: CatalogSystem = cs2Writers;

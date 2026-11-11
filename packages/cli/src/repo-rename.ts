@@ -23,7 +23,24 @@ import {
   writeQuestion,
   type Question,
 } from "@maycombhq/core";
-import { forgetCatalogs, readCatalog } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  buildCatalog,
+  buildLines,
+  factsSlotOf,
+  factsSlotPaths,
+  forgetCatalogs,
+  loadBuildInputs,
+  readCatalog,
+  readersSlotPath,
+  readersSlotRead,
+  serializeFactsSlotMeta,
+  serializeReadersSlot,
+  sha256Of,
+  withSlotWrites,
+  type SlotWrite,
+} from "@maycombhq/scanner";
+import { loadOrgPack } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 
@@ -150,6 +167,89 @@ export async function repoRename(
     return 1;
   }
 
+  // ---- ADR 0195 (CS2): the repo's slots under the new id, checked, then the build from them
+  // with its guards, all in memory before anything moves. A failure changes nothing.
+  const slotWrites: SlotWrite[] = [];
+  const readText = (p: string) =>
+    readFile(p, "utf8").then(
+      (t) => t.replace(/\r\n?/g, "\n"),
+      () => undefined,
+    );
+  const rOld = readersSlotPath(root, from);
+  const rText = await readText(rOld);
+  if (rText !== undefined) {
+    const read = readersSlotRead(rText);
+    const next =
+      "slot" in read
+        ? serializeReadersSlot(
+            renamed({ ...read.slot }, from, to).value as Parameters<typeof serializeReadersSlot>[0],
+          )
+        : undefined;
+    const check = next === undefined ? undefined : readersSlotRead(next);
+    if (!next || !check || !("slot" in check) || check.slot.repo !== to) {
+      io.err(
+        `The readers slot of ${from} doesn't read under ${to} (${"problem" in read ? read.problem : "renamed, it isn't a slot"}); nothing was changed.`,
+      );
+      return 1;
+    }
+    slotWrites.push({ path: readersSlotPath(root, to), text: next });
+  }
+  const fOld = factsSlotPaths(root, from);
+  const [fText, mText] = [await readText(fOld.facts), await readText(fOld.meta)];
+  if (fText !== undefined || mText !== undefined) {
+    const facts = fText === undefined ? undefined : rewriteFactsFile(".jsonl", fText, from, to);
+    let meta: string | undefined;
+    try {
+      const m = mText === undefined ? undefined : (JSON.parse(mText) as Record<string, unknown>);
+      if (m && facts !== undefined) {
+        const n = renamed(m, from, to).value as Record<string, unknown>;
+        meta = serializeFactsSlotMeta({
+          ...(n as Parameters<typeof serializeFactsSlotMeta>[0]),
+          repo: to,
+          factsHash: sha256Of(facts),
+        });
+      }
+    } catch {
+      meta = undefined;
+    }
+    const check = factsSlotOf(to, facts, meta);
+    if (!check?.ok || facts === undefined || meta === undefined) {
+      io.err(
+        `The facts snapshot of ${from} doesn't read under ${to} (${check && !check.ok ? check.problem : "its meta isn't JSON"}); nothing was changed.`,
+      );
+      return 1;
+    }
+    const p = factsSlotPaths(root, to);
+    slotWrites.push({ path: p.facts, text: facts }, { path: p.meta, text: meta });
+  }
+  // The old slot files go last, once the new ones are written.
+  if (rText !== undefined) slotWrites.push({ path: rOld, text: null });
+  if (fText !== undefined) slotWrites.push({ path: fOld.facts, text: null });
+  if (mText !== undefined) slotWrites.push({ path: fOld.meta, text: null });
+  const op0 = await loadOrgPack(orgPackDirOf(root));
+  const op = structuredClone(op0);
+  for (const p of op.profiles)
+    for (const r of p.repos?.repos ?? []) if (r.id === from) (r as { id: string }).id = to;
+  const curatedNow = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
+  const curatedNext = curatedNow.records.map((r) => {
+    const n = renamed(r, from, to);
+    if (!n.changed) return r;
+    const p = parseRecord(n.value);
+    return p.ok ? p.record : r;
+  });
+  const command = `atticus repo rename ${from} ${to}`;
+  const inputs = await loadBuildInputs(root, { op, curated: curatedNext });
+  const build = await buildCatalog({
+    ...inputs,
+    slots: await withSlotWrites(root, inputs.slots, slotWrites),
+  });
+  const pre = await buildAndWrite(root, { command, build, check: true });
+  if (pre.guard.refused) {
+    for (const l of buildLines(root, pre)) io.err(l);
+    io.err("Nothing was renamed.");
+    return 1;
+  }
+
   let lock: Awaited<ReturnType<typeof acquireLock>>;
   try {
     lock = await acquireLock(root, "scan", `atticus repo rename ${from} ${to}`);
@@ -198,30 +298,41 @@ export async function repoRename(
     }
     if (qs.length) said.push(`${qs.length} question${qs.length === 1 ? "" : "s"} (repo ${to})`);
 
-    // ---- the catalog records that name it, generated and curated
+    // ---- the curated decisions that name it (catalog/generated is the build's: written below)
     let records = 0;
-    for (const sub of ["generated", "curated"]) {
-      const dir = join(catalogDirOf(root), sub);
-      const cat = await readCatalog(dir, { cacheRoot: root });
-      for (const r of cat.records) {
-        const n = renamed(r, from, to);
-        if (!n.changed) continue;
-        const p = parseRecord(n.value);
-        if (!p.ok) {
-          io.err(
-            `${r.kind} ${r.id} names ${from} but wouldn't be valid renamed (${p.issues.map((i) => i.message).join("; ")}); left as it is.`,
-          );
-          continue;
-        }
-        await writeFileAtomic(
-          join(dir, ...recordPath(p.record).split("/")),
-          serializeRecord(p.record),
+    const dir = join(catalogDirOf(root), "curated");
+    for (const r of curatedNow.records) {
+      const n = renamed(r, from, to);
+      if (!n.changed) continue;
+      const p = parseRecord(n.value);
+      if (!p.ok) {
+        io.err(
+          `${r.kind} ${r.id} names ${from} but wouldn't be valid renamed (${p.issues.map((i) => i.message).join("; ")}); left as it is.`,
         );
-        records++;
+        continue;
       }
+      await writeFileAtomic(
+        join(dir, ...recordPath(p.record).split("/")),
+        serializeRecord(p.record),
+      );
+      records++;
     }
+    // ---- the new slots, then the build, then the old slots go (ADR 0195 point 2)
+    let written;
+    try {
+      written = await buildAndWrite(root, { command, build, slots: slotWrites });
+    } catch (e) {
+      // Only the new files this wrote are taken away; the old ones stay.
+      for (const w of slotWrites) if (w.text !== null) await rm(w.path, { force: true });
+      throw e;
+    }
+    if (written.guard.refused) {
+      for (const l of buildLines(root, written)) io.err(l);
+      return 1;
+    }
+    for (const l of buildLines(root, written)) said.push(l);
     forgetCatalogs();
-    if (records) said.push(`${records} catalog record${records === 1 ? "" : "s"} (repo ${to})`);
+    if (records) said.push(`${records} curated decision${records === 1 ? "" : "s"} (repo ${to})`);
 
     io.out(`Renamed ${from} to ${to}:`);
     for (const l of said) io.out(`  ${l}`);
