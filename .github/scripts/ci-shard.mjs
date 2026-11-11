@@ -59,6 +59,8 @@ const UNIT_DEFAULT = 5;
 // The CLI's test files that take 10 s or more.
 const CLI_WEIGHTS = {
   "propose.test.ts": 149,
+  // ADR 0195's property tests (100 sequences); estimated from Linux, not yet measured on Windows.
+  "properties/catalog-properties.test.ts": 120,
   "learn-cli.test.ts": 103,
   "map-all-cli.test.ts": 64,
   "ui-api-task-run.test.ts": 57,

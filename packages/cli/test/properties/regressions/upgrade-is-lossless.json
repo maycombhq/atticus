@@ -1,0 +1,36 @@
+{
+  "invariant": "upgrade-is-lossless",
+  "note": "upgrade-is-lossless: Component/ledger-api is in 0 legacy slots after atticus upgrade --yes, not exactly one",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    }
+  ]
+}

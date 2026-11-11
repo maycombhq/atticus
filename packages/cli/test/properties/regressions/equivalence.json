@@ -1,0 +1,42 @@
+{
+  "invariant": "equivalence",
+  "note": "equivalence: the catalog differs from a fresh build of the final observations in 6 files: + Component/payments-api (forge-payments); + System/customers (no repo); + System/ledger (no repo); + System/notify (no repo); + System/orders (no repo); + System/payments (forge-payments)",
+  "seed": 7,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan-not-cloned",
+      "slot": 0
+    },
+    {
+      "t": "archive",
+      "slot": 0
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "change"
+    }
+  ]
+}

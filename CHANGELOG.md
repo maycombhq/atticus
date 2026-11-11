@@ -13,6 +13,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Changed
 
 - **`catalog/generated` is written exactly as before.** This release only adds the slots beside it; building the catalog from them, its guards and undo, and the upgrade that adopts an existing catalog come with the rest of ADR 0195.
+- **Property tests for the catalog's writers (ADR 0195, ticket CS4).** `packages/cli/test/properties/` drives `atticus scan`, `atticus verify <repo> --write`, curated decisions, answers, archive, remove, rename, hand edits, undo and upgrade in random sequences (fast-check's `fc.commands`, a new dev dependency under MIT) over small invented Forge estates in temporary folders, and checks the twelve invariants of ADR 0195 point 10 after each command against a small model of what each repo's readers and facts last observed. `pnpm check` runs 100 sequences and `pnpm --filter @maycombhq/cli test:properties:nightly` runs 2,000; every run prints its seed, and a failure prints the seed, path and shrunk commands that replay it. The invariants today's writers break are recorded as known failures, each with its shrunk counterexample committed under `regressions/`, for CS2 to turn green. Nothing changes for a user.
 
 ## 2.0.0-beta.26 (2026-11-11)
 

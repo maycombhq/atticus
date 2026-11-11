@@ -1,0 +1,58 @@
+{
+  "invariant": "links-are-live",
+  "note": "links-are-live: after verify-write the arrow if-060d0447e87c76c0 (ledger-api|payments-api|EVENT|forge.ledger.changed) doesn't follow from the current observations: allowed none",
+  "seed": 17,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "change-code",
+      "slot": 3,
+      "sketch": {
+        "endpoints": [],
+        "calls": [],
+        "publishes": false,
+        "consumes": [0]
+      }
+    },
+    {
+      "t": "change-code",
+      "slot": 0,
+      "sketch": {
+        "endpoints": [],
+        "calls": [],
+        "publishes": true,
+        "consumes": []
+      }
+    },
+    {
+      "t": "verify-live",
+      "slot": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 3,
+      "ok": true
+    }
+  ]
+}

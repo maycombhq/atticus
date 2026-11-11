@@ -1,0 +1,41 @@
+{
+  "invariant": "locality",
+  "note": "locality: only forge-ledger's observation changed, yet scan changed Component/payments-api (forge-payments); System/payments (forge-payments)",
+  "seed": 13,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan-not-cloned",
+      "slot": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}

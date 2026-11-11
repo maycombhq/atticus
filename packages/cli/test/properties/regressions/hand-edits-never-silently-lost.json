@@ -1,0 +1,40 @@
+{
+  "invariant": "hand-edits-never-silently-lost",
+  "note": "hand-edits-never-silently-lost: component/ledger-api.yaml was edited by hand, not made curated nor discarded, yet scan wrote component/ledger-api.yaml",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "change"
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}

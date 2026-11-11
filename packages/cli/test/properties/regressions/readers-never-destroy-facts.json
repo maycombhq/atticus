@@ -1,0 +1,58 @@
+{
+  "invariant": "readers-never-destroy-facts",
+  "note": "readers-never-destroy-facts: forge-ledger has verified facts, yet scan removed Unresolved/unresolved.c-publish-forge-ledger-changed, projected from them",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": ["forge.ledger.changed"],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-notify",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.ledger.changed"]
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}

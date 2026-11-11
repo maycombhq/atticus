@@ -1,0 +1,39 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: scan removed Unresolved/ledger-api.event-subscribe.2e2e2b73fa (forge-ledger), and no changed slot, input, manifest entry or curated decision explains it (changed: none)",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.payments.changed"]
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "verify-live",
+      "slot": 1
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}
