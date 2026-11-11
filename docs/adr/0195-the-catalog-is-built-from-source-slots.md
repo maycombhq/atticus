@@ -1,6 +1,6 @@
 # 0195. The catalog is built from source slots: a scan or a verify writes only its repo's observation, and one pure build makes catalog/generated
 
-- Status: proposed (the design settled in the beta.27 planning session, 2026-11-11, and revised the same day after the product owner's review so that nothing in it can destroy data; for the product owner to accept)
+- Status: accepted (2026-11-11). Settled in the beta.27 planning session, revised the same day after the product owner's review so that nothing in it can destroy data, and accepted with the three answers under "Decisions for the product owner".
 - Date: 2026-11-11
 - Release: 2.0.0-beta.27
 - Amends: ADR 0003 (`catalog/generated/` is written only by the build, not "only by scans"), ADR 0124 addendum A3b ("What --write does": `--write` no longer patches the catalog it finds; its "Not done here" question, which source wins for a repo that has facts, is answered in point 2) and addendum A-incremental (the scan's own `factsForScan` carry is deleted, and the scan no longer writes facts at all: only `verify <repo> --write` does, point 1)
@@ -311,11 +311,11 @@ Resolved by the owner's direction, "nothing destructive" (2026-11-11):
 - **Undo** over the last five builds, with git history as the long-term undo (point 7).
 - **beta.26's stop stays as a guard**: a scan that read nothing writes nothing (point 4).
 
-Still open:
+Decided by the owner (2026-11-11), with the recommended option each time:
 
-- **The additive C4 routes.** CS3 adds routes to the local API for the cross-check (read, promote, dismiss) and for the confirm steps (read a refused build's or the upgrade's list, confirm it with its count, prune, undo). They are additive, a minor version, but C4 is frozen (CLAUDE.md rule 1), so they need the owner's yes and an ADR number when they land.
-- **Facts behind HEAD still win.** For a repo with a current facts slot, the facts are the source even when the readers slot was read at a later commit (point 2). This is not destructive: the readers slot is kept whole, every record the readers found that the facts lack and every value they disagree on is shown in the cross-check (point 3) with promote to assert, and the scan says when the facts are stale. Newest-wins is rejected above; the owner may still prefer another default.
-- **Does a changed non-slot input explain a removal?** The draft says yes (point 4): when an answer, a pair, an AI target, a contract file, traffic, a shared map, `inputs/` or a federated catalog changed and the record came from it, the removal is explained, so it is written and reported when small and confirmed when large. The stricter reading would treat those as unexplained, which would leave a person no way to change an answer that drops an arrow except a curated suppress first.
+- **The additive C4 routes: yes.** CS3 adds routes to the local API for the cross-check (read, promote, dismiss) and for the confirm steps (read a refused build's or the upgrade's list, confirm it with its count, prune, undo). They are additive: a minor `API_VERSION`, the API and spec docs regenerated, and an ADR note when they land.
+- **Facts behind HEAD still win: kept.** For a repo with a current facts slot, the facts are the source even when the readers slot was read at a later commit (point 2). Nothing is lost: the readers slot is kept whole, what the readers found that the facts lack and every value they disagree on is shown in the cross-check (point 3) with promote to assert, and the scan says when the facts are stale.
+- **A changed non-slot input explains a removal: yes, and it is listed.** When an answer, a pair, an AI target, a contract file, traffic, a shared map, `inputs/` or a federated catalog changed and the record came from it, the removal is explained (it is the person's own action): written and listed in the build report when small, confirmed when large, and undoable (point 7).
 
 ## Plan for beta.27
 
