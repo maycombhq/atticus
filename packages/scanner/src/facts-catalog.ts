@@ -29,6 +29,7 @@ import {
   TOPICS_STEP_ID,
   HOSTS_STEP,
   ignoredAnswer,
+  hostQuestionText,
   ignoreOption,
   topicOfQuestion,
   urlHostPort,
@@ -906,7 +907,20 @@ export function targetsFromAnswers(
     let byAi = label && asked?.answer && isAiBy(asked.answer.by) ? asked.answer.by : undefined;
     const at = q.evidence[0]!;
     if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
-      const jh = joinHosts.find((x) => x.evidence.includes(at) && !!joinHostTarget(x));
+      // Beta.25: by the host the call names (the join asks of `host ?? base`) in this repo, never
+      // by the lines the question cited: a line added above the call doesn't ask it again. The
+      // question is the join's words for that host whole (`hostQuestionText`), so a host with a
+      // `?` in it (`${A_URL ?? B_URL}`) is read as it is, not up to its first `?`.
+      const named = (f.host ?? f.base)?.trim();
+      const asks = named ? hostQuestionText(named) : undefined;
+      const jh = asks
+        ? joinHosts.find((x) => {
+            const t = x.question.trim();
+            return (
+              t.startsWith(asks) && /^(?:\s|$)/.test(t.slice(asks.length)) && !!joinHostTarget(x)
+            );
+          })
+        : undefined;
       if (jh) {
         label = joinHostTarget(jh);
         byAi = jh.answer && isAiBy(jh.answer.by) ? jh.answer.by : undefined;

@@ -1,17 +1,27 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   answerQuestion,
+  Api,
   editProfileSystem,
   HOSTS_STEP,
+  IGNORE_REASON_MAX,
   ignoredAnswer,
+  nameReadsAsSentence,
+  ProfileEditError,
   JOIN_IGNORE_LABEL,
-  madeFromWords,
+  joinHostOfQuestion,
+  addOutsideSystem,
+  addProfileSystem,
+  changedLines,
+  forwardHostQuestion,
+  namesKnownTarget,
   raiseQuestions,
+  readsAsSentence,
   readQuestion,
   systemNameProblem,
   TARGETS_ANOTHER_LABEL,
@@ -30,8 +40,14 @@ const ESTATE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/
 const AT = "2026-11-10T12:00:00.000Z";
 const PROFILE = ["org-pack", "profiles", "forge", "profile.yaml"];
 
+const temps: string[] = [];
+afterAll(async () => {
+  for (const d of temps) await rm(d, { recursive: true, force: true });
+});
+
 async function metarepo() {
   const root = await mkdtemp(join(tmpdir(), "atticus-words-"));
+  temps.push(root);
   await cp(join(ESTATE, "org-pack"), join(root, "org-pack"), { recursive: true });
   return root;
 }
@@ -178,12 +194,34 @@ describe("a system's name (beta.24 review)", () => {
     expect(systemNameProblem("")).toBeDefined();
   });
 
-  it("tells a box made from an answer's words from a named one", () => {
-    expect(madeFromWords("ignore-this--its-cicd-related-")).toBe(true);
-    expect(madeFromWords("this-is-a-proxy-to-send-outbound-webhook")).toBe(true);
-    expect(madeFromWords("x", "a proxy that sends outbound webhooks to merchants")).toBe(true);
-    expect(madeFromWords("northwind-pay", "Northwind Pay")).toBe(false);
-    expect(madeFromWords("forge-ledger-api")).toBe(false);
+  it("tells words that read as a sentence from a name (beta.25)", () => {
+    expect(readsAsSentence("ignore this, its cicd related")).toBe(true);
+    expect(readsAsSentence("ignore this its cicd related")).toBe(true);
+    expect(readsAsSentence("this is a proxy to send outbound webhook")).toBe(true);
+    expect(readsAsSentence("a proxy that sends outbound webhooks to merchants")).toBe(true);
+    // Names, of any length in words, with one small word, or a host's dots.
+    for (const name of [
+      "Northwind Pay",
+      "forge-ledger-api",
+      "IT Service Desk",
+      "it-service-desk",
+      "Plan A",
+      "plan-a",
+      "To Do",
+      "to-do",
+      "Payments API Gateway North East",
+      "payments-api-gateway-north-east",
+      "api.payments.northwind.example.com",
+      "api-payments-northwind-example-com",
+    ])
+      expect(readsAsSentence(name), name).toBe(false);
+  });
+
+  it("takes a name with one small word, or five words, as a system's name (beta.25)", () => {
+    expect(systemNameProblem("IT Service Desk")).toBeUndefined();
+    expect(systemNameProblem("Plan A")).toBeUndefined();
+    expect(systemNameProblem("Payments Gateway North East Two")).toBeUndefined();
+    expect(systemNameProblem("ignore this its cicd related")).toMatch(/sentence/);
   });
 
   it("takes a system out of the profile, or renames it, previewed first", async () => {
@@ -206,5 +244,249 @@ describe("a system's name (beta.24 review)", () => {
     const gone = parse(await readFile(file, "utf8")) as { systems: { id: string }[] };
     expect(gone.systems.some((s) => s.id === "northwind-hooks")).toBe(false);
     expect(await editProfileSystem(root, "no-such-system")).toBeUndefined();
+  });
+});
+
+/** The golden profile edits keep: its comments, and its flow lists as written (`[a]`, `{ a }`). */
+describe("a profile edit changes only its own lines (beta.25)", () => {
+  const AUDIT =
+    "  - { id: harbor-audit, name: Harbor Audit, boundary: internal, owner: team-harbor, aliases: [] }\n";
+  const SSO =
+    "  - { id: forge-sso, name: Forge SSO, boundary: internal, owner: team-identity, aliases: [sso.forge.internal] }\n";
+
+  it("keeps the group comment above a system taken out, and every other line as it was", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    expect(before).toContain(`# Other teams' systems no repo here belongs to`);
+    const look = await editProfileSystem(root, "harbor-audit", { preview: true });
+    expect(look?.changes).toEqual([{ was: AUDIT.slice(0, -1) }]);
+    await editProfileSystem(root, "harbor-audit");
+    expect(await readFile(file, "utf8")).toBe(before.replace(AUDIT, ""));
+  });
+
+  it("keeps a comment when the first system of a group goes, and a rename is one line", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    await editProfileSystem(root, "harbor-audit");
+    await editProfileSystem(root, "forge-sso");
+    const after = await readFile(file, "utf8");
+    expect(after).toBe(before.replace(AUDIT, "").replace(SSO, ""));
+    expect(after).toMatch(/# Other teams' systems[^\n]*\n {2}# Invented vendors/);
+    const r = await editProfileSystem(root, "lantern-mail", {
+      rename: { id: "lantern-post", name: "Lantern Post" },
+      preview: true,
+    });
+    expect(r?.changes.filter((c) => c.was !== undefined)).toHaveLength(1);
+    expect(r?.changes.filter((c) => c.now !== undefined)).toHaveLength(1);
+  });
+
+  it("adds an outside system's or a named system's lines and changes no other", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    // A long host: no line folded, no flow list re-padded.
+    const host = "api.payments.northwind.example.com";
+    await addOutsideSystem(root, "forge-payments", host, "vendor");
+    const mid = await readFile(file, "utf8");
+    expect(changedLines(before, mid).every((c) => c.was === undefined)).toBe(true);
+    expect(mid).toContain(SSO);
+    const r = await addProfileSystem(
+      root,
+      "forge-payments",
+      { id: "forge-it-service-desk", name: "Forge IT Service Desk", boundary: "internal" },
+      { preview: true },
+    );
+    expect(r.changes?.every((c) => c.was === undefined)).toBe(true);
+    expect(r.write?.after).toContain(SSO);
+  });
+});
+
+describe("join questions read back (beta.25)", () => {
+  it("reads a spaced token's host back from the join's words", () => {
+    const q = forwardHostQuestion("{{ vendor_url }}", "forge-proxy-northwind-v1");
+    expect(joinHostOfQuestion({ question: q })).toBe("{{ vendor_url }}");
+    expect(
+      joinHostOfQuestion({ question: forwardHostQuestion("@targetVendorUrl@", "forge-proxy") }),
+    ).toBe("@targetVendorUrl@");
+    expect(joinHostOfQuestion({ question: "Which repo answers on rates-cache:8080?" })).toBe(
+      "rates-cache:8080",
+    );
+    expect(
+      joinHostOfQuestion({ question: "Which repo or system answers POST /hooks, which x calls?" }),
+    ).toBeUndefined();
+  });
+
+  it("never takes a sentence as a known system, even one a profile holds", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "environments:",
+        `  - { id: ignore-this-its-cicd-related, name: "ignore this, its cicd related", boundary: vendor, aliases: [] }\nenvironments:`,
+      ),
+    );
+    expect(await namesKnownTarget(root, "ignore this, its cicd related")).toBe(false);
+    expect(await namesKnownTarget(root, "ignore-this-its-cicd-related")).toBe(true);
+    expect(
+      await namesKnownTarget(root, "ignore-this-its-cicd-related", {
+        except: new Set(["ignore-this-its-cicd-related"]),
+      }),
+    ).toBe(false);
+    expect(await namesKnownTarget(root, "Northwind Pay")).toBe(true);
+  });
+
+  it("refuses an Ignore's reason longer than 300 characters", async () => {
+    const { root, q } = await asked();
+    await expect(
+      answerQuestion(root, q.id, { ignore: { reason: "x".repeat(301) }, by: "pat", at: AT }),
+    ).rejects.toThrow(/at most 300/);
+    expect((await readQuestion(root, q.id))!.state).toBe("open");
+  });
+
+  it("caps an Ignore given as words the same (beta.25)", async () => {
+    const { root, q } = await asked();
+    await expect(
+      answerQuestion(root, q.id, { text: `Ignore: ${"x".repeat(301)}`, by: "pat", at: AT }),
+    ).rejects.toThrow(/at most 300/);
+    expect((await readQuestion(root, q.id))!.state).toBe("open");
+    const r = await answerQuestion(root, q.id, {
+      text: `Ignore: ${"x".repeat(IGNORE_REASON_MAX)}`,
+      by: "pat",
+      at: AT,
+    });
+    expect(ignoredAnswer(r.question)?.reason).toHaveLength(IGNORE_REASON_MAX);
+    // The local API takes the same longest reason.
+    const body = (n: number) => ({ ignore: true, reason: "x".repeat(n) });
+    expect(Api.AnswerQuestionRequest.safeParse(body(IGNORE_REASON_MAX)).success).toBe(true);
+    expect(Api.AnswerQuestionRequest.safeParse(body(IGNORE_REASON_MAX + 1)).success).toBe(false);
+  });
+});
+
+describe("a real system's name with a mark in it (beta.25, review of beta.24)", () => {
+  const NAMED = [
+    '{ id: northwind-inc, name: "Northwind, Inc.", boundary: vendor, aliases: [] }',
+    '{ id: harbor-co, name: "Harbor Co.", boundary: vendor, aliases: [] }',
+    '{ id: lantern-bang, name: "Lantern!", boundary: vendor, aliases: [] }',
+  ];
+  async function withSystems(lines: string[]) {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "environments:",
+        `${lines.map((l) => `  - ${l}\n`).join("")}environments:`,
+      ),
+    );
+    return root;
+  }
+
+  it("judges a system's name by a sentence's words only, never its marks", () => {
+    for (const name of ["Northwind, Inc.", "Harbor Co.", "Lantern!"])
+      expect(nameReadsAsSentence(name), name).toBe(false);
+    expect(nameReadsAsSentence("ignore this, its cicd related")).toBe(true);
+    expect(nameReadsAsSentence("this is a proxy")).toBe(true);
+  });
+
+  it("knows a profile system by its exact name, marks and all, unless it is a box", async () => {
+    const root = await withSystems(NAMED);
+    for (const name of ["Northwind, Inc.", "northwind, inc.", "Harbor Co.", "Lantern!"])
+      expect(await namesKnownTarget(root, name), name).toBe(true);
+    expect(
+      await namesKnownTarget(root, "Northwind, Inc.", { except: new Set(["northwind-inc"]) }),
+    ).toBe(false);
+    // A sentence nothing is named is still none.
+    expect(await namesKnownTarget(root, "Northwind, the vendor.")).toBe(false);
+  });
+
+  it("takes the system's typed name as a targets answer", async () => {
+    const root = await withSystems(NAMED);
+    const q = (await raiseQuestions(root, [draft], by(TARGETS_STEP_ID))).raised[0]!;
+    const r = await answerQuestion(root, q.id, { text: "Northwind, Inc.", by: "pat", at: AT });
+    expect(r.question.answer?.text).toBe("Northwind, Inc.");
+  });
+});
+
+describe("a sentence's words are the language's (beta.25)", () => {
+  it("are function words only: 'ignore' and 'related' are a name's words", () => {
+    expect(readsAsSentence("Ignore Related Records")).toBe(false);
+    expect(systemNameProblem("Related Ignore List")).toBeUndefined();
+    expect(readsAsSentence("ignore this, its cicd related")).toBe(true);
+    expect(readsAsSentence("this is it")).toBe(true);
+  });
+});
+
+describe("a profile edit keeps what it doesn't touch (beta.25, review of beta.24)", () => {
+  const BLOCK = `schemaVersion: 1
+platform: forge
+name: Forge
+systems:
+  # product systems
+  - id: payments
+    name: Payments
+    boundary: product
+    owner: team-payments
+    aliases: []
+  - id: harbor-audit
+    name: Harbor Audit
+    boundary: internal
+    owner: team-harbor
+    aliases:
+      - audit.harbor.internal   # the host
+  - id: lantern-mail
+    name: Lantern Mail
+    boundary: vendor
+    aliases: [api.lanternmail.example]   # the vendor's
+environments:
+  - dev
+  - prod`;
+
+  async function withProfile(text: string) {
+    const root = await metarepo();
+    await writeFile(join(root, ...PROFILE), text);
+    return root;
+  }
+
+  it("keeps a file with no newline at its end so, and every comment's spacing", async () => {
+    const root = await withProfile(BLOCK);
+    const file = join(root, ...PROFILE);
+    const look = await editProfileSystem(root, "payments", { preview: true });
+    expect(look?.after.endsWith("\n")).toBe(false);
+    expect(look?.changes.every((c) => c.now === undefined)).toBe(true);
+    await editProfileSystem(root, "payments");
+    const after = await readFile(file, "utf8");
+    expect(after).toContain("      - audit.harbor.internal   # the host\n");
+    expect(after).toContain("    aliases: [api.lanternmail.example]   # the vendor's\n");
+    expect(after.endsWith("  - prod")).toBe(true);
+    await addOutsideSystem(root, "forge-payments", "api.payments.northwind.example", "vendor");
+    const added = await readFile(file, "utf8");
+    expect(changedLines(after, added).every((c) => c.was === undefined)).toBe(true);
+    expect(added.endsWith("\n")).toBe(false);
+  });
+
+  it("keeps a file's newline at its end", async () => {
+    const root = await withProfile(`${BLOCK}\n`);
+    const look = await editProfileSystem(root, "payments", { preview: true });
+    expect(look?.after.endsWith("prod\n")).toBe(true);
+  });
+
+  it("refuses, clearly, to take out a system that holds an anchor others use", async () => {
+    const root = await withProfile(`schemaVersion: 1
+platform: forge
+name: Forge
+systems:
+  - { id: harbor-audit, name: Harbor Audit, boundary: internal, owner: &own team-harbor, aliases: [] }
+  - { id: payments, name: Payments, boundary: product, owner: *own, aliases: [] }
+environments: [dev, prod]
+`);
+    const err = await editProfileSystem(root, "harbor-audit", { preview: true }).catch(
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(ProfileEditError);
+    expect((err as Error).message).toMatch(/anchor &own/);
+    expect((err as Error).message).toMatch(/by hand/);
   });
 });
