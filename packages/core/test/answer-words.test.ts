@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,14 @@ import {
   HOSTS_STEP,
   ignoredAnswer,
   JOIN_IGNORE_LABEL,
-  madeFromWords,
+  joinHostOfQuestion,
+  addOutsideSystem,
+  addProfileSystem,
+  changedLines,
+  forwardHostQuestion,
+  namesKnownTarget,
   raiseQuestions,
+  readsAsSentence,
   readQuestion,
   systemNameProblem,
   TARGETS_ANOTHER_LABEL,
@@ -178,12 +184,34 @@ describe("a system's name (beta.24 review)", () => {
     expect(systemNameProblem("")).toBeDefined();
   });
 
-  it("tells a box made from an answer's words from a named one", () => {
-    expect(madeFromWords("ignore-this--its-cicd-related-")).toBe(true);
-    expect(madeFromWords("this-is-a-proxy-to-send-outbound-webhook")).toBe(true);
-    expect(madeFromWords("x", "a proxy that sends outbound webhooks to merchants")).toBe(true);
-    expect(madeFromWords("northwind-pay", "Northwind Pay")).toBe(false);
-    expect(madeFromWords("forge-ledger-api")).toBe(false);
+  it("tells words that read as a sentence from a name (beta.25)", () => {
+    expect(readsAsSentence("ignore this, its cicd related")).toBe(true);
+    expect(readsAsSentence("ignore this its cicd related")).toBe(true);
+    expect(readsAsSentence("this is a proxy to send outbound webhook")).toBe(true);
+    expect(readsAsSentence("a proxy that sends outbound webhooks to merchants")).toBe(true);
+    // Names, of any length in words, with one small word, or a host's dots.
+    for (const name of [
+      "Northwind Pay",
+      "forge-ledger-api",
+      "IT Service Desk",
+      "it-service-desk",
+      "Plan A",
+      "plan-a",
+      "To Do",
+      "to-do",
+      "Payments API Gateway North East",
+      "payments-api-gateway-north-east",
+      "api.payments.northwind.example.com",
+      "api-payments-northwind-example-com",
+    ])
+      expect(readsAsSentence(name), name).toBe(false);
+  });
+
+  it("takes a name with one small word, or five words, as a system's name (beta.25)", () => {
+    expect(systemNameProblem("IT Service Desk")).toBeUndefined();
+    expect(systemNameProblem("Plan A")).toBeUndefined();
+    expect(systemNameProblem("Payments Gateway North East Two")).toBeUndefined();
+    expect(systemNameProblem("ignore this its cicd related")).toMatch(/sentence/);
   });
 
   it("takes a system out of the profile, or renames it, previewed first", async () => {
@@ -206,5 +234,105 @@ describe("a system's name (beta.24 review)", () => {
     const gone = parse(await readFile(file, "utf8")) as { systems: { id: string }[] };
     expect(gone.systems.some((s) => s.id === "northwind-hooks")).toBe(false);
     expect(await editProfileSystem(root, "no-such-system")).toBeUndefined();
+  });
+});
+
+/** The golden profile edits keep: its comments, and its flow lists as written (`[a]`, `{ a }`). */
+describe("a profile edit changes only its own lines (beta.25)", () => {
+  const AUDIT =
+    "  - { id: harbor-audit, name: Harbor Audit, boundary: internal, owner: team-harbor, aliases: [] }\n";
+  const SSO =
+    "  - { id: forge-sso, name: Forge SSO, boundary: internal, owner: team-identity, aliases: [sso.forge.internal] }\n";
+
+  it("keeps the group comment above a system taken out, and every other line as it was", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    expect(before).toContain(`# Other teams' systems no repo here belongs to`);
+    const look = await editProfileSystem(root, "harbor-audit", { preview: true });
+    expect(look?.changes).toEqual([{ was: AUDIT.slice(0, -1) }]);
+    await editProfileSystem(root, "harbor-audit");
+    expect(await readFile(file, "utf8")).toBe(before.replace(AUDIT, ""));
+  });
+
+  it("keeps a comment when the first system of a group goes, and a rename is one line", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    await editProfileSystem(root, "harbor-audit");
+    await editProfileSystem(root, "forge-sso");
+    const after = await readFile(file, "utf8");
+    expect(after).toBe(before.replace(AUDIT, "").replace(SSO, ""));
+    expect(after).toMatch(/# Other teams' systems[^\n]*\n {2}# Invented vendors/);
+    const r = await editProfileSystem(root, "lantern-mail", {
+      rename: { id: "lantern-post", name: "Lantern Post" },
+      preview: true,
+    });
+    expect(r?.changes.filter((c) => c.was !== undefined)).toHaveLength(1);
+    expect(r?.changes.filter((c) => c.now !== undefined)).toHaveLength(1);
+  });
+
+  it("adds an outside system's or a named system's lines and changes no other", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    // A long host: no line folded, no flow list re-padded.
+    const host = "api.payments.northwind.example.com";
+    await addOutsideSystem(root, "forge-payments", host, "vendor");
+    const mid = await readFile(file, "utf8");
+    expect(changedLines(before, mid).every((c) => c.was === undefined)).toBe(true);
+    expect(mid).toContain(SSO);
+    const r = await addProfileSystem(
+      root,
+      "forge-payments",
+      { id: "forge-it-service-desk", name: "Forge IT Service Desk", boundary: "internal" },
+      { preview: true },
+    );
+    expect(r.changes?.every((c) => c.was === undefined)).toBe(true);
+    expect(r.write?.after).toContain(SSO);
+  });
+});
+
+describe("join questions read back (beta.25)", () => {
+  it("reads a spaced token's host back from the join's words", () => {
+    const q = forwardHostQuestion("{{ vendor_url }}", "forge-proxy-northwind-v1");
+    expect(joinHostOfQuestion({ question: q })).toBe("{{ vendor_url }}");
+    expect(
+      joinHostOfQuestion({ question: forwardHostQuestion("@targetVendorUrl@", "forge-proxy") }),
+    ).toBe("@targetVendorUrl@");
+    expect(joinHostOfQuestion({ question: "Which repo answers on rates-cache:8080?" })).toBe(
+      "rates-cache:8080",
+    );
+    expect(
+      joinHostOfQuestion({ question: "Which repo or system answers POST /hooks, which x calls?" }),
+    ).toBeUndefined();
+  });
+
+  it("never takes a sentence as a known system, even one a profile holds", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "environments:",
+        `  - { id: ignore-this-its-cicd-related, name: "ignore this, its cicd related", boundary: vendor, aliases: [] }\nenvironments:`,
+      ),
+    );
+    expect(await namesKnownTarget(root, "ignore this, its cicd related")).toBe(false);
+    expect(await namesKnownTarget(root, "ignore-this-its-cicd-related")).toBe(true);
+    expect(
+      await namesKnownTarget(root, "ignore-this-its-cicd-related", {
+        except: new Set(["ignore-this-its-cicd-related"]),
+      }),
+    ).toBe(false);
+    expect(await namesKnownTarget(root, "Northwind Pay")).toBe(true);
+  });
+
+  it("refuses an Ignore's reason longer than 300 characters", async () => {
+    const { root, q } = await asked();
+    await expect(
+      answerQuestion(root, q.id, { ignore: { reason: "x".repeat(301) }, by: "pat", at: AT }),
+    ).rejects.toThrow(/at most 300/);
+    expect((await readQuestion(root, q.id))!.state).toBe("open");
   });
 });

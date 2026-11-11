@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
+import { isMap, isSeq, parseDocument, YAMLSeq, type Document } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { slugify, cmpText } from "./identity.js";
@@ -93,6 +93,9 @@ export const ignoreOption = (): { label: string; means: string; changes: string 
     "The join leaves these calls (ignored by you), no box is drawn for them, and this isn't asked again",
 });
 
+/** Beta.25: the longest reason an Ignore keeps, as the local API takes it. */
+export const IGNORE_REASON_MAX = 300;
+
 /** An Ignore answer's words: `Ignore: <reason>`. */
 export const ignoreText = (reason: string) => `${IGNORE_PREFIX} ${reason.trim()}`;
 
@@ -118,7 +121,11 @@ export function ignoredAnswer(q: {
 /** The longest name an outside system an answer adds may have. */
 export const SYSTEM_NAME_MAX = 40;
 
-/** Words that make a phrase a sentence, never a system's name (beta.24 review). */
+/**
+ * The small words a sentence is made of (beta.24 review): two or more of them in a phrase make it
+ * a sentence, never a name. One is a name's ("IT Service Desk", "Plan A", "To Do"). The words of
+ * the language, not of any organisation, so nothing here is an org's convention.
+ */
 const SENTENCE_WORDS = new Set([
   "ignore",
   "this",
@@ -133,9 +140,27 @@ const SENTENCE_WORDS = new Set([
 ]);
 
 /**
+ * Beta.25 (review of beta.24): whether words read as a sentence rather than a name: a sentence's
+ * marks (a comma, a semicolon, `!`, `?`, a quote, or a full stop that ends a word: never the dots
+ * of a host), or two or more of a sentence's small words ("ignore this, its cicd related"). A name
+ * of any length in words ("Payments API Gateway North East") is a name, and so is one with a
+ * single small word in it ("IT Service Desk", "Plan A").
+ */
+export function readsAsSentence(words: string): boolean {
+  const n = words.trim();
+  if (/[,;!?"“”]|\.(?:\s|$)/.test(n)) return true;
+  const ws = n
+    .toLowerCase()
+    .split(/[\s_'’-]+/)
+    .filter(Boolean);
+  return ws.filter((w) => SENTENCE_WORDS.has(w)).length >= 2;
+}
+
+/**
  * Why words can't be a new outside system's name (beta.24 review), or undefined when they can: a
- * short name of letters, digits, spaces and dashes, at most 40 characters, not a sentence (four
- * words at most, none of "ignore", "this", "is", "a", "to", "the", "related", "not", "it").
+ * short name of letters, digits, spaces and dashes, at most 40 characters, that doesn't read as a
+ * sentence (`readsAsSentence`). Lenient for names: "IT Service Desk", "Plan A" and a five-word
+ * name are names.
  */
 export function systemNameProblem(name: string): string | undefined {
   const n = name.trim();
@@ -144,43 +169,27 @@ export function systemNameProblem(name: string): string | undefined {
     return `a system's name is at most ${SYSTEM_NAME_MAX} characters (this is ${n.length})`;
   if (!/^[A-Za-z0-9][A-Za-z0-9 -]*$/.test(n))
     return "a system's name is letters, digits, spaces and dashes only";
-  const words = n
-    .toLowerCase()
-    .split(/[\s-]+/)
-    .filter(Boolean);
-  if (words.length > 4 || words.some((w) => SENTENCE_WORDS.has(w)))
-    return "that reads as a sentence, not a system's name";
+  if (readsAsSentence(n)) return "that reads as a sentence, not a system's name";
   return undefined;
 }
 
 /**
- * Beta.24 review: whether a system (its id, and its name when it has one) looks made from an
- * answer's words rather than named: an id of five or more dash-separated words, or with a word
- * of a sentence in it, or a name with spaces longer than 40 characters.
+ * Beta.25: the names Atticus knows a target by, as `namesKnownTarget` reads them: `ids` the ids
+ * (repos, components, a system's id, alias or topic, teams) exactly, lower case; `names` those and
+ * the systems' names, each also as the id it slugs to. Systems whose id is in `except` are left
+ * out (the boxes an answer's words made, which name nothing real).
  */
-export function madeFromWords(id: string, name?: string): boolean {
-  const words = id
-    .toLowerCase()
-    .split(/[-_.]+/)
-    .filter(Boolean);
-  if (words.length >= 5) return true;
-  if (words.some((w) => SENTENCE_WORDS.has(w))) return true;
-  const n = name?.trim() ?? "";
-  return /\s/.test(n) && n.length > SYSTEM_NAME_MAX;
-}
-
-/**
- * Beta.24 review: whether words name a repo, component, system or team Atticus knows, as an
- * answer about where calls go may: a repo of the manifests (its id, component or a module's
- * component), a system of the profiles (its id, name, an alias or a topic), a team of roles.yaml,
- * or a component a repo's facts name. Case and spacing aside, or by the id the words slug to.
- */
-export async function namesKnownTarget(root: string, words: string): Promise<boolean> {
+export async function knownTargetNames(
+  root: string,
+  o: { except?: ReadonlySet<string> } = {},
+): Promise<{ ids: Set<string>; names: Set<string> }> {
   const { loadOrgPack } = await import("./orgpack-load.js");
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const ids = new Set<string>();
   const names = new Set<string>();
-  const add = (n: string | undefined) => {
+  const add = (n: string | undefined, isId = true) => {
     if (!n?.trim()) return;
+    if (isId) ids.add(n.trim().toLowerCase());
     names.add(n.trim().toLowerCase());
     names.add(slugify(n));
   };
@@ -190,12 +199,13 @@ export async function namesKnownTarget(root: string, words: string): Promise<boo
       add(r.component);
       for (const m of r.modules ?? []) add(m.component);
     }
-    for (const s of p.profile?.systems ?? [])
-      for (const n of [s.id, s.name, ...s.aliases, ...(s.topics ?? [])]) add(n);
+    for (const s of p.profile?.systems ?? []) {
+      if (o.except?.has(s.id)) continue;
+      for (const n of [s.id, ...s.aliases, ...(s.topics ?? [])]) add(n);
+      add(s.name, false);
+    }
   }
   for (const t of op?.roles?.teams ?? []) add(t.id);
-  const want = words.trim().toLowerCase();
-  if (names.has(want) || names.has(slugify(words))) return true;
   // The components the repos' facts name (a module the manifest doesn't list).
   const dir = factsDirOf(root);
   for (const f of await readdir(dir).catch(() => [] as string[])) {
@@ -203,9 +213,36 @@ export async function namesKnownTarget(root: string, words: string): Promise<boo
       continue;
     const text = await readFile(join(dir, f), "utf8").catch(() => "");
     for (const m of text.matchAll(/"component"\s*:\s*"([^"]+)"/g)) add(m[1]);
-    if (names.has(want) || names.has(slugify(words))) return true;
   }
-  return false;
+  return { ids, names };
+}
+
+/**
+ * Whether words name a target of `knownTargetNames`: case and spacing aside, or by the id they
+ * slug to; words that read as a sentence only when they are an id exactly (a sentence is never a
+ * system's name, even one an answer's words once wrote into a profile).
+ */
+export function namesKnown(known: { ids: Set<string>; names: Set<string> }, words: string) {
+  const want = words.trim().toLowerCase();
+  if (!want) return false;
+  if (readsAsSentence(want)) return known.ids.has(want);
+  return known.names.has(want) || known.names.has(slugify(words));
+}
+
+/**
+ * Beta.24 review: whether words name a repo, component, system or team Atticus knows, as an
+ * answer about where calls go may: a repo of the manifests (its id, component or a module's
+ * component), a system of the profiles (its id, name, an alias or a topic), a team of roles.yaml,
+ * or a component a repo's facts name. Case and spacing aside, or by the id the words slug to.
+ * Beta.25: words that read as a sentence name only an id they are exactly, and the systems in
+ * `except` (the boxes an answer's words made) are none.
+ */
+export async function namesKnownTarget(
+  root: string,
+  words: string,
+  o: { except?: ReadonlySet<string> } = {},
+): Promise<boolean> {
+  return namesKnown(await knownTargetNames(root, o), words);
 }
 
 /**
@@ -248,10 +285,12 @@ export function hostOfQuestion(q: { question: string }): string | undefined {
  * Beta.24 review: the host a targets question the join raised for a host nothing resolves asks
  * about (a gateway's forwarding call whose target URL is a token, `@targetUrl@`): its words start
  * as a hosts question's do, and may go on to say what to do next (`forwardHostQuestion`). A
- * targets question asked of a call (`Which repo or system answers ...`) has none.
+ * targets question asked of a call (`Which repo or system answers ...`) has none. Beta.25: the
+ * host up to the first `?` that ends the question, so a token with spaces in it (`{{ vendor_url
+ * }}`, as `forwardHostQuestion` writes it) is read back whole.
  */
 export function joinHostOfQuestion(q: { question: string }): string | undefined {
-  return /^Which repo answers on (\S+)\?(?:\s|$)/.exec(q.question.trim())?.[1];
+  return /^Which repo answers on (\S(?:.*?\S)?)\?(?:\s|$)/.exec(q.question.trim())?.[1];
 }
 
 /** A host still written as a whole token: `@targetUrl@`, `{{host}}`, `${HOST}` (its name). */
@@ -282,6 +321,32 @@ async function platformsOf(root: string): Promise<{ dir: string; platform: strin
     .filter((x) => x.isDirectory())
     .map((x) => ({ dir: join(profiles, x.name), platform: x.name }))
     .sort((a, b) => cmpText(a.platform, b.platform));
+}
+
+/** A flow collection's padding taken out, to tell a line the library re-padded from a changed one. */
+const unpadded = (line: string) => line.replace(/([[{]) +/g, "$1").replace(/ +([\]}])/g, "$1");
+
+/**
+ * Beta.25 (review of beta.24): the one way every profile edit is written (an outside system, a
+ * system a person named, a box put right), so a preview shows only the lines that really change:
+ * no line folded (`lineWidth: 0`), flow collections padded as the file pads them (`[ a ]` or
+ * `[a]`), and each line the edit didn't change kept exactly as the file had it (the library pads
+ * a file's maps and lists alike, so a file that mixes `{ a: 1 }` with `[b]` keeps both). LF only;
+ * the caller writes it in the file's own line endings.
+ */
+export function profileText(doc: Document, before: string | undefined): string {
+  const was = before === undefined ? undefined : lfOnly(before);
+  const out = doc.toString({
+    lineWidth: 0,
+    flowCollectionPadding: was === undefined ? true : /[[{] \S/.test(was),
+  });
+  if (was === undefined) return out;
+  const kept = new Map<string, string>();
+  for (const l of was.split("\n")) if (!kept.has(unpadded(l))) kept.set(unpadded(l), l);
+  return out
+    .split("\n")
+    .map((l) => kept.get(unpadded(l)) ?? l)
+    .join("\n");
 }
 
 /**
@@ -324,7 +389,9 @@ export async function addOutsideSystem(
     const rel = `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
     const before = await readFile(file, "utf8").catch(() => undefined);
     const doc = parseDocument(
-      before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`,
+      before === undefined
+        ? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`
+        : lfOnly(before),
     );
     let systems = doc.get("systems");
     if (!isSeq(systems)) {
@@ -340,7 +407,7 @@ export async function addOutsideSystem(
       throw new Error(
         `${rel} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
       );
-    await writeFileIfUnchanged(file, before, inEol(doc.toString(), eolOf(before ?? "")));
+    await writeFileIfUnchanged(file, before, inEol(profileText(doc, before), eolOf(before ?? "")));
     return { id: sys.id, profile: rel, added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
@@ -376,6 +443,11 @@ export async function addProfileSystem(
   topics?: string[];
   /** The lines a new system changes in the profile (as the write makes them). */
   changes?: LineChange[];
+  /**
+   * Beta.25: for a new system, the file, the text it was read as (undefined: none yet) and the
+   * text written (or, previewed, to write), so a caller can write it with others, all or none.
+   */
+  write?: { file: string; before: string | undefined; after: string };
 }> {
   const platforms = await platformsOf(root);
   const relOf = (platform: string) =>
@@ -407,7 +479,7 @@ export async function addProfileSystem(
         if (isSeq(list)) for (const t of missing) list.add(doc.createNode(t));
         else node.set("topics", doc.createNode([...(had.topics ?? []), ...missing]));
         valid(doc, platform);
-        await writeFileIfUnchanged(file, text, inEol(doc.toString(), eolOf(text!)));
+        await writeFileIfUnchanged(file, text, inEol(profileText(doc, text), eolOf(text!)));
       }
     }
     return {
@@ -448,21 +520,22 @@ export async function addProfileSystem(
       }),
     );
     valid(doc, platform);
-    // Block lists stay block; flow lines take the library's padding, as this writer always has
-    // (yaml pads maps and lists alike, so a file that mixes them can't keep both).
-    const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+    // Block lists stay block; every line it doesn't change stays as the file has it.
+    const after = profileText(doc, before);
     const changes = changedLines(before ?? "", after);
-    if (o.preview) return { id: s.id, profile: relOf(platform), added: true, changes };
-    await writeFileIfUnchanged(file, raw, inEol(after, eol));
-    return { id: s.id, profile: relOf(platform), added: true, changes };
+    const write = { file, before: raw, after: inEol(after, eol) };
+    if (o.preview) return { id: s.id, profile: relOf(platform), added: true, changes, write };
+    await writeFileIfUnchanged(file, raw, write.after);
+    return { id: s.id, profile: relOf(platform), added: true, changes, write };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
 }
 
 /**
  * Beta.24 review: take a system out of the profile that has it, or (with `rename`) give it another
- * id and name, keeping its other fields, the file's comments and its order. For a system an
- * answer's words made (`madeFromWords`), from Map › Trust: written as a file change in the
+ * id and name, keeping its other fields, the file's comments and its order (a comment above a
+ * system taken out stays, above the next). For a system an answer's words made (a box on Map ›
+ * Trust): written as a file change in the
  * metarepo, for review in the pull request. `preview` writes nothing. Undefined when no profile
  * has the system. Throws when the profile would not be valid (the new id another system has).
  */
@@ -470,7 +543,18 @@ export async function editProfileSystem(
   root: string,
   id: string,
   o: { rename?: { id: string; name: string }; preview?: boolean } = {},
-): Promise<{ profile: string; changes: LineChange[]; written: boolean } | undefined> {
+): Promise<
+  | {
+      profile: string;
+      changes: LineChange[];
+      written: boolean;
+      /** Beta.25: the file, the text it was read as and the text written (or to write). */
+      file: string;
+      before: string;
+      after: string;
+    }
+  | undefined
+> {
   for (const { dir, platform } of await platformsOf(root)) {
     const file = join(dir, "profile.yaml");
     const raw = await readFile(file, "utf8").catch(() => undefined);
@@ -487,17 +571,28 @@ export async function editProfileSystem(
         node.set("id", o.rename.id);
         node.set("name", o.rename.name);
       }
-    } else seq.items.splice(at, 1);
+    } else {
+      // Beta.25: a comment above the system (a group's heading) stays, above the next one.
+      const [gone] = seq.items.splice(at, 1) as { commentBefore?: string | null }[];
+      const lead = gone?.commentBefore;
+      if (lead) {
+        const next = seq.items[at] as { commentBefore?: string | null } | undefined;
+        if (next) next.commentBefore = next.commentBefore ? `${lead}\n${next.commentBefore}` : lead;
+        else seq.comment = seq.comment ? `${lead}\n${seq.comment}` : lead;
+      }
+    }
     const checked = Profile.safeParse(doc.toJS());
     if (!checked.success)
       throw new Error(
         `${rel} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
       );
-    const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+    const after = profileText(doc, raw);
     const changes = changedLines(lfOnly(raw), after);
-    if (o.preview) return { profile: rel, changes, written: false };
-    await writeFileIfUnchanged(file, raw, inEol(after, eolOf(raw)));
-    return { profile: rel, changes, written: true };
+    const text = inEol(after, eolOf(raw));
+    const out = { profile: rel, changes, file, before: raw, after: text };
+    if (o.preview) return { ...out, written: false };
+    await writeFileIfUnchanged(file, raw, text);
+    return { ...out, written: true };
   }
   return undefined;
 }

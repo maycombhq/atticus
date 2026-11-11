@@ -29,6 +29,7 @@ import {
   TOPICS_STEP_ID,
   HOSTS_STEP,
   ignoredAnswer,
+  joinHostOfQuestion,
   ignoreOption,
   topicOfQuestion,
   urlHostPort,
@@ -906,7 +907,12 @@ export function targetsFromAnswers(
     let byAi = label && asked?.answer && isAiBy(asked.answer.by) ? asked.answer.by : undefined;
     const at = q.evidence[0]!;
     if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
-      const jh = joinHosts.find((x) => x.evidence.includes(at) && !!joinHostTarget(x));
+      // Beta.25: by the host the call names (the join asks of `host ?? base`) in this repo, never
+      // by the lines the question cited: a line added above the call doesn't ask it again.
+      const named = (f.host ?? f.base)?.trim();
+      const jh = named
+        ? joinHosts.find((x) => joinHostOfQuestion(x) === named && !!joinHostTarget(x))
+        : undefined;
       if (jh) {
         label = joinHostTarget(jh);
         byAi = jh.answer && isAiBy(jh.answer.by) ? jh.answer.by : undefined;

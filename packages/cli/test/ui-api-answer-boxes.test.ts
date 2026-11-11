@@ -146,9 +146,28 @@ describe("boxes made from an answer's words (beta.24 review)", () => {
     });
     expect(bad.status).toBe(400);
     expect(JSON.stringify(bad.body)).toContain("names no repo, component or system");
+    // Beta.25: the write is the one previewed: a stamp of other files is refused, nothing written.
+    const look = Api.AnswerBoxResult.parse(
+      (
+        await call("POST", "/api/trust/answer-boxes/rename", {
+          id,
+          name: "Northwind Hooks",
+          preview: true,
+        })
+      ).body,
+    );
+    expect(look.stamp).toBeTruthy();
+    const stale = await call("POST", "/api/trust/answer-boxes/rename", {
+      id,
+      name: "Northwind Hooks",
+      stamp: "0000000000000000",
+    });
+    expect(stale.status).toBe(409);
+    expect((await readQuestion(root, proxyQ))!.answer?.text).toBe(PROXY_WORDS);
     const w = await call("POST", "/api/trust/answer-boxes/rename", {
       id,
       name: "Northwind Hooks",
+      stamp: look.stamp,
     });
     expect(w.status, JSON.stringify(w.body)).toBe(200);
     expect(Api.AnswerBoxResult.parse(w.body).answers[0]).toMatchObject({

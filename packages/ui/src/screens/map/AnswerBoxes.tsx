@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api } from "../../api/client.js";
 import { ApplyAndPropose } from "../../app/propose.js";
@@ -56,24 +56,32 @@ export function AnswerBoxRow({ box }: { box: Box }) {
   const send = useAction();
   const [mode, setMode] = useState<"ignore" | "rename" | undefined>();
   const [name, setName] = useState("");
-  const [plan, setPlan] = useState<Result>();
+  // Beta.25: a preview is kept with the fix it is of, and one that answers after the person has
+  // switched fixes is dropped, so "Yes, rename it" never shows Ignore's plan.
+  const [shown, setPlan] = useState<{ mode: "ignore" | "rename"; r: Result }>();
+  const plan = shown && shown.mode === mode ? shown.r : undefined;
+  const asked = useRef(0);
   const [done, setDone] = useState<Result>();
   const path = `/api/trust/answer-boxes/${mode ?? "ignore"}`;
   const body = (preview: boolean) => ({
     id: box.id,
     ...(mode === "rename" ? { name: name.trim() } : {}),
-    ...(preview ? { preview: true } : {}),
+    // The write is the one previewed: refused (409) if its files changed since.
+    ...(preview ? { preview: true } : plan?.stamp ? { stamp: plan.stamp } : {}),
   });
   const open = (m: "ignore" | "rename") => {
+    asked.current++;
     setMode(m);
     setPlan(undefined);
   };
-  const preview = () =>
-    look.run(async () => {
-      setPlan(
-        await api<Result>(`/api/trust/answer-boxes/${mode}`, { method: "POST", body: body(true) }),
-      );
+  const look1 = (m: "ignore" | "rename", b: object) => {
+    const n = asked.current;
+    return look.run(async () => {
+      const r = await api<Result>(`/api/trust/answer-boxes/${m}`, { method: "POST", body: b });
+      if (asked.current === n) setPlan({ mode: m, r });
     }, "");
+  };
+  const preview = () => (mode ? look1(mode, body(true)) : undefined);
   const head = `${id}-h`;
   return (
     <section aria-labelledby={head} className="stack" style={{ gap: 6 }}>
@@ -122,14 +130,7 @@ export function AnswerBoxRow({ box }: { box: Box }) {
               aria-label={B.ignoreOf(box.name)}
               onClick={() => {
                 open("ignore");
-                void look.run(async () => {
-                  setPlan(
-                    await api<Result>("/api/trust/answer-boxes/ignore", {
-                      method: "POST",
-                      body: { id: box.id, preview: true },
-                    }),
-                  );
-                }, "");
+                void look1("ignore", { id: box.id, preview: true });
               }}
             >
               {B.ignore}
@@ -199,6 +200,7 @@ export function AnswerBoxRow({ box }: { box: Box }) {
                   className="btn"
                   disabled={send.busy}
                   onClick={() => {
+                    asked.current++;
                     setMode(undefined);
                     setPlan(undefined);
                   }}

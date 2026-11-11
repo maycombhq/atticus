@@ -368,8 +368,8 @@ export const JOIN_STEP_IDS: ReadonlySet<string> = new Set([
   "facts-topics",
   "estate-targets",
 ]);
-/** The Ignore option, as the core's JOIN_IGNORE_LABEL. */
-export const IGNORE_LABEL = "Ignore: not a real call (e.g. CI/CD, a test, a template)";
+/** The Ignore option, as the core's JOIN_IGNORE_LABEL: its words are the copy file's. */
+export const IGNORE_LABEL = C.ignore.label;
 
 /** Whether an answer is Ignore (its option, or words that start `Ignore:`), and its reason. */
 export function ignoredOf(q: {

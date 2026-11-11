@@ -46,6 +46,7 @@ import {
   RULE_AFTER_CORRECTIONS,
   ruleKindOf,
   TARGETS_STEP_ID,
+  HOSTS_STEP,
   writeBatch,
   withSharedFileLock,
   writeFileAtomic,
@@ -211,7 +212,12 @@ async function answeredByPerson(
   repo: string,
   facts: readonly Fact[],
 ): Promise<Set<string>> {
-  const questions = (await listQuestions(root, { step: TARGETS_STEP_ID })).questions;
+  // Beta.25: the hosts questions too, so a host a person answered Ignore leaves its calls here as
+  // it does in the join (targetsFromAnswers reads both).
+  const questions = [
+    ...(await listQuestions(root, { step: TARGETS_STEP_ID })).questions,
+    ...(await listQuestions(root, { step: HOSTS_STEP })).questions,
+  ];
   const people = questions.filter(
     (q) => q.state === "answered" && !!q.answer && !isAiBy(q.answer.by),
   );

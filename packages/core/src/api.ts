@@ -483,8 +483,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   drawn in the architecture and repo lenses, never merged into calls or their counts; its join's
  *   `how` is `coordinates` and it carries `dependency` (group, name, version, scope), with the
  *   dependency's lines as `caller` and the publishing lines as `callee`. Additive only.
+ * 3.11.0 (beta.25, review of beta.24's answer boxes): GET /api/trust's `answerBoxes` are only what
+ *   a person's own words made (answers whose words read as a sentence, and the system of a profile
+ *   they made), never a system judged by the shape of its id, nor one an option, the picker or an
+ *   outside system's answer made. POST /api/trust/answer-boxes/ignore and /rename answer a
+ *   `stamp` (what the files the fix writes held), and take it back with the write: a file changed
+ *   since the preview is refused (409, nothing written). The write is all or none (every file held,
+ *   each written whole and renamed, a failure puts back what was written, or answers 500 naming
+ *   the files left written, `written`). A rename to the box's own name, or to another box, is
+ *   refused (400). An Ignore's `reason` is at most 300 characters from every caller. Additive only.
  */
-export const API_VERSION = "3.10.0";
+export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1448,9 +1457,10 @@ export const ContractCounts = z.object({
   unlinked: z.number().int().optional(),
 });
 /**
- * 3.10.0 (beta.24 review): a box on the map made from an answer's words, not a system's name (an
- * id of five or more words, or with a sentence's words in it, or a long name with spaces): a
- * system of a profile, the answers to questions about where calls go that name it, or both.
+ * 3.10.0 (beta.24 review): a box on the map made from an answer's words, not a system's name: the
+ * answers to questions about where calls go whose words read as a sentence, and the system of a
+ * profile those words made, if any. 3.11.0 (beta.25): never judged by the shape of an id; a system
+ * an option, the picker or an outside system's answer made (with a host alias) is never one.
  */
 export const AnswerBox = z.object({
   id: z.string(),
@@ -1487,6 +1497,11 @@ export const AnswerBoxRequest = z.strictObject({
   /** For rename: the repo or system it is, or a new outside system's name. */
   name: z.string().trim().min(1).max(200).optional(),
   preview: z.literal(true).optional(),
+  /**
+   * 3.11.0 (beta.25): the preview's `stamp`. A write with it is refused (409, nothing written)
+   * when a file the fix writes changed since that preview.
+   */
+  stamp: z.string().trim().min(1).max(100).optional(),
 });
 export const AnswerBoxResult = z.object({
   id: z.string(),
@@ -1504,6 +1519,11 @@ export const AnswerBoxResult = z.object({
     .optional(),
   /** The repos whose answers changed: Apply (verify --write) puts them on the map. */
   repos: z.array(z.string()),
+  /**
+   * 3.11.0 (beta.25): what the files the fix writes held when it was worked out, to send back
+   * with the write (`stamp`), so the write is the one previewed.
+   */
+  stamp: z.string().optional(),
 });
 export type AnswerBoxResultT = z.infer<typeof AnswerBoxResult>;
 
@@ -6350,22 +6370,22 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "ignoreAnswerBox",
       summary:
-        "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write is local, for Propose for review",
+        "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
       tag: "workspace",
       body: AnswerBoxRequest,
       ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
-      errors: [400, 404, 409, 422],
+      errors: [400, 404, 409, 422, 500],
     },
   },
   "/api/trust/answer-boxes/rename": {
     post: {
       id: "renameAnswerBox",
       summary:
-        "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write is local, for Propose for review",
+        "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
       tag: "workspace",
       body: AnswerBoxRequest,
       ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
-      errors: [400, 404, 409, 422],
+      errors: [400, 404, 409, 422, 500],
     },
   },
   "/api/trust/fresh": {

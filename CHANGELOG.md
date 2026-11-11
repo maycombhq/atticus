@@ -2,6 +2,19 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Fixed
+
+- **Map › Trust never offers to delete a real system.** A box made from an answer's words is now only what a person's own words made: an answer whose words read as a sentence (a comma, a full stop ending a word, or two or more of a sentence's small words, as in "ignore this, its cicd related"), and the profile's system those words made (named by them, with no host or topic of its own). A system is no longer judged by the shape of its id, so `payments-api-gateway-north-east`, `it-service-desk`, `plan-a`, `to-do`, a system the picker or an option added, and the outside system a hosts answer added for a long host (`api-payments-northwind-example-com`, its host as its alias) are never listed, and Ignore can't take them out of the profile.
+- **Putting a box right writes all or none, and only what was previewed.** Its answers and its profile are worked out and checked first, every file is held for the write, each written whole and renamed; a failure puts back what was written (said as such), or names exactly the files left written. The preview returns a `stamp`, and a write with it is refused (409, nothing written) when a file it writes changed since the preview. In the app, a preview that answers after you switched from Ignore to Rename is no longer shown under "Yes, rename it".
+- **A rename names something real.** Renaming a box to its own name (in its words, its id or its name in other case), or to another box made from words, is refused; a box is no longer counted as a system Atticus knows, and words that read as a sentence never name a known system by its name.
+- **A system's name is lenient for names.** "IT Service Desk", "Plan A" and a five-word name are names; only what reads as a sentence (or is over 40 characters, or has marks besides letters, digits, spaces and dashes) is refused.
+- **The join's questions read their host back.** A hosts question the join raised retires, saying why, once the join no longer asks about its host from any repo (the profile or the manifest names it now); before it stayed open. A token host's answer (Ignore too) is matched by its host in the repo, not by the lines it cited, so a line added above the call no longer asks it again. A token with spaces in it (`{{ vendor_url }}`) is read back whole, so its Ignore is honoured, it retires, and an outside system's answer names it.
+- **Editing the profile keeps its comments and its formatting.** Taking a system out keeps the comment above it (a group's heading) above the next one; every flow list and map keeps the padding the file had (`[a]` stays `[a]`); and every profile edit (an outside system, a system named, a box put right) is written the same way, with no line folded, so a preview shows only the lines that really change.
+- **The AI never pairs a call on a host a person answered Ignore**, as it already didn't for a targets question a person answered.
+- **An Ignore's reason is at most 300 characters** from every caller (`atticus questions answer --reason`, the library), as the app's API already took.
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed

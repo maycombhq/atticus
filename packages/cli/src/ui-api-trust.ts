@@ -526,6 +526,7 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
     by: ctx.user,
     at: new Date().toISOString(),
     ...(b.data.preview ? { preview: true } : {}),
+    ...(b.data.stamp ? { stamp: b.data.stamp } : {}),
   };
   try {
     const r = rename
@@ -538,8 +539,18 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
     }
     return { status: 200, body: r };
   } catch (e) {
-    if (e instanceof AnswerBoxError)
-      throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+    if (e instanceof AnswerBoxError) {
+      if (e.code === "not-found") throw notFound(e.message);
+      // Beta.25: changed since it was read or previewed: nothing written.
+      if (e.code === "changed") throw conflict(e.message);
+      if (e.code === "partial") {
+        for (const f of e.written) ctx.events.publish({ type: "file.changed", path: f });
+        throw new HttpError(500, "Atticus wrote only part of it", e.message, {
+          written: e.written,
+        });
+      }
+      throw badRequest(e.message);
+    }
     if (e instanceof FileChangedError) throw conflict(e.message);
     if (e instanceof QuestionError) throw new HttpError(422, "Atticus can't do that", e.message);
     if (e instanceof Error && / would not be valid: /.test(e.message))

@@ -15,6 +15,7 @@ import {
   ignoredAnswer,
   ignoreOption,
   ignoreText,
+  IGNORE_REASON_MAX,
   JOIN_IGNORE_LABEL,
   JOIN_STEPS,
   namesKnownTarget,
@@ -1164,6 +1165,12 @@ export async function answerQuestion(
         "The AI doesn't ignore calls: a person says they aren't real.",
       );
     const reason = a.ignore.reason?.trim();
+    // Beta.25: as long as the API takes, from any caller.
+    if (reason && reason.length > IGNORE_REASON_MAX)
+      throw new QuestionError(
+        "bad-answer",
+        `An Ignore's reason is at most ${IGNORE_REASON_MAX} characters (this is ${reason.length}): say it in fewer words.`,
+      );
     if (reason) a = { ...a, text: ignoreText(reason) };
     else {
       let at = q.options.findIndex((o) => o.label === JOIN_IGNORE_LABEL);
