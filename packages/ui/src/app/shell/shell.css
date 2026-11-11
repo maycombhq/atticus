@@ -189,11 +189,16 @@
 .sh-tip::before {
   content: attr(data-tip);
 }
-.sh-act:hover > .sh-tip,
 .sh-act:focus-visible > .sh-tip,
-.sh-tool:hover > .sh-tip,
 .sh-tool:focus-visible > .sh-tip {
   display: block;
+}
+/* On hover only where there is a pointer that hovers: a tap on a phone leaves none behind. */
+@media (hover: hover) {
+  .sh-act:hover > .sh-tip,
+  .sh-tool:hover > .sh-tip {
+    display: block;
+  }
 }
 .sh-act > .sh-tip {
   left: calc(100% + 8px);
