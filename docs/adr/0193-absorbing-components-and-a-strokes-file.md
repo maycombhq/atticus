@@ -33,6 +33,10 @@ strokes:
     why: One API service instead of a wrapper each
 ```
 
+### A path prefix
+
+Components that serve the same paths (two wrappers each answering `GET /search`) can't land on one target as they are: a second flow at the same entry is refused. `into.prefix` (`/legacy-cards`) puts every moved flow's entry under that path on the target, and every caller is sent to the prefixed path. A gateway proxy's own contract is unchanged; only where it routes changes.
+
 ## Consequences
 
 - A consolidation of twenty wrappers is twenty lines of a file, previewed, then written once; the architecture stage keeps every drawn step as drawn (ADR 0179).

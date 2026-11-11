@@ -254,4 +254,55 @@ describe("absorbing a component into another (ADR 0193)", () => {
     const r = applyStroke([], absorb("forge-accounts-wrapper", "forge-api"), taken, "pat", "s4");
     expect(r.deltas.map((d) => d.flow)).toContain("forge-api.get-accounts-2");
   });
+
+  it("moves the flows under a path prefix, so two components serving the same path can merge (ADR 0193)", () => {
+    // A prefix puts the moved flows under their own path on forge-api, so wrappers that serve
+    // the same paths can merge; the proxy's call goes to the prefixed path (its own contract is
+    // unchanged: only where it routes changes).
+    const first = applyStroke(
+      [],
+      absorb("forge-accounts-wrapper", "forge-api", { runsOn: { type: "service" } }),
+      estate,
+      "pat",
+      "s1",
+    );
+    const r = applyStroke(
+      first.deltas,
+      absorb("forge-cards-wrapper", "forge-api", { prefix: "/legacy-cards" }),
+      estate,
+      "pat",
+      "s2",
+    );
+    expect(r.problem).toBeUndefined();
+    const moved = r.deltas.find((d) => d.flow === "forge-api.get-cards")!;
+    expect(moved.trigger?.entry).toBe("GET /legacy-cards/cards/{id}");
+    const proxy = r.deltas.find((d) => d.flow === "forge-cards-proxy.route-cards")!;
+    expect(proxy.steps.find((s) => s.op === "add")?.to).toEqual({
+      component: "forge-api",
+      entry: "GET /legacy-cards/cards/{id}",
+      new: false,
+    });
+    // Without a prefix the paths stay as they are; a prefix must start with a slash.
+    const clash = applyStroke(
+      first.deltas,
+      Stroke.parse({
+        kind: "absorb",
+        component: "forge-cards-wrapper",
+        into: { component: "forge-api" },
+        why: "w",
+      }),
+      { ...estate },
+      "pat",
+      "s3",
+    );
+    expect(clash.problem).toBeUndefined();
+    expect(
+      Stroke.safeParse({
+        kind: "absorb",
+        component: "a",
+        into: { component: "b", prefix: "no-slash" },
+        why: "w",
+      }).success,
+    ).toBe(false);
+  });
 });

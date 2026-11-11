@@ -122,7 +122,21 @@ export const Stroke = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("absorb"),
     component: Id,
-    into: z.object({ component: Id, runsOn: RunsOn.optional() }),
+    into: z.object({
+      component: Id,
+      runsOn: RunsOn.optional(),
+      /**
+       * A path the moved flows' entries go under on the target ("/legacy-cards"), so components
+       * that serve the same paths can merge; callers are sent to the prefixed path.
+       */
+      prefix: z
+        .string()
+        .regex(
+          /^\/[A-Za-z0-9._~{}/-]*[A-Za-z0-9._~}-]$/,
+          "a path prefix: starts with /, no trailing /",
+        )
+        .optional(),
+    }),
     why: text(),
   }),
 ]);
@@ -525,6 +539,22 @@ function absorbStroke(
     return fail(
       `${removed.map((f) => f.flow.id).join(", ")} ${removed.length === 1 ? "is" : "are"} changed in this change already: take that back first, then absorb ${a}.`,
     );
+  // Where an entry of the absorbed component lands on the target: under the prefix, if any.
+  const prefix = stroke.into.prefix;
+  const endpointOf = (e: string): string => {
+    const r = estate.byId?.get(e) as
+      { kind?: string; method?: unknown; pathOrTopic?: unknown } | undefined;
+    return r?.kind === "Endpoint" && typeof r.pathOrTopic === "string"
+      ? typeof r.method === "string" && r.method
+        ? `${r.method} ${r.pathOrTopic}`
+        : r.pathOrTopic
+      : e;
+  };
+  const landed = (e: string): string => {
+    if (!prefix) return e;
+    const m = /^([A-Z]+)\s+(\/.*)$/.exec(endpointOf(e));
+    return m ? `${m[1]} ${prefix}${m[2]}` : e;
+  };
   // The entries the target serves today and in this change: a moved flow can't take one twice.
   const key = (e: string) => e.replace(/\s+/g, " ").trim().toLowerCase();
   const served = new Set<string>();
@@ -541,10 +571,11 @@ function absorbStroke(
     )
       served.add(key(d.trigger.entry));
   for (const f of flows) {
-    const e = entryOf(f.flow, estate);
+    const raw = entryOf(f.flow, estate);
+    const e = raw ? landed(raw) : undefined;
     if (e && served.has(key(e)))
       return fail(
-        `${b} has a flow at ${e} already: a second flow can't take the same entry. Take that one back, or absorb ${a} into another component.`,
+        `${b} has a flow at ${e} already: a second flow can't take the same entry. Give the absorb a prefix (into.prefix: /something), take that one back, or absorb ${a} into another component.`,
       );
     if (e) served.add(key(e));
   }
@@ -570,7 +601,8 @@ function absorbStroke(
   let all: FlowDelta[] = [...before];
   const changed: string[] = [];
   for (const f of flows) {
-    const entry = entryOf(f.flow, estate);
+    const raw = entryOf(f.flow, estate);
+    const entry = raw ? landed(raw) : undefined;
     const id = idFor(f.flow.id);
     all.push({
       schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
@@ -595,7 +627,7 @@ function absorbStroke(
           ? {
               to: {
                 component: s.to.component === a ? b : s.to.component,
-                entry: s.to.entry,
+                entry: s.to.component === a ? landed(s.to.entry) : s.to.entry,
                 new: false,
               },
             }
@@ -651,7 +683,7 @@ function absorbStroke(
                 after: c.step,
                 kind: c.s.kind,
                 what: c.s.what,
-                to: { component: b, entry: c.s.to!.entry, new: false },
+                to: { component: b, entry: landed(c.s.to!.entry), new: false },
                 why: why(reason),
               },
             ],
