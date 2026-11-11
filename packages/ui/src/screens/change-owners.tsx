@@ -110,49 +110,54 @@ export function ChangeOwners(p: {
   };
   const suggestions = suggested.state === "ready" ? suggested.data.suggestions : [];
   return (
-    <section className="stack" style={{ gap: 6 }} aria-labelledby={`${id}-h`}>
-      <p id={`${id}-h`} className="hud" style={{ margin: 0 }}>
-        {W.ownersTitle}
-      </p>
-      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-        {W.ownersIntro}
-      </p>
+    <section className="cw-section" aria-labelledby={`${id}-h`}>
+      {/* Its label and Change who is on it on one line; the form opens in place below. */}
+      <div className="cw-section-head">
+        <p id={`${id}-h`} className="hud cw-label">
+          {W.ownersTitle}
+        </p>
+        {!editing && (
+          <button
+            type="button"
+            className="btn cw-sm"
+            onClick={() => {
+              setFields(ownersFields(owners));
+              setEditing(true);
+            }}
+          >
+            {W.editOwners}
+          </button>
+        )}
+      </div>
+      <p className="cw-muted-line">{W.ownersIntro}</p>
       {!editing && (
         <>
-          <dl className="row" style={{ gap: 16, flexWrap: "wrap", margin: 0 }}>
+          <dl className="cw-owners">
             {OWNER_ROLES.map((r) => (
-              <div key={r} className="stack" style={{ gap: 2, minWidth: 140 }}>
-                <dt className="hud" style={{ fontSize: 10 }}>
-                  {O.roles[r]}
-                </dt>
-                <dd style={{ margin: 0, fontSize: 13 }}>
+              <div key={r} className="cw-owner">
+                <dt className="hud cw-label">{O.roles[r]}</dt>
+                <dd className={(owners?.[r] ?? []).length ? undefined : "muted"}>
                   {(owners?.[r] ?? []).length ? (owners?.[r] ?? []).join(", ") : W.nobody}
                 </dd>
               </div>
             ))}
           </dl>
           {suggestions.length > 0 && (
-            <div className="stack" style={{ gap: 4 }}>
-              <p className="hud" style={{ margin: 0, fontSize: 10 }}>
-                {W.suggestedTitle}
-              </p>
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
+            <div className="cw-section" style={{ gap: 6 }}>
+              <p className="hud cw-label">{W.suggestedTitle}</p>
+              <ul className="cw-suggest">
                 {suggestions.map((s) => {
                   const who = s.people.join(", ");
                   const role = W.roleNames[s.role] ?? s.role;
                   return (
-                    <li
-                      key={`${s.role}|${who}`}
-                      className="row"
-                      style={{ gap: 8, flexWrap: "wrap" }}
-                    >
-                      <span style={{ fontSize: 13 }}>
+                    <li key={`${s.role}|${who}`}>
+                      <span style={{ minWidth: 0 }}>
                         {O.roles[s.role] ?? s.role}: <strong>{who}</strong>{" "}
                         <span className="muted">({suggestionFrom(s)})</span>
                       </span>
                       <button
                         type="button"
-                        className="btn"
+                        className="btn cw-sm"
                         disabled={accept.busy}
                         aria-label={W.acceptFor(who, role)}
                         onClick={() =>
@@ -182,27 +187,15 @@ export function ChangeOwners(p: {
             </div>
           )}
           <Note note={accept.note} />
-          <div className="row" style={{ gap: 6 }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setFields(ownersFields(owners));
-                setEditing(true);
-              }}
-            >
-              {W.editOwners}
-            </button>
-          </div>
           <Note note={save.note} />
         </>
       )}
       {editing && (
-        <form className="stack" style={{ gap: 6 }} onSubmit={submit}>
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <form className="cw-card" onSubmit={submit}>
+          <div className="cw-owners">
             {OWNER_ROLES.map((r) => (
-              <div key={r} className="stack" style={{ gap: 2, minWidth: 160 }}>
-                <label htmlFor={`${id}-${r}`} className="hud" style={{ fontSize: 10 }}>
+              <div key={r} className="cw-owner">
+                <label htmlFor={`${id}-${r}`} className="hud cw-label">
                   {O.roles[r]}
                 </label>
                 <input
@@ -215,11 +208,11 @@ export function ChangeOwners(p: {
               </div>
             ))}
           </div>
-          <div className="row" style={{ gap: 6 }}>
-            <button type="submit" className="btn" disabled={save.busy}>
+          <div className="cw-actions">
+            <button type="submit" className="btn primary cw-sm" disabled={save.busy}>
               {save.busy ? O.saving : W.saveOwners}
             </button>
-            <button type="button" className="btn" onClick={() => setEditing(false)}>
+            <button type="button" className="btn cw-sm" onClick={() => setEditing(false)}>
               {W.cancelOwners}
             </button>
           </div>

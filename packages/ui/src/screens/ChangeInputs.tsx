@@ -4,6 +4,7 @@ import { api, useApi, useLiveEvents } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "./know/common.js";
+import "./change-work.css";
 
 const T = COPY.changes;
 const MAX_MB = 15;
@@ -53,20 +54,21 @@ export function ChangeInputs({ change }: { change: string }) {
       span="span 4"
       meta={list.state === "ready" ? list.data.files.length : undefined}
     >
-      <div className="stack" style={{ gap: 10 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <label htmlFor={id} className="hud">
+      <div className="cw-list">
+        <div className="cw-filter">
+          <label htmlFor={id} className="hud cw-label">
             {T.attachLabel}
           </label>
           <input
             id={id}
             ref={input}
             type="file"
+            className="cw-file"
             disabled={attach.busy}
             aria-describedby={`${id}-help`}
             onChange={onPick}
           />
-          <span id={`${id}-help`} className="muted" style={{ fontSize: 12 }}>
+          <span id={`${id}-help`} className="cw-muted-line">
             {T.attachHelp}
           </span>
           <Note note={attach.note} />
@@ -74,19 +76,19 @@ export function ChangeInputs({ change }: { change: string }) {
         </div>
         <View of={list} empty={(d) => d.files.length === 0} emptyText={T.noInputs}>
           {(d) => (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table className="cw-table">
               <caption className="sr">{T.inputs}</caption>
               <thead>
-                <tr className="hud" style={{ textAlign: "left", fontSize: 10 }}>
-                  <th style={{ padding: "4px 0", fontWeight: 400 }}>{T.inputFile}</th>
-                  <th style={{ fontWeight: 400 }}>{T.inputKind}</th>
-                  <th style={{ fontWeight: 400 }}>{T.inputWho}</th>
+                <tr className="hud">
+                  <th>{T.inputFile}</th>
+                  <th>{T.inputKind}</th>
+                  <th>{T.inputWho}</th>
                 </tr>
               </thead>
               <tbody>
                 {d.files.map((f) => (
-                  <tr key={f.path} style={{ borderTop: "1px solid var(--rule)" }}>
-                    <td className="mono" style={{ padding: "7px 0", wordBreak: "break-all" }}>
+                  <tr key={f.path}>
+                    <td className="mono" style={{ wordBreak: "break-all", verticalAlign: "top" }}>
                       {f.path}
                     </td>
                     <td>

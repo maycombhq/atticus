@@ -25,6 +25,7 @@ import {
 import { Command, NoChangeYet, PickAChange, RunNextPanel } from "./RunNext.js";
 import { RunsLink } from "../runs/Runs.js";
 import { ChangeImpactPanel } from "./Impact.js";
+import "../change-work.css";
 
 /**
  * Feature design, Stories and Tasks (plan 4.5): for now each shows the change's files and the
@@ -61,13 +62,14 @@ export function ChangePicker(p: {
 }) {
   const id = `pick-${p.screen}`;
   return (
-    <div className="row" style={{ gap: 8 }}>
-      <label htmlFor={id} className="hud" style={{ fontSize: 10 }}>
+    <div className="cw-picker">
+      <label htmlFor={id} className="hud cw-label">
         {W.pickChange}
       </label>
       <select
         id={id}
         className="run-select"
+        title={p.current}
         value={p.current ?? ""}
         onChange={(e) => setQueryParam(p.screen, "change", e.target.value)}
       >
@@ -114,25 +116,35 @@ export function FilesTable({
   const wanted = STAGE_FILES[stage];
   const rows = [...detail.artifacts.filter((a) => wanted.includes(a.artifact)), ...extra];
   if (rows.length === 0) return <div className="state">{W.noFiles}</div>;
+  // Compact rows: the file's name in full, its folder muted and cut short from the left (whole
+  // in its title and to a screen reader), its status at the end.
   return (
-    <Table
-      caption={W.files}
-      rows={rows}
-      rowKey={(a) => a.artifact}
-      cols={[
-        { label: W.fileCol, cell: (a) => a.path, mono: true },
-        {
-          label: W.statusCol,
-          cell: (a) => (
-            <span
-              className={`chip ${a.status === "done" ? "done" : a.status === "ready" ? "warn" : "dim"}`}
-            >
-              {artifactStatusWord(a)}
+    <ul className="cw-items" aria-label={W.files}>
+      {rows.map((a) => {
+        const cut = a.path.lastIndexOf("/") + 1;
+        return (
+          <li key={a.artifact} className="cw-item" style={{ alignItems: "center" }}>
+            <span className="cw-file-path" title={a.path}>
+              <span className="cw-file-dir" aria-hidden="true">
+                <bdi>{a.path.slice(0, cut)}</bdi>
+              </span>
+              <span className="cw-file-base">
+                <span className="sr">{a.path.slice(0, cut)}</span>
+                {a.path.slice(cut)}
+              </span>
             </span>
-          ),
-        },
-      ]}
-    />
+            <span className="cw-item-end">
+              <span className="sr">{W.statusCol}: </span>
+              <span
+                className={`chip ${a.status === "done" ? "done" : a.status === "ready" ? "warn" : "dim"}`}
+              >
+                {artifactStatusWord(a)}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -175,14 +187,15 @@ export function TaskList({ change, tasks }: { change: string; tasks: TaskRow[] }
                 >
                   {W.openOnBoard}
                 </a>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {W.runOnBoard}
-                </span>
-                <span className="hud" style={{ fontSize: 10, marginTop: 4 }}>
-                  {W.fromTerminal}
-                </span>
-                <Command text={s.command} label={R.copy} />
-                <Command text={s.slash!.command} label={R.copySlash} />
+                <span className="cw-muted-line">{W.runOnBoard}</span>
+                {/* The commands folded away, so each row is the link and a line. */}
+                <details className="work-terminal" style={{ marginTop: 0 }}>
+                  <summary>{W.fromTerminal}</summary>
+                  <div className="stack" style={{ gap: 6, marginTop: 6 }}>
+                    <Command text={s.command} label={R.copy} />
+                    <Command text={s.slash!.command} label={R.copySlash} />
+                  </div>
+                </details>
               </div>
             );
           },
@@ -215,13 +228,15 @@ export function StagePage(p: {
         const ready = p.tasks?.state === "ready" ? p.tasks.data : undefined;
         return (
           <>
-            <div className="row between" style={{ flexWrap: "wrap", marginBottom: 12 }}>
-              <p style={{ margin: 0 }}>
-                <span className="n" style={{ fontSize: 20 }}>
-                  {c.title}
+            {/* The page head: the change's title and id, then its links and picker. */}
+            <div className="cw-stage-head">
+              <div className="cw-head-name">
+                <p className="cw-title">{c.title}</p>
+                <span className="cw-mono-sub cw-trunc" title={c.id}>
+                  {c.id}
                 </span>
-              </p>
-              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+              </div>
+              <div className="cw-stage-tools">
                 <RunsLink change={c.id} />
                 {p.stage === "tasks" && (
                   <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
@@ -265,7 +280,11 @@ export function StagePage(p: {
                   stage={p.stage === "feature" ? "feature" : "stories"}
                 />
               )}
-              <Panel title={W.files} span={p.stage === "tasks" ? "span 4" : "1 / -1"}>
+              {/* Feature design: the files beside the files attached, not each on its own row. */}
+              <Panel
+                title={W.files}
+                span={p.stage === "tasks" ? "span 4" : p.stage === "feature" ? "span 8" : "1 / -1"}
+              >
                 {p.detail ? (
                   <View of={p.detail}>
                     {(d) => <FilesTable detail={d} stage={p.stage} extra={extra} />}

@@ -1,0 +1,629 @@
+/* A change's pages (All changes, At a glance, the stage tabs, the stage's conversation) in the
+   arrow panel's vocabulary: a clear page head, compact cards, muted monospace secondary lines,
+   small labels, actions grouped with the primary first. Every rule is under a cw- class of its
+   own and every colour, font and line is a token of hud.css. Rhythm: 4, 8, 12 and 16 px. */
+
+/* ------------------------------------------------------------------ shared pieces */
+
+.cw-label {
+  margin: 0;
+  font-size: 10.5px;
+}
+.cw-muted-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* One line, cut short with an ellipsis; the whole text stays in the DOM (and in a title). */
+.cw-trunc {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-mono-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.cw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cw-section + .cw-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.cw-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* A group of actions: the primary first, the rest beside it, wrapping as one block. */
+.cw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cw-actions:empty {
+  display: none;
+}
+.btn.cw-sm,
+.cw-sm .btn,
+a.btn.cw-sm {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+/* A card: a bordered box in a panel, as the arrow panel's calls are. */
+.cw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover-soft);
+}
+.cw-card > p,
+.cw-card > ul,
+.cw-card > ol {
+  margin: 0;
+}
+.cw-card.cw-accent {
+  border-color: var(--line-hero);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cw-plain-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
+}
+/* The browser's file button, made a button of the app. */
+.cw-file::file-selector-button {
+  height: 28px;
+  margin-right: 8px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line-2);
+  background: var(--hover-soft);
+  color: var(--btn-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cw-file {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* The change picker on a change's tabs: never wider than the page. */
+.cw-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cw-picker select {
+  min-width: 0;
+  max-width: min(100%, 360px);
+  flex: 1 1 auto;
+}
+
+/* ------------------------------------------------------------------ All changes */
+
+.cw-page {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+/* The panels' own spans are for the 12-column bento; here the page sets the columns. */
+.cw-page > * {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+@media (max-width: 1000px) {
+  .cw-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.cw-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cw-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cw-filter-row .field {
+  flex: 1 1 120px;
+}
+.cw-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cw-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+.cw-row:hover {
+  background: var(--hover);
+}
+.cw-row[aria-current="page"] {
+  background: var(--picked);
+  border-color: var(--line-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cw-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cw-row-title {
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.cw-row .chip {
+  flex: none;
+  font-size: 10.5px;
+}
+.cw-across {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.cw-across .chip {
+  text-decoration: none;
+}
+.cw-across .chip[aria-current="page"] {
+  background: var(--picked-on);
+}
+
+/* One change: its head, then its panels two by two, then what it needs. */
+.cw-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  container-type: inline-size;
+}
+.cw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.cw-grid > * {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+@container (max-width: 760px) {
+  .cw-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cw-detail > .panel {
+  grid-column: auto !important;
+}
+
+/* The page head: the title, the id and type under it, the state at the right. */
+.cw-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cw-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.cw-head-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cw-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.cw-head .chip {
+  flex: none;
+}
+.cw-next-line {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.cw-chips .chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Who is on the change: four roles side by side, two by two when narrow. */
+.cw-owners {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+@container (max-width: 560px) {
+  .cw-owners {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.cw-owner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cw-owner dd {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.cw-owner .field {
+  width: 100%;
+  box-sizing: border-box;
+}
+.cw-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cw-suggest li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px dashed var(--line-2);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+/* A panel's compact table (artifacts, attached files). */
+.cw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.cw-table th {
+  padding: 0 8px 6px 0;
+  font-weight: 400;
+  font-size: 10.5px;
+  text-align: left;
+}
+.cw-table td {
+  padding: 6px 8px 6px 0;
+  border-top: 1px solid var(--rule);
+  vertical-align: middle;
+}
+.cw-table td:last-child,
+.cw-table th:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+.cw-table .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+/* A list of compact rows: the name, a muted mono line under it, the state or action at the end. */
+.cw-items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cw-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+}
+.cw-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.cw-item-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.cw-item-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cw-item-end .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.cw-file-path {
+  display: flex;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.cw-file-dir {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.cw-file-base {
+  flex: none;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* An open finding: a card with its chips, its words, then its reason and actions. */
+.cw-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cw-finding p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ At a glance */
+
+.cw-glance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  container-type: inline-size;
+}
+.cw-glance > .cw-wide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 900px) {
+  .cw-glance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cw-glance h3 {
+  margin: 0;
+}
+.cw-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cw-stages li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.cw-stages a.chip {
+  text-decoration: none;
+}
+.cw-stages a.chip:hover,
+.cw-stages a.chip:focus-visible {
+  text-decoration: underline;
+}
+.cw-repos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cw-repos li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.cw-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.cw-past {
+  margin-top: 12px;
+}
+.cw-past ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------ a stage's tab */
+
+.cw-stage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.cw-stage-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cw-stage-tools a {
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ the stage's conversation */
+
+.cw-thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.cw-thread-head .thread-headline {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.cw-intro summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cw-intro p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+/* Each item: its kind and chips on one line, then its words. */
+.cw-item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.cw-item-head .btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.cw-item-head code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.thread .thread-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.thread .thread-item > p,
+.thread .thread-item > ul {
+  margin: 0;
+}
+.thread .thread-item details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.thread .thread-item .stage-comments code {
+  overflow-wrap: anywhere;
+}
+.thread .thread-item .cw-actions {
+  margin-top: 2px;
+}
+.thread .thread-item .cw-actions .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.cw-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--box);
+}
+.cw-reply textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5em;
+  padding: 8px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.cw-reply .work-say {
+  margin: 0;
+}

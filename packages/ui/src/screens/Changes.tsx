@@ -16,6 +16,7 @@ import { lensesWaiting, type CriticRan } from "./work/critic-ran.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
+import "./change-work.css";
 
 const T = COPY.changes;
 
@@ -167,108 +168,100 @@ function ChangeList({
   const [text, setText] = useState("");
   const [state, setState] = useState("");
   return (
-    <Panel title={T.changes} span="span 3" rows="span 3">
-      <NewChange
-        onCreated={(id) => {
-          onCreated?.();
-          window.location.hash = `#/changes/${id}`;
-        }}
-      />
-      <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
-        {(all) => {
-          const states = [...new Set(all.map((c) => c.state))];
-          const l = filterChanges(all, text, state);
-          return (
-            <div className="stack" style={{ gap: 8 }}>
-              <div className="stack" style={{ gap: 4 }}>
-                <label htmlFor="change-filter" className="hud" style={{ fontSize: 10 }}>
-                  {T.findAChange}
-                </label>
-                <input
-                  id="change-filter"
-                  className="field"
-                  value={text}
-                  placeholder={T.idTitleOrRepo}
-                  onChange={(e) => setText(e.target.value)}
-                />
-                <label htmlFor="change-state" className="sr">
-                  {T.state}
-                </label>
-                <select
-                  id="change-state"
-                  className="field"
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                >
-                  <option value="">{T.everyState}</option>
-                  <option value="blocked">{T.blocked}</option>
-                  {states.map((x) => (
-                    <option key={x} value={x}>
-                      {LABEL[x] ?? x}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <nav aria-label={T.changes} className="stack" style={{ gap: 2 }}>
-                {l.map((c) => (
-                  <a
-                    key={c.id}
-                    href={`#/changes/${c.id}`}
-                    aria-current={!across && c.id === current ? "page" : undefined}
-                    className="list-row"
-                    style={{
-                      textDecoration: "none",
-                      padding: "8px 6px",
-                      borderRadius: 6,
-                      background: !across && c.id === current ? "var(--picked)" : undefined,
-                    }}
-                  >
-                    <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                      <span className="mono" style={{ fontSize: 12 }}>
-                        {c.id}
-                      </span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>
-                        {c.title}
-                      </span>
-                    </span>
-                    <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
-                      {c.openFindings.blocking
-                        ? T.blocked2
-                        : (LABEL[c.state] ?? c.state).toUpperCase()}
-                    </span>
-                  </a>
-                ))}
-                {l.length === 0 && (
-                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    {T.noChangeMatches}
-                  </p>
-                )}
-              </nav>
-              <div
-                className="stack"
-                style={{ gap: 4, borderTop: "1px solid var(--line)", paddingTop: 8 }}
-              >
-                <span className="hud" style={{ fontSize: 10 }}>
-                  {T.acrossAllChanges}
-                </span>
-                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                  {ACROSS.map((a) => (
-                    <a
-                      key={a.id}
-                      href={`#/changes?across=${a.id}`}
-                      aria-current={across === a.id ? "page" : undefined}
-                      className="chip"
-                      style={{ textDecoration: "none" }}
+    <Panel
+      title={T.changes}
+      span="span 3"
+      rows="span 3"
+      meta={list.state === "ready" && list.data.length > 0 ? list.data.length : undefined}
+    >
+      <div className="cw-list">
+        <NewChange
+          onCreated={(id) => {
+            onCreated?.();
+            window.location.hash = `#/changes/${id}`;
+          }}
+        />
+        <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
+          {(all) => {
+            const states = [...new Set(all.map((c) => c.state))];
+            const l = filterChanges(all, text, state);
+            return (
+              <>
+                <div className="cw-filter">
+                  <label htmlFor="change-filter" className="hud cw-label">
+                    {T.findAChange}
+                  </label>
+                  <div className="cw-filter-row">
+                    <input
+                      id="change-filter"
+                      className="field"
+                      value={text}
+                      placeholder={T.idTitleOrRepo}
+                      onChange={(e) => setText(e.target.value)}
+                    />
+                    <label htmlFor="change-state" className="sr">
+                      {T.state}
+                    </label>
+                    <select
+                      id="change-state"
+                      className="field"
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
                     >
-                      {a.label}
+                      <option value="">{T.everyState}</option>
+                      <option value="blocked">{T.blocked}</option>
+                      {states.map((x) => (
+                        <option key={x} value={x}>
+                          {LABEL[x] ?? x}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <nav aria-label={T.changes} className="cw-rows">
+                  {l.map((c) => (
+                    <a
+                      key={c.id}
+                      href={`#/changes/${c.id}`}
+                      aria-current={!across && c.id === current ? "page" : undefined}
+                      className="cw-row"
+                    >
+                      {/* The title first; the id under it, cut short, whole in its title. */}
+                      <span className="cw-row-name">
+                        <span className="cw-row-title">{c.title}</span>
+                        <span className="mono cw-mono-sub cw-trunc" title={c.id}>
+                          {c.id}
+                        </span>
+                      </span>
+                      <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
+                        {c.openFindings.blocking
+                          ? T.blocked2
+                          : (LABEL[c.state] ?? c.state).toUpperCase()}
+                      </span>
                     </a>
                   ))}
+                  {l.length === 0 && <p className="cw-muted-line">{T.noChangeMatches}</p>}
+                </nav>
+                <div className="cw-across">
+                  <span className="hud cw-label">{T.acrossAllChanges}</span>
+                  <div className="cw-chips">
+                    {ACROSS.map((a) => (
+                      <a
+                        key={a.id}
+                        href={`#/changes?across=${a.id}`}
+                        aria-current={across === a.id ? "page" : undefined}
+                        className="chip"
+                      >
+                        {a.label}
+                      </a>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-          );
-        }}
-      </View>
+              </>
+            );
+          }}
+        </View>
+      </div>
     </Panel>
   );
 }
@@ -626,24 +619,40 @@ function Detail({ id }: { id: string }) {
     if (e.type === "file.changed" || e.type === "run.changed") reloadAll();
   });
 
+  const title = detail.state === "ready" ? `${detail.data.id} · ${detail.data.title}` : id;
   return (
-    <>
-      <Panel
-        title={detail.state === "ready" ? `${detail.data.id} · ${detail.data.title}` : id}
-        span="span 9"
-        kind="hero"
-      >
+    <div className="cw-detail" style={{ gridColumn: "span 9" }}>
+      {/* The page head: the change's title, its id and type, and its phase. */}
+      <section className="panel hero cw-hero" aria-labelledby="cw-change-title">
+        <div className="cw-head">
+          <div className="cw-head-name">
+            {/* The heading's name stays "<id> · <title>"; the id shows on its own line. */}
+            <h2 id="cw-change-title" className="cw-title" aria-label={title}>
+              {detail.state === "ready" ? detail.data.title : id}
+            </h2>
+            {detail.state === "ready" && (
+              <span className="cw-mono-sub cw-trunc" title={detail.data.id}>
+                {detail.data.id} · {detail.data.type}
+              </span>
+            )}
+          </div>
+          {detail.state === "ready" && (
+            <span className={`chip ${detail.data.openFindings.blocking ? "blocking" : ""}`}>
+              {detail.data.openFindings.blocking
+                ? T.blocked2
+                : (LABEL[detail.data.state] ?? detail.data.state).toUpperCase()}
+            </span>
+          )}
+        </div>
         <View of={detail}>
           {(d) => (
-            <div className="stack" style={{ gap: 14 }}>
+            <>
               <Pipeline state={d.state} />
-              {/* Ninth UX walk: name the change's owners per role, so each sees their questions. */}
-              <ChangeOwners change={d.id} owners={d.owners} onSaved={detail.reload} />
               <View of={status}>
                 {(s) => (
-                  <div className="stack">
-                    <p style={{ margin: 0, fontSize: 14 }}>
-                      <span className="hud" style={{ marginRight: 8 }}>
+                  <div className="cw-section">
+                    <p className="cw-next-line">
+                      <span className="hud cw-label" style={{ marginRight: 8 }}>
                         {T.next}
                       </span>
                       {/* Sixth UX walk: a manual Git host's PR isn't open until a person opens it. */}
@@ -653,7 +662,7 @@ function Detail({ id }: { id: string }) {
                         s.nextStep
                       )}
                     </p>
-                    <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                    <div className="cw-chips">
                       <span
                         className={`chip ${s.risk.level === "high" ? "blocking" : s.risk.level === "medium" ? "warn" : ""}`}
                       >
@@ -661,7 +670,10 @@ function Detail({ id }: { id: string }) {
                       </span>
 
                       {d.handoff && (
-                        <span className="chip">
+                        <span
+                          className="chip"
+                          title={d.handoff.pr && !isManualLink(d.handoff.pr) ? d.handoff.pr : undefined}
+                        >
                           {isManualLink(d.handoff.pr)
                             ? T.handOffManual(d.handoff.phase.toUpperCase())
                             : T.handOff(
@@ -677,12 +689,8 @@ function Detail({ id }: { id: string }) {
                     )}
                     {s.blockers.length > 0 && (
                       <ul
-                        style={{
-                          margin: 0,
-                          paddingLeft: 18,
-                          color: "var(--text-2)",
-                          lineHeight: 1.6,
-                        }}
+                        className="cw-plain-list"
+                        style={{ color: "var(--text-2)" }}
                         aria-label={T.whatBlocksTheHand}
                       >
                         {s.blockers.map((b) => (
@@ -690,7 +698,7 @@ function Detail({ id }: { id: string }) {
                         ))}
                       </ul>
                     )}
-                    <div className="row" style={{ flexWrap: "wrap" }}>
+                    <div className="cw-actions">
                       <button
                         type="button"
                         className="btn primary"
@@ -761,33 +769,36 @@ function Detail({ id }: { id: string }) {
                   </div>
                 )}
               </View>
-            </div>
+              {/* Ninth UX walk: name the change's owners per role, so each sees their questions. */}
+              <div className="cw-section">
+                <ChangeOwners change={d.id} owners={d.owners} onSaved={detail.reload} />
+              </div>
+            </>
           )}
         </View>
-      </Panel>
+      </section>
 
       {editing && <ArtifactEditor change={id} artifact={editing} onClose={closeEditor} />}
 
+      <div className="cw-grid">
       <Panel title={T.artifacts} span="span 5">
         <View of={detail} empty={(d) => d.artifacts.length === 0}>
           {(d) => (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table className="cw-table">
               <thead>
-                <tr className="hud" style={{ textAlign: "left", fontSize: 10 }}>
-                  <th style={{ padding: "4px 0", fontWeight: 400 }}>{T.artifact}</th>
-                  <th style={{ fontWeight: 400 }}>{T.status}</th>
-                  <th style={{ fontWeight: 400 }}>{T.findings}</th>
-                  <th style={{ fontWeight: 400 }}>
+                <tr className="hud">
+                  <th>{T.artifact}</th>
+                  <th>{T.status}</th>
+                  <th>{T.findings}</th>
+                  <th>
                     <span className="sr">{T.actions}</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {d.artifacts.map((a) => (
-                  <tr key={a.artifact} style={{ borderTop: "1px solid var(--rule)" }}>
-                    <td className="mono" style={{ padding: "7px 0" }}>
-                      {a.artifact}
-                    </td>
+                  <tr key={a.artifact}>
+                    <td className="mono">{a.artifact}</td>
                     <td>
                       <span
                         className={`chip ${a.status === "done" ? "done" : a.status === "blocked" ? "dim" : "warn"}`}
@@ -825,10 +836,6 @@ function Detail({ id }: { id: string }) {
           ) && <RunStep command={`atticus change draft ${id}`} />}
       </Panel>
 
-      <ChangeInputs change={id} />
-
-      <ChangePrototypes change={id} />
-
       <Panel
         title={T.openFindings}
         span="span 4"
@@ -837,27 +844,21 @@ function Detail({ id }: { id: string }) {
         <Said said={findingSaid.said} />
         <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindingsOn}>
           {(list) => (
-            <div className="stack" style={{ gap: 12 }}>
+            <div className="cw-findings">
               {list.map((f) => (
-                <article
-                  key={`${f.gate}/${f.id}`}
-                  className="stack"
-                  style={{ gap: 6, borderTop: "1px solid var(--rule)", paddingTop: 10 }}
-                >
-                  <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <article key={`${f.gate}/${f.id}`} className="cw-card cw-finding">
+                  <div className="cw-item-head">
                     <span
                       className={`chip ${f.severity === "blocking" ? "blocking" : f.severity === "gap" ? "warn" : "dim"}`}
                     >
                       {f.severity.toUpperCase()}
                     </span>
-                    <span className="hud" style={{ fontSize: 10 }}>
+                    <span className="cw-mono-sub">
                       {f.gate} · {f.lens ?? T.checks} · {f.artifact}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13 }}>{f.question?.text ?? f.summary}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {f.why}
-                  </div>
+                  <p style={{ fontSize: 13, lineHeight: 1.45 }}>{f.question?.text ?? f.summary}</p>
+                  <p className="cw-muted-line">{f.why}</p>
                   <FindingActions change={id} f={f} done={reloadAll} say={findingSaid.say} />
                 </article>
               ))}
@@ -868,18 +869,20 @@ function Detail({ id }: { id: string }) {
 
       <Panel title={T.tasks} span="span 5">
         <View of={tasks} empty={(t) => t.length === 0} emptyText={T.noTasksYetThey}>
-          {(list) =>
-            list.map((t) => (
-              <div key={t.id} className="list-row">
-                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span style={{ fontSize: 12.5 }}>
+          {(list) => (
+            <ul className="cw-items">
+            {list.map((t) => (
+              <li key={t.id} className="cw-item">
+                <span className="cw-item-name">
+                  <span>
                     <span className="mono">{t.id}</span> {t.description}
                   </span>
-                  <span className="hud" style={{ fontSize: 9.5 }}>
+                  <span className="cw-mono-sub">
                     {t.repo}
                     {t.story ? ` · ${t.story}` : ""}
                   </span>
                 </span>
+                <span className="cw-item-end">
                 {t.done ? (
                   <span className="chip done">{T.done2}</span>
                 ) : !aiOn ? (
@@ -910,24 +913,27 @@ function Detail({ id }: { id: string }) {
                     {T.runWithAi}
                   </button>
                 )}
-              </div>
-            ))
-          }
+                </span>
+              </li>
+            ))}
+            </ul>
+          )}
         </View>
         <Note note={runAct.note} />
       </Panel>
 
       <Panel title={T.aiRuns} span="span 4">
         <View of={runs} empty={(r) => r.length === 0} emptyText={T.noAiRunsYet}>
-          {(list) =>
-            list
+          {(list) => (
+            <ul className="cw-items">
+            {list
               .slice()
               .reverse()
               .map((r) => (
-                <div key={r.runId} className="list-row" style={{ alignItems: "flex-start" }}>
-                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                    <span style={{ fontSize: 12.5 }}>{r.agent}</span>
-                    <span className="hud" style={{ fontSize: 9.5 }}>
+                <li key={r.runId} className="cw-item">
+                  <span className="cw-item-name">
+                    <span>{r.agent}</span>
+                    <span className="cw-mono-sub" style={{ overflowWrap: "anywhere" }}>
                       {r.runtime} · {r.promptPath ?? r.runId}
                     </span>
                     {r.errors.length > 0 && (
@@ -946,7 +952,7 @@ function Detail({ id }: { id: string }) {
                       />
                     )}
                   </span>
-                  <span className="row" style={{ gap: 6 }}>
+                  <span className="cw-item-end" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <span
                       className={`chip ${r.state === "validated" ? "done" : r.state === "failed" ? "blocking" : "ai"}`}
                     >
@@ -1005,15 +1011,21 @@ function Detail({ id }: { id: string }) {
                       </button>
                     )}
                   </span>
-                </div>
-              ))
-          }
+                </li>
+              ))}
+            </ul>
+          )}
         </View>
       </Panel>
 
+      <ChangeInputs change={id} />
+
+      <ChangePrototypes change={id} />
+      </div>
+
       {/* ADR 0102: what the change needs from the organisation. */}
-      <NeedsPanel change={id} span="span 9" />
-    </>
+      <NeedsPanel change={id} span="1 / -1" />
+    </div>
   );
 }
 
@@ -1025,7 +1037,7 @@ export function Changes({ hash }: { hash: string }) {
   const first = list.state === "ready" ? list.data[0]?.id : undefined;
   const current = id ?? first;
   return (
-    <div className="bento">
+    <div className="cw-page">
       <ChangeList list={list} current={current} across={across} onCreated={list.reload} />
       {across && !id ? (
         <AcrossPanel key={across} view={across} />

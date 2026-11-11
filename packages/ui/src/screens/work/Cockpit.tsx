@@ -12,6 +12,7 @@ import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 import { hasAction, StepAction } from "./step-action.js";
 import { StageThreadPanel } from "./StageThread.js";
+import "../change-work.css";
 
 /**
  * The change cockpit (WP7.1): one page per change with what a person needs to follow it. Where
@@ -152,30 +153,25 @@ export function CockpitView(p: {
 }) {
   const c = p.c;
   const drafted = taskNext(c.next?.command, p.tasks);
+  // Each part of the page is a card: where it is and what's next side by side, then what blocks
+  // it and its repos; one column on a narrow page.
   return (
-    <div className="stack">
-      <section aria-labelledby="cockpit-where" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-where" className="hud">
+    <div className="cw-glance">
+      <section aria-labelledby="cockpit-where" className="cw-card">
+        <h3 id="cockpit-where" className="hud cw-label">
           {C.where}
         </h3>
         <p style={{ margin: 0 }}>{C.state(c.state, c.risk.level)}</p>
         {c.waitsOn && <WaitsOnLine w={c.waitsOn} />}
         {/* Where the stages' work is when it ran ahead of the gates (ADR 0124 addendum B-change). */}
-        {c.work && (
-          <p className="muted" style={{ margin: 0 }}>
-            {c.work}
-          </p>
-        )}
-        <ol
-          className="row"
-          style={{ gap: 6, flexWrap: "wrap", listStyle: "none", padding: 0, margin: 0 }}
-        >
+        {c.work && <p className="cw-muted-line">{c.work}</p>}
+        <ol className="cw-stages">
           {c.stages.map((s) => {
             const mark = stageMark(s);
             return (
               <li key={s.stage}>
                 <a
-                  className={`chip ${mark === "done" ? "" : mark === "current" ? "warn" : ""}`}
+                  className={`chip ${mark === "done" ? "done" : mark === "current" ? "warn" : "dim"}`}
                   href={hrefOf(C.stageScreen[s.stage]!, c.id)}
                   aria-current={mark === "current" ? "step" : undefined}
                 >
@@ -184,7 +180,7 @@ export function CockpitView(p: {
                 {/* Ninth UX walk: "done2 drafts" ran together; a space keeps them apart. */}
                 {(s.drafts > 0 || s.openQuestions > 0) && " "}
                 {(s.drafts > 0 || s.openQuestions > 0) && (
-                  <span className="muted" style={{ fontSize: 11.5, marginLeft: 4 }}>
+                  <span className="cw-mono-sub">
                     {C.progress(s.drafts, s.rounds, s.openQuestions)}
                   </span>
                 )}
@@ -192,21 +188,24 @@ export function CockpitView(p: {
             );
           })}
         </ol>
+        {c.openQuestions > 0 && (
+          <p style={{ margin: 0 }}>
+            <a href={hrefOf("questions", c.id)}>{C.questions(c.openQuestions)}</a>
+          </p>
+        )}
       </section>
 
-      <section aria-labelledby="cockpit-next" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-next" className="hud">
+      <section aria-labelledby="cockpit-next" className="cw-card cw-accent">
+        <h3 id="cockpit-next" className="hud cw-label">
           {C.next}
         </h3>
-        <p style={{ margin: 0 }}>{c.nextStep}</p>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{c.nextStep}</p>
         {drafted ? (
           <DraftedTaskNext d={drafted} onDone={p.onTasks} />
         ) : (
           c.next && (
             <>
-              <p className="muted" style={{ margin: 0 }}>
-                {inAppWords(c.next.why)}
-              </p>
+              <p className="cw-muted-line">{inAppWords(c.next.why)}</p>
               <NextAction change={c.id} next={c.next} />
             </>
           )
@@ -214,11 +213,11 @@ export function CockpitView(p: {
       </section>
 
       {c.reasons.length > 0 && (
-        <section aria-labelledby="cockpit-blocks" className="stack" style={{ gap: 6 }}>
-          <h3 id="cockpit-blocks" className="hud">
+        <section aria-labelledby="cockpit-blocks" className="cw-card">
+          <h3 id="cockpit-blocks" className="hud cw-label">
             {C.blocks}
           </h3>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <ul className="cw-plain-list">
             {c.reasons.map((r) => (
               <li key={`${r.code}-${r.message}`}>{r.message}</li>
             ))}
@@ -226,29 +225,29 @@ export function CockpitView(p: {
         </section>
       )}
 
-      {c.openQuestions > 0 && (
-        <p style={{ margin: 0 }}>
-          <a href={hrefOf("questions", c.id)}>{C.questions(c.openQuestions)}</a>
-        </p>
-      )}
-
-      <section aria-labelledby="cockpit-repos" className="stack" style={{ gap: 6 }}>
-        <h3 id="cockpit-repos" className="hud">
+      <section
+        aria-labelledby="cockpit-repos"
+        className={`cw-card${c.reasons.length > 0 ? "" : " cw-wide"}`}
+      >
+        <h3 id="cockpit-repos" className="hud cw-label">
           {C.repos}
         </h3>
         {c.repos.length === 0 ? (
           <OpenWorkspace change={c.id} />
         ) : (
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <ul className="cw-repos">
             {c.repos.map((r) => (
               <li key={r.id}>
-                <span className="mono">{r.id}</span>: {C.branchOn(r.branch, r.base)}
-                {r.pr && !isManualLink(r.pr) && (
-                  <>
-                    {" · "}
-                    <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
-                  </>
-                )}
+                <span className="mono">{r.id}</span>
+                <span className="cw-mono-sub" style={{ overflowWrap: "anywhere" }}>
+                  {C.branchOn(r.branch, r.base)}
+                  {r.pr && !isManualLink(r.pr) && (
+                    <>
+                      {" · "}
+                      <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
+                    </>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -340,25 +339,27 @@ export function PastChangesView(p: {
 }) {
   const L = C.like;
   return (
-    <section aria-label={L.title}>
-      <h3>{L.title}</h3>
-      <p className="muted">{L.intro}</p>
+    <section aria-label={L.title} className="cw-card cw-past">
+      <h3 className="hud cw-label">{L.title}</h3>
+      <p className="cw-muted-line">{L.intro}</p>
       {p.r.how === "words" && p.r.note && p.r.changes.length > 0 && (
-        <p className="muted">{L.byWords(p.r.note)}</p>
+        <p className="cw-muted-line">{L.byWords(p.r.note)}</p>
       )}
       {p.r.changes.length === 0 ? (
-        <p className="muted">{L.none}</p>
+        <p style={{ margin: 0, fontSize: 12.5 }}>{L.none}</p>
       ) : (
-        <ul className="plain">
+        <ul className="plain cw-items">
           {p.r.changes.map((c) => (
-            <li key={c.id}>
-              <strong>{c.title}</strong>
-              {c.archived && <span className="muted"> · {L.archived(c.archived)}</span>}
-              {c.summary && <div>{c.summary}</div>}
+            <li key={c.id} className="cw-item">
+              <span className="cw-item-name">
+                <strong>{c.title}</strong>
+                {c.archived && <span className="cw-mono-sub">{L.archived(c.archived)}</span>}
+                {c.summary && <span className="muted">{c.summary}</span>}
+              </span>
               {p.onUse && (
                 <button
                   type="button"
-                  className="btn"
+                  className="btn cw-sm"
                   disabled={p.busy}
                   onClick={() => p.onUse?.(c.id)}
                 >
@@ -451,7 +452,9 @@ export function CockpitPicked(p: {
   if (!p.current || !p.list.some((x) => x.id === p.current)) return <PickAChange bare />;
   return (
     <>
-      <ChangePicker list={p.list} current={p.current} screen="cockpit" />
+      <div className="cw-toolbar">
+        <ChangePicker list={p.list} current={p.current} screen="cockpit" />
+      </div>
       <View of={p.c}>
         {(d) => (
           <>
