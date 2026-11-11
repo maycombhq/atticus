@@ -431,6 +431,17 @@ async function modelsReadingNothing(
   return out;
 }
 
+/** A record with every evidence entry's `scannedAt` set to `at` (an entry without one stays so). */
+function restamp(r: CatalogRecord, at: string): CatalogRecord {
+  if (!r.evidence.some((e) => (e as { scannedAt?: string }).scannedAt !== undefined)) return r;
+  return {
+    ...r,
+    evidence: r.evidence.map((e) =>
+      (e as { scannedAt?: string }).scannedAt !== undefined ? { ...e, scannedAt: at } : e,
+    ),
+  } as CatalogRecord;
+}
+
 /**
  * The readers slot's `settings` (ADR 0195 point 1): a hash of what steered the readers of a
  * repo, so a slot read under other settings shows it. The repo's scan settings, the rule files
@@ -524,7 +535,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     // A scan the app cancelled stops between repos, before anything is written (ADR 0119).
     throwIfCancelled();
     const dir = o.repoDir?.(r.id) ?? inPlaceDir(o.root, r.url) ?? baseClonePath(o.root, r.id);
-    let state: { commit: string; dirty: boolean };
+    let state: { commit: string; dirty: boolean; committedAt?: string };
     // No folder: say it isn't cloned, not what git said about a folder that isn't there.
     if (!o.repoState && !(await stat(dir).catch(() => undefined))) {
       problems.push({
@@ -537,7 +548,11 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       continue;
     }
     try {
-      state = o.repoState ? await o.repoState(r.id, dir) : await checkoutState(dir);
+      // Atticus's own folder (a repo adopted in place keeps it there, and every scan writes it)
+      // doesn't make a clone dirty (ADR 0195 review of CS1).
+      state = o.repoState
+        ? await o.repoState(r.id, dir)
+        : await checkoutState(dir, undefined, { ignore: [".atticus/"] });
     } catch (e) {
       problems.push({
         repo: r.id,
@@ -660,8 +675,12 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: rej.extractor,
         message: `invalid record: ${rej.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`,
       });
+    // ADR 0195 point 1: no time of the run is written into a slot. The evidence a reader stamps
+    // is stamped with the time the commit fixes (its committer date), so the same commit read on
+    // any machine, cached or not, writes the same bytes.
+    const stamp = state.committedAt ?? o.scannedAt;
     const readerRecords = applyClients(
-      applyPrefixes(scan.records, settings.prefixes),
+      applyPrefixes(stamp ? scan.records.map((x) => restamp(x, stamp)) : scan.records, settings.prefixes),
       settings.clients,
     );
     // ADR 0195 point 1: a full read is an observation; anything less leaves the slot as it was.
@@ -676,6 +695,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       });
     else if (off.has("readers"))
       notObserved({ repo: r.id, full: false, why: "readers-off", ...stale });
+    else if (state.dirty)
+      // A clone with changes not committed: what it reads isn't the commit the slot would name.
+      notObserved({
+        repo: r.id,
+        full: false,
+        why: "dirty",
+        detail: "its clone has changes not committed",
+        ...stale,
+      });
     else if (refusedHere.length)
       notObserved({
         repo: r.id,
@@ -722,7 +750,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       const on = o.slots ? o.slots(disk) : disk;
       const readers = new Map(on.readers);
       for (const [repo, slot] of fresh)
-        readers.set(repo, readersSlotRead(serializeReadersSlot(slot)));
+        readers.set(repo, readersSlotRead(serializeReadersSlot(slot), repo));
       return { ...on, readers };
     },
     ...(o.curatedDir ? { curatedDir: o.curatedDir } : {}),
@@ -730,7 +758,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     ...(o.federated ? { federated: o.federated } : {}),
   });
   const build = await buildCatalog(inputs);
-  problems.push(...build.problems.filter((p) => !p.source.startsWith("org-pack/")));
+  // What the build says that the scan said already (the org pack, a framework model's tests) is said once.
+  const said = new Set(problems.map((p) => JSON.stringify([p.repo, p.source, p.message])));
+  for (const p of build.problems)
+    if (!said.has(JSON.stringify([p.repo, p.source, p.message]))) problems.push(p);
   for (const s of build.sources)
     if (s.source === "facts" && repos.some((r) => r.id === s.repo)) {
       basis[s.repo] = { from: "facts", unread: [] };

@@ -12,6 +12,7 @@ import {
   FACTS_SCHEMA_VERSION,
   parseFacts,
   parseRecord,
+  RecordId,
   SCHEMA_VERSION,
   serializeFacts,
   staleCite,
@@ -40,11 +41,18 @@ import { changesSince, type GitRunner } from "@maycombhq/workspace";
 export const SLOT_VERSION = 1 as const;
 /** The version of `catalog/sources/build.json`. */
 export const BUILD_MANIFEST_VERSION = 1 as const;
+/**
+ * The build's own version (ADR 0195 point 4, review of CS1): bumped whenever the build's passes
+ * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
+ * by it (`build.json`'s `buildVersion`).
+ */
+export const BUILD_VERSION = "2.0.0-beta.27.1";
 /** The version of `facts/<repo>.crosscheck.yaml`. */
 export const DISMISSALS_VERSION = 1 as const;
 
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/, "a SHA-256, 64 lowercase hex digits");
-const REPO = z.string().min(1);
+/** A repo id as the manifests hold it (a record id's slug). */
+const REPO = RecordId;
 /** The commit read; a legacy slot's may be `unknown` (ADR 0195 point 6). */
 const COMMIT = z.string().min(1);
 /** A record of contract C1, in its own shape at its own schemaVersion; checked with parseRecord. */
@@ -61,16 +69,27 @@ export const ReadersSlot = z
     commit: COMMIT,
     /** `read`: a full read. `legacy`: adopted by `atticus upgrade`. There is no partial. */
     status: z.enum(["read", "legacy"]),
-    /** Each extractor that ran, sorted. */
+    /** Each extractor that ran, sorted; none for a legacy slot (no reader ran). */
     extractors: z.array(z.strictObject({ id: z.string().min(1), version: z.string().min(1) })),
-    /** A hash of what steered the readers: the repo's scan settings, the rule files, the plugins and their pins. */
-    settings: SHA256,
+    /**
+     * A hash of what steered the readers: the repo's scan settings, the rule files, the plugins
+     * and their pins. Null for a legacy slot: nothing steered an adoption.
+     */
+    settings: SHA256.nullable(),
     /** The repo's records as the readers produced them, before the merge, sorted by kind then id. */
     records: z.array(RECORD),
   })
   .refine((s) => s.status === "legacy" || s.commit !== "unknown", {
     message: "a read slot names the commit it read",
     path: ["commit"],
+  })
+  .refine((s) => (s.status === "legacy") === (s.settings === null), {
+    message: "a read slot has a settings hash, and a legacy slot has none (null)",
+    path: ["settings"],
+  })
+  .refine((s) => s.status === "read" || s.extractors.length === 0, {
+    message: "a legacy slot lists no extractors: no reader ran",
+    path: ["extractors"],
   });
 export type ReadersSlotT = Omit<z.infer<typeof ReadersSlot>, "records"> & {
   records: CatalogRecord[];
@@ -105,6 +124,8 @@ export type LegacyJoinsSlotT = Omit<z.infer<typeof LegacyJoinsSlot>, "records"> 
 const HASHED = z.strictObject({ path: PATH, sha256: SHA256 });
 export const BuildManifest = z.strictObject({
   version: z.literal(BUILD_MANIFEST_VERSION),
+  /** The build that wrote it (`BUILD_VERSION`): a change of it explains a removal. */
+  buildVersion: z.string().min(1),
   /** Every file the last build wrote under catalog/generated/, with the sources it came from. */
   files: z.array(z.strictObject({ path: PATH, sha256: SHA256, sources: z.array(HASHED) })),
 });
@@ -113,7 +134,13 @@ export type BuildManifestT = z.infer<typeof BuildManifest>;
 export const CrossCheckDismissals = z.strictObject({
   version: z.literal(DISMISSALS_VERSION),
   /** Each dismissed cross-check item: its key, and the readers' value it was dismissed at. */
-  dismissed: z.array(z.strictObject({ key: z.string().min(1), readers: z.unknown() })),
+  dismissed: z.array(
+    z.strictObject({
+      key: z.string().min(1),
+      // Required: the readers' value it was dismissed at (null when they found none).
+      readers: z.unknown().refine((v) => v !== undefined, "the readers' value is required"),
+    }),
+  ),
 });
 export type CrossCheckDismissalsT = z.infer<typeof CrossCheckDismissals>;
 
@@ -192,6 +219,7 @@ export function serializeLegacyJoins(s: LegacyJoinsSlotT): string {
 export function serializeBuildManifest(m: BuildManifestT): string {
   return json({
     version: m.version,
+    buildVersion: m.buildVersion,
     files: [...m.files]
       .sort((a, b) => cmpText(a.path, b.path))
       .map((f) => ({
@@ -248,13 +276,36 @@ function parseRecords(
   return issues.length ? { ok: false, issues } : { ok: true, records };
 }
 
-export function parseReadersSlot(text: string): SlotParse<ReadersSlotT> {
+export function parseReadersSlot(text: string, repo?: string): SlotParse<ReadersSlotT> {
   const j = parseJson(text);
   if (!j.ok) return j;
   const s = ReadersSlot.safeParse(j.value);
   if (!s.success) return { ok: false, issues: zodIssues(s.error) };
   const r = parseRecords(s.data.records);
-  return r.ok ? { ok: true, slot: { ...s.data, records: r.records } } : r;
+  if (!r.ok) return r;
+  // The slot is one repo's (locality rests on it): its file's name, and every record's evidence.
+  const issues: Issue[] = [];
+  if (repo !== undefined && s.data.repo !== repo)
+    issues.push({ path: "repo", message: `names ${s.data.repo}, but the file is ${repo}'s` });
+  if (s.data.status === "read")
+    r.records.forEach((rec, i) => {
+      const other = rec.evidence.find((e) => e.repo !== undefined && e.repo !== s.data.repo);
+      if (other)
+        issues.push({
+          path: `records.${i}.evidence`,
+          message: `cites ${other.repo}, not the slot's repo ${s.data.repo}`,
+        });
+    });
+  return issues.length ? { ok: false, issues } : { ok: true, slot: { ...s.data, records: r.records } };
+}
+
+/** A repo's readers slot as stored, checked against its file name and its records' evidence. */
+export async function readReadersSlot(
+  root: string,
+  repo: string,
+): Promise<SlotParse<ReadersSlotT> | undefined> {
+  const text = await readFile(readersSlotPath(root, repo), "utf8").catch(() => undefined);
+  return text === undefined ? undefined : parseReadersSlot(text, repo);
 }
 
 export function parseFactsSlotMeta(text: string): SlotParse<FactsSlotMetaT> {
@@ -373,7 +424,13 @@ export async function writeSlotFile(path: string, text: string): Promise<"writte
 
 /** Why a scan has no observation of a repo: anything less than a full read writes nothing. */
 export type NotObserved =
-  "not-cloned" | "unreadable" | "run-failed" | "not-asked" | "plugin-refused" | "readers-off";
+  | "not-cloned"
+  | "unreadable"
+  | "run-failed"
+  | "not-asked"
+  | "plugin-refused"
+  | "readers-off"
+  | "dirty";
 
 /** What a scan observed of a production repo: its full read, as a slot, or why there is none. */
 export type ReadersObservation =
@@ -420,6 +477,12 @@ export async function writeReadersSlots(
       continue;
     }
     const text = serializeReadersSlot(x.slot);
+    // A writer reads back what it serialized before writing it: a slot that doesn't read is a bug.
+    const back = parseReadersSlot(text, x.repo);
+    if (!back.ok)
+      throw new Error(
+        `The readers slot of ${x.repo} doesn't read back: ${back.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`,
+      );
     if (onDisk?.replace(/\r\n?/g, "\n") === text) {
       out.push({ repo: x.repo, slot: "unchanged", commit: x.slot.commit });
       continue;

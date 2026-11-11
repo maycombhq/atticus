@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import {
   factsDirOf,
   factsRelOf,
@@ -116,6 +116,8 @@ const linkView = (l: LinkView): LinkView => ({
   ...(l.was ? { was: l.was } : {}),
 });
 
+const posixRel = (root: string, p: string) => relative(root, p).split(sep).join("/");
+
 /**
  * The preview of `atticus verify <repo> --write` after a correction, with the commands. Undefined
  * when the repo has no facts file (the route says 404).
@@ -133,16 +135,7 @@ export async function verifyWritePreview(
   if (text === undefined) return undefined;
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const host = op?.runtime.adapters.gitHost?.type;
-  // ADR 0195 (CS1): a --write that succeeds also takes the facts snapshot and its meta.
-  const { sourcesRelOf } = await import("@maycombhq/scanner");
-  const snapshot = `${sourcesRelOf(root)}/facts/${repo}`;
-  const base = [
-    wrote,
-    `${rel}/${repo}.jsonl`,
-    `${rel}/${repo}.verify.yaml`,
-    `${snapshot}.jsonl`,
-    `${snapshot}.meta.json`,
-  ];
+  const base = [wrote, `${rel}/${repo}.jsonl`, `${rel}/${repo}.verify.yaml`];
   const plain = (files: string[], unavailable?: View["unavailable"]): View => ({
     repo,
     wrote,
@@ -257,6 +250,19 @@ export async function verifyWritePreview(
     .map((r) => `${catalogRel}/generated/${recordPath(r as { kind: never; id: string })}`)
     .sort();
   files.push(...new Set(recordFiles));
+  // ADR 0195: a --write that succeeds takes the facts snapshot and its meta, and writes the build
+  // manifest; each is listed only when it would change (a prototype's write takes none).
+  const { isPrototypeRepo } = await import("@maycombhq/scanner");
+  if (!(op && isPrototypeRepo(op, repo))) {
+    for (const w of p.snap) {
+      const now = await readFile(w.path, "utf8").catch(() => undefined);
+      if (now?.replace(/\r\n?/g, "\n") !== w.text) files.push(posixRel(root, w.path));
+    }
+    const { buildManifestPath, serializeBuildManifest } = await import("@maycombhq/scanner");
+    const m = await readFile(buildManifestPath(root), "utf8").catch(() => undefined);
+    if (m?.replace(/\r\n?/g, "\n") !== serializeBuildManifest(p.build.manifest))
+      files.push(posixRel(root, buildManifestPath(root)));
+  }
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))
     files.push(specRelOf(root, repo));

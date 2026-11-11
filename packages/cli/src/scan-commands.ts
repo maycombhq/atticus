@@ -110,8 +110,12 @@ export function scanRefusal(
  */
 export interface ScanSource {
   repo: string;
-  source: "facts" | "readers" | "none";
+  /** What the build took its records from. */
+  source: "facts" | "readers" | "legacy" | "none";
+  /** The commit of that source (the facts snapshot's, or the readers slot's). */
+  sourceCommit?: string;
   slot: ReadersSlotOutcome["slot"];
+  /** The commit of the readers slot on disk after the scan (written, unchanged or kept). */
   commit?: string;
   reason?: ReadersSlotOutcome["reason"];
   detail?: string;
@@ -119,16 +123,20 @@ export interface ScanSource {
 }
 
 export function scanSources(
-  scan: Pick<EstateScan, "observations" | "basis">,
+  scan: Pick<EstateScan, "observations" | "basis"> & {
+    build?: Pick<EstateScan["build"], "sources">;
+  },
   slots: readonly ReadersSlotOutcome[],
 ): ScanSource[] {
   return scan.observations.map((o) => {
     const s = slots.find((x) => x.repo === o.repo);
-    const read =
-      o.full || (o.why !== "not-cloned" && o.why !== "unreadable" && o.why !== "not-asked");
+    // What the build took the repo's records from (ADR 0195 point 5): its facts snapshot, its
+    // readers slot (this read or its last good one), a legacy slot, or none.
+    const built = scan.build?.sources.find((x) => x.repo === o.repo);
     return {
       repo: o.repo,
-      source: read ? (scan.basis?.[o.repo]?.from ?? "readers") : "none",
+      source: built?.source ?? "none",
+      ...(built?.commit ? { sourceCommit: built.commit } : {}),
       slot: s?.slot ?? "none",
       ...(s?.commit ? { commit: s.commit } : {}),
       ...(s?.reason ? { reason: s.reason } : {}),
@@ -155,6 +163,8 @@ function keptWhy(s: Pick<ScanSource, "reason" | "detail">): string {
       return `a plugin that applies to it isn't used (${s.detail ?? "a plugin"})`;
     case "readers-off":
       return "the readers are switched off (ATTICUS_HELPERS_OFF=readers)";
+    case "dirty":
+      return "its clone has changes not committed (commit or stash them, then scan again)";
     case "refused":
       return "the scan wrote nothing";
     case "dry-run":
@@ -275,7 +285,11 @@ export function scanSummaryLines(report: Record<string, unknown>): string[] {
   // ADR 0195: the readers slots and any stale facts snapshot, as the command says them.
   if (Array.isArray(report.sources))
     out.push(
-      ...sourceLines("catalog/sources", report.sources as ScanSource[], report.written === true),
+      ...sourceLines(
+        typeof report.sourcesDir === "string" ? report.sourcesDir : "catalog/sources",
+        report.sources as ScanSource[],
+        report.written === true,
+      ),
     );
   if (typeof refusal?.message === "string") out.push(...refusal.message.split("\n"));
   return out;
@@ -468,6 +482,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           written: write !== undefined,
           files: write ?? null,
           sources,
+          sourcesDir: sourcesRelOf(root),
           removed: (w?.removals ?? []).map((x) => ({
             kind: x.kind,
             id: x.id,
