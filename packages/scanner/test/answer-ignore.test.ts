@@ -3,9 +3,11 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   forwardHostQuestion,
+  HOSTS_OUTSIDE_VENDOR,
   ignoreOption,
   loadOrgPack,
   NO_TARGET,
+  outsideSystemOfJoinHost,
   parseFacts,
   type Fact,
   type OrgPack,
@@ -106,5 +108,29 @@ describe("an Ignore answer (beta.24 review)", () => {
         "c-archive": NO_TARGET,
       });
     }
+  });
+
+  it("joins an outside system's answer for a `??` host to the system named by the whole host (beta.25)", () => {
+    const answeredOutside = (host: string, i: number) =>
+      ({
+        id: `q-join-host-${i}`,
+        repo: "forge-notes",
+        state: "answered",
+        question: forwardHostQuestion(host, "forge-notes"),
+        options: [
+          { label: HOSTS_OUTSIDE_VENDOR, means: "a vendor's", changes: "a system" },
+          ignoreOption(),
+        ],
+        evidence: ["web/src/notes/notes-api.ts:99"],
+        answer: { option: 1, by: "pat", at: "2026-11-10T12:00:00.000Z" },
+        askedBy: { step: TARGETS_STEP },
+      }) as unknown as Question;
+    const ids = ["${A_URL ?? B_URL}", "${A_URL ?? C_URL}"].map((host, i) => {
+      const facts = notes().map((f) => (f.id === "c-archive" ? ({ ...f, host } as Fact) : f));
+      const t = targetsFromAnswers("forge-notes", facts, [answeredOutside(host, i)]);
+      expect(t, host).toEqual({ "c-archive": outsideSystemOfJoinHost(host).id });
+      return t["c-archive"];
+    });
+    expect(new Set(ids).size).toBe(2);
   });
 });

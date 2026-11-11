@@ -523,7 +523,8 @@ export const Problem = z.object({
   next: NextStep.optional(),
   /**
    * 3.11.0 (beta.25): for a 500 that wrote only part of what was asked, the files left written
-   * (each in the metarepo, or in `repo`'s working copy), so the app reads them again.
+   * (each in the metarepo, or in `repo`'s working copy), so the app reads them again; empty when a
+   * write failed and all that was written was put back.
    */
   written: z.array(z.object({ repo: z.string().optional(), file: z.string() })).optional(),
 });

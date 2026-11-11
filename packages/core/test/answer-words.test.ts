@@ -8,8 +8,12 @@ import {
   answerQuestion,
   Api,
   editProfileSystem,
+  HOSTS_OUTSIDE_VENDOR,
   HOSTS_STEP,
+  hostQuestionText,
   IGNORE_REASON_MAX,
+  outsideSystemOfJoinHost,
+  questionFileText,
   ignoredAnswer,
   nameReadsAsSentence,
   ProfileEditError,
@@ -362,6 +366,69 @@ describe("join questions read back (beta.25)", () => {
     const body = (n: number) => ({ ignore: true, reason: "x".repeat(n) });
     expect(Api.AnswerQuestionRequest.safeParse(body(IGNORE_REASON_MAX)).success).toBe(true);
     expect(Api.AnswerQuestionRequest.safeParse(body(IGNORE_REASON_MAX + 1)).success).toBe(false);
+  });
+});
+
+describe("a join host with a `?` in it (beta.25, pre-merge review)", () => {
+  const A = "${A_URL ?? B_URL}";
+  const C = "${A_URL ?? C_URL}";
+  const tokenDraft = (host: string, line: number) => ({
+    question: forwardHostQuestion(host, "forge-proxy"),
+    options: [
+      { label: "forge-cards", means: "it serves it", changes: "joins it" },
+      { label: HOSTS_OUTSIDE_VENDOR, means: "a vendor's", changes: "a system" },
+      { label: "None of these", means: "nothing", changes: "a loose end" },
+    ],
+    evidence: [`apiproxy/targets/TE-Vendor.xml:${line}`],
+    scope: "repo" as const,
+  });
+
+  it("reads the host back whole, as the join wrote it", () => {
+    for (const host of [A, "${PROD ? A_URL : B_URL}", "{{ url }}?", "{{ vendor_url }}"]) {
+      expect(joinHostOfQuestion({ question: forwardHostQuestion(host, "forge-proxy") }), host).toBe(
+        host,
+      );
+      expect(joinHostOfQuestion({ question: hostQuestionText(host) }), host).toBe(host);
+    }
+  });
+
+  it("names an outside system by the whole host, and two such hosts as two systems", async () => {
+    const root = await metarepo();
+    const [a, c] = (
+      await raiseQuestions(root, [tokenDraft(A, 4), tokenDraft(C, 8)], by(TARGETS_STEP_ID))
+    ).raised;
+    const ra = await answerQuestion(root, a!.id, { option: 2, by: "pat", at: AT });
+    const rc = await answerQuestion(root, c!.id, { option: 2, by: "pat", at: AT });
+    expect(ra.system).toMatchObject({ host: A, boundary: "vendor", added: true });
+    expect(rc.system).toMatchObject({ host: C, boundary: "vendor", added: true });
+    expect(ra.system!.id).not.toBe(rc.system!.id);
+    const systems = (
+      parse(await readFile(join(root, ...PROFILE), "utf8")) as {
+        systems: { id: string; name: string }[];
+      }
+    ).systems;
+    const of = (id: string) => systems.find((s) => s.id === id);
+    expect(of(ra.system!.id)).toMatchObject(outsideSystemOfJoinHost(A));
+    expect(of(rc.system!.id)).toMatchObject(outsideSystemOfJoinHost(C));
+    expect(systems.some((s) => s.name === "${A_URL ?")).toBe(false);
+  });
+});
+
+describe("an answer says what it wrote (beta.25, pre-merge review)", () => {
+  it("tells `wrote` its question file and the exact text, as the file holds it", async () => {
+    const { root, q } = await asked();
+    const seen: { file: string; text: string }[] = [];
+    const r = await answerQuestion(root, q.id, {
+      text: "northwind-pay",
+      by: "pat",
+      at: AT,
+      wrote: (file, text) => {
+        seen.push({ file, text });
+      },
+    });
+    const file = join(root, "questions", `${q.id}.yaml`);
+    expect(seen).toEqual([{ file, text: questionFileText(r.question) }]);
+    expect(await readFile(file, "utf8")).toBe(seen[0]!.text);
   });
 });
 

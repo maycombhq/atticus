@@ -175,15 +175,24 @@ export async function routeQuestion(
 const fileOf = (root: string, id: string) => join(questionsDirOf(root), `${id}.yaml`);
 
 /**
- * Write a question's file. With `before` (the text it was read as), only when the file still
- * holds that text: a change made meanwhile (a person's answer in the app, another command) is
- * never overwritten, and FileChangedError says so instead (round 46).
+ * The text of a question's file, exactly as Atticus writes it: the same question always gives the
+ * same text (beta.25: a caller can tell its own write from another writer's).
  */
-async function write(root: string, q: Question, before?: { text: string }): Promise<void> {
+export function questionFileText(q: Question): string {
+  return `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
+}
+
+/**
+ * Write a question's file, and return the text written. With `before` (the text it was read as),
+ * only when the file still holds that text: a change made meanwhile (a person's answer in the
+ * app, another command) is never overwritten, and FileChangedError says so instead (round 46).
+ */
+async function write(root: string, q: Question, before?: { text: string }): Promise<string> {
   await mkdir(questionsDirOf(root), { recursive: true });
-  const text = `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
+  const text = questionFileText(q);
   if (before) await writeFileIfUnchanged(fileOf(root, q.id), before.text, text);
   else await writeFileAtomic(fileOf(root, q.id), text);
+  return text;
 }
 
 /** A question and the text it was read from, for a write back that checks nothing changed. */
@@ -1081,6 +1090,13 @@ export interface AnswerInput {
    * words name, so they aren't refused as naming nothing.
    */
   adds?: string;
+  /**
+   * Beta.25 (pre-merge review): told of each file the answer writes, its question file and its
+   * skill file, with the exact text written, as soon as it is written: before the answer returns,
+   * and whether or not a later write of it fails. A caller that puts back what it wrote (Map ›
+   * Trust's fix of a box) tells its own text from a change someone made just after.
+   */
+  wrote?: (file: string, text: string) => void | Promise<void>;
 }
 
 /**
@@ -1319,7 +1335,8 @@ export async function answerQuestion(
   }
   // Round 46: only over the file as it was read, so the AI's batch never overwrites a person's
   // answer given meanwhile (FileChangedError, 409 in the app).
-  await write(root, answered, read);
+  const fileText = await write(root, answered, read);
+  await a.wrote?.(fileOf(root, answered.id), fileText);
   // ADR 0153 (Q2): the other open hosts questions the pattern covers are answered by it now.
   const covered: string[] = [];
   if (hosts && match && !isPathMatch(match))
@@ -1350,7 +1367,9 @@ export async function answerQuestion(
   // The question is answered already: an edit of the skill file meanwhile is read again once,
   // and the answer's line goes in that (it replaces its own line by its marker).
   try {
-    await writeFileIfUnchanged(file, body, withSkillAnswer(body, answered));
+    const text = withSkillAnswer(body, answered);
+    await writeFileIfUnchanged(file, body, text);
+    await a.wrote?.(file, text);
   } catch (e) {
     if (!(e instanceof FileChangedError)) throw e;
     // Gone, or changed again: the answer stands; the skill file says it next time.
@@ -1358,7 +1377,9 @@ export async function answerQuestion(
     if (now === undefined)
       return { question: answered, ...extra, skill: { path: skill, written: false } };
     try {
-      await writeFileIfUnchanged(file, now, withSkillAnswer(now, answered));
+      const text = withSkillAnswer(now, answered);
+      await writeFileIfUnchanged(file, now, text);
+      await a.wrote?.(file, text);
     } catch (again) {
       if (again instanceof FileChangedError)
         return { question: answered, ...extra, skill: { path: skill, written: false } };

@@ -550,6 +550,9 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
           written: e.written.map((file) => ({ file })),
         });
       }
+      // Pre-merge review: a write failed and all of it was put back: nothing is written.
+      if (e.code === "failed")
+        throw new HttpError(500, "Atticus couldn't write it", e.message, { written: [] });
       throw badRequest(e.message);
     }
     if (e instanceof FileChangedError) throw conflict(e.message);

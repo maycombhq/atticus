@@ -303,15 +303,28 @@ export function hostOfQuestion(q: { question: string }): string | undefined {
 }
 
 /**
+ * The words after a gateway's token host in the join's question (`forwardHostQuestion`): the
+ * gateway repo, then these. Beta.25: the host is read back up to them, so a host with a `?` in it
+ * is read whole.
+ */
+export const TOKEN_HOST_WORDS = "'s target URL is a token no fact sets.";
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const JOIN_HOST = new RegExp(
+  `^Which repo answers on (\\S(?:.*?\\S)?)\\?(?:$|\\s\\S+${escapeRe(TOKEN_HOST_WORDS)})`,
+);
+
+/**
  * Beta.24 review: the host a targets question the join raised for a host nothing resolves asks
  * about (a gateway's forwarding call whose target URL is a token, `@targetUrl@`): its words start
  * as a hosts question's do, and may go on to say what to do next (`forwardHostQuestion`). A
  * targets question asked of a call (`Which repo or system answers ...`) has none. Beta.25: the
- * host up to the first `?` that ends the question, so a token with spaces in it (`{{ vendor_url
- * }}`, as `forwardHostQuestion` writes it) is read back whole.
+ * host is what comes before the `?` that ends the question, or before the words that follow it
+ * (`<repo>'s target URL is a token no fact sets.`), so a token with spaces in it (`{{ vendor_url
+ * }}`) or a `?` (`${A_URL ?? B_URL}`) is read back whole.
  */
 export function joinHostOfQuestion(q: { question: string }): string | undefined {
-  return /^Which repo answers on (\S(?:.*?\S)?)\?(?:\s|$)/.exec(q.question.trim())?.[1];
+  return JOIN_HOST.exec(q.question.trim())?.[1];
 }
 
 /** A host still written as a whole token: `@targetUrl@`, `{{host}}`, `${HOST}` (its name). */

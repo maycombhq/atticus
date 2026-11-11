@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { CatalogRecord } from "./catalog.js";
 import { callPath, catalogAuth, entryEndpointId, factIdPart } from "./facts.js";
-import { hostQuestionText } from "./host-questions.js";
+import { hostQuestionText, TOKEN_HOST_WORDS } from "./host-questions.js";
 import { interfaceId, normalizePath } from "./identity.js";
 import type { EvidenceT } from "./schema/common.js";
 import type { Fact, FactOf } from "./schema/facts.js";
@@ -761,7 +761,7 @@ export function callTargetQuestion(f: Call, component: string): string {
  */
 export function forwardHostQuestion(host: string, repo: string): string {
   if (!placeholderIn(host)) return hostQuestionText(host);
-  return `Which repo answers on ${host}? ${repo}'s target URL is a token no fact sets. If a deploy file sets it per environment (the Apigee config plugin's config.json), read ${repo} again with your assistant (Read with my assistant): the read records each environment's value, and the calls join where they go. Else name the repo or the outside system that answers.`;
+  return `${hostQuestionText(host)} ${repo}${TOKEN_HOST_WORDS} If a deploy file sets it per environment (the Apigee config plugin's config.json), read ${repo} again with your assistant (Read with my assistant): the read records each environment's value, and the calls join where they go. Else name the repo or the outside system that answers.`;
 }
 
 /** The question for a call whose gateway routes lead back where they came from (A-gateway2). */

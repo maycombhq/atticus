@@ -1,7 +1,7 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import {
   Api,
@@ -15,6 +15,22 @@ import {
 } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiTrustRoutes } from "../src/ui-api-trust.js";
+
+// An answer's later write failing once its question file is written (a skill file's EPERM).
+const failing = vi.hoisted(() => ({ afterAnswer: undefined as undefined | Error }));
+vi.mock("@maycombhq/core", async (orig) => {
+  const m = await orig<typeof import("@maycombhq/core")>();
+  return {
+    ...m,
+    answerQuestion: async (...args: Parameters<typeof m.answerQuestion>) => {
+      const r = await m.answerQuestion(...args);
+      const e = failing.afterAnswer;
+      failing.afterAnswer = undefined;
+      if (e) throw e;
+      return r;
+    },
+  };
+});
 
 /**
  * Beta.24 review: Map › Trust lists the boxes an answer's words made (a system of a profile, an
@@ -207,6 +223,32 @@ describe("boxes made from an answer's words (beta.24 review)", () => {
     expect(r.status).toBe(422);
     expect(Api.Problem.parse(r.body).detail).toMatch(/anchor &own.*by hand/);
     expect(await readFile(file, "utf8")).toContain("&own");
+  });
+
+  it("answers 500 naming nothing written when a write failed and was put back (pre-merge review)", async () => {
+    const words = "this is a box whose write fails";
+    const { raised } = await raiseQuestions(root, [draft("/fails", 40)], {
+      step: TARGETS_STEP_ID,
+      repo: "forge-payments",
+      command: "atticus verify forge-payments --write",
+      rerun: "atticus verify forge-payments --write",
+      at: AT,
+    });
+    await writeQuestion(root, answeredWith(raised[0]!, words));
+    const qf = join(root, "questions", `${raised[0]!.id}.yaml`);
+    const before = await readFile(qf, "utf8");
+    failing.afterAnswer = Object.assign(new Error("EBUSY: resource busy or locked"), {
+      code: "EBUSY",
+      syscall: "rename",
+    });
+    const r = await call("POST", "/api/trust/answer-boxes/ignore", {
+      id: "this-is-a-box-whose-write-fails",
+    });
+    expect(r.status).toBe(500);
+    const p = Api.Problem.parse(r.body);
+    expect(p.written).toEqual([]);
+    expect(p.detail).toMatch(/EBUSY.*put back/);
+    expect(await readFile(qf, "utf8")).toBe(before);
   });
 
   it("declares the files a 500 left written on the problem (beta.25)", () => {

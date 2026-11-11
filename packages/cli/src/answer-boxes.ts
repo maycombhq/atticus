@@ -16,6 +16,8 @@ import {
   nameReadsAsSentence,
   namesKnown,
   orgPackDirOf,
+  ProfileEditError,
+  QuestionError,
   questionsDirOf,
   QUICK_WRITE_LOCK,
   readsAsSentence,
@@ -50,9 +52,10 @@ export class AnswerBoxError extends Error {
     /**
      * not-found: no such box; bad: the fix can't be made; changed: a file changed since it was read
      * (or since the preview), nothing written; partial: a write failed and some files couldn't be
-     * put back (`written` names them).
+     * put back (`written` names them); failed: a write failed (EPERM, EBUSY, ENOSPC) and every
+     * file the fix wrote was put back, nothing written (`written` is empty).
      */
-    readonly code: "not-found" | "bad" | "changed" | "partial",
+    readonly code: "not-found" | "bad" | "changed" | "partial" | "failed",
     message: string,
     readonly written: string[] = [],
   ) {
@@ -164,10 +167,18 @@ function stampOf(root: string, snap: Snap): string {
 const relOf = (root: string, f: string) => relative(root, f).split("\\").join("/");
 
 /**
- * What a fix wrote to a file, recorded as it writes it (the text given, or else the file as it is
- * just after the write): a put back after a failure touches only a file that still holds that.
+ * What a fix wrote to a file, recorded as soon as it is written: the exact text (an answer's, as
+ * answerQuestion says it wrote it, before it returns or fails). A put back after a failure
+ * touches only a file that still holds that text, so a change someone made just after is kept.
  */
-type Wrote = (file: string, text?: string) => Promise<void>;
+type Wrote = (file: string, text: string) => void;
+
+/** A refusal in words (the route answers 422), not a write that failed. */
+const isRefusal = (e: unknown) =>
+  e instanceof QuestionError ||
+  e instanceof ProfileEditError ||
+  e instanceof AnswerBoxError ||
+  (e instanceof Error && / would not be valid: /.test(e.message));
 
 /**
  * Write a fix all or none, as far as Atticus can: each file it writes held (`<file>.lock`, which
@@ -198,9 +209,9 @@ async function allOrNone(
           "changed",
           `${relOf(root, f)} changed since it was read (another edit, or a person's): nothing was written. Look at the change again and redo it.`,
         );
-    const ours = new Map<string, string | undefined>();
-    const wrote: Wrote = async (file, text) => {
-      ours.set(file, text ?? (await readFile(file, "utf8").catch(() => undefined)));
+    const ours = new Map<string, string>();
+    const wrote: Wrote = (file, text) => {
+      ours.set(file, text);
     };
     try {
       await work(wrote);
@@ -246,23 +257,16 @@ async function allOrNone(
           "changed",
           `${relOf(root, e.path)} changed since it was read (another edit, or a person's): nothing of the fix was written, and what it wrote before was put back.${left} Look at the change again and redo it.`,
         );
-      throw e;
+      if (isRefusal(e)) throw e;
+      // Pre-merge review: a write that failed (a skill file's EPERM after the answer's question
+      // file was written), everything the fix wrote put back: said, never a raw error.
+      throw new AnswerBoxError(
+        "failed",
+        `The fix couldn't be written (${why}): nothing of it is written, and what it wrote before was put back.${left} Try it again.`,
+      );
     }
   };
   await hold(0);
-}
-
-/**
- * Record what an answer wrote: its question file, and its skill file when it wrote that, each as
- * it is just after the write (answerQuestion writes them itself).
- */
-async function answered(
-  root: string,
-  wrote: Wrote,
-  r: { question: Question; skill?: { path: string; written: boolean } },
-): Promise<void> {
-  await wrote(join(questionsDirOf(root), `${r.question.id}.yaml`));
-  if (r.skill?.written) await wrote(join(root, ...r.skill.path.split("/")));
 }
 
 /** A write asked for over files that changed since its preview: nothing is written. */
@@ -303,21 +307,19 @@ export async function ignoreAnswerBox(
   const stamp = checkStamp(root, snap, o.stamp);
   if (!o.preview)
     await allOrNone(root, snap, async (wrote) => {
+      // Each file an answer writes is recorded, with its text, as answerQuestion writes it.
       for (const q of qs)
-        await answered(
-          root,
+        await answerQuestion(root, q.id, {
+          ignore: { reason: ignoreReason(wordsOf(q) ?? "") },
+          scope: q.answer!.scope.level,
+          ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
+          by: o.by,
+          at: o.at,
           wrote,
-          await answerQuestion(root, q.id, {
-            ignore: { reason: ignoreReason(wordsOf(q) ?? "") },
-            scope: q.answer!.scope.level,
-            ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
-            by: o.by,
-            at: o.at,
-          }),
-        );
+        });
       if (profile) {
         await writeFileIfUnchanged(profile.file, profile.before, profile.after);
-        await wrote(profile.file, profile.after);
+        wrote(profile.file, profile.after);
       }
     });
   return {
@@ -395,23 +397,20 @@ export async function renameAnswerBox(
   if (!o.preview)
     await allOrNone(root, snap, async (wrote) => {
       for (const q of qs)
-        await answered(
-          root,
+        await answerQuestion(root, q.id, {
+          text: to,
+          // A new system the profile gains is named by the answer, so it isn't refused.
+          ...(known ? {} : { adds: to }),
+          scope: q.answer!.scope.level,
+          ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
+          ...(q.answer!.match ? { match: q.answer!.match } : {}),
+          by: o.by,
+          at: o.at,
           wrote,
-          await answerQuestion(root, q.id, {
-            text: to,
-            // A new system the profile gains is named by the answer, so it isn't refused.
-            ...(known ? {} : { adds: to }),
-            scope: q.answer!.scope.level,
-            ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
-            ...(q.answer!.match ? { match: q.answer!.match } : {}),
-            by: o.by,
-            at: o.at,
-          }),
-        );
+        });
       if (profile) {
         await writeFileIfUnchanged(profile.file, profile.before, profile.after);
-        await wrote(profile.file, profile.after);
+        wrote(profile.file, profile.after);
       }
     });
   return {

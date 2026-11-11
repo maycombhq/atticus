@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -25,15 +25,26 @@ import {
 // The write a test makes fail: the profile's, after the answers are written. `race` is another
 // writer (an answer in the CLI, which takes no lock) changing files just before it: the profile
 // (so the fix's write of it fails), or a question file the fix has written already.
+// `afterAnswer` runs once just after an answer is written (its question file on disk): it can
+// throw, as answerQuestion does when its skill file's write fails (EPERM, EBUSY, ENOSPC), or be a
+// person's change to the file before the fix reads anything back.
 const failing = vi.hoisted(() => ({
   profile: false,
   race: undefined as undefined | { file: string; add: string }[],
+  afterAnswer: undefined as undefined | ((root: string, id: string) => Promise<void>),
 }));
 vi.mock("@maycombhq/core", async (orig) => {
   const m = await orig<typeof import("@maycombhq/core")>();
   const { appendFile } = await import("node:fs/promises");
   return {
     ...m,
+    answerQuestion: async (...args: Parameters<typeof m.answerQuestion>) => {
+      const r = await m.answerQuestion(...args);
+      const after = failing.afterAnswer;
+      failing.afterAnswer = undefined;
+      if (after) await after(args[0], args[1]);
+      return r;
+    },
     writeFileIfUnchanged: async (path: string, before: string | undefined, data: string) => {
       if (failing.race && path.endsWith("profile.yaml")) {
         const race = failing.race;
@@ -260,6 +271,50 @@ describe("a fix writes all or none (beta.25)", () => {
     expect(q).toContain("# a person's note");
     expect(q).toContain("Ignore:");
     expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(pBefore);
+  });
+
+  it("puts back the question file an answer wrote before it failed, and says so (pre-merge review)", async () => {
+    const root = await metarepo([CICD_SYSTEM]);
+    const a = await answeredWith(root, targets("/build/hooks", 12), CICD);
+    const qf = join(root, "questions", `${a.id}.yaml`);
+    const qBefore = await readFile(qf, "utf8");
+    const pBefore = await readFile(join(root, ...PROFILE), "utf8");
+    // The answer's question file is written, then its skill file's write fails.
+    failing.afterAnswer = () =>
+      Promise.reject(
+        Object.assign(new Error("EPERM: operation not permitted, rename 'skills/forge.md'"), {
+          code: "EPERM",
+          syscall: "rename",
+        }),
+      );
+    const err = await ignoreAnswerBox(root, CICD, { by: "pat", at: AT }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(AnswerBoxError);
+    expect(err).toMatchObject({ code: "failed", written: [] });
+    expect((err as Error).message).toMatch(/EPERM/);
+    expect((err as Error).message).toMatch(/put back/);
+    expect((err as Error).message).not.toMatch(/someone else/);
+    expect(await readFile(qf, "utf8")).toBe(qBefore);
+    expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(pBefore);
+  });
+
+  it("keeps a person's change made just after the answer was written, when a later write fails (pre-merge review)", async () => {
+    const root = await metarepo([CICD_SYSTEM]);
+    const a = await answeredWith(root, targets("/build/hooks", 12), CICD);
+    const qf = join(root, "questions", `${a.id}.yaml`);
+    // A person adds a note right after the answer is written, before the fix reads anything.
+    failing.afterAnswer = (r, id) =>
+      appendFile(join(r, "questions", `${id}.yaml`), "# a person's note\n");
+    failing.profile = true;
+    try {
+      const err = await ignoreAnswerBox(root, CICD, { by: "pat", at: AT }).catch((e: Error) => e);
+      expect(err).toMatchObject({ code: "partial", written: [`questions/${a.id}.yaml`] });
+      expect((err as Error).message).toMatch(/someone else after the fix wrote it/);
+    } finally {
+      failing.profile = false;
+    }
+    const q = await readFile(qf, "utf8");
+    expect(q).toContain("# a person's note");
+    expect(q).toContain("Ignore:");
   });
 
   it("refuses a write over files changed since its preview, writing nothing", async () => {
