@@ -9,24 +9,49 @@ const T = COPY.palette;
 export const OPEN_PALETTE = "atticus:open-palette";
 
 interface Item {
-  kind: "screen" | "change" | "record" | "ask";
+  kind: "screen" | "change" | "record" | "ask" | "command";
   label: string;
   detail: string;
   href: string;
+  /** A command's: what it does, in place of opening an address. */
+  run?: () => void;
+}
+
+/** ADR 0194: something Ctrl+K does rather than opens (Switch to the classic layout). */
+export interface PaletteCommand {
+  label: string;
+  detail: string;
+  run: () => void;
+  /** Other words it is found by. */
+  also?: readonly string[];
 }
 
 /**
  * Pure: the palette's items for what was typed, screens first. Every page, More pages' too, with
- * or without `atticus ui --full` (2026-10-25: anything that exists is findable). Exported for tests.
+ * or without `atticus ui --full` (2026-10-25: anything that exists is findable). Commands come
+ * first once something is typed that names them (ADR 0194), never on an empty box, so Enter on
+ * opening it never runs one. Exported for tests.
  */
 export function paletteItems(
   text: string,
   changes: { id: string; title: string; state: string }[],
   records: { kind: string; id: string; name?: string }[],
+  commands: readonly PaletteCommand[] = [],
 ): Item[] {
   const t = text.trim().toLowerCase();
   const hit = (s: string) => !t || s.toLowerCase().includes(t);
   const out: Item[] = [
+    ...(t
+      ? commands
+          .filter((c) => hit(c.label) || (c.also ?? []).some(hit))
+          .map((c) => ({
+            kind: "command" as const,
+            label: c.label,
+            detail: c.detail,
+            href: "",
+            run: c.run,
+          }))
+      : []),
     ...SCREENS.filter((s) => hit(s.label) || hit(s.id) || (s.also ?? []).some(hit)).map((s) => ({
       kind: "screen" as const,
       label: s.label,
@@ -63,8 +88,14 @@ export function paletteItems(
   return out.slice(0, 14);
 }
 
-/** Ctrl+K (Cmd+K): jump to any screen, change or catalog record, or ask a question. */
-export function CommandPalette() {
+/**
+ * Ctrl+K (Cmd+K): jump to any screen, change or catalog record, ask a question, or run one of
+ * `commands`. `placeholder`: the box's example (the IDE layout's, from the person's catalog).
+ */
+export function CommandPalette({
+  commands = [],
+  placeholder,
+}: { commands?: readonly PaletteCommand[]; placeholder?: string } = {}) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [sel, setSel] = useState(0);
@@ -124,13 +155,21 @@ export function CommandPalette() {
     };
   }, [text, open]);
 
-  const items = useMemo(() => paletteItems(text, changes, records), [text, changes, records]);
+  const items = useMemo(
+    () => paletteItems(text, changes, records, commands),
+    [text, changes, records, commands],
+  );
   const close = () => {
     setOpen(false);
     (back.current as HTMLElement | null)?.focus?.();
   };
   const go = (i: Item | undefined) => {
     if (!i) return;
+    if (i.run) {
+      close();
+      i.run();
+      return;
+    }
     location.hash = i.href;
     close();
   };
@@ -172,7 +211,7 @@ export function CommandPalette() {
             setText(e.target.value);
             setSel(0);
           }}
-          placeholder={T.goToAScreen2}
+          placeholder={placeholder ?? T.goToAScreen2}
           role="combobox"
           aria-expanded="true"
           aria-controls="palette-list"

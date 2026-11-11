@@ -1910,6 +1910,55 @@ export const COPY = {
     replayTheTour: "Replay the tour",
     skipToContent: "Skip to content",
   },
+  /**
+   * ADR 0194: the IDE layout (beta.26): a title bar, an activity bar of the sections, a side
+   * panel, a tab per open page, the page, the bottom panel and a status bar.
+   */
+  ide: {
+    /** The title bar's box: it opens Ctrl+K. */
+    search: "Search the estate, ask, or run a command",
+    /** The metarepo's folder, beside the logo. */
+    metarepo: (name: string) => `${name} · metarepo`,
+    sideShow: "Show the side panel",
+    sideHide: "Hide the side panel",
+    side: "Explorer",
+    resize: "Resize the side panel",
+    /** The tab strip. */
+    tabs: "Open pages",
+    tabHint: "Delete closes this tab. Ctrl+Shift+Left or Right moves it.",
+    closeTab: (label: string) => `Close ${label}`,
+    tabTitle: (change: string, page: string) => `${change} · ${page}`,
+    /** Activity bar badges, heard after the section's name. */
+    openCount: (n: number) => `${n} open`,
+    more: "More pages",
+    settings: "Settings",
+    /** The status bar. */
+    status: "Status",
+    repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
+    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} open`,
+    running: (title: string) => `${title} running`,
+    step: (done: number, total: number) => `${done}/${total}`,
+    alsoRunning: (n: number) => `+${n}`,
+    api: (v: string) => `local API ${v}`,
+    version: (v: string) => `v${v}`,
+    who: (user: string, role?: string) => (role ? `${user} · ${role}` : user),
+    /** Embedded in an editor: the few title-bar buttons, beside the tabs. */
+    tools: "Page tools",
+    /** The layout setting (Settings, and Ctrl+K). */
+    layout: {
+      title: "Layout",
+      meta: "this browser",
+      legend: "How the app is laid out",
+      ide: "IDE (new)",
+      ideWhat: "An activity bar, a side panel, a tab per open page and a status bar.",
+      classic: "Classic",
+      classicWhat: "The menu on the left and one page at a time, as before beta.26.",
+      kept: "Kept in this browser. The classic layout stays available for this release.",
+      toClassic: "Switch to the classic layout",
+      toIde: "Switch to the IDE layout",
+      commandDetail: "layout, this browser",
+    },
+  },
   boundary: {
     appCouldntBeShown: "Atticus couldn't be shown",
     somethingInTheApp: (error: string | number) =>
@@ -1953,10 +2002,13 @@ export const COPY = {
     anyPage: (keys: string) => `${keys}: any page`,
   },
   palette: {
-    kinds: { screen: "page", change: "change", record: "record", ask: "ask" } as Record<
-      string,
-      string
-    >,
+    kinds: {
+      screen: "page",
+      change: "change",
+      record: "record",
+      ask: "ask",
+      command: "command",
+    } as Record<string, string>,
     askItem: (question: string) => `Ask: ${question}`,
     askDetail: "answer from the catalog, with the query shown",
     goToAScreen: "Go to a screen, change or record, or ask a question",

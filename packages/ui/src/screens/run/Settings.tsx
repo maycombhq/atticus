@@ -6,6 +6,7 @@ import { COPY } from "../../copy.js";
 import { Facts, Note, useAction } from "./shared.js";
 import { AdaptersPanel } from "../setup/Adapters.js";
 import { EditInApp } from "../setup/RawFile.js";
+import { LayoutSetting } from "../../app/shell/LayoutSetting.js";
 
 const T = COPY.settings;
 
@@ -263,6 +264,8 @@ export function Settings() {
       </div>
 
       <div className="bento">
+        {/* ADR 0194: the IDE layout or the classic one, for this browser. */}
+        <LayoutSetting />
         <Panel title={T.runtimeModes} meta={T.runtimeYaml} span="span 7">
           <View of={s}>
             {(d) => (
