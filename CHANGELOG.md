@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.26 (unreleased)
+
+### Changed
+
+- **The new shell's bottom panel holds the Console with Questions, Problems and Runs as tabs**: the shown run's live lines with follow, search, copy and Stop; the open questions, each linking to its answer; failed runs, blocking findings and repos whose facts the verifier rejected; and the recent runs, one pick showing it in the Console. Its top edge resizes by drag or arrow keys and keeps its height, Show in the Console opens it on that run, and Questions and Problems are read only when their tab is first shown.
+
 ## 2.0.0-beta.25 (unreleased)
 
 ### Added

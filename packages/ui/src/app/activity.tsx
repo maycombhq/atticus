@@ -59,6 +59,11 @@ export interface ActivityCtx {
   loadEarlier(id: string): void;
   /** What a screen reader hears, politely: new lines, an end. */
   said: string;
+  /**
+   * Beta.26: how many times show() was asked (Show in the Console, from anywhere), so a panel
+   * that holds the Console among other tabs turns to it even when it was open already.
+   */
+  showAsks?: number;
 }
 
 export const ActivityContext = createContext<ActivityCtx | undefined>(undefined);
@@ -204,6 +209,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const [stopError, setStopError] = useState<string | undefined>();
   const [said, setSaid] = useState("");
   const lastSaid = useRef(0);
+  const [showAsks, setShowAsks] = useState(0);
 
   // The Copilot run the page knows of is in the list, whatever the list says yet.
   const run = copilot?.run;
@@ -406,6 +412,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         picked.current = true;
         setSelected(id);
         setOpen(true);
+        setShowAsks((n) => n + 1);
         refreshSoon();
       },
       stop,
@@ -417,6 +424,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       },
       loadEarlier,
       said,
+      showAsks,
     }),
     [
       state,
@@ -434,12 +442,14 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       refresh,
       loadEarlier,
       said,
+      showAsks,
     ],
   );
   return <ActivityContext.Provider value={value}>{children}</ActivityContext.Provider>;
 }
 
-const timeOf = (iso: string) => {
+/** When an entry started: the time today, else a short date and time. */
+export const timeOf = (iso: string) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const today = new Date().toDateString() === d.toDateString();
@@ -495,14 +505,7 @@ export function ActivityStrip() {
               <span className="work-say">{T.strip.more(others.length - 1)}</span>
             )}
             <span style={{ flex: 1 }} />
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                a.select(first.id);
-                a.setOpen(true);
-              }}
-            >
+            <button type="button" className="btn" onClick={() => a.show(first.id)}>
               {T.strip.show}
             </button>
             {first.stop ? (
@@ -535,6 +538,8 @@ export function LogView(p: {
   lines?: Lines;
   state?: "loading" | "error";
   onEarlier(): void;
+  /** The search field's id, where more than one log can be on the page (beta.26). */
+  searchId?: string;
 }) {
   const [follow, setFollow] = useState(true);
   const [q, setQ] = useState("");
@@ -560,11 +565,11 @@ export function LogView(p: {
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
           {T.follow}
         </label>
-        <label htmlFor="activity-search" className="sr">
+        <label htmlFor={p.searchId ?? "activity-search"} className="sr">
           {T.search}
         </label>
         <input
-          id="activity-search"
+          id={p.searchId ?? "activity-search"}
           className="field"
           type="search"
           placeholder={T.search}
@@ -627,10 +632,113 @@ export function LogView(p: {
   );
 }
 
+/** An entry's kind, its name and its state, where it started and when: a list's row. */
+export function EntryMeta({ e }: { e: Entry }) {
+  return (
+    <>
+      <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
+      <span className="activity-title">{titleOf(e)}</span>
+      <span className="activity-meta">
+        <span className={`activity-state ${e.state}`}>{T.states[e.state] ?? e.state}</span>
+        {" · "}
+        {T.from(T.where[e.where] ?? e.where)}
+        {" · "}
+        {T.at(timeOf(e.startedAt))}
+      </span>
+    </>
+  );
+}
+
+/**
+ * The list's loading, error and empty states (beta.26: shared by the Console and the shell's
+ * panel); null once there are entries.
+ */
+export function ActivityStates({ a }: { a: ActivityCtx }) {
+  if (a.state === "loading" && !a.entries.length)
+    return (
+      <p className="work-say" role="status">
+        {T.loading}
+      </p>
+    );
+  if (a.state === "error" && !a.entries.length)
+    return (
+      <div className="row" style={{ gap: 8, alignItems: "center" }}>
+        <p className="state error" role="alert">
+          {T.failed(a.error ?? "")}
+        </p>
+        <button type="button" className="btn" onClick={a.reload}>
+          {T.retry}
+        </button>
+      </div>
+    );
+  if (!a.entries.length)
+    return (
+      <div>
+        <p>{T.empty}</p>
+        <p className="work-say">{T.emptyHint}</p>
+      </div>
+    );
+  return null;
+}
+
+/**
+ * One entry as the Console shows it: its name and state, Stop, what its state means, and its
+ * lines (a Copilot run's own tabs). Beta.26: shared by the Console and the shell's panel.
+ */
+export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: string }) {
+  const { a, entry: shown } = p;
+  const copilot = useCopilotRuns();
+  const held = shownLines(a.lines[shown.id], shown);
+  return (
+    <>
+      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <strong>{titleOf(shown)}</strong>
+        <span className="work-say">
+          {T.states[shown.state] ?? shown.state}
+          {shown.exitCode !== undefined && shown.state !== "done"
+            ? ` (${T.exitCode(shown.exitCode)})`
+            : ""}
+          {" · "}
+          {T.from(T.where[shown.where] ?? shown.where)}
+          {" · "}
+          {T.at(timeOf(shown.startedAt))}
+        </span>
+        <span style={{ flex: 1 }} />
+        {shown.state === "running" && shown.stop && shown.kind !== "copilot" && (
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => void a.stop(shown)}
+            disabled={a.stopping === shown.id}
+          >
+            {a.stopping === shown.id ? T.stopping : T.stop}
+          </button>
+        )}
+        {shown.state === "running" && shown.kind === "command" && (
+          <span className="work-say">{T.stopTerminal}</span>
+        )}
+      </div>
+      {shown.state === "ended" && <p className="work-say">{T.endedWithoutSaying}</p>}
+      {shown.state === "waiting" && <p className="work-say">{T.handoffWaits}</p>}
+      {shown.kind === "copilot" && copilot?.run?.runId === shown.id ? (
+        <CopilotRunTabs />
+      ) : (
+        <LogView
+          key={`${shown.id}:${shown.startedAt}`}
+          entry={shown}
+          {...(held ? { lines: held } : {})}
+          {...(a.linesState[shown.id] ? { state: a.linesState[shown.id]! } : {})}
+          {...(p.searchId ? { searchId: p.searchId } : {})}
+          onEarlier={() => a.loadEarlier(shown.id)}
+        />
+      )}
+    </>
+  );
+}
+
 /** The Console at the foot of the app: always there, open or closed. */
 export function ActivityConsole() {
   const a = useActivity();
-  const copilot = useCopilotRuns();
   if (!a) return null;
   const running = a.entries.filter((e) => e.state === "running").length;
   const shown = a.entries.find((e) => e.id === a.selected) ?? a.entries[0];
@@ -673,24 +781,8 @@ export function ActivityConsole() {
       </div>
       {a.open && (
         <div id="run-console-body" className="run-console-body">
-          {a.state === "loading" && !a.entries.length ? (
-            <p className="work-say" role="status">
-              {T.loading}
-            </p>
-          ) : a.state === "error" && !a.entries.length ? (
-            <div className="row" style={{ gap: 8, alignItems: "center" }}>
-              <p className="state error" role="alert">
-                {T.failed(a.error ?? "")}
-              </p>
-              <button type="button" className="btn" onClick={a.reload}>
-                {T.retry}
-              </button>
-            </div>
-          ) : !a.entries.length ? (
-            <div>
-              <p>{T.empty}</p>
-              <p className="work-say">{T.emptyHint}</p>
-            </div>
+          {!a.entries.length ? (
+            <ActivityStates a={a} />
           ) : (
             <div className="activity">
               <div
@@ -712,17 +804,7 @@ export function ActivityConsole() {
                     className={`activity-item ${e.state}`}
                     onClick={() => a.select(e.id)}
                   >
-                    <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
-                    <span className="activity-title">{titleOf(e)}</span>
-                    <span className="activity-meta">
-                      <span className={`activity-state ${e.state}`}>
-                        {T.states[e.state] ?? e.state}
-                      </span>
-                      {" · "}
-                      {T.from(T.where[e.where] ?? e.where)}
-                      {" · "}
-                      {T.at(timeOf(e.startedAt))}
-                    </span>
+                    <EntryMeta e={e} />
                   </button>
                 ))}
               </div>
@@ -732,52 +814,7 @@ export function ActivityConsole() {
                 className="activity-panel"
                 aria-labelledby={shown ? `activity-${shown.id}` : undefined}
               >
-                {shown && (
-                  <>
-                    <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <strong>{titleOf(shown)}</strong>
-                      <span className="work-say">
-                        {T.states[shown.state] ?? shown.state}
-                        {shown.exitCode !== undefined && shown.state !== "done"
-                          ? ` (${T.exitCode(shown.exitCode)})`
-                          : ""}
-                        {" · "}
-                        {T.from(T.where[shown.where] ?? shown.where)}
-                        {" · "}
-                        {T.at(timeOf(shown.startedAt))}
-                      </span>
-                      <span style={{ flex: 1 }} />
-                      {shown.state === "running" && shown.stop && shown.kind !== "copilot" && (
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => void a.stop(shown)}
-                          disabled={a.stopping === shown.id}
-                        >
-                          {a.stopping === shown.id ? T.stopping : T.stop}
-                        </button>
-                      )}
-                      {shown.state === "running" && shown.kind === "command" && (
-                        <span className="work-say">{T.stopTerminal}</span>
-                      )}
-                    </div>
-                    {shown.state === "ended" && <p className="work-say">{T.endedWithoutSaying}</p>}
-                    {shown.state === "waiting" && <p className="work-say">{T.handoffWaits}</p>}
-                    {shown.kind === "copilot" && copilot?.run?.runId === shown.id ? (
-                      <CopilotRunTabs />
-                    ) : (
-                      <LogView
-                        key={`${shown.id}:${shown.startedAt}`}
-                        entry={shown}
-                        {...(shownLines(a.lines[shown.id], shown)
-                          ? { lines: shownLines(a.lines[shown.id], shown)! }
-                          : {})}
-                        {...(a.linesState[shown.id] ? { state: a.linesState[shown.id]! } : {})}
-                        onEarlier={() => a.loadEarlier(shown.id)}
-                      />
-                    )}
-                  </>
-                )}
+                {shown && <ActivityEntryView a={a} entry={shown} />}
               </div>
             </div>
           )}

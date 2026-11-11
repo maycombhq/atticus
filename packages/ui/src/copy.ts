@@ -4965,6 +4965,62 @@ export const COPY = {
       show: "Show in the Console",
     },
   },
+  /** The shell's bottom panel (beta.26): the Console, open questions, problems and runs. */
+  bottomPanel: {
+    label: "Panel",
+    tabs: "Panel tabs",
+    tab: {
+      console: "Console",
+      questions: "Questions",
+      problems: "Problems",
+      runs: "Runs",
+    } as Record<"console" | "questions" | "problems" | "runs", string>,
+    /** What a tab's count says to a screen reader. */
+    count: (n: number) => (n === 1 ? "1 item" : `${n.toLocaleString()} items`),
+    expand: "Show the panel",
+    collapse: "Hide the panel",
+    resize: "Resize the panel",
+    resizeHint: "Drag, or use the up and down arrow keys, to change the panel's height.",
+    running: (title: string, where: string) => `${title} · ${where}`,
+    started: (title: string) => `Started: ${title}`,
+    console: {
+      noneSelected: "Pick a run in Runs to see its lines here.",
+    },
+    questions: {
+      loading: "Reading the open questions…",
+      failed: (why: string) => `Couldn't read the open questions: ${why}`,
+      empty: "No question is open. Atticus asks here when it can't tell something from the code.",
+      intro: (n: number) => (n === 1 ? "1 open question" : `${n.toLocaleString()} open questions`),
+      openAll: "Open Questions",
+      answer: "Answer",
+      answerLabel: (q: string) => `Answer: ${q}`,
+      more: (n: number) => `and ${n.toLocaleString()} more on the Questions page`,
+    },
+    problems: {
+      loading: "Reading what needs attention…",
+      findingsFailed: (why: string) => `Couldn't read the open findings: ${why}`,
+      trustFailed: (why: string) => `Couldn't read the verifier's reports: ${why}`,
+      empty:
+        "Nothing needs attention: no run failed lately, no finding blocks a change and the verifier rejected no fact.",
+      failedRuns: "Failed runs",
+      blocking: "Blocking findings",
+      rejected: "Facts the verifier rejected",
+      failedRun: (state: string, where: string, time: string) => `${state} · ${where} · ${time}`,
+      rejectedFacts: (repo: string, n: number) =>
+        n === 1 ? `${repo}: 1 fact rejected` : `${repo}: ${n.toLocaleString()} facts rejected`,
+      fixThenVerify: (command: string) => `Fix them, then run ${command}`,
+      open: "Open",
+      openLabel: (what: string) => `Open: ${what}`,
+      openTrust: "Open Trust",
+      show: "Show in the Console",
+      showLabel: (title: string) => `Show ${title} in the Console`,
+    },
+    runs: {
+      label: "Recent runs",
+      hint: "Pick a run to see its lines in the Console.",
+    },
+    retry: "Try again",
+  },
   copilotRuns: {
     start: {
       stale: "Read the stale repos with Copilot",
