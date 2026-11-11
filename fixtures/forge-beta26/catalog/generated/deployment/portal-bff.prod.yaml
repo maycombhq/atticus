@@ -1,0 +1,18 @@
+schemaVersion: 5
+kind: Deployment
+id: portal-bff.prod
+status: current
+confidence: verified
+component: portal-bff
+env: prod
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: infra@1.1.0
+    line: 7
+    path: k8s/portal-bff.yaml
+    repo: forge-infra
+    scannedAt: 2026-10-18T09:00:00Z
+    source: infrastructure
+networkPolicies: []
+platform: kubernetes
+replicas: 2

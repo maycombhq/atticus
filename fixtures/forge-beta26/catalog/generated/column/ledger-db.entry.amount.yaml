@@ -1,0 +1,17 @@
+schemaVersion: 5
+kind: Column
+id: ledger-db.entry.amount
+status: current
+confidence: verified
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 4
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+name: amount
+nullable: false
+table: ledger-db.entry
+type: numeric(18,2)

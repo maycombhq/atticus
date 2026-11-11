@@ -1,0 +1,16 @@
+schemaVersion: 5
+kind: ObservabilityAsset
+id: ledger-api.alert.error-rate
+status: current
+confidence: verified
+assetKind: alert
+component: ledger-api
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: infra@1.1.0
+    line: 3
+    path: alerts/ledger-api.yaml
+    repo: forge-infra
+    scannedAt: 2026-10-18T09:00:00Z
+    source: infrastructure
+name: Ledger API error rate

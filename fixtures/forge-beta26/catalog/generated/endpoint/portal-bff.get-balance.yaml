@@ -1,0 +1,20 @@
+schemaVersion: 5
+kind: Endpoint
+id: portal-bff.get-balance
+status: current
+confidence: verified
+component: portal-bff
+endpointType: rest
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 12
+    path: src/main/java/forge/portal/BalanceController.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+method: GET
+normalizedPath: /api/balance/{}
+pathOrTopic: /api/balance/{accountId}
+schemaRefs: []

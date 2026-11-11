@@ -1,0 +1,18 @@
+schemaVersion: 5
+kind: Setting
+id: portal-bff.ledger-connect-timeout
+status: current
+confidence: verified
+component: portal-bff
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 8
+    path: src/main/resources/application.yml
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    source: config
+key: ledger.client.connect-timeout
+settingKind: timeout
+target: ledger-api
+valueOrRef: 500ms

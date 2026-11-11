@@ -1,0 +1,23 @@
+schemaVersion: 5
+kind: Interface
+id: if-e7344c9455608119
+status: current
+confidence: inferred
+conflicts: []
+direction: outbound
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 8
+    path: src/main/java/forge/ledger/NorthwindClient.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+from: ledger-api
+method: POST
+normalizedPath: /v2/payments
+sync: sync
+to: northwind-pay
+via: direct

@@ -1,0 +1,18 @@
+schemaVersion: 5
+kind: Endpoint
+id: topic.payments-initiated
+status: current
+confidence: verified
+component: portal-bff
+endpointType: event-topic
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: topics@1.0.0
+    line: 1
+    path: topics/payments.initiated.yaml
+    repo: forge-events
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: event-config
+pathOrTopic: payments.initiated
+schemaRefs: []

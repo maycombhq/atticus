@@ -1,0 +1,17 @@
+schemaVersion: 5
+kind: Column
+id: ledger-db.entry.id
+status: current
+confidence: verified
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 2
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+name: id
+nullable: false
+table: ledger-db.entry
+type: bigint

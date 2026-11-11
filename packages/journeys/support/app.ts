@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -127,6 +127,95 @@ export async function forgeMetarepo(): Promise<string> {
     "Forge metarepo",
   );
   return root;
+}
+
+/**
+ * ADR 0195 (CS5): the Forge estate as the slots make it. Every repo of fixtures/forge/repos is a
+ * base clone under workspace/, and `atticus scan` has read them all, so each has its readers slot
+ * (catalog/sources/readers/<repo>.json), and catalog/generated and catalog/sources/build.json are
+ * the build's. The fixture is copied whole, because the Forge dialect's own tests read ../repos
+ * beside the metarepo. The Console starts with nothing run, as on a fresh metarepo.
+ */
+export async function forgeSlotsMetarepo(): Promise<string> {
+  const top = await mkdtemp(join(tmpdir(), "atticus-journey-"));
+  await cp(join(FIXTURES, "forge"), top, { recursive: true });
+  const root = join(top, "metarepo");
+  const git = (cwd: string, ...a: string[]) =>
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Forge",
+        "-c",
+        "user.email=forge@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        ...a,
+      ],
+      { cwd, encoding: "utf8" },
+    );
+  for (const id of readdirSync(join(top, "repos"))) {
+    const dir = join(root, "workspace", id);
+    await cp(join(top, "repos", id), dir, { recursive: true });
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "Forge fixture");
+  }
+  const scan = atticus(root, "scan", "--no-drift");
+  const repos = readdirSync(join(top, "repos"));
+  if (!repos.every((r) => scan.includes(`catalog/sources/readers/${r}.json`)))
+    throw new Error(`atticus scan didn't read every repo: ${scan}`);
+  await rm(join(root, ".atticus", "logs"), { recursive: true, force: true });
+  git(root, "init", "-q", "-b", "main");
+  git(root, "config", "user.name", "Priya Nair");
+  git(root, "config", "user.email", "priya@forge.example");
+  await writeFile(join(root, ".gitignore"), "workspace/\n.index/\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "Forge metarepo, built from its slots");
+  return root;
+}
+
+/** A commit in one of a slots metarepo's clones: a file written, or deleted with `null`. */
+export function commitInClone(root: string, repo: string, path: string, text: string | null): void {
+  const dir = join(root, "workspace", repo);
+  const full = join(dir, ...path.split("/"));
+  if (text === null) rmSync(full);
+  else writeFileSync(full, text);
+  const git = (...a: string[]) =>
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Forge",
+        "-c",
+        "user.email=forge@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        ...a,
+      ],
+      { cwd: dir, encoding: "utf8" },
+    );
+  git("add", "-A");
+  git("commit", "-qm", `change ${path}`);
+}
+
+/** A slots metarepo and its own server for one journey (see forgeJourney). */
+export function forgeSlotsJourney(): () => App {
+  let app: App | undefined;
+  test.describe.configure({ mode: "serial" });
+  test.beforeAll(async () => {
+    app = await startApp(await forgeSlotsMetarepo());
+  });
+  test.afterAll(async () => {
+    if (!app) return;
+    await stopApp(app);
+    // The fixture was copied whole into the journey's own temporary folder.
+    await rm(dirname(app.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  return () => {
+    if (!app) throw new Error("The journey's app hasn't started.");
+    return app;
+  };
 }
 
 /** The claim every fact of the Forge Studio fixture makes about its commit, until the clone's own. */

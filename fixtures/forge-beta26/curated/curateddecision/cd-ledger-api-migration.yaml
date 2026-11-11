@@ -1,0 +1,13 @@
+schemaVersion: 5
+kind: CuratedDecision
+id: cd-ledger-api-migration
+status: current
+confidence: asserted
+action: assert
+at: 2026-10-20T09:00:00Z
+by: priya.nair
+evidence: []
+reason: The ledger API is moving to the new Forge platform this quarter.
+target: ledger-api
+value:
+  migration: in-progress
