@@ -1,4 +1,12 @@
-import { accessible, atticus, expect, forgeJourney, open, test } from "../support/app.js";
+import {
+  accessible,
+  atticus,
+  classicLayout,
+  expect,
+  forgeJourney,
+  open,
+  test,
+} from "../support/app.js";
 
 /**
  * ADR 0187: the Console. Whatever Atticus does on this metarepo shows in one place the person can
@@ -7,6 +15,10 @@ import { accessible, atticus, expect, forgeJourney, open, test } from "../suppor
  * run files. Everything is the invented Forge estate (CLAUDE.md rule 3).
  */
 const app = forgeJourney();
+
+// ADR 0194: the classic layout's Console, at the foot of the page, as before; the IDE layout's
+// bottom panel holds it too (34-ide-shell).
+test.beforeEach(async ({ page }) => classicLayout(page));
 
 test("opens the Console on a fresh metarepo, and starts a scan whose lines it shows", async ({
   page,

@@ -122,6 +122,25 @@ test("keeps what was typed into a page, and what was opened, when its tab comes 
   await expect(page.locator(".canvas-tools-body input[type=search]").first()).toHaveValue("teller");
 });
 
+test("the bottom panel holds the Console, and a scan started from a page shows in Runs", async ({
+  page,
+}) => {
+  await open(page, app(), "scans");
+  const panel = page.getByRole("region", { name: "Panel" });
+  await panel.getByRole("button", { name: "Show the panel" }).click();
+  const tabs = panel.getByRole("tablist", { name: "Panel tabs" });
+  await expect(tabs.getByRole("tab", { name: /^Console/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await accessible(page, "the bottom panel open on the Console");
+  await page.getByRole("button", { name: "Check with the built-in readers" }).click();
+  await tabs.getByRole("tab", { name: /^Runs/ }).click();
+  await expect(panel.getByRole("list", { name: "Recent runs" })).toContainText(/Scan/);
+  await accessible(page, "the bottom panel's runs");
+  await panel.getByRole("button", { name: "Hide the panel" }).click();
+});
+
 test("More pages and Settings are in the activity bar, and the classic layout a setting away", async ({
   page,
 }) => {
