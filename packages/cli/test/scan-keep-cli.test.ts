@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { CatalogRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { keepWhatTheReadersCantSee } from "../src/scan-keep.js";
+import { carryFrom, withCarried } from "@maycombhq/scanner";
+import { keptLines } from "../src/scan-commands.js";
 
 /**
  * Beta.26 review: the cross-check with the built-in readers (`atticus scan`, Set up › Scans) on an
@@ -89,7 +90,9 @@ describe("the readers' cross-check keeps what it can't read", () => {
       expect(await main(["scan", "--root", root], c.io)).toBe(1);
       const out = c.out.join("\n");
       expect(out).toMatch(/catalog\/generated: \d+ written, \d+ unchanged, 0 removed/);
-      expect(out).toMatch(/Kept \d+ records of 7 repos this scan couldn't read/);
+      expect(out).toMatch(
+        /Kept \d+ records as they were of (forge-[a-z-]+, ){6}forge-[a-z-]+, which aren't cloned here: atticus workspace sync clones them/,
+      );
       const after = await catalogFiles(root);
       for (const p of before.keys()) expect(after.has(p), p).toBe(true);
     },
@@ -139,6 +142,9 @@ describe("the readers' cross-check keeps what it can't read", () => {
       const c = capture();
       expect(await main(["scan", "--root", root, "--repos", "forge-events"], c.io)).toBe(0);
       expect(c.out.join("\n")).toMatch(/0 removed/);
+      // Item 7: said as not asked for, never as a clone to make.
+      expect(c.out.join("\n")).toMatch(/which this scan wasn't asked to read \(--repos\)/);
+      expect(c.out.join("\n")).not.toMatch(/cloned here|couldn't read/);
       const after = await catalogFiles(root);
       for (const p of before.keys()) expect(after.has(p), p).toBe(true);
     },
@@ -196,93 +202,210 @@ describe("the readers' cross-check keeps what it can't read", () => {
     },
     T,
   );
+
+  it(
+    "never weakens or doubles a link to a repo it couldn't read (item 1)",
+    async () => {
+      const root = await forgeRoot();
+      expect(await main(["scan", "--root", root], capture().io)).toBe(0);
+      const before = await catalogFiles(root);
+      const links = [...before].filter(
+        ([p, text]) => p.startsWith("interface/") && text.includes("repo: forge-ledger\n"),
+      );
+      expect(links.length).toBeGreaterThan(0);
+      await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
+
+      const c = capture();
+      await main(["scan", "--root", root, "--json"], c.io);
+      const report = JSON.parse(c.out.join("\n")) as {
+        diff: { added: { kind: string; id: string }[]; changed: { kind: string }[] };
+      };
+      const after = await catalogFiles(root);
+      for (const [p, text] of links) expect(after.get(p), p).toBe(text);
+      // No call (an HTTP call, an event, a table's reader) is made again as a loose end or a
+      // second, thinner link.
+      expect(
+        report.diff.added.filter((d) => d.kind === "Unresolved" || d.kind === "Interface"),
+      ).toEqual([]);
+      expect(report.diff.changed.filter((d) => d.kind === "Interface")).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    "never shows a call twice while the readers stand in beside a fact's record (item 4)",
+    async () => {
+      const root = await forgeRoot();
+      const repo = join(root, "workspace", "forge-portal-bff");
+      const commit = git(repo, "rev-parse", "HEAD");
+      const file = "src/main/java/forge/portal/AuditPublisher.java";
+      const fact = (verified: string) =>
+        `${JSON.stringify({
+          kind: "call",
+          id: "c-audit",
+          repo: "forge-portal-bff",
+          commit,
+          callType: "rest",
+          method: "POST",
+          base: "${audit.url}",
+          path: "/audit/events",
+          cite: {
+            file,
+            line: 10,
+            value: "/audit/events",
+            quote: 'rest.postForObject("${audit.url}/audit/events", event, Void.class);',
+          },
+          verified,
+          by: "assistant",
+          conf: "declared",
+        })}\n`;
+      await mkdir(join(root, "facts"), { recursive: true });
+      await writeFile(join(root, "facts", "forge-portal-bff.jsonl"), fact("line"));
+      expect(await main(["scan", "--root", root], capture().io)).toBe(0);
+      const ofCall = (files: Map<string, string>) =>
+        [...files].filter(
+          ([p, text]) =>
+            (p.startsWith("unresolved/") || p.startsWith("interface/")) &&
+            text.includes("/audit/events"),
+        );
+      const fromFacts = ofCall(await catalogFiles(root));
+      expect(fromFacts.length).toBe(1);
+      expect(fromFacts[0]![1]).toContain("by: assistant");
+
+      // Read again and not verified yet: the readers stand in, and their loose end for the
+      // same call is left out beside the fact's.
+      await writeFile(join(root, "facts", "forge-portal-bff.jsonl"), fact("none"));
+      const c = capture();
+      await main(["scan", "--root", root], c.io);
+      expect(ofCall(await catalogFiles(root))).toEqual(fromFacts);
+      expect(c.out.join("\n")).toMatch(/Left out \d+ records? of the readers'/);
+    },
+    T,
+  );
+
+  it(
+    "lets an archived repo's records go, as a scan always did (item 3)",
+    async () => {
+      const root = await forgeRoot();
+      expect(await main(["scan", "--root", root], capture().io)).toBe(0);
+      const before = await catalogFiles(root);
+      // The profile's systems are made by every scan, whatever it reads.
+      const only = [...before]
+        .filter(([p, text]) => {
+          if (p.startsWith("system/")) return false;
+          const repos = [...text.matchAll(/repo: (\S+)\n/g)].map((m) => m[1]);
+          return repos.length > 0 && repos.every((r) => r === "forge-reports-job");
+        })
+        .map(([p]) => p);
+      expect(only.length).toBeGreaterThan(0);
+      const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+      const text = await readFile(manifest, "utf8");
+      await writeFile(
+        manifest,
+        text.replace(
+          "    component: reports-job\n",
+          "    component: reports-job\n    archived: true\n",
+        ),
+      );
+      const c = capture();
+      await main(["scan", "--root", root, "--json"], c.io);
+      const report = JSON.parse(c.out.join("\n")) as {
+        kept: { unread: string[]; records: number };
+      };
+      expect(report.kept).toMatchObject({ unread: [], records: 0 });
+      const after = await catalogFiles(root);
+      for (const p of only) expect(after.has(p), p).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "lets go of fact records that cite a file changed since they were read (item 2)",
+    async () => {
+      const root = await forgeRoot();
+      const repo = join(root, "workspace", "forge-ledger");
+      const commit = git(repo, "rev-parse", "HEAD");
+      const file = "src/main/java/forge/ledger/LedgerEndpoints.java";
+      const quote =
+        '@ForgeEndpoint(method = "GET", path = "/accounts/{id}/balance", auth = "oauth2")';
+      const source = await readFile(join(repo, file), "utf8");
+      expect(source.split("\n")[7]).toContain(quote);
+      await mkdir(join(root, "facts"), { recursive: true });
+      await writeFile(
+        join(root, "facts", "forge-ledger.jsonl"),
+        `${JSON.stringify({
+          kind: "entry",
+          id: "e-balance",
+          repo: "forge-ledger",
+          commit,
+          entryType: "rest",
+          method: "GET",
+          path: "/accounts/{id}/balance",
+          auth: "oauth2",
+          cite: { file, line: 8, value: "/accounts/{id}/balance", quote },
+          verified: "line",
+          by: "assistant",
+          conf: "declared",
+        })}\n`,
+      );
+      expect(await main(["scan", "--root", root], capture().io)).toBe(0);
+      const projected = [...(await catalogFiles(root))].filter(
+        ([p, text]) => p.startsWith("endpoint/") && text.includes("by: assistant"),
+      );
+      expect(projected.length).toBe(1);
+
+      // The file the fact cites changes and is committed: the fact is of an earlier commit and
+      // cites a changed file, so it isn't carried and the readers stand in. Its record is outdated.
+      await writeFile(
+        join(repo, file),
+        source.replace("/accounts/{id}/balance", "/accounts/{id}/funds"),
+      );
+      git(repo, "commit", "-q", "-am", "rename the balance route");
+      const c = capture();
+      await main(["scan", "--root", root], c.io);
+      expect(c.out.join("\n")).toMatch(
+        /Let go \d+ records? from your assistant's facts that cite a file changed/,
+      );
+      const after = await catalogFiles(root);
+      expect([...after].some(([, t]) => t.includes("by: assistant"))).toBe(false);
+    },
+    T,
+  );
 });
 
-const rec = (kind: string, id: string, evidence: Record<string, unknown>[]): CatalogRecord =>
+const rec = (kind: string, id: string, repo: string): CatalogRecord =>
   ({
     schemaVersion: 5,
     kind,
     id,
     status: "current",
     confidence: "verified",
-    evidence,
+    evidence: [{ source: "code", repo, path: "src/a.ts", line: 1 }],
   }) as unknown as CatalogRecord;
 
-const code = (repo: string, extra: Record<string, unknown> = {}) => ({
-  source: "code",
-  repo,
-  path: "src/a.ts",
-  line: 1,
-  ...extra,
-});
-
-describe("keepWhatTheReadersCantSee", () => {
-  const base = {
-    manifest: ["northwind-api", "northwind-web"],
-    read: ["northwind-web"],
-    standIn: [] as string[],
-  };
-
-  it("keeps a record of a repo it couldn't read, and lets the rest go", () => {
-    const before = [
-      rec("Endpoint", "northwind-api.get-quote", [code("northwind-api")]),
-      rec("Endpoint", "northwind-web.get-page", [code("northwind-web")]),
-      rec("Endpoint", "gone-repo.get-x", [code("gone-repo")]),
-    ];
-    const r = keepWhatTheReadersCantSee({ ...base, before, scanned: [] });
-    expect(r.records.map((x) => x.id)).toEqual(["northwind-api.get-quote"]);
-    expect(r.unread).toEqual(["northwind-api"]);
-    expect(r.keptUnread).toBe(1);
-    expect(r.keptFacts).toBe(0);
-  });
-
-  it("keeps a link between a repo it read and one it couldn't", () => {
-    const link = rec("Interface", "if-1", [
-      code("northwind-web", { side: "caller" }),
-      code("northwind-api", { side: "callee" }),
-    ]);
-    const r = keepWhatTheReadersCantSee({ ...base, before: [link], scanned: [] });
-    expect(r.records).toEqual([link]);
-  });
-
-  it("prefers the earlier record over the scan's when only unread repos made it", () => {
-    const old = rec("Component", "northwind-api", [code("northwind-api")]);
-    const thin = rec("Component", "northwind-api", [{ source: "manual", by: "manifest" }]);
-    const r = keepWhatTheReadersCantSee({ ...base, before: [old], scanned: [thin] });
-    expect(r.records).toEqual([old]);
-  });
-
-  it("keeps a record from verified facts while the readers stand in, beside theirs", () => {
-    const fromFacts = rec("Endpoint", "northwind-web.get-page", [
-      code("northwind-web", { by: "assistant", commit: "abc1234" }),
-    ]);
-    const readersSame = rec("Endpoint", "northwind-web.get-page", [
-      code("northwind-web", { extractor: "spring@1" }),
-    ]);
-    const readersNew = rec("Endpoint", "northwind-web.get-other", [
-      code("northwind-web", { extractor: "spring@1" }),
-    ]);
-    const r = keepWhatTheReadersCantSee({
-      ...base,
-      standIn: ["northwind-web"],
-      before: [fromFacts],
-      scanned: [readersSame, readersNew],
+describe("what a scan says it kept (item 7)", () => {
+  it("says why each repo wasn't read, and asks to clone only one not cloned", () => {
+    const carry = carryFrom({
+      before: [
+        rec("Endpoint", "northwind-api.get-quote", "northwind-api"),
+        rec("Endpoint", "northwind-batch.get-run", "northwind-batch"),
+        rec("Endpoint", "northwind-docs.get-page", "northwind-docs"),
+      ],
+      estate: ["northwind-api", "northwind-batch", "northwind-docs", "northwind-web"],
+      read: ["northwind-web"],
+      standIn: {},
+      why: { "northwind-api": "not-asked", "northwind-batch": "unreadable" },
     });
-    expect(r.records).toEqual([readersNew, fromFacts].sort((a, b) => (a.id < b.id ? -1 : 1)));
-    expect(r.keptFacts).toBe(1);
-  });
-
-  it("lets facts drive removals once the repo is read from its facts", () => {
-    const fromFacts = rec("Endpoint", "northwind-web.get-page", [
-      code("northwind-web", { by: "assistant" }),
+    const { summary } = withCarried([], carry, 0);
+    expect(summary.by).toEqual([
+      { why: "not-cloned", repos: ["northwind-docs"], records: 1 },
+      { why: "unreadable", repos: ["northwind-batch"], records: 1 },
+      { why: "not-asked", repos: ["northwind-api"], records: 1 },
     ]);
-    const r = keepWhatTheReadersCantSee({ ...base, before: [fromFacts], scanned: [] });
-    expect(r.records).toEqual([]);
-  });
-
-  it("never keeps a person's or a document's record by these rules", () => {
-    const manual = rec("Decision", "d-1", [{ source: "manual", by: "tom" }]);
-    const r = keepWhatTheReadersCantSee({ ...base, before: [manual], scanned: [] });
-    expect(r.records).toEqual([]);
+    const lines = keptLines(summary);
+    expect(lines[0]).toMatch(/of northwind-docs, which isn't cloned here: atticus workspace sync/);
+    expect(lines[1]).toMatch(/of northwind-batch, whose clone couldn't be read/);
+    expect(lines[2]).toMatch(/of northwind-api, which this scan wasn't asked to read \(--repos\)/);
+    expect(lines[2]).not.toMatch(/clone/);
   });
 });

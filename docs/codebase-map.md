@@ -36,6 +36,7 @@ Atticus 2 (ADR 0124): the assistant reads the code and writes cited facts; `veri
   - `packages/scanner/src/scan.ts` (`scanEstate`).
   - `merge-input.ts` (`mergeEstate`, `estateMergeInput`).
   - `facts-scan.ts`: a repo with verified facts is taken from them, and its readers become a note.
+  - `scan-carry.ts` (`carryFrom`, `withoutCovered`, `withCarried`; ADR 0124 addendum B-keep): what a scan can't read (a repo not read, facts the readers stand in for) carried from the catalog before it into its merge.
 - **CLI:** `packages/cli/src/main.ts` routes every command to a `*-commands.ts` file in the same folder.
   - The twelve commands `atticus help` shows are `TOP_WORDS` and `TOP_HELP` in `top-commands.ts`, with `aliasArgv` for `join`, `stories` and `task`.
   - `atticus openspec <args...>` (ADR 0006 addendum 2026-10-26) is a pass-through in `openspec-run-commands.ts`, running the bundled OpenSpec through `runOpenSpecRaw` (`openspec-adapter/src/adapter.ts`); `openspec setup` and `openspec check` stay Atticus's own in `workspace-commands.ts`.

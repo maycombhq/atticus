@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { acquireLock, catalogDirOf, factsDirOf, LockHeldError } from "@maycombhq/core";
+import { acquireLock, catalogDirOf, LockHeldError } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
@@ -9,11 +8,12 @@ import {
   readCatalog,
   scanEstate,
   writeCatalog,
+  type CarriedSummary,
   type CatalogDiff,
+  type UnreadWhy,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
-import { keepWhatTheReadersCantSee } from "./scan-keep.js";
 
 /** The lines a person reads for a catalog diff: + added, - removed, ~ changed (fields). */
 export function diffLines(d: CatalogDiff): string[] {
@@ -53,17 +53,38 @@ function driftLine(d: DriftAfterScan): string {
   return `${head}: ${what} in review/drift/${d.round}${d.unchanged ? ", nothing new" : ""}.`;
 }
 
-/** What a scan kept that its readers couldn't see, said before what changed. */
-export function keptLines(k: ReturnType<typeof keepWhatTheReadersCantSee>): string[] {
+/** What a scan carried that it couldn't read (scanner's scan-carry.ts), said before what changed. */
+export function keptLines(k: CarriedSummary): string[] {
   const out: string[] = [];
   const n = (x: number, one: string) => `${x} ${one}${x === 1 ? "" : "s"}`;
-  if (k.keptUnread)
+  // Beta.26 review: said by why each repo wasn't read; only a repo not cloned is told to clone.
+  for (const g of k.by) {
+    const one = g.repos.length === 1;
+    const head = `Kept ${n(g.records, "record")} as ${g.records === 1 ? "it was" : "they were"} of ${g.repos.join(", ")}`;
+    if (g.why === "not-cloned")
+      out.push(
+        `${head}, ${one ? "which isn't" : "which aren't"} cloned here: atticus workspace sync clones ${one ? "it" : "them"}, then scan again to read ${one ? "it" : "them"}.`,
+      );
+    else if (g.why === "unreadable")
+      out.push(
+        `${head}, whose clone${one ? "" : "s"} couldn't be read (see the problems below): atticus workspace sync, then scan again.`,
+      );
+    else
+      out.push(
+        `${head}, which this scan wasn't asked to read (--repos): a scan without --repos reads ${one ? "it" : "them"} again.`,
+      );
+  }
+  if (k.fromFacts)
     out.push(
-      `Kept ${n(k.keptUnread, "record")} of ${n(k.unread.length, "repo")} this scan couldn't read (${k.unread.join(", ")}): clone ${k.unread.length === 1 ? "it" : "them"} with atticus workspace sync to read ${k.unread.length === 1 ? "it" : "them"} again.`,
+      `Kept ${n(k.fromFacts, "record")} from your assistant's verified facts while the readers stand in: the readers' records are beside them, never over them, until atticus verify <repo> --write.`,
     );
-  if (k.keptFacts)
+  if (k.covered)
     out.push(
-      `Kept ${n(k.keptFacts, "record")} from your assistant's verified facts while the readers stand in: the readers' records are beside them, never over them, until atticus verify <repo> --write.`,
+      `Left out ${n(k.covered, "record")} of the readers' that a kept fact record already has (the same call, endpoint, table, column or setting).`,
+    );
+  if (k.outdated)
+    out.push(
+      `Let go ${n(k.outdated, "record")} from your assistant's facts that cite a file changed since they were read: /atticus-map <repo>, then atticus verify <repo> --write reads ${k.outdated === 1 ? "it" : "them"} again.`,
     );
   return out;
 }
@@ -79,13 +100,24 @@ export function scanSummaryLines(report: Record<string, unknown>): string[] {
   const out = [
     `Scanned ${n(num(s.repos), "repo")}: ${n(num(s.records), "record")}, ${n(num(s.interfaces), "interface")} (${num(s.verified)} verified), ${n(num(s.unresolved), "loose end")}.`,
   ];
-  const k = (report.kept ?? {}) as { unread?: unknown; records?: unknown; fromFacts?: unknown };
+  const k = (report.kept ?? {}) as Record<string, unknown>;
+  const why = (v: unknown): UnreadWhy =>
+    v === "unreadable" || v === "not-asked" ? v : "not-cloned";
   out.push(
     ...keptLines({
-      records: [],
       unread: Array.isArray(k.unread) ? k.unread.map(String) : [],
-      keptUnread: num(k.records),
-      keptFacts: num(k.fromFacts),
+      records: num(k.records),
+      by: (Array.isArray(k.by) ? k.by : []).map((g) => {
+        const x = (g ?? {}) as Record<string, unknown>;
+        return {
+          why: why(x.why),
+          repos: Array.isArray(x.repos) ? x.repos.map(String) : [],
+          records: num(x.records),
+        };
+      }),
+      fromFacts: num(k.fromFacts),
+      covered: num(k.covered),
+      outdated: num(k.outdated),
     }),
   );
   const f = report.files as { written?: unknown; unchanged?: unknown; removed?: unknown } | null;
@@ -164,30 +196,25 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const out = join(catalogDirOf(root), "generated");
   const before = await readCatalog(out, { cacheRoot: root });
   const started = Date.now();
+  // Beta.26 review: the readers are a cross-check, so what the scan can't read is carried from
+  // the catalog before it and merged beside what it reads (scanner's scan-carry.ts, ADR 0124
+  // addendum B-keep): the records of an estate repo not read here (not cloned, a clone that
+  // doesn't read, not asked for), and those from verified facts while the readers stand in.
   const scan = await scanEstate({
     root,
     ...(o.repos ? { repos: o.repos } : {}),
     ...(o.full ? { cache: null } : {}),
+    carry: before.records,
   });
-  // Beta.26 review: the readers are a cross-check, so what they couldn't read stays: the records
-  // of a repo not read here (not cloned, not asked for), and those from verified facts while the
-  // readers stand in for their repo (scan-keep.ts).
-  const manifest = (await loadRepos(root)).map((r) => r.id);
-  const read = scan.repos.map((r) => r.repo);
-  const standIn: string[] = [];
-  for (const id of read)
-    if (scan.basis?.[id]?.from !== "facts") {
-      const text = await readFile(join(factsDirOf(root), `${id}.jsonl`), "utf8").catch(() => "");
-      if (text.trim()) standIn.push(id);
-    }
-  const kept = keepWhatTheReadersCantSee({
-    before: before.records,
-    scanned: scan.records,
-    manifest,
-    read,
-    standIn,
-  });
-  const records = kept.records;
+  const kept: CarriedSummary = scan.carried ?? {
+    unread: [],
+    records: 0,
+    by: [],
+    fromFacts: 0,
+    covered: 0,
+    outdated: 0,
+  };
+  const records = scan.records;
   const diff = diffCatalogs(before.records, records);
   const write = o.dryRun ? undefined : await writeCatalog(out, records);
   // The drift check reads the catalog just written, so it runs only when one was.
@@ -231,7 +258,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           files: write ?? null,
           drift,
           questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
-          kept: { unread: kept.unread, records: kept.keptUnread, fromFacts: kept.keptFacts },
+          kept,
         },
         null,
         2,

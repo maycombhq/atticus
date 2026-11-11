@@ -87,9 +87,11 @@ export type TerminalRunView = TerminalRunRecord & { stale?: true };
 /**
  * The commands that keep a run log: every one that writes (a file in the metarepo, the catalog,
  * an answer, a hand-off), and the long reads. Read-only, quick commands (help, list, show, status,
- * next, `--json` queries) never make a file. By the command's words: `true` for every sub-command,
- * a set for those named, `{ except }` for all but those named (a quick look); a group with
- * sub-commands needs one. Beta.26 review: `change`, `initiative`, `questions` and the rest of the
+ * next, and the questions asked of them with `--json`) never make a file, being off this list; a
+ * command that writes is kept with `--json` too (ADR 0187: `--json` is no flag that skips the log,
+ * so `atticus scan --json` run in a terminal is in the Console). By the command's words: `true`
+ * for every sub-command, a set for those named, `{ except }` for all but those named (a quick
+ * look); a group with sub-commands needs one. Beta.26 review: `change`, `initiative`, `questions` and the rest of the
  * commands that write were missing, so a change started in a terminal never showed in the Console.
  */
 type Rule = true | ReadonlySet<string> | { except: ReadonlySet<string> };
