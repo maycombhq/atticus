@@ -246,3 +246,88 @@ describe("the join's questions are question files (beta.24 review)", () => {
     expect(out).toContain(`Retired ${token!.id}`);
   }, 60_000);
 });
+
+describe("the join's questions read back their host (beta.25, review of beta.24)", () => {
+  /** The proxy with a comment line above its flow: every line the facts cite moves down one. */
+  function moveDown(root: string) {
+    const f = join(root, "workspace", PROXY, "apiproxy/proxies/default.xml");
+    const x = readFileSync(f, "utf8").split("\n");
+    x.splice(1, 0, "  <!-- the vendor's quotes -->");
+    writeFileSync(f, x.join("\n"));
+    const ff = join(root, "facts", `${PROXY}.jsonl`);
+    const at = (n: number) => `"file":"apiproxy/proxies/default.xml","line":${n}`;
+    writeFileSync(ff, readFileSync(ff, "utf8").replaceAll(at(4), at(5)).replaceAll(at(8), at(9)));
+  }
+
+  it("keeps Ignore on a token host when a line is added above the call", async () => {
+    const root = metarepo();
+    await verifyAll(root);
+    const { token } = await asked(root);
+    await answer(root, [token!.id, "--ignore", "--reason", "a CI template"]);
+    await verify(root, PROXY);
+    moveDown(root);
+    const out = (await verify(root, PROXY)).join("\n");
+    expect(out).not.toMatch(/asked q-/i);
+    const open = (await listQuestions(root, { state: "open", repo: PROXY })).questions;
+    expect(open.filter((q) => q.question.includes(TOKEN))).toEqual([]);
+    const p = await joinOf(root, PROXY);
+    expect(p.targets["call.get.quotes-id"]).toBe(NO_TARGET);
+    expect(p.result.join!.asks).toEqual([]);
+  }, 120_000);
+
+  it("retires a hosts question the join raised once the profile names its host", async () => {
+    const root = metarepo();
+    await verifyAll(root);
+    const { cache } = await asked(root);
+    expect(cache?.repo).toBe(TELLER);
+    // A person writes the host into an outside system of the profile by hand.
+    const p = join(root, "org-pack", "profiles", "forge", "profile.yaml");
+    writeFileSync(
+      p,
+      readFileSync(p, "utf8").replace(
+        "environments:",
+        '  - { id: rates-cache, name: Rates Cache, boundary: internal, aliases: ["rates-cache:8080", rates-cache] }\nenvironments:',
+      ),
+    );
+    const out = (await verify(root, TELLER)).join("\n");
+    const q = (await readQuestion(root, cache!.id))!;
+    expect(q.state).toBe("retired");
+    expect(q.retired!.why).toMatch(/^the join no longer asks about rates-cache:8080/);
+    expect(out).toContain(`Retired ${cache!.id}`);
+  }, 120_000);
+
+  it("reads a spaced token back: Ignore is honoured", async () => {
+    const root = metarepo();
+    const te = join(root, "workspace", PROXY, "apiproxy/targets/TE-Vendor.xml");
+    writeFileSync(te, readFileSync(te, "utf8").replace(TOKEN, "{{ vendor_url }}"));
+    const ff = join(root, "facts", `${PROXY}.jsonl`);
+    writeFileSync(ff, readFileSync(ff, "utf8").replaceAll(TOKEN, "{{ vendor_url }}"));
+    await verifyAll(root);
+    const qs = (await listQuestions(root)).questions.filter((q) =>
+      q.question.includes("vendor_url"),
+    );
+    expect(qs.map((q) => q.askedBy.step)).toEqual([TARGETS_STEP_ID]);
+    await answer(root, [qs[0]!.id, "--ignore"]);
+    await verify(root, PROXY);
+    const p = await joinOf(root, PROXY);
+    expect(p.targets["call.get.quotes-id"]).toBe(NO_TARGET);
+    expect(p.result.join!.asks).toEqual([]);
+    expect((await readQuestion(root, qs[0]!.id))!.state).toBe("answered");
+  }, 120_000);
+
+  it("caps an Ignore's reason at 300 characters", async () => {
+    const root = metarepo();
+    await verifyAll(root);
+    const { cache } = await asked(root);
+    const err: string[] = [];
+    const code = await questionsFiles(
+      root,
+      ["questions", "answer", cache!.id, "--ignore", "--reason", "x".repeat(301), "--by", "pat"],
+      { out: () => {}, err: (l) => err.push(l) },
+      { now: AT },
+    );
+    expect(code).toBe(2);
+    expect(err.join("\n")).toMatch(/at most 300/);
+    expect((await readQuestion(root, cache!.id))!.state).toBe("open");
+  }, 120_000);
+});

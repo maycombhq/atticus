@@ -325,6 +325,11 @@ export const COPY = {
     ownWordsJoin:
       "Name a repo, component or system Atticus knows. Words that name none are refused, never drawn as a box: for a new outside system, choose it from the list above; if these aren't real calls, choose Ignore.",
     ignore: {
+      /**
+       * Beta.25: the Ignore option's words, the same as the core's JOIN_IGNORE_LABEL (the answer's
+       * value is read by them, so a test keeps the two the same).
+       */
+      label: "Ignore: not a real call (e.g. CI/CD, a test, a template)",
       means:
         "These aren't real calls: a CI/CD job, a test or a template, not code that runs. The join leaves them, no box is drawn for them, and this isn't asked again.",
       reason: "Why (optional)",
