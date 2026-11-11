@@ -25,6 +25,7 @@ import {
 } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
+import { IGNORE_REASON_MAX } from "./host-questions.js";
 import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
@@ -488,10 +489,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   they made), never a system judged by the shape of its id, nor one an option, the picker or an
  *   outside system's answer made. POST /api/trust/answer-boxes/ignore and /rename answer a
  *   `stamp` (what the files the fix writes held), and take it back with the write: a file changed
- *   since the preview is refused (409, nothing written). The write is all or none (every file held,
- *   each written whole and renamed, a failure puts back what was written, or answers 500 naming
- *   the files left written, `written`). A rename to the box's own name, or to another box, is
- *   refused (400). An Ignore's `reason` is at most 300 characters from every caller. Additive only.
+ *   since the preview is refused (409, nothing written). The write is all or none as far as
+ *   Atticus can make it (each file locked against its other locking writers, checked, written
+ *   whole and renamed; a failure puts back only a file that still holds what the fix wrote, leaves
+ *   one someone else changed, and answers 500 naming the files left written, Problem `written`).
+ *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
+ *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
+ *   caller. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -517,6 +521,11 @@ export const Problem = z.object({
   needs: z.object({ role: z.string(), names: z.array(z.string()) }).optional(),
   /** 3.9.0: what the app offers next, e.g. Sync the repos with no base clone here. */
   next: NextStep.optional(),
+  /**
+   * 3.11.0 (beta.25): for a 500 that wrote only part of what was asked, the files left written
+   * (each in the metarepo, or in `repo`'s working copy), so the app reads them again.
+   */
+  written: z.array(z.object({ repo: z.string().optional(), file: z.string() })).optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);
@@ -3902,7 +3911,7 @@ export const AnswerQuestionRequest = z.strictObject({
    * text and target; `reason` is kept as the answer's words (`Ignore: <reason>`).
    */
   ignore: z.literal(true).optional(),
-  reason: z.string().trim().min(1).max(300).optional(),
+  reason: z.string().trim().min(1).max(IGNORE_REASON_MAX).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */

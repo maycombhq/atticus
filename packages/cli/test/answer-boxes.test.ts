@@ -6,6 +6,7 @@ import {
   answerQuestion,
   HOSTS_OUTSIDE_VENDOR,
   HOSTS_STEP,
+  IGNORE_REASON_MAX,
   ignoredAnswer,
   raiseQuestions,
   readQuestion,
@@ -21,13 +22,24 @@ import {
  * (fixtures/link-estate); files only, no network.
  */
 
-// The write a test makes fail: the profile's, after the answers are written.
-const failing = vi.hoisted(() => ({ profile: false }));
+// The write a test makes fail: the profile's, after the answers are written. `race` is another
+// writer (an answer in the CLI, which takes no lock) changing files just before it: the profile
+// (so the fix's write of it fails), or a question file the fix has written already.
+const failing = vi.hoisted(() => ({
+  profile: false,
+  race: undefined as undefined | { file: string; add: string }[],
+}));
 vi.mock("@maycombhq/core", async (orig) => {
   const m = await orig<typeof import("@maycombhq/core")>();
+  const { appendFile } = await import("node:fs/promises");
   return {
     ...m,
     writeFileIfUnchanged: async (path: string, before: string | undefined, data: string) => {
+      if (failing.race && path.endsWith("profile.yaml")) {
+        const race = failing.race;
+        failing.race = undefined;
+        for (const r of race) await appendFile(r.file, r.add);
+      }
       if (failing.profile && path.endsWith("profile.yaml")) throw new m.FileChangedError(path);
       return m.writeFileIfUnchanged(path, before, data);
     },
@@ -141,6 +153,55 @@ describe("what is a box (beta.25)", () => {
       ["this-is-a-proxy-to-merchants", undefined, [b.id]],
     ]);
   });
+
+  it("never offers a real system whose name has a mark in it (beta.25)", async () => {
+    const root = await metarepo([
+      '{ id: northwind-inc, name: "Northwind, Inc.", boundary: vendor, aliases: [] }',
+      '{ id: harbor-co, name: "Harbor Co.", boundary: vendor, aliases: [] }',
+      '{ id: lantern-bang, name: "Lantern!", boundary: vendor, aliases: [] }',
+    ]);
+    // The picker's answers (the ids), and the names typed.
+    let n = 30;
+    for (const t of ["northwind-inc", "lantern-bang", "Harbor Co.", "Northwind, Inc."])
+      await answeredWith(root, targets(`/m${n}`, n++), t);
+    expect(await answerBoxesOf(root)).toEqual([]);
+    const f = join(root, ...PROFILE);
+    const before = await readFile(f, "utf8");
+    await expect(
+      ignoreAnswerBox(root, "northwind-inc", { by: "pat", at: AT, preview: true }),
+    ).rejects.toMatchObject({ code: "not-found" });
+    expect(await readFile(f, "utf8")).toBe(before);
+  });
+
+  it("offers a system a topics answer made from a sentence (beta.25)", async () => {
+    // A topics answer writes the system it names with the topic under its topics.
+    const root = await metarepo();
+    const f = join(root, ...PROFILE);
+    await writeFile(
+      f,
+      (await readFile(f, "utf8"))
+        .replace("schemaVersion: 1", "schemaVersion: 2")
+        .replace(
+          "environments:",
+          `  - { id: ${CICD}, name: "${CICD_WORDS}", boundary: vendor, aliases: [], topics: [forge.cicd.events] }\nenvironments:`,
+        ),
+    );
+    const a = await answeredWith(root, targets("/topic", 40), CICD);
+    expect((await answerBoxesOf(root)).map((b) => [b.id, b.profile, b.questions[0]?.id])).toEqual([
+      [CICD, "org-pack/profiles/forge/profile.yaml", a.id],
+    ]);
+  });
+
+  it("keeps an Ignore's reason within the longest the API takes", async () => {
+    const long = `this is ${"a very long reason ".repeat(30)}`.trim();
+    const root = await metarepo();
+    const a = await answeredWith(root, targets("/long", 50), long);
+    const id = (await answerBoxesOf(root))[0]!.id;
+    await ignoreAnswerBox(root, id, { by: "pat", at: AT });
+    const reason = ignoredAnswer((await readQuestion(root, a.id))!)?.reason ?? "";
+    expect(reason.length).toBeLessThanOrEqual(IGNORE_REASON_MAX);
+    expect(reason).toMatch(/^It was 'ignore this'/);
+  });
 });
 
 describe("a fix writes all or none (beta.25)", () => {
@@ -154,13 +215,51 @@ describe("a fix writes all or none (beta.25)", () => {
       const err = await ignoreAnswerBox(root, CICD, { by: "pat", at: AT }).catch((e: Error) => e);
       expect(err).toBeInstanceOf(AnswerBoxError);
       expect(err).toMatchObject({ code: "changed" });
-      expect((err as Error).message).toMatch(/nothing was written.*put back/);
+      expect((err as Error).message).toMatch(/nothing of the fix was written.*put back/);
+      expect((err as Error).message).not.toMatch(/someone else/);
     } finally {
       failing.profile = false;
     }
     expect(await readFile(join(root, "questions", `${a.id}.yaml`), "utf8")).toBe(qBefore);
     expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(pBefore);
     expect(ignoredAnswer((await readQuestion(root, a.id))!)).toBeUndefined();
+  });
+
+  it("never puts back over another writer's change to a file it didn't write (beta.25)", async () => {
+    const root = await metarepo([CICD_SYSTEM]);
+    const a = await answeredWith(root, targets("/build/hooks", 12), CICD);
+    const qBefore = await readFile(join(root, "questions", `${a.id}.yaml`), "utf8");
+    const f = join(root, ...PROFILE);
+    // Another writer adds a line to the profile just before the fix writes it.
+    failing.race = [{ file: f, add: "# another writer's line\n" }];
+    const err = await ignoreAnswerBox(root, CICD, { by: "pat", at: AT }).catch((e: Error) => e);
+    expect(err).toMatchObject({ code: "changed" });
+    expect((err as Error).message).toMatch(/profile\.yaml.*someone else/);
+    expect(await readFile(f, "utf8")).toContain("# another writer's line");
+    // What the fix wrote (the answer) is put back.
+    expect(await readFile(join(root, "questions", `${a.id}.yaml`), "utf8")).toBe(qBefore);
+  });
+
+  it("leaves a file it wrote that someone changed since, and names it (beta.25)", async () => {
+    const root = await metarepo([CICD_SYSTEM]);
+    const a = await answeredWith(root, targets("/build/hooks", 12), CICD);
+    const qf = join(root, "questions", `${a.id}.yaml`);
+    const pBefore = await readFile(join(root, ...PROFILE), "utf8");
+    // The answer is written; someone adds to its file; then the profile's write fails.
+    failing.race = [{ file: qf, add: "# a person's note\n" }];
+    failing.profile = true;
+    try {
+      const err = await ignoreAnswerBox(root, CICD, { by: "pat", at: AT }).catch((e: Error) => e);
+      expect(err).toMatchObject({ code: "partial", written: [`questions/${a.id}.yaml`] });
+      expect((err as Error).message).toMatch(/someone else/);
+      expect((err as Error).message).not.toMatch(/nothing was written/);
+    } finally {
+      failing.profile = false;
+    }
+    const q = await readFile(qf, "utf8");
+    expect(q).toContain("# a person's note");
+    expect(q).toContain("Ignore:");
+    expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(pBefore);
   });
 
   it("refuses a write over files changed since its preview, writing nothing", async () => {

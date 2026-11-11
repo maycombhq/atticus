@@ -16,6 +16,7 @@ import {
   parseFacts,
   Api,
   FileChangedError,
+  ProfileEditError,
   QuestionError,
   type Fact,
   type CatalogRecord,
@@ -546,13 +547,15 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
       if (e.code === "partial") {
         for (const f of e.written) ctx.events.publish({ type: "file.changed", path: f });
         throw new HttpError(500, "Atticus wrote only part of it", e.message, {
-          written: e.written,
+          written: e.written.map((file) => ({ file })),
         });
       }
       throw badRequest(e.message);
     }
     if (e instanceof FileChangedError) throw conflict(e.message);
     if (e instanceof QuestionError) throw new HttpError(422, "Atticus can't do that", e.message);
+    // Beta.25: a profile edit Atticus doesn't make (a system holding an anchor others use).
+    if (e instanceof ProfileEditError) throw new HttpError(422, "Atticus can't do that", e.message);
     if (e instanceof Error && / would not be valid: /.test(e.message))
       throw new HttpError(422, "Atticus can't do that", e.message.split("\n")[0]!);
     throw e;

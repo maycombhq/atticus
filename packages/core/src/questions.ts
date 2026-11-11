@@ -1165,12 +1165,6 @@ export async function answerQuestion(
         "The AI doesn't ignore calls: a person says they aren't real.",
       );
     const reason = a.ignore.reason?.trim();
-    // Beta.25: as long as the API takes, from any caller.
-    if (reason && reason.length > IGNORE_REASON_MAX)
-      throw new QuestionError(
-        "bad-answer",
-        `An Ignore's reason is at most ${IGNORE_REASON_MAX} characters (this is ${reason.length}): say it in fewer words.`,
-      );
     if (reason) a = { ...a, text: ignoreText(reason) };
     else {
       let at = q.options.findIndex((o) => o.label === JOIN_IGNORE_LABEL);
@@ -1184,6 +1178,17 @@ export async function answerQuestion(
   const text = a.text?.trim() || undefined;
   if ((a.option === undefined) === (text === undefined))
     throw new QuestionError("bad-answer", "Give an option or your own words, one of the two.");
+  // Beta.25: an Ignore's reason, given with Ignore or as words (`Ignore: <reason>`), is as long
+  // as the API takes, from any caller.
+  const ignoreWhy =
+    text && JOIN_STEPS.has(q.askedBy.step)
+      ? ignoredAnswer({ options: q.options, answer: { text, by: a.by } })?.reason
+      : undefined;
+  if (ignoreWhy && ignoreWhy.length > IGNORE_REASON_MAX)
+    throw new QuestionError(
+      "bad-answer",
+      `An Ignore's reason is at most ${IGNORE_REASON_MAX} characters (this is ${ignoreWhy.length}): say it in fewer words.`,
+    );
   if (
     a.option !== undefined &&
     (!Number.isInteger(a.option) || a.option < 1 || a.option > q.options.length)

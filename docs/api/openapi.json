@@ -26523,6 +26523,24 @@
               "repos"
             ],
             "additionalProperties": false
+          },
+          "written": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [

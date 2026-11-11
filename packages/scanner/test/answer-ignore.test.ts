@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  forwardHostQuestion,
   ignoreOption,
   loadOrgPack,
   NO_TARGET,
@@ -86,4 +87,24 @@ describe("an Ignore answer (beta.24 review)", () => {
       const text = JSON.stringify(again.records);
       expect(text).not.toMatch(/ignore|cicd/i);
     });
+
+  it("reads the join's host question by its host's whole words, a `?` in the host and all (beta.25)", () => {
+    // A call whose host is a token with a `?` in it: the join asks of it whole.
+    for (const host of ["${PROD ? A_URL : B_URL}", "${A_URL ?? B_URL}", "{{ url }}?"]) {
+      const facts = notes().map((f) => (f.id === "c-archive" ? ({ ...f, host } as Fact) : f));
+      const q = {
+        id: "q-join-host",
+        repo: "forge-notes",
+        state: "answered",
+        question: forwardHostQuestion(host, "forge-notes"),
+        options: [ignoreOption()],
+        evidence: ["web/src/notes/notes-api.ts:99"],
+        answer: { option: 1, by: "pat", at: "2026-11-10T12:00:00.000Z" },
+        askedBy: { step: TARGETS_STEP },
+      } as unknown as Question;
+      expect(targetsFromAnswers("forge-notes", facts, [q]), host).toEqual({
+        "c-archive": NO_TARGET,
+      });
+    }
+  });
 });

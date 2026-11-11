@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -93,7 +93,10 @@ beforeAll(async () => {
     extend: (r, ctx) => uiTrustRoutes(r, ctx),
   });
 });
-afterAll(() => srv?.close());
+afterAll(async () => {
+  await srv?.close();
+  if (root) await rm(root, { recursive: true, force: true });
+});
 
 describe("boxes made from an answer's words (beta.24 review)", () => {
   it("lists each on Map › Trust, a system of the profile and an answer's words alike", async () => {
@@ -179,5 +182,43 @@ describe("boxes made from an answer's words (beta.24 review)", () => {
     const after = Api.TrustView.parse((await call("GET", "/api/trust")).body);
     expect(after.answerBoxes ?? []).toEqual([]);
     expect((await call("POST", "/api/trust/answer-boxes/ignore", { id })).status).toBe(404);
+  });
+
+  it("answers 422, in words, for a box whose system holds an anchor others use (beta.25)", async () => {
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    const box = "this-is-the-anchor-box";
+    await writeFile(
+      file,
+      before.replace(
+        "environments:",
+        `  - { id: ${box}, name: "this is the anchor box", boundary: vendor, owner: &own team-harbor, aliases: [] }\n  - { id: northwind-relay, name: Northwind Relay, boundary: vendor, owner: *own, aliases: [] }\nenvironments:`,
+      ),
+    );
+    const { raised } = await raiseQuestions(root, [draft("/anchor", 30)], {
+      step: TARGETS_STEP_ID,
+      repo: "forge-payments",
+      command: "atticus verify forge-payments --write",
+      rerun: "atticus verify forge-payments --write",
+      at: AT,
+    });
+    await writeQuestion(root, answeredWith(raised[0]!, box));
+    const r = await call("POST", "/api/trust/answer-boxes/ignore", { id: box, preview: true });
+    expect(r.status).toBe(422);
+    expect(Api.Problem.parse(r.body).detail).toMatch(/anchor &own.*by hand/);
+    expect(await readFile(file, "utf8")).toContain("&own");
+  });
+
+  it("declares the files a 500 left written on the problem (beta.25)", () => {
+    const p = Api.Problem.parse({
+      type: "about:blank",
+      title: "Atticus wrote only part of it",
+      status: 500,
+      written: [{ file: "questions/q-1.yaml" }, { repo: "forge-payments", file: "a.txt" }],
+    });
+    expect(p.written).toEqual([
+      { file: "questions/q-1.yaml" },
+      { repo: "forge-payments", file: "a.txt" },
+    ]);
   });
 });

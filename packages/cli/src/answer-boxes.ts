@@ -6,12 +6,14 @@ import {
   answerQuestion,
   editProfileSystem,
   FileChangedError,
+  IGNORE_REASON_MAX,
   ignoredAnswer,
   isAdopted,
   JOIN_STEPS,
   knownTargetNames,
   listQuestions,
   loadOrgPack,
+  nameReadsAsSentence,
   namesKnown,
   orgPackDirOf,
   questionsDirOf,
@@ -36,9 +38,11 @@ import {
  *
  * Beta.25 (review of beta.24): a box is only what a person's own words made: an answer whose words
  * read as a sentence (`readsAsSentence`), and the system of a profile with the id those words slug
- * to. A system is never judged by the shape of its id: one an option, the picker or an outside
- * system's answer made (named by a host, with the host as its alias) is never a box. A fix writes
- * all of its files or none, and only over the files its preview was made from (`stamp`).
+ * to, its name a sentence by its words (`nameReadsAsSentence`, never by its marks). A system is
+ * never judged by the shape of its id: one an option, the picker or an outside system's answer made
+ * (named by a host, with the host as its alias) is never a box. A fix writes all of its files or
+ * none, and only over the files its preview was made from (`stamp`); a failure never puts back
+ * over another writer's change.
  */
 
 export class AnswerBoxError extends Error {
@@ -67,17 +71,13 @@ const idOfWords = (words: string) => slugify(words).replace(/\./g, "-");
 export async function answerBoxesOf(root: string): Promise<Api.AnswerBoxT[]> {
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const prefix = isAdopted(root) ? ".atticus/" : "";
-  const systems = new Map<
-    string,
-    { name: string; aliases: string[]; topics: string[]; profile: string }
-  >();
+  const systems = new Map<string, { name: string; aliases: string[]; profile: string }>();
   for (const p of op?.profiles ?? [])
     for (const s of p.profile?.systems ?? [])
       if (!systems.has(s.id))
         systems.set(s.id, {
           name: s.name,
           aliases: s.aliases,
-          topics: s.topics ?? [],
           profile: `${prefix}org-pack/profiles/${p.platform}/profile.yaml`,
         });
   const answered = await listQuestions(root, { state: "answered" }).then(
@@ -95,10 +95,12 @@ export async function answerBoxesOf(root: string): Promise<Api.AnswerBoxT[]> {
     let made: typeof s;
     if (s) {
       // The system the answer names (the picker's answer is its id): a box only when a person's
-      // words made it, its name a sentence of theirs, with no host or topic of its own. One an
-      // outside system's answer made (named by a host, the host its alias), or named as a
-      // system is ("IT Service Desk", "Plan A"), is real, whatever its id looks like.
-      if (s.aliases.length || s.topics.length || !readsAsSentence(s.name)) continue;
+      // words made it, its name a sentence of theirs by its words (never by its marks: "Northwind,
+      // Inc." is a name), with no host of its own. One an outside system's answer made (named by
+      // a host, the host its alias), or named as a system is ("IT Service Desk", "Plan A"), is
+      // real, whatever its id looks like. A topic is no sign: a topics answer's typed words make
+      // a system with the topic under its topics.
+      if (s.aliases.length || !nameReadsAsSentence(s.name)) continue;
       made = s;
     } else if (!readsAsSentence(words) || namesKnown(known, words)) continue;
     const box = boxes.get(id) ?? {
@@ -131,7 +133,7 @@ async function boxOf(root: string, id: string) {
 /** The reason an Ignore made from Trust keeps: the person's word, and the answer it replaces. */
 const ignoreReason = (was: string) => {
   const r = `It was 'ignore this' (the answer was: ${was})`;
-  return r.length > 300 ? `${r.slice(0, 296)}...)` : r;
+  return r.length > IGNORE_REASON_MAX ? `${r.slice(0, IGNORE_REASON_MAX - 4)}...)` : r;
 };
 
 // ------------------------------------------------------------------ all or none
@@ -162,12 +164,25 @@ function stampOf(root: string, snap: Snap): string {
 const relOf = (root: string, f: string) => relative(root, f).split("\\").join("/");
 
 /**
- * Write a fix all or none: every file it writes held (`<file>.lock`), each still as it was read
- * (else nothing is written), then `work`, whose every write is whole and renamed into place
- * (writeFileIfUnchanged). A failure puts back each file written, as it was; one that can't be put
- * back is named (`partial`), never said to be unwritten.
+ * What a fix wrote to a file, recorded as it writes it (the text given, or else the file as it is
+ * just after the write): a put back after a failure touches only a file that still holds that.
  */
-async function allOrNone(root: string, snap: Snap, work: () => Promise<void>): Promise<void> {
+type Wrote = (file: string, text?: string) => Promise<void>;
+
+/**
+ * Write a fix all or none, as far as Atticus can: each file it writes held (`<file>.lock`, which
+ * keeps out the other writers that take it; an answer in the CLI or the app takes none), each
+ * still as it was read (else nothing is written), then `work`, whose every write is whole and
+ * renamed into place (writeFileIfUnchanged) and recorded (`wrote`). Beta.25 (review of beta.24): a
+ * failure puts back only a file that still holds what the fix wrote to it; a file someone else
+ * changed meanwhile is left as they wrote it, and named. One the fix wrote that can't be put back,
+ * or that someone changed after the fix wrote it, is named (`partial`), never said to be unwritten.
+ */
+async function allOrNone(
+  root: string,
+  snap: Snap,
+  work: (wrote: Wrote) => Promise<void>,
+): Promise<void> {
   const files = [...snap.keys()];
   const hold = (i: number): Promise<void> =>
     i < files.length
@@ -183,37 +198,71 @@ async function allOrNone(root: string, snap: Snap, work: () => Promise<void>): P
           "changed",
           `${relOf(root, f)} changed since it was read (another edit, or a person's): nothing was written. Look at the change again and redo it.`,
         );
+    const ours = new Map<string, string | undefined>();
+    const wrote: Wrote = async (file, text) => {
+      ours.set(file, text ?? (await readFile(file, "utf8").catch(() => undefined)));
+    };
     try {
-      await work();
+      await work(wrote);
     } catch (e) {
+      /** Written by the fix and couldn't be put back; written, then changed by someone else. */
       const kept: string[] = [];
+      const over: string[] = [];
+      /** Changed by someone else, not by the fix: left as they wrote it. */
+      const theirs: string[] = [];
       for (const f of files) {
         const now = await readFile(f, "utf8").catch(() => undefined);
         const was = snap.get(f);
         if (now === was) continue;
-        try {
-          if (was === undefined) await rm(f, { force: true });
-          else await writeFileIfUnchanged(f, now, was);
-        } catch {
-          kept.push(relOf(root, f));
-        }
+        if (!ours.has(f)) theirs.push(relOf(root, f));
+        else if (now !== ours.get(f)) over.push(relOf(root, f));
+        else
+          try {
+            if (was === undefined) await rm(f, { force: true });
+            else await writeFileIfUnchanged(f, now, was);
+          } catch {
+            kept.push(relOf(root, f));
+          }
       }
-      const why = e instanceof Error ? e.message.split("\n")[0]! : String(e);
-      if (kept.length)
+      const why =
+        e instanceof FileChangedError
+          ? `${relOf(root, e.path)} changed since it was read`
+          : e instanceof Error
+            ? e.message.split("\n")[0]!
+            : String(e);
+      const them = (l: string[], one: string, many: string) =>
+        `${l.join(", ")} ${l.length === 1 ? one : many}`;
+      const left = theirs.length
+        ? ` ${them(theirs, "was changed by someone else meanwhile: it is left as they wrote it.", "were changed by someone else meanwhile: they are left as they wrote them.")}`
+        : "";
+      if (kept.length || over.length)
         throw new AnswerBoxError(
           "partial",
-          `The fix couldn't be written (${why}), and ${kept.join(", ")} couldn't be put back as ${kept.length === 1 ? "it was: it is" : "they were: they are"} written, the other files are not.`,
-          kept,
+          `The fix couldn't be written (${why}).${kept.length ? ` ${them(kept, "couldn't be put back as it was: it is written.", "couldn't be put back as they were: they are written.")}` : ""}${over.length ? ` ${them(over, "was changed by someone else after the fix wrote it, so it is left as it is, the fix's change in it.", "were changed by someone else after the fix wrote them, so they are left as they are, the fix's change in them.")}` : ""}${left} The fix's other files are as they were.`,
+          [...kept, ...over].sort(),
         );
       if (e instanceof FileChangedError)
         throw new AnswerBoxError(
           "changed",
-          `${relOf(root, e.path)} changed since it was read (another edit, or a person's): nothing was written, and what was written before it was put back. Look at the change again and redo it.`,
+          `${relOf(root, e.path)} changed since it was read (another edit, or a person's): nothing of the fix was written, and what it wrote before was put back.${left} Look at the change again and redo it.`,
         );
       throw e;
     }
   };
   await hold(0);
+}
+
+/**
+ * Record what an answer wrote: its question file, and its skill file when it wrote that, each as
+ * it is just after the write (answerQuestion writes them itself).
+ */
+async function answered(
+  root: string,
+  wrote: Wrote,
+  r: { question: Question; skill?: { path: string; written: boolean } },
+): Promise<void> {
+  await wrote(join(questionsDirOf(root), `${r.question.id}.yaml`));
+  if (r.skill?.written) await wrote(join(root, ...r.skill.path.split("/")));
 }
 
 /** A write asked for over files that changed since its preview: nothing is written. */
@@ -253,16 +302,23 @@ export async function ignoreAnswerBox(
   const snap = await snapshot(root, qs, profile ? [profile.file] : []);
   const stamp = checkStamp(root, snap, o.stamp);
   if (!o.preview)
-    await allOrNone(root, snap, async () => {
+    await allOrNone(root, snap, async (wrote) => {
       for (const q of qs)
-        await answerQuestion(root, q.id, {
-          ignore: { reason: ignoreReason(wordsOf(q) ?? "") },
-          scope: q.answer!.scope.level,
-          ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
-          by: o.by,
-          at: o.at,
-        });
-      if (profile) await writeFileIfUnchanged(profile.file, profile.before, profile.after);
+        await answered(
+          root,
+          wrote,
+          await answerQuestion(root, q.id, {
+            ignore: { reason: ignoreReason(wordsOf(q) ?? "") },
+            scope: q.answer!.scope.level,
+            ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
+            by: o.by,
+            at: o.at,
+          }),
+        );
+      if (profile) {
+        await writeFileIfUnchanged(profile.file, profile.before, profile.after);
+        await wrote(profile.file, profile.after);
+      }
     });
   return {
     id: box.id,
@@ -337,19 +393,26 @@ export async function renameAnswerBox(
   const snap = await snapshot(root, qs, profile ? [profile.file] : []);
   const stamp = checkStamp(root, snap, o.stamp);
   if (!o.preview)
-    await allOrNone(root, snap, async () => {
+    await allOrNone(root, snap, async (wrote) => {
       for (const q of qs)
-        await answerQuestion(root, q.id, {
-          text: to,
-          // A new system the profile gains is named by the answer, so it isn't refused.
-          ...(known ? {} : { adds: to }),
-          scope: q.answer!.scope.level,
-          ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
-          ...(q.answer!.match ? { match: q.answer!.match } : {}),
-          by: o.by,
-          at: o.at,
-        });
-      if (profile) await writeFileIfUnchanged(profile.file, profile.before, profile.after);
+        await answered(
+          root,
+          wrote,
+          await answerQuestion(root, q.id, {
+            text: to,
+            // A new system the profile gains is named by the answer, so it isn't refused.
+            ...(known ? {} : { adds: to }),
+            scope: q.answer!.scope.level,
+            ...(q.answer!.scope.level === "repo-type" ? { repoType: q.answer!.scope.id } : {}),
+            ...(q.answer!.match ? { match: q.answer!.match } : {}),
+            by: o.by,
+            at: o.at,
+          }),
+        );
+      if (profile) {
+        await writeFileIfUnchanged(profile.file, profile.before, profile.after);
+        await wrote(profile.file, profile.after);
+      }
     });
   return {
     id: box.id,

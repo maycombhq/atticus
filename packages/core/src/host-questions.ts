@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isMap, isSeq, parseDocument, YAMLSeq, type Document } from "yaml";
+import { isAlias, isMap, isNode, isSeq, parseDocument, visit, YAMLSeq, type Document } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { slugify, cmpText } from "./identity.js";
@@ -123,21 +123,29 @@ export const SYSTEM_NAME_MAX = 40;
 
 /**
  * The small words a sentence is made of (beta.24 review): two or more of them in a phrase make it
- * a sentence, never a name. One is a name's ("IT Service Desk", "Plan A", "To Do"). The words of
- * the language, not of any organisation, so nothing here is an org's convention.
+ * a sentence, never a name. One is a name's ("IT Service Desk", "Plan A", "To Do"). Beta.25: the
+ * function words of the language only, never a word a name may hold ("Ignore", "Related"), and
+ * nothing of any organisation's, so nothing here is an org's convention.
  */
-const SENTENCE_WORDS = new Set([
-  "ignore",
-  "this",
-  "is",
-  "a",
-  "to",
-  "the",
-  "related",
-  "not",
-  "its",
-  "it",
-]);
+const SENTENCE_WORDS = new Set(["this", "is", "a", "to", "the", "not", "its", "it"]);
+
+/** How many of a sentence's small words the words hold. */
+const sentenceWordsIn = (words: string) =>
+  words
+    .trim()
+    .toLowerCase()
+    .split(/[\s_'’,;:!?."“”()-]+/)
+    .filter((w) => SENTENCE_WORDS.has(w)).length;
+
+/**
+ * Beta.25 (review of beta.24): whether a system's name reads as a sentence: by its words only,
+ * two or more of a sentence's small words ("ignore this, its cicd related"). Never by its marks:
+ * a real system's name may have a comma, a full stop or a `!` in it ("Northwind, Inc.", "Harbor
+ * Co."), and a profile holds what its people wrote.
+ */
+export function nameReadsAsSentence(name: string): boolean {
+  return sentenceWordsIn(name) >= 2;
+}
 
 /**
  * Beta.25 (review of beta.24): whether words read as a sentence rather than a name: a sentence's
@@ -149,11 +157,7 @@ const SENTENCE_WORDS = new Set([
 export function readsAsSentence(words: string): boolean {
   const n = words.trim();
   if (/[,;!?"“”]|\.(?:\s|$)/.test(n)) return true;
-  const ws = n
-    .toLowerCase()
-    .split(/[\s_'’-]+/)
-    .filter(Boolean);
-  return ws.filter((w) => SENTENCE_WORDS.has(w)).length >= 2;
+  return sentenceWordsIn(n) >= 2;
 }
 
 /**
@@ -173,20 +177,33 @@ export function systemNameProblem(name: string): string | undefined {
   return undefined;
 }
 
+/** The names Atticus knows a target by (`knownTargetNames`). */
+export interface KnownTargets {
+  ids: Set<string>;
+  names: Set<string>;
+  /**
+   * Beta.25: the profiles' systems' names exactly, lower case, marks and all ("northwind, inc."),
+   * of those whose name isn't a sentence by its words (`nameReadsAsSentence`).
+   */
+  systemNames?: Set<string>;
+}
+
 /**
  * Beta.25: the names Atticus knows a target by, as `namesKnownTarget` reads them: `ids` the ids
  * (repos, components, a system's id, alias or topic, teams) exactly, lower case; `names` those and
- * the systems' names, each also as the id it slugs to. Systems whose id is in `except` are left
- * out (the boxes an answer's words made, which name nothing real).
+ * the systems' names, each also as the id it slugs to; `systemNames` the systems' names exactly.
+ * Systems whose id is in `except` are left out (the boxes an answer's words made, which name
+ * nothing real).
  */
 export async function knownTargetNames(
   root: string,
   o: { except?: ReadonlySet<string> } = {},
-): Promise<{ ids: Set<string>; names: Set<string> }> {
+): Promise<Required<KnownTargets>> {
   const { loadOrgPack } = await import("./orgpack-load.js");
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const ids = new Set<string>();
   const names = new Set<string>();
+  const systemNames = new Set<string>();
   const add = (n: string | undefined, isId = true) => {
     if (!n?.trim()) return;
     if (isId) ids.add(n.trim().toLowerCase());
@@ -203,6 +220,8 @@ export async function knownTargetNames(
       if (o.except?.has(s.id)) continue;
       for (const n of [s.id, ...s.aliases, ...(s.topics ?? [])]) add(n);
       add(s.name, false);
+      if (s.name.trim() && !nameReadsAsSentence(s.name))
+        systemNames.add(s.name.trim().toLowerCase());
     }
   }
   for (const t of op?.roles?.teams ?? []) add(t.id);
@@ -214,17 +233,19 @@ export async function knownTargetNames(
     const text = await readFile(join(dir, f), "utf8").catch(() => "");
     for (const m of text.matchAll(/"component"\s*:\s*"([^"]+)"/g)) add(m[1]);
   }
-  return { ids, names };
+  return { ids, names, systemNames };
 }
 
 /**
- * Whether words name a target of `knownTargetNames`: case and spacing aside, or by the id they
- * slug to; words that read as a sentence only when they are an id exactly (a sentence is never a
- * system's name, even one an answer's words once wrote into a profile).
+ * Whether words name a target of `knownTargetNames`: a profile system's name exactly, case aside
+ * (beta.25: "Northwind, Inc." names the system so named, its marks and all); else case and spacing
+ * aside, or by the id they slug to; words that read as a sentence only when they are an id exactly
+ * (a sentence is never a system's name, even one an answer's words once wrote into a profile).
  */
-export function namesKnown(known: { ids: Set<string>; names: Set<string> }, words: string) {
+export function namesKnown(known: KnownTargets, words: string) {
   const want = words.trim().toLowerCase();
   if (!want) return false;
+  if (known.systemNames?.has(want)) return true;
   if (readsAsSentence(want)) return known.ids.has(want);
   return known.names.has(want) || known.names.has(slugify(words));
 }
@@ -323,8 +344,17 @@ async function platformsOf(root: string): Promise<{ dir: string; platform: strin
     .sort((a, b) => cmpText(a.platform, b.platform));
 }
 
-/** A flow collection's padding taken out, to tell a line the library re-padded from a changed one. */
-const unpadded = (line: string) => line.replace(/([[{]) +/g, "$1").replace(/ +([\]}])/g, "$1");
+/**
+ * A line as the library may write it again with nothing changed, to tell such a line from a
+ * changed one: a flow collection's padding taken out, the spaces before an inline comment as one
+ * (the library writes `a # b` for `a   # b`), and no spaces at its end.
+ */
+const unpadded = (line: string) =>
+  line
+    .replace(/([[{]) +/g, "$1")
+    .replace(/ +([\]}])/g, "$1")
+    .replace(/[ \t]+#/g, " #")
+    .replace(/[ \t]+$/, "");
 
 /**
  * Beta.25 (review of beta.24): the one way every profile edit is written (an outside system, a
@@ -343,10 +373,33 @@ export function profileText(doc: Document, before: string | undefined): string {
   if (was === undefined) return out;
   const kept = new Map<string, string>();
   for (const l of was.split("\n")) if (!kept.has(unpadded(l))) kept.set(unpadded(l), l);
-  return out
+  const text = out
     .split("\n")
     .map((l) => kept.get(unpadded(l)) ?? l)
     .join("\n");
+  // Beta.25: the file's end as it was: a file with no newline at its end keeps none.
+  return was && !was.endsWith("\n") ? text.replace(/\n+$/, "") : text;
+}
+
+/**
+ * Beta.25 (review of beta.24): a profile edit Atticus doesn't make, said in a person's words (the
+ * local API answers 422): the file stays as it is, for a person to change by hand.
+ */
+export class ProfileEditError extends Error {}
+
+/**
+ * The anchors an edit would leave aliases of with nothing to name (`*own` once its `&own` went
+ * with the system that held it), in the file's order.
+ */
+function aliasesLeftOf(doc: Document): string[] {
+  const anchors = new Set<string>();
+  const left: string[] = [];
+  visit(doc, (_key, node) => {
+    if (isAlias(node)) {
+      if (!anchors.has(node.source) && !left.includes(node.source)) left.push(node.source);
+    } else if (isNode(node) && node.anchor) anchors.add(node.anchor);
+  });
+  return left;
 }
 
 /**
@@ -581,6 +634,12 @@ export async function editProfileSystem(
         else seq.comment = seq.comment ? `${lead}\n${seq.comment}` : lead;
       }
     }
+    // Beta.25: never an alias left naming nothing (the system held the anchor it names).
+    const left = aliasesLeftOf(doc);
+    if (left.length)
+      throw new ProfileEditError(
+        `${id} holds the YAML anchor ${left.map((a) => `&${a}`).join(", ")} in ${rel}, which other lines use (${left.map((a) => `*${a}`).join(", ")}): Atticus doesn't ${o.rename ? "rename" : "take out"} it, as they would name nothing. Write the value in place of ${left.map((a) => `*${a}`).join(", ")} by hand (or move the anchor to another line), then do this again.`,
+      );
     const checked = Profile.safeParse(doc.toJS());
     if (!checked.success)
       throw new Error(
