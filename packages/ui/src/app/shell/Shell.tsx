@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useLastAnswer } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { useActivity, titleOf } from "../activity.js";
 import { AiChip, Person, ThemeSwitch, type Health } from "../chrome.js";
@@ -20,7 +19,15 @@ import {
   restoreDraft,
   togglesIn,
 } from "./drafts.js";
+import {
+  OWNER_QUESTIONS_PATH,
+  questionsToAnswerOf,
+  STEP_QUESTIONS_PATH,
+  type OwnerQuestionsAnswer,
+  type StepQuestionsAnswer,
+} from "../question-counts.js";
 import { Explorer } from "./Explorer.js";
+import { useKnownAnswer } from "./explorer-data.js";
 import { PinIcon, SearchIcon, Tip } from "./icons.js";
 import { pinHash, togglePin, usePins } from "./pinned-pages.js";
 import {
@@ -196,15 +203,31 @@ function PinTool({ hash, label }: { hash: string; label: string }) {
   );
 }
 
-/** The counts the shell shows, from answers pages already loaded (never a request of its own). */
-function useCounts(): { questions?: number; repos?: number } {
-  const steps = useLastAnswer<{ questions?: unknown[] }>("/api/questions?state=open");
-  const owner = useLastAnswer<{ open?: number }>("/api/owner-questions");
-  const trust = useLastAnswer<{ repos?: unknown[] }>("/api/trust");
-  const a = Array.isArray(steps?.questions) ? steps.questions.length : undefined;
-  const b = typeof owner?.open === "number" ? owner.open : undefined;
+/**
+ * The counts the shell shows (the badge, the status bar). Beta.27: the same on every page, not
+ * only once a page loaded them: each is the answer a page already had, else the shell's own read
+ * once the page is quiet (useKnownAnswer). The questions to answer are both kinds, counted as Home
+ * and Questions count them (question-counts.ts); none until both are known.
+ */
+function useCounts(want: boolean): { questions?: number; repos?: number } {
+  const steps = useKnownAnswer<StepQuestionsAnswer>(STEP_QUESTIONS_PATH, want);
+  const owner = useKnownAnswer<OwnerQuestionsAnswer>(OWNER_QUESTIONS_PATH, want);
+  const trust = useKnownAnswer<{ repos?: unknown[] }>(TRUST_PATH, want);
+  return shellCounts(steps, owner, trust);
+}
+
+/** The status bar's repos: the manifest's, as Map › Trust lists them. */
+export const TRUST_PATH = "/api/trust";
+
+/** The shell's counts from the answers it has (tests give their own). */
+export function shellCounts(
+  steps: StepQuestionsAnswer | undefined,
+  owner: OwnerQuestionsAnswer | undefined,
+  trust: { repos?: unknown[] } | undefined,
+): { questions?: number; repos?: number } {
+  const q = questionsToAnswerOf(steps, owner);
   return {
-    ...(a !== undefined || b !== undefined ? { questions: (a ?? 0) + (b ?? 0) } : {}),
+    ...(q ? { questions: q.total } : {}),
     ...(Array.isArray(trust?.repos) ? { repos: trust.repos.length } : {}),
   };
 }
@@ -337,7 +360,7 @@ export function Shell({
   const scroller = useRef<HTMLElement>(null);
   const sideToggle = useRef<HTMLDivElement>(null);
   const forgetDrafts = useDrafts(hash, panel, scroller);
-  const counts = useCounts();
+  const counts = useCounts(!embedded);
   const activity = useActivity();
   const { me } = useMe();
   const running = (activity?.entries ?? []).filter((e) => e.state === "running");

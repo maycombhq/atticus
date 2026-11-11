@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, BUSY_EVENT, rememberAnswer, requestsInFlight } from "../../api/client.js";
+import {
+  api,
+  ApiError,
+  BUSY_EVENT,
+  rememberAnswer,
+  requestsInFlight,
+  useLastAnswer,
+} from "../../api/client.js";
 
 /**
  * The Explorer's reads (beta.26). Each is a GET the app already makes (Home's /api/changes and
@@ -119,4 +126,17 @@ export function useLazyApi<T>(
     };
   }, [path, want, tick]);
   return { ...s, reload };
+}
+
+/**
+ * Beta.27: an answer the shell shows a count from (the badge, the status bar), on every page and
+ * not only on the pages that load it: the last answer a page (or the Explorer) had to the path,
+ * else one read of its own once the page is quiet (as a section open from the start reads), so a
+ * page that loads the path itself (Home loads /api/trust) is never asked twice. Nothing while
+ * `want` is false (an editor's panel has no status bar).
+ */
+export function useKnownAnswer<T>(path: string, want = true): T | undefined {
+  const last = useLastAnswer<T>(path);
+  const own = useLazyApi<T>(path, want && last === undefined, true);
+  return last ?? (own.state === "ready" ? own.data : undefined);
 }

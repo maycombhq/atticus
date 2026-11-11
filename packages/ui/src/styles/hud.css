@@ -1225,8 +1225,14 @@ a.btn {
 .viewer-aside[hidden] {
   display: none;
 }
+/* Beta.27: in sentence case and wrapping (the HUD's capitals ran it past the frame's right edge);
+   the picture leaves it the room it takes (DiagramFrame). */
 .viewer-keys {
   margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 /* Focus mode: what isn't the focused box or a neighbour is dimmed, never hidden. */
 .arch-canvas .react-flow__node.dim,

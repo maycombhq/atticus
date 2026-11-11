@@ -6,7 +6,7 @@ import type { z } from "zod";
 import { Api, runsDirOf, startTerminalRun } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { newestKeepingRunning, tracked, uiActivityRoutes } from "../src/ui-api-activity.js";
-import { main } from "../src/main.js";
+import { main, optionValuesOf } from "../src/main.js";
 
 /**
  * ADR 0187: the Console's list. The app's jobs with what they printed, the commands run in a
@@ -311,6 +311,26 @@ describe("a command run from the command line (ADR 0187)", () => {
     const r2 = await metarepo();
     await main(["verify", "forge-nothing", "--root", r2], io);
     expect(readTerminalRuns(r2)).toEqual([]);
+  });
+
+  it("beta.27: titles it as typed, the flags' values kept unless they look secret", async () => {
+    const { runTitle } = await import("@maycombhq/core");
+    const argv = [
+      "initiative",
+      "plan",
+      "transfer-limits-rollout",
+      "--target",
+      "2027-03-31",
+      "--by=@bao",
+      "--root",
+      "/work/forge",
+    ];
+    const values = optionValuesOf(argv);
+    expect(values).toMatchObject({ target: "2027-03-31", by: "@bao", root: "/work/forge" });
+    expect(
+      runTitle(["initiative", "plan", "transfer-limits-rollout"], ["target", "by", "root"], values)
+        .title,
+    ).toBe("atticus initiative plan transfer-limits-rollout --target 2027-03-31 --by @bao");
   });
 });
 

@@ -33,7 +33,8 @@ const { useLastAnswer } = await import("../src/api/client.js");
 const { panelHost, inEditorPanel, HOST_KEY } = await import("../src/app/shell/host.js");
 const { overlayEscape, Resizer, Shell } = await import("../src/app/shell/Shell.js");
 const { CommandPalette, OPEN_PALETTE } = await import("../src/app/palette.js");
-const { forgetExplorerAnswers, useLazyApi } = await import("../src/app/shell/explorer-data.js");
+const { forgetExplorerAnswers, QUIET_MS, useKnownAnswer, useLazyApi } =
+  await import("../src/app/shell/explorer-data.js");
 const { DraftShelf } = await import("../src/app/shell/drafts.js");
 const { PINS_KEY, togglePin, readPinsOr } = await import("../src/app/shell/pinned-pages.js");
 const { startHash, TABS_KEY, initialTabs, openTab } =
@@ -231,6 +232,36 @@ describe("3. the Explorer's and the shell's counts keep up", () => {
     await settle();
     m.render();
     expect((m.tree as { last?: { questions: unknown[] } }).last?.questions).toHaveLength(4);
+  });
+
+  it("beta.27: has the status bar's counts on every page, never asking twice for one a page read", async () => {
+    const TRUST = "/api/trust";
+    const Known = () => useKnownAnswer<{ repos: unknown[] }>(TRUST);
+    // A page that doesn't read /api/trust (beta.26: the repos showed on Home only): the shell
+    // reads it once the page is quiet.
+    forgetExplorerAnswers();
+    asked.length = 0;
+    answers.set(TRUST, { repos: [1, 2, 3, 4, 5, 6, 7] });
+    let m = mount(Known, {});
+    expect(m.tree).toBeUndefined();
+    await new Promise((r) => setTimeout(r, QUIET_MS + 50));
+    m.render();
+    expect(asked).toEqual([TRUST]);
+    expect((m.tree as { repos: unknown[] }).repos).toHaveLength(7);
+    // A page that read it already (Home): its answer, and no request of the shell's own.
+    asked.length = 0;
+    m = mount(Known, {});
+    await new Promise((r) => setTimeout(r, QUIET_MS + 50));
+    m.render();
+    expect(asked).toEqual([]);
+    expect((m.tree as { repos: unknown[] }).repos).toHaveLength(7);
+    // An editor's panel has no status bar: nothing is read.
+    forgetExplorerAnswers();
+    const Off = () => useKnownAnswer<{ repos: unknown[] }>("/api/trust?off", false);
+    m = mount(Off, {});
+    await new Promise((r) => setTimeout(r, QUIET_MS + 50));
+    m.render();
+    expect(asked).toEqual([]);
   });
 });
 

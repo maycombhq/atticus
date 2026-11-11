@@ -42,3 +42,7 @@ The Console's toggle says Open or Close with `aria-expanded`; the list is a vert
 - A run still running whose process is there is never pruned; the list keeps every running entry, then the newest of the rest up to 100.
 - The Console takes an answer from a later line than it asked as lines dropped, says how many, and goes on from there.
 - Liveness: on Linux the record keeps its process's start (`procStart`, from `/proc/<pid>/stat`, one file read) and a pid whose process started at another time is ended; a command started by the command line writes its record every 30 s (`beatAt`), and a record that beats but has been silent (record and log) for over five minutes is ended without saying. A record without `beatAt` (an older Atticus) is judged as before.
+
+## Addendum (beta.27, 2026-11-11)
+
+- A run's title keeps a flag's value that is an id, a name, a date or a handle (`atticus initiative plan transfer-limits-rollout --target 2027-03-31 --by @bao`; beta.26 showed `--target --by`). A value is left out when its flag names a secret (`token`, `password`, `secret`, `api-key`, `access-key`, `private-key`, `credential`, `auth`, `cookie`, `session`, `cert`, `signature`), when it looks like one (core's `hasSecretShape` and `keyIsSecret`, moved from the verifier), when it isn't one word of letters, digits and `._/,:+@-`, or when redaction would change it; `--root` and `--metarepo` still keep none. The record's `flags` stay names only, and the local log (ADR 0050) still keeps no values.

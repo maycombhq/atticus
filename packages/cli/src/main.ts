@@ -979,13 +979,31 @@ function positionalsAt(argv: string[]): number[] {
 function recorderFor(argv: string[], flags: string[], root: string) {
   if (process.env.ATTICUS_RUN_LOG === "off") return undefined;
   let positionals: string[];
+  let values: Record<string, string>;
   try {
     positionals = positionalsAt(argv).map((i) => argv[i]!);
+    values = optionValuesOf(argv);
   } catch {
     return undefined;
   }
   if (!recordedCommand(positionals, flags) || !isMetarepoRoot(root)) return undefined;
-  return startTerminalRun(root, { positionals, flags, hookProcess: true });
+  // Beta.27: the values go to the title, which keeps an id or a name and drops a secret.
+  return startTerminalRun(root, { positionals, flags, values, hookProcess: true });
+}
+
+/** Beta.27: each option's value as the parser reads it (the last one given), by its name. */
+export function optionValuesOf(argv: string[]): Record<string, string> {
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: optionsFor(argv),
+    strict: false,
+    tokens: true,
+  });
+  const out: Record<string, string> = {};
+  for (const t of tokens)
+    if (t.kind === "option" && typeof t.value === "string") out[t.name] = t.value;
+  return out;
 }
 
 /** A metarepo, or a repo adopted in place: where Atticus keeps a log. */

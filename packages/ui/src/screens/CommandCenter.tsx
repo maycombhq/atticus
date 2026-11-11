@@ -37,6 +37,7 @@ import { Panel } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 import type { QuestionListView } from "./Questions.js";
 import { waitingQuestions } from "./OwnerQuestions.js";
+import { questionsToAnswerOf } from "../app/question-counts.js";
 import { Propose } from "../app/propose.js";
 import { stageOf, type OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
@@ -530,7 +531,9 @@ type CountStatus = { state: "loading" } | { state: "error"; error: string } | un
  * to where it is acted on. A count not loaded shows a dash, never a 0 that reads as "none".
  */
 export function waitingTiles(p: {
+  /** Beta.27: the questions to answer, both kinds (question-counts.ts), said apart under it. */
   questions: number | undefined;
+  questionsOf?: { steps: number; owner: number } | undefined;
   /** Where Questions to answer opens: the owner questions when only they wait. */
   questionsHref?: string | undefined;
   needs: number | undefined;
@@ -562,6 +565,7 @@ export function waitingTiles(p: {
       href: p.questionsHref ?? "#/questions",
       value: p.questions,
       ...of(p.status?.questions),
+      ...(p.questionsOf ? { sub: H.questionsSub(p.questionsOf.steps, p.questionsOf.owner) } : {}),
       tone: toneOf(p.questions, "waits"),
     },
     blocking: {
@@ -966,11 +970,12 @@ export function CommandCenter() {
     (f) => f.severity === "blocking" && holdsPhase(f.asks, stateOf.get(f.change)),
   );
   const notMine = open.filter((f) => levels && f.asks && !levels.includes(f.asks)).length;
-  const questions = qs.state === "ready" ? qs.data.open : 0;
-  const waitingQs = waitingQuestions(
-    asked.state === "ready" ? asked.data.questions.length : undefined,
-    qs.state === "ready" ? questions : undefined,
+  // Beta.27: the questions to answer, counted as the badge, the status bar and Questions count.
+  const toAnswer = questionsToAnswerOf(
+    asked.state === "ready" ? asked.data : undefined,
+    qs.state === "ready" ? qs.data : undefined,
   );
+  const waitingQs = waitingQuestions(toAnswer?.steps, toAnswer?.owner);
   const facts = kinds.state === "ready" ? kinds.data.reduce((a, k) => a + k.count, 0) : 0;
   const countOf = (kind: string) =>
     kinds.state === "ready" ? (kinds.data.find((k) => k.kind === kind)?.count ?? 0) : 0;
@@ -1005,6 +1010,7 @@ export function CommandCenter() {
   const status = homeStatus(listState, blocking.length);
   const wait = waitingTiles({
     questions: waitingQs.n,
+    questionsOf: toAnswer,
     questionsHref: waitingQs.href,
     needs: needs.state === "ready" ? allNeeds.filter((n) => n.status === "open").length : undefined,
     steps: todo.state === "ready" ? todo.data.steps.length : undefined,
@@ -1102,7 +1108,11 @@ export function CommandCenter() {
           </HomePanel>
         </div>
         <div className="hm-col">
-          <HomePanel id="hm-needs" title={T.needsAPerson} meta={waiting || undefined}>
+          <HomePanel
+            id="hm-needs"
+            title={T.needsAPerson}
+            meta={waiting ? H.needsMeta(waiting) : undefined}
+          >
             {notMine > 0 && levels && !levels.includes("design") && (
               <p className="hm-quiet-line">{COPY.roleWork.home.designWaits(notMine)}</p>
             )}

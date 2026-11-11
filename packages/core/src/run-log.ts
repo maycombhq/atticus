@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import { hasSecretShape, keyIsSecret } from "./cite.js";
 import { ignoreLocalSync, redactText } from "./log.js";
 
 /**
@@ -26,7 +27,9 @@ import { ignoreLocalSync, redactText } from "./log.js";
  *   colour codes; bounded (its last lines are kept past RUN_LOG_MAX_BYTES).
  * - `.atticus/logs/running/<runId>.json`: who and what — the command words, the ids it was given
  *   (repo, change, run and task ids: words that look like an id and nothing else), the names of
- *   its flags (never their values), the process and a hash of the machine's name, when it
+ *   its flags (in `flags`, never their values; beta.27: the title keeps a value that is an id, a
+ *   name or a date, never a secret-looking one: titleValue), the process and a hash of the
+ *   machine's name, when it
  *   started, and how it ended (its exit code), written again when it ends. While it runs it is
  *   written again every RUN_HEARTBEAT_MS (`beatAt`), and on Linux it keeps when its process
  *   started (`procStart`, from /proc): a process id used again by another process, or a run
@@ -192,16 +195,41 @@ const WHERE_FLAGS = new Set(["root", "metarepo"]);
 const safeWord = (w: string) =>
   ID_WORD.test(w) && !w.includes("//") && redactText(w, { home: "", user: "" }) === w ? w : "…";
 
-/** The command words, ids and flag names of a run, and its title. */
+/**
+ * Beta.27: a flag's value kept in a title: an id, a name, a date, a handle or a list of them
+ * (`2027-03-31`, `@bao`, `forge-ledger,forge-teller`), never one a secret could be. A flag whose
+ * name says secret (`--token`, `--api-key`, `--client-secret`) keeps no value whatever it is; a
+ * value shaped like one (a token, a random string, a digest: core's hasSecretShape and
+ * keyIsSecret, the verifier's), or anything the log's redaction would change, is dropped too.
+ */
+const VALUE_WORD = /^@?[A-Za-z0-9][A-Za-z0-9._/,:+@_-]{0,99}$/;
+const SECRET_FLAG =
+  /(token|passw|pwd|secret|api-?key|access-?key|private-?key|credential|auth|cookie|session|cert|signature)/i;
+export function titleValue(flag: string, value: string | undefined): string | undefined {
+  if (value === undefined || !value || SECRET_FLAG.test(flag)) return undefined;
+  if (!VALUE_WORD.test(value) || value.includes("//") || value.includes("\\")) return undefined;
+  if (hasSecretShape(value) || keyIsSecret(value)) return undefined;
+  return redactText(value, { home: "", user: "" }) === value ? value : undefined;
+}
+
+/**
+ * The command words, ids and flag names of a run, and its title. Beta.27: with the flags'
+ * values (`values`, by flag name; a boolean flag has none), each kept when titleValue keeps it, so
+ * the title reads as the command was typed; beta.26 dropped them all ("--target --by").
+ */
 export function runTitle(
   positionals: readonly string[],
   flags: readonly string[],
+  values: Readonly<Record<string, string | undefined>> = {},
 ): { command: string[]; title: string } {
   const command = positionals.slice(0, MAX_WORDS).map(safeWord);
   // Where it ran (the metarepo's folder) isn't what ran (beta.26 review).
   const names = flags
     .filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f) && !WHERE_FLAGS.has(f))
-    .map((f) => `--${f}`);
+    .map((f) => {
+      const v = Object.hasOwn(values, f) ? titleValue(f, values[f]) : undefined;
+      return v === undefined ? `--${f}` : `--${f} ${v}`;
+    });
   return { command, title: ["atticus", ...command, ...names].join(" ") };
 }
 
@@ -268,6 +296,8 @@ export interface TerminalRunRecorder {
 export interface StartRunOptions {
   positionals: readonly string[];
   flags: readonly string[];
+  /** Beta.27: the flags' values, by name, for the title (runTitle keeps the safe ones). */
+  values?: Readonly<Record<string, string | undefined>>;
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   pid?: number;
@@ -356,7 +386,7 @@ export function startTerminalRun(
     : pid === process.pid
       ? procStartOf(pid)
       : undefined;
-  const { command, title } = runTitle(o.positionals, o.flags);
+  const { command, title } = runTitle(o.positionals, o.flags, o.values);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
     runId,

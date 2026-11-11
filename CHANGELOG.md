@@ -2,6 +2,17 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.27 (unreleased)
+
+### Fixed
+
+- **The questions are counted once, the same everywhere.** Questions to answer is the open questions from the steps and the owner questions not answered yet: Home's tile (with the two said under it), the activity bar's badge, the status bar ("7 questions to answer"), the Explorer's Questions and a new line at the top of Questions ("7 questions to answer: 4 from the steps, 3 owner questions") all show that one number (`packages/ui/src/app/question-counts.ts`). Questions' Open, Answered, Retired and All are labelled as the steps' questions only, and Home's Needs a person says what it counts ("14 waiting": the questions and everything else waiting on a person).
+- **The status bar is the same on every page.** Its repos and questions showed only once a page had loaded them (the repos on Home only); the shell now reads what the page didn't, once the page is quiet, and never asks again for what the page read.
+- **At a glance agrees with itself.** It said Ready to raise "Plan ready" over a next step of answering a question and running the stories stage again: while the next step is anything but the gate's own, it says the hand-off isn't ready yet. The proposal's conversation said its stage hadn't started while All changes listed the proposal as Written: both read the one check of a written artifact (`artifactWritten`), so a proposal written outside the app is written there too.
+- **The map's canvas can be read when fitted.** A fit no longer goes below 90 % (it went to 60 %, its words about 8 px); a bigger picture starts at its top-left and pans. A link's label moves along its route off a box it would run under ("2 × calls" under payments.initiated). The keys line under the picture is in sentence case and wraps, and the picture leaves it the room it takes.
+- **A run's title reads as typed.** The Console showed `atticus initiative plan transfer-limits-rollout --target --by`: a flag's value that is an id, a name, a date or a handle is kept now; one whose flag names a secret (`--token`, `--api-key`, …) or that looks like one (a token, a random string, a digest: `hasSecretShape` and `keyIsSecret`, which moves from the verifier to core) is still left out.
+- **The cited line on Questions is read whole.** A long line of code wrapped under itself, its line number kept in its own column, instead of running past the box's right edge.
+
 ## 2.0.0-beta.26 (2026-11-11)
 
 ### Changed

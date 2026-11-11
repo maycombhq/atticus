@@ -109,6 +109,40 @@ describe("which commands keep a run log", () => {
     expect(t.command).toEqual(["map", "…", "…", "…", "…"]);
   });
 
+  it("beta.27: keeps a flag's value that is an id, a name or a date, so the title reads as typed", () => {
+    // Beta.26 dropped every value: "atticus initiative plan transfer-limits-rollout --target --by".
+    expect(
+      runTitle(["initiative", "plan", "transfer-limits-rollout"], ["target", "by"], {
+        target: "2027-03-31",
+        by: "@bao",
+      }).title,
+    ).toBe("atticus initiative plan transfer-limits-rollout --target 2027-03-31 --by @bao");
+    expect(
+      runTitle(["map"], ["repos", "handoff"], { repos: "forge-ledger,forge-teller" }).title,
+    ).toBe("atticus map --repos forge-ledger,forge-teller --handoff");
+    // A boolean flag has no value; --root's folder is still left out.
+    expect(runTitle(["map"], ["root", "all"], { root: "/work/forge" }).title).toBe(
+      "atticus map --all",
+    );
+  });
+
+  it("beta.27: drops a value that looks secret, by its flag's name or its own shape", () => {
+    const t = (flag: string, value: string) => runTitle(["sync"], [flag], { [flag]: value }).title;
+    // By the flag's name, whatever the value.
+    expect(t("token", "forge")).toBe("atticus sync --token");
+    expect(t("api-key", "abc")).toBe("atticus sync --api-key");
+    expect(t("client-secret", "x1")).toBe("atticus sync --client-secret");
+    expect(t("password", "hunter2")).toBe("atticus sync --password");
+    // By the value's shape: a token, a random string, a URL with a password, a path, words.
+    expect(t("with", "ghp_abcdefghijklmnopqrstuvwxyz0123")).toBe("atticus sync --with");
+    expect(t("with", "q7Xf3Kd9Lm2Np8Rs4Tv6")).toBe("atticus sync --with");
+    expect(t("with", "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3")).toBe("atticus sync --with");
+    expect(t("with", "https://u:p@host/x")).toBe("atticus sync --with");
+    expect(t("with", "C:\\Users\\tom\\x")).toBe("atticus sync --with");
+    expect(t("with", "two words")).toBe("atticus sync --with");
+    expect(t("with", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")).toBe("atticus sync --with");
+  });
+
   it("leaves where it ran out of a title: --root and --metarepo say a folder, not what ran", () => {
     expect(runTitle(["index", "rebuild"], ["root"]).title).toBe("atticus index rebuild");
     expect(runTitle(["map", "forge-ledger"], ["metarepo", "handoff", "root"]).title).toBe(

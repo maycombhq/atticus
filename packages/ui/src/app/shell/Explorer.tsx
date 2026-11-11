@@ -11,6 +11,12 @@ import { catalogMayHaveChanged, isOffline, useFileChanges } from "../../api/clie
 import { COPY } from "../../copy.js";
 import { useLazyApi, type Lazy } from "./explorer-data.js";
 import {
+  OWNER_QUESTIONS_PATH,
+  questionsToAnswerOf,
+  STEP_QUESTIONS_PATH,
+  type StepQuestionsAnswer,
+} from "../question-counts.js";
+import {
   changeItems,
   domId,
   filterItems,
@@ -46,8 +52,8 @@ const E = COPY.explorer;
 /** The map's own estate view, three levels down: systems, their repos, the repos' components. */
 export const ESTATE_PATH = "/api/graph/node/estate?lens=architecture&depth=3";
 export const CHANGES_PATH = "/api/changes";
-export const QUESTIONS_PATH = "/api/questions?state=open";
-export const OWNER_PATH = "/api/owner-questions";
+export const QUESTIONS_PATH = STEP_QUESTIONS_PATH;
+export const OWNER_PATH = OWNER_QUESTIONS_PATH;
 
 /** Which sections the viewer left open, per viewer, as the menu keeps More pages. */
 export const OPEN_KEY = "atticus.explorer.sections";
@@ -390,11 +396,9 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
     want("systems"),
     defer("systems"),
   );
-  const questions = useLazyApi<{ questions: { repo: string }[] }>(
-    QUESTIONS_PATH,
-    want("questions"),
-    defer("questions"),
-  );
+  const questions = useLazyApi<
+    { questions: { repo: string; state?: string }[] } & StepQuestionsAnswer
+  >(QUESTIONS_PATH, want("questions"), defer("questions"));
   const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
   const pins = usePins();
 
@@ -445,10 +449,14 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const counts: Record<SectionId, string | undefined> = {
     changes: changes.state === "ready" ? E.count(all.changes.length) : undefined,
     systems: estate.state === "ready" ? E.repos(countRepos(all.systems)) : undefined,
-    questions:
-      questions.state === "ready"
-        ? E.count(all.questions.reduce((n, i) => n + (i.count ?? 0), 0))
-        : undefined,
+    // Beta.27: the questions to answer, as the badge, the status bar and Home count them.
+    questions: (() => {
+      const q = questionsToAnswerOf(
+        questions.state === "ready" ? questions.data : undefined,
+        owner.state === "ready" ? owner.data : undefined,
+      );
+      return q ? E.count(q.total) : undefined;
+    })(),
     pinned: undefined,
   };
   const sections: SectionModel[] = SECTION_IDS.map((id) => ({

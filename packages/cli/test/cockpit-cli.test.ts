@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { cockpit } from "../src/cockpit.js";
+import { cockpit, glanceNextStep } from "../src/cockpit.js";
 import { uiCockpitRoutes } from "../src/ui-api-cockpit.js";
 
 /**
@@ -67,6 +67,33 @@ describe("the change cockpit (WP7.1)", () => {
     expect(c.next?.change).toBe(CHANGE);
     expect(c.next?.slash).toMatch(/^\/atticus-/);
     expect(c.repos).toEqual([]);
+  });
+
+  it("beta.27: never says ready to raise while its next step is something else", () => {
+    const type = { phases: ["define", "design", "plan", "build"] } as never;
+    const report = {
+      nextStep: 'Ready to raise "Plan ready".',
+      type,
+      phase: "plan" as const,
+      blockers: [],
+    };
+    // Beta.26: "Ready to raise "Plan ready"" over "1 question … is waiting for a person".
+    expect(glanceNextStep(report, { step: "answer" })).toBe(
+      'Not ready to raise "Plan ready" yet: the step below comes first.',
+    );
+    expect(glanceNextStep(report, { step: "stories" })).not.toMatch(/^Ready to raise/);
+    // The gate's own step: ready it is.
+    expect(glanceNextStep(report, { step: "handoff" })).toBe('Ready to raise "Plan ready".');
+    expect(glanceNextStep(report, undefined)).toBe('Ready to raise "Plan ready".');
+    // What change status says otherwise stands.
+    const blocked = {
+      ...report,
+      nextStep: 'Finish the plan work, then raise "Plan ready".',
+      blockers: [{ code: "stage-not-done", message: "x" }],
+    } as never;
+    expect(glanceNextStep(blocked, { step: "answer" })).toBe(
+      'Finish the plan work, then raise "Plan ready".',
+    );
   });
 
   it("is served by the local API, and a change that isn't there is not found", async () => {

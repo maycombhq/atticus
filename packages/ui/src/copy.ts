@@ -283,8 +283,17 @@ export const COPY = {
       "pick this and the list of every repo, system and team opens below; it takes the one you name",
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
+    /**
+     * Beta.27: the questions to answer, both kinds, as Home, the activity bar and the status bar
+     * count them; the counts under it are the steps' questions only.
+     */
+    toAnswer: (total: number, steps: number, owner: number) =>
+      `${total} question${total === 1 ? "" : "s"} to answer: ${steps} from the steps, ${owner} owner question${owner === 1 ? "" : "s"}`,
     counts: {
-      label: (repo?: string) => (repo ? `Questions in ${repo}` : "Questions in the estate"),
+      label: (repo?: string) =>
+        repo ? `Questions from the steps in ${repo}` : "Questions from the steps, in the estate",
+      /** Beta.27: said above the counts, which are the steps' questions only. */
+      caption: "From the steps",
       open: "Open",
       answered: "Answered",
       retired: "Retired",
@@ -1934,14 +1943,15 @@ export const COPY = {
     tabHint: "Delete closes this tab. Ctrl+Shift+Left or Right moves it.",
     closeTab: (label: string) => `Close ${label}`,
     tabTitle: (change: string, page: string) => `${change} · ${page}`,
-    /** Activity bar badges, heard after the section's name. */
-    openCount: (n: number) => `${n} open`,
+    /** Activity bar badges, heard after the section's name (beta.27: the questions to answer). */
+    openCount: (n: number) => `${n} to answer`,
     more: "More pages",
     settings: "Settings",
     /** The status bar. */
     status: "Status",
     repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
-    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} open`,
+    /** Beta.27: the same count, in the same words, as Home's Questions to answer. */
+    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} to answer`,
     running: (title: string) => `${title} running`,
     step: (done: number, total: number) => `${done}/${total}`,
     alsoRunning: (n: number) => `+${n}`,
@@ -2585,6 +2595,14 @@ export const COPY = {
       waitOnYouSub: (needs: number, steps: number) =>
         `${needs} open need${needs === 1 ? "" : "s"} · ${steps} manual step${steps === 1 ? "" : "s"}`,
       needsMore: (n: number) => `${n} more group${n === 1 ? "" : "s"}`,
+      /**
+       * Beta.27: what Needs a person counts, said beside it: everything waiting on a person (the
+       * questions to answer among it), never a bare number to set against Questions to answer.
+       */
+      needsMeta: (n: number) => `${n} waiting`,
+      /** Beta.27: under Questions to answer, the two kinds it adds up. */
+      questionsSub: (steps: number, owner: number) =>
+        `${steps} from the steps · ${owner} owner question${owner === 1 ? "" : "s"}`,
       seeAllQuestions: "See all questions",
       wholeList: (n: number) => `Show the whole list (${n})`,
       hideWholeList: "Hide the whole list",

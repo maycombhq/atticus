@@ -37,11 +37,17 @@ test("lays out the title bar, the activity bar, the tabs, the page and the statu
   await expect(status).toContainText(/v2\.0\.0/);
   await expect(status).toContainText(/local API \d+\.\d+/);
   // Once Home loaded them, the counts it already has: no request of the shell's own.
-  await expect(status.getByRole("link", { name: /questions? open$/ })).toBeVisible();
+  await expect(status.getByRole("link", { name: /questions? to answer$/ })).toBeVisible();
+  await expect(status.getByRole("link", { name: /^\d+ repos?$/ })).toBeVisible();
   await accessible(page, "the IDE layout on Home, dark");
   await page.getByLabel("Theme").selectOption("light");
   await accessible(page, "the IDE layout on Home, light");
   await page.getByLabel("Theme").selectOption("dark");
+  // Beta.27: the same counts on a page that doesn't load them (the map), opened first.
+  await open(page, app(), "canvas");
+  const there = page.getByRole("contentinfo", { name: "Status" });
+  await expect(there.getByRole("link", { name: /^\d+ repos?$/ })).toBeVisible();
+  await expect(there.getByRole("link", { name: /questions? to answer$/ })).toBeVisible();
 });
 
 test("opens a tab per page, focuses one already open, closes one, and follows Back", async ({
