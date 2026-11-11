@@ -86,10 +86,19 @@ describe("opening a question keeps the page where it is (beta.26)", () => {
   it("focuses without scrolling, and its side of the page shows it from the top", () => {
     const pane = { scrollTop: 240 };
     const el = { focus: vi.fn(), closest: vi.fn(() => pane) };
-    focusInPlace(el);
+    focusInPlace(el, false);
     expect(el.focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(el.closest).toHaveBeenCalledWith(".qs-pane");
     expect(pane.scrollTop).toBe(0);
+  });
+
+  it("in one column (a narrow window, VS Code's panel) brings the question into view", () => {
+    const pane = { scrollTop: 240 };
+    const el = { focus: vi.fn(), closest: vi.fn(() => pane), scrollIntoView: vi.fn() };
+    focusInPlace(el, true);
+    expect(el.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    expect(pane.scrollTop).toBe(240);
   });
 
   it("does nothing without an element, and needs no pane", () => {

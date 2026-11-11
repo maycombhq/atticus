@@ -122,6 +122,12 @@ export function draftOf(
 }
 
 /**
+ * Review (beta.26): a draft put back counts as typed. The fields put back raise no trusted event,
+ * so without this a tab left a second time without typing kept nothing.
+ */
+export const typedOf = (d: Draft): Set<string> => new Set(Object.keys(d.fields));
+
+/**
  * Put a draft's fields back into those on the page now, as typing would (so the page's own
  * state follows). Returns the keys not found yet: the page may still be loading.
  */

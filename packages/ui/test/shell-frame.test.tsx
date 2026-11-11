@@ -11,6 +11,7 @@ import { screenOf } from "../src/app/screens.js";
 import { ActivityBar, activeEntry } from "../src/app/shell/ActivityBar.js";
 import {
   draftOf,
+  typedOf,
   fieldKey,
   keptField,
   openToggles,
@@ -338,6 +339,12 @@ describe("what a tab keeps of a page while another is shown", () => {
       scroll: 420,
     });
     expect(draftOf(fields, new Set(), 0)).toBeUndefined();
+  });
+
+  it("keeps a draft put back when the tab is left again without typing (two round trips)", () => {
+    const d = draftOf(fields, new Set(["#brief-text"]), 0)!;
+    // Back on the page: the field holds the draft's text, and nothing was typed since.
+    expect(draftOf(fields, typedOf(d), 0)).toEqual(d);
   });
 
   it("opens again the disclosures that were open, by what they control, once each", () => {

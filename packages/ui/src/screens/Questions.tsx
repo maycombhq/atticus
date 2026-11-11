@@ -1123,10 +1123,18 @@ export function focusInPlace(
   el: {
     focus: (o?: FocusOptions) => void;
     closest?: (selector: string) => { scrollTop: number } | null;
+    scrollIntoView?: (o?: ScrollIntoViewOptions) => void;
   } | null,
+  // Review (beta.26): at 1000 px or narrower (questions.css) the list and the question stack and
+  // the page scrolls as one, so the question opened below the list is brought into view.
+  stacked: boolean = typeof matchMedia === "function" && matchMedia("(max-width: 1000px)").matches,
 ): void {
   if (!el) return;
   el.focus({ preventScroll: true });
+  if (stacked) {
+    el.scrollIntoView?.({ block: "start" });
+    return;
+  }
   const pane = el.closest?.(".qs-pane");
   if (pane) pane.scrollTop = 0;
 }

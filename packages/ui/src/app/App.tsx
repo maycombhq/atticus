@@ -193,7 +193,9 @@ export function App() {
     if (shown.current !== undefined && shown.current !== current.id && !fromTabs)
       document.getElementById("main")?.focus({ preventScroll: true });
     shown.current = current.id;
-  }, [current.id]);
+    // Review (beta.26): run on every address, so a tab switch within one screen (two changes'
+    // tabs on At a glance) uses up its flag and the next link in the page still moves focus.
+  }, [current.id, hash]);
   const tour = !bare && (
     <Tour
       metarepo={

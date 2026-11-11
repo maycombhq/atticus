@@ -11,6 +11,7 @@ import { ActivityBar, MoreFlyout } from "./ActivityBar.js";
 import { BottomPanel } from "./BottomPanel.js";
 import {
   draftOf,
+  typedOf,
   fieldKey,
   fieldsIn,
   keptField,
@@ -159,6 +160,7 @@ function useDrafts(
       return;
     }
     drafts.current.delete(key);
+    changed.current = typedOf(d);
     return restoreDraft(panel.current, scroller.current, d);
   }, [hash, panel, scroller]);
 }
@@ -441,6 +443,8 @@ export function Shell({
                       <AiChip />
                       {help}
                       {words}
+                      {/* Review (beta.26): who records are made as, and "Set your Git user". */}
+                      {health && <Person health={health} version={false} />}
                     </>
                   )}
                 </>
