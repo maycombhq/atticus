@@ -471,3 +471,107 @@ describe("a token's config.json beside a gateway bundle", () => {
     expect(r.rejected).toEqual([]);
   });
 });
+
+/**
+ * Beta.25 review, third round: every message of a rejection is said through one sanitiser. A
+ * cited line that holds a secret (a key naming one, or a value shaped like one) is never quoted,
+ * whatever the fact claims, and a fact citing such a line is quiet as a secret's own fact is: its
+ * value, source, quote and parts are taken out of its messages and its record.
+ */
+describe("a rejection's messages and the secret on a cited line", () => {
+  const STRONG = "q8Zt4LmN2vXy7RkP0sWd";
+  const F = "src/main/resources/application.yml";
+  const files: Record<string, string> = {
+    [F]: [
+      "spring:",
+      "  datasource:",
+      "    password: hunter22",
+      "forge:",
+      "  base-url: https://ledger.forge.example",
+      `  client-secret: ${STRONG}`,
+      "  token: ${FORGE_TOKEN:changeme9}",
+      "  admin-password: Summer2024!",
+      "  db-pw: Hunter22wx",
+    ].join("\n"),
+  };
+  const cfg = (id: string, key: string, value: string, cite: Record<string, unknown>) =>
+    Fact.parse({
+      kind: "config",
+      id,
+      repo: "forge-ledger",
+      commit: "abcdef1",
+      key,
+      value,
+      cite: { file: F, ...cite },
+    });
+  it.each([
+    [
+      "a URL fact citing the client secret's line, its quote neither line's",
+      cfg("config.a", "forge.base-url", "https://ledger.forge.example", {
+        line: 6,
+        value: "base-url",
+        quote: "nope",
+      }),
+      STRONG,
+    ],
+    [
+      "a URL fact citing the password's line",
+      cfg("config.b", "forge.base-url", "https://ledger.forge.example", {
+        line: 3,
+        value: "base-url",
+        quote: "nope",
+      }),
+      "hunter22",
+    ],
+    [
+      "a fact of another key on a token with a literal default",
+      cfg("config.g", "forge.tokenx", "${FORGE_TOKEN:changeme9}", { line: 7, value: "token" }),
+      "changeme9",
+    ],
+    [
+      "a URL fact whose value is the admin password",
+      cfg("config.q", "forge.base-url", "Summer2024!", { line: 8, value: "admin-password" }),
+      "Summer2024!",
+    ],
+    [
+      "a URL fact quoting the admin password's line",
+      cfg("config.i", "forge.base-url", "https://ledger.forge.example", {
+        line: 5,
+        value: "base-url",
+        quote: "admin-password: Summer2024!",
+      }),
+      "Summer2024!",
+    ],
+    [
+      "an entry quoting nothing of the password line",
+      Fact.parse({
+        kind: "entry",
+        id: "entry.k",
+        repo: "forge-ledger",
+        commit: "abcdef1",
+        entryType: "rest",
+        method: "GET",
+        path: "/db-pw",
+        handler: "X.y",
+        cite: { file: F, line: 9, value: "db-pw", quote: "nope" },
+      }),
+      "Hunter22wx",
+    ],
+  ])("never says it: %s", async (_, f, secret) => {
+    const r = await verifyFacts({ facts: [f], source: memory(files), commit: "abcdef1" });
+    expect(r.accepted).toEqual([]);
+    expect(r.rejected).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain(secret);
+  });
+
+  it("still quotes a line that holds no secret", async () => {
+    const f = cfg("config.m", "forge.base-url", "https://ledger.forge.example", {
+      line: 5,
+      value: "base-url",
+      quote: "base-url: https://elsewhere.forge.example",
+    });
+    const r = await verifyFacts({ facts: [f], source: memory(files), commit: "abcdef1" });
+    expect(r.rejected[0]?.code).toBe("quote-mismatch");
+    expect(r.rejected[0]?.message).toContain('reads "base-url: https://ledger.forge.example"');
+  });
+});

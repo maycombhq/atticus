@@ -76,18 +76,150 @@ import {
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
 
+/** `key: value`, `key = value`, `"key": "value"`, `export KEY=value`: a line's key and value. */
+const LINE_KEY_VALUE =
+  /^\s*(?:-\s+)?(?:export\s+)?["']?([A-Za-z0-9_.\-[\]]+)["']?\s*[:=]\s*(.*?)\s*,?\s*$/;
+/** An XML element that holds its value (`<password>x</password>`), or names it (`name="k" value="x"`). */
+const LINE_XML = [
+  /<([A-Za-z_][\w.-]*)>([^<]+)<\/\1>/g,
+  /\b(?:key|name)\s*=\s*"([^"]+)"\s+value\s*=\s*"([^"]*)"/g,
+];
+const unquoted = (v: string) => v.replace(/^["'`]|["'`]$/g, "").trim();
+
 /**
- * Whether a config fact's text is never quoted (beta.25 review, second round): its key names a
- * secret, or its value, source, a part or its quote carries one or reads as a credential. Its
- * messages say what is wrong without the text (`checkCite`'s `quiet`), are scrubbed of it
- * (`scrubbed`), and a rejection shows it redacted (`withoutSecret`).
+ * The key and value pairs a line writes (`LINE_KEY_VALUE`, `LINE_XML`), for `lineSecrets`.
  */
-function quietFact(f: Fact): boolean {
+function pairsOf(t: string): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
+  const kv = LINE_KEY_VALUE.exec(t);
+  if (kv) out.push({ key: kv[1]!, value: unquoted(kv[2]!) });
+  for (const re of LINE_XML)
+    for (const m of t.matchAll(re)) out.push({ key: m[1]!, value: unquoted(m[2]!) });
+  return out;
+}
+
+/**
+ * Beta.25 review, third round: the texts of a line of code that are never said in a message,
+ * none when it holds no secret. A line holds one when a key it writes names a secret, whatever
+ * its value (`token: ${FORGE_TOKEN:changeme9}`), or it holds a value shaped like one: a text
+ * `redactSecrets` takes out, a URL's password, a quoted literal beside a secret word, or a word
+ * that reads as a credential (`Hunter22wx`). Its texts are the line itself (as a message quotes
+ * it, trimmed and cut at 200 characters), each value it writes and each literal on it.
+ */
+function lineSecrets(line: string): string[] {
+  const t = line.trim();
+  if (!t) return [];
+  const pairs = pairsOf(t);
+  const words = t
+    .split(/[\s"'`=:,;()<>{}[\]/@]+/)
+    .filter((w) => w.length >= 6 && credentialLike(w));
+  const holds =
+    redactSecrets(t) !== t ||
+    hasSecretShape(t) ||
+    quoteHoldsSecret(t) ||
+    words.length > 0 ||
+    pairs.some((p) => looksLikeSecret(p.key, "x") || (p.value && credentialLike(p.value)));
+  if (!holds) return [];
+  const literals = [...t.matchAll(/(["'`])((?:(?!\1).){3,})\1/g)].map((m) => m[2]!);
+  return [t, t.slice(0, 200), ...pairs.map((p) => p.value), ...literals, ...words].filter(
+    (s) => s.length >= 3,
+  );
+}
+
+/** Every citation in a fact, wherever it sits (its cite, parts, authCite, steps, error paths). */
+function citesIn(x: unknown, out: { file: string; line: number; quote?: string }[] = []) {
+  if (Array.isArray(x)) for (const v of x) citesIn(v, out);
+  else if (x && typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    if (typeof o.file === "string" && typeof o.line === "number")
+      out.push(o as { file: string; line: number; quote?: string });
+    for (const v of Object.values(o)) if (v && typeof v === "object") citesIn(v, out);
+  }
+  return out;
+}
+
+/**
+ * Whether a config fact's text is never quoted (beta.25 review, second and third rounds): its key
+ * names a secret, its value, source, a part or its quote carries one or reads as a credential,
+ * or a line it cites holds a secret (`lineSecrets`), whatever key the fact claims. Its messages
+ * say what is wrong without the text (`checkCite`'s `quiet`), are scrubbed of it (`scrubbed`),
+ * and a rejection shows it redacted (`withoutSecret`).
+ */
+function quietFact(f: Fact, lineAt?: (file: string, line: number) => string | undefined): boolean {
   if (f.kind !== "config") return false;
   if (looksLikeSecret(f.key, "x") || configSecretField(f)) return true;
-  return [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)].some(
-    (t) => t !== undefined && (hasSecretShape(t) || credentialLike(t) || redactSecrets(t) !== t),
+  if (
+    [f.value, f.source, f.cite.quote, ...(f.cite.with ?? []).map((w) => w.value)].some(
+      (t) => t !== undefined && (hasSecretShape(t) || credentialLike(t) || redactSecrets(t) !== t),
+    )
+  )
+    return true;
+  return (
+    lineAt !== undefined &&
+    [f.cite, ...(f.cite.with ?? [])].some((c) => lineSecrets(lineAt(c.file, c.line) ?? "").length)
   );
+}
+
+/**
+ * Beta.25 review, third round: the one choke point every message of a rejection passes, whichever
+ * way it is shown (`rejected.jsonl`, `verify.yaml`, `--json`, the terminal). Secrets are
+ * redacted (`redactSecrets`); every secret text of a line the fact cites, or a line either side
+ * (`lineSecrets`), and any quoted text that holds one, is `<redacted>`; and a quiet fact's own
+ * texts (`scrubbed`) are taken out.
+ */
+function sanitised(
+  f: Fact,
+  message: string,
+  lineAt: (file: string, line: number) => string | undefined,
+  quiet: boolean,
+): string {
+  let out = redactSecrets(message);
+  const texts = new Set<string>();
+  for (const c of citesIn(f))
+    for (const n of [c.line - 1, c.line, c.line + 1])
+      for (const s of lineSecrets(lineAt(c.file, n) ?? "")) texts.add(s);
+  for (const t of [...texts].sort((a, b) => b.length - a.length))
+    out = out.split(t).join("<redacted>");
+  out = out.replace(/"([^"]*)"/g, (all, inner: string) =>
+    lineSecrets(inner).length ? '"<redacted>"' : all,
+  );
+  return quiet ? scrubbed(f, out) : out;
+}
+
+/**
+ * A rejected fact as its rejection shows it: a quiet one redacted (`withoutSecret`), any other
+ * with each quote that holds a secret, or a secret text of the line it cites, left out.
+ */
+function shownFact(
+  f: Fact,
+  quiet: boolean,
+  lineAt: (file: string, line: number) => string | undefined,
+): Fact {
+  if (quiet) return withoutSecret(f);
+  const cites = citesIn(f).filter((c) => c.quote !== undefined);
+  const bad = (c: { file: string; line: number; quote?: string }) => {
+    const q = c.quote!;
+    if (lineSecrets(q).length) return true;
+    return [c.line - 1, c.line, c.line + 1].some((n) =>
+      lineSecrets(lineAt(c.file, n) ?? "").some((s) => s !== "" && q.includes(s)),
+    );
+  };
+  if (!cites.some(bad)) return f;
+  const strip = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(strip);
+    if (!x || typeof x !== "object") return x;
+    const o = Object.fromEntries(Object.entries(x).map(([k, v]) => [k, strip(v)]));
+    const c = x as { file?: unknown; line?: unknown; quote?: unknown };
+    if (
+      typeof c.file === "string" &&
+      typeof c.line === "number" &&
+      typeof c.quote === "string" &&
+      bad(c as { file: string; line: number; quote: string })
+    )
+      delete o.quote;
+    return o;
+  };
+  return strip(f) as Fact;
 }
 
 /**
@@ -804,6 +936,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     return lines;
   };
   const deriveEnv: DeriveEnv = { lines: linesOf, files: listed };
+  /** One line of a file, as `sanitised` and `quietFact` read the lines a fact cites. */
+  const lineAt = (file: string, n: number) => (n >= 1 ? linesOf(file)?.[n - 1] : undefined);
 
   /** One citation checked against its file: undefined when it holds, else why not. */
   const checkCite = (
@@ -1027,7 +1161,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 PLACEHOLDER_KEY.test(f.path.trim()) &&
                 helperBuildsKey(PLACEHOLDER_KEY.exec(f.path.trim())![1]!, f.cite, linesOf))
           : undefined,
-        quietFact(f),
+        quietFact(f, lineAt),
       ),
     );
     // Beta.24 review: a config fact's value is what its line sets, and its key sits where the
@@ -1333,10 +1467,21 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (!ps?.length) continue;
     // A fact refused for the secret it carries is reported without it, in its fields and in
     // every message of its, whatever else is wrong with it (beta.25 review, second round); so
-    // is a config fact whose text may be a secret (`quietFact`), under a secret's key.
-    const quiet = ps.some((p) => p.code === "secret-value") || quietFact(f);
-    if (quiet) ps = ps.map((p) => ({ ...p, message: scrubbed(f, p.message) }));
-    const shown = quiet ? withoutSecret(f) : f;
+    // is a config fact whose text may be a secret, or that cites a line holding one
+    // (`quietFact`). Every message passes `sanitised`, the one choke point (third round). A fact
+    // of another commit is written back to the facts file as it was read (`writeVerifyFiles`),
+    // so its record is redacted only when it carries a secret itself; its lines aren't this
+    // commit's, so they make it quiet in no other way.
+    const isOther = other.has(f.id);
+    const quiet =
+      ps.some((p) => p.code === "secret-value") || quietFact(f, isOther ? undefined : lineAt);
+    ps = ps.map((p) => ({ ...p, message: sanitised(f, p.message, lineAt, quiet) }));
+    const shown = isOther
+      ? (f.kind === "config" && configSecretField(f)) ||
+        citesIn(f).some((c) => c.quote && lineSecrets(c.quote).length)
+        ? withoutSecret(f)
+        : f
+      : shownFact(f, quiet, lineAt);
     rejected.set(
       f.id,
       ps.length === 1
@@ -1355,10 +1500,16 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (rejected.has(f.id)) continue;
       const r = refsOf(f).find((x) => rejected.has(x.id));
       if (r) {
+        const quiet = quietFact(f, lineAt);
         rejected.set(f.id, {
-          fact: f,
+          fact: shownFact(f, quiet, lineAt),
           code: "ref-rejected",
-          message: `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
+          message: sanitised(
+            f,
+            `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
+            lineAt,
+            quiet,
+          ),
         });
         changed = true;
       }

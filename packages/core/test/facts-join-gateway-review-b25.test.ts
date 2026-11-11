@@ -474,8 +474,18 @@ describe("a target URL an estate service may serve under its base", () => {
     expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
   });
 
+  it("is asked about when the service declares the base but no entry of its is read yet", () => {
+    const got = fate(
+      joinFacts({ repos: hostIs(LEDGER_URL, [...bare(), ledger([], "/ledger-api")]) }),
+    );
+    expect(got.outside).toEqual([]);
+    expect(new Set(got.asked)).toEqual(new Set(["unknown-host"]));
+  });
+
   it.each([
     ["/v1", "https://api.northwind.example/v1"],
+    ["/v1.0", "https://api.northwind.example/v1.0"],
+    ["/v2.1.3", "https://api.northwind.example/v2.1.3"],
     ["/api", "https://api.northwind.example/api/"],
     ["/rest", "https://api.northwind.example/rest"],
     ["/services", "https://api.northwind.example/services"],

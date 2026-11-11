@@ -408,20 +408,6 @@ function identifierName(t: string): boolean {
 /** A default that names no value (`${X:none}`), as a flag or a mode does. */
 const NO_DEFAULT = /^(true|false|yes|no|on|off|none|null)$/i;
 
-/**
- * Whether a text's placeholder has a literal default (`${DB_PASSWORD:hunter22}`,
- * `${DB_PASSWORD:-changeme}`, the inner one of `${A:${B:x}}`): under a secret's key, that
- * default is the secret (beta.25 review, second round). An empty default, or one that is
- * itself a placeholder (`${A:${B}}`), is none.
- */
-function literalDefault(t: string): boolean {
-  for (const m of t.matchAll(/\$\{[^}:$]*:-?([^}$]*)/g)) {
-    const d = m[1]!.trim();
-    if (d && !NO_DEFAULT.test(d)) return true;
-  }
-  return false;
-}
-
 /** The schemes a source names where a secret lives by (the assistant's rules give these). */
 const REFERENCE_SCHEMES = new Set([
   "env",
@@ -435,13 +421,79 @@ const REFERENCE_SCHEMES = new Set([
 ]);
 
 /**
+ * Schemes a placeholder names a store by (`${env:X}`, `${ssm:/forge/db}`), never a variable
+ * with a default (beta.25 review, third round).
+ */
+const PLACEHOLDER_SCHEMES = new Set([
+  ...REFERENCE_SCHEMES,
+  "ssm",
+  "sm",
+  "secretsmanager",
+  "aws",
+  "azure",
+  "keyvault",
+  "gcp",
+  "k8s",
+  "cf",
+  "opt",
+  "self",
+  "sys",
+  "param",
+]);
+
+/**
+ * Whether a text's placeholder has a literal default (`${DB_PASSWORD:hunter22}`,
+ * `${DB_PASSWORD:-changeme}`, the inner one of `${A:${B:x}}`): under a secret's key, that
+ * default is the secret (beta.25 review, second round). Third round: only a plain variable's
+ * (letters, digits, `_`, `.`, `-`, no scheme of `PLACEHOLDER_SCHEMES`, no `(`), after `:` or
+ * `:-`; `${env:X}`, `${ssm:/p}`, `${file(./s.yml):db}`, `${X:?message}` and `${X:+alt}` have
+ * none. An empty default, or one that is itself a placeholder (`${A:${B}}`), is none.
+ */
+function literalDefault(t: string): boolean {
+  for (const m of t.matchAll(/\$\{([^{}:$]*):(-?)([^}$]*)/g)) {
+    const name = m[1]!.trim();
+    if (!/^[A-Za-z0-9_.-]+$/.test(name) || PLACEHOLDER_SCHEMES.has(name.toLowerCase())) continue;
+    const d = m[3]!.trim();
+    if (!m[2] && /^[?+]/.test(d)) continue;
+    if (d && !NO_DEFAULT.test(d)) return true;
+  }
+  return false;
+}
+
+/**
+ * A reference written as a CI or shell variable, or an expression (beta.25 review, third round):
+ * `${{ secrets.X }}`, `$X`, `${X}`, `%X%`, `#{…}`.
+ */
+const VARIABLE_REFERENCE = [
+  /^\$\{\{[^{}]*\}\}$/,
+  /^\$[A-Za-z_][A-Za-z0-9_]*$/,
+  /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}$/,
+  /^%[A-Za-z_][A-Za-z0-9_]*%$/,
+  /^#\{[^{}]*\}$/,
+];
+
+/**
+ * The assistant's own form for a secret written as a literal (`literal:<file>`, its rules say):
+ * `literal:` then a file's name or path: a name with an extension (`App.config`, `Creds.java`), a
+ * dot file (`.npmrc`), one a tool names `…file` (`Dockerfile`, `Jenkinsfile`) or any path with a
+ * folder (`deploy/creds`); never a bare word (`literal:hunter22`, `literal:changeme`).
+ */
+const LITERAL_FILE =
+  /^literal:\s*(?:(?:[\w.-]+\/)+[\w.-]+|[\w-][\w.-]*\.[A-Za-z0-9]{1,10}|\.[\w.-]+|[A-Za-z][\w-]*file)$/i;
+
+/**
  * Whether a source refers to where its secret lives rather than holding it: a placeholder with
  * no literal default and nothing beside it (`${DB_PASSWORD}`, `{{ db_password }}`), or a
  * scheme and what it names: one of `REFERENCE_SCHEMES` (`env:X`, `secretKeyRef:name/key`), or
  * any scheme then a path, a resource name or a name (`aws-sm:arn:…`, `ssm:/forge/db`), never a
- * word with digits (`admin:hunter22`).
+ * word with digits (`admin:hunter22`). Third round: a CI or shell variable or an expression
+ * (`VARIABLE_REFERENCE`), the assistant's `literal:<file>` (`LITERAL_FILE`), and a Basic
+ * credential only by a reference after its scheme (`basic:env:X`, not `basic:admin:hunter22`).
  */
 function isReference(t: string): boolean {
+  if (VARIABLE_REFERENCE.some((r) => r.test(t)) && !literalDefault(t)) return true;
+  if (LITERAL_FILE.test(t)) return true;
+  if (/^basic:/i.test(t)) return isReference(t.slice("basic:".length).trim());
   if (/^(\$\{|\{\{)/.test(t)) {
     if (literalDefault(t)) return false;
     let rest = t;

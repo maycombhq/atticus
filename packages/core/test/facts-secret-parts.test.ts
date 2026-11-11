@@ -349,6 +349,76 @@ describe("a source under a secret's key", () => {
     expect(field(db({ value: v }))).toBe("value");
   });
 
+  /**
+   * Beta.25 review, third round: a scheme's reference (`${env:X}`, `${ssm:/p}`), a function's
+   * (`${file(./secrets.yml):db}`) and a required variable's message (`${X:?msg}`) are no default.
+   */
+  it.each([
+    "${env:DB_PASSWORD}",
+    "${ssm:/forge/db/password}",
+    "${sm:forge-db-password}",
+    "${vault:secret/forge/db}",
+    "${file(./secrets.yml):db}",
+    "${DB_PASSWORD:?DB_PASSWORD is required}",
+    "${DB_PASSWORD:+set}",
+    "${DB_PASSWORD}",
+    "${{ secrets.DB_PASSWORD }}",
+    "$DB_PASSWORD",
+    "%DB_PASSWORD%",
+    "#{vault.db.password}",
+    "#{environment['DB_PASSWORD']}",
+  ])("is a reference, never a default: %s", (v) => {
+    expect(field(db({ source: v }))).toBeUndefined();
+  });
+
+  it.each([
+    "${env:DB_PASSWORD}",
+    "${ssm:/forge/db/password}",
+    "${sm:forge-db-password}",
+    "${file(./secrets.yml):db}",
+    "${DB_PASSWORD:?DB_PASSWORD is required}",
+  ])("is no default as a value either: %s", (v) => {
+    expect(field(db({ value: v }))).toBeUndefined();
+  });
+
+  it.each(["${DB_PASSWORD:hunter22}", "${db.password:hunter22}", "${DB-PASSWORD:-hunter22}"])(
+    "still finds a plain variable's literal default: %s",
+    (v) => {
+      expect(field(db({ source: v }))).toBe("source");
+    },
+  );
+
+  /** The assistant's own form for a secret written as a literal (`literal:<file>`). */
+  it.each([
+    "literal:Dockerfile",
+    "literal:Jenkinsfile",
+    "literal:Creds.java",
+    "literal:App.config",
+    "literal:appsettings.json",
+    "literal:application.yml",
+    "literal:src/main/java/forge/DbConfig.java",
+  ])("is no secret when it names the file the literal is in: %s", (v) => {
+    expect(field(db({ source: v }))).toBeUndefined();
+  });
+
+  it.each(["literal:hunter22", "literal:Summer2024!"])(
+    "is the secret when literal: is followed by no file: %s",
+    (v) => {
+      expect(field(db({ source: v }))).toBe("source");
+    },
+  );
+
+  it.each(["basic:admin:hunter22", "admin:hunter22", "Basic:admin:Summer2024!"])(
+    "is the secret when it is a user and password: %s",
+    (v) => {
+      expect(field(db({ source: v }))).toBe("source");
+    },
+  );
+
+  it("keeps a Basic credential's reference", () => {
+    expect(field(db({ source: "basic:env:FORGE_BASIC_AUTH" }))).toBeUndefined();
+  });
+
   it("leaves a placeholder's literal default alone under a key that names no secret", () => {
     expect(
       field(db({ key: "forge.ledger.url", value: "${LEDGER_URL:http://localhost:8081}" })),

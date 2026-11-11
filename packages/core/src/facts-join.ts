@@ -2115,10 +2115,28 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   };
   /** Whether a forwarding target URL serves some call sent to it (`outsideOfEstate`), by key. */
   const targetServed = new Map<string, boolean>();
-  /** A base any service may declare (`/`, `/v1`, `/api`, `/rest`, `/services`, `/api/v2`). */
+  /** A base any service may declare (`/`, `/v1`, `/v1.0`, `/api`, `/rest`, `/services`, `/api/v2`). */
   const genericBase = (segs: readonly string[]) =>
-    segs.every((s) => /^(v\d+|api|rest|services)$/i.test(s));
+    segs.every((s) => /^(v\d+(\.\d+)*|api|rest|services)$/i.test(s));
   const ownBaseSeen = new Map<string, boolean>();
+  /**
+   * One node of each component of the estate, entries first (beta.25 review, third round): a
+   * component that declares a base but has no entry read yet (its context path setting alone)
+   * is asked about, never sent outside. `basesOf` reads a node's repo and component only.
+   */
+  let baseOwners: (Node & { fact: Entry })[] | undefined;
+  const ownersOfBases = () => {
+    if (baseOwners) return baseOwners;
+    const seen = new Set<string>();
+    baseOwners = [];
+    for (const n of [...entries, ...nodes]) {
+      const k = key(n.repo, n.component);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      baseOwners.push(n as Node & { fact: Entry });
+    }
+    return baseOwners;
+  };
   /**
    * Whether a path is, whole, a base path another component of the estate declares (`basesOf`)
    * that is no common one (`genericBase`).
@@ -2131,7 +2149,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (was !== undefined) return was;
     const done = new Set<string>();
     let got = false;
-    for (const e of entries) {
+    for (const e of ownersOfBases()) {
       if (e.component === component) continue;
       const ek = key(e.repo, e.component);
       if (done.has(ek)) continue;
