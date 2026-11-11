@@ -155,16 +155,22 @@ export function pluginApplies(
  * The org pack's enabled plugins that may run: pinned, unchanged since the pin, with golden
  * tests that pass (re-tested before each scan). Every other one is a problem, not used.
  */
-export async function usablePlugins(
-  op: OrgPack,
-): Promise<{ plugins: UsablePlugin[]; problems: { source: string; message: string }[] }> {
+export async function usablePlugins(op: OrgPack): Promise<{
+  plugins: UsablePlugin[];
+  problems: { source: string; message: string }[];
+  /** The enabled plugins not used (a changed or missing pin, no or failing tests), by manifest. */
+  refused: ScannerPlugin[];
+}> {
   const plugins: UsablePlugin[] = [];
   const problems: { source: string; message: string }[] = [];
+  const refused: ScannerPlugin[] = [];
   for (const { manifest, dir } of op.plugins) {
     if (!manifest.enabled) continue;
     const source = `plugin ${manifest.id}`;
-    const notUsed = (message: string) =>
+    const notUsed = (message: string) => {
       problems.push({ source, message: `${message}; the plugin is not used` });
+      if (!refused.includes(manifest)) refused.push(manifest);
+    };
     const entry = await readPinnedEntry(dir, manifest);
     if (!entry.ok) {
       notUsed(entry.message);
@@ -187,7 +193,7 @@ export async function usablePlugins(
       config: configHash({ plugin: `${manifest.sha256}|${JSON.stringify(manifest.limits)}` }),
     });
   }
-  return { plugins, problems };
+  return { plugins, problems, refused };
 }
 
 /** One repo's scan with the plugins' run added after the built-ins'. */

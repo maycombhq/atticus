@@ -1,0 +1,306 @@
+{
+  "slotVersion": 1,
+  "kind": "readers",
+  "repo": "forge-events",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "read",
+  "extractors": [
+    {
+      "id": "access",
+      "version": "0.1.0"
+    },
+    {
+      "id": "apigee",
+      "version": "1.0.0"
+    },
+    {
+      "id": "apps",
+      "version": "0.2.0"
+    },
+    {
+      "id": "asyncapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "batch",
+      "version": "0.2.0"
+    },
+    {
+      "id": "cloud-stores",
+      "version": "0.1.0"
+    },
+    {
+      "id": "component",
+      "version": "1.3.0"
+    },
+    {
+      "id": "data-pipelines",
+      "version": "0.1.3"
+    },
+    {
+      "id": "dialect-argocd",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-harness",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-tekton",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-aws",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-azure",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-gcp",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dotnet",
+      "version": "0.1.1"
+    },
+    {
+      "id": "frontend",
+      "version": "1.2.0"
+    },
+    {
+      "id": "gcp",
+      "version": "0.1.0"
+    },
+    {
+      "id": "go",
+      "version": "0.1.0"
+    },
+    {
+      "id": "graphql",
+      "version": "0.1.1"
+    },
+    {
+      "id": "grpc",
+      "version": "0.1.1"
+    },
+    {
+      "id": "house-frameworks",
+      "version": "1.0.0"
+    },
+    {
+      "id": "infra",
+      "version": "1.1.0"
+    },
+    {
+      "id": "ingress",
+      "version": "0.2.0"
+    },
+    {
+      "id": "mainframe",
+      "version": "1.1.0"
+    },
+    {
+      "id": "mesh",
+      "version": "0.1.1"
+    },
+    {
+      "id": "migrations",
+      "version": "1.4.0"
+    },
+    {
+      "id": "ml",
+      "version": "0.1.1"
+    },
+    {
+      "id": "node",
+      "version": "0.1.0"
+    },
+    {
+      "id": "observability",
+      "version": "1.0.0"
+    },
+    {
+      "id": "openapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "openshift",
+      "version": "0.3.0"
+    },
+    {
+      "id": "orm",
+      "version": "1.0.0"
+    },
+    {
+      "id": "pipelines",
+      "version": "0.1.0"
+    },
+    {
+      "id": "python",
+      "version": "0.1.0"
+    },
+    {
+      "id": "realtime",
+      "version": "0.1.0"
+    },
+    {
+      "id": "serverless",
+      "version": "0.1.1"
+    },
+    {
+      "id": "speckit",
+      "version": "1.0.0"
+    },
+    {
+      "id": "spring",
+      "version": "1.2.0"
+    },
+    {
+      "id": "topics",
+      "version": "1.0.0"
+    },
+    {
+      "id": "webhooks",
+      "version": "0.1.0"
+    }
+  ],
+  "settings": "fd1f76fb6df527511c3b333a3e8899e391d1708ff8697a57c84174aa162166c9",
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "topic.payments-initiated",
+      "status": "current",
+      "confidence": "verified",
+      "component": "portal-bff",
+      "endpointType": "event-topic",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 1,
+          "path": "topics/payments.initiated.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "pathOrTopic": "payments.initiated",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "topic.transfers-completed",
+      "status": "current",
+      "confidence": "verified",
+      "component": "ledger-api",
+      "endpointType": "event-topic",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 1,
+          "path": "topics/transfers.completed.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "pathOrTopic": "transfers.completed",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "ledger-api.event-publish.3fd50a21f9",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 2,
+          "path": "topics/transfers.completed.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "owner": "ledger-api",
+      "raw": "transfers.completed",
+      "unresolvedKind": "event-publish"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "ledger-api.event-subscribe.70a3dbd15d",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 3,
+          "path": "topics/payments.initiated.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "owner": "ledger-api",
+      "raw": "payments.initiated",
+      "unresolvedKind": "event-subscribe"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "portal-bff.event-publish.7ac9183210",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 2,
+          "path": "topics/payments.initiated.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "owner": "portal-bff",
+      "raw": "payments.initiated",
+      "unresolvedKind": "event-publish"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "reports-job.event-subscribe.87274c1908",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "topics@1.0.0",
+          "line": 3,
+          "path": "topics/transfers.completed.yaml",
+          "repo": "forge-events",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "event-config"
+        }
+      ],
+      "owner": "reports-job",
+      "raw": "transfers.completed",
+      "unresolvedKind": "event-subscribe"
+    }
+  ]
+}

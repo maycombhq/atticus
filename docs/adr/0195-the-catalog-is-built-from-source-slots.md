@@ -411,3 +411,20 @@ Done when:
 - The six journeys pass in the app's default layout.
 - The 88 files' tests pass on Linux and Windows CI.
 - `docs/build-status.md` is ticked.
+
+## Addendum (CS1, as built, 2026-11-11)
+
+The formats of point 1, as `packages/scanner/src/slots.ts` writes them (zod, with JSON Schema under `sources/` from `atticus schema export`). Every JSON file is two-space indented, LF, one trailing newline, its top-level keys in the order listed; nested free-form values (records, contracts, a dismissed value) are in the catalog's canonical key order. Reading any of them and writing it again gives the same bytes (golden files in `fixtures/forge/slots/`).
+
+- **Readers slot**: `slotVersion`, `kind: readers`, `repo`, `commit`, `status` (`read` | `legacy`; a `read` slot never has commit `unknown`), `extractors` (`{ id, version }`, sorted by id), `settings` (SHA-256 of the canonical JSON of the repo's scan-settings entry, the dialects used on it and the framework models, each sorted by name, and the plugins that ran with `id`, `version`, `sha256` and `limits`), `records` (each a C1 record parsed as one, at `SCHEMA_VERSION`, a Flow at its own; sorted by kind then id). The records keep their evidence as the readers stamped it, `scannedAt` included: it is C1, and the scan cache keeps it for an unchanged repo, so an unchanged repo writes the same bytes; `--full` stamps afresh, as it does in `catalog/generated`.
+- **Facts slot**: `<repo>.jsonl` is `serializeFacts` of the facts verify kept (by id, canonical; a newer Atticus's lines are not in it). `<repo>.meta.json`: `slotVersion`, `kind: facts`, `repo`, `commit` (the commit verify checked), `factsSchemaVersion`, `factsHash` (SHA-256 of `<repo>.jsonl`), `contracts` (the `ContractsFile` verify wrote to `facts/<repo>.contracts.yaml`, or `null`). The meta is written after the facts, so a write cut short between them leaves a hash that doesn't match.
+- **Legacy joins slot**: `slotVersion`, `kind: legacy-joins`, `status: legacy`, `records` (as the readers slot's), `inputs` (an object from each slot's or build input's path to its SHA-256, keys sorted).
+- **`build.json`**: `version: 1`, `files` (sorted by path), each `{ path, sha256, sources }` with `sources` a sorted list of `{ path, sha256 }`.
+- **Dismissals** (`facts/<repo>.crosscheck.yaml`, canonical YAML): `version: 1`, `dismissed` (sorted by key), each `{ key, readers }`: the item's key (`<Kind>|<the kind's key>`, as point 3 matches) and the readers' value it was dismissed at.
+
+What CS1 writes, and when:
+
+- The scan writes readers slots in `atticus scan` only when it writes `catalog/generated`. beta.26's stop is unchanged, so a scan with any production repo not read in full writes no slot at all, and its message, "Nothing written", stays true; `scanEstate`'s `observations` already say, per repo, a full read or why not, and CS2 lifts the gate so the repos read in full are written. `writeReadersSlots` takes the gate as `hold`.
+- Besides the failures of point 1, two more are no observation: a plugin that applies to the repo but isn't used (its pin changed or is missing, or its golden tests fail: the sandbox never ran it, so the read is short of it, though beta.26 still writes the catalog), and the readers switched off (`ATTICUS_HELPERS_OFF=readers`), where no reader ran.
+- `verify --write` takes the snapshot inside `writeFactsIntoCatalog`, under the scan's lock, after the contract companion and before `writeCatalog`. A prototype gets none (it is never in the catalog).
+- For each cloned repo with a snapshot, the scan compares the snapshot's commit with HEAD (`changesSince`, then `staleCite` on each fact) and reports the facts citing a changed file by file, a commit it can't compare, or a snapshot that doesn't read or whose hash doesn't match, each with `atticus verify <repo> --write`. `--json` carries it as `sources[].factsStale`.

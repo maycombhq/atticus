@@ -1,5 +1,11 @@
 import { join } from "node:path";
-import { acquireLock, catalogDirOf, LockHeldError, type CatalogRecord } from "@maycombhq/core";
+import {
+  acquireLock,
+  catalogDirOf,
+  LockHeldError,
+  throwIfCancelled,
+  type CatalogRecord,
+} from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
@@ -7,9 +13,13 @@ import {
   diffIsEmpty,
   readCatalog,
   scanEstate,
+  sourcesRelOf,
   writeCatalog,
+  writeReadersSlots,
   type CatalogDiff,
   type EstateScan,
+  type FactsStaleness,
+  type ReadersSlotOutcome,
   type UnreadRepo,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
@@ -107,6 +117,119 @@ export function scanRefusal(
 }
 
 /**
+ * One repo's sources after a scan (ADR 0195; `atticus scan --json`'s `sources`): what its records
+ * rest on this scan (its verified facts or its readers; none when it wasn't read), its readers
+ * slot (written, unchanged, kept from its last good read, or none) and why, and its facts
+ * snapshot when a file its facts cite changed since (the verify command refreshes it).
+ */
+export interface ScanSource {
+  repo: string;
+  source: "facts" | "readers" | "none";
+  slot: ReadersSlotOutcome["slot"];
+  commit?: string;
+  reason?: ReadersSlotOutcome["reason"];
+  detail?: string;
+  factsStale?: FactsStaleness;
+}
+
+export function scanSources(
+  scan: Pick<EstateScan, "observations" | "basis">,
+  slots: readonly ReadersSlotOutcome[],
+): ScanSource[] {
+  return scan.observations.map((o) => {
+    const s = slots.find((x) => x.repo === o.repo);
+    const read =
+      o.full || (o.why !== "not-cloned" && o.why !== "unreadable" && o.why !== "not-asked");
+    return {
+      repo: o.repo,
+      source: read ? (scan.basis?.[o.repo]?.from ?? "readers") : "none",
+      slot: s?.slot ?? "none",
+      ...(s?.commit ? { commit: s.commit } : {}),
+      ...(s?.reason ? { reason: s.reason } : {}),
+      ...(s?.detail ? { detail: s.detail } : {}),
+      ...(o.factsStale ? { factsStale: o.factsStale } : {}),
+    };
+  });
+}
+
+const short = (c: string) => (/^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : c);
+
+/** Why a repo's readers slot kept its last good read, in words. */
+function keptWhy(s: Pick<ScanSource, "reason" | "detail">): string {
+  switch (s.reason) {
+    case "not-cloned":
+      return "it isn't cloned here";
+    case "unreadable":
+      return "its clone can't be read";
+    case "not-asked":
+      return "--repos left it out";
+    case "run-failed":
+      return `a run failed (${s.detail ?? "a reader"})`;
+    case "plugin-refused":
+      return `a plugin that applies to it isn't used (${s.detail ?? "a plugin"})`;
+    case "readers-off":
+      return "the readers are switched off (ATTICUS_HELPERS_OFF=readers)";
+    case "refused":
+      return "the scan wrote nothing";
+    case "dry-run":
+      return "a dry run writes nothing";
+    default:
+      return "it wasn't read in full";
+  }
+}
+
+/**
+ * What a person reads of the slots after a scan (ADR 0195): the readers slots written and
+ * unchanged, each repo that kept its last good read and why (when the scan wrote), and each
+ * repo whose facts snapshot is stale, with the facts that cite a changed file and the command.
+ */
+export function sourceLines(
+  /** catalog/sources, relative to the metarepo (`sourcesRelOf`). */
+  rel: string,
+  sources: readonly ScanSource[],
+  wrote: boolean,
+): string[] {
+  const out: string[] = [];
+  if (wrote) {
+    const n = (k: ScanSource["slot"]) => sources.filter((s) => s.slot === k).length;
+    out.push(`${rel}/readers: ${n("written")} written, ${n("unchanged")} unchanged`);
+    for (const s of sources)
+      if (s.reason && s.reason !== "refused" && s.reason !== "dry-run")
+        out.push(
+          s.slot === "kept-last-good"
+            ? `${s.repo}: its readers slot keeps its last good read${s.commit ? ` (commit ${short(s.commit)})` : ""}: ${keptWhy(s)}.`
+            : `${s.repo}: no readers slot written: ${keptWhy(s)}.`,
+        );
+  }
+  for (const s of sources) {
+    const f = s.factsStale;
+    if (!f) continue;
+    const at = `${rel}/facts/${s.repo}.jsonl`;
+    if (f.unusable)
+      out.push(
+        `${s.repo}: its facts snapshot (${at}) ${f.unusable}, so it isn't used; write it again: ${f.command}`,
+      );
+    else if (f.notComparable)
+      out.push(
+        `${s.repo}: its facts snapshot (${at}) is of commit ${short(f.commit)}, which can't be compared with ${short(f.head)} here; the snapshot stays as it is; refresh it: ${f.command}`,
+      );
+    else {
+      const shown = f.files
+        .slice(0, 5)
+        .map(
+          (x) =>
+            `${x.path} ${x.how}${x.to ? ` to ${x.to}` : ""}: ${x.facts.slice(0, 5).join(", ")}${x.facts.length > 5 ? ` and ${x.facts.length - 5} more` : ""}`,
+        );
+      if (f.files.length > 5) shown.push(`${f.files.length - 5} more files`);
+      out.push(
+        `${s.repo}: its facts snapshot (${at}, commit ${short(f.commit)}) is stale at ${short(f.head)}: ${f.facts} ${f.facts === 1 ? "fact cites" : "facts cite"} files changed since (${shown.join("; ")}). The snapshot stays as it is; refresh it: ${f.command}`,
+      );
+    }
+  }
+  return out;
+}
+
+/**
  * A problem the refusal already says (a repo not cloned or unreadable, a failed run), so a
  * person reads each once; `--json` keeps every problem.
  */
@@ -163,6 +286,11 @@ export function scanSummaryLines(report: Record<string, unknown>): string[] {
   out.push(...problemLines());
   const w = Array.isArray(report.warnings) ? report.warnings.length : 0;
   if (w) out.push(`${n(w, "warning")}: atticus scan --warnings lists ${w === 1 ? "it" : "them"}`);
+  // ADR 0195: the readers slots and any stale facts snapshot, as the command says them.
+  if (Array.isArray(report.sources))
+    out.push(
+      ...sourceLines("catalog/sources", report.sources as ScanSource[], report.written === true),
+    );
   if (typeof refusal?.message === "string") out.push(...refusal.message.split("\n"));
   return out;
 }
@@ -263,6 +391,14 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const diff = refused
     ? { added: [], removed: [], changed: [], evidenceOnly: [] }
     : diffCatalogs(before.records, scan.records);
+  // A scan the app stopped writes nothing, not even a slot (ADR 0195 point 1).
+  throwIfCancelled();
+  // ADR 0195 (CS1): the readers slot of each repo read in full, written before the catalog;
+  // every other repo's slot is left byte for byte. A scan that writes nothing writes no slot.
+  const slots = await writeReadersSlots(root, scan.observations, {
+    ...(refused ? { hold: "refused" as const } : o.dryRun ? { hold: "dry-run" as const } : {}),
+  });
+  const sources = scanSources(scan, slots);
   const write = o.dryRun || refused ? undefined : await writeCatalog(out, scan.records);
   // The drift check reads the catalog just written, so it runs only when one was.
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
@@ -303,6 +439,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           notes: scan.notes,
           written: write !== undefined,
           files: write ?? null,
+          sources,
           drift,
           questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
           ...(refused ? { refused } : {}),
@@ -362,6 +499,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
         `catalog/generated: ${write.written} written, ${write.unchanged} unchanged, ${write.removed} removed`,
       );
     else if (!refused) io.out("Dry run: nothing written.");
+    for (const l of sourceLines(sourcesRelOf(root), sources, write !== undefined)) io.out(l);
     for (const d of drift) io.out(driftLine(d));
     for (const l of hosts.lines) io.out(l);
     for (const n of scan.notes) io.out(`note: ${n}`);

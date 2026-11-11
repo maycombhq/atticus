@@ -2,6 +2,18 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.27 (unreleased)
+
+### Added
+
+- **Each repo's last good read is kept as its own source (ADR 0195, CS1).** A scan that writes keeps, beside `catalog/generated`, the readers slot of every repo it read in full: `catalog/sources/readers/<repo>.json`, one canonical JSON file with the commit read, the extractors that ran, a hash of the scan settings, rule files and plugin pins that steered them, and the repo's records as the readers produced them, before the merge (no time is written, so an unchanged repo writes the same bytes). A repo the scan didn't read in full (not cloned, unreadable, outside `--repos`, a run that failed or timed out, a plugin refused by its pin or tests, the readers switched off, a cancel) keeps its last good slot byte for byte, said with why; a dry run or a scan that writes nothing (beta.26's stop, unchanged) writes no slot. `atticus scan --json` gains `sources` (per repo: `source`, `slot` written, unchanged, kept-last-good or none, `commit`, `reason`, `factsStale`).
+- **A successful `atticus verify <repo> --write` keeps a facts snapshot**: `catalog/sources/facts/<repo>.jsonl` (the kept facts as verify writes them) and `<repo>.meta.json` (the commit, the facts version, the snapshot's SHA-256 and the repo's contract companion as read at that commit). A refused `--write`, or a check without it, leaves the snapshot byte for byte. The scan never writes it: when a file the snapshot's facts cite has changed at the clone's HEAD, the scan names those facts and the files, leaves the snapshot as it is, and says to run `atticus verify <repo> --write`. Map › Trust's preview of a write lists the snapshot among the files to add.
+- **The slot formats are versioned and have JSON Schema** (`atticus schema export` writes them under `sources/`): the readers slot, the facts slot's meta, the legacy joins slot and `catalog/sources/build.json` (`slotVersion: 1` and `version: 1`), and the cross-check's dismissals, `facts/<repo>.crosscheck.yaml` (`version: 1`). They are new formats, not contracts: C1 to C6 and the facts file are unchanged. The Forge golden slots are in `fixtures/forge/slots/` (`pnpm fixtures:slots` writes them again, and a test checks that doing so changes nothing).
+
+### Changed
+
+- **`catalog/generated` is written exactly as before.** This release only adds the slots beside it; building the catalog from them, its guards and undo, and the upgrade that adopts an existing catalog come with the rest of ADR 0195.
+
 ## 2.0.0-beta.26 (2026-11-11)
 
 ### Changed

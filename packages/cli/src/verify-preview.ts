@@ -133,7 +133,16 @@ export async function verifyWritePreview(
   if (text === undefined) return undefined;
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const host = op?.runtime.adapters.gitHost?.type;
-  const base = [wrote, `${rel}/${repo}.jsonl`, `${rel}/${repo}.verify.yaml`];
+  // ADR 0195 (CS1): a --write that succeeds also takes the facts snapshot and its meta.
+  const { sourcesRelOf } = await import("@maycombhq/scanner");
+  const snapshot = `${sourcesRelOf(root)}/facts/${repo}`;
+  const base = [
+    wrote,
+    `${rel}/${repo}.jsonl`,
+    `${rel}/${repo}.verify.yaml`,
+    `${snapshot}.jsonl`,
+    `${snapshot}.meta.json`,
+  ];
   const plain = (files: string[], unavailable?: View["unavailable"]): View => ({
     repo,
     wrote,

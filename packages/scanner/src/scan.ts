@@ -29,9 +29,11 @@ import {
   type Fact,
   type FrameworkModel,
   type OrgPack,
+  type ScannerPlugin,
   helperOn,
   stackHelpersOff,
   cmpText,
+  canonicalize,
 } from "@maycombhq/core";
 import {
   BUILT_IN_EXTRACTORS,
@@ -70,6 +72,7 @@ import {
   withExcludes,
 } from "./scan-settings.js";
 import { pluginApplies, usablePlugins, withPluginScan } from "./plugins.js";
+import { factsSlotStaleness, sha256Of, SLOT_VERSION, type ReadersObservation } from "./slots.js";
 
 export interface ScanOptions {
   /** The metarepo root (holds org-pack/, catalog/, workspace/). */
@@ -212,6 +215,15 @@ export interface EstateScan {
    * Archived repos and prototypes are never listed.
    */
   unread: UnreadRepo[];
+  /**
+   * What the scan observed of each production repo, in manifest order (ADR 0195 point 1): its
+   * full read as a readers slot (the readers' records before the merge, at the commit read), or
+   * why there is none. Anything less than a full read is no observation: a repo not cloned or
+   * unreadable, outside `repos`, a run that failed or timed out, a plugin that applies to it
+   * refused, or the readers switched off. With each, the repo's facts snapshot when its cited
+   * files changed since (never written here: `atticus verify <repo> --write` refreshes it).
+   */
+  observations: ReadersObservation[];
 }
 
 async function isDir(p: string): Promise<boolean> {
@@ -411,6 +423,38 @@ async function modelsReadingNothing(
 }
 
 /**
+ * The readers slot's `settings` (ADR 0195 point 1): a hash of what steered the readers of a
+ * repo, so a slot read under other settings shows it. The repo's scan settings, the rule files
+ * used (its dialects and the framework models) and the plugins that ran, with their pins.
+ */
+export function readersSettingsHash(s: {
+  scanSettings: unknown;
+  dialects: readonly Dialect[];
+  frameworks: readonly FrameworkModel[];
+  plugins: readonly ScannerPlugin[];
+}): string {
+  const byName = <T extends { name: string }>(xs: readonly T[]) =>
+    [...xs].sort((a, b) => cmpText(a.name, b.name));
+  return sha256Of(
+    JSON.stringify(
+      canonicalize({
+        scanSettings: s.scanSettings,
+        dialects: byName(s.dialects),
+        frameworks: byName(s.frameworks),
+        plugins: s.plugins
+          .map((p) => ({
+            id: p.id,
+            version: p.version,
+            sha256: p.sha256 ?? null,
+            limits: p.limits,
+          }))
+          .sort((a, b) => cmpText(a.id, b.id)),
+      }),
+    ),
+  );
+}
+
+/**
  * Scan every repo in the org pack's manifests with the built-in extractors and the dialects
  * whose tests pass, then merge into one catalog. Unchanged repos come from the cache.
  *
@@ -449,9 +493,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const results: RepoScan[] = [];
   // Beta.26 safety stop: every production repo this scan doesn't read in full, and why.
   const unreadOf = new Map<string, UnreadRepo>();
+  /** ADR 0195: what each production repo's readers slot may hold after this scan. */
+  const observed = new Map<string, ReadersObservation>();
+  const notObserved = (x: Extract<ReadersObservation, { full: false }>) => observed.set(x.repo, x);
   if (o.repos)
     for (const r of productionRepos(op))
-      if (!o.repos.includes(r.id)) unreadOf.set(r.id, { repo: r.id, why: "not-asked" });
+      if (!o.repos.includes(r.id)) {
+        unreadOf.set(r.id, { repo: r.id, why: "not-asked" });
+        notObserved({ repo: r.id, full: false, why: "not-asked" });
+      }
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
   const basis: Record<string, FactBasis> = {};
   /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
@@ -476,6 +526,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         message: "isn't cloned here yet; run atticus workspace sync",
       });
       unreadOf.set(r.id, { repo: r.id, why: "not-cloned" });
+      notObserved({ repo: r.id, full: false, why: "not-cloned" });
       continue;
     }
     try {
@@ -487,8 +538,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         message: `can't read the base clone (${(e as Error).message}); run atticus workspace sync`,
       });
       unreadOf.set(r.id, { repo: r.id, why: "unreadable", detail: (e as Error).message });
+      notObserved({ repo: r.id, full: false, why: "unreadable", detail: (e as Error).message });
       continue;
     }
+    // ADR 0195: the facts snapshot against this clone, said when a file its facts cite changed.
+    const factsStale = await factsSlotStaleness(o.root, r.id, {
+      dir,
+      head: state.commit,
+      ...(o.git ? { git: o.git } : {}),
+    });
     const extractors: Extractor[] = off.has("readers")
       ? []
       : [
@@ -515,6 +573,9 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     for (const message of settings.problems)
       problems.push({ repo: r.id, source: `org-pack/scan/${r.id}.yaml`, message });
     const handle = withParseCache(withExcludes(files, settings.exclude), parsed);
+    // The plugins that apply here, and those refused that would have (ADR 0195: not a full read).
+    const here = pluginSet.plugins.filter((p) => pluginApplies(p.manifest, r));
+    const refusedHere = pluginSet.refused.filter((m) => pluginApplies(m, r)).map((m) => m.id);
     let scan: RepoScan;
     try {
       const modules = r.modules.length
@@ -549,7 +610,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       });
       // Plugins after the built-ins, each in its own sandbox: one that fails, times out, runs
       // out of memory or tries something forbidden is a failed run, reported below.
-      const here = pluginSet.plugins.filter((p) => pluginApplies(p.manifest, r));
       if (here.length > 0)
         scan = withPluginScan(
           scan,
@@ -597,6 +657,47 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       applyPrefixes(scan.records, settings.prefixes),
       settings.clients,
     );
+    // ADR 0195 point 1: a full read is an observation; anything less leaves the slot as it was.
+    const stale = factsStale ? { factsStale } : {};
+    if (failedRuns.length)
+      notObserved({
+        repo: r.id,
+        full: false,
+        why: "run-failed",
+        detail: failedRuns.map((x) => x.extractor).join(", "),
+        ...stale,
+      });
+    else if (off.has("readers"))
+      notObserved({ repo: r.id, full: false, why: "readers-off", ...stale });
+    else if (refusedHere.length)
+      notObserved({
+        repo: r.id,
+        full: false,
+        why: "plugin-refused",
+        detail: refusedHere.join(", "),
+        ...stale,
+      });
+    else
+      observed.set(r.id, {
+        repo: r.id,
+        full: true,
+        slot: {
+          slotVersion: SLOT_VERSION,
+          kind: "readers",
+          repo: r.id,
+          commit: state.commit,
+          status: "read",
+          extractors: scan.runs.map((x) => ({ id: x.extractor, version: x.version })),
+          settings: readersSettingsHash({
+            scanSettings: settingsFor ?? null,
+            dialects: dialectExtractors.filter(({ x }) => extractors.includes(x)).map(({ d }) => d),
+            frameworks,
+            plugins: here.map((p) => p.manifest),
+          }),
+          records: readerRecords,
+        },
+        ...stale,
+      });
     // ADR 0124 §3: a repo the assistant has read takes its verified facts over its readers'
     // records; the readers stay as a cross-check, said as a note. Facts of an earlier commit are
     // carried where the files they cite are unchanged (addendum A-incremental); the readers stand
@@ -797,6 +898,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     unread: productionRepos(op).flatMap((r) => {
       const u = unreadOf.get(r.id);
       return u ? [u] : [];
+    }),
+    observations: productionRepos(op).flatMap((r) => {
+      const x = observed.get(r.id);
+      return x ? [x] : [];
     }),
   };
 }

@@ -69,6 +69,14 @@ describe("atticus CLI", () => {
       "Recording.json",
       "RunSummary.json",
     ]);
+    // ADR 0195: the source slots, build.json and the cross-check's dismissals.
+    expect((await readdir(join(dir, "sources"))).sort()).toEqual([
+      "BuildManifest.json",
+      "CrossCheckDismissals.json",
+      "FactsSlotMeta.json",
+      "LegacyJoinsSlot.json",
+      "ReadersSlot.json",
+    ]);
     expect((await readdir(join(dir, "rules"))).sort()).toEqual([
       "ChecklistPack.json",
       "Dialect.json",

@@ -1,0 +1,113 @@
+{
+  "slotVersion": 1,
+  "kind": "legacy-joins",
+  "status": "legacy",
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-75b5e8d8aa780837",
+      "status": "current",
+      "confidence": "verified",
+      "auth": "oauth2",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "ledger-api.get-balance",
+      "evidence": [
+        {
+          "line": 8,
+          "path": "src/main/java/forge/portal/LedgerClient.java",
+          "repo": "forge-portal-bff",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "line": 9,
+          "path": "proxies/ledger-v1/apiproxy/proxies/default.xml",
+          "repo": "forge-gateway",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "dialect": "forge@0.1.0",
+          "line": 8,
+          "path": "src/main/java/forge/ledger/LedgerEndpoints.java",
+          "repo": "forge-ledger",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "from": "portal-bff",
+      "method": "GET",
+      "normalizedPath": "/accounts/{}/balance",
+      "pattern": {
+        "code": "S.GW.SOR",
+        "source": "inferred"
+      },
+      "route": "gw-ledger-v1",
+      "sync": "sync",
+      "to": "ledger-api",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-f5c8b4b06d75284f",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "portal-bff.get-balance",
+      "evidence": [
+        {
+          "line": 3,
+          "path": "src/api/balance.ts",
+          "repo": "forge-portal-ui",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "line": 12,
+          "path": "src/main/java/forge/portal/BalanceController.java",
+          "repo": "forge-portal-bff",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "from": "portal-ui",
+      "method": "GET",
+      "normalizedPath": "/api/balance/{}",
+      "pattern": {
+        "code": "S.DIR.BFF",
+        "source": "inferred"
+      },
+      "sync": "sync",
+      "to": "portal-bff",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "System",
+      "id": "northwind-pay",
+      "status": "current",
+      "confidence": "verified",
+      "accessGroup": "everyone",
+      "boundary": "vendor",
+      "evidence": [
+        {
+          "path": "inputs/partner-specs/northwind-pay-openapi.yaml",
+          "side": "definition",
+          "source": "spec"
+        }
+      ],
+      "name": "Northwind Pay",
+      "repos": [],
+      "tags": []
+    }
+  ],
+  "inputs": {
+    "catalog/sources/readers/forge-ledger.json": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21",
+    "catalog/sources/readers/forge-portal-bff.json": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400",
+    "org-pack/profiles/forge/repos.manifest.yaml": "b17af6e6a29818d4e663aadf80b0fb5949668c6007811e8db180ee0e160b60c8"
+  }
+}

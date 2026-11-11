@@ -1,0 +1,8 @@
+version: 1
+dismissed:
+  - key: Endpoint|GET /accounts/{}/statement
+    readers:
+      method: GET
+      path: /accounts/{accountId}/statement
+  - key: Setting|ledger.fx.timeout-ms
+    readers: "2500"

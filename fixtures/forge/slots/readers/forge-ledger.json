@@ -1,0 +1,756 @@
+{
+  "slotVersion": 1,
+  "kind": "readers",
+  "repo": "forge-ledger",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "read",
+  "extractors": [
+    {
+      "id": "access",
+      "version": "0.1.0"
+    },
+    {
+      "id": "apigee",
+      "version": "1.0.0"
+    },
+    {
+      "id": "apps",
+      "version": "0.2.0"
+    },
+    {
+      "id": "asyncapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "batch",
+      "version": "0.2.0"
+    },
+    {
+      "id": "cloud-stores",
+      "version": "0.1.0"
+    },
+    {
+      "id": "component",
+      "version": "1.3.0"
+    },
+    {
+      "id": "data-pipelines",
+      "version": "0.1.3"
+    },
+    {
+      "id": "dialect-argocd",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-forge",
+      "version": "0.1.0"
+    },
+    {
+      "id": "dialect-harness",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-tekton",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-aws",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-azure",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-gcp",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dotnet",
+      "version": "0.1.1"
+    },
+    {
+      "id": "frontend",
+      "version": "1.2.0"
+    },
+    {
+      "id": "gcp",
+      "version": "0.1.0"
+    },
+    {
+      "id": "go",
+      "version": "0.1.0"
+    },
+    {
+      "id": "graphql",
+      "version": "0.1.1"
+    },
+    {
+      "id": "grpc",
+      "version": "0.1.1"
+    },
+    {
+      "id": "house-frameworks",
+      "version": "1.0.0"
+    },
+    {
+      "id": "infra",
+      "version": "1.1.0"
+    },
+    {
+      "id": "ingress",
+      "version": "0.2.0"
+    },
+    {
+      "id": "mainframe",
+      "version": "1.1.0"
+    },
+    {
+      "id": "mesh",
+      "version": "0.1.1"
+    },
+    {
+      "id": "migrations",
+      "version": "1.4.0"
+    },
+    {
+      "id": "ml",
+      "version": "0.1.1"
+    },
+    {
+      "id": "node",
+      "version": "0.1.0"
+    },
+    {
+      "id": "observability",
+      "version": "1.0.0"
+    },
+    {
+      "id": "openapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "openshift",
+      "version": "0.3.0"
+    },
+    {
+      "id": "orm",
+      "version": "1.0.0"
+    },
+    {
+      "id": "pipelines",
+      "version": "0.1.0"
+    },
+    {
+      "id": "python",
+      "version": "0.1.0"
+    },
+    {
+      "id": "realtime",
+      "version": "0.1.0"
+    },
+    {
+      "id": "serverless",
+      "version": "0.1.1"
+    },
+    {
+      "id": "speckit",
+      "version": "1.0.0"
+    },
+    {
+      "id": "spring",
+      "version": "1.2.0"
+    },
+    {
+      "id": "topics",
+      "version": "1.0.0"
+    },
+    {
+      "id": "webhooks",
+      "version": "0.1.0"
+    }
+  ],
+  "settings": "a21887d6eb7cf5d662f9461868b660263f837aa2b16622c435f29a4c0a0a6a10",
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.account.account-number",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 3,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "account_number",
+      "nullable": false,
+      "table": "ledger-db.account",
+      "type": "varchar(34)"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.account.holder-name",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 4,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "holder_name",
+      "nullable": false,
+      "table": "ledger-db.account",
+      "type": "varchar(200)"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.account.id",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 2,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "id",
+      "nullable": false,
+      "table": "ledger-db.account",
+      "type": "bigint"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.entry.account-id",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 3,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "account_id",
+      "nullable": false,
+      "table": "ledger-db.entry",
+      "type": "bigint"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.entry.amount",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 4,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "amount",
+      "nullable": false,
+      "table": "ledger-db.entry",
+      "type": "numeric(18,2)"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.entry.id",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 2,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "id",
+      "nullable": false,
+      "table": "ledger-db.entry",
+      "type": "bigint"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Column",
+      "id": "ledger-db.entry.posted-at",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 5,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "posted_at",
+      "nullable": false,
+      "table": "ledger-db.entry",
+      "type": "timestamp"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Component",
+      "id": "ledger-api",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "component@1.3.0",
+          "path": "forge.yaml",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "config"
+        }
+      ],
+      "repo": "forge-ledger",
+      "system": "ledger",
+      "type": "forge-service"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "DataStore",
+      "id": "ledger-db",
+      "status": "current",
+      "confidence": "verified",
+      "entitiesHeld": [],
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 1,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "ownerComponent": "ledger-api",
+      "storeType": "unknown"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "ledger-api.get-balance",
+      "status": "current",
+      "confidence": "verified",
+      "auth": "oauth2",
+      "component": "ledger-api",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dialect": "forge@0.1.0",
+          "extractor": "dialect-forge@0.1.0",
+          "line": 8,
+          "path": "src/main/java/forge/ledger/LedgerEndpoints.java",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "GET",
+      "normalizedPath": "/accounts/{}/balance",
+      "pathOrTopic": "/accounts/{id}/balance",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "ledger-api.get.e9564c7142",
+      "status": "current",
+      "confidence": "verified",
+      "auth": "oauth2",
+      "component": "ledger-api",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "openapi@1.0.1",
+          "line": 6,
+          "path": "api/ledger-openapi.yaml",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "spec"
+        }
+      ],
+      "method": "GET",
+      "normalizedPath": "/accounts/{}/balance",
+      "pathOrTopic": "/accounts/{id}/balance",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "ledger-api.post-transfer",
+      "status": "current",
+      "confidence": "verified",
+      "auth": "oauth2",
+      "component": "ledger-api",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dialect": "forge@0.1.0",
+          "extractor": "dialect-forge@0.1.0",
+          "line": 11,
+          "path": "src/main/java/forge/ledger/LedgerEndpoints.java",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "POST",
+      "normalizedPath": "/transfers",
+      "pathOrTopic": "/transfers",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "ledger-api.post.afe0d8aa47",
+      "status": "current",
+      "confidence": "verified",
+      "auth": "oauth2",
+      "component": "ledger-api",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "openapi@1.0.1",
+          "line": 14,
+          "path": "api/ledger-openapi.yaml",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "definition",
+          "source": "spec"
+        }
+      ],
+      "method": "POST",
+      "normalizedPath": "/transfers",
+      "pathOrTopic": "/transfers",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "IndexConstraint",
+      "id": "ledger-db.account.pk",
+      "status": "current",
+      "confidence": "verified",
+      "columns": [
+        "id"
+      ],
+      "constraintKind": "primary-key",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 2,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "table": "ledger-db.account"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "IndexConstraint",
+      "id": "ledger-db.entry.fk-account",
+      "status": "current",
+      "confidence": "verified",
+      "columns": [
+        "account_id"
+      ],
+      "constraintKind": "foreign-key",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 3,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "references": {
+        "columns": [
+          "id"
+        ],
+        "table": "ledger-db.account"
+      },
+      "table": "ledger-db.entry"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "IndexConstraint",
+      "id": "ledger-db.entry.idx-entry-account",
+      "status": "current",
+      "confidence": "verified",
+      "columns": [
+        "account_id"
+      ],
+      "constraintKind": "index",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 7,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "table": "ledger-db.entry"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "IndexConstraint",
+      "id": "ledger-db.entry.pk",
+      "status": "current",
+      "confidence": "verified",
+      "columns": [
+        "id"
+      ],
+      "constraintKind": "primary-key",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 2,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "table": "ledger-db.entry"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-e7344c9455608119",
+      "status": "current",
+      "confidence": "inferred",
+      "conflicts": [],
+      "direction": "outbound",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dialect": "forge@0.1.0",
+          "extractor": "dialect-forge@0.1.0",
+          "line": 8,
+          "path": "src/main/java/forge/ledger/NorthwindClient.java",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "from": "ledger-api",
+      "method": "POST",
+      "normalizedPath": "/v2/payments",
+      "sync": "sync",
+      "to": "northwind-pay",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Migration",
+      "id": "ledger-db.v1",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "ledger-db",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 1,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "file": "src/main/resources/db/migration/V1__create_account.sql",
+      "operations": [
+        "create table account"
+      ],
+      "tool": "flyway",
+      "version": "1"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Migration",
+      "id": "ledger-db.v2",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "ledger-db",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 1,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "file": "src/main/resources/db/migration/V2__create_entry.sql",
+      "operations": [
+        "create table entry",
+        "create index idx_entry_account"
+      ],
+      "tool": "flyway",
+      "version": "2"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "ledger-db.account",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "ledger-db",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 1,
+          "path": "src/main/resources/db/migration/V1__create_account.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "account",
+      "ownerComponent": "ledger-api",
+      "readers": [
+        "ledger-api"
+      ],
+      "tableKind": "table",
+      "writers": [
+        "ledger-api"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "ledger-db.entry",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "ledger-db",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "migrations@1.4.0",
+          "line": 1,
+          "path": "src/main/resources/db/migration/V2__create_entry.sql",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "migration"
+        }
+      ],
+      "name": "entry",
+      "ownerComponent": "ledger-api",
+      "readers": [
+        "ledger-api"
+      ],
+      "tableKind": "table",
+      "writers": [
+        "ledger-api"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "ledger-api.publish.transfers.completed",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dialect": "forge@0.1.0",
+          "extractor": "dialect-forge@0.1.0",
+          "line": 9,
+          "path": "src/main/java/forge/ledger/LedgerEvents.java",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "ledger-api",
+      "raw": "transfers.completed",
+      "unresolvedKind": "event-publish"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "ledger-api.subscribe.payments.initiated",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dialect": "forge@0.1.0",
+          "extractor": "dialect-forge@0.1.0",
+          "line": 6,
+          "path": "src/main/java/forge/ledger/LedgerEvents.java",
+          "repo": "forge-ledger",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "owner": "ledger-api",
+      "raw": "payments.initiated",
+      "unresolvedKind": "event-subscribe"
+    }
+  ]
+}

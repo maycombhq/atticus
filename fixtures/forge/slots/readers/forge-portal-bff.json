@@ -1,0 +1,349 @@
+{
+  "slotVersion": 1,
+  "kind": "readers",
+  "repo": "forge-portal-bff",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "read",
+  "extractors": [
+    {
+      "id": "access",
+      "version": "0.1.0"
+    },
+    {
+      "id": "apigee",
+      "version": "1.0.0"
+    },
+    {
+      "id": "apps",
+      "version": "0.2.0"
+    },
+    {
+      "id": "asyncapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "batch",
+      "version": "0.2.0"
+    },
+    {
+      "id": "cloud-stores",
+      "version": "0.1.0"
+    },
+    {
+      "id": "component",
+      "version": "1.3.0"
+    },
+    {
+      "id": "data-pipelines",
+      "version": "0.1.3"
+    },
+    {
+      "id": "dialect-argocd",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-harness",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-tekton",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-aws",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-azure",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dialect-terraform-gcp",
+      "version": "1.0.0"
+    },
+    {
+      "id": "dotnet",
+      "version": "0.1.1"
+    },
+    {
+      "id": "frontend",
+      "version": "1.2.0"
+    },
+    {
+      "id": "gcp",
+      "version": "0.1.0"
+    },
+    {
+      "id": "go",
+      "version": "0.1.0"
+    },
+    {
+      "id": "graphql",
+      "version": "0.1.1"
+    },
+    {
+      "id": "grpc",
+      "version": "0.1.1"
+    },
+    {
+      "id": "house-frameworks",
+      "version": "1.0.0"
+    },
+    {
+      "id": "infra",
+      "version": "1.1.0"
+    },
+    {
+      "id": "ingress",
+      "version": "0.2.0"
+    },
+    {
+      "id": "mainframe",
+      "version": "1.1.0"
+    },
+    {
+      "id": "mesh",
+      "version": "0.1.1"
+    },
+    {
+      "id": "migrations",
+      "version": "1.4.0"
+    },
+    {
+      "id": "ml",
+      "version": "0.1.1"
+    },
+    {
+      "id": "node",
+      "version": "0.1.0"
+    },
+    {
+      "id": "observability",
+      "version": "1.0.0"
+    },
+    {
+      "id": "openapi",
+      "version": "1.0.1"
+    },
+    {
+      "id": "openshift",
+      "version": "0.3.0"
+    },
+    {
+      "id": "orm",
+      "version": "1.0.0"
+    },
+    {
+      "id": "pipelines",
+      "version": "0.1.0"
+    },
+    {
+      "id": "python",
+      "version": "0.1.0"
+    },
+    {
+      "id": "realtime",
+      "version": "0.1.0"
+    },
+    {
+      "id": "serverless",
+      "version": "0.1.1"
+    },
+    {
+      "id": "speckit",
+      "version": "1.0.0"
+    },
+    {
+      "id": "spring",
+      "version": "1.2.0"
+    },
+    {
+      "id": "topics",
+      "version": "1.0.0"
+    },
+    {
+      "id": "webhooks",
+      "version": "0.1.0"
+    }
+  ],
+  "settings": "fd1f76fb6df527511c3b333a3e8899e391d1708ff8697a57c84174aa162166c9",
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Component",
+      "id": "portal-bff",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "component@1.3.0",
+          "path": "pom.xml",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "config"
+        }
+      ],
+      "repo": "forge-portal-bff",
+      "system": "portal",
+      "type": "spring-boot"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "portal-bff.get.03f49d36e5",
+      "status": "current",
+      "confidence": "verified",
+      "component": "portal-bff",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 12,
+          "path": "src/main/java/forge/portal/BalanceController.java",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "GET",
+      "normalizedPath": "/api/balance/{}",
+      "pathOrTopic": "/api/balance/{accountId}",
+      "schemaRefs": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "portal-bff.ledger-connect-timeout",
+      "status": "current",
+      "confidence": "verified",
+      "component": "portal-bff",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 8,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "config"
+        }
+      ],
+      "key": "ledger.client.connect-timeout",
+      "settingKind": "timeout",
+      "valueOrRef": "500ms"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "portal-bff.ledger-read-timeout",
+      "status": "current",
+      "confidence": "verified",
+      "component": "portal-bff",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 7,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "source": "config"
+        }
+      ],
+      "key": "ledger.client.read-timeout",
+      "settingKind": "timeout",
+      "valueOrRef": "2000ms"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "portal-bff.event-publish.b1605506ac",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 11,
+          "path": "src/main/java/forge/portal/PaymentEvents.java",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "portal-bff",
+      "raw": "payments.initiated",
+      "unresolvedKind": "event-publish"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "portal-bff.http-call.2fa76a4adc",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 8,
+          "path": "src/main/java/forge/portal/LedgerClient.java",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "portal-bff",
+      "raw": "GET https://gateway.forge.example/ledger/v1/accounts/{id}/balance",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "portal-bff.http-call.8ec7d77f9a",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 11,
+          "path": "src/main/java/forge/portal/LedgerClient.java",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "portal-bff",
+      "raw": "POST https://gateway.forge.example/ledger/v1/transfers",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "portal-bff.http-call.e39b0892a0",
+      "status": "current",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "extractor": "spring@1.2.0",
+          "line": 10,
+          "path": "src/main/java/forge/portal/AuditPublisher.java",
+          "repo": "forge-portal-bff",
+          "scannedAt": "2026-10-18T09:00:00Z",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "portal-bff",
+      "raw": "POST http://audit-svc.forge.internal/audit/events",
+      "unresolvedKind": "http-call"
+    }
+  ]
+}

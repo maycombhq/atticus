@@ -357,7 +357,7 @@ export async function verifyCommand(
         root,
         repo,
         report.accepted,
-        { dir, command: `atticus verify ${repo} --write` },
+        { dir, command: `atticus verify ${repo} --write`, ...(commit ? { commit } : {}) },
         { ...io, out: () => undefined },
       );
       if (!written) return 1;
@@ -655,7 +655,12 @@ export async function verifyCommand(
     root,
     repo,
     report.accepted,
-    { dir, command: `atticus verify ${repo} --write`, verbose: o.verbose === true },
+    {
+      dir,
+      command: `atticus verify ${repo} --write`,
+      verbose: o.verbose === true,
+      ...(commit ? { commit } : {}),
+    },
     io,
   );
   return written ? 0 : 1;

@@ -13,3 +13,4 @@ export * from "./target-suggest.js";
 export * from "./facts-scan.js";
 export * from "./measure-links.js";
 export * from "./audit-links.js";
+export * from "./slots.js";

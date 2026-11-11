@@ -73,6 +73,8 @@ import {
   TARGETS_STEP,
   topicQuestionDrafts,
   writeCatalog,
+  writeFactsSlot,
+  sourcesRelOf,
   type CatalogDiff,
 } from "@maycombhq/scanner";
 import { readNotSettled, repoOfTarget } from "./answer-reopen.js";
@@ -118,6 +120,11 @@ export interface WriteFactsResult {
   changes: CatalogDiff & { byKind: Record<string, KindCount> };
   /** J2: the links between components the write made, unmade or changed, and the join's counts. */
   links: LinkChanges;
+  /**
+   * ADR 0195 (CS1): the facts snapshot this write took, `catalog/sources/facts/<repo>.jsonl` and
+   * its meta, and whether either changed. Left out for a prototype, which is never in the catalog.
+   */
+  snapshot?: { path: string; status: "written" | "unchanged"; facts: number; commit: string };
 }
 
 /** J2: one Interface of a write, with its confidence and how its callee was found. */
@@ -563,7 +570,14 @@ export async function writeFactsIntoCatalog(
   repo: string,
   facts: readonly Fact[],
   /** verbose: list every record changed and flow written, not only the counts. */
-  o: { dir: string; command: string; now?: Date; verbose?: boolean },
+  o: {
+    dir: string;
+    command: string;
+    now?: Date;
+    verbose?: boolean;
+    /** The commit verify checked the facts at (the snapshot's commit); default the facts' own. */
+    commit?: string;
+  },
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
   let lock: Awaited<ReturnType<typeof acquireLock>>;
@@ -602,7 +616,7 @@ export async function writeFactsIntoCatalog(
     }
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
-    await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
+    const contracts = await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
     // ADR 0164: this repo's specs (OpenAPI, .proto, Avro, JSON Schema, AsyncAPI), kept the same way.
     await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const {
@@ -622,6 +636,25 @@ export async function writeFactsIntoCatalog(
       io.err(
         `A merged record isn't valid C1 (a bug): ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
       );
+    // ADR 0195 (CS1): the facts snapshot, taken only by a --write that succeeded (this one): the
+    // kept facts as verify wrote them, at the commit checked, with the contract companion read
+    // beside them. Written before the catalog, which is still written as it was.
+    const snapshotCommit = o.commit ?? facts.map((f) => f.commit).sort()[0] ?? "unknown";
+    const slot = await writeFactsSlot(root, {
+      repo,
+      commit: snapshotCommit,
+      facts,
+      contracts: contracts.entries.length ? contracts : null,
+    });
+    const snapshot = {
+      path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
+      status:
+        slot.facts === "written" || slot.meta === "written"
+          ? ("written" as const)
+          : ("unchanged" as const),
+      facts: slot.count,
+      commit: snapshotCommit,
+    };
     const written = await writeCatalog(generated, result.records);
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
@@ -894,6 +927,9 @@ export async function writeFactsIntoCatalog(
     if (o.verbose) for (const p of flowPaths) io.out(`    ${p}`);
     else if (!diffIsEmpty(diff) || flowPaths.length)
       io.out(`  atticus verify ${repo} --write --verbose lists each record and flow.`);
+    io.out(
+      `  Facts snapshot: ${snapshot.path} ${snapshot.status} (${snapshot.facts} ${snapshot.facts === 1 ? "fact" : "facts"} at ${snapshot.commit.slice(0, 7)}).`,
+    );
     for (const p of result.curated.problems)
       io.out(`Curated decision ${p.decision} no longer applies: ${p.message}`);
     for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
@@ -924,6 +960,7 @@ export async function writeFactsIntoCatalog(
       map: map ?? [],
       changes: { ...diff, byKind },
       links,
+      snapshot,
     };
   } finally {
     await lock.release();
