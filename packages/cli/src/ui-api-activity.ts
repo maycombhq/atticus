@@ -147,6 +147,16 @@ export async function trackedLocal<T>(
 const jobState = (j: Job): Api.ActivityStateT =>
   j.state === "queued" ? "running" : (j.state as Api.ActivityStateT);
 
+/** How far before a hand-off run the command that prepared it may have started. */
+const PREPARED_MS = 15 * 60 * 1000;
+/** Where a command ran, in words, for a hand-off's first line. */
+const WHERE_WORDS: Record<string, string> = {
+  terminal: "in a terminal",
+  vscode: "in VS Code",
+  intellij: "in IntelliJ",
+  copilot: "in a Copilot session",
+};
+
 interface HandoffRun {
   runId: string;
   change: string;
@@ -410,6 +420,21 @@ export function uiActivityRoutes(
       handoffCache = { at: t, runs: readHandoffRuns(root, now().getTime()) };
     return handoffCache.runs;
   };
+  /**
+   * The command run elsewhere that prepared a hand-off run: the newest that names its change and
+   * started at most PREPARED_MS before it (a `handoff done` is a Done, not the start).
+   */
+  const preparedBy = (h: HandoffRun): TerminalRunView | undefined => {
+    const at = Date.parse(h.startedAt);
+    let best: TerminalRunView | undefined;
+    for (const t of readTerminalRuns(root, readOpts)) {
+      if (t.command[0] === "handoff" || !t.command.slice(1).includes(h.change)) continue;
+      const s = Date.parse(t.startedAt);
+      if (!(s <= at && at - s <= PREPARED_MS)) continue;
+      if (!best || t.startedAt > best.startedAt) best = t;
+    }
+    return best;
+  };
   /** A hand-off run's lines: what to do, then each Done's, from the app and from anywhere. */
   const handoffLines = (h: HandoffRun): { lines: string[]; shape: string[] } => {
     // The parts the lines are made of (the waiting words or the state, then each Done's), each
@@ -417,6 +442,12 @@ export function uiActivityRoutes(
     const shape: string[] = [handoffState(h.state)];
     const prompt = `${runsRelOf(root)}/${h.change}/${h.runId}/prompt.md`;
     const out: string[] = [];
+    // Beta.26 review: the command that prepared it, run elsewhere (its own entry has its lines).
+    const by = preparedBy(h);
+    if (by) {
+      shape.push(`prepared ${by.runId}`);
+      out.push(`Prepared by ${by.title}, ${WHERE_WORDS[by.startedBy] ?? `in ${by.startedBy}`}.`);
+    }
     if (handoffState(h.state) === "waiting") {
       out.push(
         `Waiting for your assistant${h.agent ? ` (${h.agent})` : ""} on ${h.change}.`,

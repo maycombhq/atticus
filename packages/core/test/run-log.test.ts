@@ -43,7 +43,39 @@ describe("which commands keep a run log", () => {
     expect(recordedCommand(["knowledge", "scan"], [])).toBe(true);
     expect(recordedCommand(["upgrade"], [])).toBe(true);
     expect(recordedCommand(["handoff", "done", "run-1"], [])).toBe(true);
+    // Beta.26 review: every command that writes, run anywhere, is in the Console.
+    expect(recordedCommand(["change", "new", "c1"], ["type"])).toBe(true);
+    expect(recordedCommand(["change", "feature", "c1"], [])).toBe(true);
+    expect(recordedCommand(["change", "architecture", "c1"], ["handoff"])).toBe(true);
+    expect(recordedCommand(["change", "attach", "c1"], [])).toBe(true);
+    expect(recordedCommand(["initiative", "new"], ["journey"])).toBe(true);
+    expect(recordedCommand(["initiative", "commit", "i1"], [])).toBe(true);
+    expect(recordedCommand(["questions", "answer", "q1"], ["option"])).toBe(true);
+    expect(recordedCommand(["questions", "owner", "q1"], ["text"])).toBe(true);
+    expect(recordedCommand(["questions", "propose"], [])).toBe(true);
+    expect(recordedCommand(["critic", "c1"], ["gate"])).toBe(true);
+    expect(recordedCommand(["finding", "c1", "f1", "waive"], [])).toBe(true);
+    expect(recordedCommand(["plan", "stories", "c1"], [])).toBe(true);
+    expect(recordedCommand(["needs", "done", "c1", "n1"], [])).toBe(true);
+    expect(recordedCommand(["knowledge", "verify", "k1"], [])).toBe(true);
+    expect(recordedCommand(["repo", "add"], [])).toBe(true);
+    expect(recordedCommand(["baseline"], [])).toBe(true);
+    expect(recordedCommand(["triage", "decide", "t1", "2"], [])).toBe(true);
+    expect(recordedCommand(["workspace", "prune"], [])).toBe(true);
+    expect(recordedCommand(["task", "c1", "t1"], [])).toBe(true);
+    expect(recordedCommand(["spec", "draft", "forge-ledger"], [])).toBe(true);
     // Quick or read-only: no file.
+    expect(recordedCommand(["change", "status", "c1"], [])).toBe(false);
+    expect(recordedCommand(["change", "list"], ["json"])).toBe(false);
+    expect(recordedCommand(["questions"], [])).toBe(false);
+    expect(recordedCommand(["questions", "list"], ["json"])).toBe(false);
+    expect(recordedCommand(["questions", "show", "q1"], [])).toBe(false);
+    expect(recordedCommand(["initiative", "status", "i1"], [])).toBe(false);
+    expect(recordedCommand(["critic", "stats"], [])).toBe(false);
+    expect(recordedCommand(["task", "context", "c1", "t1"], [])).toBe(false);
+    expect(recordedCommand(["feature", "list"], [])).toBe(false);
+    // A prompt recorded by a hook, every time a person writes one: never a Console entry.
+    expect(recordedCommand(["history", "add"], ["surface", "kind"])).toBe(false);
     expect(recordedCommand(["help", "map"], [])).toBe(false);
     expect(recordedCommand(["map"], ["help"])).toBe(false);
     expect(recordedCommand(["upgrade"], ["check"])).toBe(false);
@@ -75,6 +107,13 @@ describe("which commands keep a run log", () => {
     );
     expect(t.title).toBe("atticus map … … … … --max-tokens");
     expect(t.command).toEqual(["map", "…", "…", "…", "…"]);
+  });
+
+  it("leaves where it ran out of a title: --root and --metarepo say a folder, not what ran", () => {
+    expect(runTitle(["index", "rebuild"], ["root"]).title).toBe("atticus index rebuild");
+    expect(runTitle(["map", "forge-ledger"], ["metarepo", "handoff", "root"]).title).toBe(
+      "atticus map forge-ledger --handoff",
+    );
   });
 
   it("says who started it from the environment", () => {

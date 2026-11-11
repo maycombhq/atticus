@@ -190,8 +190,24 @@ describe("the Console's list (ADR 0187)", () => {
           request: { change: "c1", agent: "critic", outputPath: "review/critic.md" },
         }),
       );
+    // Beta.26 review: the command that prepared it (here in a terminal) has its own entry, and
+    // the hand-off says where it came from.
+    const prepared = startTerminalRun(root, {
+      positionals: ["change", "feature", "c1"],
+      flags: ["root"],
+      env: {},
+      pid: 1,
+    })!;
+    prepared.line("The feature stage is handed to your assistant.");
+    prepared.end(0);
     await run("waiting");
     await until(async () => (await list()).entries.some((x) => x.id === "run-abc1"));
+    const cmd = (await list()).entries.find((x) => x.runId === prepared.runId)!;
+    expect(cmd).toMatchObject({
+      kind: "command",
+      title: "atticus change feature c1",
+      where: "terminal",
+    });
     const e = (await list()).entries.find((x) => x.id === "run-abc1")!;
     expect(e).toMatchObject({
       kind: "handoff",
@@ -201,6 +217,7 @@ describe("the Console's list (ADR 0187)", () => {
     });
     expect(e.handoff!.promptPath).toMatch(/c1\/run-abc1\/prompt\.md$/);
     const said = Api.ActivityLines.parse((await call("/api/activity/run-abc1/lines")).body);
+    expect(said.lines[0]).toBe("Prepared by atticus change feature c1, in a terminal.");
     expect(said.lines.join("\n")).toContain("atticus handoff done run-abc1");
     expect(said.lines.join("\n")).toContain("prompt.md");
     // Review of beta.23: its lines are rewritten (not only added to) as it ends, so the entry
@@ -284,7 +301,7 @@ describe("a command run from the command line (ADR 0187)", () => {
     const code = await main(["verify", "forge-nothing", "--root", r], io, { record: true });
     const [rec] = readTerminalRuns(r);
     expect(rec).toMatchObject({
-      title: "atticus verify forge-nothing --root",
+      title: "atticus verify forge-nothing",
       state: code === 0 ? "done" : "failed",
       exitCode: code,
     });

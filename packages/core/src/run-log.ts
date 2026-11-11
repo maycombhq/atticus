@@ -85,39 +85,108 @@ export interface TerminalRunRecord {
 export type TerminalRunView = TerminalRunRecord & { stale?: true };
 
 /**
- * The commands that keep a run log: long ones, or ones that write. Read-only, quick commands
- * (help, list, show, next, `--json` queries) never make a file. By the command's words.
+ * The commands that keep a run log: every one that writes (a file in the metarepo, the catalog,
+ * an answer, a hand-off), and the long reads. Read-only, quick commands (help, list, show, status,
+ * next, `--json` queries) never make a file. By the command's words: `true` for every sub-command,
+ * a set for those named, `{ except }` for all but those named (a quick look); a group with
+ * sub-commands needs one. Beta.26 review: `change`, `initiative`, `questions` and the rest of the
+ * commands that write were missing, so a change started in a terminal never showed in the Console.
  */
-const RECORDED: Record<string, true | ReadonlySet<string>> = {
-  map: true,
-  scan: true,
-  verify: true,
-  upgrade: true,
-  reconcile: true,
-  "run-ready": true,
-  workspace: new Set(["sync", "bring-in", "open"]),
-  task: new Set(["run", "run-ready"]),
-  knowledge: new Set(["scan"]),
-  handoff: new Set(["done"]),
-  index: new Set(["rebuild", "embed"]),
+type Rule = true | ReadonlySet<string> | { except: ReadonlySet<string> };
+const all = true as const;
+const only = (...c: string[]): Rule => new Set(c);
+const but = (...c: string[]): Rule => ({ except: new Set(c) });
+const RECORDED: Record<string, Rule> = {
+  // The long ones.
+  map: all,
+  scan: all,
+  verify: all,
+  upgrade: all,
+  reconcile: all,
+  "run-ready": all,
+  workspace: only("sync", "bring-in", "open", "prune"),
+  task: but("context"),
+  knowledge: only("scan", "find", "ask", "keep", "verify", "correct", "reject"),
+  handoff: only("done"),
+  index: only("rebuild", "embed"),
+  // A change, from its start to its archive, and what it asks of people.
+  change: but("status", "list", "knowledge", "similar", "impact", "conflicts", "estimate", "map"),
+  initiative: but("status"),
+  questions: but("list", "show", "proposed", "decisions"),
+  critic: all,
+  finding: all,
+  plan: all,
+  stories: all,
+  needs: only("done", "skip", "reopen"),
+  todo: only("done", "run"),
+  ado: all,
+  release: all,
+  outcome: only("record"),
+  tests: only("generate"),
+  spec: only("draft", "seed", "accept", "hand-down", "hand-up"),
+  feature: but("list", "show"),
+  triage: only("decide"),
+  alias: all,
+  // The estate, the org pack and what Atticus learns.
+  baseline: all,
+  repo: all,
+  "repo-type": only("new", "note", "rules"),
+  rules: only("add", "activate", "off", "draft", "try", "import"),
+  types: only("add"),
+  skills: only("import", "write"),
+  connect: all,
+  join: all,
+  estate: only("join", "measure", "shared", "contracts"),
+  sources: only("sync", "tag", "refresh"),
+  glossary: only("scan", "define", "link", "alias"),
+  intake: only("add", "traffic"),
+  patterns: only("scan"),
+  defences: only("scan"),
+  onboard: but("check"),
+  frameworks: all,
+  dialect: only("new", "kit"),
+  plugin: all,
+  absorb: all,
+  orgpack: only("draft", "accept", "owner"),
+  standards: all,
+  openspec: only("setup"),
+  templates: only("draft"),
+  catalog: only("migrate"),
+  diagram: all,
+  "assistant-files": all,
+  site: only("build"),
+  secret: only("set", "forget"),
+  init: all,
+  adopt: all,
+  unadopt: all,
+  support: only("bundle"),
+  probe: all,
+  eval: only("run"),
+  bench: all,
 };
 /** Never kept, whatever the command: a question about it, or a look at what it would do. */
 const NOT_RECORDED_FLAGS = new Set(["help", "version", "check", "dry-run"]);
 /** Sub-commands of a kept command that are a quick look. */
-const QUICK = new Set(["map render", "verify audit", "scan review"]);
+const QUICK = new Set(["map render", "verify audit", "scan review", "critic stats"]);
 
 export function recordedCommand(positionals: readonly string[], flags: readonly string[]): boolean {
   const [group, command] = positionals;
   if (!group || flags.some((f) => NOT_RECORDED_FLAGS.has(f))) return false;
   if (command && QUICK.has(`${group} ${command}`)) return false;
   const rule = RECORDED[group];
+  if (rule === undefined) return false;
   if (rule === true) return true;
-  return !!rule && !!command && rule.has(command);
+  if (!command) return false;
+  return rule instanceof Set
+    ? rule.has(command)
+    : !(rule as { except: ReadonlySet<string> }).except.has(command);
 }
 
 /** A word kept in a title: an id (repo, change, run, task), nothing that could be a value. */
 const ID_WORD = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_WORDS = 8;
+/** The flags that say where a command ran, left out of its title. */
+const WHERE_FLAGS = new Set(["root", "metarepo"]);
 const safeWord = (w: string) =>
   ID_WORD.test(w) && !w.includes("//") && redactText(w, { home: "", user: "" }) === w ? w : "…";
 
@@ -127,7 +196,10 @@ export function runTitle(
   flags: readonly string[],
 ): { command: string[]; title: string } {
   const command = positionals.slice(0, MAX_WORDS).map(safeWord);
-  const names = flags.filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f)).map((f) => `--${f}`);
+  // Where it ran (the metarepo's folder) isn't what ran (beta.26 review).
+  const names = flags
+    .filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f) && !WHERE_FLAGS.has(f))
+    .map((f) => `--${f}`);
   return { command, title: ["atticus", ...command, ...names].join(" ") };
 }
 
