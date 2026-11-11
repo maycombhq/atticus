@@ -949,6 +949,8 @@ export function ArrowWrongForm(p: {
     const next = new Set(ticked);
     if (!next.delete(k)) next.add(k);
     setPicked(next);
+    // A tick answers "Tick at least one call…": it goes as soon as something is ticked.
+    if (next.size > 0 && problem === A.pick.need) setProblem(undefined);
   };
   const planned = loading || !joins ? undefined : arrowCorrections(joins, p.viewOf, fix(), ticked);
   // The number of calls the submit corrects: those planned, or, until the fix is said, the clear

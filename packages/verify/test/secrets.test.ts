@@ -213,6 +213,10 @@ describe("a live-looking secret: the review's cases (beta.24 review)", () => {
       expect(share(sample(`${ALNUM}+/`, 40, 0x5eed))).toBeGreaterThanOrEqual(0.95);
     });
 
+    it("flags at least 95% of random 43-character base64url keys (a JWT's part, an API token)", () => {
+      expect(share(sample(`${ALNUM}-_`, 43, 0xb64))).toBeGreaterThanOrEqual(0.95);
+    });
+
     it("flags at least 95% of random 32-character keys of letters and digits", () => {
       expect(share(sample(ALNUM, 32, 0xbee5))).toBeGreaterThanOrEqual(0.95);
     });
