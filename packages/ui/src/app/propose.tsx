@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, ApiError, onWrote, useApi } from "../api/client.js";
+import { api, ApiError, onWrote, useApi, type Loaded } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
@@ -34,7 +34,7 @@ type Scope =
   | "outcomes"
   | "work"
   | "service-desk";
-interface Plan {
+export interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string; proposed?: string }[];
   branch: string;
@@ -396,8 +396,33 @@ export function CorrectionsToApply() {
  * an audit after the page that made it is gone), with Propose for review, where a person comes
  * back. Nothing shows when there is nothing to propose.
  */
-export function PendingProposals() {
-  const plan = useApi<Plan>("/api/propose?scope=work");
+/**
+ * The repos whose corrections wait for Apply before their files go out (fourth UX walk): as the
+ * server says (applyFirst), else every repo with a corrections file among the files to propose.
+ */
+export function applyFirstRepos(plan: Plan): string[] {
+  return (
+    plan.applyFirst ?? [
+      ...new Set(
+        plan.files
+          .map((f) => /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1])
+          .filter((r): r is string => !!r),
+      ),
+    ]
+  );
+}
+
+/** The files of the person's work not proposed for review yet. */
+export const waitingFiles = (plan: Plan): number => plan.files.filter((f) => !f.proposed).length;
+
+export function PendingProposals(
+  p: {
+    /** beta.26: Home's own load of the plan (its tile counts it too), so it is asked for once. */
+    plan?: Loaded<Plan> & { reload: () => void };
+  } = {},
+) {
+  const own = useApi<Plan>(p.plan ? undefined : "/api/propose?scope=work");
+  const plan = p.plan ?? own;
   // Eighth UX walk: a page action that wrote files (Accept the catalog on Home) says so, and the
   // count is read again (it stayed 6 until a reload, then 7).
   const reload = plan.reload;
@@ -408,21 +433,12 @@ export function PendingProposals() {
   // Sixth UX walk: after Push, the lines about what waited go (the push's own lines stay), and
   // the list is read again for the next time.
   const [pushed, setPushed] = useState(false);
-  const waiting = plan.state === "ready" ? plan.data.files.filter((f) => !f.proposed).length : 0;
+  const waiting = plan.state === "ready" ? waitingFiles(plan.data) : 0;
   if (waiting === 0 && !pushed) return null;
   // Fourth UX walk: a correction saved but not applied would go out without its map: each repo
   // with one gets Apply first. Sixth: only while its corrections are newer than its last Apply,
   // as the server says (applyFirst); a server that doesn't say goes by the corrections file.
-  const repos =
-    plan.state !== "ready" || pushed
-      ? []
-      : (plan.data.applyFirst ?? [
-          ...new Set(
-            plan.data.files
-              .map((f) => /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1])
-              .filter((r): r is string => !!r),
-          ),
-        ]);
+  const repos = plan.state !== "ready" || pushed ? [] : applyFirstRepos(plan.data);
   return (
     <div className="stack" style={{ gap: 4 }}>
       {!pushed && (

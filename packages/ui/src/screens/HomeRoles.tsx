@@ -50,6 +50,60 @@ export function ChangeWaitsLine(p: {
   );
 }
 
+/** Whether the change waits on the person (the Git user named among those it waits on). */
+export const waitsOnMe = (w: Api.WaitsOnT | undefined, me: string | undefined) =>
+  !!w && !!me && w.people.some((x) => x.toLowerCase() === me.replace(/^@/, "").toLowerCase());
+
+/**
+ * beta.26: one change on Home's Changes panel, in one line: its title (to its page), its id and
+ * whom it waits on in a muted line under it, then its stage, BLOCKED and "waits on you" as chips.
+ */
+export function HomeChangeRow(p: {
+  c: { id: string; title: string; state: string; blocked?: boolean };
+  stage: string;
+  waitsOn?: Api.WaitsOnT | undefined;
+  me: string | undefined;
+}) {
+  const w = p.waitsOn;
+  const mine = waitsOnMe(w, p.me);
+  const role = w ? (R.roleNames[w.role] ?? w.role) : undefined;
+  const other =
+    w && !mine
+      ? w.people.length
+        ? H.waitsOnOther(`${w.people.map((x) => `@${x}`).join(", ")} (${role})`)
+        : R.waitsOnNobody(role ?? w.role)
+      : undefined;
+  return (
+    <li>
+      <span className="hm-row-main">
+        <a className="hm-row-title" href={`#/changes/${encodeURIComponent(p.c.id)}`}>
+          {p.c.title}
+        </a>
+        <span className="hm-row-sub">
+          {p.c.id}
+          {other ? ` · ${other}` : ""}
+        </span>
+      </span>
+      <span className="hm-row-end">
+        {p.c.blocked && <span className="chip blocking">{COPY.commandCenter.blocked}</span>}
+        {mine && <span className="chip warn">{H.waitsOnYou}</span>}
+        <span className="chip dim">{p.stage}</span>
+      </span>
+    </li>
+  );
+}
+
+/** HomeChangeRow with whom the change waits on, from its cockpit (a change the person is on). */
+export function HomeChangeWaits(p: {
+  c: { id: string; title: string; state: string; blocked?: boolean };
+  stage: string;
+  me: string | undefined;
+}) {
+  const ck = useApi<Api.ChangeCockpitT>(`/api/changes/${encodeURIComponent(p.c.id)}/cockpit`);
+  useReloadOnFiles(ck);
+  return <HomeChangeRow {...p} waitsOn={ck.state === "ready" ? ck.data.waitsOn : undefined} />;
+}
+
 function ChangeWaits(p: {
   c: { id: string; title: string; state: string };
   me: string | undefined;

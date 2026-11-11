@@ -199,7 +199,11 @@ export async function makeHomeEstate(
   return root;
 }
 
-/** Every request Home (CommandCenter and its panels) sends as it opens, in the order it sends them. */
+/**
+ * Every request Home (CommandCenter and its panels) sends as it opens, in the order it sends them.
+ * beta.26: Home is one screen; the system map left it for its tile, so it asks for no graph or
+ * diagram (/api/graph and /api/diagram/context/graph were the last two here).
+ */
 export const HOME_REQUESTS = [
   "/api/health",
   "/api/me",
@@ -216,11 +220,9 @@ export const HOME_REQUESTS = [
   "/api/onboarding",
   "/api/trust",
   "/api/knowledge/items",
-  "/api/graph",
   "/api/upgrade",
   "/api/propose?scope=work",
   "/api/decisions",
-  "/api/diagram/context/graph",
 ];
 
 /** What Home asks of each change in flight (its needs, its role's questions), and of the first its cockpit. */
@@ -231,7 +233,7 @@ export const homeChangeRequests = (changes: readonly string[]): string[] => [
 
 /**
  * What Home asks again when it hears a change (CommandCenter's useFileChanges and the panels'
- * useReloadOnFiles): the counts, the graph and the map only when the catalog may have changed.
+ * useReloadOnFiles): the catalog's counts only when the catalog may have changed.
  */
 export const homeReloads = (changes: readonly string[], catalog: boolean): string[] => [
   "/api/changes",
@@ -244,6 +246,6 @@ export const homeReloads = (changes: readonly string[], catalog: boolean): strin
   "/api/knowledge/items",
   "/api/upgrade",
   "/api/decisions",
-  ...(catalog ? ["/api/catalog/kinds", "/api/graph", "/api/diagram/context/graph"] : []),
+  ...(catalog ? ["/api/catalog/kinds"] : []),
   ...homeChangeRequests(changes),
 ];

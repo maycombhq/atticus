@@ -106,8 +106,22 @@ test.afterAll(async () => {
 
 test("Waiting on you lists what needs a person by change, and filters it", async ({ page }) => {
   await open(page, a(), "home");
-  const panel = page.locator("section", {
+  // beta.26: Needs a person shows its top rows; the whole list opens under it on a click.
+  const top = page.locator("section", {
     has: page.getByRole("heading", { name: "Needs a person", level: 2 }),
+  });
+  await expect(top.getByRole("link", { name: "See all questions" })).toHaveAttribute(
+    "href",
+    /^#\/questions/,
+  );
+  const show = top.getByRole("button", { name: /^Show the whole list \(\d+\)$/ });
+  await show.click();
+  await expect(top.getByRole("button", { name: "Hide the whole list" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  const panel = page.locator("section", {
+    has: page.getByRole("heading", { name: "Everything that needs a person", level: 2 }),
   });
   const add = panel.locator("section[aria-labelledby=waiting-add-transfer-limit]");
   const fix = panel.locator("section[aria-labelledby=waiting-fix-northwind-timeout]");
@@ -125,11 +139,10 @@ test("Waiting on you lists what needs a person by change, and filters it", async
   // What belongs to no change: the questions, by repo.
   await expect(none.getByRole("heading", { name: "Questions · forge-notes" })).toBeVisible();
   await expect(none.getByRole("heading", { name: "Questions · forge-ledger" })).toBeVisible();
-  // The counts and their links stay as they were.
-  await expect(page.getByRole("link", { name: /^Needs still open 2$/ })).toHaveAttribute(
-    "href",
-    "#/changes?across=needs",
-  );
+  // The counts and their links stay: the open needs on the Wait on you tile, said under it.
+  const wait = page.getByRole("link", { name: /^Wait on you \d+$/ });
+  await expect(wait).toHaveAttribute("href", "#/changes?across=needs");
+  await expect(wait).toHaveAccessibleDescription(/^2 open needs · /);
   await accessible(page, "Waiting on you, by change");
 
   const box = panel.getByLabel("Filter");

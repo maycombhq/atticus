@@ -72,18 +72,36 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "href",
     "#/changes",
   );
-  // Home is one page: what needs you, then what is read and trusted and the changes in flight.
+  // Home is one screen (beta.26): six tiles, then three short panels; no page scroll.
   await open(page, app(), "home");
   await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeAttached();
+  await expect(page.getByRole("heading", { level: 2, name: "At a glance" })).toBeAttached();
+  await expect(page.getByRole("heading", { level: 2, name: "Next for you" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 2, name: "What is read and trusted" }),
+    page.getByRole("heading", { level: 2, name: /^(Your changes|Changes in flight)$/ }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Changes in flight" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Map › Trust" })).toHaveAttribute(
+  await expect(page.getByRole("list", { name: /^Gate pipeline of / })).toBeVisible();
+  // The catalog's tile opens Map › Trust; the changes panel opens the map; See all each list.
+  await expect(page.getByRole("link", { name: /^Facts in the catalog/ })).toHaveAttribute(
     "href",
     "#/trust",
   );
+  await expect(page.getByRole("link", { name: "Open the map" })).toHaveAttribute(
+    "href",
+    "#/canvas",
+  );
+  await expect(page.getByRole("link", { name: "See all changes" })).toHaveAttribute(
+    "href",
+    "#/changes",
+  );
+  await expect(page.getByRole("link", { name: "See all questions" })).toHaveAttribute(
+    "href",
+    /^#\/questions/,
+  );
+  // The slash commands are one click away, not a screen long.
+  await page.getByText("Use with your assistant").click();
+  await expect(page.getByText("/plugin install atticus@maycombhq")).toBeVisible();
   await expect(page.getByText(/Approving is the pull request/).first()).toBeVisible();
   await accessible(page, "home");
   // The Overview's old address opens Home.

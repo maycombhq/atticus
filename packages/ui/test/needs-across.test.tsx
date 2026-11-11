@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { ACROSS } from "../src/screens/Across.js";
-import { WaitingSections } from "../src/screens/CommandCenter.js";
+import { waitingTiles } from "../src/screens/CommandCenter.js";
+import { TileGroup } from "../src/screens/home/HomeTiles.js";
 import {
   needsAcross,
   NeedsAcrossView,
@@ -171,13 +172,19 @@ describe("needs across changes", () => {
 
 describe("Waiting on you", () => {
   it("links to each kind of thing that waits, with its count", () => {
-    const out = html(<WaitingSections questions={3} needs={2} steps={0} blocking={undefined} />);
+    // beta.26: Home's tiles; the needs and the manual steps share one, said apart under it.
+    const t = waitingTiles({ questions: 3, needs: 2, steps: 0, blocking: undefined });
+    const out = html(<TileGroup id="w" title="w" tiles={[t.wait, t.questions, t.blocking]} />);
     expect(out).toContain('href="#/questions"');
     expect(out).toContain('href="#/changes?across=needs"');
-    expect(out).toContain('href="#/todo"');
     expect(out).toContain('href="#/changes?across=findings"');
     expect(out).toContain(">3<");
     expect(out).toContain(">2<");
+    expect(out).toContain(esc(COPY.commandCenter.home.waitOnYouSub(2, 0)));
     expect(out).toContain(esc(COPY.app.notLoaded));
+    // Only manual steps waiting: the tile opens them.
+    expect(waitingTiles({ questions: 0, needs: 0, steps: 1, blocking: 0 }).wait.href).toBe(
+      "#/todo",
+    );
   });
 });

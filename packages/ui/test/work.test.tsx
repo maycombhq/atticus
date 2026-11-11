@@ -525,7 +525,9 @@ describe("Home's overview: the next step, the estate and the changes in flight",
         questions={{ state: "ready", data: { questions: [question], problems: [] } }}
       />,
     );
-    expect(out).toContain(R.title);
+    // beta.26: one row under Home's Next for you, its command folded under Or in a terminal.
+    expect(out).toContain('class="hm-step"');
+    expect(out).toContain(esc(R.orTerminal));
     // The repos are read and verified: a map question no longer holds Home on answering.
     expect(out).toContain("atticus change new &quot;&lt;title&gt;&quot; --type &lt;type&gt;");
     expect(out).not.toContain("atticus questions list --state open");
