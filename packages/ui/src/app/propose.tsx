@@ -406,7 +406,10 @@ export const touchesApplyFirst = (e: LiveEvent): boolean =>
   (/(?:^|[\\/])facts[\\/][^\\/]+\.(?:corrections\.jsonl|verify\.yaml)$/.test(e.path) ||
     /(?:^|[\\/])questions[\\/]q-[^\\/]+\.yaml$/.test(e.path));
 
-/** How long after the app's own write its file events are taken as that write heard back. */
+/**
+ * How long after the app's own write its file events may be that write heard back: the bar's
+ * events within it are read once, when it ends.
+ */
 export const OWN_WRITE_ECHO_MS = 2000;
 
 /**
@@ -414,8 +417,8 @@ export const OWN_WRITE_ECHO_MS = 2000;
  * applyFirst), with one Apply for them all (each repo's own when only one), read again after
  * every write the app makes, so a line drawn or removed on the map shows here at once. Review of
  * beta.24: and on the server's file events, so a correction the CLI or an assistant writes shows
- * too. Round 3: only for the files it is about, once a burst, and not again for the app's own
- * write heard back; and Apply to every repo's map stays while it runs (the job's writes read the
+ * too. Round 3: only for the files it is about, once a burst, and (round 4) the events heard just
+ * after the app's own write once, when that write's echo window ends; and Apply to every repo's map stays while it runs (the job's writes read the
  * bar again, and it may then name one repo or none) and, when it applied only some, with its
  * errors and Sync until dismissed or the next Apply. The bar holds the run, so a reload loses none.
  */
@@ -435,19 +438,35 @@ export function CorrectionsToApply() {
       off();
     };
   }, [reload]);
+  // Round 4: events heard within the window of the app's own write may be its echo or another
+  // writer's change at the same time: they are coalesced, and the bar reads once when it ends.
+  const later = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(later.current), []);
   useFileChanges((events) => {
     if (!events.some(touchesApplyFirst)) return;
-    if (Date.now() - own.current < OWN_WRITE_ECHO_MS) return;
-    reload();
+    const left = own.current + OWN_WRITE_ECHO_MS - Date.now();
+    if (left <= 0) return reload();
+    if (later.current !== undefined) return;
+    later.current = setTimeout(() => {
+      later.current = undefined;
+      reload();
+    }, left);
   });
   const [run, setRun] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
   const [applied, setApplied] = useState(false);
-  // WCAG 2.4.3: Dismiss goes with the errors; the keyboard goes to the bar's Apply (or the bar).
+  // WCAG 2.4.3: Dismiss goes with the errors; the keyboard goes to the bar's Apply (or the bar),
+  // and, round 4, when the bar went with them (no repo left to apply), to the page's main region,
+  // never left on the page's body.
   const [dismissed, setDismissed] = useState(0);
   const bar = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!dismissed) return;
-    (bar.current?.querySelector<HTMLElement>("button") ?? bar.current)?.focus();
+    const at = bar.current?.isConnected
+      ? (bar.current.querySelector<HTMLElement>("button") ?? bar.current)
+      : typeof document === "undefined"
+        ? null
+        : document.getElementById("main");
+    at?.focus();
   }, [dismissed]);
   const repos = plan.state === "ready" ? (plan.data.applyFirst ?? []) : [];
   const failed = !run.running && run.note?.ok === false;

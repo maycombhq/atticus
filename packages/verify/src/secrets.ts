@@ -74,44 +74,23 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
 
 /**
  * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
- * well-known token shape (an access key id written as a credentials file's key), or a long run of
- * letters and digits that switches between them as a random token does (`q7Xf3Kd9…`), not words.
+ * well-known token shape (an access key id written as a credentials file's key), a run of 24 hex
+ * digits or more (a random id, a digest), a run of 16 letters and digits or more that switches
+ * between them as a random token does (`q7Xf3Kd9…`), or (round 4) 32 characters or more of one
+ * piece (no `_`, `-` or `.`) in base64's, base64url's or hex's alphabet, digits and letters both.
+ * A key of words, however abbreviated (`MSSQL_SA_PWD_2019`, `x509Certificate2Path`), is shown.
  */
 export function keyIsSecret(key: string): boolean {
   if (hasSecretShape(key)) return true;
-  // Round 3: a run of 24 or more hex digits, letters and digits both (a random id, a digest).
   for (const run of key.match(/[0-9a-f]{24,}|[0-9A-F]{24,}/g) ?? [])
     if (/\d/.test(run) && /[a-f]/i.test(run)) return true;
-  if (key.length < 16 || !/^[A-Za-z0-9+/=_-]+$/.test(key) || !/\d/.test(key)) return false;
-  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : /[A-Z]/.test(c) ? 2 : 3);
+  const digitsAndLetters = /\d/.test(key) && /[A-Za-z]/.test(key);
+  if (key.length >= 32 && /^[A-Za-z0-9+/=]+$/.test(key) && digitsAndLetters) return true;
+  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
+  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
   let switches = 0;
   for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
-  if (switches >= key.length / 2 && !readsAsWords(key)) return true;
-  // Round 3: as random as a token is (3.5 bits a character or more), and not words.
-  return entropyOf(key) >= 3.5 && !readsAsWords(key);
-}
-
-/** Shannon entropy, in bits a character. */
-function entropyOf(s: string): number {
-  const n = new Map<string, number>();
-  for (const c of s) n.set(c, (n.get(c) ?? 0) + 1);
-  let h = 0;
-  for (const k of n.values()) h -= (k / s.length) * Math.log2(k / s.length);
-  return h;
-}
-
-/**
- * Whether a key is made of words (`x509Certificate2Path`, `NorthwindV2ApiKey`): its letters,
- * split at case changes and at what isn't a letter, are mostly pieces of three or more, and its
- * letters have vowels as words do (a random token's are about one in five).
- */
-function readsAsWords(key: string): boolean {
-  const pieces = key.split(/[^A-Za-z]+|(?<=[a-z])(?=[A-Z])/).filter(Boolean);
-  const letters = pieces.join("");
-  if (!letters.length) return false;
-  const vowels = (letters.match(/[aeiouy]/gi) ?? []).length / letters.length;
-  const long = pieces.filter((p) => p.length >= 3).reduce((k, p) => k + p.length, 0);
-  return vowels >= 0.25 && long / letters.length >= 0.6;
+  return switches >= key.length / 2;
 }
 
 /**

@@ -161,14 +161,16 @@ describe("a live-looking secret: the review's cases (beta.24 review)", () => {
     ]);
   });
 
-  // Review of beta.24, round 3: a random key in lowercase hex, or in base64url, is a secret too.
-  it("never names a line by a random hex or base64url key (review of beta.24, round 3)", () => {
+  // Review of beta.24, round 3: a random key in lowercase hex is a secret too. Round 4: and one
+  // piece of 32 characters or more of base64's alphabet, digits and letters both.
+  it("never names a line by a random hex or base64 key (review of beta.24, rounds 3 and 4)", () => {
     const id = "AKIAIOSFODNN7EXAMPLE";
     for (const key of [
       "6d7ba6243c180beaf40be98ed4967b5d",
       "9F86D081884C7D659A2FEAA0C55AD015",
       "k3j5h2l4m9n8b7v6c1x0z2q4",
-      "Zq8xT_r4LmP2-vK9wQs3Nd",
+      "bm9ydGh3aW5kLWZvcmdlLWxlZGdlcjE2",
+      "Q2hhcmdlcytLZXkvRm9yZ2UxMjM0NTY3OA==",
     ]) {
       expect(keyIsSecret(key), key).toBe(true);
       const found = liveSecretsIn("credentials", [`${key}:${id}`]);
@@ -186,5 +188,56 @@ describe("a live-looking secret: the review's cases (beta.24 review)", () => {
       "aws_access_key_id",
     ])
       expect(keyIsSecret(key), key).toBe(false);
+  });
+
+  // Review of beta.24, round 4: a random key is caught by its shape, never let through by a
+  // guess that it reads as words; an abbreviated key of words is always shown.
+  describe("keys, by a seeded sample (review of beta.24, round 4)", () => {
+    /** mulberry32: the same keys on every run. */
+    const rng = (seed: number) => () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const sample = (alphabet: string, n: number, seed: number, count = 500) => {
+      const r = rng(seed);
+      return Array.from({ length: count }, () =>
+        Array.from({ length: n }, () => alphabet[Math.floor(r() * alphabet.length)]).join(""),
+      );
+    };
+    const share = (keys: string[]) => keys.filter(keyIsSecret).length / keys.length;
+
+    it("flags at least 95% of random 40-character base64 keys", () => {
+      expect(share(sample(`${ALNUM}+/`, 40, 0x5eed))).toBeGreaterThanOrEqual(0.95);
+    });
+
+    it("flags at least 95% of random 32-character keys of letters and digits", () => {
+      expect(share(sample(ALNUM, 32, 0xbee5))).toBeGreaterThanOrEqual(0.95);
+    });
+
+    it("shows abbreviated config keys, dotted names and keys of words", () => {
+      for (const key of [
+        "MSSQL_SA_PWD_2019",
+        "PGSQL_CONN_STR_V2",
+        "HTTP2_MAX_CONC_STRMS",
+        "NW_PMT_GW_CLNT_ID_2",
+        "cfg_bkt_nm_prd_01",
+        "svc_acct_k8s_ns_1",
+        "ORCL_TNS_ADMN_DIR_19c",
+        "mq_qmgr_chl_svrconn_1",
+        "spring.datasource.hikari.maximumPoolSize",
+        "FORGE_LEDGER_BASE_URL_FOR_RECONCILIATION",
+        "northwindApiKey",
+        "x509Certificate2Path",
+      ]) {
+        expect(keyIsSecret(key), key).toBe(false);
+        // A value shaped like a secret is caught whatever its key, and its line named by it.
+        expect(liveSecretsIn(".env", [`${key}=AKIAIOSFODNN7EXAMPLE`]), key).toEqual([
+          { file: ".env", line: 1, key },
+        ]);
+      }
+    });
   });
 });

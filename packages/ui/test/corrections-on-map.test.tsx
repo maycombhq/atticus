@@ -45,7 +45,7 @@ vi.mock("../src/app/job.js", async () => ({
     }),
 }));
 const { COPY } = await import("../src/copy.js");
-const { ApplyAll, ApplyAndPropose, CorrectionsToApply, workChanged } =
+const { ApplyAll, ApplyAndPropose, CorrectionsToApply, OWN_WRITE_ECHO_MS, workChanged } =
   await import("../src/app/propose.js");
 const P = COPY.propose;
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -87,13 +87,38 @@ it("is read again when a corrections file changes on the server, and only then",
   expect(all(m.tree).some((e) => e.type === ApplyAll)).toBe(true);
   onFiles!([{ type: "file.changed", path: "questions/q-0001.yaml" }]);
   expect(reloads).toBe(2);
-  // The app's own write is read at once; its file events, heard back, aren't read again.
-  // (Earlier tests' bars hear the write too: the hooks shim runs no clean-up.)
-  workChanged();
-  expect(reloads).toBeGreaterThan(2);
-  const heard = reloads;
-  onFiles!([{ type: "file.changed", path: "facts/forge-teller.corrections.jsonl" }]);
-  expect(reloads).toBe(heard);
+});
+
+// Review of beta.24, round 4: file events heard just after the app's own write may be its echo or
+// another writer's change at the same moment: never dropped, they are read once, when the window
+// ends.
+it("reads the events heard after the app's own write once, when its echo window ends", () => {
+  vi.useFakeTimers();
+  try {
+    applyFirst = served = ["forge-ledger"];
+    mount(CorrectionsToApply as never, {} as never);
+    // The app's own write is read at once. (Earlier tests' bars hear it too: the shim runs no
+    // clean-up.)
+    const before = reloads;
+    workChanged();
+    expect(reloads).toBeGreaterThan(before);
+    const heard = reloads;
+    served = ["forge-ledger", "forge-teller"];
+    onFiles!([{ type: "file.changed", path: "facts/forge-ledger.corrections.jsonl" }]);
+    onFiles!([{ type: "file.changed", path: "facts/forge-teller.corrections.jsonl" }]);
+    vi.advanceTimersByTime(OWN_WRITE_ECHO_MS - 100);
+    expect(reloads).toBe(heard);
+    vi.advanceTimersByTime(100);
+    expect(reloads).toBe(heard + 1);
+    expect(applyFirst).toEqual(["forge-ledger", "forge-teller"]);
+    vi.advanceTimersByTime(OWN_WRITE_ECHO_MS * 2);
+    expect(reloads).toBe(heard + 1);
+    // Past the window, an event is read at once.
+    onFiles!([{ type: "file.changed", path: "facts/forge-teller.verify.yaml" }]);
+    expect(reloads).toBe(heard + 2);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 // Review of beta.24, round 3: the job's own writes read the bar again while it runs (each repo
@@ -162,4 +187,32 @@ it("dismisses the errors with two repos left, and keeps one Apply for them", asy
   m.render();
   expect(text(m.tree)).toContain(P.onMapApplied);
   expect(apply()).toBeUndefined();
+});
+
+// Review of beta.24, round 4 (WCAG 2.4.3): when Dismiss takes the bar away (no repo is left to
+// apply), the keyboard goes to the page's main region, never left on the page's body.
+it("puts the keyboard on the main region when Dismiss leaves no repo to apply", async () => {
+  const focus = vi.fn();
+  vi.stubGlobal("document", {
+    getElementById: (id: string) => (id === "main" ? { focus } : null),
+  });
+  try {
+    applyFirst = served = ["forge-card-vault", "forge-ledger"];
+    const m = mount(CorrectionsToApply as never, {} as never);
+    const apply = () => all(m.tree).find((e) => e.type === ApplyAll);
+    (apply()!.props.onRun as () => void)();
+    served = [];
+    job.reject(new Error("forge-ledger: the facts file can't be read."));
+    await settle();
+    m.render();
+    expect(applyFirst).toEqual([]);
+    const dismiss = all(m.tree).find((e) => e.type === "button" && text(e) === P.dismissErrors)!;
+    expect(focus).not.toHaveBeenCalled();
+    (dismiss.props.onClick as () => void)();
+    m.render();
+    expect(m.tree).toBeNull();
+    expect(focus).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

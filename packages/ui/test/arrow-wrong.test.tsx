@@ -228,7 +228,6 @@ describe("this whole arrow is wrong", () => {
       // The proxy's forwarding is shared by every caller of the route: never corrected here.
       declared: ["if-declared"],
       routing: ["if-hop"],
-      byLine: [],
     });
     expect(
       arrowCorrections([JOIN, TELLER], viewOf, { kind: "not-a-call", reason: "health probes" }),
@@ -244,7 +243,6 @@ describe("this whole arrow is wrong", () => {
       missing: [],
       declared: [],
       routing: [],
-      byLine: [],
     });
   });
 
@@ -414,21 +412,33 @@ describe("this whole arrow is wrong", () => {
     };
     const r = arrowCorrections([join], () => view, { kind: "not-a-call", reason: "a probe" });
     expect("body" in r && r.body.items.map((i) => i.fact)).toEqual(["c-rates"]);
-    expect("body" in r && r.byLine).toEqual([]);
-    // No call on the line has the link's path: every call there, and the form says so.
+    // Round 4: no call on the line has the link's path: nothing is guessed, the person ticks.
     const elsewhere = { ...join, path: "/v2/quotes" };
-    const all = arrowCorrections([elsewhere], () => view, { kind: "not-a-call", reason: "x" });
-    expect("body" in all && all.body.items.map((i) => i.fact)).toEqual(["c-rates", "c-limits"]);
-    expect("body" in all && all.byLine).toEqual(["if-ledger-fx"]);
+    const basis = linkBasis(elsewhere, () => view);
+    expect(basis.kind === "calls" && basis.calls).toEqual([]);
+    expect(basis.kind === "calls" && basis.ask.map((c) => [c.fact.id, c.ofPath])).toEqual([
+      ["c-rates", false],
+      ["c-limits", false],
+    ]);
+    expect(arrowCorrections([elsewhere], () => view, { kind: "not-a-call", reason: "x" })).toEqual({
+      error: "needPick",
+    });
+    const picked = arrowCorrections(
+      [elsewhere],
+      () => view,
+      { kind: "not-a-call", reason: "x" },
+      new Set(["forge-ledger\u0000c-limits"]),
+    );
+    expect("body" in picked && picked.body.items.map((i) => i.fact)).toEqual(["c-limits"]);
     expect(
       html(<ArrowWrongForm link={edge([elsewhere])} viewOf={() => view} known={[]} startOpen />),
-    ).toContain(esc(W.arrow.byLine(1)));
+    ).toContain(esc(W.arrow.pick.legend));
   });
 
   // Review of beta.24, round 3: a call joined by a proxy's base path has the path its caller
   // wrote (`/api/ledger/accounts/{id}`), while its link has the path the callee serves
-  // (`/accounts/{id}`); another call on the line may be another arrow's, of that very path.
-  describe("a line that holds a call joined by base path and another arrow's call", () => {
+  // (`/accounts/{id}`). Round 4: a line where that leaves more than one call is asked about.
+  describe("a line that holds a call joined by base path", () => {
     const fact = (id: string, path: string, to: string): Api.FactCiteViewT => ({
       ...CALL,
       id,
@@ -436,15 +446,6 @@ describe("this whole arrow is wrong", () => {
       claim: { method: "GET", path, to, value: path },
       cite: { file: "src/Ledger.java", line: 30, value: path },
     });
-    const view: FactsView = {
-      ...FACTS,
-      repo: "forge-bridge",
-      file: "facts/forge-bridge.jsonl",
-      facts: [
-        fact("c-via-edge", "/api/ledger/accounts/{id}", "forge-edge"),
-        fact("c-direct", "/accounts/{id}", "ledger-service"),
-      ],
-    };
     const line = [{ source: "code", repo: "forge-bridge", at: "src/Ledger.java:30" }];
     const BASE: Api.HierJoinT = {
       ...JOIN,
@@ -457,74 +458,44 @@ describe("this whole arrow is wrong", () => {
       caller: line,
       callee: [],
     };
-    const DIRECT: Api.HierJoinT = {
-      ...BASE,
-      interface: "if-direct",
-      to: "ledger-service",
-      how: "host",
-      caller: line,
-    };
-    const facts = (joins: Api.HierJoinT[]) => {
-      const r = arrowCorrections(joins, () => view, { kind: "not-a-call", reason: "a probe" });
-      return "body" in r ? { facts: r.body.items.map((i) => i.fact), byLine: r.byLine } : r;
+    const on = (...facts: Api.FactCiteViewT[]): FactsView => ({
+      ...FACTS,
+      repo: "forge-bridge",
+      file: "facts/forge-bridge.jsonl",
+      facts,
+    });
+    const basis = (view: FactsView) => {
+      const b = linkBasis(BASE, () => view);
+      return b.kind === "calls"
+        ? { calls: b.calls.map((c) => c.fact.id), ask: b.ask.map((c) => [c.fact.id, c.ofPath]) }
+        : b;
     };
 
-    it("corrects each arrow's own call, by the fact ids the server names", () => {
-      const named = (j: Api.HierJoinT, fact: string): Api.HierJoinT => ({
-        ...j,
-        calls: [{ repo: "forge-bridge", fact, at: "src/Ledger.java:30" }],
+    it("takes the call whose path ends with the link's at a segment, and no other", () => {
+      const view = on(
+        fact("c-via-edge", "/api/ledger/accounts/{id}", "forge-edge"),
+        fact("c-rates", "/rates", "northwind-fx"),
+      );
+      expect(basis(view)).toEqual({ calls: ["c-via-edge"], ask: [] });
+      // Not at a segment's start (`/xaccounts/{id}`): not the link's path.
+      expect(basis(on(fact("c-x", "/api/xaccounts/{id}", "forge-edge")))).toEqual({
+        calls: [],
+        ask: [["c-x", false]],
       });
-      expect(facts([named(BASE, "c-via-edge")])).toEqual({ facts: ["c-via-edge"], byLine: [] });
-      expect(facts([named(DIRECT, "c-direct")])).toEqual({ facts: ["c-direct"], byLine: [] });
     });
 
-    it("without the server's ids, by the path: a base path's join by its end, at a segment", () => {
-      expect(facts([BASE])).toEqual({ facts: ["c-via-edge"], byLine: [] });
-      expect(facts([DIRECT])).toEqual({ facts: ["c-direct"], byLine: [] });
-      // Not at a segment's start (`/xaccounts/{id}`): not the link's call; the one of its path is.
-      const off: FactsView = {
-        ...view,
-        facts: [fact("c-x", "/api/xaccounts/{id}", "forge-edge"), view.facts[1]!],
-      };
-      const r = arrowCorrections([BASE], () => off, { kind: "not-a-call", reason: "x" });
-      expect("body" in r && r.body.items.map((i) => i.fact)).toEqual(["c-direct"]);
-    });
-
-    it("when two calls of one method and path are on the line, every call there, and says so", () => {
-      const twin: FactsView = {
-        ...view,
-        facts: [
-          {
-            ...fact("c-ledger-a", "/accounts/{id}", "ledger-a"),
-            claim: {
-              method: "GET",
-              path: "/accounts/{id}",
-              to: "https://a.forge.example",
-              value: "/accounts/{id}",
-            },
-          },
-          {
-            ...fact("c-ledger-b", "/accounts/{id}", "ledger-b"),
-            claim: {
-              method: "GET",
-              path: "/accounts/{id}",
-              to: "https://b.forge.example",
-              value: "/accounts/{id}",
-            },
-          },
+    it("asks when another arrow's call of the link's path is on the line too", () => {
+      const view = on(
+        fact("c-via-edge", "/api/ledger/accounts/{id}", "forge-edge"),
+        fact("c-direct", "/accounts/{id}", "ledger-service"),
+      );
+      expect(basis(view)).toEqual({
+        calls: [],
+        ask: [
+          ["c-via-edge", true],
+          ["c-direct", true],
         ],
-      };
-      const r = arrowCorrections([DIRECT], () => twin, { kind: "not-a-call", reason: "x" });
-      expect("body" in r && r.body.items.map((i) => i.fact)).toEqual(["c-ledger-a", "c-ledger-b"]);
-      expect("body" in r && r.byLine).toEqual(["if-direct"]);
-      // The server's ids settle it.
-      const named = {
-        ...DIRECT,
-        calls: [{ repo: "forge-bridge", fact: "c-ledger-b", at: "src/Ledger.java:30" }],
-      };
-      const s = arrowCorrections([named], () => twin, { kind: "not-a-call", reason: "x" });
-      expect("body" in s && s.body.items.map((i) => i.fact)).toEqual(["c-ledger-b"]);
-      expect("body" in s && s.byLine).toEqual([]);
+      });
     });
   });
 
@@ -563,7 +534,8 @@ describe("this whole arrow is wrong", () => {
       fact: {
         ...CALL,
         id: `c-many-${i}`,
-        cite: { file: "src/many.ts", line: i + 1, value: "/api/customers" },
+        claim: { method: "POST", path: `/api/many/${i}`, value: `/api/many/${i}` },
+        cite: { file: "src/many.ts", line: i + 1, value: `/api/many/${i}` },
       } satisfies Api.FactCiteViewT,
     }));
     const facts = { ...FACTS, facts: many.map((m) => m.fact) };

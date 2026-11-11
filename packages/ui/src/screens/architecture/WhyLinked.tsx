@@ -14,6 +14,7 @@ import {
   ARROW_CALLS_MAX,
   arrowCalls,
   arrowCorrections,
+  callKey,
   callerLine,
   callerRepos,
   callFactsOf,
@@ -22,6 +23,7 @@ import {
   joinWhat,
   linkCorrection,
   predict,
+  tickedOf,
   type Join,
   type LinkFix,
   type Moved,
@@ -934,26 +936,38 @@ export function ArrowWrongForm(p: {
   const [target, setTarget] = useState("");
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | undefined>();
+  // Round 4: the calls the person ticked of those asked about; until then, those of the path.
+  const [picked, setPicked] = useState<ReadonlySet<string> | undefined>();
   const saving = p.saving ?? { state: "idle" };
   const repos = callerRepos(joins ?? []);
   const loading = !joins || repos.some((r) => !p.viewOf(r));
   const fix = (): LinkFix =>
     choice === "not-a-call" ? { kind: choice, reason } : { kind: choice, target, reason };
-  const planned = loading || !joins ? undefined : arrowCorrections(joins, p.viewOf, fix());
   const found = loading || !joins ? undefined : arrowCalls(joins, p.viewOf);
-  // The number of calls the submit corrects: those planned, or, until the fix is said, all.
-  const n = planned && "body" in planned ? planned.body.items.length : (found?.calls.length ?? 0);
+  const ticked = new Set(tickedOf(found?.ask ?? [], picked).map(callKey));
+  const toggle = (k: string) => {
+    const next = new Set(ticked);
+    if (!next.delete(k)) next.add(k);
+    setPicked(next);
+  };
+  const planned = loading || !joins ? undefined : arrowCorrections(joins, p.viewOf, fix(), ticked);
+  // The number of calls the submit corrects: those planned, or, until the fix is said, the clear
+  // ones and those ticked.
+  const all = (found?.calls.length ?? 0) + ticked.size;
+  const n = planned && "body" in planned ? planned.body.items.length : all;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!joins || saving.state === "done" || saving.state === "working") return;
-    const b = arrowCorrections(joins, p.viewOf, fix());
+    const b = arrowCorrections(joins, p.viewOf, fix(), ticked);
     if ("error" in b)
       return setProblem(
         b.error === "noCalls"
           ? A.noCalls
-          : b.error === "tooMany"
-            ? A.tooMany(found?.calls.length ?? 0, ARROW_CALLS_MAX)
-            : W[b.error],
+          : b.error === "needPick"
+            ? A.pick.need
+            : b.error === "tooMany"
+              ? A.tooMany(all, ARROW_CALLS_MAX)
+              : W[b.error],
       );
     setProblem(undefined);
     p.onSave?.(b.body, b.lines);
@@ -975,7 +989,10 @@ export function ArrowWrongForm(p: {
           aria-expanded={open}
           aria-label={A.openOf(label)}
           onClick={() => {
-            if (!open) p.onOpen?.();
+            if (!open) {
+              p.onOpen?.();
+              setPicked(undefined);
+            }
             setOpen((o) => !o);
           }}
         >
@@ -1046,6 +1063,31 @@ export function ArrowWrongForm(p: {
               <span className="hud">{choice === "not-a-call" ? W.reason : W.reasonOptional}</span>
               <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
             </label>
+            {found && found.ask.length > 0 && (
+              <fieldset className="ev-choice" aria-describedby={`${id}-pick`}>
+                <legend className="hud">{A.pick.legend}</legend>
+                <p id={`${id}-pick`} className="ev-say" style={{ margin: 0 }}>
+                  {A.pick.intro}
+                </p>
+                {found.ask.map((c) => {
+                  const k = callKey(c);
+                  const what = [c.fact.claim.method, c.fact.claim.path].filter(Boolean).join(" ");
+                  return (
+                    <label key={k} className="li-choice">
+                      <input
+                        type="checkbox"
+                        name={`${id}-pick`}
+                        checked={ticked.has(k)}
+                        onChange={() => toggle(k)}
+                      />
+                      <code className="mono">
+                        {A.pick.call(what, c.fact.claim.host ?? c.fact.claim.to, c.at)}
+                      </code>
+                    </label>
+                  );
+                })}
+              </fieldset>
+            )}
             {found && found.missing.length > 0 && (
               <p className="ev-say" style={{ margin: 0 }}>
                 {A.missing(found.missing.length)}
@@ -1054,11 +1096,6 @@ export function ArrowWrongForm(p: {
             {found && found.declared.length > 0 && (
               <p className="ev-say" style={{ margin: 0 }}>
                 {A.declared(found.declared.length)}
-              </p>
-            )}
-            {found && found.byLine.length > 0 && (
-              <p className="ev-say" style={{ margin: 0 }}>
-                {A.byLine(found.byLine.length)}
               </p>
             )}
             {found && found.routing.length > 0 && (

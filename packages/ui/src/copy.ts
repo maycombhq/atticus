@@ -5391,11 +5391,17 @@ export const COPY = {
       declared: (n: number) =>
         `${n} of these link${n === 1 ? " is" : "s are"} a person's declaration, not a call in code, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: withdraw a declaration from This link is wrong under its call.`,
       /**
-       * Review of beta.24: a link whose line holds no call of its path, only others'. Round 3: or
-       * two of its path that can't be told apart (one method and path to two hosts).
+       * Review of beta.24, round 4: a line that holds no call of its link's path, or more than
+       * one (two hosts, another arrow's call), is never settled by a guess: the person ticks.
        */
-      byLine: (n: number) =>
-        `${n === 1 ? "One link's line holds" : `${n} links' lines hold`} no call of ${n === 1 ? "its" : "their"} path, or more than one, so every call of the method on ${n === 1 ? "that line" : "those lines"} is corrected: check they all belong to this arrow.`,
+      pick: {
+        legend: "Which of these calls are on this arrow?",
+        intro:
+          "Atticus can't tell for sure which call on these lines makes this arrow: the line holds no call of its path, or more than one. Tick each call that belongs to this arrow; only the ticked ones are corrected.",
+        call: (what: string, host: string | undefined, at: string) =>
+          `${what}${host ? ` to ${host}` : ""}, ${at}`,
+        need: "Tick at least one call to correct first.",
+      },
       /** Review of beta.24, round 3: more calls than one request corrects. */
       tooMany: (n: number, max: number) =>
         `This arrow has ${n} calls to correct, more than the ${max} one correction can take. Correct the calls of one box at a time, opening the arrow from a box inside it.`,

@@ -5,22 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import {
-  Api,
-  DiagramLayout,
-  joinRecords,
-  parseRecord,
-  recordPath,
-  serializeRecord,
-  type CatalogRecord,
-} from "@maycombhq/core";
+import { Api, DiagramLayout, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import {
-  estateJoinOf,
-  estateLinkCalls,
-  uiGraphRoutes,
-  vscodeFileLink,
-} from "../src/ui-api-graph.js";
+import { uiGraphRoutes, vscodeFileLink } from "../src/ui-api-graph.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 
@@ -283,98 +270,5 @@ describe("canvas views kept in the metarepo, and a cited line to open (ADR 0175,
     expect(vscodeFileLink("C:\\work\\forge\\A.java", 3)).toBe(
       "vscode://file/C:/work/forge/A.java:3",
     );
-  });
-});
-
-/**
- * Review of beta.24, round 3: GET /api/graph/edge-calls names the call facts each link is made
- * of (`calls`), from the join of the facts on file, so All calls on this arrow are wrong corrects
- * the arrow's own call on a line that holds another arrow's too (a call joined by a proxy's base
- * path has the path its caller wrote, its link the path the callee serves). The real-shapes
- * corpus (`fixtures/real-shapes/`, invented), its catalog the join's own records.
- */
-describe("GET /api/graph/edge-calls: the call facts each link is made of (round 3)", () => {
-  const SHAPES = join(FIXTURES, "real-shapes");
-  let shapes: RunningServer;
-  let at: string;
-  beforeAll(async () => {
-    at = await mkdtemp(join(tmpdir(), "atticus-ui-graph-calls-"));
-    await cp(join(SHAPES, "org-pack"), join(at, "org-pack"), { recursive: true });
-    await cp(join(SHAPES, "facts"), join(at, "facts"), { recursive: true });
-    const manifest = parse(
-      readFileSync(join(SHAPES, "org-pack/profiles/forge/repos.manifest.yaml"), "utf8"),
-    ) as { repos: { id: string; system: string }[] };
-    const systemOf = new Map(manifest.repos.map((r) => [r.id, r.system]));
-    const { join: joined, repos } = await estateJoinOf(at);
-    const records: CatalogRecord[] = joinRecords(joined, repos).filter(
-      (r) => r.kind === "Interface",
-    );
-    const components = new Map<string, string>();
-    for (const j of joined.joins) {
-      components.set(j.call.component, j.call.repo);
-      components.set(j.entry.component, j.entry.repo);
-    }
-    for (const [id, repo] of components) {
-      const p = parseRecord({
-        schemaVersion: 1,
-        status: "current",
-        confidence: "verified",
-        kind: "Component",
-        id,
-        repo,
-        system: systemOf.get(repo),
-        type: "service",
-        evidence: [{ source: "code", repo, path: "pom.xml", line: 1 }],
-      });
-      if (p.ok) records.push(p.record);
-    }
-    for (const r of records) {
-      const f = join(at, "catalog/generated", recordPath(r));
-      await mkdir(dirname(f), { recursive: true });
-      await writeFile(f, serializeRecord(r));
-    }
-    shapes = await startServer({ root: at, port: 0, extend: (r, ctx) => uiGraphRoutes(r, ctx) });
-  });
-  afterAll(async () => {
-    await shapes?.close();
-    const { rm } = await import("node:fs/promises");
-    await rm(at, { recursive: true, force: true });
-  });
-
-  it("gives each link's calls, each its repo, fact id and line, as the join made it", async () => {
-    const calls = await estateLinkCalls(at);
-    expect(calls.get("if-5b84b1fd35cc309f")).toEqual([
-      {
-        repo: "forge-bridge",
-        fact: "call.get.ledger-accounts-id",
-        at: "src/main/java/forge/bridge/BridgeRouter.java:31",
-      },
-    ]);
-    const v = Api.GraphNodeView.parse((await call(shapes, "/api/graph/node/estate")).body);
-    const e = v.edges.find((x) => x.from === "system:integration" && x.to === "system:ledger")!;
-    expect(e).toBeDefined();
-    // The node view's joins don't name them; edge-calls does.
-    expect(e.joins?.some((j) => j.calls)).toBe(false);
-    const r = await call(
-      shapes,
-      `/api/graph/edge-calls?node=estate&edge=${encodeURIComponent(e.id)}`,
-    );
-    expect(r.status).toBe(200);
-    const c = Api.GraphEdgeCallsView.parse(r.body);
-    const j = c.joins.find((x) => x.interface === "if-5b84b1fd35cc309f")!;
-    expect(j.calls).toEqual(calls.get("if-5b84b1fd35cc309f"));
-    // Every link of the edge the join made names its calls.
-    expect(c.joins.every((x) => x.calls?.length)).toBe(true);
-  });
-
-  it("names none with no org pack or no facts on file", async () => {
-    const bare = await mkdtemp(join(tmpdir(), "atticus-ui-graph-calls-bare-"));
-    expect((await estateLinkCalls(bare)).size).toBe(0);
-    const v = Api.GraphNodeView.parse((await get("/api/graph/node/estate")).body);
-    const e = v.edges.find((x) => x.joins?.length)!;
-    const c = Api.GraphEdgeCallsView.parse(
-      (await get(`/api/graph/edge-calls?node=estate&edge=${encodeURIComponent(e.id)}`)).body,
-    );
-    expect(c.joins.some((x) => x.calls)).toBe(false);
   });
 });

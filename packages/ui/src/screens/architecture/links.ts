@@ -71,42 +71,43 @@ export interface CallToCorrect {
 }
 
 /**
- * What a correction of one link rests on (review of beta.24): every call fact on every line of
- * the caller's (of the link's method, when a line holds several), each the caller's own. Round 2:
- * and of the link's path, normalised as the join normalises it, so a line that holds another
- * arrow's call of the same method leaves that one alone. Round 3: the call facts the server names
- * the link's (`calls`, from the join of the facts on file) when it names any on these lines; else
- * the path, or one that ends with it at a segment (a proxy's base path the join took off, see
- * `ofLinkPath`). When no call on a line has the link's path, or two do that can't be told apart,
- * every call of the method there, and `byLine` says so. A link a person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
- * with no line of a caller's (`routing`, a gateway proxy's routing) has none of its own: its
- * proxy's forwarding call is shared by every caller of the route, so it is never corrected from
- * here. `none`: the caller's lines hold no call fact loaded.
+ * A call on a line where the arrow's own call can't be told for sure (review of beta.24, round
+ * 4): the person ticks the ones to correct. `ofPath`: its path is the link's (ticked at first).
+ */
+export interface CallToChoose extends CallToCorrect {
+  ofPath: boolean;
+}
+
+/** A call's key in a pick: its repo and fact id. */
+export const callKey = (c: { repo: string; fact: { id: string } }) => `${c.repo}\u0000${c.fact.id}`;
+
+/**
+ * What a correction of one link rests on (review of beta.24): on every line of the caller's, the
+ * call facts of the link's method, and of those the ones of the link's path, normalised as the
+ * join normalises it (or ending with it at a segment, a proxy's base path the join took off).
+ * Round 4: a line with exactly one such call is clear, and that call is corrected (`calls`); a
+ * line with none, or with several (two hosts, or another arrow's call of that path), is never
+ * settled by a guess: its calls of the method are offered to the person to tick (`ask`), those of
+ * the link's path ticked at first. A link a person declared (`declared`) has no call in code: the
+ * declaration is withdrawn instead. A link with no line of a caller's (`routing`, a gateway
+ * proxy's routing) has none of its own: its proxy's forwarding call is shared by every caller of
+ * the route, so it is never corrected from here. `none`: the caller's lines hold no call fact
+ * loaded.
  */
 export type LinkBasis =
-  | { kind: "calls"; calls: CallToCorrect[]; byLine?: boolean }
+  | { kind: "calls"; calls: CallToCorrect[]; ask: CallToChoose[] }
   | { kind: "declared" }
   | { kind: "routing" }
   | { kind: "none" };
 
-/**
- * The calls of a link's path (normalised as the join normalises it): the same path, or one that
- * ends with it at a segment (`/api/ledger/accounts/{}` for `/accounts/{}`, a proxy's base path
- * the join took off). A link joined by base path takes those that end with it first, any other
- * link those of the same path first; when that leaves several, they are all given.
- */
-function ofLinkPath(calls: readonly FactCite[], path: string, basePath: boolean): FactCite[] {
-  const p = (c: FactCite) => (c.claim.path === undefined ? undefined : normalizePath(c.claim.path));
-  const same = calls.filter((c) => p(c) === path);
-  const ends =
-    path === "/" || path === ""
-      ? []
-      : calls.filter((c) => {
-          const q = p(c);
-          return q !== undefined && q.length > path.length && q.endsWith(path);
-        });
-  const [first, then] = basePath ? [ends, same] : [same, ends];
-  return first.length ? first : then;
+/** A call's path is the link's: the same, or one ending with it at a segment (a base path's). */
+function ofLinkPath(c: FactCite, path: string): boolean {
+  if (c.claim.path === undefined) return false;
+  const q = normalizePath(c.claim.path);
+  if (q === path) return true;
+  if (path === "" || path === "/") return false;
+  const tail = path.startsWith("/") ? path : `/${path}`;
+  return q.length > tail.length && q.endsWith(tail);
 }
 
 export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefined): LinkBasis {
@@ -115,40 +116,28 @@ export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefin
   if (!lines.length) return { kind: "routing" };
   const m = (x: string | undefined) => (x ?? "").toUpperCase();
   const path = j.path ? normalizePath(j.path) : undefined;
-  // Round 3: the call facts the server names this link's (GET /api/graph/edge-calls), when any of
-  // them is on the caller's lines as the facts read now; else the path decides.
-  const named = new Set((j.calls ?? []).map((c) => `${c.repo}\u0000${c.fact}`));
-  const onLines = lines.map((line) => ({ line, all: callFactsOn(line, viewOf(line.repo)) }));
-  const byId = onLines.some(({ line, all }) =>
-    all.some((c) => named.has(`${line.repo}\u0000${c.id}`)),
-  );
   const calls: CallToCorrect[] = [];
+  const ask: CallToChoose[] = [];
   const seen = new Set<string>();
-  let byLine = false;
-  for (const { line, all } of onLines) {
-    let take: FactCite[];
-    if (byId) take = all.filter((c) => named.has(`${line.repo}\u0000${c.id}`));
-    else {
-      const ofMethod = all.filter(
-        (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
-      );
-      const some = ofMethod.length ? ofMethod : all;
-      // No call of the link's path on the line, or two that can't be told apart (one method and
-      // path to two hosts): every call there, and the form says so.
-      const ofPath = path ? ofLinkPath(some, path, j.how === "base-path") : some;
-      const one = !path || ofPath.length === 1;
-      if (!one && some.length > 1) byLine = true;
-      take = one ? ofPath : some;
-    }
-    for (const c of take) {
-      const k = `${line.repo}\u0000${c.id}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      calls.push({ repo: line.repo, at: line.at, fact: c });
+  for (const line of lines) {
+    const all = callFactsOn(line, viewOf(line.repo));
+    const ofMethod = all.filter(
+      (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
+    );
+    const candidates = ofMethod.length ? ofMethod : all;
+    const ofPath = path ? candidates.filter((c) => ofLinkPath(c, path)) : candidates;
+    // Exactly one call of the link's path on the line: that one. Else the person says.
+    const clear = ofPath.length === 1;
+    for (const fact of clear ? ofPath : candidates) {
+      const call = { repo: line.repo, at: line.at, fact };
+      if (seen.has(callKey(call))) continue;
+      seen.add(callKey(call));
+      if (clear) calls.push(call);
+      else ask.push({ ...call, ofPath: ofPath.includes(fact) });
     }
   }
-  if (!calls.length) return { kind: "none" };
-  return byLine ? { kind: "calls", calls, byLine } : { kind: "calls", calls };
+  if (!calls.length && !ask.length) return { kind: "none" };
+  return { kind: "calls", calls, ask };
 }
 
 /** The repos whose facts a link's correction reads: its caller's. */
@@ -156,53 +145,60 @@ export const callerRepos = (joins: readonly Join[]): string[] => [
   ...new Set(joins.flatMap((j) => (j.how === "declared" ? [] : callerLines(j).map((l) => l.repo)))),
 ];
 
-/** Every call on an arrow a correction is written for, and the links it leaves alone, by kind. */
+/**
+ * Every call on an arrow a correction is written for (`calls`), those the person is asked to
+ * tick (`ask`, none of them in `calls`), and the links it leaves alone, by kind.
+ */
 export function arrowCalls(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
 ): {
   calls: CallToCorrect[];
+  ask: CallToChoose[];
   missing: string[];
   declared: string[];
   routing: string[];
-  /** Links whose line holds no call of their path: every call of the method there is taken. */
-  byLine: string[];
 } {
-  const calls: CallToCorrect[] = [];
+  const calls = new Map<string, CallToCorrect>();
+  const ask = new Map<string, CallToChoose>();
   const missing: string[] = [];
   const declared: string[] = [];
   const routing: string[] = [];
-  const byLine: string[] = [];
-  const seen = new Set<string>();
   for (const j of joins) {
     const b = linkBasis(j, viewOf);
     if (b.kind === "declared") declared.push(j.interface);
     else if (b.kind === "routing") routing.push(j.interface);
     else if (b.kind === "none") missing.push(j.interface);
     else {
-      if (b.byLine) byLine.push(j.interface);
-      for (const c of b.calls) {
-        const k = `${c.repo}\u0000${c.fact.id}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        calls.push(c);
+      for (const c of b.calls) if (!calls.has(callKey(c))) calls.set(callKey(c), c);
+      for (const c of b.ask) {
+        const was = ask.get(callKey(c));
+        ask.set(callKey(c), was ? { ...was, ofPath: was.ofPath || c.ofPath } : c);
       }
     }
   }
-  return { calls, missing, declared, routing, byLine };
+  for (const k of calls.keys()) ask.delete(k);
+  return { calls: [...calls.values()], ask: [...ask.values()], missing, declared, routing };
 }
+
+/** The calls ticked of those asked about (by `callKey`); until the person ticks, those of the path. */
+export const tickedOf = (ask: readonly CallToChoose[], ticked?: ReadonlySet<string>) =>
+  ask.filter((c) => (ticked ? ticked.has(callKey(c)) : c.ofPath));
 
 /**
  * This whole arrow is wrong (beta.24): the POST /api/links/corrections body that gives every call
  * on the arrow the same correction, each in its caller's repo, and the lines corrected (`lines`,
- * `repo:path:line`, to watch them move). `missing`, `declared` and `routing` name the links it
- * leaves alone (see `linkBasis`); none to correct at all is an error, as is a fix missing its
- * target or why.
+ * `repo:path:line`, to watch them move). Round 4: exactly the clear calls and those ticked of the
+ * ones asked about (`ticked`; left out, those of the link's path). `missing`, `declared` and
+ * `routing` name the links it leaves alone (see `linkBasis`); none to correct at all is an error
+ * (`needPick` when calls are asked about and none is ticked), as is a fix missing its target or
+ * why.
  */
 export function arrowCorrections(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
   fix: LinkFix,
+  ticked?: ReadonlySet<string>,
 ):
   | {
       body: Api.LinkCorrectionsRequestT;
@@ -210,18 +206,17 @@ export function arrowCorrections(
       missing: string[];
       declared: string[];
       routing: string[];
-      byLine: string[];
     }
-  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" | "tooMany" } {
+  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" | "needPick" | "tooMany" } {
   const reason = fix.reason.trim();
   if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
   const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
   if (fix.kind !== "not-a-call" && !target) return { error: "needTarget" };
-  const { calls, missing, declared, routing, byLine } = arrowCalls(joins, viewOf);
+  const { calls, ask, missing, declared, routing } = arrowCalls(joins, viewOf);
   const items: Api.LinkCorrectionsRequestT["items"] = [];
   const lines = new Set<string>();
   let already = 0;
-  for (const c of calls) {
+  for (const c of [...calls, ...tickedOf(ask, ticked)]) {
     if (fix.kind !== "not-a-call" && (c.fact.claim.to ?? "").trim() === target) {
       already++;
       continue;
@@ -233,7 +228,7 @@ export function arrowCorrections(
         : { repo: c.repo, fact: c.fact.id, action: "edit", set: { to: target } },
     );
   }
-  if (!items.length) return { error: already ? "sameTarget" : "noCalls" };
+  if (!items.length) return { error: already ? "sameTarget" : ask.length ? "needPick" : "noCalls" };
   // Review of beta.24, round 3: more than one request takes is said in words, never sent.
   if (items.length > ARROW_CALLS_MAX) return { error: "tooMany" };
   return {
@@ -242,7 +237,6 @@ export function arrowCorrections(
     missing,
     declared,
     routing,
-    byLine,
   };
 }
 

@@ -4937,7 +4937,7 @@
             }
           },
           "500": {
-            "description": "Written only in part: the problem names exactly what was written",
+            "description": "Not done: the problem says what was written all the same (`written`), most often nothing",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5053,7 +5053,7 @@
             }
           },
           "500": {
-            "description": "Written only in part: the problem names exactly what was written",
+            "description": "Not done: the problem says what was written all the same (`written`), most often nothing",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27248,29 +27248,6 @@
               },
               "required": [
                 "source",
-                "at"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "calls": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "repo": {
-                  "type": "string"
-                },
-                "fact": {
-                  "type": "string"
-                },
-                "at": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "repo",
-                "fact",
                 "at"
               ],
               "additionalProperties": false

@@ -297,10 +297,12 @@ const holdingAll = <T>(
  * Review of beta.24: a repo as the estate spells it, from the repos' manifests and the facts
  * files: a name in another case (`Forge-Ledger`) is the one repo it names on a file system that
  * ignores case, so it is spelt the one way, and a batch makes one plan of it. A name nothing
- * spells is refused. Round 3: one table by the name in lower case, the manifests' spelling first;
- * a facts folder's other files (`.corrections`, `.rejected`, `.reviewed`, `.questions`) spell no
- * repo; and a name two facts files spell but for case (a file system that tells them apart) is
- * refused, as it is no one repo where case is ignored.
+ * spells is refused. Round 3: one table by the name in lower case; a facts folder's other files
+ * (`.corrections`, `.rejected`, `.reviewed`, `.questions`) spell no repo; and a name two facts
+ * files spell but for case (a file system that tells them apart) is refused, as it is no one repo
+ * where case is ignored. Round 4: the facts file's spelling first, as the file that is there (a
+ * manifest's `forge-ledger` with only `Forge-Ledger.jsonl` on a file system that minds case);
+ * the manifests' when no facts file spells it.
  */
 async function repoSpellings(root: string): Promise<(name: string) => string> {
   const byLower = new Map<string, Set<string>>();
@@ -315,9 +317,9 @@ async function repoSpellings(root: string): Promise<(name: string) => string> {
       add(n.slice(0, -6));
   return (name) => {
     const k = name.toLowerCase();
-    const manifest = manifests.get(k);
-    if (manifest) return manifest;
     const same = [...(byLower.get(k) ?? [])].sort();
+    const manifest = manifests.get(k);
+    if (!same.length && manifest) return manifest;
     if (!same.length) throw notFound(`No repo of the estate is named ${name}.`);
     if (same.length > 1)
       throw new HttpError(

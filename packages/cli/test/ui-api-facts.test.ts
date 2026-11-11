@@ -720,6 +720,56 @@ describe("every call on an arrow: what is on file, how many, who holds it", () =
     }
   });
 
+  // Review of beta.24, round 4: the manifest spells `forge-vault`, and the one facts file there is
+  // `Forge-Vault.jsonl` (a file system that minds case): the facts file's spelling is taken, so
+  // its file is the one written, never a 404 for a file of the manifest's spelling.
+  it("takes the facts file's spelling when the manifest spells the repo in another case", async () => {
+    const { rm } = await import("node:fs/promises");
+    const profile = join(r3, "org-pack/profiles/forge");
+    await mkdir(profile, { recursive: true });
+    await writeFile(
+      join(profile, "repos.manifest.yaml"),
+      [
+        "schemaVersion: 1",
+        "platform: forge",
+        "repos:",
+        "  - id: forge-vault",
+        "    url: https://git.forge.example/forge/forge-vault.git",
+        "    type: spring-boot",
+        "    owner: team-vault",
+        "    system: vault",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(join(r3, "facts/Forge-Vault.jsonl"), facts);
+    try {
+      for (const [i, repo] of ["forge-vault", "Forge-Vault", "FORGE-VAULT"].entries()) {
+        const r = await post({
+          items: [{ repo, fact: "c-notify", action: "edit", set: { to: `forge-mailer-${i}` } }],
+          reason: "The mailer",
+        });
+        expect(r.status, repo).toBe(200);
+        expect(Api.LinkCorrectionsResult.parse(r.body).files.map((f) => f.repo)).toEqual([
+          "Forge-Vault",
+        ]);
+      }
+      expect((await text("Forge-Vault"))!.trim().split("\n")).toHaveLength(3);
+      const one = await fetch(`${s3.url}/api/facts/forge-vault/corrections`, {
+        method: "POST",
+        headers: { "X-Atticus-Token": s3.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ fact: "c-notify", action: "wrong", reason: "One probe" }),
+      });
+      expect(one.status).toBe(200);
+      expect(Api.FactCorrectionResult.parse(await one.json()).file).toBe(
+        "facts/Forge-Vault.corrections.jsonl",
+      );
+    } finally {
+      await rm(join(r3, "org-pack"), { recursive: true, force: true });
+      await rm(join(r3, "facts/Forge-Vault.jsonl"), { force: true });
+      await rm(join(r3, "facts/Forge-Vault.corrections.jsonl"), { force: true });
+    }
+  });
+
   // Review of beta.24, round 3: the one-correction route answers as the batch does.
   it("writes one correction to the repo as it is spelt, and answers 409 while a file is held", async () => {
     const { hostname } = await import("node:os");
