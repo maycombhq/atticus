@@ -578,7 +578,10 @@ const accessorOf = (alias: string) => alias.replace(/[-_.]+/g, ".");
  * `alias = "g:a:v"`, `alias = { module = "g:a", version.ref = "x" }` or
  * `alias = { group = "g", name = "a", version = "v" }`.
  */
-export function catalogLibraryAt(lines: readonly string[], line: number): CatalogLibrary | undefined {
+export function catalogLibraryAt(
+  lines: readonly string[],
+  line: number,
+): CatalogLibrary | undefined {
   let section = "";
   for (let i = 0; i < line && i < lines.length; i++) {
     const m = /^\s*\[\s*([^\]]+?)\s*\]\s*(#.*)?$/.exec((lines[i] ?? "").replace(/\r$/, ""));
@@ -1073,7 +1076,9 @@ function catalogProblem(
   // The version: the entry's own, or the [versions] entry its version.ref names (the catalog's
   // own structure, read here, as a pom's <parent> is).
   if (f.version !== undefined) {
-    const v = lib.version ?? (lib.versionRef ? catalogVersions(lines).get(lib.versionRef)?.value : undefined);
+    const v =
+      lib.version ??
+      (lib.versionRef ? catalogVersions(lines).get(lib.versionRef)?.value : undefined);
     if (v !== f.version)
       return `${label} says version ${f.version}, and ${where} gives ${v === undefined ? "no version Atticus can read" : `"${v}"`}${lib.versionRef ? ` (version.ref = "${lib.versionRef}")` : ""}`;
   }

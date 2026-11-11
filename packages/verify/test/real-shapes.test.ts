@@ -111,17 +111,14 @@ describe("a pom as public projects write it", () => {
     ]);
   });
 
-  it(
-    "reads the project's coordinates when its start tag spans three lines (a parent pom)",
-    () => {
-      const pom = pomCoordinates(lines("forge-ledger", "pom.xml"));
-      expect(pom.group).toEqual({ value: "forge.ledger", line: 22 });
-      expect(pom.artifact).toEqual({ value: "forge-ledger-parent", line: 23 });
-      expect(pom.version).toEqual({ value: "1.2.0", line: 24 });
-      expect(pom.parentGroup).toEqual({ value: "org.springframework.boot", line: 16 });
-      expect(pom.parentArtifact).toEqual({ value: "spring-boot-starter-parent", line: 17 });
-    },
-  );
+  it("reads the project's coordinates when its start tag spans three lines (a parent pom)", () => {
+    const pom = pomCoordinates(lines("forge-ledger", "pom.xml"));
+    expect(pom.group).toEqual({ value: "forge.ledger", line: 22 });
+    expect(pom.artifact).toEqual({ value: "forge-ledger-parent", line: 23 });
+    expect(pom.version).toEqual({ value: "1.2.0", line: 24 });
+    expect(pom.parentGroup).toEqual({ value: "org.springframework.boot", line: 16 });
+    expect(pom.parentArtifact).toEqual({ value: "spring-boot-starter-parent", line: 17 });
+  });
 
   it("reads a CRLF module pom whose start tag spans two lines (gs-multi-module's)", () => {
     const pom = pomCoordinates(rawLines("forge-ledger", "ledger-api/pom.xml"));
@@ -148,18 +145,15 @@ describe("a pom as public projects write it", () => {
     ]);
   });
 
-  it(
-    "leaves what a CDATA section holds out, keeping managed, profile and plugin entries apart",
-    () => {
-      expect(deps(pomCoordinates(lines("forge-ledger", "pom.xml")))).toEqual([
-        "org.apache.camel.springboot camel-spring-boot-bom 48 import managed",
-        "${project.groupId} ledger-api 55  managed",
-        "com.northwind.pay northwind-pay-client 60  managed",
-        "org.testcontainers junit-jupiter 72 test ",
-        "com.puppycrawl.tools checkstyle 89  plugin",
-      ]);
-    },
-  );
+  it("leaves what a CDATA section holds out, keeping managed, profile and plugin entries apart", () => {
+    expect(deps(pomCoordinates(lines("forge-ledger", "pom.xml")))).toEqual([
+      "org.apache.camel.springboot camel-spring-boot-bom 48 import managed",
+      "${project.groupId} ledger-api 55  managed",
+      "com.northwind.pay northwind-pay-client 60  managed",
+      "org.testcontainers junit-jupiter 72 test ",
+      "com.puppycrawl.tools checkstyle 89  plugin",
+    ]);
+  });
 
   it("takes a parent pom a <relativePath> names (shared-pom.xml) for a pom", () => {
     expect(isPomFile("src/gateway/shared-pom.xml")).toBe(true);
