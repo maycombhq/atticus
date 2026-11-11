@@ -374,6 +374,11 @@ export async function writeVerifyFiles(
    * the facts file as written, after the facts this version read.
    */
   newerLines: readonly string[] = [],
+  /**
+   * Beta.26: leave `<repo>.jsonl` exactly as it is (a `--write` that refused: nothing is written
+   * but what to fix and the report, so the facts file never holds a half-verified read).
+   */
+  o: { keepFacts?: boolean } = {},
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -394,19 +399,20 @@ export async function writeVerifyFiles(
     }
   };
   // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
-  await writeFileAtomic(
-    join(dir, `${repo}.jsonl`),
-    serializeFacts([...report.accepted, ...otherCommit]) +
-      [...newerLines]
-        .map((l) => l.trim())
-        .filter((l) => {
-          const id = idOf(l);
-          return typeof id !== "string" || !written.has(id);
-        })
-        .sort()
-        .map((l) => `${l}\n`)
-        .join(""),
-  );
+  if (!o.keepFacts)
+    await writeFileAtomic(
+      join(dir, `${repo}.jsonl`),
+      serializeFacts([...report.accepted, ...otherCommit]) +
+        [...newerLines]
+          .map((l) => l.trim())
+          .filter((l) => {
+            const id = idOf(l);
+            return typeof id !== "string" || !written.has(id);
+          })
+          .sort()
+          .map((l) => `${l}\n`)
+          .join(""),
+    );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [
     ...report.rejected.map((r) =>

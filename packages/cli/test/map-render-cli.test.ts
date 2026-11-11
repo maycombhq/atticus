@@ -514,9 +514,97 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const before = files(join(root, "catalog", "generated"));
     const o = io();
     expect(await write(root, o)).toBe(1);
-    expect(o.err.join("\n")).toMatch(/Nothing written to the catalog: 11 facts were rejected/);
+    expect(o.err.join("\n")).toMatch(/Nothing written: 11 facts were rejected/);
     expect(files(join(root, "catalog", "generated"))).toEqual(before);
     expect(existsSync(join(root, "map"))).toBe(false);
+  });
+
+  // Beta.26: a refused --write wrote nothing to the catalog but rewrote the facts file with only
+  // the kept facts, stamped verified, so the next scan (or --write) projected the half-read repo.
+  it("a refused --write leaves the facts file byte for byte as it was, and says why", async () => {
+    const asRead = (
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
+      readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8")
+    ).replaceAll('"verified":"line"', '"verified":"none"');
+    const root = await metarepo(asRead);
+    const factsFile = join(root, "facts", "forge-ledger.jsonl");
+    const bytes = readFileSync(factsFile);
+    const o = io();
+    expect(await write(root, o)).toBe(1);
+    expect(readFileSync(factsFile).equals(bytes)).toBe(true);
+    expect(o.err.join("\n")).toMatch(
+      /Nothing written: 11 facts were rejected, so facts\/forge-ledger\.jsonl and the catalog are left as they were/,
+    );
+    // What to fix is still written, and the verify report.
+    expect(readFileSync(join(root, "facts", "forge-ledger.rejected.jsonl"), "utf8")).toMatch(
+      /"code":/,
+    );
+    expect(existsSync(join(root, "facts", "forge-ledger.verify.yaml"))).toBe(true);
+    // --json says the same, and leaves the file as it was too.
+    const j = io();
+    expect(
+      await verifyCommand(
+        root,
+        "forge-ledger",
+        {
+          commit: "0123abc",
+          dir: join(root, "workspace", "forge-ledger"),
+          write: true,
+          json: true,
+        },
+        j.io,
+      ),
+    ).toBe(1);
+    expect(readFileSync(factsFile).equals(bytes)).toBe(true);
+    // So a scan doesn't take the half-read repo from its facts: they aren't verified yet.
+    const { factsForScan } = await import("@maycombhq/scanner");
+    const op = await loadOrgPack(join(root, "org-pack"));
+    const used = await factsForScan(root, op, "forge-ledger", "0123abc", []);
+    expect(used.records).toBeUndefined();
+    expect(used.note).toMatch(/aren't verified yet/);
+  });
+
+  it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
+    const root = await metarepo(
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
+        readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8"),
+    );
+    const o = io();
+    expect(
+      await verifyCommand(
+        root,
+        "forge-ledger",
+        { commit: "0123abc", dir: join(root, "workspace", "forge-ledger") },
+        o.io,
+      ),
+    ).toBe(1);
+    const ids = (file: string) =>
+      readFileSync(join(root, "facts", file), "utf8")
+        .trim()
+        .split("\n")
+        .map(
+          (l) =>
+            JSON.parse(l) as {
+              id?: string;
+              code?: string;
+              fact?: { id: string };
+              verified?: string;
+            },
+        );
+    const kept = ids("forge-ledger.jsonl");
+    // A fact of another commit stays in the file (round 40); the rest move out.
+    const rejected = ids("forge-ledger.rejected.jsonl").flatMap((r) =>
+      r.fact && r.code !== "wrong-commit" ? [r.fact.id] : [],
+    );
+    expect(rejected.length).toBeGreaterThan(5);
+    expect(kept.length).toBeGreaterThan(10);
+    expect(kept.filter((f) => rejected.includes(f.id!))).toEqual([]);
+    const other = ids("forge-ledger.rejected.jsonl").flatMap((r) =>
+      r.fact && r.code === "wrong-commit" ? [r.fact.id] : [],
+    );
+    expect(kept.filter((f) => !other.includes(f.id!)).every((f) => f.verified === "line")).toBe(
+      true,
+    );
   });
 
   // App-only audit: one rejected fact held the repo; the app's Drop this fact writes the person's
@@ -528,7 +616,7 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     );
     const o = io();
     expect(await write(root, o)).toBe(1);
-    expect(o.err.join("\n")).toMatch(/Nothing written to the catalog: 1 facts were rejected/);
+    expect(o.err.join("\n")).toMatch(/Nothing written: 1 fact was rejected/);
     const f = JSON.parse(bad) as {
       id: string;
       kind: string;
@@ -565,7 +653,7 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const said = [...o.out, ...o.err].join("\n");
     expect(said).toMatch(/w-post-entry/);
     expect(said).toMatch(/step 2 is a call-out that names no fact/);
-    expect(said).toMatch(/Nothing written to the catalog/);
+    expect(said).toMatch(/Nothing written: /);
     expect(existsSync(join(root, "specs", "forge-ledger"))).toBe(false);
   });
 

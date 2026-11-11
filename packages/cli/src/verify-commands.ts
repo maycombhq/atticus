@@ -306,6 +306,13 @@ export async function verifyCommand(
     raw: b.raw,
     message: `line ${b.line} isn't a fact: ${b.issues.map((i) => i.message).join("; ")}`,
   }));
+  const failed =
+    report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
+  // Beta.26: a --write that refuses writes nothing but what to fix and the report: the facts
+  // file stays as it was, so the kept facts aren't stamped verified without the rest (a scan
+  // would take the half-read repo from them). Without --write the check keeps its inner loop
+  // (ADR 0124 A3b): the kept facts in canonical form, the rejected ones in <repo>.rejected.jsonl.
+  const refusedWrite = o.write === true && failed;
   const summary = await writeVerifyFiles(
     root,
     repo,
@@ -316,9 +323,8 @@ export async function verifyCommand(
     reviewedBad,
     slips,
     parsed.newer.flatMap((n) => (n.raw !== undefined ? [n.raw] : [])),
+    { keepFacts: refusedWrite },
   );
-  const failed =
-    report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
   // ADR 0141: the parts (or the one-session read) the facts now account for are stamped in the
   // read plan, so what a read took is on file; a stamp is never moved.
   await recordReadProgress(root, repo, {
@@ -341,7 +347,8 @@ export async function verifyCommand(
 
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
-  const rejectedNote = `Nothing written to the catalog: ${report.rejected.length} facts were rejected. Fix them and run atticus verify ${repo} --write again.`;
+  const n = report.rejected.length;
+  const rejectedNote = `Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
   if (o.json) {
     let written;
     if (o.write && !failed) {
