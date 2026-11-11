@@ -1,0 +1,852 @@
+/* beta.26: the change and work screens in the IDE look (Changes, At a glance, the stage tabs, the
+   thread, Release, Model runs, History, Flows). Dense and dark-first like the shell, Home and the
+   map's panels: compact panels, small sentence-case section labels, muted monospace secondary
+   lines, compact grouped buttons, long explanations cut to two lines with More. Every class
+   starts cw-, every rule sits under .cw (the screen's root, screens/registry.tsx), and every
+   colour, font and line is a token of hud.css, so light and dark follow. Rhythm: 4, 8, 12 and
+   16 px; words at 12 to 13 px, labels 11 to 12 px.
+
+   The screen is a container (inline size), so its columns follow the shell's main area (about
+   1130 px beside the side panel), not the window. */
+
+.cw {
+  container-type: inline-size;
+  container-name: cw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ panels */
+
+/* A bento of panels of uneven spans fills its holes rather than leaving them blank. */
+.cw .bento {
+  gap: 12px;
+  grid-auto-flow: row dense;
+}
+.cw .panel {
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.cw .panel.hero {
+  box-shadow: none;
+}
+/* A panel's head: its name as a small sentence-case label, its count or meta muted at the end. */
+.cw .panel > .row.between:first-child {
+  margin-bottom: 8px !important;
+  gap: 8px;
+  min-width: 0;
+}
+.cw .panel .h,
+.cw .work-next > .h {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text);
+}
+.cw .panel > .row.between:first-child > .hud {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+/* The HUD's small labels (a section, a column, a field) in sentence case, as the arrow panel's. */
+.cw h3.hud,
+.cw label.hud,
+.cw p.hud,
+.cw span.hud,
+.cw th.hud,
+.cw tr.hud,
+.cw .hud {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+/* Labels in the sans face; a panel's count or meta stays muted monospace. */
+.cw .hud {
+  font-family: var(--font);
+  font-size: 11.5px;
+}
+.cw .panel > .row.between:first-child > .hud {
+  font-family: var(--mono);
+}
+.cw .panel > .row.between:first-child > .hud .btn {
+  font-family: var(--font);
+}
+.cw h3.hud {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.cw .btn.primary .hud {
+  color: inherit;
+}
+
+/* Compact buttons, as the arrow panel's. */
+.cw .btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* A link set as a button (Run tasks with AI, Open Breakdown) centres its words like one. */
+.cw a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Headings inside what a panel shows (a drawn feature.md, a story): a step under the panel's. */
+.cw .panel h1,
+.cw .panel h2:not(.h),
+.cw .panel h3:not(.hud):not(.h),
+.cw .panel h4 {
+  margin: 8px 0 4px;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+/* A table beside the work: no minimum width, its long paths wrap instead. */
+.cw-cols > .cw-col:last-child table {
+  min-width: 0 !important;
+}
+.cw-cols > .cw-col:last-child td {
+  overflow-wrap: anywhere;
+}
+.cw-cols > .cw-col:last-child td.mono {
+  font-size: 11.5px;
+}
+/* Who the change waits on, as one line that wraps (not two columns). */
+.cw-card p.row {
+  display: block;
+}
+.cw .btn.primary {
+  box-shadow: none;
+}
+.cw .btn:hover:not(:disabled) {
+  border-color: var(--accent-soft);
+}
+.cw .btn.primary:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.cw .btn:focus-visible,
+.cw a:focus-visible,
+.cw summary:focus-visible,
+.cw .cw-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Words: a panel's explanation and its asides, smaller than what the panel is about. */
+.cw .work-why {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.cw .work-say {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cw .work-cmd code {
+  flex-basis: 220px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.cw .work-terminal,
+.cw .work-after {
+  font-size: 12px;
+}
+.cw details > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.cw details > summary:hover {
+  color: var(--text);
+}
+/* Empty, loading-done and error words: a compact inset line, not a tall centred block. */
+.cw .state {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12.5px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+.cw .state.error {
+  background: var(--danger-bg);
+}
+.cw .list-row {
+  padding: 6px 0;
+  border-bottom-color: var(--line);
+}
+.cw .chip {
+  font-size: 10.5px;
+  padding: 1px 6px;
+}
+.cw .field,
+.cw .run-select,
+.cw select,
+.cw input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+  max-width: 100%;
+}
+.cw textarea {
+  max-width: 100%;
+}
+/* A panel's head wraps its picker under its name when the two don't fit side by side, and a
+   select with a long change name shrinks to its line rather than push the page sideways. */
+.cw .panel > .row.between:first-child {
+  flex-wrap: wrap;
+}
+.cw .panel > .row.between:first-child > .hud,
+.cw label.row {
+  min-width: 0;
+  max-width: 100%;
+}
+.cw label.row > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Run next: a step card with the accent on its left, as Home's Next for you. */
+.cw .work-next {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--inset);
+  box-shadow: none;
+}
+.cw .work-next::before {
+  display: none;
+}
+.cw .work-next > * {
+  margin: 0;
+}
+.cw .work-next .work-why {
+  font-size: 13px;
+  color: var(--text);
+}
+.cw .work-next > .h {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ------------------------------------------------------------------ a change page's head */
+
+.cw-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.cw-head-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.cw-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-head-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cw-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.cw-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  min-width: 0;
+  font-size: 12px;
+}
+.cw-head-actions > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.cw-head-actions .run-select {
+  max-width: 260px;
+}
+/* The page's lead line under the head: its main action and why. */
+.cw-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* A change picker: its label small, the select compact. */
+.cw-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cw-picker label {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cw-picker select {
+  min-width: 0;
+  max-width: 260px;
+  height: 28px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------------ an explanation, cut */
+
+.cw-explain {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+/* Straight under a panel's head, before what the panel holds. */
+.panel > .cw-explain {
+  margin-bottom: 8px;
+}
+.cw-explain-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.cw-explain.cut .cw-explain-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cw-more {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.cw-more:hover {
+  color: var(--accent-hover);
+}
+
+/* ------------------------------------------------------------------ columns */
+
+/* Two columns: the work on the left, what it rests on beside it. */
+.cw-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 12px;
+  align-items: start;
+}
+.cw-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* Pairs of panels side by side, each row as tall as its taller panel. */
+.cw-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.cw-pairs > .cw-wide {
+  grid-column: 1 / -1;
+}
+.cw-pairs > .panel,
+.cw-cols .panel {
+  grid-column: auto !important;
+}
+
+/* ------------------------------------------------------------------ All changes */
+
+.cw-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.cw-split > .panel {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+.cw-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.cw-list-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 -6px;
+}
+.cw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.cw-row:hover {
+  background: var(--hover);
+}
+.cw-row[aria-current="page"] {
+  background: var(--picked);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cw-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cw-row-title {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-row-sub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-row .chip {
+  flex: none;
+}
+.cw-across {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.cw-across-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cw-across-links a {
+  text-decoration: none;
+}
+.cw-across-links a[aria-current="page"] {
+  background: var(--picked-on);
+}
+.cw-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* A change's phases as a row of small steps, as Home's gates. */
+.cw-gates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+.cw-gate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  text-align: center;
+}
+/* The line between two steps. */
+.cw-gate + .cw-gate::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  right: calc(50% + 14px);
+  width: calc(100% - 24px);
+  height: 1px;
+  background: var(--step-off);
+}
+.cw-gate.done + .cw-gate::before {
+  background: var(--btn-text);
+}
+.cw-gate-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--step-off);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.cw-gate.done .cw-gate-dot {
+  border-color: var(--btn-text);
+  color: var(--btn-text);
+}
+.cw-gate.now .cw-gate-dot {
+  border-color: var(--accent);
+  background: var(--picked-on);
+  color: var(--text);
+  font-weight: 600;
+}
+.cw-gate-name {
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-gate.now .cw-gate-name {
+  color: var(--accent-soft);
+  font-weight: 600;
+}
+
+/* The change's head panel on All changes: the gates, owners, next step and its actions. */
+.cw-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cw-next {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--inset);
+  min-width: 0;
+}
+.cw-next-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* A group of buttons, the primary first. */
+.cw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cw-blockers {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* A compact table: the artifacts, a stage's files and tasks. */
+.cw .run-table,
+.cw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.cw-table th {
+  padding: 0 8px 4px 0;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--muted);
+}
+.cw-table td {
+  padding: 5px 8px 5px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+.cw-table td:last-child,
+.cw-table th:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+.cw-table .btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+/* A finding on All changes: its marks, words and actions, compact. */
+.cw-finding {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.cw-finding:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.cw-finding-what {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.cw-finding-why {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ At a glance */
+
+.cw-frame.panel {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.cw-frame.panel::before {
+  display: none;
+}
+.cw-frame.panel > .row.between:first-child .h {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cw-glance {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.cw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover-soft);
+}
+.cw-card > p,
+.cw-card > ul,
+.cw-card > ol {
+  margin: 0;
+}
+.cw-card.cw-step {
+  border-color: var(--line-2);
+  border-left: 2px solid var(--accent);
+  background: var(--inset);
+}
+.cw-step-what {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.cw-card .muted {
+  font-size: 12px;
+}
+.cw-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cw-stages > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.cw-stages > li:last-child {
+  border-bottom: 0;
+}
+.cw-stages .cw-row-sub {
+  flex: none;
+}
+.cw-links > li {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.cw-plain {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.cw-plain li + li {
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------------------------ the thread */
+
+.cw .thread {
+  gap: 6px;
+}
+.cw .thread-item {
+  padding: 8px 10px;
+  border-color: var(--line);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.cw .thread-item > .row:first-child {
+  gap: 6px !important;
+}
+.cw .thread-item details {
+  margin-top: 4px;
+}
+.cw .thread-item p {
+  margin: 4px 0 0;
+}
+.cw .thread-reply {
+  border-left: 2px solid var(--accent-soft);
+}
+.cw .thread-headline {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cw .thread-reply-box {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.cw .thread-reply-box textarea {
+  min-height: 56px;
+  resize: vertical;
+}
+.cw .thread-prompt {
+  max-height: 260px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--box);
+  font-size: 11.5px;
+}
+.cw .stage-comments {
+  font-size: 12px;
+}
+.cw-thread-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------ narrower */
+
+/* The shell's main area below about 900 px (an editor beside it, a small laptop): one column. */
+@container cw (max-width: 900px) {
+  .cw-cols,
+  .cw-pairs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cw .bento > * {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
+}
+@container cw (max-width: 720px) {
+  .cw-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cw-head-actions {
+    justify-content: flex-start;
+  }
+  .cw-head-actions .run-select,
+  .cw-picker select {
+    max-width: 100%;
+  }
+  .cw-picker {
+    flex-wrap: wrap;
+  }
+  .cw-gate-name {
+    font-size: 9.5px;
+  }
+  .cw-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+@container cw (max-width: 480px) {
+  .cw-gate + .cw-gate::before {
+    display: none;
+  }
+  .cw-table td,
+  .cw-table th {
+    overflow-wrap: anywhere;
+  }
+}

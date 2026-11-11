@@ -6,7 +6,7 @@ import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
-import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
+import { escapeCloses, Panel, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
 import { ChangeInputs } from "./ChangeInputs.js";
@@ -16,8 +16,10 @@ import { lensesWaiting, type CriticRan } from "./work/critic-ran.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
+import "./work/cw.css";
 
 const T = COPY.changes;
+const CW = COPY.changeWork;
 
 export interface ChangeSummary {
   id: string;
@@ -167,7 +169,11 @@ function ChangeList({
   const [text, setText] = useState("");
   const [state, setState] = useState("");
   return (
-    <Panel title={T.changes} span="span 3" rows="span 3">
+    <Panel
+      title={T.changes}
+      className="cw-list-panel"
+      meta={list.state === "ready" ? CW.changeCount(list.data.length) : undefined}
+    >
       <NewChange
         onCreated={(id) => {
           onCreated?.();
@@ -179,9 +185,9 @@ function ChangeList({
           const states = [...new Set(all.map((c) => c.state))];
           const l = filterChanges(all, text, state);
           return (
-            <div className="stack" style={{ gap: 8 }}>
-              <div className="stack" style={{ gap: 4 }}>
-                <label htmlFor="change-filter" className="hud" style={{ fontSize: 10 }}>
+            <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+              <div className="cw-list-tools">
+                <label htmlFor="change-filter" className="sr">
                   {T.findAChange}
                 </label>
                 <input
@@ -209,49 +215,30 @@ function ChangeList({
                   ))}
                 </select>
               </div>
-              <nav aria-label={T.changes} className="stack" style={{ gap: 2 }}>
+              <nav aria-label={T.changes} className="cw-list">
                 {l.map((c) => (
                   <a
                     key={c.id}
                     href={`#/changes/${c.id}`}
                     aria-current={!across && c.id === current ? "page" : undefined}
-                    className="list-row"
-                    style={{
-                      textDecoration: "none",
-                      padding: "8px 6px",
-                      borderRadius: 6,
-                      background: !across && c.id === current ? "var(--picked)" : undefined,
-                    }}
+                    className="cw-row"
+                    // The title and id are cut short in the list; their whole words on hover.
+                    title={`${c.title} (${c.id})`}
                   >
-                    <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                      <span className="mono" style={{ fontSize: 12 }}>
-                        {c.id}
-                      </span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>
-                        {c.title}
-                      </span>
+                    <span className="cw-row-main">
+                      <span className="cw-row-title">{c.title}</span>
+                      <span className="cw-row-sub">{c.id}</span>
                     </span>
-                    <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
-                      {c.openFindings.blocking
-                        ? T.blocked2
-                        : (LABEL[c.state] ?? c.state).toUpperCase()}
+                    <span className={`chip ${c.openFindings.blocking ? "blocking" : "dim"}`}>
+                      {c.openFindings.blocking ? T.blocked : (LABEL[c.state] ?? c.state)}
                     </span>
                   </a>
                 ))}
-                {l.length === 0 && (
-                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    {T.noChangeMatches}
-                  </p>
-                )}
+                {l.length === 0 && <p className="state">{T.noChangeMatches}</p>}
               </nav>
-              <div
-                className="stack"
-                style={{ gap: 4, borderTop: "1px solid var(--line)", paddingTop: 8 }}
-              >
-                <span className="hud" style={{ fontSize: 10 }}>
-                  {T.acrossAllChanges}
-                </span>
-                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              <div className="cw-across">
+                <span className="cw-label">{T.acrossAllChanges}</span>
+                <div className="cw-across-links">
                   {ACROSS.map((a) => (
                     <a
                       key={a.id}
@@ -273,49 +260,32 @@ function ChangeList({
   );
 }
 
+/**
+ * A change's phases as a row of small steps (beta.26, as Home's gates): each a dot named by its
+ * phase and where it stands (done, the current phase, to come), the phase's name under it.
+ */
 export function Pipeline({ state }: { state: string }) {
   const at = PHASES.indexOf(state);
   return (
-    <ol
-      className="row between"
-      style={{ listStyle: "none", margin: 0, padding: 0 }}
-      aria-label={T.phases}
-    >
+    <ol className="cw-gates" aria-label={T.phases}>
       {PHASES.map((p, i) => (
         <li
           key={p}
-          className="stack"
-          style={{ alignItems: "center", gap: 6 }}
+          className={`cw-gate${i < at ? " done" : i === at ? " now" : ""}`}
           aria-current={i === at ? "step" : undefined}
         >
-          {i === at ? (
-            <Ring
-              value={i + 1}
-              max={PHASES.length}
-              size={46}
-              label={T.currentPhase(LABEL[p] ?? "")}
-            />
-          ) : (
-            <span
-              role="img"
-              aria-label={`${LABEL[p]}: ${i < at ? T.done : T.toCome}`}
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: "50%",
-                border: `1.5px solid ${i < at ? "var(--btn-text)" : "var(--step-off)"}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {i < at ? "✓" : ""}
-            </span>
-          )}
           <span
-            className="hud"
-            style={{ fontSize: 10, color: i === at ? "var(--accent)" : undefined }}
+            role="img"
+            className="cw-gate-dot"
+            aria-label={
+              i === at
+                ? T.currentPhase(LABEL[p] ?? "")
+                : `${LABEL[p]}: ${i < at ? T.done : T.toCome}`
+            }
           >
+            {i < at ? "✓" : i === at ? i + 1 : ""}
+          </span>
+          <span className="cw-gate-name" aria-hidden="true">
             {LABEL[p]}
           </span>
         </li>
@@ -627,33 +597,31 @@ function Detail({ id }: { id: string }) {
   });
 
   return (
-    <>
+    <div className="cw-detail">
       <Panel
         title={detail.state === "ready" ? `${detail.data.id} · ${detail.data.title}` : id}
-        span="span 9"
         kind="hero"
+        className="cw-summary-panel"
       >
         <View of={detail}>
           {(d) => (
-            <div className="stack" style={{ gap: 14 }}>
+            <div className="cw-summary">
               <Pipeline state={d.state} />
-              {/* Ninth UX walk: name the change's owners per role, so each sees their questions. */}
-              <ChangeOwners change={d.id} owners={d.owners} onSaved={detail.reload} />
               <View of={status}>
                 {(s) => (
-                  <div className="stack">
-                    <p style={{ margin: 0, fontSize: 14 }}>
-                      <span className="hud" style={{ marginRight: 8 }}>
-                        {T.next}
-                      </span>
+                  <div className="cw-next">
+                    <p className="cw-next-line">
+                      <span className="cw-label">{T.next}</span>
                       {/* Sixth UX walk: a manual Git host's PR isn't open until a person opens it. */}
-                      {s.handoff && isManualLink(s.handoff.pr.url) ? (
-                        <ManualHandoff phase={s.handoff.phase} />
-                      ) : (
-                        s.nextStep
-                      )}
+                      <span>
+                        {s.handoff && isManualLink(s.handoff.pr.url) ? (
+                          <ManualHandoff phase={s.handoff.phase} />
+                        ) : (
+                          s.nextStep
+                        )}
+                      </span>
                     </p>
-                    <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                    <div className="cw-chips">
                       <span
                         className={`chip ${s.risk.level === "high" ? "blocking" : s.risk.level === "medium" ? "warn" : ""}`}
                       >
@@ -676,21 +644,13 @@ function Detail({ id }: { id: string }) {
                       <PushAgain change={d.id} branch={d.handoff.branch} onDone={reloadAll} />
                     )}
                     {s.blockers.length > 0 && (
-                      <ul
-                        style={{
-                          margin: 0,
-                          paddingLeft: 18,
-                          color: "var(--text-2)",
-                          lineHeight: 1.6,
-                        }}
-                        aria-label={T.whatBlocksTheHand}
-                      >
+                      <ul className="cw-blockers" aria-label={T.whatBlocksTheHand}>
                         {s.blockers.map((b) => (
                           <li key={b.message}>{b.message}</li>
                         ))}
                       </ul>
                     )}
-                    <div className="row" style={{ flexWrap: "wrap" }}>
+                    <div className="cw-actions">
                       <button
                         type="button"
                         className="btn primary"
@@ -761,6 +721,8 @@ function Detail({ id }: { id: string }) {
                   </div>
                 )}
               </View>
+              {/* Ninth UX walk: name the change's owners per role, so each sees their questions. */}
+              <ChangeOwners change={d.id} owners={d.owners} onSaved={detail.reload} />
             </div>
           )}
         </View>
@@ -768,252 +730,246 @@ function Detail({ id }: { id: string }) {
 
       {editing && <ArtifactEditor change={id} artifact={editing} onClose={closeEditor} />}
 
-      <Panel title={T.artifacts} span="span 5">
-        <View of={detail} empty={(d) => d.artifacts.length === 0}>
-          {(d) => (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-              <thead>
-                <tr className="hud" style={{ textAlign: "left", fontSize: 10 }}>
-                  <th style={{ padding: "4px 0", fontWeight: 400 }}>{T.artifact}</th>
-                  <th style={{ fontWeight: 400 }}>{T.status}</th>
-                  <th style={{ fontWeight: 400 }}>{T.findings}</th>
-                  <th style={{ fontWeight: 400 }}>
-                    <span className="sr">{T.actions}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.artifacts.map((a) => (
-                  <tr key={a.artifact} style={{ borderTop: "1px solid var(--rule)" }}>
-                    <td className="mono" style={{ padding: "7px 0" }}>
-                      {a.artifact}
-                    </td>
-                    <td>
+      <div className="cw-pairs">
+        <Panel title={T.artifacts}>
+          <View of={detail} empty={(d) => d.artifacts.length === 0}>
+            {(d) => (
+              <table className="cw-table">
+                <thead>
+                  <tr>
+                    <th>{T.artifact}</th>
+                    <th>{T.status}</th>
+                    <th>{T.findings}</th>
+                    <th>
+                      <span className="sr">{T.actions}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.artifacts.map((a) => (
+                    <tr key={a.artifact}>
+                      <td className="mono">{a.artifact}</td>
+                      <td>
+                        <span
+                          className={`chip ${a.status === "done" ? "done" : a.status === "blocked" ? "dim" : "warn"}`}
+                        >
+                          {artifactStatusWord(a)}
+                        </span>
+                      </td>
+                      <td>{a.openFindings || ""}</td>
+                      <td>
+                        {a.status !== "blocked" && (
+                          <button
+                            type="button"
+                            className="btn"
+                            ref={(b) => {
+                              if (b) editBtns.current.set(a.artifact, b);
+                              else editBtns.current.delete(a.artifact);
+                            }}
+                            onClick={() => setEditing(a.artifact)}
+                            aria-label={T.edit(a.artifact)}
+                          >
+                            {T.edit2}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </View>
+          {/* Fourth UX walk: a change whose proposal or specs aren't written yet drafts them here. */}
+          {detail.state === "ready" &&
+            detail.data.artifacts.some(
+              (a) => (a.artifact === "proposal" || a.artifact === "specs") && a.status !== "done",
+            ) && <RunStep command={`atticus change draft ${id}`} />}
+        </Panel>
+
+        <Panel
+          title={T.openFindings}
+          meta={findings.state === "ready" ? findings.data.length : undefined}
+        >
+          <Said said={findingSaid.said} />
+          <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindingsOn}>
+            {(list) => (
+              <div className="stack" style={{ gap: 0 }}>
+                {list.map((f) => (
+                  <article key={`${f.gate}/${f.id}`} className="cw-finding">
+                    <div className="cw-chips">
                       <span
-                        className={`chip ${a.status === "done" ? "done" : a.status === "blocked" ? "dim" : "warn"}`}
+                        className={`chip ${f.severity === "blocking" ? "blocking" : f.severity === "gap" ? "warn" : "dim"}`}
                       >
-                        {artifactStatusWord(a)}
+                        {f.severity.toUpperCase()}
                       </span>
-                    </td>
-                    <td>{a.openFindings || ""}</td>
-                    <td style={{ textAlign: "right" }}>
-                      {a.status !== "blocked" && (
+                      <span className="cw-row-sub">
+                        {f.gate} · {f.lens ?? T.checks} · {f.artifact}
+                      </span>
+                    </div>
+                    <div className="cw-finding-what">{f.question?.text ?? f.summary}</div>
+                    <div className="cw-finding-why">{f.why}</div>
+                    <FindingActions change={id} f={f} done={reloadAll} say={findingSaid.say} />
+                  </article>
+                ))}
+              </div>
+            )}
+          </View>
+        </Panel>
+
+        <Panel title={T.tasks}>
+          <View of={tasks} empty={(t) => t.length === 0} emptyText={T.noTasksYetThey}>
+            {(list) =>
+              list.map((t) => (
+                <div key={t.id} className="list-row">
+                  <span className="cw-row-main">
+                    <span style={{ fontSize: 12.5 }}>
+                      <span className="mono">{t.id}</span> {t.description}
+                    </span>
+                    <span className="cw-row-sub">
+                      {t.repo}
+                      {t.story ? ` · ${t.story}` : ""}
+                    </span>
+                  </span>
+                  {t.done ? (
+                    <span className="chip done">{T.done2}</span>
+                  ) : !aiOn ? (
+                    <span className="chip dim" title={AI_OFF_TEXT}>
+                      {T.byHand}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={runAct.busy}
+                      onClick={() =>
+                        void runAct.run(
+                          () =>
+                            api(`/api/changes/${id}/runs`, {
+                              method: "POST",
+                              body: {
+                                agent: "task-runner",
+                                runtime: "hand-off",
+                                // runtime.yaml's level, lowered to the repo's cap, at most draft.
+                                task: t.id,
+                              },
+                            }).then(reloadAll),
+                          T.taskHanded(t.id),
+                        )
+                      }
+                    >
+                      {T.runWithAi}
+                    </button>
+                  )}
+                </div>
+              ))
+            }
+          </View>
+          <Note note={runAct.note} />
+        </Panel>
+
+        <Panel title={T.aiRuns}>
+          <View of={runs} empty={(r) => r.length === 0} emptyText={T.noAiRunsYet}>
+            {(list) =>
+              list
+                .slice()
+                .reverse()
+                .map((r) => (
+                  <div key={r.runId} className="list-row" style={{ alignItems: "flex-start" }}>
+                    <span className="cw-row-main">
+                      <span style={{ fontSize: 12.5 }}>{r.agent}</span>
+                      <span className="cw-row-sub" title={r.promptPath ?? r.runId}>
+                        {r.runtime} · {r.promptPath ?? r.runId}
+                      </span>
+                      {r.errors.length > 0 && (
+                        <span style={{ color: "var(--magenta-text)", fontSize: 12 }}>
+                          {r.errors.join("; ")}
+                        </span>
+                      )}
+                      {r.taskRun && (
+                        <TaskRunLine
+                          of={r.taskRun}
+                          pr={
+                            tasks.state === "ready"
+                              ? tasks.data.find((x) => x.id === r.taskRun!.task)?.taskRun?.pr?.state
+                              : undefined
+                          }
+                        />
+                      )}
+                    </span>
+                    <span className="row" style={{ gap: 6 }}>
+                      <span
+                        className={`chip ${r.state === "validated" ? "done" : r.state === "failed" ? "blocking" : "ai"}`}
+                      >
+                        {r.state.toUpperCase()}
+                      </span>
+                      {(r.state === "waiting" || r.state === "prepared") && (
                         <button
                           type="button"
                           className="btn"
-                          ref={(b) => {
-                            if (b) editBtns.current.set(a.artifact, b);
-                            else editBtns.current.delete(a.artifact);
-                          }}
-                          onClick={() => setEditing(a.artifact)}
-                          aria-label={T.edit(a.artifact)}
+                          disabled={runAct.busy}
+                          onClick={() =>
+                            void runAct.run(
+                              () => callAsJob(`/api/runs/${r.runId}/done`).then(reloadAll),
+                              T.checkedTheAnswer,
+                            )
+                          }
                         >
-                          {T.edit2}
+                          {T.markDone}
                         </button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </View>
-        {/* Fourth UX walk: a change whose proposal or specs aren't written yet drafts them here. */}
-        {detail.state === "ready" &&
-          detail.data.artifacts.some(
-            (a) => (a.artifact === "proposal" || a.artifact === "specs") && a.status !== "done",
-          ) && <RunStep command={`atticus change draft ${id}`} />}
-      </Panel>
-
-      <ChangeInputs change={id} />
-
-      <ChangePrototypes change={id} />
-
-      <Panel
-        title={T.openFindings}
-        span="span 4"
-        meta={findings.state === "ready" ? findings.data.length : undefined}
-      >
-        <Said said={findingSaid.said} />
-        <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindingsOn}>
-          {(list) => (
-            <div className="stack" style={{ gap: 12 }}>
-              {list.map((f) => (
-                <article
-                  key={`${f.gate}/${f.id}`}
-                  className="stack"
-                  style={{ gap: 6, borderTop: "1px solid var(--rule)", paddingTop: 10 }}
-                >
-                  <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                    <span
-                      className={`chip ${f.severity === "blocking" ? "blocking" : f.severity === "gap" ? "warn" : "dim"}`}
-                    >
-                      {f.severity.toUpperCase()}
-                    </span>
-                    <span className="hud" style={{ fontSize: 10 }}>
-                      {f.gate} · {f.lens ?? T.checks} · {f.artifact}
+                      {(r.state === "waiting" || r.state === "prepared") && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={runAct.busy}
+                          onClick={() =>
+                            void runAct.run(
+                              () =>
+                                api(`/api/runs/${r.runId}/cancel`, {
+                                  method: "POST",
+                                  body: {},
+                                }).then(reloadAll),
+                              T.runCancelled,
+                            )
+                          }
+                        >
+                          {T.cancelRun}
+                        </button>
+                      )}
+                      {r.state === "failed" && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={runAct.busy}
+                          onClick={() =>
+                            void runAct.run(
+                              () =>
+                                api(`/api/runs/${r.runId}/retry`, {
+                                  method: "POST",
+                                  body: {},
+                                }).then(reloadAll),
+                              T.readyToTryAgain,
+                            )
+                          }
+                        >
+                          {T.retry}
+                        </button>
+                      )}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13 }}>{f.question?.text ?? f.summary}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {f.why}
-                  </div>
-                  <FindingActions change={id} f={f} done={reloadAll} say={findingSaid.say} />
-                </article>
-              ))}
-            </div>
-          )}
-        </View>
-      </Panel>
+                ))
+            }
+          </View>
+        </Panel>
 
-      <Panel title={T.tasks} span="span 5">
-        <View of={tasks} empty={(t) => t.length === 0} emptyText={T.noTasksYetThey}>
-          {(list) =>
-            list.map((t) => (
-              <div key={t.id} className="list-row">
-                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span style={{ fontSize: 12.5 }}>
-                    <span className="mono">{t.id}</span> {t.description}
-                  </span>
-                  <span className="hud" style={{ fontSize: 9.5 }}>
-                    {t.repo}
-                    {t.story ? ` · ${t.story}` : ""}
-                  </span>
-                </span>
-                {t.done ? (
-                  <span className="chip done">{T.done2}</span>
-                ) : !aiOn ? (
-                  <span className="chip dim" title={AI_OFF_TEXT}>
-                    {T.byHand}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={runAct.busy}
-                    onClick={() =>
-                      void runAct.run(
-                        () =>
-                          api(`/api/changes/${id}/runs`, {
-                            method: "POST",
-                            body: {
-                              agent: "task-runner",
-                              runtime: "hand-off",
-                              // runtime.yaml's level, lowered to the repo's cap, at most draft.
-                              task: t.id,
-                            },
-                          }).then(reloadAll),
-                        T.taskHanded(t.id),
-                      )
-                    }
-                  >
-                    {T.runWithAi}
-                  </button>
-                )}
-              </div>
-            ))
-          }
-        </View>
-        <Note note={runAct.note} />
-      </Panel>
+        <ChangeInputs change={id} />
 
-      <Panel title={T.aiRuns} span="span 4">
-        <View of={runs} empty={(r) => r.length === 0} emptyText={T.noAiRunsYet}>
-          {(list) =>
-            list
-              .slice()
-              .reverse()
-              .map((r) => (
-                <div key={r.runId} className="list-row" style={{ alignItems: "flex-start" }}>
-                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                    <span style={{ fontSize: 12.5 }}>{r.agent}</span>
-                    <span className="hud" style={{ fontSize: 9.5 }}>
-                      {r.runtime} · {r.promptPath ?? r.runId}
-                    </span>
-                    {r.errors.length > 0 && (
-                      <span style={{ color: "var(--magenta-text)", fontSize: 12 }}>
-                        {r.errors.join("; ")}
-                      </span>
-                    )}
-                    {r.taskRun && (
-                      <TaskRunLine
-                        of={r.taskRun}
-                        pr={
-                          tasks.state === "ready"
-                            ? tasks.data.find((x) => x.id === r.taskRun!.task)?.taskRun?.pr?.state
-                            : undefined
-                        }
-                      />
-                    )}
-                  </span>
-                  <span className="row" style={{ gap: 6 }}>
-                    <span
-                      className={`chip ${r.state === "validated" ? "done" : r.state === "failed" ? "blocking" : "ai"}`}
-                    >
-                      {r.state.toUpperCase()}
-                    </span>
-                    {(r.state === "waiting" || r.state === "prepared") && (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={runAct.busy}
-                        onClick={() =>
-                          void runAct.run(
-                            () => callAsJob(`/api/runs/${r.runId}/done`).then(reloadAll),
-                            T.checkedTheAnswer,
-                          )
-                        }
-                      >
-                        {T.markDone}
-                      </button>
-                    )}
-                    {(r.state === "waiting" || r.state === "prepared") && (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={runAct.busy}
-                        onClick={() =>
-                          void runAct.run(
-                            () =>
-                              api(`/api/runs/${r.runId}/cancel`, {
-                                method: "POST",
-                                body: {},
-                              }).then(reloadAll),
-                            T.runCancelled,
-                          )
-                        }
-                      >
-                        {T.cancelRun}
-                      </button>
-                    )}
-                    {r.state === "failed" && (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={runAct.busy}
-                        onClick={() =>
-                          void runAct.run(
-                            () =>
-                              api(`/api/runs/${r.runId}/retry`, { method: "POST", body: {} }).then(
-                                reloadAll,
-                              ),
-                            T.readyToTryAgain,
-                          )
-                        }
-                      >
-                        {T.retry}
-                      </button>
-                    )}
-                  </span>
-                </div>
-              ))
-          }
-        </View>
-      </Panel>
+        <ChangePrototypes change={id} />
+      </div>
 
       {/* ADR 0102: what the change needs from the organisation. */}
-      <NeedsPanel change={id} span="span 9" />
-    </>
+      <NeedsPanel change={id} span="1 / -1" />
+    </div>
   );
 }
 
@@ -1025,17 +981,15 @@ export function Changes({ hash }: { hash: string }) {
   const first = list.state === "ready" ? list.data[0]?.id : undefined;
   const current = id ?? first;
   return (
-    <div className="bento">
+    <div className="cw-split">
       <ChangeList list={list} current={current} across={across} onCreated={list.reload} />
       {across && !id ? (
         <AcrossPanel key={across} view={across} />
       ) : current ? (
         <Detail key={current} id={current} />
       ) : (
-        <Panel title={T.noChangeSelected} span="span 9">
-          <p className="muted" style={{ margin: 0 }}>
-            {T.pickAChangeOn}
-          </p>
+        <Panel title={T.noChangeSelected}>
+          <p className="state">{T.pickAChangeOn}</p>
         </Panel>
       )}
     </div>

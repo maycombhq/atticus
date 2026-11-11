@@ -8,6 +8,7 @@ import { Propose } from "../../app/propose.js";
 import { runsHref } from "../runs/Runs.js";
 import { Command, PrepareFirst } from "./RunNext.js";
 import "./work.css";
+import { Explain } from "./cw.js";
 
 /**
  * ADR 0181 (stage drafts): AI decides first, a person corrects, and the AI corrects the rest
@@ -387,9 +388,7 @@ export function StageDraftsView(p: { of: Loaded<Drafts> } & StageDraftsHandlers)
   };
   return (
     <Panel title={D.title} span="1 / -1">
-      <p className="work-why" style={{ marginTop: 0 }}>
-        {D.intro}
-      </p>
+      <Explain text={D.intro} />
       <View
         of={p.of}
         empty={(d) => d.files.length === 0 && d.corrections.length === 0}

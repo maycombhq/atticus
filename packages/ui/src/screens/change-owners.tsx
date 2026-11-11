@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "./know/common.js";
+import { Explain } from "./work/cw.js";
 
 /**
  * Ninth UX walk (API 2.83.0): name a change's owners per role on its page: the product owner, the
@@ -114,9 +115,7 @@ export function ChangeOwners(p: {
       <p id={`${id}-h`} className="hud" style={{ margin: 0 }}>
         {W.ownersTitle}
       </p>
-      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-        {W.ownersIntro}
-      </p>
+      <Explain text={W.ownersIntro} />
       {!editing && (
         <>
           <dl className="row" style={{ gap: 16, flexWrap: "wrap", margin: 0 }}>
