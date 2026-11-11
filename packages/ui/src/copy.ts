@@ -1921,7 +1921,6 @@ export const COPY = {
     metarepo: (name: string) => `${name} · metarepo`,
     sideShow: "Show the side panel",
     sideHide: "Hide the side panel",
-    side: "Explorer",
     resize: "Resize the side panel",
     /** The tab strip. */
     tabs: "Open pages",

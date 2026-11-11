@@ -11,7 +11,8 @@ import { ActivityBar, MoreFlyout } from "./ActivityBar.js";
 import { BottomPanel } from "./BottomPanel.js";
 import { draftOf, fieldKey, fieldsIn, keptField, restoreDraft, type Draft } from "./drafts.js";
 import { Explorer } from "./Explorer.js";
-import { SearchIcon } from "./icons.js";
+import { PinIcon, SearchIcon } from "./icons.js";
+import { pinHash, togglePin, usePins } from "./pinned-pages.js";
 import {
   clampSide,
   readBottom,
@@ -146,6 +147,28 @@ function useDrafts(
     drafts.current.delete(key);
     return restoreDraft(panel.current, scroller.current, d);
   }, [hash, panel, scroller]);
+}
+
+/**
+ * Pin the page shown (beta.26): it is kept at hand in the Explorer's Pinned, per browser. A
+ * toggle: pressed while the page is pinned, and a press unpins it.
+ */
+function PinTool({ hash, label }: { hash: string; label: string }) {
+  const pins = usePins();
+  const pinned = pins.includes(pinHash(hash));
+  const name = COPY.explorer.pinHere(label);
+  return (
+    <button
+      type="button"
+      className="sh-tool"
+      aria-pressed={pinned}
+      aria-label={name}
+      data-tip={name}
+      onClick={() => togglePin(hash)}
+    >
+      <PinIcon filled={pinned} />
+    </button>
+  );
 }
 
 /** The counts the shell shows, from answers pages already loaded (never a request of its own). */
@@ -343,7 +366,7 @@ export function Shell({
         <aside
           id="sh-side"
           className="sh-side"
-          aria-label={T.side}
+          aria-label={COPY.explorer.label}
           hidden={!side.open}
           onKeyDown={(e) => {
             if (e.key === "Escape" && side.overlay) {
@@ -379,27 +402,28 @@ export function Shell({
               }}
               onMove={(key, by) => setTabs(moveTab(tabs, key, by))}
               side={{ open: side.open, onToggle: side.toggle }}
-              {...(embedded
-                ? {
-                    tools: (
-                      <>
-                        <button
-                          type="button"
-                          className="sh-tool"
-                          aria-label={T.search}
-                          data-tip={T.search}
-                          onClick={openPalette}
-                        >
-                          <SearchIcon size={16} />
-                        </button>
-                        <MoreFlyout current={current} hash={hash} className="sh-tool" />
-                        <AiChip />
-                        {help}
-                        {words}
-                      </>
-                    ),
-                  }
-                : {})}
+              tools={
+                <>
+                  <PinTool hash={hash} label={current.label} />
+                  {embedded && (
+                    <>
+                      <button
+                        type="button"
+                        className="sh-tool"
+                        aria-label={T.search}
+                        data-tip={T.search}
+                        onClick={openPalette}
+                      >
+                        <SearchIcon size={16} />
+                      </button>
+                      <MoreFlyout current={current} hash={hash} className="sh-tool" />
+                      <AiChip />
+                      {help}
+                      {words}
+                    </>
+                  )}
+                </>
+              }
             />
           </div>
           <main id="main" ref={scroller} className="sh-main" tabIndex={-1}>

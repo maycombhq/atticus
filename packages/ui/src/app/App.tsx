@@ -270,6 +270,8 @@ export function App() {
                   top={
                     <>
                       <FlashLine />
+                      {/* What runs (a Copilot run's own strip, ADR 0173), above the page. */}
+                      <ActivityStrip />
                       {!bare && <SectionTabs current={current} hash={hash} full={full} />}
                       {server.down && <ServerDown inPanel={!!hostBridge()} />}
                     </>

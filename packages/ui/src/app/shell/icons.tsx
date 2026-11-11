@@ -102,3 +102,20 @@ export const SideIcon = () => (
     <path d="M9 4v16" />
   </Svg>
 );
+
+export const PinIcon = ({ filled = false }: { filled?: boolean }) => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill={filled ? "currentColor" : "none"}
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8" />
+  </svg>
+);
