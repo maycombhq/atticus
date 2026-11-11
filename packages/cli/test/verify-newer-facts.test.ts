@@ -16,7 +16,10 @@ const VERIFY = join(import.meta.dirname, "../../verify/test/fixtures");
 const REPO = "forge-ledger";
 
 /** A metarepo with forge-ledger read at one commit, its facts and the lines given after them. */
-async function verifyWith(lines: (first: Record<string, unknown>, head: string) => string[]) {
+async function verifyWith(
+  lines: (first: Record<string, unknown>, head: string) => string[],
+  o: { write?: boolean } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "verify-newer-"));
   cpSync(join(VERIFY, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(VERIFY, "metarepo/catalog"), join(root, "catalog"), { recursive: true });
@@ -49,12 +52,13 @@ async function verifyWith(lines: (first: Record<string, unknown>, head: string) 
   const first = JSON.parse(text.split("\n")[0]!) as Record<string, unknown>;
   const extra = lines(first, head);
   writeFileSync(facts, `${text.trim()}\n${extra.join("\n")}\n`);
+  const written = readFileSync(facts, "utf8");
   const err: string[] = [];
   const out: string[] = [];
   const code = await verifyCommand(
     root,
     REPO,
-    { write: true },
+    { write: o.write ?? true },
     { out: (l) => out.push(l), err: (l) => err.push(l) },
   );
   const after = readFileSync(facts, "utf8").split("\n").filter(Boolean);
@@ -72,6 +76,8 @@ async function verifyWith(lines: (first: Record<string, unknown>, head: string) 
     after,
     rejected,
     known: text.trim().split("\n").filter(Boolean).length,
+    /** The facts file as the test wrote it, before verify ran. */
+    written,
   };
 }
 
@@ -117,21 +123,33 @@ it("keeps a newer Atticus's fact in the facts file as written, and says so", asy
 });
 
 it("refuses a slip of a value or a field, for the assistant to fix, never keeping it as newer", async () => {
-  const r = await verifyWith((first) => [
+  const slips = (first: Record<string, unknown>) => [
     JSON.stringify({ ...first, id: "e-get-account-v5", conf: "declard" }),
     JSON.stringify({ ...first, id: "e-get-account-v6", verified: "lnie" }),
     JSON.stringify({ ...first, id: "e-get-account-v7", pathh: "/accounts" }),
-  ]);
+  ];
+  // The check (no --write), the read's inner loop: each slip is out of the facts file, for the
+  // assistant to write again.
+  const r = await verifyWith(slips, { write: false });
   try {
     expect(r.code).toBe(1);
     expect(r.said).not.toContain("written by a newer Atticus");
     expect(r.said).toContain('did you mean "declared"?');
     expect(r.said).toContain('did you mean "line"?');
-    // each slip is out of the facts file, for the assistant to write again
     for (const id of ["e-get-account-v5", "e-get-account-v6", "e-get-account-v7"])
       expect(r.after.join("\n")).not.toContain(id);
     expect(r.after.length).toBe(r.known);
   } finally {
     rmSync(r.root, { recursive: true, force: true });
+  }
+  // Beta.26: --write refuses them too, and then leaves the facts file as it was.
+  const w = await verifyWith(slips);
+  try {
+    expect(w.code).toBe(1);
+    expect(w.said).toContain('did you mean "declared"?');
+    expect(`${w.after.join("\n")}\n`).toBe(w.written);
+    expect(w.err).toMatch(/so facts\/forge-ledger\.jsonl and the catalog are left as they were/);
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
   }
 });
