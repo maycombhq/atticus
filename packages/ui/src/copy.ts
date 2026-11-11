@@ -5221,6 +5221,9 @@ export const COPY = {
     intro:
       "Each call on this link, how Atticus joined it to what it calls, and the line it cites at each end. A verified call is read from code at both ends and named by someone; an inferred one is a guess.",
     call: (from: string, to: string, what: string) => `${from} → ${to}${what ? `: ${what}` : ""}`,
+    // The arrow's panel: how many calls under its name, and each call's Copy.
+    count: (n: number) => `${n} call${n === 1 ? "" : "s"}`,
+    copyOf: (what: string) => `Copy ${what}`,
     how: {
       person:
         "A person paired this call with this entry on the canvas (Connect to…): their word, written as a link in the caller's corrections, the call's own fact left as read.",
@@ -5291,6 +5294,8 @@ export const COPY = {
         "Each build dependency on this link: the component's build file declares the coordinates the library's build publishes. It isn't a call, so it is never counted with the calls; the library's own calls stay the library's.",
       title: (from: string, to: string, coordinates: string) =>
         `${from} depends on ${to}: ${coordinates}`,
+      ends: (from: string, to: string) => `${from} depends on ${to}`,
+      count: (n: number) => `${n} build dependenc${n === 1 ? "y" : "ies"}`,
       scope: (scope: string) => `(${scope} scope)`,
       caller: "Declared in its build file",
       callee: "Published by",

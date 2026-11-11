@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.25 (unreleased)
+
+### Fixed
+
+- **The arrow's panel on the map is laid out, not jumbled.** A head with the arrow's name, its number of calls and Close stays in sight while its calls scroll; each call is a card (its method and path on one line, cut short when long with the whole text on hover, focus and Copy; its two ends; the verified or inferred chip beside them, never wrapped apart), its cited lines grouped under even labels, then This link is wrong and its form in place. The correction forms' choices keep each radio beside its words at every width. A declared topic's Undo is found on the system that declared it and lists only that topic's declaration; closing a correction form, or writing All calls on this arrow are wrong, keeps the keyboard focus (on the button that opened it, or on what was written).
+
 ## 2.0.0-beta.24 (2026-11-10)
 
 ### Fixed
