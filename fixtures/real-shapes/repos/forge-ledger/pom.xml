@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Forge Ledger, an invented sample of the Atticus test corpus.
+
+    Licensed under the Apache License, Version 2.0 (the "License"), the
+    licence of the repository it is part of.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.11</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>forge.ledger</groupId>
+    <artifactId>forge-ledger-parent</artifactId>
+    <version>1.2.0</version>
+    <packaging>pom</packaging>
+    <name>Forge :: Ledger :: Parent</name>
+    <description><![CDATA[
+        The ledger's parent. A <dependency> named in prose is no build entry:
+        <dependency><groupId>forge.nowhere</groupId><artifactId>not-a-dependency</artifactId></dependency>
+    ]]></description>
+
+    <modules>
+        <module>ledger-api</module>
+        <module>ledger-service</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <!-- versions -->
+        <northwind-pay.version>4.2.1</northwind-pay.version>
+        <forge-rates.version>0.4.0</forge-rates.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.camel.springboot</groupId>
+                <artifactId>camel-spring-boot-bom</artifactId>
+                <version>4.8.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>ledger-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.northwind.pay</groupId>
+                <artifactId>northwind-pay-client</artifactId>
+                <version>${northwind-pay.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <profiles>
+        <profile>
+            <id>it</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>junit-jupiter</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>3.6.0</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>12.3.1</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

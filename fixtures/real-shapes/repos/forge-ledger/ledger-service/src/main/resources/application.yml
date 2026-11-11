@@ -1,0 +1,37 @@
+# Forge ledger service settings (invented)
+spring:
+  application:
+    name: forge-ledger
+  datasource:
+    url: jdbc:postgresql://ledger-db.ledger.svc.cluster.local:5432/ledger
+    username: ledger
+    password: ${LEDGER_DB_PASSWORD}
+
+server:
+  port: 8080
+  servlet:
+    context-path: /ledger
+
+forge:
+  clients:
+    rates:
+      base-url: ${RATES_URL:http://forge-rates.rates.svc.cluster.local:8080/rates}
+      timeout: 5s
+    northwind:
+      base-url: https://api.northwind-pay.example/v2
+      client-secret: nw-live-7f3a9c2e5b1d4f60a8e2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+forge:
+  clients:
+    rates:
+      base-url: https://rates.forge.example/rates

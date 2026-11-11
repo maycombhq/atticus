@@ -1,0 +1,39 @@
+# The real-shapes estate (invented): a Maven multi-module Spring Boot service, a Gradle
+# multi-project with a Helm chart, a Kotlin DSL client, an Apigee gateway repo holding two proxies
+# and a shared flow, and a Camel bridge. Only the ledger and the gateway list their hosts; the rates
+# service is reached through its in-cluster Service and its Ingress, which its deploy facts give.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge-ledger
+    url: https://git.forge.example/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-ledger
+    component: forge-ledger
+    system: ledger
+    hosts: [ledger.forge.example, ledger.test.forge.example]
+  - id: forge-rates
+    url: https://git.forge.example/forge/forge-rates.git
+    type: spring-boot
+    owner: team-rates
+    component: forge-rates
+    system: rates
+  - id: forge-wallets
+    url: https://git.forge.example/forge/forge-wallets.git
+    type: spring-boot
+    owner: team-wallets
+    component: forge-wallets
+    system: wallets
+  - id: forge-edge
+    url: https://git.forge.example/forge/forge-edge.git
+    type: gateway
+    owner: team-platform
+    component: forge-edge
+    system: platform
+    hosts: [api.forge.example]
+  - id: forge-bridge
+    url: https://git.forge.example/forge/forge-bridge.git
+    type: spring-boot
+    owner: team-integration
+    component: forge-bridge
+    system: integration

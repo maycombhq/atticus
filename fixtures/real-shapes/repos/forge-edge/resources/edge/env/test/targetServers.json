@@ -1,0 +1,22 @@
+[
+    {
+        "name": "TS-Rates",
+        "host": "forge-rates.rates.svc.cluster.local",
+        "isEnabled": true,
+        "port": 8080
+    },
+    {
+        "name": "TS-Ledger",
+        "host": "ledger.test.forge.example",
+        "isEnabled": true,
+        "port": 443,
+        "sSLInfo": {
+            "clientAuthEnabled": "false",
+            "enabled": "true",
+            "ignoreValidationErrors": "false",
+            "keyAlias": "forge_key_alias",
+            "keyStore": "forge_keystore",
+            "trustStore": "forge_truststore"
+        }
+    }
+]
