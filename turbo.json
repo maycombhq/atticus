@@ -4,7 +4,20 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig.base.json", "$TURBO_ROOT$/scripts/**"],
       "outputs": ["dist/**", "dist-lib/**", "npm/**", "THIRD-PARTY-LICENSES.txt"]
+    },
+    "@maycombhq/atticus#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tsconfig.base.json",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/fixtures/forge/**",
+        "$TURBO_ROOT$/fixtures/forge-change/**"
+      ],
+      "outputs": ["dist/**", "THIRD-PARTY-LICENSES.txt", "LICENSE"]
     },
     "typecheck": {
       "dependsOn": ["^build"]
