@@ -2249,11 +2249,34 @@ export const COPY = {
   changeWork: {
     more: "More",
     less: "Less",
+    /**
+     * An explanation's More and Less as a screen reader names them, by what they open (the panel,
+     * else the explanation's first words), so several on one page are told apart.
+     */
+    moreAbout: (what: string) => `More: ${what}`,
+    lessAbout: (what: string) => `Less: ${what}`,
     /** The All changes list's head: how many changes it holds. */
     changeCount: (n: number) => `${n} change${n === 1 ? "" : "s"}`,
-    /** A change's id and type, under its title. */
     /** A change's risk as a badge in its head: "Low risk". */
     risk: (level: string) => `${level.charAt(0).toUpperCase()}${level.slice(1)} risk`,
+    /** A change's state as its badge, a word for every lifecycle state (core's LIFECYCLE_STATES). */
+    lifecycle: {
+      draft: "Draft",
+      define: "Define",
+      design: "Design",
+      plan: "Plan",
+      build: "Build",
+      qa: "QA",
+      "release-ready": "Release",
+      released: "Released",
+      "post-release-review": "Post-release review",
+      returned: "Returned",
+      archived: "Archived",
+    },
+    /** A task's terminal fold as a screen reader names it, its task said so each is told apart. */
+    fromTerminalFor: (task: string) => `From a terminal or your assistant, for task ${task}`,
+    /** A hand-off's PR on a change's chips: short words, the whole address the link's target. */
+    prShort: (n?: string) => (n ? `PR #${n}` : "PR"),
   },
   changes: {
     qa: "QA",

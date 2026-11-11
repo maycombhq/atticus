@@ -345,7 +345,7 @@ export function PastChangesView(p: {
   return (
     <section aria-label={L.title} className="cw-card">
       <h3 className="hud">{L.title}</h3>
-      <Explain text={L.intro} />
+      <Explain text={L.intro} about={L.title} />
       {p.r.how === "words" && p.r.note && p.r.changes.length > 0 && (
         <p className="muted">{L.byWords(p.r.note)}</p>
       )}
@@ -357,7 +357,8 @@ export function PastChangesView(p: {
             <li key={c.id}>
               <strong>{c.title}</strong>
               {c.archived && <span className="muted"> · {L.archived(c.archived)}</span>}
-              {c.summary && <div className="cw-row-sub">{c.summary}</div>}
+              {/* beta.26 review: what it asked, whole and wrapped, not one cut monospace line. */}
+              {c.summary && <p className="cw-past-summary">{c.summary}</p>}
               {p.onUse && (
                 <button
                   type="button"
