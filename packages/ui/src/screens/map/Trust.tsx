@@ -16,6 +16,7 @@ import { DecidePaused, useDecisions } from "../../app/decisions.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
+ * Beside it, the canaries and the silent error rate (ADR 0196, `GET /api/trust/canaries`).
  * Per repo: the facts it kept and rejected, how much of the code they cover and the files not
  * read yet, the facts' commit against the checkout's, whether the catalog is built from the
  * facts or the built-in readers, and the command to run next. It reads files only
@@ -549,6 +550,118 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
   );
 }
 
+const K = T.canary;
+
+/**
+ * ADR 0196 (Z2): canaries and the silent error rate, beside the sample audit: the rate with its
+ * range and its parts (real lines misread, from the sample audit; planted and found, and taken
+ * out but still claimed, from the latest canary of each repo), a row per repo's latest canary,
+ * the canaries planted here and waiting for a score, and the commands to run one. From
+ * `GET /api/trust/canaries`, which reads files only; the app runs nothing.
+ */
+export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: () => void } }) {
+  const how = (v: Api.CanaryViewT) => (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {K.howTo}
+      </p>
+      <Command text={v.commands.plant} label={R.copy} noRun />
+      <Command text={v.commands.score} label={R.copy} noRun />
+      <Command text={v.commands.report} label={R.copy} noRun />
+    </div>
+  );
+  return (
+    <Panel
+      title={K.title}
+      span="1 / -1"
+      meta={of.state === "ready" ? K.silent(of.data.silent.silent) : undefined}
+    >
+      <p className="work-why" style={{ marginTop: 0 }}>
+        {K.intro}
+      </p>
+      <View
+        of={of}
+        empty={(v) =>
+          !v.latest.length && !v.pending.length && !v.silent.misread.n && !v.problems.length
+        }
+        emptyContent={
+          of.state === "ready" ? (
+            <div className="stack" style={{ gap: 8 }}>
+              <p className="work-say" style={{ margin: 0 }}>
+                {K.empty}
+              </p>
+              {how(of.data)}
+            </div>
+          ) : undefined
+        }
+      >
+        {(v) => {
+          const s = v.silent;
+          return (
+            <div className="stack" style={{ gap: 8 }}>
+              <Problems list={v.problems} />
+              <p style={{ margin: 0 }}>
+                <strong>{K.silent(s.silent)}</strong>{" "}
+                <span className="work-say">{K.range(s.silent.low, s.silent.high)}</span>
+              </p>
+              <ul className="trust-items" style={{ margin: 0 }}>
+                <li>{K.misread(s.misread, s.repos.audited)}</li>
+                <li>{K.recall(s.recall)}</li>
+                <li>{K.fabrication(s.fabrication, s.passed, s.caught)}</li>
+              </ul>
+              {s.silent.n < 30 && <p className="work-say">{K.small}</p>}
+              {v.latest.length > 0 && (
+                <table className="run-table">
+                  <caption className="sr">{K.caption}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{K.col.repo}</th>
+                      <th scope="col">{K.col.at}</th>
+                      <th scope="col">{K.col.planted}</th>
+                      <th scope="col">{K.col.removed}</th>
+                      <th scope="col">{K.col.passed}</th>
+                      <th scope="col">{K.col.report}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v.latest.map((r) => (
+                      <tr key={r.repo}>
+                        <th scope="row" className="mono">
+                          {r.repo}
+                        </th>
+                        <td>{r.at.slice(0, 10)}</td>
+                        <td>{K.of(r.recall.k, r.recall.n)}</td>
+                        <td>{K.of(r.fabrication.k, r.fabrication.n)}</td>
+                        <td>
+                          {r.passed.k > 0 && <span aria-hidden="true">⚠ </span>}
+                          {K.of(r.passed.k, r.passed.n)}
+                        </td>
+                        <td className="mono">{r.path}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {v.pending.map((p) => (
+                <div key={p.repo}>
+                  <p className="work-say" style={{ margin: 0 }}>
+                    {K.pending(p.repo)}
+                  </p>
+                  <Command text={K.scoreIt(p.repo)} label={R.copy} noRun />
+                </div>
+              ))}
+              <details className="work-terminal">
+                <summary>{K.howTo}</summary>
+                {how(v)}
+              </details>
+            </div>
+          );
+        }}
+      </View>
+    </Panel>
+  );
+}
+
 /** The tab from loaded data, so tests can render every state. */
 /**
  * ADR 0181: the sample audit's precision for the AI's decisions, every repo summed, against the
@@ -578,16 +691,20 @@ export function TrustPage({
   of,
   fresh,
   decide,
+  canary,
 }: {
   of: Loaded<Api.TrustViewT> & { reload?: () => void };
   fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
   /** ADR 0181: GET /api/decisions, for the AI's precision row. */
   decide?: Loaded<Api.DecisionsViewT> & { reload?: () => void };
+  /** ADR 0196: GET /api/trust/canaries, for the silent error rate. */
+  canary?: Loaded<Api.CanaryViewT> & { reload?: () => void };
 }) {
   return (
     <div className="bento">
       {fresh && <FreshPanel of={fresh} />}
       {decide && <AiPrecision of={decide} />}
+      {canary && <CanaryPanel of={canary} />}
       <Panel
         title={COPY.nav.screens.trust}
         span="1 / -1"
@@ -649,11 +766,14 @@ export function Trust() {
   const fresh = useApi<Api.FreshViewT>("/api/trust/fresh");
   useReloadOnFiles(fresh);
   const ds = useDecisions();
+  const canary = useApi<Api.CanaryViewT>("/api/trust/canaries");
+  useReloadOnFiles(canary);
   return (
     <EvidenceProvider>
       <TrustPage
         of={view}
         fresh={fresh}
+        canary={canary}
         decide={{ ...(ds?.view ?? { state: "loading" }), ...(ds ? { reload: ds.reload } : {}) }}
       />
     </EvidenceProvider>

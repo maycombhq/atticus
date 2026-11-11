@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.27 (unreleased)
+
+### Added
+
+- **Canaries, and the silent error rate (ADR 0196, plan item Z2).** `atticus canary plant <repo> [--seed s]` copies the repo to a scratch folder outside the metarepo, plants a few made-up entries, calls, topics and config keys (by template, for Spring, Node and Python code) and comments out a few real lines its verified facts cite, the same for the same seed, and writes the prompt your assistant reads the copy by (Claude Code, or Copilot in agent mode). `atticus canary check <repo>` is the read's own verify loop against the copy; `atticus canary score <repo>` gives recall on what was planted and fabrication on what was taken out (and how much of it the verifier kept), writes `reports/canaries/<date>-<repo>.yaml` (claims and places, no code), and deletes the copy, the facts and the key whether it scores or not. `atticus canary report` gives the **silent error rate**, wrong claims graded as backed, pooled from the latest canary of each repo and the sample audit's answers, each part with its count and a 95% interval; `atticus verify audit --report` adds it when a canary is on file, and `atticus canary clean` deletes a canary not yet scored. Atticus runs none of the repo's code and calls no model. Map › Trust has a Canaries and the silent error rate panel, from `GET /api/trust/canaries` (local API 3.12.0, additive). On the Forge fixtures, with a read written by hand, the first run found a fact whose `cite.with` part names a value only a commented-out line beside it holds, which the verifier keeps; a real baseline needs a read by your assistant on your repos.
+
 ## 2.0.0-beta.26 (2026-11-11)
 
 ### Changed

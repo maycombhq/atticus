@@ -91,3 +91,19 @@ atticus verify audit --report                  # every repo audited, and the est
 ```
 
 The report gives the share right of those answered right or wrong, how many that is, and a 95% interval. A sample of ten says little: 9 of 10 right is somewhere between 60% and 98%, so read the range, not the number, and draw more with another seed. A fact answered right shows as checked by the sample on the Map while it still cites the line you saw; Map › Trust shows each repo's audit.
+
+## Canaries: recall, fabrication and the silent error rate
+
+The audit measures real lines read wrongly. It can't see what a read misses, or a claim about something that isn't there. A canary does, on your own code and with nobody labelling anything (ADR 0196):
+
+```sh
+atticus canary plant forge-payments            # a scratch copy outside the metarepo, and a prompt
+# give the prompt it names to your assistant in a new chat; it reads the copy and loops on:
+atticus canary check forge-payments
+atticus canary score forge-payments            # writes reports/canaries/<date>-forge-payments.yaml
+atticus canary report                          # the latest canary of each repo, and the silent error rate
+```
+
+In the copy, Atticus plants a few made-up entries, calls, topics and config keys (by template, for Spring, Node and Python code) and comments out a few real lines your verified facts cite. The read must find what was planted (recall) and leave out what was taken out (fabrication); a claim about a commented line that the verifier still kept is a silent error. The same seed plants the same copy. Atticus runs none of the code and calls no model: your assistant does the read. The copy, the prompt and the key are deleted when the canary is scored, and the report (claims and places, no code) is the only file written to the metarepo: commit it with the audit.
+
+The **silent error rate** is the share of claims graded as backed that are wrong, pooled from the audit's answers (kept facts, and links not joined by a guess) and the canaries. Run canaries on a few repos of each stack per release, not on every read. Map › Trust shows the rate, its range and its parts.

@@ -98,6 +98,8 @@ const NO_AI = new Set([
   "estate measure",
   "estate fresh",
   "estate shared",
+  // ADR 0196: a canary copies, plants by template and checks with the verifier; no model.
+  "canary",
   "change status",
   // Reading the questions on file and printing one: files only, no model (question-commands.ts).
   "questions list",
@@ -502,6 +504,11 @@ Usage:
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
   atticus verify audit <repo>          Confirm a reproducible random sample of the repo's kept facts and its links, each with its cited lines (right, wrong or unsure); the answers go to facts/<repo>.audit.yaml, a person's record for a pull request (ADR 0148) [--size n] [--seed s] [--answers file] [--right ids] [--wrong ids] [--unsure ids] [--dir path] [--json]
   atticus verify audit <repo> --report  Precision from the answers, per kind of fact and for links (by how each was joined), with the sample size and a 95% interval; without a repo, every repo audited and the estate [--json]
+  atticus canary plant <repo>          A canary (ADR 0196): copy the repo to a scratch folder outside the metarepo, plant a few synthetic entries, calls, topics and config keys and comment out a few real lines its verified facts cite, the same for the same seed, and write the prompt your assistant reads the copy by; what was planted is kept on this machine, apart from the copy [--seed s] [--size n] [--json]
+  atticus canary check <repo>          The canary read's own verify loop: check the facts the assistant wrote against the copy, rejected ones to the run's rejected.jsonl; exits 1 while any is rejected [--facts file]
+  atticus canary score <repo>          Score the canary read: recall on the planted, fabrication on the commented-out (a claim the verifier kept), written to reports/canaries/<date>-<repo>.yaml with the silent error rate; the copy, the facts and the key are deleted, scored or not [--facts file] [--json]
+  atticus canary report [--json]       The silent error rate: wrong claims graded as backed, from the latest canary of each repo and the sample audit's answers, each part with its count and a 95% interval
+  atticus canary clean [<repo>]        Delete a planted canary's scratch copy and key without scoring it
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
@@ -1894,6 +1901,26 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       }
       throw e;
     }
+  }
+  if (group === "canary") {
+    // ADR 0196 (Z2): canaries, beside the sample audit.
+    const c = await import("./canary-commands.js");
+    const text = (x: unknown) => (typeof x === "string" ? x : undefined);
+    const size = Number(text(values.size));
+    const o = {
+      by: who(),
+      ...(text(values.seed) ? { seed: text(values.seed)! } : {}),
+      ...(Number.isFinite(size) && size >= 0 && text(values.size) ? { size } : {}),
+      ...(text(values.facts) ? { facts: text(values.facts)! } : {}),
+      json: values.json === true,
+    };
+    if (command === "plant") return c.canaryPlant(root, arg, o, io);
+    if (command === "check") return c.canaryCheck(root, arg, o, io);
+    if (command === "score") return c.canaryScore(root, arg, o, io);
+    if (command === "report") return c.canaryReport(root, o, io);
+    if (command === "clean") return c.canaryClean(root, arg, o, io);
+    io.err(c.CANARY_WORDS.usage);
+    return 2;
   }
   if (group === "verify") {
     // --write is a switch, and verify's own options are in OPTIONS with their types (review

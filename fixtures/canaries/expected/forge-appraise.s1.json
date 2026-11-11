@@ -1,0 +1,70 @@
+{
+  "stacks": [
+    "python"
+  ],
+  "planted": [
+    {
+      "id": "plant:1",
+      "kind": "config",
+      "what": "config",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 20,
+      "claim": "config BIRCH_REED_URL",
+      "needle": "birch-reed-url"
+    },
+    {
+      "id": "plant:2",
+      "kind": "entry",
+      "what": "entry",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 24,
+      "claim": "entry GET /spruce-umber/{id}",
+      "needle": "spruce-umber"
+    },
+    {
+      "id": "plant:3",
+      "kind": "call",
+      "what": "call",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 26,
+      "claim": "call GET /nutmeg-raven/{id}",
+      "needle": "nutmeg-raven"
+    },
+    {
+      "id": "plant:4",
+      "kind": "call",
+      "what": "topic-out",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 27,
+      "claim": "call topic quill.dune.viewed",
+      "needle": "quill-dune-viewed"
+    },
+    {
+      "id": "plant:5",
+      "kind": "entry",
+      "what": "topic-in",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 31,
+      "claim": "entry topic saffron.lumen.updated",
+      "needle": "saffron-lumen-updated"
+    }
+  ],
+  "removed": [
+    {
+      "id": "remove:call.post.v2-assessments",
+      "fact": "call.post.v2-assessments",
+      "kind": "call",
+      "file": "app/clients/county_client.py",
+      "line": 8,
+      "claim": "call POST /v2/assessments",
+      "value": "/v2/assessments",
+      "needle": "v2-assessments",
+      "how": "commented"
+    }
+  ]
+}

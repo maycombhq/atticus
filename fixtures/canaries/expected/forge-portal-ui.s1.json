@@ -1,0 +1,70 @@
+{
+  "stacks": [
+    "node"
+  ],
+  "planted": [
+    {
+      "id": "plant:1",
+      "kind": "config",
+      "what": "config",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 9,
+      "claim": "config BIRCH_REED_URL",
+      "needle": "birch-reed-url"
+    },
+    {
+      "id": "plant:2",
+      "kind": "entry",
+      "what": "entry",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 11,
+      "claim": "entry GET /spruce-umber/{id}",
+      "needle": "spruce-umber"
+    },
+    {
+      "id": "plant:3",
+      "kind": "call",
+      "what": "call",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 12,
+      "claim": "call GET /nutmeg-raven/{id}",
+      "needle": "nutmeg-raven"
+    },
+    {
+      "id": "plant:4",
+      "kind": "call",
+      "what": "topic-out",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 13,
+      "claim": "call topic quill.dune.viewed",
+      "needle": "quill-dune-viewed"
+    },
+    {
+      "id": "plant:5",
+      "kind": "entry",
+      "what": "topic-in",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 17,
+      "claim": "entry topic saffron.lumen.updated",
+      "needle": "saffron-lumen-updated"
+    }
+  ],
+  "removed": [
+    {
+      "id": "remove:call.get.api-balance-accountid",
+      "fact": "call.get.api-balance-accountid",
+      "kind": "call",
+      "file": "src/api/balance.ts",
+      "line": 3,
+      "claim": "call GET /api/balance/{accountId}",
+      "value": "/api/balance/",
+      "needle": "api-balance-param",
+      "how": "commented"
+    }
+  ]
+}

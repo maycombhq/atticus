@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { accessible, ask, expect, forgeStudioJourney, open, test } from "../support/app.js";
 
@@ -24,6 +26,50 @@ test("Trust counts the repo once: the facts file's companions aren't repos", asy
   await expect(page.getByText(/doesn't read as facts/)).toHaveCount(0);
   await expect(page.getByText(/forge-studio\.(questions|reviewed)/i)).toHaveCount(0);
   await accessible(page, "trust on an Atticus 2 metarepo");
+});
+
+test("Trust shows the canaries and the silent error rate, and how to run one (ADR 0196)", async ({
+  page,
+}) => {
+  await open(page, app(), "trust");
+  const panel = page.getByRole("region", { name: "Canaries and the silent error rate" });
+  // Nothing scored yet: the commands to run one.
+  await expect(panel.getByText(/No canary has been scored yet/)).toBeVisible();
+  await expect(panel.getByText("atticus canary plant <repo>")).toBeVisible();
+  // A report on file, as atticus canary score writes it.
+  const dir = join(app().root, "reports/canaries");
+  await mkdir(dir, { recursive: true });
+  const rate = (k: number, n: number) =>
+    `{ k: ${k}, n: ${n}, rate: ${Math.round((k / n) * 1000) / 1000}, low: 0.1, high: 0.9 }`;
+  await writeFile(
+    join(dir, "2026-11-11-forge-studio.yaml"),
+    [
+      "schema: 1",
+      "repo: forge-studio",
+      "seed: s1",
+      "at: 2026-11-11T10:00:00.000Z",
+      "by: priya",
+      "stacks: [spring]",
+      "read: { facts: 12, kept: 11, rejected: 1 }",
+      "planted:",
+      '  - { id: plant:1, kind: entry, what: entry, stack: spring, file: api/src/main/java/forge/studio/SpruceUmberResource.java, line: 16, claim: "entry GET /spruce-umber/{id}", result: found, by: entry.get.spruce-umber }',
+      '  - { id: plant:2, kind: call, what: call, stack: spring, file: api/src/main/java/forge/studio/SpruceUmberResource.java, line: 18, claim: "call GET /nutmeg-raven/{id}", result: missed }',
+      "removed:",
+      "  - { id: remove:x, fact: x, kind: call, file: api/src/main/java/forge/studio/A.java, line: 3, claim: call GET /a, value: /a, how: commented, result: rejected, by: x }",
+      `recall: ${rate(1, 2)}`,
+      `fabrication: ${rate(1, 1)}`,
+      `passed: { k: 0, n: 1, rate: 0, low: 0, high: 0.793 }`,
+      "",
+    ].join("\n"),
+  );
+  await page.reload();
+  await expect(
+    panel.getByText(/^Silent error rate: 0% \(0 of 1 claims graded as backed\)/).first(),
+  ).toBeVisible();
+  await expect(panel.getByRole("table", { name: "The latest canary of each repo" })).toContainText(
+    "forge-studio",
+  );
+  await accessible(page, "trust with a canary on file");
 });
 
 test("Home says the assistant the probe measured, and the read, not a scan", async ({ page }) => {

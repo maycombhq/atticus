@@ -1,0 +1,1 @@
+{"kind":"call","id":"call.get.api-balance-accountid","repo":"forge-portal-ui","commit":"d0d0001","callType":"rest","method":"GET","path":"/api/balance/{accountId}","cite":{"file":"src/api/balance.ts","line":3,"value":"/api/balance/","quote":"const res = await fetch(`/api/balance/${accountId}`, { method: \"GET\" });"},"verified":"line","by":"assistant","conf":"declared"}

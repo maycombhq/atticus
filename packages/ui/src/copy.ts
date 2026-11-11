@@ -3,6 +3,11 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
+
+/** A share as a percentage, to one decimal place where it has one (ADR 0196's rates). */
+const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
+const pctOf = (r: { k: number; n: number }) => (r.n ? pct(r.k / r.n) : "-");
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -1124,6 +1129,46 @@ export const COPY = {
     moreFacts: (n: number, file: string) => `and ${n} more, in ${file}`,
     openCanvas: "Open the repo on the estate canvas",
     /** ADR 0141 (P5): which repos' clones have moved past their facts' commit, most stale first. */
+    /** ADR 0196 (Z2): canaries and the silent error rate, beside the sample audit. */
+    canary: {
+      title: "Canaries and the silent error rate",
+      intro:
+        "How often a claim graded as backed is wrong. A canary copies a repo to a scratch folder outside the metarepo, plants a few made-up entries, calls, topics and config keys, and comments out a few real lines; your assistant reads the copy as it reads any repo, and the read must find what was planted and miss what was taken out. Real lines read wrongly come from the sample audit. Both are measured on your own code, with nobody labelling anything.",
+      empty:
+        "No canary has been scored yet. Run one on a few repos each release: plant it, give the prompt it writes to your assistant in a new chat, then score it. Nothing is written to the metarepo but its report.",
+      howTo: "In a terminal, in the metarepo:",
+      silent: (r: { k: number; n: number }) =>
+        r.n
+          ? `Silent error rate: ${pctOf(r)} (${r.k} of ${r.n} claims graded as backed)`
+          : "Silent error rate: not measured yet",
+      range: (low: number | null, high: number | null) =>
+        low === null || high === null ? "" : `95% between ${pct(low)} and ${pct(high)}`,
+      misread: (r: { k: number; n: number }, repos: number) =>
+        r.n
+          ? `Real lines misread (sample audit, ${repos} repo${repos === 1 ? "" : "s"}): ${pctOf(r)}, ${r.k} of ${r.n}`
+          : "Real lines misread: no sample audit answered yet",
+      recall: (r: { k: number; n: number }) =>
+        r.n
+          ? `Planted and found: ${pctOf(r)}, ${r.k} of ${r.n}`
+          : "Planted and found: no canary yet",
+      fabrication: (r: { k: number; n: number }, passed: { k: number }, caught: number) =>
+        r.n
+          ? `Taken out but still claimed: ${pctOf(r)}, ${r.k} of ${r.n}; the verifier kept ${passed.k} and caught ${caught}`
+          : "Taken out but still claimed: no canary yet",
+      small: "A small sample: read the range, not the number.",
+      caption: "The latest canary of each repo",
+      col: {
+        repo: "Repo",
+        at: "Scored",
+        planted: "Planted found",
+        removed: "Taken out, claimed",
+        passed: "Kept by the verifier",
+        report: "Report",
+      },
+      of: (k: number, n: number) => `${k} of ${n}`,
+      pending: (repo: string) => `${repo}: planted, waiting for its read and its score`,
+      scoreIt: (repo: string) => `atticus canary score ${repo}`,
+    },
     fresh: {
       title: "Freshness",
       intro:
