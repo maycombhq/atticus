@@ -10,7 +10,11 @@ import {
   joinWhat,
   linkDependenciesOf,
 } from "../src/screens/architecture/links.js";
-import { DependencyWrongForm, saveDependencyBatch } from "../src/screens/architecture/WhyLinked.js";
+import {
+  DependencyView,
+  DependencyWrongForm,
+  saveDependencyBatch,
+} from "../src/screens/architecture/WhyLinked.js";
 import { EveryDependencyView } from "../src/screens/architecture/EveryDependency.js";
 
 /**
@@ -154,6 +158,39 @@ describe("This link is wrong in one batch, every coordinate shown (review of bet
       <DependencyWrongForm join={KIT} facts={{ state: "ready", data: FACTS }} onClose={() => {}} />,
     );
     expect(out).toContain("forge.kit:kit-core");
+  });
+
+  it("heads the link with a scope only when every fact on it has that scope", () => {
+    const scoped = (a?: string, b?: string, link?: string): Api.HierJoinT => ({
+      ...KIT,
+      dependency: {
+        ...KIT.dependency!,
+        ...(link ? { scope: link } : {}),
+        facts: KIT.dependency!.facts!.map((f, i) => {
+          const s = i === 0 ? a : b;
+          return s ? { ...f, scope: s } : f;
+        }),
+      },
+    });
+    const head = (j: Api.HierJoinT) => html(<DependencyView join={j} />);
+    const runtime = esc(D.scope("runtime"));
+    // compile kit-api, runtime kit-core: no scope in the head (the join says none)
+    expect(head(scoped(undefined, "runtime"))).not.toContain("li-scope");
+    // nor when an older server gave the first fact's scope to the whole link
+    expect(head(scoped("runtime", undefined, "runtime"))).not.toContain("li-scope");
+    expect(head(scoped("runtime", "provided", "runtime"))).not.toContain(runtime);
+    // both runtime: the link is runtime
+    expect(head(scoped("runtime", "runtime", "runtime"))).toContain(runtime);
+    // one fact, its scope
+    const one: Api.HierJoinT = {
+      ...JOIN,
+      dependency: {
+        ...JOIN.dependency!,
+        scope: "provided",
+        facts: [{ ...JOIN.dependency!.facts![0]!, scope: "provided" }],
+      },
+    };
+    expect(head(one)).toContain(esc(D.scope("provided")));
   });
 
   it("asks for all of them in one POST /api/links/corrections, all or none", async () => {

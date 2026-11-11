@@ -126,6 +126,18 @@ export function AlsoLine({ also }: { also: readonly string[] | undefined }) {
 }
 
 /**
+ * The scope a dependency link's head says (review of beta.25): the link's, and only when every
+ * dependency fact on it has that scope (a fact saying none is compile), so a compile `kit-api`
+ * and a runtime `kit-core` merged into one link head it with none, even from a server that gave
+ * the link its first fact's scope.
+ */
+function linkScopeOf(join: Api.HierJoinT): string | undefined {
+  const d = join.dependency;
+  if (!d?.scope) return undefined;
+  return (d.facts ?? []).every((f) => f.scope === d.scope) ? d.scope : undefined;
+}
+
+/**
  * ADR 0192: one build dependency on the link: the coordinates, the line that declares them in
  * the depending build file and the lines that publish them in the library's.
  */
@@ -133,14 +145,13 @@ export function DependencyView({ join, children }: { join: Api.HierJoinT; childr
   const D = W.dependency;
   const what = joinWhat(join);
   const title = D.title(join.from, join.to, what);
+  const scope = linkScopeOf(join);
   return (
     <article className="li-call" aria-label={title}>
       <CallHead
         what={what}
         ends={D.ends(join.from, join.to)}
-        {...(join.dependency?.scope
-          ? { extra: <span className="li-scope"> {D.scope(join.dependency.scope)}</span> }
-          : {})}
+        {...(scope ? { extra: <span className="li-scope"> {D.scope(scope)}</span> } : {})}
         chip={
           <span className={`chip ${join.verified ? "done" : "warn"}`}>
             {join.verified ? W.verified : W.inferred}

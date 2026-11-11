@@ -604,6 +604,17 @@ export async function verifyCommand(
       `(buildUnrecorded in ${verifyYaml})`,
     );
   }
+  // Review of beta.25: a fact naming a folder's component in a repo that ships as one.
+  const placed = report.componentsPlaced ?? [];
+  if (placed.length) {
+    io.out(
+      `${placed.length} ${placed.length === 1 ? "fact names a component" : "facts name components"} the manifest doesn't list, in a repo whose manifest lists no modules (a note, not a rejection; under componentsPlaced in ${verifyYaml}): each is placed in the repo's component. List the modules in repos.manifest.yaml if they ship apart:`,
+    );
+    show(
+      placed.map((p) => `${p.id}: ${p.named} is ${p.component} (${p.cite})`),
+      `(componentsPlaced in ${verifyYaml})`,
+    );
+  }
   // G4: with the framework models off, nothing is offered to learn.
   const learn = off.has("framework-models")
     ? []

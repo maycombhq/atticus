@@ -184,9 +184,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when only a token setting a URL, a host or a path was told to be recorded (beta.24 review),
     // and when the artifact and dependency facts were added, a build's coordinates and what it
     // builds on (ADR 0192), and when a pom's system scope was said to be provided, a build's folders no
-    // components and a root subprojects { } line each subproject's (review of beta.25).
+    // components and a root subprojects { } line each subproject's (review of beta.25), and when
+    // a build's and a framework's `component` was said to be the one the manifest names, a module
+    // only when it lists modules (review of beta.25; not in the core: an 8000-token batch's room).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "d42f9f7a96cb6976f3309c1cc764f4b5f0d0119b3c62ed776c126f0a5f8a3c58",
+      "b9b44089293abf163fff1d5838b1f5036bac247a27f65a8aed61ffc0dc022c5f",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

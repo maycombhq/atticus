@@ -9,6 +9,7 @@ import {
   callTargetQuestion,
   declaredCallsOf,
   factIdPart,
+  placedComponentOf,
   joinCallers,
   joinFacts,
   joinTerms,
@@ -1134,7 +1135,7 @@ export function componentRenames(
   const use = (id: string, repo: string) => users.set(id, (users.get(id) ?? new Set()).add(repo));
   for (const { repo, facts } of repos) {
     const fallback = manifests.find((r) => r.id === repo)?.component;
-    for (const f of facts)
+    for (const f of placedFacts(repo, facts, op))
       if (f.kind !== "field") use(factIdPart(f.component ?? fallback ?? repo), repo);
   }
   for (const t of taken) if (users.has(t.id)) use(t.id, t.repo);
@@ -1149,6 +1150,31 @@ export function componentRenames(
   return out;
 }
 
+/**
+ * Review of beta.25: a repo's facts with each one naming a component its manifest doesn't (a
+ * folder's name, in a repo whose entry lists no modules) placed in the repo's component
+ * (`placedComponentOf`), as `atticus verify` places them, so a file verified before projects the
+ * same boxes.
+ */
+function placedFacts(repo: string, facts: readonly Fact[], op: OrgPack): readonly Fact[] {
+  const repos = estateRepos(op);
+  const m = repos.find((r) => r.id === repo);
+  if (!m || m.modules?.length) return facts;
+  const manifest = {
+    component: m.component ?? m.id,
+    prototype: isPrototypeRepo(op, repo),
+    components: repos.flatMap((r) => [
+      r.id,
+      ...(r.component ? [r.component] : []),
+      ...(r.modules ?? []).map((x) => x.component),
+    ]),
+  };
+  return facts.map((f): Fact => {
+    const to = placedComponentOf(f, manifest);
+    return to === undefined ? f : { ...f, component: to };
+  });
+}
+
 /** A repo's facts with its components renamed, the manifest's component filling one left out. */
 function withComponents(
   repo: string,
@@ -1158,7 +1184,7 @@ function withComponents(
 ): Fact[] {
   const fallback = estateRepos(op).find((r) => r.id === repo)?.component;
   const mine = renames?.[repo] ?? {};
-  return facts.map((f): Fact => {
+  return placedFacts(repo, facts, op).map((f): Fact => {
     const c = f.component ?? fallback;
     if (!c) return f;
     const to = mine[factIdPart(c)];

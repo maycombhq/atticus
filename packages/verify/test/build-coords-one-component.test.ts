@@ -5,6 +5,7 @@ import {
   joinDependencies,
   parseFacts,
   parseRecord,
+  projectFacts,
   type CatalogRecord,
   type Fact,
   type FactOf,
@@ -264,6 +265,155 @@ describe("a multi-module repo that ships as one component (review of beta.25)", 
       component: "forge-cards",
       from: "repo",
     });
+  });
+});
+
+// ------------------------------------------------------- forge-ledger: an entry in a folder's box
+const LEDGER: Record<string, string> = {
+  "pom.xml": [
+    "<project>", // 1
+    "  <groupId>forge.ledger</groupId>", // 2
+    "  <artifactId>forge-ledger</artifactId>", // 3
+    "  <dependencies>", // 4
+    "    <dependency>", // 5
+    "      <groupId>forge.payments</groupId>", // 6
+    "      <artifactId>forge-payments-common</artifactId>", // 7
+    "    </dependency>", // 8
+    "  </dependencies>", // 9
+    "</project>", // 10
+  ].join("\n"),
+  "ledger-api/src/main/java/forge/ledger/api/LedgerController.java": [
+    "package forge.ledger.api;", // 1
+    "@RestController", // 2
+    "class LedgerController {", // 3
+    '  @GetMapping("/ledger/{id}") String one(String id) { return id; }', // 4
+    '  @PostMapping("/ledger") String add(String b) { return b; }', // 5
+    "}", // 6
+  ].join("\n"),
+};
+const L = "forge-ledger";
+const CONTROLLER = "ledger-api/src/main/java/forge/ledger/api/LedgerController.java";
+const entry = (id: string, method: string, path: string, line: number, named?: string) =>
+  ({
+    ...base,
+    kind: "entry",
+    repo: L,
+    id,
+    entryType: "rest",
+    method,
+    path,
+    ...(named ? { component: named } : {}),
+    cite: at(CONTROLLER, line, path),
+  }) as Fact;
+const ledgerFacts = (named = "ledger-api"): Fact[] => [
+  artifact(
+    L,
+    "artifact.forge-ledger",
+    "forge-ledger",
+    "forge.ledger",
+    at("pom.xml", 3, "forge-ledger", ["pom.xml", 2, "forge.ledger"]),
+  ),
+  dependency(
+    L,
+    "dependency.common",
+    { group: "forge.payments", name: "forge-payments-common" },
+    at("pom.xml", 7, "forge-payments-common", ["pom.xml", 6, "forge.payments"]),
+  ),
+  // named for the folder the code is in, which the manifest doesn't list
+  entry("entry.get.ledger-id", "get", "/ledger/{id}", 4, named),
+  // naming none: the repo's
+  entry("entry.post.ledger", "post", "/ledger", 5),
+];
+// repos.manifest.yaml: forge-ledger is `component: ledger`, no `modules`
+const LEDGER_ESTATE = {
+  components: ["forge-ledger", "ledger", "forge-payments-common", "payments-common"],
+  repoComponent: { "forge-ledger": "ledger", "forge-payments-common": "payments-common" },
+};
+
+describe("a fact naming a folder's component in a repo that ships as one (review of beta.25)", () => {
+  type Estate = Parameters<typeof verifyFacts>[0]["estate"];
+  const run = (facts: Fact[], estate: Estate | null = LEDGER_ESTATE) =>
+    verifyFacts({
+      facts,
+      source: memorySource(LEDGER),
+      commit: "5555eee",
+      ...(estate ? { estate } : {}),
+    });
+
+  it("places it in the repo's component with a note, never refusing it", async () => {
+    const r = await run(ledgerFacts());
+    expect(r.rejected.map((x) => x.message)).toEqual([]);
+    expect(r.accepted.map((f) => [f.id, f.component])).toEqual([
+      ["artifact.forge-ledger", undefined],
+      ["dependency.common", undefined],
+      ["entry.get.ledger-id", "ledger"],
+      ["entry.post.ledger", undefined],
+    ]);
+    expect(r.componentsPlaced).toEqual([
+      {
+        id: "entry.get.ledger-id",
+        named: "ledger-api",
+        component: "ledger",
+        cite: `${CONTROLLER}:4`,
+      },
+    ]);
+  });
+
+  it("leaves a component the manifest names as it is, and places nothing in a repo with modules", async () => {
+    for (const named of ["ledger", "forge-ledger"]) {
+      const r = await run(ledgerFacts(named));
+      expect(r.accepted.find((f) => f.id === "entry.get.ledger-id")!.component).toBe(named);
+      expect(r.componentsPlaced).toBeUndefined();
+    }
+    const mods = await run(ledgerFacts(), {
+      ...LEDGER_ESTATE,
+      modules: { [L]: [{ path: "ledger-api", component: "ledger-api" }] },
+    });
+    expect(mods.accepted.find((f) => f.id === "entry.get.ledger-id")!.component).toBe("ledger-api");
+    expect(mods.componentsPlaced).toBeUndefined();
+    // a prototype's UI, BFF and mocks are components of their own (ADR 0133)
+    const proto = await run(ledgerFacts(), { ...LEDGER_ESTATE, prototypes: [L] });
+    expect(proto.accepted.find((f) => f.id === "entry.get.ledger-id")!.component).toBe(
+      "ledger-api",
+    );
+    expect(proto.componentsPlaced).toBeUndefined();
+    // no manifest known: nothing is placed
+    const bare = await run(ledgerFacts(), null);
+    expect(bare.accepted.find((f) => f.id === "entry.get.ledger-id")!.component).toBe("ledger-api");
+  });
+
+  it("ends the endpoints and the depends-on arrow in the same ledger box", async () => {
+    const r = await run(ledgerFacts());
+    // the manifest's component for a fact naming none, as a scan's projection gives it
+    const kept = r.accepted.map((f) => (f.component ? f : ({ ...f, component: "ledger" } as Fact)));
+    const projected = projectFacts(kept, { system: "ledger" });
+    expect(projected.records.filter((x) => x.kind === "Component").map((x) => x.id)).toEqual([
+      "ledger",
+    ]);
+    const endpoints = projected.records.filter((x) => x.kind === "Endpoint");
+    expect(endpoints.map((x) => (x as { component: string }).component)).toEqual([
+      "ledger",
+      "ledger",
+    ]);
+    const { links } = joinDependencies({
+      repos: [
+        { repo: L, component: "ledger", facts: r.accepted },
+        { repo: "forge-payments-common", component: "payments-common", facts: libraryFacts() },
+      ],
+    });
+    expect(links.map((l) => [l.from.component, l.to.component])).toEqual([
+      ["ledger", "payments-common"],
+    ]);
+    const est = buildEstate(
+      [...projected.records, component("payments-common", "forge-payments-common", "payments")],
+      { dependsOn: links },
+    );
+    const parents = [...est.kids].filter(([, ks]) => ks.some((k) => k.startsWith("endpoint:")));
+    expect(parents.map(([p]) => p)).toEqual(["component:ledger"]);
+    const v = nodeView(est, "system:ledger", { lens: "architecture", depth: 2 });
+    expect(v.edges.filter((e) => e.type === "depends-on").map((e) => [e.from, e.to])).toEqual([
+      ["component:ledger", "system:payments"],
+    ]);
   });
 });
 

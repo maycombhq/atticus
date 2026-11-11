@@ -86,7 +86,12 @@ const common = {
   id: FactId,
   repo: str(),
   commit: z.string().regex(/^[0-9a-f]{7,64}$/),
-  /** The module in the repo the fact belongs to; the repo itself when left out. */
+  /**
+   * The component the fact belongs to: the component the manifest names (a module only when the
+   * manifest lists modules); the repo's own when left out. Review of beta.25: in a repo whose
+   * manifest lists no modules, one the manifest doesn't name (a folder's) is placed in the repo's
+   * component (`placedComponentOf`), with a note.
+   */
   component: z.string().optional(),
   cite: Cite,
   verified: FactVerified.default("none"),

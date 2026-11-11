@@ -1,4 +1,6 @@
 # Two invented Forge repos, each with a front end it calls frontend (B-fixes, problem 1).
+# Review of beta.25: a module is a component only when the manifest lists it, so each repo's
+# modules are listed (a repo listing none ships as its one component).
 schemaVersion: 1
 platform: forge
 repos:
@@ -7,8 +9,16 @@ repos:
     type: angular
     owner: team-shop
     system: shop
+    modules:
+      - path: frontend
+        component: frontend
   - id: forge-admin
     url: https://git.forge.example/forge/forge-admin.git
     type: spring-boot
     owner: team-shop
     system: shop
+    modules:
+      - path: frontend
+        component: frontend
+      - path: backend
+        component: admin-api

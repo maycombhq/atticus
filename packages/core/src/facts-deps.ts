@@ -59,7 +59,10 @@ export interface DependencyLink {
   published?: DependencyEnd[];
   group: string;
   name: string;
-  /** The dependency's declared scope, when it says one other than compile. */
+  /**
+   * The dependency's declared scope, when it says one other than compile; on a link merged from
+   * several facts (review of beta.25), only when every one of them has it, else left out.
+   */
   scope?: DependencyScope;
   /** The version the dependency declares, when it says one. */
   version?: string;
@@ -192,6 +195,9 @@ export function joinDependencies(input: { repos: readonly JoinRepo[] }): Depende
         // Beta.25: the same dependency on another line, or another coordinate of the library, is
         // on the link too, so marking one wrong never leaves the link standing on another unseen.
         twin.facts!.push(fact);
+        // Review of beta.25: the link's scope is one every fact on it has, else it says none
+        // (a compile kit-api and a runtime kit-core are no runtime link).
+        if (twin.scope !== fact.scope) delete twin.scope;
         if (!twin.published!.some((p) => p.repo === lib.repo && p.fact === lib.fact))
           twin.published!.push(lib);
         continue;

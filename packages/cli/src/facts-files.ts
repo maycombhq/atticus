@@ -7,6 +7,7 @@ import {
   DEFAULT_CONVENTIONS,
   factsDirOf,
   isAdopted,
+  isPrototypeType,
   isSecretPath,
   loadOrgPack,
   orgPackDirOf,
@@ -249,6 +250,12 @@ export interface VerifySummary {
    * that no artifact or dependency fact records. Left out when there are none.
    */
   buildUnrecorded?: VerifyReport["buildUnrecorded"];
+  /**
+   * A note, not a rejection (review of beta.25): the facts that named a component the manifest
+   * doesn't list, in a repo whose manifest lists no modules, each placed in the repo's component.
+   * Left out when there are none.
+   */
+  componentsPlaced?: VerifyReport["componentsPlaced"];
 }
 
 /**
@@ -269,6 +276,8 @@ export async function estateComponentsOf(root: string): Promise<
        * build file of a repo whose entry lists no modules is.
        */
       repoComponent: Record<string, string>;
+      /** Review of beta.25: the prototype repos (ADR 0133), none of whose facts is placed. */
+      prototypes: string[];
     }
   | undefined
 > {
@@ -297,7 +306,14 @@ export async function estateComponentsOf(root: string): Promise<
       modules[r.id] = r.modules.map((m) => ({ path: m.path, component: m.component }));
   const repoComponent: Record<string, string> = {};
   for (const r of repos) repoComponent[r.id] = r.component ?? r.id;
-  return { components: [...new Set(components)].sort(), repoComponents, modules, repoComponent };
+  const prototypes = repos.filter((r) => isPrototypeType(r.type)).map((r) => r.id);
+  return {
+    components: [...new Set(components)].sort(),
+    repoComponents,
+    modules,
+    repoComponent,
+    prototypes,
+  };
 }
 
 /**
@@ -470,6 +486,7 @@ export async function writeVerifyFiles(
     }));
   if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
   if (report.buildUnrecorded?.length) summary.buildUnrecorded = report.buildUnrecorded;
+  if (report.componentsPlaced?.length) summary.componentsPlaced = report.componentsPlaced;
   await writeFileAtomic(join(dir, `${repo}.verify.yaml`), stringify(summary));
   return summary;
 }

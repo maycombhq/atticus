@@ -78,27 +78,77 @@ function fieldsOf(kind: string): readonly string[] {
   return out;
 }
 
-/** Whether two names are at most two letters apart (an edit distance of 2 or less). */
-function near(a: string, b: string): boolean {
-  if (Math.abs(a.length - b.length) > 2) return false;
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++)
-      row[j] = Math.min(
-        prev[j]! + 1,
-        row[j - 1]! + 1,
-        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+/**
+ * How many edits apart two names are: a letter added, dropped or changed, or two side by side
+ * swapped (`complie`, `lnie`), each one edit. More than 2 is said as 3.
+ */
+function edits(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const d: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    d[i] = [i];
+    for (let j = 1; j <= b.length; j++) {
+      if (i === 0) {
+        d[0]![j] = j;
+        continue;
+      }
+      let v = Math.min(
+        d[i - 1]![j]! + 1,
+        d[i]![j - 1]! + 1,
+        d[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
       );
-    prev = row;
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        v = Math.min(v, d[i - 2]![j - 2]! + 1);
+      d[i]![j] = v;
+    }
   }
-  return prev[b.length]! <= 2;
+  return Math.min(d[a.length]![b.length]!, 3);
 }
 
-/** A field name a letter or two from one the kind has: a slip, never a newer Atticus's field. */
-const nearFieldOf = (kind: string, key: string) =>
-  key.length > 3 &&
-  fieldsOf(kind).some((f) => f !== key && near(f.toLowerCase(), key.toLowerCase()));
+/**
+ * A field name that is a slip of one the kind has, never a newer Atticus's field (review of
+ * beta.25): one edit from it (`scpoe`, `groupp`, `verison`), starting with its letter, and not
+ * the field with an `s` (or a `d`) added or dropped, which is another word (`lines`, `scopes`,
+ * `repos`, `named`). A name two edits from a field (`path` and `with`, `code` and `conf`) is a
+ * word of its own: a newer Atticus's field.
+ */
+const nearFieldOf = (kind: string, key: string) => {
+  if (key.length <= 3) return false;
+  const k = key.toLowerCase();
+  return fieldsOf(kind).some((field) => {
+    const f = field.toLowerCase();
+    if (f === k || f[0] !== k[0]) return false;
+    const inflected = [`${f}s`, `${f}d`].includes(k) || [`${k}s`, `${k}d`].includes(f);
+    return !inflected && edits(f, k) === 1;
+  });
+};
+
+/**
+ * A list's value that is a slip of one of its values, two edits or fewer from it (`complie`,
+ * `declard`, `asistant`): the value it may have meant, else undefined (review of beta.25).
+ */
+const meantValueOf = (v: string, values: readonly unknown[]): string | undefined =>
+  values
+    .filter((x): x is string => typeof x === "string")
+    .map((x) => [x, edits(x, v)] as const)
+    .filter(([, n]) => n <= 2)
+    .sort((a, b) => a[1] - b[1])[0]?.[0];
+
+/**
+ * A refused fact's issue as it is said back to the assistant (review of beta.25): a pom's
+ * `system` scope is recorded as `provided` (ADR 0192 addendum §6), and a slip of a list's value
+ * names the value it may have meant.
+ */
+function sayIssue(json: unknown, i: z.core.$ZodIssue): z.core.$ZodIssue {
+  if (i.code !== "invalid_value") return i;
+  const v = valueAt(json, i.path);
+  if (typeof v !== "string") return i;
+  const kind = (json as { kind?: unknown } | null)?.kind;
+  if (kind === "dependency" && i.path.length === 1 && i.path[0] === "scope" && v === "system")
+    return { ...i, message: "record a system-scoped dependency as provided" };
+  const meant = ENUM_VALUE.test(v) ? meantValueOf(v, i.values) : undefined;
+  return meant ? { ...i, message: `${i.message} (did you mean "${meant}"?)` } : i;
+}
 
 const valueAt = (json: unknown, path: readonly PropertyKey[]): unknown => {
   let at: unknown = json;
@@ -111,9 +161,11 @@ const valueAt = (json: unknown, path: readonly PropertyKey[]): unknown => {
 
 /**
  * Review of beta.25: a fact of a kind this Atticus knows that a newer Atticus wrote: every reason
- * it doesn't read is a field this Atticus doesn't know (a name as Atticus writes them) or a value
- * of one of its lists it doesn't know (a lowercase word, as `scope: "shaded"`). Said as such, so
- * the fact is left out on its own and kept as written; anything else wrong is a wrong fact.
+ * it doesn't read is a field this Atticus doesn't know (a name as Atticus writes them, never a
+ * slip of one the kind has: `nearFieldOf`) or a value of one of its lists it doesn't know (a
+ * lowercase word more than two edits from each of the list's values, as `scope: "shaded"`; never
+ * `scope: "system"`, which is recorded as provided). Said as such, so the fact is left out on its
+ * own and kept as written; anything else wrong is a wrong fact, refused for the assistant to fix.
  */
 export function newerShapeOf(
   json: unknown,
@@ -141,6 +193,9 @@ export function newerShapeOf(
     else if (i.code === "invalid_value") {
       const v = valueAt(json, i.path);
       if (typeof v !== "string" || !ENUM_VALUE.test(v)) return undefined;
+      // a slip (`complie`), and a pom's system scope (recorded as provided), are wrong facts
+      if (meantValueOf(v, i.values) !== undefined) return undefined;
+      if (kind === "dependency" && where === "scope" && v === "system") return undefined;
       said.push(`${where} "${v}" is a value this Atticus doesn't know`);
     } else return undefined;
   }
@@ -174,7 +229,7 @@ export function parseFacts(text: string): ParseFactsResult {
       if (r.success) facts.push(r.data);
       else if (newerShapeOf(item, r.error.issues)) newer.push(newerShapeOf(item, r.error.issues)!);
       else
-        for (const iss of r.error.issues)
+        for (const iss of r.error.issues.map((x) => sayIssue(item, x)))
           issues.push({ code: iss.code, message: `${[i, ...iss.path].join(".")}: ${iss.message}` });
     });
     if (issues.length) return { ok: false, issues };
@@ -197,7 +252,7 @@ export function parseFacts(text: string): ParseFactsResult {
     if (r.success) facts.push(r.data);
     else if (newerShapeOf(json, r.error.issues, line))
       newer.push(newerShapeOf(json, r.error.issues, line)!);
-    else for (const iss of r.error.issues) issues.push({ line, ...issueOf(iss) });
+    else for (const iss of r.error.issues) issues.push({ line, ...issueOf(sayIssue(json, iss)) });
   });
   const seen = new Map<string, number>();
   facts.forEach((f, i) => {
@@ -248,7 +303,11 @@ export function parseFactLine(
     const shape = newerShapeOf(json, r.error.issues, line);
     if (shape) return { newer: { ...shape, raw } };
     return {
-      bad: { line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) },
+      bad: {
+        line,
+        raw,
+        issues: r.error.issues.map((iss) => ({ line, ...issueOf(sayIssue(json, iss)) })),
+      },
     };
   }
   if (seen.has(r.data.id))
@@ -338,6 +397,38 @@ export function entryEndpointId(f: FactOf<"entry">, component: string): string {
       ? `on-${idPart(f.path)}`
       : idPart(`${f.method ?? ""} ${f.path}`);
   return `${component}.${name}`;
+}
+
+/**
+ * The component a fact is placed in that names one its repo's manifest doesn't have (review of
+ * beta.25, ADR 0192 addendum §2): a repo whose manifest entry lists no modules ships as its one
+ * component, so a fact (an entry, a call, a store, any but a build's coordinates, which the
+ * verifier refuses instead) naming a component that is neither the repo's own nor one the
+ * manifest names anywhere (`ledger-api`, a folder's name) is the repo's component's, and its
+ * endpoints are in the box its depends-on arrow starts from. Undefined when the fact stays as it
+ * is: it names none, or one the manifest names, or the repo lists modules, or it is a prototype
+ * (ADR 0133: its UI, BFF and mocks are components of their own, read and compared, never
+ * written into the catalog).
+ */
+export function placedComponentOf(
+  f: Fact,
+  manifest: {
+    /** The repo's own component (the manifest's `component`, else its id). */
+    component: string;
+    /** The repo's modules as the manifest lists them. */
+    modules?: readonly unknown[] | undefined;
+    /** Every component (and repo id) the estate's manifests name. */
+    components: readonly string[];
+    /** The repo is a prototype (its manifest `type`). */
+    prototype?: boolean | undefined;
+  },
+): string | undefined {
+  if (f.component === undefined || f.kind === "artifact" || f.kind === "dependency") return;
+  if (manifest.modules?.length || manifest.prototype) return;
+  const c = idPart(f.component);
+  if (c === idPart(manifest.component)) return;
+  if (manifest.components.some((x) => idPart(x) === c)) return;
+  return manifest.component;
 }
 
 /**

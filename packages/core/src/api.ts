@@ -730,7 +730,8 @@ export const HierJoin = z.object({
   run: z.string().optional(),
   /**
    * 3.10.0 (ADR 0192): on a `depends-on` edge's join (`how: coordinates`), the coordinates the
-   * dependency names and the library publishes, and its scope when not compile. `interface` is
+   * dependency names and the library publishes, and its scope when not compile (review of
+   * beta.25: on a link of several facts, only when every one has it). `interface` is
    * then the link's own id (`depends-on:<repo>/<component>><repo>/<component>`, no Interface
    * record), `caller` the dependency's lines in the depending build file, `callee` the lines that
    * publish the coordinates. Left out on a call's join.

@@ -12,6 +12,7 @@ import {
   isBinaryText,
   isLfsPointer,
   noteProblem,
+  placedComponentOf,
   type NumberedNote,
   NEVER_CHECKED_STEPS,
   quoteHoldsSecret,
@@ -312,6 +313,23 @@ export interface VerifyReport {
    * when there are none.
    */
   buildUnrecorded?: BuildUnrecorded[];
+  /**
+   * A note, not a rejection (review of beta.25, ADR 0192 addendum §2): the kept facts that named
+   * a component neither their repo's own nor one the manifest names, in a repo whose manifest
+   * entry lists no modules (`ledger-api`, a folder's name), each placed in the repo's component
+   * (`placedComponentOf`), so its endpoints are in the box its depends-on arrow starts from. In
+   * id order; left out when there are none.
+   */
+  componentsPlaced?: PlacedComponent[];
+}
+
+/** A fact placed in its repo's component: its id, the component it named, where, and the cite. */
+export interface PlacedComponent {
+  id: string;
+  named: string;
+  component: string;
+  /** The fact's own cite, `file:line`. */
+  cite: string;
 }
 
 /** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
@@ -428,6 +446,12 @@ export interface VerifyOptions {
      * of its build files is that component's, whatever folder it is in.
      */
     repoComponent?: Readonly<Record<string, string>>;
+    /**
+     * Review of beta.25: the repos that are prototypes (ADR 0133), whose UI, BFF and mocks are
+     * components of their own however the manifest lists them, so no fact of theirs is placed in
+     * the repo's component (`placedComponentOf`).
+     */
+    prototypes?: readonly string[];
   };
   /**
    * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
@@ -913,6 +937,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const serves = facts.some((f) => f.kind === "entry");
   // ADR 0192 addendum: the module a coordinates fact naming no component is given (its build file's).
   const moduleOf = new Map<string, string>();
+  // Review of beta.25: the component each placed fact named (`placedComponentOf`), by fact id.
+  const placedFrom = new Map<string, string>();
   const repoComponents = new Map(
     Object.entries(o.estate?.repoComponents ?? {}).map(
       ([r, cs]) => [factIdPart(r), new Set(cs.map(factIdPart))] as const,
@@ -1185,6 +1211,21 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // cited line, the group's line is cited too, and a version is written where it says.
     // Beta.25: and the fact's component is the module whose build file it cites, given it when
     // it names none.
+    // Review of beta.25: in a repo whose manifest lists no modules, any other fact naming a
+    // component the manifest doesn't (a folder's name) is placed in the repo's, with a note.
+    const own = o.estate?.repoComponent?.[f.repo];
+    if (own !== undefined && o.estate) {
+      const to = placedComponentOf(f, {
+        component: own,
+        modules: o.estate.modules?.[f.repo],
+        components: o.estate.components,
+        prototype: o.estate.prototypes?.includes(f.repo),
+      });
+      if (to !== undefined) {
+        moduleOf.set(f.id, to);
+        placedFrom.set(f.id, f.component!);
+      }
+    }
     if ((f.kind === "artifact" || f.kind === "dependency") && !found.has(f.id)) {
       const mod = buildModuleOf(
         f,
@@ -1525,6 +1566,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const namedPoms = [...touched].some((p) => isBuildFile(p))
     ? pomFilesNamed(listed(), linesOf)
     : undefined;
+  const placed: PlacedComponent[] = accepted
+    .filter((f) => placedFrom.has(f.id))
+    .map((f) => ({
+      id: f.id,
+      named: placedFrom.get(f.id)!,
+      component: f.component!,
+      cite: `${f.cite.file}:${f.cite.line}`,
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const unrecorded = buildUnrecorded(
     [...touched].filter((p) => isBuildFileIn(p, namedPoms) && insideRepo(p) && !isSecretPath(p)),
     (p) => linesOf(p),
@@ -1568,5 +1618,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     specOpsUncovered,
     frameworkGaps: frameworkGaps(accepted, rules.frameworks),
     ...(unrecorded.length ? { buildUnrecorded: unrecorded } : {}),
+    ...(placed.length ? { componentsPlaced: placed } : {}),
   };
 }

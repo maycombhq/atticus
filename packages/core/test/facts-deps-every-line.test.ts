@@ -151,6 +151,25 @@ describe("every coordinate of one pair of components is one link (review of beta
     expect(l.published!.map((p) => p.at)).toEqual(["kit-api/pom.xml:7", "kit-core/pom.xml:8"]);
   });
 
+  it("says a merged link's scope only when every fact on it has that scope", () => {
+    const runtime = (f: Fact) => ({ ...f, scope: "runtime" }) as Fact;
+    // kit-api compile, kit-core runtime: the link says no scope (each fact still says its own)
+    const mixed = joinDependencies({ repos: [kit, wallets(two)] }).links[0]!;
+    expect(mixed.scope).toBeUndefined();
+    expect(mixed.facts!.map((f) => f.scope)).toEqual([undefined, "runtime"]);
+    // the first runtime, the second compile: none either
+    const first = joinDependencies({
+      repos: [kit, wallets([runtime(two[0]!), { ...two[1]!, scope: undefined } as Fact])],
+    }).links[0]!;
+    expect(first.scope).toBeUndefined();
+    // both runtime: the link's scope is runtime
+    const both = joinDependencies({ repos: [kit, wallets(two.map(runtime))] }).links[0]!;
+    expect(both.scope).toBe("runtime");
+    // runtime and provided: none
+    const two2 = [runtime(two[0]!), { ...two[1]!, scope: "provided" } as Fact];
+    expect(joinDependencies({ repos: [kit, wallets(two2)] }).links[0]!.scope).toBeUndefined();
+  });
+
   it("takes the arrow away only once every coordinate's fact is wrong", () => {
     const after = (ids: string[]) =>
       joinDependencies({ repos: [kit, wallets(two.filter((f) => !ids.includes(f.id)))] }).links;
