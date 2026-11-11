@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApplyAndPropose } from "../app/propose.js";
 import { RunStep, stepArgs } from "../app/runstep.js";
 import type { Api, Question } from "@maycombhq/core";
 import { api, callAsJob, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
-import { Panel, View } from "../app/ui.js";
+import { View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
@@ -12,6 +12,7 @@ import { queryParam } from "./know/common.js";
 import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 import { AiChip, AiMark, isAiBy, readyView, SplitCounts, useDecisions } from "../app/decisions.js";
 import { RouteQuestion } from "./RouteQuestion.js";
+import "./questions.css";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -81,8 +82,8 @@ export function ProposalView(p: {
   const { question: q, proposal: x } = p;
   const head = `proposal-${q.id}`;
   return (
-    <section aria-labelledby={head} className="stack" style={{ gap: 6 }}>
-      <h3 id={head} className="hud" style={{ margin: 0, fontSize: 10 }}>
+    <section aria-labelledby={head} className="qs-section qs-proposal">
+      <h3 id={head} className="qs-label">
         {P.title}
       </h3>
       <p className="muted" style={{ margin: 0 }}>
@@ -96,10 +97,8 @@ export function ProposalView(p: {
         </strong>
       </p>
       <p style={{ margin: 0 }}>{x.why}</p>
-      <h4 className="hud" style={{ margin: 0, fontSize: 10 }}>
-        {P.cites}
-      </h4>
-      <ul style={{ margin: 0 }}>
+      <h4 className="qs-label">{P.cites}</h4>
+      <ul className="qs-cites">
         {x.cites.map((c) => (
           <li key={`${c.repo ?? q.repo}:${c.file}:${c.line}`}>
             <span className="mono">
@@ -109,11 +108,11 @@ export function ProposalView(p: {
           </li>
         ))}
       </ul>
-      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="qs-group-btns">
         <button type="button" className="btn primary" disabled={p.busy} onClick={p.onAccept}>
           {p.busy ? P.accepting : P.accept}
         </button>
-        <code className="mono">{P.command(q.id)}</code>
+        <code className="mono qs-cmd">{P.command(q.id)}</code>
         <CopyButton text={P.command(q.id)} label={C.copy} />
       </div>
       <p className="muted" style={{ margin: 0 }}>
@@ -200,8 +199,8 @@ export function TargetPickerView(p: {
     ) : null;
   };
   return (
-    <div className="stack" style={{ gap: 6, marginLeft: 24 }}>
-      <label htmlFor={`${name}-pick`} className="hud" style={{ fontSize: 10 }}>
+    <div className="qs-sub">
+      <label htmlFor={`${name}-pick`} className="qs-label">
         {A.label}
       </label>
       <select
@@ -215,7 +214,7 @@ export function TargetPickerView(p: {
         {group("system", A.systems)}
         {group("team", A.teams)}
       </select>
-      <label htmlFor={`${name}-new`} className="hud" style={{ fontSize: 10 }}>
+      <label htmlFor={`${name}-new`} className="qs-label">
         {A.newVendor}
       </label>
       <input
@@ -225,11 +224,11 @@ export function TargetPickerView(p: {
         aria-describedby={`${name}-new-d`}
         onChange={(e) => pickTo(undefined, e.target.value)}
       />
-      <span id={`${name}-new-d`} className="muted" style={{ fontSize: 12 }}>
+      <span id={`${name}-new-d`} className="qs-hint">
         {A.newVendorHint}
       </span>
       {p.form.needsSystem && (
-        <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+        <div className="qs-check">
           <input
             type="checkbox"
             id={`${name}-add`}
@@ -259,23 +258,18 @@ type Excerpt = Api.QuestionEvidenceListT["excerpts"][number];
  */
 export function ExcerptView({ e }: { e: Excerpt }) {
   return (
-    <figure style={{ margin: 0 }}>
+    <figure className="qs-excerpt">
       <figcaption>
         <code className="mono">{e.ref}</code>
-        {!e.found && (
-          <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
-            {C.notShown}
-          </span>
-        )}
+        {!e.found && <span className="muted">{C.notShown}</span>}
       </figcaption>
       {e.found && (
         <pre
-          className="mono"
+          className="mono qs-code"
           // UX re-walk (axe): a code excerpt that scrolls can be reached and scrolled by keyboard.
           tabIndex={0}
           role="region"
           aria-label={C.excerptOf(e.ref)}
-          style={{ margin: "4px 0 0", fontSize: 12, overflowX: "auto" }}
         >
           {e.lines.map((l, i) => {
             const n = e.start + i;
@@ -297,7 +291,7 @@ function Evidence({ id, refs }: { id: string; refs: string[] }) {
   const ex = useApi<Api.QuestionEvidenceListT>(`/api/questions/${id}/evidence`);
   if (ex.state !== "ready")
     return (
-      <ul style={{ margin: 0, paddingLeft: 18 }}>
+      <ul className="qs-refs">
         {refs.map((e) => (
           <li key={e}>
             <code className="mono">{e}</code>
@@ -306,7 +300,7 @@ function Evidence({ id, refs }: { id: string; refs: string[] }) {
       </ul>
     );
   return (
-    <div className="stack" style={{ gap: 8 }}>
+    <div className="qs-excerpts">
       {ex.data.excerpts.map((e) => (
         <ExcerptView key={e.ref} e={e} />
       ))}
@@ -498,7 +492,7 @@ export function QuestionList(p: {
         return (
           <div className="stack" style={{ gap: 8 }}>
             {d.me && (
-              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              <p className="qs-note">
                 {d.me.teams.length
                   ? C.mineTeams(d.me.teams.map((t) => t.name ?? t.id).join(", "))
                   : d.questions.length
@@ -712,7 +706,7 @@ export const isMapQuestion = (q: QuestionView) =>
 /** What happened after the answer was saved: the file, the skill file, the command to run next. */
 export function AnsweredView({ result }: { result: AnsweredResult }) {
   return (
-    <div role="status" ref={focusOnShow} tabIndex={-1} className="stack" style={{ gap: 6 }}>
+    <div role="status" ref={focusOnShow} tabIndex={-1} className="qs-done">
       <p style={{ margin: 0 }}>{C.saved(`questions/${result.question.id}.yaml`)}</p>
       {result.system?.added && (
         <p style={{ margin: 0 }}>{C.another.added(result.system.id, result.system.profile)}</p>
@@ -739,7 +733,7 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
       )}
       <details className="work-terminal">
         <summary>{C.orCommandLine}</summary>
-        <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="work-cmd">
           <code className="mono">{result.rerun}</code>
           <CopyButton text={result.rerun} label={C.copy} />
         </div>
@@ -827,14 +821,191 @@ export function QuestionDetail(p: {
     }
   };
   const name = `q-${q.id}`;
+  const folded = !!q.answer && !done;
+  const answerForm = (
+    <form className="qs-form" onSubmit={(e) => void submit(e)} noValidate>
+      <fieldset className="qs-section">
+        <legend>{q.answer && !folded ? C.change : C.options}</legend>
+        <div className="qs-opts">
+          {q.options.map((o, i) => {
+            const id = `${name}-o${i + 1}`;
+            // Beta.24 review: Ignore is offered below, with its reason, for every join question.
+            if (joinStep && o.label === IGNORE_LABEL) return null;
+            const picker = PICKER_OPTIONS[q.askedBy.step] === o.label;
+            return (
+              <Fragment key={id}>
+                <div className="qs-opt">
+                  <input
+                    type="radio"
+                    id={id}
+                    name={`${name}-pick`}
+                    checked={form.pick === i + 1}
+                    onChange={() => set({ pick: i + 1, another: picker })}
+                    aria-describedby={`${id}-d`}
+                  />
+                  <label htmlFor={id}>
+                    <span className="qs-opt-label">
+                      <span className="qs-opt-num">{i + 1}.</span> {o.label}
+                    </span>
+                    <span id={`${id}-d`} className="qs-opt-d">
+                      {sentence(o.means)} {C.optionChanges}: {sentence(changesInWords(o.changes))}
+                    </span>
+                  </label>
+                </div>
+                {picker && form.another && <TargetPicker id={q.id} form={form} set={set} />}
+              </Fragment>
+            );
+          })}
+          {joinStep && (
+            <div className="qs-opt">
+              <input
+                type="radio"
+                id={`${name}-ignore`}
+                name={`${name}-pick`}
+                checked={form.pick === "ignore"}
+                onChange={() => set({ pick: "ignore", another: false })}
+                aria-describedby={`${name}-ignore-d`}
+              />
+              <label htmlFor={`${name}-ignore`}>
+                <span className="qs-opt-label">{IGNORE_LABEL}</span>
+                <span id={`${name}-ignore-d`} className="qs-opt-d">
+                  {C.ignore.means}
+                </span>
+              </label>
+            </div>
+          )}
+          {form.pick === "ignore" && (
+            <div className="qs-sub">
+              <label htmlFor={`${name}-reason`} className="qs-label">
+                {C.ignore.reason}
+              </label>
+              <input
+                id={`${name}-reason`}
+                className="field"
+                maxLength={300}
+                value={form.reason ?? ""}
+                onChange={(e) => set({ reason: e.target.value })}
+              />
+            </div>
+          )}
+          <div className="qs-opt">
+            <input
+              type="radio"
+              id={`${name}-words`}
+              name={`${name}-pick`}
+              checked={form.pick === "words"}
+              onChange={() => set({ pick: "words", another: false })}
+            />
+            <label htmlFor={`${name}-words`}>
+              <span className="qs-opt-label">{C.ownWords}</span>
+            </label>
+          </div>
+          {form.pick === "words" && (
+            <div className="qs-sub">
+              <label htmlFor={`${name}-text`} className="qs-label">
+                {C.ownWordsLabel}
+              </label>
+              <textarea
+                id={`${name}-text`}
+                className="field"
+                rows={3}
+                value={form.text}
+                {...(joinStep ? { "aria-describedby": `${name}-text-d` } : {})}
+                onChange={(e) => set({ text: e.target.value })}
+              />
+              {joinStep && (
+                <span id={`${name}-text-d`} className="qs-hint">
+                  {C.ownWordsJoin}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </fieldset>
+      <fieldset className="qs-section">
+        <legend>{C.scope}</legend>
+        <div className="qs-scope">
+          <div className="qs-radio">
+            <input
+              type="radio"
+              id={`${name}-repo`}
+              name={`${name}-scope`}
+              checked={form.scope === "repo"}
+              onChange={() => set({ scope: "repo" })}
+            />
+            <label htmlFor={`${name}-repo`}>
+              {isChangeQuestion(q) ? C.scopeChange(q.repo) : C.scopeRepo(q.repo)}
+              {q.scope.level === "repo" ? ` (${C.proposed})` : ""}
+            </label>
+          </div>
+          <div className="qs-radio">
+            <input
+              type="radio"
+              id={`${name}-type`}
+              name={`${name}-scope`}
+              checked={form.scope === "repo-type"}
+              onChange={() => set({ scope: "repo-type" })}
+            />
+            <label htmlFor={`${name}-type`}>
+              {q.scope.level === "repo-type"
+                ? `${C.scopeType(q.scope.id)} (${C.proposed})`
+                : C.scopeTypeOther}
+            </label>
+          </div>
+        </div>
+        {form.scope === "repo-type" && q.scope.level !== "repo-type" && (
+          <div className="qs-field">
+            <label htmlFor={`${name}-type-id`} className="qs-field-label">
+              {C.typeLabel}
+            </label>
+            <input
+              id={`${name}-type-id`}
+              className="field"
+              value={form.repoType}
+              onChange={(e) => set({ repoType: e.target.value })}
+            />
+          </div>
+        )}
+      </fieldset>
+      {RULE_STEPS.has(q.askedBy.step) && (
+        <div className="qs-field">
+          <label htmlFor={`${name}-match`} className="qs-field-label">
+            {C.rule.label}
+          </label>
+          <input
+            id={`${name}-match`}
+            className="field mono"
+            value={form.match ?? ""}
+            aria-describedby={`${name}-match-d`}
+            onChange={(e) => set({ match: e.target.value })}
+          />
+          <span id={`${name}-match-d`} className="qs-hint">
+            {offer ? `${C.rule.offer(offer.ids.length, offer.calls, offer.match)} ` : ""}
+            {C.rule.hint}
+          </span>
+        </div>
+      )}
+      <div className="qs-actions">
+        {error && (
+          <p role="alert" className="state error" style={{ margin: 0 }}>
+            {error}
+          </p>
+        )}
+        <button type="submit" className="btn primary" disabled={busy}>
+          {busy ? C.saving : C.submit}
+        </button>
+      </div>
+    </form>
+  );
   return (
-    <div className="stack" style={{ gap: 12 }}>
-      <h2 className="h" style={{ margin: 0 }}>
-        {q.question}
-      </h2>
-      <p className="hud" style={{ margin: 0, fontSize: 10 }}>
-        {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} · {forRole ? `${forRole} · ` : ""}
-        <code className="mono">{q.id}</code> <CopyButton text={q.id} label={C.copyId} />
+    <div className="qs-detail">
+      <h2 className="qs-q">{q.question}</h2>
+      <p className="qs-meta">
+        <span>
+          {askedByWords(q.askedBy, day(q.askedBy.at))} · {q.repo} · {forRole ? `${forRole} · ` : ""}
+          <code className="mono">{q.id}</code>
+        </span>
+        <CopyButton text={q.id} label={C.copyId} />
       </p>
       {/* ADR 0191: who answers it is by what it asks; a person sends it to another role. */}
       {q.state !== "retired" && (
@@ -846,14 +1017,14 @@ export function QuestionDetail(p: {
           {...(p.onRouted ? { onRouted: p.onRouted } : {})}
         />
       )}
-      <div>
-        <h3 className="hud" style={{ margin: "0 0 4px", fontSize: 10 }}>
+      <section className="qs-section" aria-labelledby={`${name}-read`}>
+        <h3 id={`${name}-read`} className="qs-label">
           {C.evidence}
         </h3>
         <Evidence id={q.id} refs={q.evidence} />
-      </div>
+      </section>
       {q.answer && (
-        <div className="stack" style={{ gap: 4 }}>
+        <div className="qs-answered">
           <p style={{ margin: 0 }}>
             {/* ADR 0181: an AI answer is the AI's, never a person's: said so, with its chip. */}
             {ignored && !isAiBy(q.answer.by) ? (
@@ -877,6 +1048,30 @@ export function QuestionDetail(p: {
               onClose={() => setCorrecting(false)}
             />
           )}
+          {q.answer.proposal && (
+            <>
+              <p className="muted" style={{ margin: 0 }}>
+                {/* Ninth UX walk: an AI answer was applied by Atticus, never confirmed by a person. */}
+                {isAiBy(q.answer.by)
+                  ? C.fromAiProposal(
+                      q.answer.proposal.by,
+                      day(q.answer.proposal.at),
+                      q.answer.by.run,
+                    )
+                  : C.fromProposal(q.answer.proposal.by, day(q.answer.proposal.at))}
+              </p>
+              <ul className="qs-cites">
+                {q.answer.proposal.cites.map((c) => (
+                  <li key={`${c.repo ?? q.repo}:${c.file}:${c.line}`}>
+                    <span className="mono">
+                      {c.repo ?? q.repo} {c.file}:{c.line}
+                    </span>{" "}
+                    <q>{c.quote}</q>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
       {q.state === "answered" && !done && applyRepoOf(q.rerun) && (
@@ -890,26 +1085,6 @@ export function QuestionDetail(p: {
             day(q.reopened.at),
           )}
         </p>
-      )}
-      {q.answer?.proposal && (
-        <div className="stack" style={{ gap: 4 }}>
-          <p className="muted" style={{ margin: 0 }}>
-            {/* Ninth UX walk: an AI answer was applied by Atticus, never confirmed by a person. */}
-            {isAiBy(q.answer.by)
-              ? C.fromAiProposal(q.answer.proposal.by, day(q.answer.proposal.at), q.answer.by.run)
-              : C.fromProposal(q.answer.proposal.by, day(q.answer.proposal.at))}
-          </p>
-          <ul style={{ margin: 0 }}>
-            {q.answer.proposal.cites.map((c) => (
-              <li key={`${c.repo ?? q.repo}:${c.file}:${c.line}`}>
-                <span className="mono">
-                  {c.repo ?? q.repo} {c.file}:{c.line}
-                </span>{" "}
-                <q>{c.quote}</q>
-              </li>
-            ))}
-          </ul>
-        </div>
       )}
       {q.state === "open" && p.proposal && !done && (
         <ProposalView
@@ -926,184 +1101,34 @@ export function QuestionDetail(p: {
         <p className="ev-say" style={{ margin: 0 }}>
           {C.changeAiAnswer}
         </p>
+      ) : folded ? (
+        // Beta.26: an answer given stays short; changing it opens the form in place.
+        <details className="qs-change">
+          <summary>{C.change}</summary>
+          {answerForm}
+        </details>
       ) : (
-        <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)} noValidate>
-          <fieldset className="stack" style={{ gap: 6, border: 0, padding: 0, margin: 0 }}>
-            <legend className="hud" style={{ fontSize: 10, marginBottom: 4 }}>
-              {q.answer ? C.change : C.options}
-            </legend>
-            {q.options.map((o, i) => {
-              const id = `${name}-o${i + 1}`;
-              // Beta.24 review: Ignore is offered below, with its reason, for every join question.
-              if (joinStep && o.label === IGNORE_LABEL) return null;
-              return (
-                <div key={id} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-                  <input
-                    type="radio"
-                    id={id}
-                    name={`${name}-pick`}
-                    checked={form.pick === i + 1}
-                    onChange={() =>
-                      set({
-                        pick: i + 1,
-                        another: PICKER_OPTIONS[q.askedBy.step] === o.label,
-                      })
-                    }
-                    aria-describedby={`${id}-d`}
-                  />
-                  <label htmlFor={id} className="stack" style={{ gap: 2 }}>
-                    <span>
-                      {i + 1}. {o.label}
-                    </span>
-                    <span id={`${id}-d`} className="muted" style={{ fontSize: 12 }}>
-                      {sentence(o.means)} {C.optionChanges}: {sentence(changesInWords(o.changes))}
-                    </span>
-                  </label>
-                </div>
-              );
-            })}
-            {form.another && <TargetPicker id={q.id} form={form} set={set} />}
-            {joinStep && (
-              <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-                <input
-                  type="radio"
-                  id={`${name}-ignore`}
-                  name={`${name}-pick`}
-                  checked={form.pick === "ignore"}
-                  onChange={() => set({ pick: "ignore", another: false })}
-                  aria-describedby={`${name}-ignore-d`}
-                />
-                <label htmlFor={`${name}-ignore`} className="stack" style={{ gap: 2 }}>
-                  <span>{IGNORE_LABEL}</span>
-                  <span id={`${name}-ignore-d`} className="muted" style={{ fontSize: 12 }}>
-                    {C.ignore.means}
-                  </span>
-                </label>
-              </div>
-            )}
-            {form.pick === "ignore" && (
-              <div className="stack" style={{ gap: 4, marginLeft: 24 }}>
-                <label htmlFor={`${name}-reason`} className="hud" style={{ fontSize: 10 }}>
-                  {C.ignore.reason}
-                </label>
-                <input
-                  id={`${name}-reason`}
-                  className="field"
-                  maxLength={300}
-                  value={form.reason ?? ""}
-                  onChange={(e) => set({ reason: e.target.value })}
-                />
-              </div>
-            )}
-            <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-              <input
-                type="radio"
-                id={`${name}-words`}
-                name={`${name}-pick`}
-                checked={form.pick === "words"}
-                onChange={() => set({ pick: "words", another: false })}
-              />
-              <label htmlFor={`${name}-words`}>{C.ownWords}</label>
-            </div>
-            {form.pick === "words" && (
-              <div className="stack" style={{ gap: 4 }}>
-                <label htmlFor={`${name}-text`} className="hud" style={{ fontSize: 10 }}>
-                  {C.ownWordsLabel}
-                </label>
-                <textarea
-                  id={`${name}-text`}
-                  className="field"
-                  rows={3}
-                  value={form.text}
-                  {...(joinStep ? { "aria-describedby": `${name}-text-d` } : {})}
-                  onChange={(e) => set({ text: e.target.value })}
-                />
-                {joinStep && (
-                  <span id={`${name}-text-d`} className="muted" style={{ fontSize: 12 }}>
-                    {C.ownWordsJoin}
-                  </span>
-                )}
-              </div>
-            )}
-          </fieldset>
-          <fieldset className="stack" style={{ gap: 6, border: 0, padding: 0, margin: 0 }}>
-            <legend className="hud" style={{ fontSize: 10, marginBottom: 4 }}>
-              {C.scope}
-            </legend>
-            <div className="row" style={{ gap: 8 }}>
-              <input
-                type="radio"
-                id={`${name}-repo`}
-                name={`${name}-scope`}
-                checked={form.scope === "repo"}
-                onChange={() => set({ scope: "repo" })}
-              />
-              <label htmlFor={`${name}-repo`}>
-                {isChangeQuestion(q) ? C.scopeChange(q.repo) : C.scopeRepo(q.repo)}
-                {q.scope.level === "repo" ? ` (${C.proposed})` : ""}
-              </label>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <input
-                type="radio"
-                id={`${name}-type`}
-                name={`${name}-scope`}
-                checked={form.scope === "repo-type"}
-                onChange={() => set({ scope: "repo-type" })}
-              />
-              <label htmlFor={`${name}-type`}>
-                {q.scope.level === "repo-type"
-                  ? `${C.scopeType(q.scope.id)} (${C.proposed})`
-                  : C.scopeTypeOther}
-              </label>
-            </div>
-            {form.scope === "repo-type" && q.scope.level !== "repo-type" && (
-              <div className="stack" style={{ gap: 4 }}>
-                <label htmlFor={`${name}-type-id`} className="hud" style={{ fontSize: 10 }}>
-                  {C.typeLabel}
-                </label>
-                <input
-                  id={`${name}-type-id`}
-                  className="field"
-                  value={form.repoType}
-                  onChange={(e) => set({ repoType: e.target.value })}
-                />
-              </div>
-            )}
-          </fieldset>
-          {RULE_STEPS.has(q.askedBy.step) && (
-            <div className="stack" style={{ gap: 4 }}>
-              <label htmlFor={`${name}-match`} className="hud" style={{ fontSize: 10 }}>
-                {C.rule.label}
-              </label>
-              <input
-                id={`${name}-match`}
-                className="field mono"
-                value={form.match ?? ""}
-                aria-describedby={`${name}-match-d`}
-                onChange={(e) => set({ match: e.target.value })}
-              />
-              <span id={`${name}-match-d`} className="muted" style={{ fontSize: 12 }}>
-                {offer ? `${C.rule.offer(offer.ids.length, offer.calls, offer.match)} ` : ""}
-                {C.rule.hint}
-              </span>
-            </div>
-          )}
-          {error && (
-            <p role="alert" className="state error" style={{ margin: 0 }}>
-              {error}
-            </p>
-          )}
-          <div>
-            <button type="submit" className="btn primary" disabled={busy}>
-              {busy ? C.saving : C.submit}
-            </button>
-          </div>
-        </form>
+        answerForm
       )}
       {done && <AnsweredView result={done} />}
     </div>
   );
+}
+
+/**
+ * Beta.26: focus moves to the question opened (WCAG 2.4.3) without the page jumping: its side of
+ * the page shows the question from its top, and the page's head and filters stay where they are.
+ */
+export function focusInPlace(
+  el: {
+    focus: (o?: FocusOptions) => void;
+    closest?: (selector: string) => { scrollTop: number } | null;
+  } | null,
+): void {
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  const pane = el.closest?.(".qs-pane");
+  if (pane) pane.scrollTop = 0;
 }
 
 function Detail({
@@ -1126,10 +1151,10 @@ function Detail({
   const heading = useRef<HTMLDivElement>(null);
   // Move focus to the question when it opens from the list, for keyboard and screen reader users.
   useEffect(() => {
-    if (q.state === "ready") heading.current?.focus();
+    if (q.state === "ready") focusInPlace(heading.current);
   }, [q.state, id]);
   return (
-    <div ref={heading} tabIndex={-1}>
+    <div ref={heading} tabIndex={-1} className="qs-focus">
       <View of={q}>
         {(d) => (
           <QuestionDetail
@@ -1175,13 +1200,7 @@ export function BulkResultView({ r, onDismiss }: { r: BulkResult; onDismiss: () 
     ref.current?.focus();
   }, [r]);
   return (
-    <div
-      role="status"
-      className="stack"
-      tabIndex={-1}
-      ref={ref}
-      style={{ gap: 4, marginBottom: 10 }}
-    >
+    <div role="status" className="qs-done" tabIndex={-1} ref={ref} style={{ marginBottom: 10 }}>
       <p className="state" style={{ margin: 0 }}>
         {C.bulk.done(r.ok.length)}
       </p>
@@ -1191,7 +1210,7 @@ export function BulkResultView({ r, onDismiss }: { r: BulkResult; onDismiss: () 
         </p>
       ))}
       {r.ok.length > 0 && <code className="mono">{C.bulk.next}</code>}
-      <div>
+      <div className="qs-group-btns">
         <button type="button" className="btn" onClick={onDismiss}>
           {COPY.app.dismiss}
         </button>
@@ -1241,10 +1260,8 @@ export function BulkAnswer(p: {
     p.onDone({ ok, failed });
   };
   return (
-    <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)} noValidate>
-      <h2 className="h" style={{ margin: 0 }}>
-        {C.bulk.title(p.ids.length)}
-      </h2>
+    <form className="qs-detail" onSubmit={(e) => void submit(e)} noValidate>
+      <h2 className="qs-q">{C.bulk.title(p.ids.length)}</h2>
       <ul className="q-bulk-list">
         {p.questions.slice(0, 8).map((q) => (
           <li key={q.id}>
@@ -1264,35 +1281,37 @@ export function BulkAnswer(p: {
           onChange={setHow}
         />
       )}
-      <label htmlFor="bulk-value" className="hud" style={{ fontSize: 10 }}>
-        {how === "target" ? C.bulk.targetLabel : C.ownWords}
-      </label>
-      <input
-        id="bulk-value"
-        className="field"
-        list={how === "target" ? "bulk-picks" : undefined}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        aria-describedby="bulk-hint"
-      />
-      {how === "target" && picks.state === "ready" && (
-        <datalist id="bulk-picks">
-          {picks.data.picks.map((x) => (
-            <option key={`${x.kind}:${x.id}`} value={x.id}>
-              {x.name} ({x.kind})
-            </option>
-          ))}
-        </datalist>
-      )}
-      <span id="bulk-hint" className="muted" style={{ fontSize: 12 }}>
-        {C.bulk.hint}
-      </span>
-      {error && (
-        <p role="alert" className="state error" style={{ margin: 0 }}>
-          {error}
-        </p>
-      )}
-      <div className="row" style={{ gap: 8 }}>
+      <div className="qs-field">
+        <label htmlFor="bulk-value" className="qs-field-label">
+          {how === "target" ? C.bulk.targetLabel : C.ownWords}
+        </label>
+        <input
+          id="bulk-value"
+          className="field"
+          list={how === "target" ? "bulk-picks" : undefined}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-describedby="bulk-hint"
+        />
+        {how === "target" && picks.state === "ready" && (
+          <datalist id="bulk-picks">
+            {picks.data.picks.map((x) => (
+              <option key={`${x.kind}:${x.id}`} value={x.id}>
+                {x.name} ({x.kind})
+              </option>
+            ))}
+          </datalist>
+        )}
+        <span id="bulk-hint" className="qs-hint">
+          {C.bulk.hint}
+        </span>
+      </div>
+      <div className="qs-actions">
+        {error && (
+          <p role="alert" className="state error" style={{ margin: 0 }}>
+            {error}
+          </p>
+        )}
         <button type="submit" className="btn primary" disabled={busy}>
           {busy ? C.bulk.busy : C.bulk.submit(p.ids.length)}
         </button>
@@ -1365,17 +1384,11 @@ export function AskAiToProposeView(p: {
       : P.askWhy;
   const waiting = p.handoff?.state === "waiting" && p.handoff.run ? p.handoff : undefined;
   return (
-    <section
-      aria-labelledby="ask-ai-propose"
-      className="stack"
-      style={{ gap: 6, margin: "0 0 12px" }}
-    >
-      <h2 id="ask-ai-propose" className="hud" style={{ margin: 0, fontSize: 11 }}>
+    <section aria-labelledby="ask-ai-propose" className="qs-ai">
+      <h2 id="ask-ai-propose" className="qs-label">
         {P.askTitle}
       </h2>
-      <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>
-        {why}
-      </p>
+      <p className="qs-ai-why">{why}</p>
       {waiting ? (
         <>
           <p className="work-say" role="status" style={{ margin: 0 }}>
@@ -1386,7 +1399,7 @@ export function AskAiToProposeView(p: {
             <CopyButton text={slash} label={`${P.askCopy}: ${slash}`} />
           </div>
           {p.onDone && (
-            <div className="row" style={{ gap: 8 }}>
+            <div className="qs-group-btns">
               <button
                 type="button"
                 className="btn primary"
@@ -1413,7 +1426,7 @@ export function AskAiToProposeView(p: {
       ) : (
         <>
           {p.onHandoff && p.open > 0 && (
-            <div className="row" style={{ gap: 8 }}>
+            <div className="qs-group-btns">
               <button
                 type="button"
                 className="btn"
@@ -1580,13 +1593,11 @@ export function scopeToChange<L extends Loaded<QuestionListView>>(
 /** The page's opening words: a change's own, or the map's. */
 export function QuestionsIntro({ change }: { change?: string | undefined }) {
   return change ? (
-    <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
+    <p className="qs-intro">
       {C.changeIntro(change)} {C.onlyChange(change)} <a href="#/questions">{C.showAll}</a>
     </p>
   ) : (
-    <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-      {C.intro}
-    </p>
+    <p className="qs-intro">{C.intro}</p>
   );
 }
 
@@ -1636,11 +1647,9 @@ export function Questions({ hash }: { hash: string }) {
     ]),
   ].sort((a, b) => a.localeCompare(b));
   return (
-    <>
-      <div className="row between" style={{ flexWrap: "wrap" }}>
-        <p className="n" style={{ margin: 0, fontSize: 24 }}>
-          {C.title}
-        </p>
+    <div className="qs">
+      <div className="qs-head">
+        <p className="qs-title">{C.title}</p>
         <Choice
           label={C.kind}
           value={kind}
@@ -1659,78 +1668,83 @@ export function Questions({ hash }: { hash: string }) {
       </div>
       {kind === "owner" ? (
         <>
-          <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-            {C.ownerQuestions.intro}
-          </p>
-          <section className="stack" aria-label={C.ownerQuestions.title}>
+          <p className="qs-intro">{C.ownerQuestions.intro}</p>
+          <section className="qs-counts" aria-label={C.ownerQuestions.title}>
             <OwnerQuestionList of={owner} onAnswered={owner.reload} />
           </section>
         </>
       ) : (
         <>
-          <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <FilterBox id={FILTER_ID} value={text} onChange={setText} />
-              {/* A change's questions are one change's, so no repo to pick among. */}
-              {!forChange && (
-                <div className="stack" style={{ gap: 4 }}>
-                  <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
-                    {COPY.filter.repo}
-                  </label>
-                  <select
-                    id="questions-repo"
-                    className="field"
-                    value={repo}
-                    onChange={(e) => setRepo(e.target.value)}
-                  >
-                    <option value="">{COPY.filter.allRepos}</option>
-                    {repos.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <RoleFilter
-                value={scope.role}
-                onChange={(r) => setScope((x) => scopeWithRole(x, r))}
-                byRole={list.state === "ready" ? list.data.counts?.byRole : undefined}
-                yours={list.state === "ready" ? list.data.yourRoles : undefined}
-              />
-              <Choice
-                label={C.whose}
-                value={whose}
-                options={[
-                  { value: "all", label: C.whoseAll },
-                  { value: "mine", label: C.whoseMine },
-                ]}
-                onChange={setWhose}
-              />
-              <Choice
-                label={C.filter}
-                value={filter}
-                options={[
-                  { value: "open", label: C.filterOpen },
-                  { value: "all", label: C.filterAll },
-                ]}
-                onChange={setFilter}
-              />
-            </div>
+          <div className="qs-tools">
+            <FilterBox id={FILTER_ID} value={text} onChange={setText} />
+            {/* A change's questions are one change's, so no repo to pick among. */}
+            {!forChange && (
+              <div className="qs-field">
+                <label htmlFor="questions-repo" className="qs-field-label">
+                  {COPY.filter.repo}
+                </label>
+                <select
+                  id="questions-repo"
+                  className="field"
+                  value={repo}
+                  onChange={(e) => setRepo(e.target.value)}
+                >
+                  <option value="">{COPY.filter.allRepos}</option>
+                  {repos.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <RoleFilter
+              value={scope.role}
+              onChange={(r) => setScope((x) => scopeWithRole(x, r))}
+              byRole={list.state === "ready" ? list.data.counts?.byRole : undefined}
+              yours={list.state === "ready" ? list.data.yourRoles : undefined}
+            />
+            <Choice
+              label={C.whose}
+              value={whose}
+              options={[
+                { value: "all", label: C.whoseAll },
+                { value: "mine", label: C.whoseMine },
+              ]}
+              onChange={setWhose}
+            />
+            <Choice
+              label={C.filter}
+              value={filter}
+              options={[
+                { value: "open", label: C.filterOpen },
+                { value: "all", label: C.filterAll },
+              ]}
+              onChange={setFilter}
+            />
           </div>
           <QuestionsIntro change={forChange} />
           {list.state === "ready" && (
-            <QuestionCounts
-              counts={countsOf(list.data, repo)}
-              {...(repo ? { repo } : {})}
-              filter={filter}
-              onFilter={setFilter}
-            />
+            <div className="qs-summary">
+              <div className="qs-counts">
+                <QuestionCounts
+                  counts={countsOf(list.data, repo)}
+                  {...(repo ? { repo } : {})}
+                  filter={filter}
+                  onFilter={setFilter}
+                />
+                <QuestionsAiCounts />
+              </div>
+              <AskAiToPropose open={countsOf(list.data).open} />
+            </div>
           )}
-          {list.state === "ready" && <QuestionsAiCounts />}
-          {list.state === "ready" && <AskAiToPropose open={countsOf(list.data).open} />}
-          <div className="bento">
-            <Panel title={C.listTitle} span="span 5">
+          <div className="qs-split">
+            <section className="panel qs-pane" aria-labelledby="p-questions">
+              <div className="row between">
+                <h2 id="p-questions" className="h">
+                  {C.listTitle}
+                </h2>
+              </div>
               <QuestionList
                 of={list}
                 current={current}
@@ -1747,8 +1761,8 @@ export function Questions({ hash }: { hash: string }) {
                 change={forChange}
                 role={scope.role}
               />
-            </Panel>
-            <section className="panel" style={{ gridColumn: "span 7" }}>
+            </section>
+            <section className="panel qs-pane">
               {bulkDone && <BulkResultView r={bulkDone} onDismiss={() => setBulkDone(undefined)} />}
               {picked.length > 0 ? (
                 <BulkAnswer
@@ -1787,6 +1801,6 @@ export function Questions({ hash }: { hash: string }) {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }

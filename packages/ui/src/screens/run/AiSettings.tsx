@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Propose } from "../../app/propose.js";
 import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
-import { Panel, View } from "../../app/ui.js";
+import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "./shared.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
@@ -534,9 +534,10 @@ export function AiSettings() {
       <div style={{ gridColumn: "1 / -1" }}>
         <UpgradeOffer only="runtime-" />
       </div>
-      <Panel title={T.title} span="1 / -1">
+      {/* Beta.26: the form's own heading names the panel, so the title isn't said twice. */}
+      <section className="panel" style={{ gridColumn: "1 / -1" }} aria-label={T.title}>
         <View of={s}>{(d) => <AiSettingsForm data={d} onSaved={s.reload} />}</View>
-      </Panel>
+      </section>
       <AdaptersPanel span="1 / -1" />
     </div>
   );

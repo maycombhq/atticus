@@ -3,6 +3,7 @@ import { api } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { message } from "./run/shared.js";
 import { ROLES, type Role } from "./RoleQuestions.js";
+import "./questions.css";
 
 /**
  * ADR 0191: a question goes to the role that answers it, by what it asks (business, design,
@@ -49,14 +50,10 @@ export function RouteQuestion(p: {
     }
   };
   return (
-    <form
-      className="row"
-      style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}
-      onSubmit={submit}
-    >
+    <form className="qs-route" onSubmit={submit}>
       {asksWords(p.asks) && <span className="chip">{asksWords(p.asks)}</span>}
       {p.routed && (
-        <span className="muted" style={{ fontSize: 12 }}>
+        <span className="qs-hint">
           {W.routedFrom(
             p.routed.from ? (COPY.roles.who[p.routed.from] ?? p.routed.from) : W.noRole,
             p.routed.by,
@@ -64,8 +61,8 @@ export function RouteQuestion(p: {
           )}
         </span>
       )}
-      <div className="stack" style={{ gap: 2 }}>
-        <label htmlFor={`${id}-to`} className="hud" style={{ fontSize: 10 }}>
+      <div className="qs-field">
+        <label htmlFor={`${id}-to`} className="qs-field-label">
           {W.routeLabel}
         </label>
         <select
@@ -88,7 +85,7 @@ export function RouteQuestion(p: {
       {note && (
         <p
           role={note.ok ? "status" : "alert"}
-          className={note.ok ? "muted" : "state error"}
+          className={`qs-route-note ${note.ok ? "muted" : "state error"}`}
           style={{ margin: 0 }}
         >
           {note.text}

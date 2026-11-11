@@ -6,6 +6,7 @@ import { Table } from "./know/common.js";
 import { NeedsAcross } from "./knowledge/NeedsAcross.js";
 import { COPY } from "../copy.js";
 import { isManualLink, MANUAL_STEPS_HREF } from "./know/task-pr.js";
+import "./knowledge/knowledge.css";
 
 const T = COPY.across;
 
@@ -149,23 +150,19 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
   const label = ACROSS.find((a) => a.id === view)!.label;
   return (
     <Panel title={T.acrossChanges2(label)} span="span 9" rows="span 3">
-      <nav
-        aria-label={T.acrossChanges}
-        className="row"
-        style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}
-      >
+      <nav aria-label={T.acrossChanges} className="kn-tabs">
         {ACROSS.map((a) => (
           <a
             key={a.id}
             href={`#/changes?across=${a.id}`}
             aria-current={a.id === view ? "page" : undefined}
-            className={`btn ${a.id === view ? "primary" : ""}`}
+            className={`btn ${a.id === view ? "on" : ""}`}
           >
             {a.label}
           </a>
         ))}
       </nav>
-      <div style={{ marginBottom: 10 }}>
+      <div className="kn-tools">
         <FilterBox id="across-filter" value={text} onChange={setText} />
       </div>
       {view === "needs" ? (
@@ -192,7 +189,7 @@ function AcrossRows(p: {
           const rows = filterRows(d.rows, text);
           return (
             <div className="stack" style={{ gap: 8 }}>
-              <p className="muted" role="status" style={{ margin: 0, fontSize: 12 }}>
+              <p className="kn-count" role="status">
                 {T.ofAcrossOpenChange(
                   rows.length,
                   d.rows.length,

@@ -1,0 +1,104 @@
+/* Set up and Settings (beta.26): the forms of Repos, AI, the org pack, Scans, Intake and
+   Settings, in the IDE shell's look. The building blocks are restyled by knowledge.css under
+   .st; here are the forms' own rules: each field's label above it, the fields one width, the
+   help under them muted, a radio or a checkbox with its words beside it, and the actions grouped
+   at the foot. Every class starts st-, and every colour, font and line is a token of hud.css. */
+
+/* A field's label, above it: small, sentence case. */
+.st :is(.stack, form, fieldset) > label:not(.row):not(.st-choice),
+.st .run-label,
+.st-label {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+.st .run-label {
+  gap: 4px;
+}
+/* Its help, under it: muted, short. */
+.st :is(.stack, form, fieldset) > span.muted,
+.st-help {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 76ch;
+}
+/* One width for the fields of a form; a list of URLs or a file takes more. */
+.st :is(.stack, form) > :is(input, select).field {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+}
+.st :is(.stack, form) > textarea.field {
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+}
+.st .run-input,
+.st .run-select {
+  height: 30px;
+  max-width: 480px;
+}
+.st .run-textarea {
+  max-width: 720px;
+}
+/* A radio or a checkbox: its control, then its words beside it, wrapped under the words. */
+.st label.row:has(> input[type="radio"]),
+.st label.row:has(> input[type="checkbox"]),
+.st-choice {
+  display: inline-grid;
+  grid-template-columns: 16px auto;
+  align-items: start;
+  column-gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.st label.row > input[type="radio"],
+.st label.row > input[type="checkbox"],
+.st-choice > input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.st fieldset.row {
+  flex-wrap: wrap;
+  gap: 6px 16px !important;
+}
+/* The actions at a form's foot: grouped, compact. */
+.st form > .row:last-child,
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* A table of fields (repos read, adapters): its fields fit their cells. */
+.st .run-table .field {
+  height: 28px;
+  max-width: 260px;
+}
+/* A group of choices: one quiet box, its legend a small label on its border. */
+.st fieldset:not(.row) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.st fieldset > legend:not(.sr) {
+  padding: 0 4px;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.st form {
+  min-width: 0;
+}

@@ -22,6 +22,8 @@ import { Estimate } from "./work/Estimate.js";
 import { ChangeKnowledgePage } from "./work/KnowledgePage.js";
 import { Onboarding } from "./work/Onboarding.js";
 import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
+import "./knowledge/knowledge.css";
+import "./setup/setup.css";
 
 /**
  * Screen id (screens.ts) → component. Each screen gets the current hash so it can read its own
@@ -29,7 +31,46 @@ import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work
  */
 export type Screen = ComponentType<{ hash: string }>;
 
-export const SCREEN_COMPONENTS: Record<string, Screen> = {
+/**
+ * Beta.26: the page's look, by its section. Knowledge's pages and the Map's reading pages take
+ * knowledge.css (.kn); Set up and Settings take setup.css too (.st). A page not named keeps its own.
+ */
+export const LOOKS: Readonly<Record<string, "kn" | "st">> = {
+  knowledge: "kn",
+  wikis: "kn",
+  documents: "kn",
+  "wiki-search": "kn",
+  parties: "kn",
+  "orgpack-draft": "kn",
+  explore: "kn",
+  map: "kn",
+  systems: "kn",
+  impact: "kn",
+  features: "kn",
+  diagrams: "kn",
+  reconcile: "kn",
+  contracts: "kn",
+  initiatives: "kn",
+  settings: "st",
+  repos: "st",
+  ai: "st",
+  orgpack: "st",
+  scans: "st",
+  intake: "st",
+};
+
+/** A screen inside its look's wrapper, the page's words and order unchanged. */
+export function withLook(look: "kn" | "st", S: Screen): Screen {
+  const Look: Screen = ({ hash }) => (
+    <div className={look}>
+      <S hash={hash} />
+    </div>
+  );
+  Look.displayName = look + "(" + (S.displayName ?? S.name ?? "Screen") + ")";
+  return Look;
+}
+
+const SCREENS: Record<string, Screen> = {
   // The stage screens of plan 4.5 (Change's tabs) and the first steps. The Overview is part of
   // Home: its address, #/dashboard, opens Home (OLD_ADDRESSES in app/screens.ts).
   onboarding: () => <Onboarding />,
@@ -66,3 +107,10 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   conformance: Conformance,
   words: Words,
 };
+
+export const SCREEN_COMPONENTS: Record<string, Screen> = Object.fromEntries(
+  Object.entries(SCREENS).map(([id, S]) => {
+    const look = LOOKS[id];
+    return [id, look ? withLook(look, S) : S];
+  }),
+);

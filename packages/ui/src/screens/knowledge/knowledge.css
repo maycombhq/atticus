@@ -1,0 +1,351 @@
+/* The Knowledge pages (items, sources, documents, search, parties, the org pack's draft, Explore
+   and the Map's reading pages) and, with setup.css, Set up and Settings (beta.26), in the IDE
+   shell's look: compact panels with small sentence-case titles, labels above their fields, muted
+   monospace for what is secondary, short grouped buttons, words at a readable measure and code
+   that scrolls in its own box. The pages keep their markup: these rules restyle the HUD's
+   building blocks inside a page wrapped in .kn (Knowledge) or .st (Set up), as Home's hm- rules
+   do on Home. Every colour, font and line is a token of hud.css. Rhythm: 4, 8, 12 and 16 px. */
+
+.kn,
+.st {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ panels and their titles */
+
+:is(.kn, .st) .bento {
+  gap: 12px;
+}
+:is(.kn, .st) .panel {
+  padding: 12px;
+  border-radius: 8px;
+}
+/* A panel's title: small, sentence case, its meta muted monospace beside it. */
+:is(.kn, .st) .panel > .row.between:first-child {
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px !important;
+}
+:is(.kn, .st) .h {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+/* A HUD line that is a label (of a field, a group, a column) reads as a small label... */
+:is(.kn, .st) :is(label, legend, dt, th, h3, h4, summary).hud,
+:is(.kn, .st) .run-facts dt,
+:is(.kn, .st) .run-table th {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+:is(.kn, .st) tr.hud {
+  font-family: var(--font);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+:is(.kn, .st) tr.hud th {
+  font-weight: 600 !important;
+  border-bottom: 1px solid var(--line);
+}
+/* A list of counts: one short row each. */
+:is(.kn, .st) .list-row {
+  padding: 4px 0;
+  border-bottom-color: var(--line);
+}
+:is(.kn, .st) .list-row .n {
+  font-size: 14px !important;
+}
+/* ...and one that says where or how much reads as muted monospace, in its own case. */
+:is(.kn, .st) :is(span, p, div).hud {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
+}
+:is(.kn, .st) .n {
+  letter-spacing: 0.02em;
+}
+
+/* ------------------------------------------------------------------ words */
+
+/* Running words at a readable measure; a list, a table or a field keeps its own width. */
+:is(.kn, .st) .panel p:not(.state),
+:is(.kn, .st) .panel li,
+:is(.kn, .st) .work-why,
+:is(.kn, .st) .ev-say {
+  max-width: 76ch;
+  line-height: 1.5;
+}
+:is(.kn, .st) .panel > p.muted,
+:is(.kn, .st) .panel > .stack > p.muted {
+  font-size: 12.5px;
+}
+:is(.kn, .st) .work-say {
+  margin: 6px 0 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+:is(.kn, .st) .work-why {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+/* Code and quotes scroll in their own box, never the page. */
+:is(.kn, .st) pre {
+  max-width: 100%;
+  max-height: 24em;
+  overflow: auto;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--inset);
+}
+:is(.kn, .st) blockquote {
+  max-width: 76ch;
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--line-2);
+  background: var(--inset);
+  color: var(--text-2);
+}
+
+/* ------------------------------------------------------------------ fields and buttons */
+
+:is(.kn, .st) .field {
+  height: 30px;
+  font-size: 12.5px;
+}
+:is(.kn, .st) textarea.field {
+  height: auto;
+  min-height: 4.5em;
+  resize: vertical;
+}
+:is(.kn, .st) :is(input, select).field:not([type="checkbox"]):not([type="radio"]) {
+  max-width: 480px;
+}
+:is(.kn, .st) textarea.field {
+  max-width: 720px;
+}
+:is(.kn, .st) .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+/* A switch of buttons is one group: they touch, one border round it. */
+:is(.kn, .st) .run-choice {
+  gap: 0;
+}
+:is(.kn, .st) .run-choice > .btn {
+  border-radius: 0;
+}
+:is(.kn, .st) .run-choice > .btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+:is(.kn, .st) .run-choice > .btn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+:is(.kn, .st) .run-choice > .btn + .btn {
+  margin-left: -1px;
+}
+:is(.kn, .st) .run-choice > .btn:only-child {
+  border-radius: 6px;
+}
+:is(.kn, .st) .chip {
+  font-size: 10.5px;
+}
+
+/* The commands to copy: a short line of monospace, Copy beside it, not a field across. */
+:is(.kn, .st) .work-cmd {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+:is(.kn, .st) .work-cmd code {
+  flex: 0 1 auto;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border-color: var(--line);
+  overflow-wrap: anywhere;
+}
+:is(.kn, .st) .work-terminal {
+  font-size: 12px;
+}
+
+/* States: on the left, quiet, in the panel's inset. */
+:is(.kn, .st) .state {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 12.5px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+:is(.kn, .st) .state.error {
+  background: var(--danger-bg);
+}
+
+/* Facts as two columns: the label, then its value. */
+:is(.kn, .st) .run-facts {
+  gap: 4px 12px;
+  font-size: 12.5px;
+}
+:is(.kn, .st) .run-facts dt {
+  padding-top: 1px;
+}
+:is(.kn, .st) .run-table {
+  font-size: 12.5px;
+}
+:is(.kn, .st) .run-table th {
+  padding: 4px 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+:is(.kn, .st) .run-table td {
+  border-top-color: var(--line);
+  padding: 6px 8px 6px 0;
+}
+/* A wide table scrolls in its panel. */
+:is(.kn, .st) .panel:has(> table, > div > table) {
+  overflow-x: auto;
+}
+
+/* ------------------------------------------------------------------ Knowledge's own */
+
+/* The AI step: Run or Prepare first, then where the command goes, each a short line. */
+.kn-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.kn-ai > .work-say {
+  margin: 4px 0 0;
+}
+.kn-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* What the knowledge says, under an answer: small labels, quotes in an inset, where from muted. */
+.kn-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.kn-answer ul {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kn-label {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.kn-quote {
+  max-width: 76ch;
+  margin: 4px 0 2px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--line-2);
+  background: var(--inset);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.kn-from {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.kn-passage {
+  max-width: 76ch;
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Across the changes: its views as one strip of compact tabs, the one open marked. */
+.kn-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.kn-tabs .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+.kn-tabs .btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.kn-tabs .btn[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--picked-strong);
+  color: var(--text);
+}
+.kn-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.kn-tools .hud {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-2);
+}
+.kn-tools .field {
+  height: 28px;
+  width: 260px;
+  max-width: 100%;
+  font-size: 12.5px;
+}
+.kn-count {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+@media (max-width: 599px) {
+  :is(.kn, .st) .work-cmd {
+    flex-wrap: wrap;
+  }
+  :is(.kn, .st) .run-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

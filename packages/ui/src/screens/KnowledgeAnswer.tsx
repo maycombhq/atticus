@@ -1,6 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../copy.js";
 import { CopyButton } from "./run/shared.js";
+import "./knowledge/knowledge.css";
 
 /**
  * ADR 0191 (app-only audit): Ask Atticus searched only the catalog, so "How do I request a
@@ -15,8 +16,8 @@ const A = COPY.roleWork.ask;
 export function KnowledgeAnswerBlock({ k }: { k: Api.KnowledgeAnswerViewT }) {
   const none = k.items.length === 0 && k.passages.length === 0;
   return (
-    <section aria-labelledby="ask-knowledge" className="stack" style={{ gap: 8 }}>
-      <h3 id="ask-knowledge" className="hud" style={{ margin: 0 }}>
+    <section aria-labelledby="ask-knowledge" className="kn-answer">
+      <h3 id="ask-knowledge" className="kn-label">
         {A.knowledge}
       </h3>
       {none ? (
@@ -30,25 +31,15 @@ export function KnowledgeAnswerBlock({ k }: { k: Api.KnowledgeAnswerViewT }) {
           </p>
           {k.items.length > 0 && (
             <div className="stack" style={{ gap: 4 }}>
-              <h4 className="hud" style={{ margin: 0, fontSize: 10 }}>
-                {A.items}
-              </h4>
+              <h4 className="kn-label">{A.items}</h4>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {k.items.map((i) => (
                   <li key={i.id} style={{ marginBottom: 6 }}>
                     <a href={`#/knowledge?item=${encodeURIComponent(i.id)}`}>{i.title}</a>
                     {i.quote && (
                       <>
-                        <blockquote
-                          style={{
-                            margin: "2px 0",
-                            paddingLeft: 10,
-                            borderLeft: "2px solid var(--line-2)",
-                          }}
-                        >
-                          {i.quote.text}
-                        </blockquote>
-                        <span className="muted" style={{ fontSize: 12 }}>
+                        <blockquote className="kn-quote">{i.quote.text}</blockquote>
+                        <span className="kn-from">
                           {COPY.roleWork.passage.from(
                             i.quote.section ?? i.quote.page,
                             i.quote.source,
@@ -63,19 +54,13 @@ export function KnowledgeAnswerBlock({ k }: { k: Api.KnowledgeAnswerViewT }) {
           )}
           {k.passages.length > 0 && (
             <div className="stack" style={{ gap: 4 }}>
-              <h4 className="hud" style={{ margin: 0, fontSize: 10 }}>
-                {A.passages}
-              </h4>
+              <h4 className="kn-label">{A.passages}</h4>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {k.passages.map((p) => (
                   <li key={`${p.path}:${p.line}`} style={{ marginBottom: 8 }}>
                     <strong>{p.heading.split(" › ").at(-1) || p.page}</strong>{" "}
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      {COPY.roleWork.passage.from(p.page, p.source)}
-                    </span>
-                    <p style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", fontSize: 12.5 }}>
-                      {p.text}
-                    </p>
+                    <span className="kn-from">{COPY.roleWork.passage.from(p.page, p.source)}</span>
+                    <p className="kn-passage">{p.text}</p>
                     <details>
                       <summary className="muted" style={{ fontSize: 11.5 }}>
                         {COPY.roleWork.passage.details}

@@ -7,6 +7,7 @@ import { RunsLink } from "../runs/Runs.js";
 import { Command } from "../work/RunNext.js";
 import "../run/run.css";
 import "../work/work.css";
+import "./knowledge.css";
 
 /**
  * Pieces the knowledge screens share (ADR 0102): a review's words, the AI step to copy, the
@@ -71,7 +72,7 @@ export function AiStep({
   runs?: { change?: string; q?: string; label?: string };
 }) {
   return (
-    <div className="stack" style={{ gap: 4 }}>
+    <div className="kn-ai">
       {why && <p className="work-why">{why}</p>}
       {/* Round 36 (UX review): the step runs from here, or is prepared for the person's own
           assistant; the command stays beside it for a terminal. */}
@@ -99,7 +100,7 @@ export function AiStep({
  */
 export function NoKnowledgeYet({ text }: { text: string }) {
   return (
-    <div className="stack" style={{ gap: 6 }}>
+    <div className="kn-empty">
       <div className="state">{text}</div>
       <p style={{ margin: 0 }}>
         <a href="#/wikis">{K.emptyGo}</a>

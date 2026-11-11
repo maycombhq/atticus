@@ -117,8 +117,8 @@ export function RoleFilter(p: {
   yours?: readonly string[] | undefined;
 }) {
   return (
-    <div className="stack" style={{ gap: 4 }}>
-      <label htmlFor="questions-role" className="hud" style={{ fontSize: 10 }}>
+    <div className="qs-field">
+      <label htmlFor="questions-role" className="qs-field-label">
         {R.filter}
       </label>
       <select

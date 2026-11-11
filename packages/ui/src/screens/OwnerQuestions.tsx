@@ -6,6 +6,7 @@ import { Propose } from "../app/propose.js";
 import { View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { CopyButton, message } from "./run/shared.js";
+import "./questions.css";
 
 /**
  * The knowledge gaps' owner questions on the Questions page (UX review, 2026-11-08). Each one
@@ -54,7 +55,7 @@ export function OwnerQuestionList(p: {
       }
     >
       {(d) => (
-        <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 12 }}>
+        <ul className="qs-owner-list">
           {d.questions.map((q) => (
             <li key={q.id}>
               <OwnerQuestionCard q={q} onAnswered={() => p.onAnswered?.()} />
@@ -101,7 +102,7 @@ export function SendOwnerQuestion({ id, owner }: { id: string; owner: string }) 
     }
   };
   return (
-    <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+    <div className="qs-group-btns">
       <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
         {busy ? S.sending : S.button(owner)}
       </button>
@@ -150,37 +151,41 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
     }
   };
   return (
-    <article className="panel stack" style={{ gap: 6 }} aria-labelledby={`${id}-q`}>
-      <div className="row between" style={{ gap: 8, alignItems: "flex-start" }}>
-        <h3 id={`${id}-q`} style={{ margin: 0, fontSize: 13.5, fontWeight: 500 }}>
+    <article className="panel qs-card" aria-labelledby={`${id}-q`}>
+      <div className="qs-card-head">
+        <h3 id={`${id}-q`} className="qs-q">
           {q.question}
         </h3>
         <span className={`chip ${shown.state === "answered" ? "done" : "warn"}`}>
           {shown.state === "answered" ? O.answered : O.open}
         </span>
       </div>
-      <span className="hud" style={{ fontSize: 10 }}>
-        {O.ask(q.owner, q.system, q.channel)} · <code className="mono">{q.id}</code>
-      </span>
-      {q.routeTo && <span className="muted">{O.routeTo(q.routeTo)}</span>}
+      <p className="qs-meta">
+        <span>
+          {O.ask(q.owner, q.system, q.channel)} · <code className="mono">{q.id}</code>
+        </span>
+      </p>
+      {q.routeTo && <span className="qs-card-line">{O.routeTo(q.routeTo)}</span>}
       {q.finding && (
-        <span className="muted" style={{ fontSize: 12.5 }}>
+        <span className="qs-card-line">
           {O.fromFinding(q.finding.change, q.finding.gate, q.finding.id)}
         </span>
       )}
-      <span className="muted" style={{ fontSize: 12.5 }}>
-        {O.needs(q.neededFact)}
-      </span>
+      <span className="qs-card-line">{O.needs(q.neededFact)}</span>
       {q.fill?.map((f) => (
-        <span key={`${f.file}|${f.field}`} className="muted" style={{ fontSize: 12.5 }}>
+        <span key={`${f.file}|${f.field}`} className="qs-card-line">
           {O.fill(f.file, f.field)}
         </span>
       ))}
-      {shown.answer && <p style={{ margin: 0 }}>{O.answeredWas(shown.answer)}</p>}
+      {shown.answer && (
+        <p className="qs-answered" style={{ margin: 0 }}>
+          {O.answeredWas(shown.answer)}
+        </p>
+      )}
       {/* ADR 0191: sent to its owner through the notifications Atticus is set up with. */}
       {shown.state !== "answered" && <SendOwnerQuestion id={q.id} owner={q.owner} />}
-      <form className="stack" style={{ gap: 6 }} onSubmit={(e) => void submit(e)}>
-        <label htmlFor={`${id}-a`} className="hud" style={{ fontSize: 10 }}>
+      <form className="qs-form" onSubmit={(e) => void submit(e)}>
+        <label htmlFor={`${id}-a`} className="qs-field-label">
           {shown.answer ? O.answerAgain : O.answerLabel}
         </label>
         <textarea
@@ -190,13 +195,11 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
           value={words}
           onChange={(e) => setWords(e.target.value)}
         />
-        <div className="row" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="qs-actions">
           <button type="submit" className="btn primary" disabled={busy}>
             {busy ? O.saving : O.save}
           </button>
-          <code className="mono muted" style={{ fontSize: 11.5 }}>
-            {O.command(q.id)}
-          </code>
+          <code className="mono qs-cmd">{O.command(q.id)}</code>
           <CopyButton text={O.command(q.id)} label={O.copyCommand} />
         </div>
       </form>
