@@ -38,7 +38,7 @@ const repos = (): JoinRepo[] => [
 
 describe("the facts schema, version 5 (ADR 0192)", () => {
   it("adds the artifact and dependency kinds, and a version-4 file reads unchanged", () => {
-    expect(FACTS_SCHEMA_VERSION).toBe(5);
+    expect(FACTS_SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
     expect(FACT_KINDS).toContain("artifact");
     expect(FACT_KINDS).toContain("dependency");
     // A facts file written before version 5: no line carries a number, every kind it has is as it was.

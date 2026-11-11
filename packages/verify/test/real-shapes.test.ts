@@ -111,37 +111,30 @@ describe("a pom as public projects write it", () => {
     ]);
   });
 
-  // known bug: a <project> start tag over several lines (xmlns, xsi:schemaLocation) is never opened, so the project's own coordinates and its <parent>'s are lost
-  it.fails(
-    "reads the project's coordinates when its start tag spans three lines (a parent pom)",
-    () => {
-      const pom = pomCoordinates(lines("forge-ledger", "pom.xml"));
-      expect(pom.group).toEqual({ value: "forge.ledger", line: 22 });
-      expect(pom.artifact).toEqual({ value: "forge-ledger-parent", line: 23 });
-      expect(pom.version).toEqual({ value: "1.2.0", line: 24 });
-      expect(pom.parentGroup).toEqual({ value: "org.springframework.boot", line: 16 });
-      expect(pom.parentArtifact).toEqual({ value: "spring-boot-starter-parent", line: 17 });
-    },
-  );
+  it("reads the project's coordinates when its start tag spans three lines (a parent pom)", () => {
+    const pom = pomCoordinates(lines("forge-ledger", "pom.xml"));
+    expect(pom.group).toEqual({ value: "forge.ledger", line: 22 });
+    expect(pom.artifact).toEqual({ value: "forge-ledger-parent", line: 23 });
+    expect(pom.version).toEqual({ value: "1.2.0", line: 24 });
+    expect(pom.parentGroup).toEqual({ value: "org.springframework.boot", line: 16 });
+    expect(pom.parentArtifact).toEqual({ value: "spring-boot-starter-parent", line: 17 });
+  });
 
-  // known bug: a <project> start tag over several lines is never opened (here CRLF, tabs, <parent> before <modelVersion>)
-  it.fails("reads a CRLF module pom whose start tag spans two lines (gs-multi-module's)", () => {
+  it("reads a CRLF module pom whose start tag spans two lines (gs-multi-module's)", () => {
     const pom = pomCoordinates(rawLines("forge-ledger", "ledger-api/pom.xml"));
     expect(pom.artifact).toEqual({ value: "ledger-api", line: 12 });
     expect(pom.parentGroup).toEqual({ value: "forge.ledger", line: 6 });
     expect(pom.parentArtifact).toEqual({ value: "forge-ledger-parent", line: 5 });
   });
 
-  // known bug: a <project> start tag over several lines is never opened (a gateway bundle's pom after a licence comment)
-  it.fails("reads a gateway bundle's pom (apigee-deploy-maven-plugin's sample)", () => {
+  it("reads a gateway bundle's pom (apigee-deploy-maven-plugin's sample)", () => {
     const pom = pomCoordinates(lines("forge-edge", "src/gateway/forge-ledger-v1/pom.xml"));
     expect(pom.group).toEqual({ value: "forge.edge", line: 15 });
     expect(pom.artifact).toEqual({ value: "forge-ledger-v1", line: 16 });
     expect(pom.parentArtifact).toEqual({ value: "parent-pom", line: 8 });
   });
 
-  // known bug: a <project> start tag whose attributes are one per line and whose `>` closes it on a line of its own is never opened
-  it.fails("reads a pom whose start tag ends on a line of its own", () => {
+  it("reads a pom whose start tag ends on a line of its own", () => {
     const pom = pomCoordinates(lines("forge-bridge", "pom.xml"));
     expect(pom.group).toEqual({ value: "forge.bridge", line: 8 });
     expect(pom.artifact).toEqual({ value: "forge-bridge", line: 9 });
@@ -152,22 +145,17 @@ describe("a pom as public projects write it", () => {
     ]);
   });
 
-  // known bug: CDATA is read as markup, so a <dependency> written inside a <description>'s CDATA becomes a dependency
-  it.fails(
-    "leaves what a CDATA section holds out, keeping managed, profile and plugin entries apart",
-    () => {
-      expect(deps(pomCoordinates(lines("forge-ledger", "pom.xml")))).toEqual([
-        "org.apache.camel.springboot camel-spring-boot-bom 48 import managed",
-        "${project.groupId} ledger-api 55  managed",
-        "com.northwind.pay northwind-pay-client 60  managed",
-        "org.testcontainers junit-jupiter 72 test ",
-        "com.puppycrawl.tools checkstyle 89  plugin",
-      ]);
-    },
-  );
+  it("leaves what a CDATA section holds out, keeping managed, profile and plugin entries apart", () => {
+    expect(deps(pomCoordinates(lines("forge-ledger", "pom.xml")))).toEqual([
+      "org.apache.camel.springboot camel-spring-boot-bom 48 import managed",
+      "${project.groupId} ledger-api 55  managed",
+      "com.northwind.pay northwind-pay-client 60  managed",
+      "org.testcontainers junit-jupiter 72 test ",
+      "com.puppycrawl.tools checkstyle 89  plugin",
+    ]);
+  });
 
-  // known bug: isPomFile knows only pom.xml and *.pom, so a parent a <relativePath> names (../shared-pom.xml) is no build file
-  it.fails("takes a parent pom a <relativePath> names (shared-pom.xml) for a pom", () => {
+  it("takes a parent pom a <relativePath> names (shared-pom.xml) for a pom", () => {
     expect(isPomFile("src/gateway/shared-pom.xml")).toBe(true);
   });
 });
@@ -212,33 +200,28 @@ describe("a Gradle build as public projects write it", () => {
     expect(gradleNameOn(lines("forge-wallets", "settings.gradle.kts")[9]!)).toBe("forge-wallets");
   });
 
-  // known bug: only configurations starting `test` are test-scoped, so a custom source set's integrationTestImplementation reads as compile
-  it.fails("takes an integration-test source set's configuration for test scope", () => {
+  it("takes an integration-test source set's configuration for test scope", () => {
     expect(
       gradleDependencyOn("    integrationTestImplementation 'org.testcontainers:postgresql'")
         ?.scope,
     ).toBe("test");
   });
 
-  // known bug: Spring's dependency-management plugin's `mavenBom "g:a:v"` and `dependency 'g:a:v'` read as compile dependencies
-  it.fails("leaves the dependency-management plugin's BOMs and pinned versions out", () => {
+  it("leaves the dependency-management plugin's BOMs and pinned versions out", () => {
     expect(buildUnrecorded(["build.gradle"], linesIn("forge-rates"), [])).toEqual([]);
   });
 
-  // known bug: a tool's configuration (checkstyle) reads as a dependency of the component
-  it.fails("leaves a tool's configuration (checkstyle) out of the component's dependencies", () => {
+  it("leaves a tool's configuration (checkstyle) out of the component's dependencies", () => {
     const got = buildUnrecorded(["rates-service/build.gradle"], linesIn("forge-rates"), []);
     expect(got.map((u) => u.cite)).not.toContain("rates-service/build.gradle:30");
   });
 
-  // known bug: a version catalog (gradle/libs.versions.toml) is no build file the verifier reads coordinates from
-  it.fails("keeps a dependency cited on its version-catalog line, with the alias's line", () => {
+  it("keeps a dependency cited on its version-catalog line, with the alias's line", () => {
     const f = fact<"dependency">("forge-wallets", "dependency.wallets-api.ledger-api");
     expect(buildCoordinatesProblem(f, linesIn("forge-wallets"))).toBeUndefined();
   });
 
-  // known bug: a subproject's name is the `include` that names it, which the verifier doesn't read as a project name
-  it.fails("keeps a subproject's artifact cited on the settings line that includes it", () => {
+  it("keeps a subproject's artifact cited on the settings line that includes it", () => {
     for (const id of ["artifact.rates-core", "artifact.rates-service"])
       expect(
         buildCoordinatesProblem(fact<"artifact">("forge-rates", id), linesIn("forge-rates")),
@@ -246,8 +229,7 @@ describe("a Gradle build as public projects write it", () => {
       ).toBeUndefined();
   });
 
-  // known bug: `project(":wallets-api").name = "forge-wallets-api"` (a subproject renamed in settings) is no project name to the verifier
-  it.fails("keeps a subproject's artifact cited on the settings line that renames it", () => {
+  it("keeps a subproject's artifact cited on the settings line that renames it", () => {
     const f = fact<"artifact">("forge-wallets", "artifact.forge-wallets-api");
     expect(buildCoordinatesProblem(f, linesIn("forge-wallets"))).toBeUndefined();
   });
@@ -271,8 +253,8 @@ describe("settings files as public projects write them", () => {
     expect(yamlPathAt(values, 25)).toEqual(["ingress", "hosts", "paths", "path"]);
   });
 
-  // known bug: a sequence written at its key's own indentation (`containers:` then `- name:`, as Kubernetes manifests and Spring Cloud Gateway routes do) loses its key from the path
-  it.fails("reads a key's path in a list written at its key's indentation (a Deployment)", () => {
+  // Beta.25: a sequence written at its key's own indentation (`containers:` then `- name:`)
+  it("reads a key's path in a list written at its key's indentation (a Deployment)", () => {
     const d = lines("forge-rates", "deploy/k8s/deployment.yaml");
     expect(yamlPathAt(d, 17)).toEqual(["spec", "template", "spec", "containers", "name"]);
     expect(yamlPathAt(d, 20)).toEqual([
@@ -381,8 +363,8 @@ describe("settings files as public projects write them", () => {
     ).toBeUndefined();
   });
 
-  // known bug: a TargetServer writes its host and port as two JSON fields, and a config value is checked on one line only, so `host:port` can't be claimed
-  it.fails("keeps a TargetServer's host and port, cited on their two lines", () => {
+  // Beta.25: a TargetServer writes its host and port as two JSON fields, each a part
+  it("keeps a TargetServer's host and port, cited on their two lines", () => {
     const f = fact<"config">("forge-edge", "config.ts-rates");
     expect(configLineProblem(f, linesIn("forge-edge"), () => [])).toBeUndefined();
   });
@@ -416,16 +398,16 @@ describe("live secrets in settings files as public projects write them", () => {
     expect(out).not.toContain("nw-live");
   });
 
-  // known bug: XML_NAMED wants `name="…"` before `value="…"`, so a blueprint property written value-first is read past
-  it.fails("finds a blueprint property's password whichever attribute comes first", () => {
+  // Beta.25: a blueprint property written value-first
+  it("finds a blueprint property's password whichever attribute comes first", () => {
     expect(secrets("forge-bridge", "src/main/resources/OSGI-INF/blueprint/routes.xml")).toEqual([
       "13 ledger.password",
       "14 statements.password",
     ]);
   });
 
-  // known bug: a YAML `- name: X` / `value: v` pair (a container's env) is read as the key `value`, so the secret its name says is read past
-  it.fails("finds a container env variable's secret by the name above its value", () => {
+  // Beta.25: a YAML `- name: X` / `value: v` pair (a container's env) is said by its name
+  it("finds a container env variable's secret by the name above its value", () => {
     expect(secrets("forge-rates", "deploy/k8s/deployment.yaml")).toEqual([
       "31 NORTHWIND_CLIENT_SECRET",
     ]);
@@ -437,29 +419,7 @@ describe("live secrets in settings files as public projects write them", () => {
  * keeps all of them. The ones a known bug rejects are listed with it; the rest must be kept now.
  */
 const KNOWN: Record<string, Record<string, string>> = {
-  "forge-ledger": {
-    "artifact.forge-ledger-parent": "a <project> start tag over three lines is never opened",
-    "artifact.ledger-api": "a <project> start tag over two lines is never opened",
-  },
-  "forge-rates": {
-    "artifact.rates-core": "a subproject's `include` line is no project name",
-    "artifact.rates-service": "a subproject's `include` line is no project name",
-    "dependency.rates-service.testcontainers-postgresql":
-      "integrationTestImplementation reads as compile",
-  },
-  "forge-wallets": {
-    "artifact.forge-wallets-api": `project(":x").name = "y" is no project name`,
-    "dependency.wallets-api.ledger-api": "a version catalog is no build file",
-  },
-  "forge-edge": {
-    "artifact.forge-ledger-v1": "a <project> start tag over three lines is never opened",
-    "call.ledger.target":
-      "a target whose whole URL a deploy token replaces has path /, which no line writes",
-    "config.ts-rates": "a TargetServer's host and port are two JSON lines; a value is read on one",
-  },
-  "forge-bridge": {
-    "artifact.forge-bridge": "a <project> start tag ending on a line of its own is never opened",
-  },
+  "forge-edge": {},
 };
 
 describe("the corpus verified end to end", () => {
@@ -488,10 +448,16 @@ describe("the corpus verified end to end", () => {
 
   it("notes the coordinates a read build file writes that no kept fact records", async () => {
     const r = await verify("forge-ledger");
-    // the facts record the Boot starters of no repo: they are left for the reader, as a note
+    // the facts record only some dependencies (the Boot starters, the API module's and the parent's
+    // own are left out): those are left for the reader, as a note. The parent pom and the API
+    // module's are read now that their <project> start tags over lines open (beta.25); the
+    // parent's managed entries, its plugin's checkstyle and the CDATA's <dependency> are none.
     expect((r.buildUnrecorded ?? []).map((u) => `${u.cite} ${u.coordinates}`)).toEqual([
+      "ledger-api/pom.xml:19 jakarta.validation:jakarta.validation-api",
+      "ledger-api/pom.xml:23 com.fasterxml.jackson.core:jackson-annotations",
       "ledger-service/pom.xml:18 org.springframework.boot:spring-boot-starter-web",
       "ledger-service/pom.xml:46 org.springframework.boot:spring-boot-starter-test",
+      "pom.xml:72 org.testcontainers:junit-jupiter",
     ]);
   });
 
@@ -519,16 +485,14 @@ describe("the corpus verified end to end", () => {
       "src/gateway/forge-ledger-v1/config.json:20 /BasicAuthentication/Password",
     );
   });
-  // known bug: the scan reads only what the source rules count as source, and the Apigee config plugin's resources/edge/env/<env>/kvms.json isn't, so a KVM entry's password is never said
-  it.fails("says forge-edge's live secret in a KVM file of the config plugin", async () => {
+  // Beta.25: a config file the source rules don't count is still scanned for the report
+  it("says forge-edge's live secret in a KVM file of the config plugin", async () => {
     expect(await secretsOf("forge-edge")).toEqual(SECRETS["forge-edge"]);
   });
-  // known bug: a container env `- name:`/`value:` pair's secret is read past
-  it.fails("says forge-rates' live secret in its Deployment's env", async () => {
+  it("says forge-rates' live secret in its Deployment's env", async () => {
     expect(await secretsOf("forge-rates")).toEqual(SECRETS["forge-rates"]);
   });
-  // known bug: a blueprint property written value-first is read past
-  it.fails("says both of forge-bridge's blueprint passwords", async () => {
+  it("says both of forge-bridge's blueprint passwords", async () => {
     expect(await secretsOf("forge-bridge")).toEqual(SECRETS["forge-bridge"]);
   });
 });

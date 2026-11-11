@@ -44,25 +44,25 @@ function fields(s: JsonSchema, skip: ReadonlySet<string> = new Set()): string[] 
 }
 
 /**
- * ADR 0192: the fact kinds only one kind of file holds, so a batch of none of those files is
- * given no line for them (a small model's room is mostly its instructions: ADR 0124 addendum
- * A-lean). The build coordinates are in build files, which are `deploy` files.
+ * ADR 0192: the fact kinds only a build file holds (a pom.xml, build.gradle(.kts) or
+ * settings.gradle(.kts)), so a batch with no build file is given no line for them (a small
+ * model's room is mostly its instructions: ADR 0124 addendum A-lean). Beta.25: keyed on the
+ * batch's build files themselves, not on the deploy topic (a Dockerfile or a Helm chart is a
+ * deploy file and holds no coordinates).
  */
-const REFERENCE_TOPICS: Readonly<Record<string, readonly RuleTopic[]>> = {
-  artifact: ["deploy"],
-  dependency: ["deploy"],
-};
+const BUILD_FILE_KINDS: ReadonlySet<string> = new Set(["artifact", "dependency"]);
 
 /**
  * Every field of every kind, from the zod schema (through its JSON Schema): the fields all kinds
- * share on one line, then one line per kind with its own. Given a batch's kinds of file, a kind
- * only other files hold (`REFERENCE_TOPICS`) is left out; given none, every kind is there.
+ * share on one line, then one line per kind with its own. Given a batch's kinds of file, the
+ * build files' kinds (`BUILD_FILE_KINDS`) are there only when `build` says the batch holds a
+ * build file; given none, every kind is there.
  */
-export function factsReference(batchKinds?: readonly RuleTopic[]): string {
-  const kinds = ((factsJsonSchemas().Fact as JsonSchema).oneOf ?? []).filter((k) => {
-    const only = REFERENCE_TOPICS[String(k.properties?.kind?.const)];
-    return !batchKinds || !only || only.some((t) => batchKinds.includes(t));
-  });
+export function factsReference(batchKinds?: readonly RuleTopic[], build?: boolean): string {
+  const kinds = ((factsJsonSchemas().Fact as JsonSchema).oneOf ?? []).filter(
+    (k) =>
+      !batchKinds || build === true || !BUILD_FILE_KINDS.has(String(k.properties?.kind?.const)),
+  );
   const keys = kinds.map((k) => new Set(Object.keys(k.properties ?? {})));
   const common = new Set(
     [...(keys[0] ?? [])].filter((k) => k !== "kind" && keys.every((s) => s.has(k))),
@@ -148,6 +148,11 @@ export interface RulePart {
    * (what a field fact belongs to, for the sets that write fields).
    */
   topUp?: readonly RuleSet[];
+  /**
+   * ADR 0192 (beta.25): a part only a build file needs (pom.xml, build.gradle(.kts),
+   * settings.gradle(.kts)): a batch prompt carries it only when the batch holds one.
+   */
+  build?: true;
   text: string;
 }
 
@@ -258,12 +263,13 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["deploy"],
-      text: "A `framework` fact is what the repo, or one of its modules, is built on: one per framework its build file declares. `name` is the framework (spring-boot, spring, quarkus, asp.net, entity-framework, express, nest, angular, react, vue, next, django, celery, rails, sidekiq, laravel), or, for one of the organisation's own starters or platform libraries, the artifact or package as the file writes it; `cite.value` is the declaration as the line writes it (`spring-boot-starter-parent`, `Microsoft.NET.Sdk.Web`, `express`, `gem \"rails\"`); `version` is the version as declared, and where that isn't written on the cited line (a `<properties>` entry, a parent pom's version, a `<TargetFramework>`, a dependency-management block) that line goes in `cite.with`; `component` is the module when a module declares its own. A library the code merely calls is not a framework: record what the repo is built on. Nor is an Apigee proxy (`<APIProxy>`) or shared flow (`<SharedFlowBundle>`): those are the gateway's routes, read by the gateway parts, never a framework fact.",
+      text: "A `framework` fact is what the repo, or one of its modules, is built on: one per framework its build file declares. `name` is the framework (spring-boot, spring, quarkus, asp.net, entity-framework, express, nest, angular, react, vue, next, django, celery, rails, sidekiq, laravel), or, for one of the organisation's own starters or platform libraries, the artifact or package as the file writes it; `cite.value` is the declaration as the line writes it (`spring-boot-starter-parent`, `Microsoft.NET.Sdk.Web`, `express`, `gem \"rails\"`); `version` is the version as declared, and where that isn't written on the cited line (a `<properties>` entry, a parent pom's version, a `<TargetFramework>`, a dependency-management block) that line goes in `cite.with`; `component` is a module that declares its own, when the manifest lists it. A library the code merely calls is not a framework: record what the repo is built on. Nor is an Apigee proxy (`<APIProxy>`) or shared flow (`<SharedFlowBundle>`): those are the gateway's routes, read by the gateway parts, never a framework fact.",
     },
     {
       when: ["deploy"],
       set: "build-coordinates",
-      text: "An `artifact` fact is the coordinates a build publishes (a pom's own `<artifactId>` and `<groupId>`, else its `<parent>`'s; Gradle's `group` and `rootProject.name`); a `dependency` fact, each dependency it declares in its dependencies (not `<dependencyManagement>`, a plugin's, an exclusion or a BOM). Cite the name's line (`cite.value` as written, a Gradle line's `g:a:v`), the group's and the version's lines in `cite.with`; `scope` when not compile; `component` the module whose build file it is. Record every dependency: which are the estate's own is read from what its repos publish. A library it builds on is a dependency, never a call; the library's own calls are read in its repo.",
+      build: true,
+      text: "An `artifact` fact is the coordinates a build publishes (a pom's own `<artifactId>` and `<groupId>`, else its `<parent>`'s; Gradle's `group` and `rootProject.name`, a subproject's `include` in settings.gradle); a `dependency` fact, each dependency it declares in its dependencies (not `<dependencyManagement>`, `constraints`, `buildscript`, a plugin's, a tool's such as `checkstyle`, an exclusion or a BOM). Cite the name's line (`cite.value` as written, a Gradle line's `g:a:v`, a version catalog alias's `[libraries]` entry with the `implementation(libs.x)` line), the group's, the version's and any `<properties>` line it is resolved through in `cite.with`; `scope` when not compile (a pom's `system` is `provided`); `component` the component the manifest names (a module only when the manifest lists modules: the one whose build file it is), else leave it out; a folder's name is never a component. A root build's `subprojects { dependencies { } }` line is each subproject's: one fact per component they are of, each naming its own. Record every dependency: which are the estate's own is read from what its repos publish. A library it builds on is a dependency, never a call; the library's own calls are read in its repo.",
     },
   ],
   [
@@ -510,6 +516,11 @@ export function factRulesFor(
    * the parts of these sets (and those they carry) go in, each still by its kinds.
    */
   sets?: readonly RuleSet[],
+  /**
+   * ADR 0192 (beta.25): the batch holds a build file. Given kinds, a build part (`build`) goes in
+   * only when this is true; without kinds, every part does.
+   */
+  build?: boolean,
 ): string {
   const inSets = (p: RulePart) =>
     !sets ||
@@ -520,6 +531,7 @@ export function factRulesFor(
         : !p.when && !p.on);
   const has = (p: RulePart) =>
     inSets(p) &&
+    (!p.build || !kinds || build === true) &&
     (!p.when || !kinds || p.when.some((k) => kinds.includes(k))) &&
     (!p.on || !frameworks || p.on.some((f) => frameworks.includes(f)));
   return FACT_RULE_PARTS.map((r) => r.filter(has))
@@ -702,6 +714,12 @@ export function mapBatchInstructions(o: {
    */
   kinds?: readonly RuleTopic[];
   /**
+   * ADR 0192 (beta.25): the batch (or the files its rejected facts cite) holds a build file
+   * (`isBuildFile` in @maycombhq/verify): only then, given kinds, does it carry the build
+   * coordinates' rule and the artifact and dependency lines of the reference.
+   */
+  build?: boolean;
+  /**
    * The frameworks the repo's facts say it is built on (`frameworkTopics` in @maycombhq/verify),
    * from the framework facts kept so far — the build files are read first, so the batches after
    * the first know them. Left out (or empty) when nothing says yet: every framework's rules go
@@ -740,9 +758,9 @@ export function mapBatchInstructions(o: {
     "",
     "Answer with JSON lines only, no code fence. Each fact has this shape:",
     "",
-    factsReference(o.kinds),
+    factsReference(o.kinds, o.build),
     "",
-    factRulesFor(o.kinds, o.frameworks, o.sets),
+    factRulesFor(o.kinds, o.frameworks, o.sets, o.build),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
     ...(o.models ? [`- ${MODELS_RULE}`] : []),

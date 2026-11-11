@@ -320,8 +320,15 @@ function expectRead(seed: number, shape: Shape) {
       plugin: dep.section === "plugin",
     })),
   };
+  // the coordinates and dependencies only (a pom's modules, properties and relativePath elsewhere)
+  const {
+    modules: _modules,
+    properties: _properties,
+    parentRelativePath: _relativePath,
+    ...coords
+  } = got;
   const plain = JSON.parse(
-    JSON.stringify({ ...got, dependencies: [...got.dependencies].sort(byLine) }),
+    JSON.stringify({ ...coords, dependencies: [...coords.dependencies].sort(byLine) }),
   );
   const wanted = JSON.parse(
     JSON.stringify({ ...want, dependencies: [...want.dependencies].sort(byLine) }),
@@ -336,16 +343,11 @@ describe("the pom reader on generated real-world poms", () => {
     for (const seed of SEEDS) expectRead(seed, { splitProject: false, cdata: false });
   });
 
-  // known bug: a <project> start tag whose attributes run over several lines is never opened, so the project's and its <parent>'s coordinates are lost
-  it.fails(
-    "reads every value when the <project> start tag spans lines (attributes in any order)",
-    () => {
-      for (const seed of SEEDS) expectRead(seed, { splitProject: true, cdata: false });
-    },
-  );
+  it("reads every value when the <project> start tag spans lines (attributes in any order)", () => {
+    for (const seed of SEEDS) expectRead(seed, { splitProject: true, cdata: false });
+  });
 
-  // known bug: a CDATA section is read as markup, so a <dependency> in a <description>'s CDATA becomes a dependency
-  it.fails("reads no dependency out of a CDATA section", () => {
+  it("reads no dependency out of a CDATA section", () => {
     for (const seed of SEEDS) expectRead(seed, { splitProject: false, cdata: true });
   });
 });
@@ -419,8 +421,7 @@ describe("the Gradle line reader on generated real-world lines", () => {
     }
   });
 
-  // known bug: only a configuration starting `test` is test-scoped, so a custom source set's (integrationTest, functionalTest, testFixtures-free) reads as compile
-  it.fails("reads a custom test source set's configurations as test scope", () => {
+  it("reads a custom test source set's configurations as test scope", () => {
     const configs = [
       "integrationTestImplementation",
       "integrationTestRuntimeOnly",

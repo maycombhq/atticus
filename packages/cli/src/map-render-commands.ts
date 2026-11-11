@@ -759,6 +759,9 @@ export async function writeFactsIntoCatalog(
       open: everyTarget.filter((q) => q.state === "open" && isJoinHostQuestion(q)),
       drafted: joinHostAsked,
       ...(result.join ? { join: result.join } : {}),
+      // Beta.25: a hosts question the join raised retires too once it no longer asks it.
+      hostsOpen: (await listQuestions(root, { step: HOSTS_STEP, state: "open", repo })).questions,
+      stillAsked: new Set([...hosts.raised, ...hosts.reasked, ...hosts.open].map((q) => q.id)),
     })) {
       await retireQuestion(root, s.id, {
         why: s.why,

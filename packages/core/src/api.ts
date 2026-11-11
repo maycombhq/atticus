@@ -25,6 +25,7 @@ import {
 } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
+import { IGNORE_REASON_MAX } from "./host-questions.js";
 import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
@@ -483,8 +484,48 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   drawn in the architecture and repo lenses, never merged into calls or their counts; its join's
  *   `how` is `coordinates` and it carries `dependency` (group, name, version, scope), with the
  *   dependency's lines as `caller` and the publishing lines as `callee`. Additive only.
+ * 3.11.0 (review of beta.24, round 2): POST /api/links/corrections takes up to 5000 items
+ *   (`LINK_CORRECTIONS_MAX`, was 200), every call GET /api/graph/edge-calls can give, still all
+ *   or none, in a body of up to 16 MB. An item is skipped only when the correction its fact
+ *   meets now (by its id and cite, as verify meets it) says the same: one on file for a line the
+ *   fact has left meets nothing, so the new one is written. A repo named in another case is the
+ *   one the manifests or the facts files spell (one plan for it); a name none spells is 404. A
+ *   corrections file another process holds past the wait answers 409 with `written: []`. A
+ *   problem may carry `written` (the repos whose files were written, `{ repo, file }`); a 500
+ *   names them, and most write none. GET /api/graph/edge-calls requires `edge` and one of
+ *   `node` or `focus`, and takes the node view's `depth` and `all`, so an edge of a depth-2 or
+ *   an all view is found. Repo trust's `secrets[].key` is empty when the key is a secret itself
+ *   (an access key id), never shown. Additive only.
+ *   Review of beta.24, round 3: POST /api/facts/{repo}/corrections takes the repo in another
+ *   case as the batch does, and answers 409 with `written: []` while another process holds the
+ *   corrections file. A repo the manifest spells in one case and only one facts file spells in
+ *   another (on a file system that minds case) is the facts file's spelling, so its file is the
+ *   one read and written; a repo name two facts files spell but for case is refused (422,
+ *   `written: []`); a facts folder's `.rejected`, `.reviewed` and `.questions` files name no
+ *   repo. GET /api/graph/edge-calls is as in round 2 (it names no call facts). Additive only.
+ * 3.11.0 (beta.25, a library's "depends on" arrows, ADR 0192 addendum): a `depends-on` join's
+ *   `dependency` carries `facts`, every dependency fact the link rests on (its repo, id, cited
+ *   line and every line it rests on, and the coordinates it names), `caller` listing all their
+ *   lines and `callee` every publishing line: one link per pair of components, holding every
+ *   coordinate one builds on of the other's. This link is wrong marks each one chosen, so the
+ *   arrow can't come back from another line, in one POST /api/links/corrections (all or none,
+ *   for dependency facts as for calls). GET /api/graph/edge-calls gives every join merged into a
+ *   `depends-on` edge too, not only the 20 a view lists. The facts file stays at version 5 (a
+ *   pom's `system` scope is recorded as `provided`). Additive only.
+ * 3.11.0 (beta.25, review of beta.24's answer boxes): GET /api/trust's `answerBoxes` are only what
+ *   a person's own words made (answers whose words read as a sentence, and the system of a profile
+ *   they made), never a system judged by the shape of its id, nor one an option, the picker or an
+ *   outside system's answer made. POST /api/trust/answer-boxes/ignore and /rename answer a
+ *   `stamp` (what the files the fix writes held), and take it back with the write: a file changed
+ *   since the preview is refused (409, nothing written). The write is all or none as far as
+ *   Atticus can make it (each file locked against its other locking writers, checked, written
+ *   whole and renamed; a failure puts back only a file that still holds what the fix wrote, leaves
+ *   one someone else changed, and answers 500 naming the files left written, Problem `written`).
+ *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
+ *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
+ *   caller. Additive only.
  */
-export const API_VERSION = "3.10.0";
+export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -508,6 +549,11 @@ export const Problem = z.object({
   needs: z.object({ role: z.string(), names: z.array(z.string()) }).optional(),
   /** 3.9.0: what the app offers next, e.g. Sync the repos with no base clone here. */
   next: NextStep.optional(),
+  /**
+   * 3.11.0 (beta.25): for a 500 that wrote only part of what was asked, the files left written
+   * (each in the metarepo, or in `repo`'s working copy), so the app reads them again.
+   */
+  written: z.array(z.object({ repo: z.string().optional(), file: z.string() })).optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);
@@ -702,7 +748,8 @@ export const HierJoin = z.object({
   run: z.string().optional(),
   /**
    * 3.10.0 (ADR 0192): on a `depends-on` edge's join (`how: coordinates`), the coordinates the
-   * dependency names and the library publishes, and its scope when not compile. `interface` is
+   * dependency names and the library publishes, and its scope when not compile (review of
+   * beta.25: on a link of several facts, only when every one has it). `interface` is
    * then the link's own id (`depends-on:<repo>/<component>><repo>/<component>`, no Interface
    * record), `caller` the dependency's lines in the depending build file, `callee` the lines that
    * publish the coordinates. Left out on a call's join.
@@ -713,6 +760,27 @@ export const HierJoin = z.object({
       name: z.string(),
       version: z.string().optional(),
       scope: z.string().optional(),
+      /**
+       * 3.11.0: every dependency fact the link rests on, the first (`caller`'s first line) first:
+       * its repo, its id, its cited line (`file:line`) and every line it rests on, and the
+       * coordinates it names (`group`, `name`, its `version` and `scope` when said): a link is
+       * one per pair of components, so it holds every coordinate one builds on of the other's
+       * (`group` and `name` above are the first's).
+       */
+      facts: z
+        .array(
+          z.object({
+            repo: z.string(),
+            fact: z.string(),
+            at: z.string(),
+            lines: z.array(z.string()),
+            group: z.string().optional(),
+            name: z.string().optional(),
+            version: z.string().optional(),
+            scope: z.string().optional(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
@@ -1448,9 +1516,10 @@ export const ContractCounts = z.object({
   unlinked: z.number().int().optional(),
 });
 /**
- * 3.10.0 (beta.24 review): a box on the map made from an answer's words, not a system's name (an
- * id of five or more words, or with a sentence's words in it, or a long name with spaces): a
- * system of a profile, the answers to questions about where calls go that name it, or both.
+ * 3.10.0 (beta.24 review): a box on the map made from an answer's words, not a system's name: the
+ * answers to questions about where calls go whose words read as a sentence, and the system of a
+ * profile those words made, if any. 3.11.0 (beta.25): never judged by the shape of an id; a system
+ * an option, the picker or an outside system's answer made (with a host alias) is never one.
  */
 export const AnswerBox = z.object({
   id: z.string(),
@@ -1487,6 +1556,11 @@ export const AnswerBoxRequest = z.strictObject({
   /** For rename: the repo or system it is, or a new outside system's name. */
   name: z.string().trim().min(1).max(200).optional(),
   preview: z.literal(true).optional(),
+  /**
+   * 3.11.0 (beta.25): the preview's `stamp`. A write with it is refused (409, nothing written)
+   * when a file the fix writes changed since that preview.
+   */
+  stamp: z.string().trim().min(1).max(100).optional(),
 });
 export const AnswerBoxResult = z.object({
   id: z.string(),
@@ -1504,6 +1578,11 @@ export const AnswerBoxResult = z.object({
     .optional(),
   /** The repos whose answers changed: Apply (verify --write) puts them on the map. */
   repos: z.array(z.string()),
+  /**
+   * 3.11.0 (beta.25): what the files the fix writes held when it was worked out, to send back
+   * with the write (`stamp`), so the write is the one previewed.
+   */
+  stamp: z.string().optional(),
 });
 export type AnswerBoxResultT = z.infer<typeof AnswerBoxResult>;
 
@@ -1761,6 +1840,9 @@ export const FactCorrectionResult = z.object({
  * why for every one (an item's own `reason` first). Every item is checked before any is written;
  * then each repo's corrections file takes its lines in one write.
  */
+/** 3.11.0: the most calls one POST /api/links/corrections corrects (was 200). */
+export const LINK_CORRECTIONS_MAX = 5000;
+
 export const LinkCorrectionsRequest = z.strictObject({
   items: z
     .array(
@@ -1773,7 +1855,7 @@ export const LinkCorrectionsRequest = z.strictObject({
       }),
     )
     .min(1)
-    .max(200),
+    .max(LINK_CORRECTIONS_MAX),
   reason: z.string().trim().min(1).max(500).optional(),
 });
 export const LinkCorrectionsResult = z.object({
@@ -1791,8 +1873,9 @@ export const LinkCorrectionsResult = z.object({
   /** The commands that apply them, one per repo. */
   verify: z.array(z.string()),
   /**
-   * Review of beta.24: the items left out because the newest correction on file for that fact
-   * says the same already (asked again, nothing is written twice).
+   * Review of beta.24: the items left out because the correction on file that the fact meets
+   * now says the same already (asked again, nothing is written twice; 3.11.0: one for a line the
+   * fact has left meets nothing).
    */
   skipped: z.array(z.object({ repo: z.string(), fact: z.string() })).optional(),
 });
@@ -3882,7 +3965,7 @@ export const AnswerQuestionRequest = z.strictObject({
    * text and target; `reason` is kept as the answer's words (`Ignore: <reason>`).
    */
   ignore: z.literal(true).optional(),
-  reason: z.string().trim().min(1).max(300).optional(),
+  reason: z.string().trim().min(1).max(IGNORE_REASON_MAX).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */
@@ -5910,10 +5993,20 @@ const OPS: Record<string, Record<string, Op>> = {
         "Every call merged into one edge of a view (a node's, or a focus), not only the first 20 the view lists (review of beta.24)",
       tag: "views",
       params: [
-        q("edge", str, "The edge's id, as the view gives it (required)"),
-        q("node", str, "The node whose view has the edge (or focus)"),
-        q("focus", str, "The node whose focus view has the edge (or node)"),
+        { ...q("edge", str, "The edge's id, as the view gives it"), required: true },
+        q("node", str, "The node whose view has the edge: one of node or focus is required"),
+        q("focus", str, "The node whose focus view has the edge: one of node or focus is required"),
         q("lens", { type: "string", enum: [...GRAPH_LENSES] }, "The view's lens"),
+        q(
+          "depth",
+          { type: "string", enum: ["1", "2", "3"] },
+          "With node: the view's depth, as GET /api/graph/node/{id} takes it (3.11.0)",
+        ),
+        q(
+          "all",
+          { type: "string", enum: ["1"] },
+          "With node: every box, as GET /api/graph/node/{id} takes it (3.11.0)",
+        ),
       ],
       ok: { status: 200, schema: "GraphEdgeCallsView", description: "OK" },
       errors: [400, 404, 422],
@@ -6350,22 +6443,22 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "ignoreAnswerBox",
       summary:
-        "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write is local, for Propose for review",
+        "A box an answer's words made (beta.24 review), put right as 'it was ignore this': each answer that names it becomes Ignore (the join leaves its calls) and the system leaves its profile. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
       tag: "workspace",
       body: AnswerBoxRequest,
       ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
-      errors: [400, 404, 409, 422],
+      errors: [400, 404, 409, 422, 500],
     },
   },
   "/api/trust/answer-boxes/rename": {
     post: {
       id: "renameAnswerBox",
       summary:
-        "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write is local, for Propose for review",
+        "A box an answer's words made (beta.24 review), renamed to a real system: a repo or system Atticus knows, or a new outside system's short name; the answers that name it name that instead. preview writes nothing; the write (with the preview's stamp) writes all or none, only over the files previewed, local, for Propose for review",
       tag: "workspace",
       body: AnswerBoxRequest,
       ok: { status: 200, schema: "AnswerBoxResult", description: "Previewed or written" },
-      errors: [400, 404, 409, 422],
+      errors: [400, 404, 409, 422, 500],
     },
   },
   "/api/trust/fresh": {
@@ -6404,11 +6497,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "correctLinkCalls",
       summary:
-        "This whole arrow is wrong (beta.24): one correction of every call on a link, each in its caller repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written. Returns each file, the git command that commits them all and the verify command per repo",
+        "This whole arrow is wrong (beta.24): one correction of every call on a link, or (beta.25) of every dependency fact a depends-on link rests on, each in its repo's facts/<repo>.corrections.jsonl (several lines in one write per repo), every item checked before any is written, all or none. Returns each file, the git command that commits them all and the verify command per repo",
       tag: "workspace",
       body: LinkCorrectionsRequest,
       ok: { status: 200, schema: "LinkCorrectionsResult", description: "Recorded" },
-      errors: [400, 404, 422, 500],
+      errors: [400, 404, 409, 413, 422, 500],
     },
   },
   "/api/facts/{repo}/preview": {
@@ -8396,7 +8489,7 @@ const ERROR_TEXT: Record<number, string> = {
   409: "Conflict: the file changed since you read it, or the state doesn't allow this",
   413: "Too large: the upload is over the limit the problem names",
   422: "Atticus refused: the problem carries the command's own words (ADR 0043)",
-  500: "Written only in part: the problem names exactly what was written",
+  500: "Not done: the problem says what was written all the same (`written`), most often nothing",
 };
 
 /** Build the OpenAPI 3.1 document from the zod schemas. */

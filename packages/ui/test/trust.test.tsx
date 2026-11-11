@@ -97,6 +97,8 @@ describe("Map › Trust (ADR 0124)", () => {
               ...LEDGER.verify.report!,
               secrets: [
                 { file: "src/main/resources/application.yml", line: 10, key: "client_secret" },
+                // Review of beta.24: a key that is a secret itself comes as none.
+                { file: "credentials", line: 2, key: "" },
               ],
             },
           },
@@ -104,7 +106,8 @@ describe("Map › Trust (ADR 0124)", () => {
       />,
     );
     expect(out).toContain('role="alert"');
-    expect(out).toContain(esc(T.secrets.title(1)));
+    expect(out).toContain(esc(T.secrets.title(2)));
+    expect(out).toContain(esc(T.secrets.at("credentials", 2, T.secrets.secretKey)));
     expect(out).toContain(
       esc(T.secrets.at("src/main/resources/application.yml", 10, "client_secret")),
     );

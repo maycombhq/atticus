@@ -15,6 +15,7 @@ import {
   ignoredAnswer,
   ignoreOption,
   ignoreText,
+  IGNORE_REASON_MAX,
   JOIN_IGNORE_LABEL,
   JOIN_STEPS,
   namesKnownTarget,
@@ -1177,6 +1178,17 @@ export async function answerQuestion(
   const text = a.text?.trim() || undefined;
   if ((a.option === undefined) === (text === undefined))
     throw new QuestionError("bad-answer", "Give an option or your own words, one of the two.");
+  // Beta.25: an Ignore's reason, given with Ignore or as words (`Ignore: <reason>`), is as long
+  // as the API takes, from any caller.
+  const ignoreWhy =
+    text && JOIN_STEPS.has(q.askedBy.step)
+      ? ignoredAnswer({ options: q.options, answer: { text, by: a.by } })?.reason
+      : undefined;
+  if (ignoreWhy && ignoreWhy.length > IGNORE_REASON_MAX)
+    throw new QuestionError(
+      "bad-answer",
+      `An Ignore's reason is at most ${IGNORE_REASON_MAX} characters (this is ${ignoreWhy.length}): say it in fewer words.`,
+    );
   if (
     a.option !== undefined &&
     (!Number.isInteger(a.option) || a.option < 1 || a.option > q.options.length)

@@ -1,0 +1,11 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    api("com.northwind.sdk:northwind-pay-client:2.1.0") {
+        because 'the FX client, "{" in a string opens nothing'
+    }
+    functionalTestImplementation 'forge.payments:forge-payments-testkit:1.4.0'
+    providedCompile 'forge.legacy:forge-servlet-api:4.0'
+}

@@ -212,7 +212,14 @@ export async function verifyCommand(
   }
   // R6: the reader's slips of form (a camelCase id, a flow with no cite) are fixed, not refused.
   const repaired = repairFormSlips(parsed.facts, parsed.bad);
-  parsed = { facts: repaired.facts, bad: repaired.bad };
+  parsed = { facts: repaired.facts, bad: repaired.bad, newer: parsed.newer };
+  // Beta.25 (ADR 0192 addendum): a fact of a kind a newer Atticus wrote is kept as written, unread.
+  if (parsed.newer.length) {
+    io.err(
+      `${parsed.newer.length} ${parsed.newer.length === 1 ? "fact" : "facts"} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "is" : "are"} written by a newer Atticus: kept in the file as written, not read here. Install that version (a team upgrades together):`,
+    );
+    for (const n of parsed.newer.slice(0, SHOWN)) io.err(`  line ${n.line}: ${n.message}`);
+  }
   const slips = repaired.slips;
   if (!parsed.facts.length && parsed.bad.length) {
     io.err(`${rel}/${repo}.jsonl does not read as facts:`);
@@ -308,6 +315,7 @@ export async function verifyCommand(
     badLines,
     reviewedBad,
     slips,
+    parsed.newer.flatMap((n) => (n.raw !== undefined ? [n.raw] : [])),
   );
   const failed =
     report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
@@ -594,6 +602,17 @@ export async function verifyCommand(
     show(
       unrecorded.map((u) => `${u.kind} ${u.coordinates} (${u.cite})`),
       `(buildUnrecorded in ${verifyYaml})`,
+    );
+  }
+  // Review of beta.25: a fact naming a folder's component in a repo that ships as one.
+  const placed = report.componentsPlaced ?? [];
+  if (placed.length) {
+    io.out(
+      `${placed.length} ${placed.length === 1 ? "fact names a component" : "facts name components"} the manifest doesn't list, in a repo whose manifest lists no modules (a note, not a rejection; under componentsPlaced in ${verifyYaml}): each is placed in the repo's component. List the modules in repos.manifest.yaml if they ship apart:`,
+    );
+    show(
+      placed.map((p) => `${p.id}: ${p.named} is ${p.component} (${p.cite})`),
+      `(componentsPlaced in ${verifyYaml})`,
     );
   }
   // G4: with the framework models off, nothing is offered to learn.

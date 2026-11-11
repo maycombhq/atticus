@@ -4,6 +4,8 @@ import {
   JOIN_HOW_FLAGS,
   JOINED_BY_BASE_PATH,
   JOINED_BY_AI,
+  JOINED_BY_PATH,
+  JOINED_BY_PATH_OVERLAP,
   JOINED_BY_PERSON,
   JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
@@ -250,8 +252,23 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   [JOINED_TO_SHARED_MAP]: "shared",
 };
 
-/** The flags that are guesses (J0, J1, F2): a link whose call was found so is inferred. */
-const GUESS_FLAGS: ReadonlySet<string> = new Set(JOIN_GUESS_FLAGS);
+/**
+ * The flags that never verify a link: the guesses (J0, J1, F2), and, beta.25 review, a pairing,
+ * a person's or the AI's word, not code at both ends (ADR 0174, ADR 0181), and a base path the
+ * overlap guessed (`joined-by-path-overlap`). A verified link merged with one says how its
+ * verified call was found, and lists these as `also`.
+ */
+const NOT_VERIFYING_FLAGS: ReadonlySet<string> = new Set([
+  ...JOIN_GUESS_FLAGS,
+  JOINED_BY_PERSON,
+  JOINED_BY_AI,
+  JOINED_BY_PATH_OVERLAP,
+]);
+/** How each flag that never verifies a link reads as an `also` (an overlap is a guess by path). */
+const ALSO_OF_FLAG: Record<string, Join["how"]> = {
+  ...HOW_OF_FLAG,
+  [JOINED_BY_PATH_OVERLAP]: "path",
+};
 
 /**
  * How an Interface's call found its callee, from its flags and via (C1, ADR 0135). A verified
@@ -262,7 +279,8 @@ export function joinHow(i: RecordOf<"Interface">): Join["how"] {
   const flags = i.flags ?? [];
   const topic = i.via === "event-bus" || i.via === "mq";
   if (i.confidence === "verified") {
-    for (const f of flags) if (HOW_OF_FLAG[f] && !GUESS_FLAGS.has(f)) return HOW_OF_FLAG[f]!;
+    for (const f of flags)
+      if (HOW_OF_FLAG[f] && !NOT_VERIFYING_FLAGS.has(f)) return HOW_OF_FLAG[f]!;
     if (topic) return "topic";
   }
   for (const f of flags) if (HOW_OF_FLAG[f]) return HOW_OF_FLAG[f]!;
@@ -270,19 +288,31 @@ export function joinHow(i: RecordOf<"Interface">): Join["how"] {
   return "unknown";
 }
 
-/** The hows that are guesses: a link whose call was found so is inferred, whatever it merged. */
+/**
+ * The hows that never verify a link: a guess's, and a pairing's (beta.25 review). A link whose
+ * how is one is never shown verified, whatever it merged.
+ */
 const GUESS_HOWS: ReadonlySet<Join["how"]> = new Set(
-  JOIN_GUESS_FLAGS.map((f) => HOW_OF_FLAG[f]!).filter(Boolean),
+  [...NOT_VERIFYING_FLAGS].map((f) => HOW_OF_FLAG[f]!).filter(Boolean),
 );
 
-/** A verified link's guesses, each how once, in its flags' order: shown as "also" (beta.24). */
+/**
+ * A verified link's other ways, each how once, in its flags' order: the guesses and pairings its
+ * other calls rest on, shown as "also" (beta.24; the pairings and a guessed base path, beta.25).
+ */
 function alsoOf(i: RecordOf<"Interface">, how: Join["how"]): Join["how"][] {
   if (i.confidence !== "verified" || GUESS_HOWS.has(how)) return [];
+  const flags = i.flags ?? [];
+  // Beta.25 review: a join by a proxy's BasePath whose caller's host is unknown is a guess
+  // (`joined-by-path` beside `joined-by-base-path`): it was found by the BasePath, not by its path
+  // alone. A verified link whose own how is the BasePath keeps the path's words for a path guess.
+  const byBase = how !== "base-path" && flags.includes(JOINED_BY_BASE_PATH);
   return [
     ...new Set(
-      (i.flags ?? []).flatMap((f) =>
-        GUESS_FLAGS.has(f) && HOW_OF_FLAG[f] ? [HOW_OF_FLAG[f]!] : [],
-      ),
+      flags.flatMap((f) => {
+        const also = byBase && f === JOINED_BY_PATH ? "base-path" : ALSO_OF_FLAG[f];
+        return NOT_VERIFYING_FLAGS.has(f) && also && also !== how ? [also] : [];
+      }),
     ),
   ];
 }
@@ -378,6 +408,17 @@ export interface BuildEstateOptions {
 export function dependencyJoin(l: DependencyLink): Join {
   const lines = (end: DependencyLink["from"]): Evidence[] =>
     end.lines.map((at) => ({ source: "code", repo: end.repo, at }));
+  // Beta.25: every dependency fact on the link, each corrected under it.
+  const facts: NonNullable<DependencyLink["facts"]> = l.facts?.length ? l.facts : [l.from];
+  const caller: Evidence[] = [];
+  for (const f of facts)
+    for (const e of lines(f))
+      if (!caller.some((x) => x.repo === e.repo && x.at === e.at)) caller.push(e);
+  // Review of beta.25: every coordinate of the library's component the link rests on publishes.
+  const callee: Evidence[] = [];
+  for (const p of l.published?.length ? l.published : [l.to])
+    for (const e of lines(p))
+      if (!callee.some((x) => x.repo === e.repo && x.at === e.at)) callee.push(e);
   return {
     interface: dependencyLinkId(l),
     from: l.from.component,
@@ -386,8 +427,8 @@ export function dependencyJoin(l: DependencyLink): Join {
     gateway: false,
     // code at both ends, each claim checked on its line, and nobody had to guess
     verified: true,
-    caller: lines(l.from),
-    callee: lines(l.to),
+    caller,
+    callee,
     hops: [],
     other: [],
     dependency: {
@@ -395,6 +436,16 @@ export function dependencyJoin(l: DependencyLink): Join {
       name: l.name,
       ...(l.version ? { version: l.version } : {}),
       ...(l.scope ? { scope: l.scope } : {}),
+      facts: facts.map((f) => ({
+        repo: f.repo,
+        fact: f.fact,
+        at: f.at,
+        lines: f.lines,
+        ...(f.group !== undefined ? { group: f.group } : {}),
+        ...(f.name !== undefined ? { name: f.name } : {}),
+        ...(f.version !== undefined ? { version: f.version } : {}),
+        ...(f.scope !== undefined ? { scope: f.scope } : {}),
+      })),
     },
   };
 }

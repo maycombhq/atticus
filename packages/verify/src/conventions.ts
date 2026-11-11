@@ -21,6 +21,8 @@ export interface ReadRules {
   notRead: { test(path: string): boolean };
   /** A file of a gateway's proxy bundle: its entries are routes, which forward. */
   gatewayBundle: RegExp;
+  /** The folders a gateway bundle is (`apiproxy`, `sharedflowbundle`), as the pack names them. */
+  gatewayBundleFolders: readonly string[];
   /** The house's own framework entries, looked at before the built-in table. */
   frameworks: readonly ConventionFramework[];
 }
@@ -56,6 +58,7 @@ function rulesOf(c: Conventions): ReadRules {
     notProduct: underFolders(c.notProductFolders),
     notRead: notReadTest(c.notReadFolders),
     gatewayBundle: gatewayBundleTest(c.gatewayBundleFolders),
+    gatewayBundleFolders: c.gatewayBundleFolders,
     frameworks: c.frameworks,
   };
 }

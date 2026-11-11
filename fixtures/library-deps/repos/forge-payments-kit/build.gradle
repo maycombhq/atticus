@@ -1,0 +1,45 @@
+buildscript {
+    repositories {
+        maven { url 'https://repo.forge.example/maven' }
+    }
+    dependencies {
+        classpath 'forge.build:forge-gradle-plugin:1.0.0'
+    }
+}
+
+allprojects {
+    group = 'forge.payments'
+}
+
+subprojects {
+    repositories {
+        maven {
+            url 'https://repo.forge.example/maven'
+        }
+    }
+    dependencyManagement {
+        imports {
+            mavenBom 'forge.platform:forge-bom:3.0.0'
+        }
+        dependencies {
+            dependency 'forge.payments:forge-payments-common:1.4.0'
+        }
+    }
+    dependencies {
+        implementation 'forge.payments:forge-payments-common'
+        constraints {
+            implementation 'com.northwind.sdk:northwind-pay-client:2.1.0'
+        }
+    }
+    configurations.all {
+        resolutionStrategy {
+            force 'com.northwind.sdk:northwind-pay-client:2.1.0'
+        }
+    }
+}
+
+project(':kit-batch') {
+    dependencies {
+        integrationTestImplementation 'com.northwind.sdk:northwind-pay-client:2.1.0'
+    }
+}

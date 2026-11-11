@@ -16,12 +16,13 @@ import {
   parseFacts,
   Api,
   FileChangedError,
+  ProfileEditError,
   QuestionError,
   type Fact,
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
-import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
+import { frameworkFacts, frameworkGaps, keyIsSecret } from "@maycombhq/verify";
 import {
   badRequest,
   conflict,
@@ -89,13 +90,16 @@ const text = (p: string) => readFile(p, "utf8").catch(() => undefined);
 /** The commit a checkout is at, from its `.git` files (core, ADR 0140). */
 export { headFromFiles };
 
-/** Beta.24: the report's live-looking secrets, each a file, a line and a key (never a value). */
+/**
+ * Beta.24: the report's live-looking secrets, each a file, a line and a key (never a value).
+ * Review of beta.24: a key that is a secret itself is none (`""`), even from an older report.
+ */
 function secretsOf(raw: unknown): Pick<Report, "secrets"> {
   if (!Array.isArray(raw)) return {};
   const secrets = raw.flatMap((x) => {
     const s = x as { file?: unknown; line?: unknown; key?: unknown } | null;
     return s && typeof s.file === "string" && typeof s.key === "string" && Number.isInteger(s.line)
-      ? [{ file: s.file, line: s.line as number, key: s.key }]
+      ? [{ file: s.file, line: s.line as number, key: keyIsSecret(s.key) ? "" : s.key }]
       : [];
   });
   return secrets.length ? { secrets } : {};
@@ -526,6 +530,7 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
     by: ctx.user,
     at: new Date().toISOString(),
     ...(b.data.preview ? { preview: true } : {}),
+    ...(b.data.stamp ? { stamp: b.data.stamp } : {}),
   };
   try {
     const r = rename
@@ -538,10 +543,22 @@ async function answerBoxRoute(ctx: ServerContext, body: unknown, rename: boolean
     }
     return { status: 200, body: r };
   } catch (e) {
-    if (e instanceof AnswerBoxError)
-      throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+    if (e instanceof AnswerBoxError) {
+      if (e.code === "not-found") throw notFound(e.message);
+      // Beta.25: changed since it was read or previewed: nothing written.
+      if (e.code === "changed") throw conflict(e.message);
+      if (e.code === "partial") {
+        for (const f of e.written) ctx.events.publish({ type: "file.changed", path: f });
+        throw new HttpError(500, "Atticus wrote only part of it", e.message, {
+          written: e.written.map((file) => ({ file })),
+        });
+      }
+      throw badRequest(e.message);
+    }
     if (e instanceof FileChangedError) throw conflict(e.message);
     if (e instanceof QuestionError) throw new HttpError(422, "Atticus can't do that", e.message);
+    // Beta.25: a profile edit Atticus doesn't make (a system holding an anchor others use).
+    if (e instanceof ProfileEditError) throw new HttpError(422, "Atticus can't do that", e.message);
     if (e instanceof Error && / would not be valid: /.test(e.message))
       throw new HttpError(422, "Atticus can't do that", e.message.split("\n")[0]!);
     throw e;

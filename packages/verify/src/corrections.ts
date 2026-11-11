@@ -27,7 +27,10 @@ export interface CorrectionsResult {
   stale: StaleCorrection[];
 }
 
-/** The correction a fact meets, by its id and cite first, else by what it cites. Newest wins. */
+/**
+ * The correction a fact meets, by its id and cite first, else by what it cites. Newest wins, and
+ * of two written at the same moment the later line.
+ */
 export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorrection | undefined {
   // G1 (ADR 0174): a pairing leaves the fact's claim as read; one to a repo the join reads
   // (pairsFromCorrections), one to an outside system is applied on top (outsidePairingFor).
@@ -40,7 +43,12 @@ export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorr
   const edited = corrections.filter((c) => c.fact === f.id && c.action === "edit");
   // An edit that moved the line or the value is met again by its id on the line it moved to.
   const moved = edited.filter((c) => (c.line ?? c.target.line) === f.cite.line);
-  return [...byId, ...byCite, ...moved].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0];
+  // Review of beta.24, round 3: two written at the same moment (one batch's, say) are told apart
+  // by where they are in the file: the later line is the newer.
+  const pos = new Map(all.map((c, i) => [c, i] as const));
+  return [...new Set([...byId, ...byCite, ...moved])].sort((a, b) =>
+    a.at < b.at ? 1 : a.at > b.at ? -1 : pos.get(b)! - pos.get(a)!,
+  )[0];
 }
 
 /**

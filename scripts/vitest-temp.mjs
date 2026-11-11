@@ -12,5 +12,14 @@ export default function setup() {
   // Review round 50: what Atticus keeps for the person outside the metarepo (the user's state
   // folder) goes to the run's own temporary folder, never the real one.
   process.env.XDG_STATE_HOME = join(dir, "state");
-  return () => rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  // beta.25: a child a test started (a server, a git process) can still be writing into it as the
+  // run ends; on Linux CI that turned a run whose tests all passed into a failure (ENOTEMPTY).
+  // Removing the folder is housekeeping: retry for a while, then leave it and say so.
+  return () => {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch (e) {
+      console.warn(`vitest-temp: left ${dir} (${e && e.code ? e.code : e})`);
+    }
+  };
 }

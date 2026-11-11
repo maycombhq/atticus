@@ -356,11 +356,13 @@ describe("a live-looking secret in a config file (beta.24)", () => {
     try {
       await writeFile(
         file,
-        `${was.trimEnd()}\nsecrets:\n  - file: src/main/resources/application.yml\n    line: 10\n    key: client_secret\n  - { file: bad }\n`,
+        `${was.trimEnd()}\nsecrets:\n  - file: src/main/resources/application.yml\n    line: 10\n    key: client_secret\n  - { file: bad }\n  - file: credentials\n    line: 2\n    key: AKIAIOSFODNN7EXAMPLE\n`,
       );
       const ledger = (await view(srv)).repos.find((r) => r.repo === "forge-ledger")!;
+      // Review of beta.24: a key that is a secret itself (an older report's) is never shown.
       expect(ledger.verify.report?.secrets).toEqual([
         { file: "src/main/resources/application.yml", line: 10, key: "client_secret" },
+        { file: "credentials", line: 2, key: "" },
       ]);
     } finally {
       await writeFile(file, was);

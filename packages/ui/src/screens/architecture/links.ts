@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { normalizePath } from "@maycombhq/core/paths";
 import { hitsAt, splitAt, type FactCite, type FactsView } from "../../app/evidence-model.js";
 import type { Views } from "./model.js";
 
@@ -9,6 +10,9 @@ import type { Views } from "./model.js";
  */
 
 export type Join = Api.HierJoinT;
+
+/** The most calls one POST /api/links/corrections corrects: the API's LINK_CORRECTIONS_MAX. */
+export const ARROW_CALLS_MAX = 5000;
 
 /** The call's own line: the caller's first code citation (the config that ties it comes after). */
 export function callerLine(j: Join): { repo: string; at: string } | undefined {
@@ -67,39 +71,73 @@ export interface CallToCorrect {
 }
 
 /**
- * What a correction of one link rests on (review of beta.24): every call fact on every line of
- * the caller's (of the link's method, when a line holds several), each the caller's own. A link a
- * person declared (`declared`) has no call in code: the declaration is withdrawn instead. A link
- * with no line of a caller's (`routing`, a gateway proxy's routing) has none of its own: its
- * proxy's forwarding call is shared by every caller of the route, so it is never corrected from
- * here. `none`: the caller's lines hold no call fact loaded.
+ * A call on a line where the arrow's own call can't be told for sure (review of beta.24, round
+ * 4): the person ticks the ones to correct. `ofPath`: its path is the link's (ticked at first).
+ */
+export interface CallToChoose extends CallToCorrect {
+  ofPath: boolean;
+}
+
+/** A call's key in a pick: its repo and fact id. */
+export const callKey = (c: { repo: string; fact: { id: string } }) => `${c.repo}\u0000${c.fact.id}`;
+
+/**
+ * What a correction of one link rests on (review of beta.24): on every line of the caller's, the
+ * call facts of the link's method, and of those the ones of the link's path, normalised as the
+ * join normalises it (or ending with it at a segment, a proxy's base path the join took off).
+ * Round 4: a line with exactly one such call is clear, and that call is corrected (`calls`); a
+ * line with none, or with several (two hosts, or another arrow's call of that path), is never
+ * settled by a guess: its calls of the method are offered to the person to tick (`ask`), those of
+ * the link's path ticked at first. A link a person declared (`declared`) has no call in code: the
+ * declaration is withdrawn instead. A link with no line of a caller's (`routing`, a gateway
+ * proxy's routing) has none of its own: its proxy's forwarding call is shared by every caller of
+ * the route, so it is never corrected from here. `none`: the caller's lines hold no call fact
+ * loaded.
  */
 export type LinkBasis =
-  | { kind: "calls"; calls: CallToCorrect[] }
+  | { kind: "calls"; calls: CallToCorrect[]; ask: CallToChoose[] }
   | { kind: "declared" }
   | { kind: "routing" }
   | { kind: "none" };
+
+/** A call's path is the link's: the same, or one ending with it at a segment (a base path's). */
+function ofLinkPath(c: FactCite, path: string): boolean {
+  if (c.claim.path === undefined) return false;
+  const q = normalizePath(c.claim.path);
+  if (q === path) return true;
+  if (path === "" || path === "/") return false;
+  const tail = path.startsWith("/") ? path : `/${path}`;
+  return q.length > tail.length && q.endsWith(tail);
+}
 
 export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefined): LinkBasis {
   if (j.how === "declared") return { kind: "declared" };
   const lines = callerLines(j);
   if (!lines.length) return { kind: "routing" };
   const m = (x: string | undefined) => (x ?? "").toUpperCase();
+  const path = j.path ? normalizePath(j.path) : undefined;
   const calls: CallToCorrect[] = [];
+  const ask: CallToChoose[] = [];
   const seen = new Set<string>();
   for (const line of lines) {
     const all = callFactsOn(line, viewOf(line.repo));
     const ofMethod = all.filter(
       (c) => !j.method || !c.claim.method || m(c.claim.method) === m(j.method),
     );
-    for (const c of ofMethod.length ? ofMethod : all) {
-      const k = `${line.repo}\u0000${c.id}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      calls.push({ repo: line.repo, at: line.at, fact: c });
+    const candidates = ofMethod.length ? ofMethod : all;
+    const ofPath = path ? candidates.filter((c) => ofLinkPath(c, path)) : candidates;
+    // Exactly one call of the link's path on the line: that one. Else the person says.
+    const clear = ofPath.length === 1;
+    for (const fact of clear ? ofPath : candidates) {
+      const call = { repo: line.repo, at: line.at, fact };
+      if (seen.has(callKey(call))) continue;
+      seen.add(callKey(call));
+      if (clear) calls.push(call);
+      else ask.push({ ...call, ofPath: ofPath.includes(fact) });
     }
   }
-  return calls.length ? { kind: "calls", calls } : { kind: "none" };
+  if (!calls.length && !ask.length) return { kind: "none" };
+  return { kind: "calls", calls, ask };
 }
 
 /** The repos whose facts a link's correction reads: its caller's. */
@@ -107,43 +145,60 @@ export const callerRepos = (joins: readonly Join[]): string[] => [
   ...new Set(joins.flatMap((j) => (j.how === "declared" ? [] : callerLines(j).map((l) => l.repo)))),
 ];
 
-/** Every call on an arrow a correction is written for, and the links it leaves alone, by kind. */
+/**
+ * Every call on an arrow a correction is written for (`calls`), those the person is asked to
+ * tick (`ask`, none of them in `calls`), and the links it leaves alone, by kind.
+ */
 export function arrowCalls(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
-): { calls: CallToCorrect[]; missing: string[]; declared: string[]; routing: string[] } {
-  const calls: CallToCorrect[] = [];
+): {
+  calls: CallToCorrect[];
+  ask: CallToChoose[];
+  missing: string[];
+  declared: string[];
+  routing: string[];
+} {
+  const calls = new Map<string, CallToCorrect>();
+  const ask = new Map<string, CallToChoose>();
   const missing: string[] = [];
   const declared: string[] = [];
   const routing: string[] = [];
-  const seen = new Set<string>();
   for (const j of joins) {
     const b = linkBasis(j, viewOf);
     if (b.kind === "declared") declared.push(j.interface);
     else if (b.kind === "routing") routing.push(j.interface);
     else if (b.kind === "none") missing.push(j.interface);
-    else
-      for (const c of b.calls) {
-        const k = `${c.repo}\u0000${c.fact.id}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        calls.push(c);
+    else {
+      for (const c of b.calls) if (!calls.has(callKey(c))) calls.set(callKey(c), c);
+      for (const c of b.ask) {
+        const was = ask.get(callKey(c));
+        ask.set(callKey(c), was ? { ...was, ofPath: was.ofPath || c.ofPath } : c);
       }
+    }
   }
-  return { calls, missing, declared, routing };
+  for (const k of calls.keys()) ask.delete(k);
+  return { calls: [...calls.values()], ask: [...ask.values()], missing, declared, routing };
 }
+
+/** The calls ticked of those asked about (by `callKey`); until the person ticks, those of the path. */
+export const tickedOf = (ask: readonly CallToChoose[], ticked?: ReadonlySet<string>) =>
+  ask.filter((c) => (ticked ? ticked.has(callKey(c)) : c.ofPath));
 
 /**
  * This whole arrow is wrong (beta.24): the POST /api/links/corrections body that gives every call
  * on the arrow the same correction, each in its caller's repo, and the lines corrected (`lines`,
- * `repo:path:line`, to watch them move). `missing`, `declared` and `routing` name the links it
- * leaves alone (see `linkBasis`); none to correct at all is an error, as is a fix missing its
- * target or why.
+ * `repo:path:line`, to watch them move). Round 4: exactly the clear calls and those ticked of the
+ * ones asked about (`ticked`; left out, those of the link's path). `missing`, `declared` and
+ * `routing` name the links it leaves alone (see `linkBasis`); none to correct at all is an error
+ * (`needPick` when calls are asked about and none is ticked), as is a fix missing its target or
+ * why.
  */
 export function arrowCorrections(
   joins: readonly Join[],
   viewOf: (repo: string) => FactsView | undefined,
   fix: LinkFix,
+  ticked?: ReadonlySet<string>,
 ):
   | {
       body: Api.LinkCorrectionsRequestT;
@@ -152,16 +207,16 @@ export function arrowCorrections(
       declared: string[];
       routing: string[];
     }
-  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" } {
+  | { error: "needTarget" | "sameTarget" | "needReason" | "noCalls" | "needPick" | "tooMany" } {
   const reason = fix.reason.trim();
   if (fix.kind === "not-a-call" && !reason) return { error: "needReason" };
   const target = fix.kind === "not-a-call" ? "" : fix.target.trim();
   if (fix.kind !== "not-a-call" && !target) return { error: "needTarget" };
-  const { calls, missing, declared, routing } = arrowCalls(joins, viewOf);
+  const { calls, ask, missing, declared, routing } = arrowCalls(joins, viewOf);
   const items: Api.LinkCorrectionsRequestT["items"] = [];
   const lines = new Set<string>();
   let already = 0;
-  for (const c of calls) {
+  for (const c of [...calls, ...tickedOf(ask, ticked)]) {
     if (fix.kind !== "not-a-call" && (c.fact.claim.to ?? "").trim() === target) {
       already++;
       continue;
@@ -173,7 +228,9 @@ export function arrowCorrections(
         : { repo: c.repo, fact: c.fact.id, action: "edit", set: { to: target } },
     );
   }
-  if (!items.length) return { error: already ? "sameTarget" : "noCalls" };
+  if (!items.length) return { error: already ? "sameTarget" : ask.length ? "needPick" : "noCalls" };
+  // Review of beta.24, round 3: more than one request takes is said in words, never sent.
+  if (items.length > ARROW_CALLS_MAX) return { error: "tooMany" };
   return {
     body: { items, ...(reason ? { reason } : {}) },
     lines: [...lines],
@@ -234,10 +291,91 @@ export function dependencyCorrection(
   return { body: { fact: fact.id, action: "wrong", reason: why } };
 }
 
+/** One dependency fact a `depends-on` link rests on, as This link is wrong lists it. */
+export interface LinkDependency {
+  repo: string;
+  id: string;
+  /** Its cited line, `file:line`. */
+  at: string;
+  /** The fact as the repo's facts give it, when they are read and hold it. */
+  fact?: FactCite;
+  /**
+   * Review of beta.25: the coordinates it names (`group:name`), from the join (C4 3.11.0): a link
+   * holds every coordinate its component builds on of the library's.
+   */
+  coordinates?: string;
+}
+
+/**
+ * Beta.25: every dependency fact a `depends-on` link rests on (its join's `dependency.facts`,
+ * C4 3.11.0), each with its fact when the depending repo's facts are read; a join from before
+ * lists the facts on its first line (`dependencyFactsOf`).
+ */
+export function linkDependenciesOf(j: Join, v: FactsView | undefined): LinkDependency[] {
+  const listed = j.dependency?.facts;
+  if (!listed?.length)
+    return dependencyFactsOf(j, v).map((f) => ({
+      repo: v!.repo,
+      id: f.id,
+      at: `${f.cite.file}:${f.cite.line}`,
+      fact: f,
+    }));
+  return listed.map((d) => {
+    const fact = v && v.repo === d.repo ? v.facts.find((f) => f.id === d.fact) : undefined;
+    return {
+      repo: d.repo,
+      id: d.fact,
+      at: d.at,
+      ...(fact ? { fact } : {}),
+      ...(d.group && d.name ? { coordinates: `${d.group}:${d.name}` } : {}),
+    };
+  });
+}
+
+/**
+ * Beta.25: the POST /api/facts/{repo}/corrections bodies that say each chosen dependency is wrong
+ * (with why, which is required), or what is missing (a key of the copy).
+ */
+export function dependencyCorrections(
+  chosen: readonly { id: string }[],
+  reason: string,
+): { bodies: Record<string, unknown>[] } | { error: "needReason" | "needFact" } {
+  if (!chosen.length) return { error: "needFact" };
+  const why = reason.trim();
+  if (!why) return { error: "needReason" };
+  return { bodies: chosen.map((d) => ({ fact: d.id, action: "wrong", reason: why })) };
+}
+
+/**
+ * Review of beta.25: the one POST /api/links/corrections that says every chosen dependency is
+ * wrong (with why), all or none, or what is missing (a key of the copy).
+ */
+export function dependencyBatch(
+  chosen: readonly { repo: string; id: string }[],
+  reason: string,
+): { body: Api.LinkCorrectionsRequestT } | { error: "needReason" | "needFact" } {
+  const b = dependencyCorrections(chosen, reason);
+  if ("error" in b) return b;
+  return {
+    body: {
+      items: chosen.map((d) => ({ repo: d.repo, fact: d.id, action: "wrong" as const })),
+      reason: reason.trim(),
+    },
+  };
+}
+
 /** A join's coordinates in words (`group:name`), or its method and path for a call. */
 export const joinWhat = (j: Join): string =>
   j.dependency
-    ? `${j.dependency.group}:${j.dependency.name}`
+    ? [
+        ...new Set([
+          `${j.dependency.group}:${j.dependency.name}`,
+          // review of beta.25: every coordinate the link holds
+          ...(j.dependency.facts ?? []).flatMap((f) =>
+            f.group && f.name ? [`${f.group}:${f.name}`] : [],
+          ),
+        ]),
+      ].join(", ")
     : [j.method, j.path].filter(Boolean).join(" ");
 
 /** The ids a person can name as a call's target, from the views loaded: repos and components. */

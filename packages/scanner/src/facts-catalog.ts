@@ -29,6 +29,7 @@ import {
   TOPICS_STEP_ID,
   HOSTS_STEP,
   ignoredAnswer,
+  hostQuestionText,
   ignoreOption,
   topicOfQuestion,
   urlHostPort,
@@ -906,7 +907,20 @@ export function targetsFromAnswers(
     let byAi = label && asked?.answer && isAiBy(asked.answer.by) ? asked.answer.by : undefined;
     const at = q.evidence[0]!;
     if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) {
-      const jh = joinHosts.find((x) => x.evidence.includes(at) && !!joinHostTarget(x));
+      // Beta.25: by the host the call names (the join asks of `host ?? base`) in this repo, never
+      // by the lines the question cited: a line added above the call doesn't ask it again. The
+      // question is the join's words for that host whole (`hostQuestionText`), so a host with a
+      // `?` in it (`${A_URL ?? B_URL}`) is read as it is, not up to its first `?`.
+      const named = (f.host ?? f.base)?.trim();
+      const asks = named ? hostQuestionText(named) : undefined;
+      const jh = asks
+        ? joinHosts.find((x) => {
+            const t = x.question.trim();
+            return (
+              t.startsWith(asks) && /^(?:\s|$)/.test(t.slice(asks.length)) && !!joinHostTarget(x)
+            );
+          })
+        : undefined;
       if (jh) {
         label = joinHostTarget(jh);
         byAi = jh.answer && isAiBy(jh.answer.by) ? jh.answer.by : undefined;
@@ -1120,7 +1134,7 @@ export function componentRenames(
   const use = (id: string, repo: string) => users.set(id, (users.get(id) ?? new Set()).add(repo));
   for (const { repo, facts } of repos) {
     const fallback = manifests.find((r) => r.id === repo)?.component;
-    for (const f of facts)
+    for (const f of placedFacts(repo, facts, op))
       if (f.kind !== "field") use(factIdPart(f.component ?? fallback ?? repo), repo);
   }
   for (const t of taken) if (users.has(t.id)) use(t.id, t.repo);
@@ -1135,6 +1149,14 @@ export function componentRenames(
   return out;
 }
 
+/** A repo's facts as their components are written (`atticus verify` places a module's folder). */
+function placedFacts(_repo: string, facts: readonly Fact[], _op: OrgPack): readonly Fact[] {
+  // Beta.25: only `atticus verify` places a fact, since only it reads the build files that say a
+  // folder is a module of one build; a monorepo's web app and API with their own builds stay
+  // apart. The projection takes the component the facts file holds.
+  return facts;
+}
+
 /** A repo's facts with its components renamed, the manifest's component filling one left out. */
 function withComponents(
   repo: string,
@@ -1144,7 +1166,7 @@ function withComponents(
 ): Fact[] {
   const fallback = estateRepos(op).find((r) => r.id === repo)?.component;
   const mine = renames?.[repo] ?? {};
-  return facts.map((f): Fact => {
+  return placedFacts(repo, facts, op).map((f): Fact => {
     const c = f.component ?? fallback;
     if (!c) return f;
     const to = mine[factIdPart(c)];
@@ -1286,6 +1308,15 @@ export function joinReposOf(
               component: x.component,
               hosts: x.hosts,
               ...(x.basePath ? { basePath: x.basePath } : {}),
+            })),
+          }
+        : {}),
+      // ADR 0192 addendum: every module by its folder, so a build fact is its module's.
+      ...(m?.modules?.length
+        ? {
+            moduleDirs: m.modules.map((x) => ({
+              path: x.path,
+              component: renames?.[repo]?.[factIdPart(x.component)] ?? x.component,
             })),
           }
         : {}),

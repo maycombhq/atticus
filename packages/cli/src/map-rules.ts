@@ -612,7 +612,7 @@ export function rulesPrompt(
     "",
     factsReference(),
     "",
-    factRulesFor(kindsOf(files), undefined, sets),
+    factRulesFor(kindsOf(files), undefined, sets, files.some(isBuildFile)),
     "",
     ...(orgIds.size && c.orgRules
       ? [readingRulesText({ rules: c.orgRules.rules, builtinOff: [] }, orgIds), ""]

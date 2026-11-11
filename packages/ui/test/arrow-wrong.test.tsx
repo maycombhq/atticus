@@ -5,6 +5,7 @@ import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import type { FactsView } from "../src/app/evidence.js";
 import {
+  ARROW_CALLS_MAX,
   arrowCorrections,
   callerLine,
   callerLines,
@@ -19,8 +20,8 @@ import {
 } from "../src/screens/architecture/WhyLinked.js";
 
 /**
- * Beta.24: a link a gateway's routing made can be corrected at its forwarding call, and "This
- * whole arrow is wrong" corrects every call on an arrow in one step (one form, one write of each
+ * Beta.24: a link a gateway's routing made is never corrected at the route's shared forwarding
+ * call, and "This whole arrow is wrong" corrects every call on an arrow in one step (one form, one write of each
  * caller repo's corrections file), beside the per-call "This link is wrong", which is unchanged.
  */
 
@@ -379,6 +380,149 @@ describe("this whole arrow is wrong", () => {
     ).toEqual(["forge-web:src/signup.service.ts:7"]);
   });
 
+  // Review of beta.24, round 2: two calls of one method on one line, to two paths (two arrows).
+  it("corrects only the call of the link's path on a line that holds another arrow's call", () => {
+    const fact = (id: string, path: string, to: string): Api.FactCiteViewT => ({
+      ...CALL,
+      id,
+      label: `GET ${path} → ${to}`,
+      claim: { method: "GET", path, to, value: path },
+      cite: { file: "src/Rates.java", line: 12, value: path },
+    });
+    const view: FactsView = {
+      ...FACTS,
+      repo: "forge-ledger",
+      file: "facts/forge-ledger.jsonl",
+      facts: [
+        fact("c-rates", "/v1/rates/{pair}", "northwind-fx"),
+        fact("c-limits", "/v1/limits", "forge-limits"),
+      ],
+    };
+    const join: Api.HierJoinT = {
+      ...JOIN,
+      interface: "if-ledger-fx",
+      from: "ledger-api",
+      to: "northwind-fx",
+      how: "path",
+      method: "GET",
+      // The join's own spelling of the path: its parameter normalised.
+      path: "/v1/rates/{}",
+      caller: [{ source: "code", repo: "forge-ledger", at: "src/Rates.java:12" }],
+      callee: [],
+    };
+    const r = arrowCorrections([join], () => view, { kind: "not-a-call", reason: "a probe" });
+    expect("body" in r && r.body.items.map((i) => i.fact)).toEqual(["c-rates"]);
+    // Round 4: no call on the line has the link's path: nothing is guessed, the person ticks.
+    const elsewhere = { ...join, path: "/v2/quotes" };
+    const basis = linkBasis(elsewhere, () => view);
+    expect(basis.kind === "calls" && basis.calls).toEqual([]);
+    expect(basis.kind === "calls" && basis.ask.map((c) => [c.fact.id, c.ofPath])).toEqual([
+      ["c-rates", false],
+      ["c-limits", false],
+    ]);
+    expect(arrowCorrections([elsewhere], () => view, { kind: "not-a-call", reason: "x" })).toEqual({
+      error: "needPick",
+    });
+    const picked = arrowCorrections(
+      [elsewhere],
+      () => view,
+      { kind: "not-a-call", reason: "x" },
+      new Set(["forge-ledger\u0000c-limits"]),
+    );
+    expect("body" in picked && picked.body.items.map((i) => i.fact)).toEqual(["c-limits"]);
+    expect(
+      html(<ArrowWrongForm link={edge([elsewhere])} viewOf={() => view} known={[]} startOpen />),
+    ).toContain(esc(W.arrow.pick.legend));
+  });
+
+  // Review of beta.24, round 3: a call joined by a proxy's base path has the path its caller
+  // wrote (`/api/ledger/accounts/{id}`), while its link has the path the callee serves
+  // (`/accounts/{id}`). Round 4: a line where that leaves more than one call is asked about.
+  describe("a line that holds a call joined by base path", () => {
+    const fact = (id: string, path: string, to: string): Api.FactCiteViewT => ({
+      ...CALL,
+      id,
+      label: `GET ${path} → ${to}`,
+      claim: { method: "GET", path, to, value: path },
+      cite: { file: "src/Ledger.java", line: 30, value: path },
+    });
+    const line = [{ source: "code", repo: "forge-bridge", at: "src/Ledger.java:30" }];
+    const BASE: Api.HierJoinT = {
+      ...JOIN,
+      interface: "if-by-base-path",
+      from: "forge-bridge",
+      to: "forge-edge",
+      how: "base-path",
+      method: "GET",
+      path: "/accounts/{}",
+      caller: line,
+      callee: [],
+    };
+    const on = (...facts: Api.FactCiteViewT[]): FactsView => ({
+      ...FACTS,
+      repo: "forge-bridge",
+      file: "facts/forge-bridge.jsonl",
+      facts,
+    });
+    const basis = (view: FactsView) => {
+      const b = linkBasis(BASE, () => view);
+      return b.kind === "calls"
+        ? { calls: b.calls.map((c) => c.fact.id), ask: b.ask.map((c) => [c.fact.id, c.ofPath]) }
+        : b;
+    };
+
+    it("takes the call whose path ends with the link's at a segment, and no other", () => {
+      const view = on(
+        fact("c-via-edge", "/api/ledger/accounts/{id}", "forge-edge"),
+        fact("c-rates", "/rates", "northwind-fx"),
+      );
+      expect(basis(view)).toEqual({ calls: ["c-via-edge"], ask: [] });
+      // Not at a segment's start (`/xaccounts/{id}`): not the link's path.
+      expect(basis(on(fact("c-x", "/api/xaccounts/{id}", "forge-edge")))).toEqual({
+        calls: [],
+        ask: [["c-x", false]],
+      });
+    });
+
+    it("asks when another arrow's call of the link's path is on the line too", () => {
+      const view = on(
+        fact("c-via-edge", "/api/ledger/accounts/{id}", "forge-edge"),
+        fact("c-direct", "/accounts/{id}", "ledger-service"),
+      );
+      expect(basis(view)).toEqual({
+        calls: [],
+        ask: [
+          ["c-via-edge", true],
+          ["c-direct", true],
+        ],
+      });
+    });
+  });
+
+  // Review of beta.24, round 3: more calls than one request takes is said in words, not sent.
+  it("says so when an arrow has more calls than one request corrects", async () => {
+    const n = 5001;
+    const facts: FactsView = {
+      ...FACTS,
+      facts: Array.from({ length: n }, (_, i) => ({
+        ...CALL,
+        id: `c-${i}`,
+        cite: { ...CALL.cite, line: i + 1 },
+      })),
+    };
+    const joins = Array.from({ length: n }, (_, i) => ({
+      ...JOIN,
+      interface: `if-${i}`,
+      caller: [{ source: "code", repo: "forge-web", at: `src/customer.service.ts:${i + 1}` }],
+    }));
+    expect(arrowCorrections(joins, () => facts, { kind: "not-a-call", reason: "x" })).toEqual({
+      error: "tooMany",
+    });
+    const { Api: A } = await import("@maycombhq/core");
+    expect(ARROW_CALLS_MAX).toBe(A.LINK_CORRECTIONS_MAX);
+    expect(W.arrow.tooMany(n, ARROW_CALLS_MAX)).toContain(String(ARROW_CALLS_MAX));
+  });
+
   it("means every call when the view lists only 20 of an arrow's 25", () => {
     const many = Array.from({ length: 25 }, (_, i) => ({
       join: {
@@ -390,7 +534,8 @@ describe("this whole arrow is wrong", () => {
       fact: {
         ...CALL,
         id: `c-many-${i}`,
-        cite: { file: "src/many.ts", line: i + 1, value: "/api/customers" },
+        claim: { method: "POST", path: `/api/many/${i}`, value: `/api/many/${i}` },
+        cite: { file: "src/many.ts", line: i + 1, value: `/api/many/${i}` },
       } satisfies Api.FactCiteViewT,
     }));
     const facts = { ...FACTS, facts: many.map((m) => m.fact) };

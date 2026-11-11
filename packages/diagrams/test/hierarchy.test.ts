@@ -771,6 +771,62 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect(link.gaps).not.toContain("joined-by-base-path");
   });
 
+  it("says a call joined by a BasePath though its host is unknown was found so, as a guess (beta.25)", () => {
+    const rs = records().map((r) =>
+      r.id === HOST
+        ? ({
+            ...r,
+            confidence: "inferred",
+            flags: ["joined-by-base-path", "joined-by-path"],
+          } as typeof r)
+        : r,
+    );
+    const j = nodeView(buildEstate(rs), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([j.how, j.verified]).toEqual(["base-path", false]);
+  });
+
+  it("lists a merged BasePath guess as the BasePath's also, not the path's alone (beta.25)", () => {
+    const rs = records().map((r) =>
+      r.id === HOST
+        ? ({
+            ...r,
+            flags: ["joined-by-host", "joined-by-base-path", "joined-by-path"],
+          } as typeof r)
+        : r,
+    );
+    const j = nodeView(buildEstate(rs), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([j.how, j.verified, j.also]).toEqual(["host", true, ["base-path"]]);
+  });
+
+  it.each([
+    ["the AI's pairing", ["joined-by-ai", "joined-by-host"], "ai"],
+    ["a person's pairing", ["joined-by-person", "joined-by-host"], "person"],
+    ["a guessed base path", ["joined-by-host", "joined-by-path-overlap"], "path"],
+  ])(
+    "a verified link that merged %s keeps the code's how, the other an also (beta.25)",
+    (_what, flags, also) => {
+      const rs = records().map((r) => (r.id === HOST ? ({ ...r, flags } as typeof r) : r));
+      const j = nodeView(buildEstate(rs), "estate", { lens: "architecture" })
+        .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+        .joins!.find((x) => x.interface === HOST)!;
+      expect([j.how, j.verified, j.also]).toEqual(["host", true, [also]]);
+    },
+  );
+
+  it("never shows a verified link by a pairing alone as verified (beta.25)", () => {
+    const rs = records().map((r) =>
+      r.id === HOST ? ({ ...r, flags: ["joined-by-ai"] } as typeof r) : r,
+    );
+    const j = nodeView(buildEstate(rs), "estate", { lens: "architecture" })
+      .edges.find((e) => e.from === "system:web" && e.to === "system:customers")!
+      .joins!.find((x) => x.interface === HOST)!;
+    expect([j.how, j.verified]).toEqual(["ai", false]);
+  });
+
   it("counts a guess as a gap, and how a link was made as none", () => {
     const v = nodeView(buildEstate(records()), "estate", { lens: "architecture" });
     const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;

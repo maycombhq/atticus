@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { freemem } from "node:os";
 import { getHeapStatistics } from "node:v8";
-import { parseFactLine, type BadFactLine, type Fact } from "@maycombhq/core";
+import { parseFactLine, type BadFactLine, type Fact, type NewerFact } from "@maycombhq/core";
 
 /**
  * A memory ceiling for the commands that read a whole repo's facts (ADR 0124 addendum A-room).
@@ -136,9 +136,11 @@ export function reExecForMemory(
 export async function streamFacts(
   file: string,
   room?: () => void,
-): Promise<{ facts: Fact[]; bad: BadFactLine[] }> {
+): Promise<{ facts: Fact[]; bad: BadFactLine[]; newer: NewerFact[] }> {
   const facts: Fact[] = [];
   const bad: BadFactLine[] = [];
+  // Beta.25: a fact of a kind a newer Atticus wrote, kept aside as written.
+  const newer: NewerFact[] = [];
   const seen = new Set<string>();
   const lines = createInterface({
     input: createReadStream(file, { encoding: "utf8" }),
@@ -151,9 +153,10 @@ export async function streamFacts(
       const r = parseFactLine(raw, ++line, seen);
       if (r.fact) facts.push(r.fact);
       else if (r.bad) bad.push(r.bad);
+      else if (r.newer) newer.push(r.newer);
     }
   } finally {
     lines.close();
   }
-  return { facts, bad };
+  return { facts, bad, newer };
 }

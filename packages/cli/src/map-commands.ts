@@ -32,6 +32,7 @@ import {
   type Conventions,
   orgPackDirOf,
   parseFacts,
+  parseFactsLines,
   runsDirOf,
   writeFileAtomic,
   type FrameworkModel,
@@ -79,6 +80,7 @@ import {
   sliceText,
   staleMessage,
   verifyFacts,
+  isBuildFile,
   type FileKind,
   type FrameworkTopic,
   type FileSlice,
@@ -303,7 +305,19 @@ function instructionTokens(
   return (
     // The rule asking what the repo is (ADR 0128) isn't counted here: it is paid for out of the
     // reserve below (`reserveFor`), so the room planned for files is what it always was.
-    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds, frameworks })) +
+    // ADR 0192: counted as if a batch of deploy files held a build file (build files are deploy
+    // files), the most its prompt can carry.
+    estimateTokens(
+      mapBatchInstructions({
+        repo,
+        commit,
+        batch: 999,
+        of: 999,
+        kinds,
+        frameworks,
+        build: kinds.includes("deploy"),
+      }),
+    ) +
     estimateTokens(DATA_RULE) +
     // the <atticus-data> wrapper around the batch's files
     60
@@ -624,6 +638,12 @@ async function readFactsFile(root: string, repo: string): Promise<Fact[] | strin
   return `${factsRelOf(root)}/${repo}.jsonl does not read as facts (${parsed.issues[0]?.message ?? "?"}); fix it, or start again with --force after moving it aside.`;
 }
 
+/** Review of beta.25: the facts file's lines a newer Atticus wrote, kept as written on a write. */
+async function newerLinesOf(root: string, repo: string): Promise<string[]> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
+  return parseFactsLines(text).newer.flatMap((n) => (n.raw !== undefined ? [n.raw] : []));
+}
+
 /** What a re-read's prompts add to the protocol: only the changed files, rewrite or drop, keep the rest. */
 function rereadInstructions(s: MapState): string {
   const r = s.reread!;
@@ -767,6 +787,10 @@ async function packFor(
     : extra + rejected.reduce((n, t) => n + estimateTokens(t), 0) <= reserve
       ? both
       : own;
+  // ADR 0192 (beta.25): the build coordinates' rule and lines only for a batch with a build file.
+  const ownBuild = slices.some((x) => isBuildFile(x.path));
+  const theirBuild = s.rejected.some((r) => citedFiles(r.fact).some(isBuildFile));
+  const build = fix ? theirBuild : kinds === both ? ownBuild || theirBuild : ownBuild;
   const sources: SourceInput[] = [
     {
       id: "0-instructions",
@@ -779,6 +803,7 @@ async function packFor(
         of: s.batches.length,
         ...(fix ? { fix: true } : {}),
         kinds,
+        build,
         // A-framework: the frameworks the repo's own facts declare, else its type's hint. The
         // build files are read first, so from the second batch on this is what the code says.
         frameworks: await frameworksFor(root, s.repo, facts),
@@ -1468,6 +1493,7 @@ async function takeAnswer(
     [],
     reviewedProblemsOf(reviewed.bad, report),
     answer.slips,
+    await newerLinesOf(root, s.repo),
   );
   // The one line the reader drafted about the repo (ADR 0128): kept as a draft, marked
   // unconfirmed wherever it is shown, for a person to confirm, edit or reject.

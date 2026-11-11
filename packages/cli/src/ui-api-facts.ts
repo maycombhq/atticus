@@ -1,5 +1,5 @@
 import { appendLines } from "./file-lock.js";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { filesIn, memoByFiles } from "./file-memo.js";
 import { join } from "node:path";
 import {
@@ -19,6 +19,7 @@ import {
   writeFileAtomic,
   type Fact,
   FactId,
+  LockHeldError,
 } from "@maycombhq/core";
 import {
   applyCorrections,
@@ -34,6 +35,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { loadRepos } from "@maycombhq/workspace";
 import { readCorrections } from "./facts-files.js";
 
 /**
@@ -278,9 +280,57 @@ const saysOf = (c: FactCorrection) =>
     c.reason ?? null,
   ]);
 
+/** The largest body POST /api/links/corrections reads: 5000 items with their why and edits. */
+const LINK_CORRECTIONS_MAX_BODY = 16 * 1024 * 1024;
+
 /** Hold every file's shared lock, in the order given, for the whole of `work`. */
-const holdingAll = <T>(files: readonly string[], work: () => Promise<T>): Promise<T> =>
-  files.length ? withSharedFileLock(files[0]!, () => holdingAll(files.slice(1), work)) : work();
+const holdingAll = <T>(
+  files: readonly string[],
+  work: () => Promise<T>,
+  o: { waitMs?: number } = {},
+): Promise<T> =>
+  files.length
+    ? withSharedFileLock(files[0]!, () => holdingAll(files.slice(1), work, o), o)
+    : work();
+
+/**
+ * Review of beta.24: a repo as the estate spells it, from the repos' manifests and the facts
+ * files: a name in another case (`Forge-Ledger`) is the one repo it names on a file system that
+ * ignores case, so it is spelt the one way, and a batch makes one plan of it. A name nothing
+ * spells is refused. Round 3: one table by the name in lower case; a facts folder's other files
+ * (`.corrections`, `.rejected`, `.reviewed`, `.questions`) spell no repo; and a name two facts
+ * files spell but for case (a file system that tells them apart) is refused, as it is no one repo
+ * where case is ignored. Round 4: the facts file's spelling first, as the file that is there (a
+ * manifest's `forge-ledger` with only `Forge-Ledger.jsonl` on a file system that minds case);
+ * the manifests' when no facts file spells it.
+ */
+async function repoSpellings(root: string): Promise<(name: string) => string> {
+  const byLower = new Map<string, Set<string>>();
+  const add = (n: string) => {
+    const k = n.toLowerCase();
+    byLower.set(k, (byLower.get(k) ?? new Set()).add(n));
+  };
+  const manifests = new Map<string, string>();
+  for (const r of await loadRepos(root).catch(() => [])) manifests.set(r.id.toLowerCase(), r.id);
+  for (const n of await readdir(factsDirOf(root)).catch(() => [] as string[]))
+    if (n.endsWith(".jsonl") && !/\.(corrections|rejected|reviewed|questions)\.jsonl$/.test(n))
+      add(n.slice(0, -6));
+  return (name) => {
+    const k = name.toLowerCase();
+    const same = [...(byLower.get(k) ?? [])].sort();
+    const manifest = manifests.get(k);
+    if (!same.length && manifest) return manifest;
+    if (!same.length) throw notFound(`No repo of the estate is named ${name}.`);
+    if (same.length > 1)
+      throw new HttpError(
+        422,
+        "Atticus can't tell which repo that is",
+        `The facts files spell ${same.join(", ")}, which differ only by case: one repo where case is ignored. Rename one (and its facts files) so each repo is spelt one way.`,
+        { written: [] },
+      );
+    return same[0]!;
+  };
+}
 
 export function uiFactsRoutes(
   r: Router,
@@ -289,6 +339,8 @@ export function uiFactsRoutes(
     now?: () => Date;
     /** How a whole corrections file is written (a test makes one fail). */
     write?: (file: string, data: string) => Promise<void>;
+    /** How long a batch waits for a corrections file another process holds (a test's is short). */
+    lockWaitMs?: number;
   } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
@@ -315,7 +367,8 @@ export function uiFactsRoutes(
         return { status: 200, body: v };
       })
       .add("POST", "/api/facts/{repo}/corrections", async ({ params, body }) => {
-        const repo = repoOf(params.repo!);
+        // Round 3: the repo as the estate spells it, as the batch takes it.
+        const repo = (await repoSpellings(ctx.root))(repoOf(params.repo!));
         const b = Api.FactCorrectionRequest.safeParse(body ?? {});
         if (!b.success)
           throw badRequest(
@@ -331,7 +384,18 @@ export function uiFactsRoutes(
         const written = correctionLine(c);
         await mkdir(factsDirOf(ctx.root), { recursive: true });
         const cfile = join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
-        await appendLines(cfile, [written]);
+        // Round 3: a file another process holds past the wait is a conflict that wrote nothing.
+        await appendLines(cfile, [written], { waitMs: deps.lockWaitMs ?? 15_000 }).catch(
+          (e: unknown) => {
+            if (!(e instanceof LockHeldError)) throw e;
+            throw new HttpError(
+              409,
+              "Another write holds a corrections file",
+              `${e.message} Nothing was written; try again once it is done.`,
+              { written: [] },
+            );
+          },
+        );
         ctx.events.publish({ type: "file.changed", path: rel });
         const result: Api.FactCorrectionResultT = {
           correction: c,
@@ -345,144 +409,171 @@ export function uiFactsRoutes(
       // This whole arrow is wrong (beta.24): one correction of every call on a link. Every item is
       // checked first, so a call that can't be recorded writes none. Review of beta.24: all or
       // none, and never twice. Every involved file's shared lock is held for the whole batch (in
-      // one order, so two batches can't wait on each other); an item whose newest correction on
-      // file says the same already is skipped; each file is written whole and renamed into
-      // place; a failure puts back every file written, or, when one can't be, says which were.
-      .add("POST", "/api/links/corrections", async ({ body }) => {
-        const b = Api.LinkCorrectionsRequest.safeParse(body ?? {});
-        if (!b.success)
-          throw badRequest(
-            "Say which calls and what is wrong: { items: [{ repo, fact, action, set }], reason }.",
-            {
-              errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-            },
-          );
-        const at = now();
-        const byRepo = new Map<string, FactCorrection[]>();
-        const read = new Map<string, Awaited<ReturnType<typeof readFacts>>>();
-        for (const item of b.data.items) {
-          const repo = repoOf(item.repo);
-          let f = read.get(repo);
-          if (!f) {
-            f = await readFacts(ctx.root, repo);
-            read.set(repo, f);
+      // one order, so two batches can't wait on each other), and one held past the wait is a 409
+      // that wrote nothing; an item whose correction the fact meets now (by its id and cite, as
+      // verify meets it) says the same already is skipped; each file is written whole and
+      // renamed into place; a failure puts back every file written, or, when one can't be, says
+      // which were (`written`). Up to 5000 items (LINK_CORRECTIONS_MAX), in a body of 16 MB.
+      .add(
+        "POST",
+        "/api/links/corrections",
+        async ({ body }) => {
+          const b = Api.LinkCorrectionsRequest.safeParse(body ?? {});
+          if (!b.success)
+            throw badRequest(
+              "Say which calls and what is wrong: { items: [{ repo, fact, action, set }], reason }.",
+              {
+                errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+              },
+            );
+          const at = now();
+          const byRepo = new Map<string, { c: FactCorrection; fact: Fact }[]>();
+          const read = new Map<string, Awaited<ReturnType<typeof readFacts>>>();
+          const spelt = await repoSpellings(ctx.root);
+          for (const item of b.data.items) {
+            const repo = spelt(repoOf(item.repo));
+            let f = read.get(repo);
+            if (!f) {
+              f = await readFacts(ctx.root, repo);
+              read.set(repo, f);
+            }
+            if (!f.present) throw notFound(`There are no facts for ${repo} at ${f.file}.`);
+            const reason = item.reason ?? b.data.reason;
+            const corrected = correctionOfRequest(
+              f,
+              {
+                fact: item.fact,
+                action: item.action,
+                ...(item.set ? { set: item.set } : {}),
+                ...(reason ? { reason } : {}),
+              },
+              ctx.user,
+              at,
+            );
+            byRepo.set(repo, [...(byRepo.get(repo) ?? []), corrected]);
           }
-          if (!f.present) throw notFound(`There are no facts for ${repo} at ${f.file}.`);
-          const reason = item.reason ?? b.data.reason;
-          const { c } = correctionOfRequest(
-            f,
-            {
-              fact: item.fact,
-              action: item.action,
-              ...(item.set ? { set: item.set } : {}),
-              ...(reason ? { reason } : {}),
-            },
-            ctx.user,
-            at,
-          );
-          byRepo.set(repo, [...(byRepo.get(repo) ?? []), c]);
-        }
-        await mkdir(factsDirOf(ctx.root), { recursive: true });
-        const repos = [...byRepo.keys()].sort((a, b2) => (a < b2 ? -1 : a > b2 ? 1 : 0));
-        const fileOf = (repo: string) => join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
-        const relOf = (repo: string) => `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
-        const files: Api.LinkCorrectionsResultT["files"] = [];
-        const skipped: { repo: string; fact: string }[] = [];
-        type Planned = {
-          repo: string;
-          before: string | undefined;
-          after: string;
-          cs: FactCorrection[];
-        };
-        await holdingAll(repos.map(fileOf), async () => {
-          // Read under the locks: what each file holds now, and what its newest line says of
-          // each fact (a line written meanwhile counts).
-          const plan: Planned[] = [];
-          for (const repo of repos) {
-            const before = await readFile(fileOf(repo), "utf8").catch((e: unknown) => {
-              if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-              throw new HttpError(
-                500,
-                "Atticus wrote none of it",
-                `${relOf(repo)} couldn't be read (${e instanceof Error ? e.message : String(e)}): nothing was written to any repo.`,
-                { written: [] },
-              );
-            });
-            const newest = new Map<string, string>();
-            for (const c of parseCorrections(before ?? "").corrections)
-              newest.set(c.fact, saysOf(c));
-            const cs: FactCorrection[] = [];
-            for (const c of byRepo.get(repo)!) {
-              if (newest.get(c.fact) === saysOf(c)) {
-                if (!skipped.some((x) => x.repo === repo && x.fact === c.fact))
-                  skipped.push({ repo, fact: c.fact });
-                continue;
+          await mkdir(factsDirOf(ctx.root), { recursive: true });
+          const repos = [...byRepo.keys()].sort((a, b2) => (a < b2 ? -1 : a > b2 ? 1 : 0));
+          const fileOf = (repo: string) => join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
+          const relOf = (repo: string) => `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
+          const files: Api.LinkCorrectionsResultT["files"] = [];
+          const skipped: { repo: string; fact: string }[] = [];
+          type Planned = {
+            repo: string;
+            before: string | undefined;
+            after: string;
+            cs: FactCorrection[];
+          };
+          const held = holdingAll(
+            repos.map(fileOf),
+            async () => {
+              // Read under the locks: what each file holds now (a line written meanwhile counts).
+              const plan: Planned[] = [];
+              for (const repo of repos) {
+                const before = await readFile(fileOf(repo), "utf8").catch((e: unknown) => {
+                  if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+                  throw new HttpError(
+                    500,
+                    "Atticus wrote none of it",
+                    `${relOf(repo)} couldn't be read (${e instanceof Error ? e.message : String(e)}): nothing was written to any repo.`,
+                    { written: [] },
+                  );
+                });
+                // Review of beta.24: an item is skipped only when the correction the fact meets now
+                // (by its id and cite, as verify meets it) says the same. One on file for a line the
+                // fact has left (the code moved) meets nothing: the new one is written, and wins.
+                const onFile = parseCorrections(before ?? "").corrections;
+                const cs: FactCorrection[] = [];
+                for (const { c, fact } of byRepo.get(repo)!) {
+                  const meets = correctionFor(fact, onFile);
+                  if (meets && saysOf(meets) === saysOf(c)) {
+                    if (!skipped.some((x) => x.repo === repo && x.fact === c.fact))
+                      skipped.push({ repo, fact: c.fact });
+                    continue;
+                  }
+                  onFile.push(c);
+                  cs.push(c);
+                }
+                if (!cs.length) continue;
+                // In the file's own line endings, on a line of its own (as appendLines writes).
+                const was = before ?? "";
+                const eol = /\r\n/.test(was) ? "\r\n" : "\n";
+                const lead = was && !was.endsWith("\n") ? eol : "";
+                const lines = cs.map(correctionLine);
+                plan.push({
+                  repo,
+                  before,
+                  after: was + lead + lines.map((l) => `${l}${eol}`).join(""),
+                  cs,
+                });
               }
-              newest.set(c.fact, saysOf(c));
-              cs.push(c);
-            }
-            if (!cs.length) continue;
-            // In the file's own line endings, on a line of its own (as appendLines writes).
-            const was = before ?? "";
-            const eol = /\r\n/.test(was) ? "\r\n" : "\n";
-            const lead = was && !was.endsWith("\n") ? eol : "";
-            const lines = cs.map(correctionLine);
-            plan.push({
-              repo,
-              before,
-              after: was + lead + lines.map((l) => `${l}${eol}`).join(""),
-              cs,
-            });
-          }
-          const done: Planned[] = [];
-          for (const x of plan) {
-            try {
-              await write(fileOf(x.repo), x.after);
-              done.push(x);
-            } catch (e) {
-              const why = e instanceof Error ? e.message : String(e);
-              // Put back what was written: the file as it was, or none where there was none.
-              const kept: Planned[] = [];
-              for (const y of [...done].reverse())
-                await (
-                  y.before === undefined
-                    ? rm(fileOf(y.repo), { force: true })
-                    : write(fileOf(y.repo), y.before)
-                ).catch(() => kept.push(y));
-              const written = kept
-                .sort((a, b2) => (a.repo < b2.repo ? -1 : 1))
-                .map((y) => ({ repo: y.repo, file: relOf(y.repo) }));
-              for (const w of written) ctx.events.publish({ type: "file.changed", path: w.file });
-              throw new HttpError(
-                500,
-                written.length ? "Atticus wrote only part of it" : "Atticus wrote none of it",
-                written.length
-                  ? `${relOf(x.repo)} couldn't be written (${why}), and ${written.map((w) => w.file).join(", ")} couldn't be put back as it was: the corrections for ${written.map((w) => w.repo).join(", ")} are on file, the others are not. Asked again, the ones on file are skipped.`
-                  : `${relOf(x.repo)} couldn't be written (${why}): nothing was written to any repo.`,
-                { written },
-              );
-            }
-          }
-          for (const x of done)
-            files.push({
-              repo: x.repo,
-              file: relOf(x.repo),
-              lines: x.cs.map(correctionLine),
-              corrections: x.cs,
-            });
-        });
-        for (const f of files) ctx.events.publish({ type: "file.changed", path: f.file });
-        const n = files.reduce((k, f) => k + f.corrections.length, 0);
-        const result: Api.LinkCorrectionsResultT = {
-          files,
-          // Nothing new written (every one on file already): nothing to commit.
-          commit: files.length
-            ? `git add ${files.map((f) => f.file).join(" ")}\ngit commit -m "A person's correction of ${n} call${n === 1 ? "" : "s"} on one link"`
-            : "",
-          verify: files.map((f) => `atticus verify ${f.repo}`),
-          ...(skipped.length ? { skipped } : {}),
-        };
-        return { status: 200, body: result };
-      })
+              const done: Planned[] = [];
+              for (const x of plan) {
+                try {
+                  await write(fileOf(x.repo), x.after);
+                  done.push(x);
+                } catch (e) {
+                  const why = e instanceof Error ? e.message : String(e);
+                  // Put back what was written: the file as it was, or none where there was none.
+                  const kept: Planned[] = [];
+                  for (const y of [...done].reverse())
+                    await (
+                      y.before === undefined
+                        ? rm(fileOf(y.repo), { force: true })
+                        : write(fileOf(y.repo), y.before)
+                    ).catch(() => kept.push(y));
+                  const written = kept
+                    .sort((a, b2) => (a.repo < b2.repo ? -1 : 1))
+                    .map((y) => ({ repo: y.repo, file: relOf(y.repo) }));
+                  for (const w of written)
+                    ctx.events.publish({ type: "file.changed", path: w.file });
+                  throw new HttpError(
+                    500,
+                    written.length ? "Atticus wrote only part of it" : "Atticus wrote none of it",
+                    written.length
+                      ? `${relOf(x.repo)} couldn't be written (${why}), and ${written.map((w) => w.file).join(", ")} couldn't be put back as it was: the corrections for ${written.map((w) => w.repo).join(", ")} are on file, the others are not. Asked again, the ones on file are skipped.`
+                      : `${relOf(x.repo)} couldn't be written (${why}): nothing was written to any repo.`,
+                    { written },
+                  );
+                }
+              }
+              for (const x of done)
+                files.push({
+                  repo: x.repo,
+                  file: relOf(x.repo),
+                  lines: x.cs.map(correctionLine),
+                  corrections: x.cs,
+                });
+            },
+            { waitMs: deps.lockWaitMs ?? 15_000 },
+          );
+          // Review of beta.24: a file another process (the CLI, an assistant) holds past the wait
+          // is a conflict, and nothing was written: every lock is taken before any write.
+          await held.catch((e: unknown) => {
+            if (!(e instanceof LockHeldError)) throw e;
+            throw new HttpError(
+              409,
+              "Another write holds a corrections file",
+              `${e.message} Nothing was written to any repo; try again once it is done.`,
+              { written: [] },
+            );
+          });
+          for (const f of files) ctx.events.publish({ type: "file.changed", path: f.file });
+          const n = files.reduce((k, f) => k + f.corrections.length, 0);
+          const result: Api.LinkCorrectionsResultT = {
+            files,
+            // Nothing new written (every one on file already): nothing to commit.
+            commit: files.length
+              ? `git add ${files.map((f) => f.file).join(" ")}\ngit commit -m "A person's correction of ${n} call${n === 1 ? "" : "s"} on one link"`
+              : "",
+            verify: files.map((f) => `atticus verify ${f.repo}`),
+            ...(skipped.length ? { skipped } : {}),
+          };
+          return { status: 200, body: result };
+        },
+        // Review of beta.24: up to 5000 calls in one request (every call edge-calls gives), each
+        // with its why: more than the server's usual 4 MB.
+        { maxBody: LINK_CORRECTIONS_MAX_BODY },
+      )
   );
 }

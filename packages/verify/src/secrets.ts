@@ -9,6 +9,7 @@ import { hasSecretShape, looksLikeSecret } from "@maycombhq/core";
 export interface SecretLine {
   file: string;
   line: number;
+  /** Review of beta.24: empty when the key is a secret itself (an access key id), never shown. */
   key: string;
 }
 
@@ -33,6 +34,8 @@ const KEY_VALUE =
 const XML_ELEMENT = /<([A-Za-z_][\w.-]*)>([^<]+)<\/\1>/g;
 /** An XML element that names its value: `<add key="ApiKey" value="x" />`. */
 const XML_NAMED = /\b(?:key|name)\s*=\s*"([^"]+)"\s+value\s*=\s*"([^"]*)"/g;
+/** Beta.25: the same, its value first: `<cm:property value="x" name="ledger.password"/>`. */
+const XML_NAMED_AFTER = /\bvalue\s*=\s*"([^"]*)"\s+(?:key|name)\s*=\s*"([^"]+)"/g;
 /** A connection string's pairs: `Server=db;User Id=forge;Password=x;`. */
 const CONNECTION_PAIR = /(?:^|[;"'])\s*([A-Za-z][A-Za-z0-9 _.-]*?)\s*=\s*([^;"'<>\s][^;"'<>]*)/g;
 /** A deploy tool's token (the Apigee config plugin's `config.json`) names its value elsewhere. */
@@ -71,8 +74,63 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
   return undefined;
 }
 
-/** The lines of a config file that hold what looks like a live secret. */
+/**
+ * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
+ * well-known token shape (an access key id written as a credentials file's key), a run of 24 hex
+ * digits or more (a random id, a digest), a run of 16 letters and digits or more that switches
+ * between them as a random token does (`q7Xf3Kd9…`), or (round 4) 32 characters or more of one
+ * piece (no `_`, `-` or `.`) in base64's or hex's alphabet, digits and letters both, or 32
+ * characters or more of base64url's alphabet with digits and both cases.
+ * A key of words, however abbreviated (`MSSQL_SA_PWD_2019`, `x509Certificate2Path`), is shown.
+ */
+export function keyIsSecret(key: string): boolean {
+  if (hasSecretShape(key)) return true;
+  for (const run of key.match(/[0-9a-f]{24,}|[0-9A-F]{24,}/g) ?? [])
+    if (/\d/.test(run) && /[a-f]/i.test(run)) return true;
+  const digitsAndLetters = /\d/.test(key) && /[A-Za-z]/.test(key);
+  if (key.length >= 32 && /^[A-Za-z0-9+/=]+$/.test(key) && digitsAndLetters) return true;
+  // base64url (a JWT's parts, many API tokens): `-` and `_` too, so digits and both cases.
+  if (
+    key.length >= 32 &&
+    /^[A-Za-z0-9_-]+$/.test(key) &&
+    /\d/.test(key) &&
+    /[a-z]/.test(key) &&
+    /[A-Z]/.test(key)
+  )
+    return true;
+  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
+  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
+  let switches = 0;
+  for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
+  return switches >= key.length / 2;
+}
+
+/**
+ * Beta.25: the name a YAML list item gives the `value:` under it (`- name: NORTHWIND_CLIENT_SECRET`
+ * then `value: "…"`, a container's env): the item's `name:` or `key:` line above, in the same item.
+ */
+function itemNameAbove(lines: readonly string[], i: number): string | undefined {
+  const col = /^\s*/.exec(lines[i]!)![0].length;
+  for (let j = i - 1; j >= 0 && i - j <= 6; j--) {
+    const l = lines[j]!;
+    if (!l.trim()) continue;
+    const lead = /^\s*/.exec(l)![0].length;
+    const item = /^(\s*)-\s+(.*)$/.exec(l);
+    const keyCol = item ? item[1]!.length + (l.length - item[1]!.length - item[2]!.length) : lead;
+    if (keyCol !== col) return undefined;
+    const m = /^(?:\s*-\s+|\s*)(name|key)\s*:\s*["']?([^"'\s#]+)["']?\s*$/.exec(l);
+    if (m) return m[2]!;
+    if (item) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The lines of a config file that hold what looks like a live secret. Review of beta.24: a key
+ * that is a secret itself (`keyIsSecret`) is said as none (`""`, the app's words say why).
+ */
 export function liveSecretsIn(file: string, lines: readonly string[]): SecretLine[] {
+  const shownKey = (key: string) => (keyIsSecret(key) ? "" : key);
   if (!isConfigFile(file)) return [];
   const out: SecretLine[] = [];
   lines.forEach((text, i) => {
@@ -80,11 +138,16 @@ export function liveSecretsIn(file: string, lines: readonly string[]): SecretLin
     const pairs: { key: string; value: string }[] = [];
     const kv = KEY_VALUE.exec(text);
     if (kv) {
-      const key = TOKEN_VALUE_KEY.test(kv[1]!) ? (tokenKeyNear(lines, i) ?? kv[1]!) : kv[1]!;
+      const key = TOKEN_VALUE_KEY.test(kv[1]!)
+        ? (tokenKeyNear(lines, i) ??
+          (/\.ya?ml$/i.test(file) ? itemNameAbove(lines, i) : undefined) ??
+          kv[1]!)
+        : kv[1]!;
       pairs.push({ key, value: unquote(kv[2]!) });
     }
     for (const m of text.matchAll(XML_ELEMENT)) pairs.push({ key: m[1]!, value: m[2]!.trim() });
     for (const m of text.matchAll(XML_NAMED)) pairs.push({ key: m[1]!, value: m[2]!.trim() });
+    for (const m of text.matchAll(XML_NAMED_AFTER)) pairs.push({ key: m[2]!, value: m[1]!.trim() });
     if (text.includes(";"))
       for (const m of text.matchAll(CONNECTION_PAIR))
         pairs.push({ key: m[1]!.trim(), value: m[2]!.trim() });
@@ -98,12 +161,13 @@ export function liveSecretsIn(file: string, lines: readonly string[]): SecretLin
         looksLikeSecret(key, value),
     );
     if (named) {
-      out.push({ file, line: i + 1, key: named.key });
+      out.push({ file, line: i + 1, key: shownKey(named.key) });
       return;
     }
     // A secret by its shape alone (an access key id, a URL's password, a bearer token), whatever
-    // names it: said by the line's key, if it has one.
-    if (hasSecretShape(text)) out.push({ file, line: i + 1, key: pairs[0]?.key ?? "(token)" });
+    // names it: said by the line's key, if it has one and it is no secret itself.
+    if (hasSecretShape(text))
+      out.push({ file, line: i + 1, key: pairs[0] ? shownKey(pairs[0].key) : "(token)" });
   });
   return out;
 }

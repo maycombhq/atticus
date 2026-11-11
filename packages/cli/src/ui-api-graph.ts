@@ -192,10 +192,19 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
           throw badRequest("Say edge=<edge id> and node=<id> or focus=<id>.");
         const id = idOf((node ?? focus)!);
         const lens = lensOf(query.get("lens"), node ? "architecture" : "data");
+        // 3.11.0: the node view's depth and all, as GET /api/graph/node takes them, so an edge
+        // of a depth-2 or an all view is found.
+        const d = query.get("depth");
+        if (d !== null && !/^[1-3]$/.test(d)) throw badRequest("depth is 1, 2 or 3.");
         const est = await estate();
         const v = guard(() =>
           node
-            ? nodeView(est, id, { lens, everyJoin: true })
+            ? nodeView(est, id, {
+                lens,
+                depth: d ? Number(d) : 1,
+                all: query.get("all") === "1",
+                everyJoin: true,
+              })
             : focusView(est, id, { lens, everyJoin: true }),
         );
         const e = v.edges.find((x) => x.id === edge);

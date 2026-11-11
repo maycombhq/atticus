@@ -325,6 +325,11 @@ export const COPY = {
     ownWordsJoin:
       "Name a repo, component or system Atticus knows. Words that name none are refused, never drawn as a box: for a new outside system, choose it from the list above; if these aren't real calls, choose Ignore.",
     ignore: {
+      /**
+       * Beta.25: the Ignore option's words, the same as the core's JOIN_IGNORE_LABEL (the answer's
+       * value is read by them, so a test keeps the two the same).
+       */
+      label: "Ignore: not a real call (e.g. CI/CD, a test, a template)",
       means:
         "These aren't real calls: a CI/CD job, a test or a template, not code that runs. The join leaves them, no box is drawn for them, and this isn't asked again.",
       reason: "Why (optional)",
@@ -1046,6 +1051,8 @@ export const COPY = {
           ? "A secret seems to sit in a config file"
           : `${n} secrets seem to sit in config files`,
       at: (file: string, line: number, key: string) => `A secret sits in ${file}:${line} (${key})`,
+      /** Review of beta.24: what a line is said by when its key is a secret itself. */
+      secretKey: "a key that looks like a secret",
       fix: "Move it to where your secrets live (a vault, an environment variable, a Secret) and read it from there; then rotate it, as it has been in the repo. Atticus never copies its value into a map.",
     },
     coverage: "Coverage",
@@ -4379,6 +4386,8 @@ export const COPY = {
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
     onMap: (repos: string) =>
       `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
+    /** Review of beta.24: put away what Apply to every repo's map said went wrong. */
+    dismissErrors: "Dismiss these errors",
     onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
@@ -5355,7 +5364,7 @@ export const COPY = {
       repo: "The call names the repo it goes to.",
       host: "The call's host is one the manifest lists for that repo.",
       "base-path":
-        "Nothing says the call's host, but its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path.",
+        "The gateway forwards the call with no host (a proxy chained to another), and its whole path starts with this proxy's base path: this is the one route under it with its method and path.",
       declared: "A person declared who calls this gateway route.",
       topic: "It publishes a topic the other side listens to.",
       path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
@@ -5378,6 +5387,11 @@ export const COPY = {
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,
+    // Beta.25 review: an inferred join's own words where they differ from a verified one's.
+    howGuessed: {
+      "base-path":
+        "Joined by the proxy's BasePath; the caller's host is unknown. Its whole path starts with this gateway proxy's base path, and this is the one route under it with its method and path, but nothing says the call goes to this gateway, so this is a guess.",
+    } as Record<string, string>,
     gateway: "It goes through a gateway on the way.",
     // ADR 0162 §6 (F8): a topic or queue a person named as an outside system's in the profile.
     declared: "Declared in the profile",
@@ -5399,11 +5413,15 @@ export const COPY = {
     more: (n: number) =>
       `${n} more call${n === 1 ? "" : "s"} on this link. Open either end to see its calls one by one, or list the Interface records with atticus query "kind:interface".`,
     none: "This link isn't a call, so there is no join to explain: its lines are listed under it.",
-    // Beta.24 review: on a verified link, the guesses its other merged calls rest on.
+    // Beta.24 review: on a verified link, the guesses its other merged calls rest on (beta.25:
+    // and the pairings, a person's or the AI's word, which never verify a link).
     also: (how: string) =>
-      `Also: other calls merged into this link were joined by ${how}, a guess; open either end to see them one by one.`,
+      `Also: other calls merged into this link were joined by ${how}, not read from code at both ends; open either end to see them one by one.`,
     alsoHow: {
+      person: "a person's pairing (their word)",
+      ai: "the AI's pairing (no person has confirmed it)",
       path: "their path alone",
+      "base-path": "the proxy's BasePath, their host unknown",
       label: "their host's first part",
       "platform-setting": "a platform-wide setting",
       "folder-name": "the folder a setting is in",
@@ -5428,12 +5446,25 @@ export const COPY = {
         "Say why it is no dependency on the estate's library (a test helper, a stale line, a fork). Atticus writes it to the depending repo's corrections file through the local API; atticus verify leaves the dependency out every time it runs, and the link goes. Nothing changes until you run the command below and the change is reviewed in a pull request.",
       reason: "Why (required)",
       needReason: "Say why the dependency is wrong first.",
+      // Beta.25: a link that rests on several dependency facts (two module poms, a profile, two
+      // configurations): each is listed, every one chosen at first.
+      pickFacts: (n: number) =>
+        `The ${n} lines of its build that declare it (the link goes once each is wrong)`,
+      needFact: "Choose at least one line that declares the dependency.",
+      // Beta.25: a merged arrow's every dependency, read when the view lists only some.
+      moreLoading: "Reading every dependency on this arrow…",
+      moreFailed: (why: string) => `Couldn't read every dependency on this arrow: ${why}`,
       noFact: (repo: string) =>
         `No dependency fact of ${repo} is on this line, so there is nothing to correct here. Read the repo again (/atticus-map ${repo}) or correct the line's facts from its citation.`,
       loadingFacts: "Reading the depending repo's facts…",
       factsFailed: (why: string) => `Couldn't read the depending repo's facts: ${why}`,
       will: (from: string, to: string) =>
         `The dependency is left out: ${from} no longer depends on ${to} once atticus verify runs with --write, unless another line of its build declares it.`,
+      // Review of beta.25: the lines chosen are corrected in one write, all or none.
+      savedAll: (n: number, files: string) =>
+        `Written ${n} correction${n === 1 ? "" : "s"} to ${files}, in one go.`,
+      alreadyAll: "Every one of these corrections is on file already, so nothing new was written.",
+      skippedAll: (n: number) => `${n} ${n === 1 ? "was" : "were"} on file already.`,
     },
     // C2: this link is wrong
     wrong: "This link is wrong",
@@ -5502,6 +5533,21 @@ export const COPY = {
       callsFailed: (why: string) => `Couldn't read every call on this arrow: ${why}`,
       declared: (n: number) =>
         `${n} of these link${n === 1 ? " is" : "s are"} a person's declaration, not a call in code, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: withdraw a declaration from This link is wrong under its call.`,
+      /**
+       * Review of beta.24, round 4: a line that holds no call of its link's path, or more than
+       * one (two hosts, another arrow's call), is never settled by a guess: the person ticks.
+       */
+      pick: {
+        legend: "Which of these calls are on this arrow?",
+        intro:
+          "Atticus can't tell for sure which call on these lines makes this arrow: the line holds no call of its path, or more than one. Tick each call that belongs to this arrow; only the ticked ones are corrected.",
+        call: (what: string, host: string | undefined, at: string) =>
+          `${what}${host ? ` to ${host}` : ""}, ${at}`,
+        need: "Tick at least one call to correct first.",
+      },
+      /** Review of beta.24, round 3: more calls than one request corrects. */
+      tooMany: (n: number, max: number) =>
+        `This arrow has ${n} calls to correct, more than the ${max} one correction can take. Correct the calls of one box at a time, opening the arrow from a box inside it.`,
       routing: (n: number) =>
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: correct the proxy's forwarding on the proxy's own box, which changes that route for every caller.`,
       already:

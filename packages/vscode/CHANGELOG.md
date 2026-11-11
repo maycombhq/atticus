@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.25 (pre-release, with Atticus 2.0.0-beta.25)
+
+- **Ships with Atticus 2.0.0-beta.25, and needs it.** The app in its tab reads beta.25's local API (3.11): the arrow's panel and the box's panel laid out, "All calls on this arrow are wrong" asking which calls when a line holds several, the boxes made from an answer's words put right, and depends-on arrows with every coordinate they rest on.
+
 ## 0.7.24 (pre-release, with Atticus 2.0.0-beta.24)
 
 - **Ships with Atticus 2.0.0-beta.24, and needs it.** The app in its tab reads beta.24's local API (3.10): All calls on this arrow are wrong, the arrow's every call, the boxes made from an answer's words on Map › Trust, Ignore on a join question and the **depends on** arrows to a library of the estate's own.

@@ -958,6 +958,34 @@ describe("review round 48: a person's word stands over the AI's, and a rule stay
     expect((await corrections()).filter((c) => c.ai)).toEqual([]);
   });
 
+  it("never pairs a call on a host a person answered Ignore (beta.25)", async () => {
+    const q = targetsQuestion(QC, 41);
+    await writeQuestion(root, {
+      ...q,
+      askedBy: { ...q.askedBy, step: "scan-hosts" },
+      question: "Which repo answers on billing-ci.forge.internal?",
+      state: "answered",
+      answer: {
+        text: "Ignore: a CI job's call",
+        by: "pat",
+        at: "2026-11-08T09:30:00.000Z",
+        scope: { level: "repo", id: "forge-billing" },
+      },
+    });
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    const d = await decideLinks(root, {
+      view,
+      facts,
+      run: "r9",
+      now: AT,
+      proposals: [
+        { call: "call.post.charges-refunds", api: REFUNDS, why: "x", lines: [`${FILE}:41`] },
+      ],
+    });
+    expect(d?.applied).toEqual([]);
+    expect((await corrections()).filter((c) => c.ai)).toEqual([]);
+  });
+
   it("a correction's spread skips a call whose targets question a person answered (x8)", async () => {
     await writeQuestion(root, targetsQuestion(QB, 41));
     await personNone(QB);
