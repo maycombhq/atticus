@@ -5,9 +5,33 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test as base, type Page } from "@playwright/test";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+
+/**
+ * ADR 0194: the journeys walk the pages with the IDE layout's side panel hidden (until a step
+ * shows it), so the Explorer's own names (its changes, systems and filter) don't stand beside
+ * the page's; 34-ide-shell walks the Explorer with it shown (`test.use({ sideHidden: false })`).
+ */
+const test = base.extend<{ sideHidden: boolean }>({
+  sideHidden: [true, { option: true }],
+  page: async ({ page, sideHidden }, use) => {
+    if (sideHidden)
+      await page.addInitScript(() => {
+        try {
+          if (!localStorage.getItem("atticus.shell.side"))
+            localStorage.setItem(
+              "atticus.shell.side",
+              JSON.stringify({ width: 260, hidden: true }),
+            );
+        } catch {
+          // No storage: the panel shows.
+        }
+      });
+    await use(page);
+  },
+});
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../../..");

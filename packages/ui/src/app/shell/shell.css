@@ -166,6 +166,10 @@
   line-height: 16px;
   text-align: center;
 }
+/* Generated content: never part of the link's name or text (its name says the count). */
+.sh-badge::before {
+  content: attr(data-n);
+}
 
 /* A tooltip with each icon's name, on hover and on keyboard focus (icons.tsx Tip). */
 .sh-tip {

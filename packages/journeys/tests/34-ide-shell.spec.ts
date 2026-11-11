@@ -8,6 +8,8 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
  * away. Each width works without scrolling sideways. Invented Forge names.
  */
 const app = forgeJourney();
+// The side panel shows, as it does for a person on a wide window.
+test.use({ sideHidden: false });
 const CHANGE = "add-transfer-limit";
 
 const sideways = (page: import("@playwright/test").Page) =>
@@ -189,14 +191,17 @@ test("in an editor's panel there is no second activity bar, and every page is st
   page,
 }) => {
   // A VS Code webview's body carries the editor's theme class (theme.ts inEditor).
-  await page.addInitScript(() => {
-    const mark = () => document.body?.classList.add("vscode-dark");
-    if (document.body) mark();
-    else
-      new MutationObserver((_m, o) => document.body && (mark(), o.disconnect())).observe(document, {
-        childList: true,
-        subtree: true,
-      });
+  await page.addInitScript({
+    content: `(() => {
+      const mark = () => document.body.classList.add("vscode-dark");
+      if (document.body) return mark();
+      new MutationObserver((_m, o) => {
+        if (document.body) {
+          mark();
+          o.disconnect();
+        }
+      }).observe(document, { childList: true, subtree: true });
+    })();`,
   });
   await page.setViewportSize({ width: 780, height: 900 });
   await open(page, app(), "home");

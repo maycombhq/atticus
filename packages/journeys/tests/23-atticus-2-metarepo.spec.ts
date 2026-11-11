@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { accessible, expect, forgeStudioJourney, open, test } from "../support/app.js";
+import { accessible, ask, expect, forgeStudioJourney, open, test } from "../support/app.js";
 
 /**
  * A metarepo made the Atticus 2 way (fixtures/forge-studio): one repo read by the assistant and

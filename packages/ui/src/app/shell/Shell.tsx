@@ -400,13 +400,16 @@ export function Shell({
           aria-label={COPY.explorer.label}
           hidden={!side.open}
         >
-          <Explorer
-            current={hash}
-            onOpen={(h) => {
-              if (side.overlay) side.close();
-              if (location.hash !== h) location.hash = h;
-            }}
-          />
+          {/* Hidden, it is not drawn at all: its names never stand beside the page's. */}
+          {side.open && (
+            <Explorer
+              current={hash}
+              onOpen={(h) => {
+                if (side.overlay) side.close();
+                if (location.hash !== h) location.hash = h;
+              }}
+            />
+          )}
         </aside>
         {side.open && !side.overlay && (
           <Resizer width={side.width} onResize={side.resize} onLive={side.setWidth} />

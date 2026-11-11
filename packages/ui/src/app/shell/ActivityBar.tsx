@@ -111,9 +111,7 @@ export function ActivityBar({
                 {n ? `, ${T.openCount(n)}` : ""}
               </span>
               {!!n && (
-                <span className="sh-badge" aria-hidden="true">
-                  {n > 99 ? "99+" : n}
-                </span>
+                <span className="sh-badge" aria-hidden="true" data-n={n > 99 ? "99+" : String(n)} />
               )}
             </a>
           );

@@ -106,8 +106,8 @@ describe("the activity bar", () => {
   it("counts open questions when a page loaded them, and says so to a screen reader", () => {
     const html = bar("#/home", 36);
     expect(html).toContain('<span class="sr">Questions, 36 open</span>');
-    expect(html).toContain('<span class="sh-badge" aria-hidden="true">36</span>');
-    expect(bar("#/home", 140)).toContain(">99+<");
+    expect(html).toContain('<span class="sh-badge" aria-hidden="true" data-n="36"></span>');
+    expect(bar("#/home", 140)).toContain('data-n="99+"');
     // Unknown, or none: no badge.
     expect(bar("#/home")).not.toContain("sh-badge");
     expect(bar("#/home", 0)).not.toContain("sh-badge");
