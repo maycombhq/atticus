@@ -280,7 +280,10 @@ const LEDGER: Record<string, string> = {
     "      <artifactId>forge-payments-common</artifactId>", // 7
     "    </dependency>", // 8
     "  </dependencies>", // 9
-    "</project>", // 10
+    "  <modules>", // 10
+    "    <module>ledger-api</module>", // 11
+    "  </modules>", // 12
+    "</project>", // 13
   ].join("\n"),
   "ledger-api/src/main/java/forge/ledger/api/LedgerController.java": [
     "package forge.ledger.api;", // 1
@@ -728,4 +731,51 @@ describe("a big pom (review of beta.25)", () => {
     expect(r.accepted).toHaveLength(n);
     expect(took).toBeLessThan(8000);
   }, 30000);
+});
+
+describe("a monorepo whose folders each have their own build (beta.25 CI: the forge-studio journeys)", () => {
+  it("keeps a web app's and an API's components apart when no build lists them as modules", async () => {
+    const files: Record<string, string> = {
+      "api/pom.xml":
+        "<project>\n  <groupId>forge.studio</groupId>\n  <artifactId>studio-api</artifactId>\n</project>",
+      "api/src/main/java/forge/studio/NotesController.java": [
+        "package forge.studio;",
+        "@RestController",
+        "class NotesController {",
+        '  @PostMapping("/api/notes") String add(String b) { return b; }',
+        "}",
+      ].join("\n"),
+    };
+    const r = await verifyFacts({
+      facts: [
+        {
+          kind: "entry",
+          id: "e-post-notes",
+          component: "api",
+          entryType: "http",
+          method: "POST",
+          path: "/api/notes",
+          cite: {
+            file: "api/src/main/java/forge/studio/NotesController.java",
+            line: 4,
+            value: "/api/notes",
+            quote: '@PostMapping("/api/notes") String add(String b) { return b; }',
+          },
+          repo: "forge-studio",
+          commit: "5555eee",
+          verified: "none",
+          by: "assistant",
+          conf: "declared",
+        } as unknown as Fact,
+      ],
+      source: memorySource(files),
+      commit: "5555eee",
+      estate: {
+        ...LEDGER_ESTATE,
+        repoComponent: { "forge-studio": "forge-studio" },
+      } as Parameters<typeof verifyFacts>[0]["estate"],
+    });
+    expect(r.componentsPlaced).toBeUndefined();
+    expect(r.accepted.map((f) => f.component)).toEqual(["api"]);
+  });
 });

@@ -1044,6 +1044,25 @@ function gradleProjectOf(
  * project's: one component when they are all of one, else `every` with each of their names.
  * Undefined when neither the manifest's modules nor the repo's component is known.
  */
+/**
+ * Beta.25: whether a top folder of a repo is a module of one build: the root `pom.xml` lists it
+ * in `<modules>`, or `settings.gradle(.kts)` includes it. Such a folder ships with the rest, so a
+ * fact naming it as a component belongs to the repo's component; a folder with its own,
+ * separate build (a web app beside an API) is no such module and keeps its own component.
+ */
+export function isBuildModuleDir(dir: string, linesOf: LinesOf): boolean {
+  const want = normDir(dir);
+  const pom = linesOf("pom.xml");
+  if (pom && pomCoordinates(pom).modules.some((m) => normDir(m.value) === want)) return true;
+  for (const f of ["settings.gradle", "settings.gradle.kts"]) {
+    const lines = linesOf(f);
+    if (!lines) continue;
+    for (const p of gradleProjects(lines))
+      if (normDir(p.path.replace(/^:/, "").replace(/:/g, "/")) === want) return true;
+  }
+  return false;
+}
+
 export function buildModuleOf(
   f: Coordinates,
   linesOf: LinesOf,

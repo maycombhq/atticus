@@ -9,7 +9,6 @@ import {
   callTargetQuestion,
   declaredCallsOf,
   factIdPart,
-  placedComponentOf,
   joinCallers,
   joinFacts,
   joinTerms,
@@ -1150,29 +1149,12 @@ export function componentRenames(
   return out;
 }
 
-/**
- * Review of beta.25: a repo's facts with each one naming a component its manifest doesn't (a
- * folder's name, in a repo whose entry lists no modules) placed in the repo's component
- * (`placedComponentOf`), as `atticus verify` places them, so a file verified before projects the
- * same boxes.
- */
-function placedFacts(repo: string, facts: readonly Fact[], op: OrgPack): readonly Fact[] {
-  const repos = estateRepos(op);
-  const m = repos.find((r) => r.id === repo);
-  if (!m || m.modules?.length) return facts;
-  const manifest = {
-    component: m.component ?? m.id,
-    prototype: isPrototypeRepo(op, repo),
-    components: repos.flatMap((r) => [
-      r.id,
-      ...(r.component ? [r.component] : []),
-      ...(r.modules ?? []).map((x) => x.component),
-    ]),
-  };
-  return facts.map((f): Fact => {
-    const to = placedComponentOf(f, manifest);
-    return to === undefined ? f : { ...f, component: to };
-  });
+/** A repo's facts as their components are written (`atticus verify` places a module's folder). */
+function placedFacts(_repo: string, facts: readonly Fact[], _op: OrgPack): readonly Fact[] {
+  // Beta.25: only `atticus verify` places a fact, since only it reads the build files that say a
+  // folder is a module of one build; a monorepo's web app and API with their own builds stay
+  // apart. The projection takes the component the facts file holds.
+  return facts;
 }
 
 /** A repo's facts with its components renamed, the manifest's component filling one left out. */

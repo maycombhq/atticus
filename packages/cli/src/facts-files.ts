@@ -23,6 +23,7 @@ import {
   writeFileAtomic,
 } from "@maycombhq/core";
 import {
+  factAsRead,
   frameworkFacts,
   insideRepo,
   parseReviewed,
@@ -379,7 +380,10 @@ export async function writeVerifyFiles(
   // Round 40: a fact read at another commit than the clone's isn't wrong, it is of another
   // commit: it stays in the facts file (and is still refused), so a run on the wrong checkout
   // never empties the file and lets the next run write a catalog without that repo's records.
-  const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").map((r) => r.fact);
+  // Beta.25: as read, not as the rejection shows it (redacted), so the file keeps its references.
+  const otherCommit = report.rejected
+    .filter((r) => r.code === "wrong-commit")
+    .map((r) => factAsRead(r.fact));
   // Review of beta.25: a newer Atticus's line is kept unless this run wrote a fact of its id.
   const written = new Set([...report.accepted, ...otherCommit].map((f) => f.id));
   const idOf = (l: string): unknown => {

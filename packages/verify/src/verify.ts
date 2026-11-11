@@ -37,6 +37,7 @@ import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-poli
 import {
   buildCoordinatesProblem,
   buildModuleOf,
+  isBuildModuleDir,
   buildModuleProblem,
   buildUnrecorded,
   isBuildFile,
@@ -249,6 +250,12 @@ function scrubbed(f: Fact, message: string): string {
 }
 
 /** A config fact with its value, source, quote and every part's value redacted (`secret-value`). */
+/** Beta.25: a fact of another commit as read, for the facts file, when its rejection shows it redacted. */
+const asRead = new WeakMap<Fact, Fact>();
+export function factAsRead(f: Fact): Fact {
+  return asRead.get(f) ?? f;
+}
+
 function withoutSecret(f: Fact): Fact {
   if (f.kind !== "config") return f;
   const { quote: _q, ...cite } = f.cite;
@@ -1448,7 +1455,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         components: o.estate.components,
         prototype: o.estate.prototypes?.includes(f.repo),
       });
-      if (to !== undefined) {
+      // Only a folder one build lists as its module: a monorepo's web app and API, each with its
+      // own build, stay separate components (the forge-studio journeys).
+      const top = f.cite?.file?.split("/")[0];
+      if (to !== undefined && top !== undefined && isBuildModuleDir(top, linesOf)) {
         moduleOf.set(f.id, to);
         placedFrom.set(f.id, f.component!);
       }
@@ -1559,6 +1569,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         ? withoutSecret(f)
         : f
       : shownFact(f, quiet, lineAt);
+    // beta.25: the facts file keeps a fact of another commit exactly as read (a redacted copy
+    // would replace a reference like `${LEDGER_DB_PASSWORD}` with `<redacted>` and corrupt it);
+    // only the rejection shows the redacted one. Kept off the report, so `--json` never has it.
+    if (isOther && shown !== f) asRead.set(shown, f);
     rejected.set(
       f.id,
       ps.length === 1
