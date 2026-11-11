@@ -2601,8 +2601,8 @@ export const COPY = {
        */
       needsMeta: (n: number) => `${n} waiting`,
       /** Beta.27: under Questions to answer, the two kinds it adds up. */
-      questionsSub: (steps: number, owner: number) =>
-        `${steps} from the steps · ${owner} owner question${owner === 1 ? "" : "s"}`,
+      // Short enough for two lines of a tile in a 780 px editor panel.
+      questionsSub: (steps: number, owner: number) => `${steps} from steps · ${owner} to owners`,
       seeAllQuestions: "See all questions",
       wholeList: (n: number) => `Show the whole list (${n})`,
       hideWholeList: "Hide the whole list",
