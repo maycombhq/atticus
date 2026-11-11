@@ -1,0 +1,34 @@
+schemaVersion: 2
+kind: Flow
+id: forge-cards-proxy.route-cards
+status: current
+confidence: inferred
+component: forge-cards-proxy
+errors: []
+evidence: []
+family: []
+name: GET /cards/{id} is routed
+template: default@1
+trigger:
+  kind: endpoint
+  ref: forge-cards-proxy.get-cards
+  what: A client calls the gateway
+  evidence:
+    - { source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 9 }
+steps:
+  - kind: entry
+    what: GET /cards/{id} arrives
+    refs: [forge-cards-proxy.get-cards]
+    evidence:
+      - { source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 9 }
+  - kind: call-out
+    what: The request is routed to the cards wrapper
+    refs: []
+    to: { component: forge-cards-wrapper, entry: "GET /cards/{id}" }
+    evidence:
+      - { source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 11 }
+  - kind: respond
+    what: The answer goes back unchanged
+    refs: []
+    evidence:
+      - { source: code, repo: forge-cards-proxy, path: apiproxy/proxies/default.xml, line: 13 }

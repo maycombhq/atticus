@@ -22,6 +22,16 @@ A change's target flows can start as a drawing ([ADR 0179](../adr/0179-drawing-a
 
 Drew it elsewhere first? `atticus change sketch <change> --from <file.drawio|.mmd>` reads a draw.io export or a Mermaid flowchart as strokes: a line marked new (or not on today's map) is a call, or a topic when its label names one; a line marked retired takes today's step out; a box the catalog doesn't know can be a call's target, not its start (a new flow needs a name and a trigger the picture can't give, so draw that one in the app). It shows what it would draw and writes with `--save`. In VS Code (**Atticus: Open the Change diagram**) and IntelliJ (the Change diagram action) the same page opens, Draw the change under it.
 
+Or say the strokes instead of drawing them: `atticus change sketch <change> --from strokes.yaml` reads a list of the canvas's strokes, applied in order, with the same preview and `--save` (ADR 0193). An `absorb` stroke folds a component into another: its flows move with the same entries, it is retired, and its callers now call the other at the same entry, so their contracts don't change.
+
+```yaml
+strokes:
+  - kind: absorb
+    component: forge-accounts-wrapper
+    into: { component: forge-api, runsOn: { type: service } }
+    why: One API service instead of a wrapper each
+```
+
 The drawn files are ordinary target flows, so review them in the pull request like any other; `atticus change architecture <change>` then drafts the steps around them and never removes or moves a drawn step. A stroke is a plan: the map changes only when the code lands and is read.
 
 **A component retired** takes a component away: every flow of it today is removed, in one stroke that Undo takes back together. A component you draw as new (a new flow of a component the catalog doesn't have, or a call to one marked new) is _planned in this change_: the architecture and stories stages and the critic know it before any repo builds it, and the deploy order may name it, marked planned ([ADR 0189](../adr/0189-a-stage-is-one-conversation.md)). After each stroke is drawn the form starts clean: _the API doesn't exist yet_ isn't carried over to the next one.
