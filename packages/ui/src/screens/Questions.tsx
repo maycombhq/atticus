@@ -1,9 +1,18 @@
-import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { ApplyAndPropose } from "../app/propose.js";
 import { RunStep, stepArgs } from "../app/runstep.js";
 import type { Api, Question } from "@maycombhq/core";
 import { api, callAsJob, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { View } from "../app/ui.js";
+import { useAvailableHeight } from "../app/viewer.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
@@ -1609,6 +1618,22 @@ export function QuestionsIntro({ change }: { change?: string | undefined }) {
   );
 }
 
+/**
+ * The list and the question side by side, each pane scrolling on its own (beta.26 review): as
+ * tall as the area that scrolls the page has left under them (the IDE layout's page, above its
+ * bottom panel; the window in the classic layout), measured as the map's canvas is and given to
+ * the CSS as --qs-pane-h, not the window's height less a guess.
+ */
+export function PaneSplit({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const h = useAvailableHeight(ref, { min: 240 });
+  return (
+    <div ref={ref} className="qs-split" style={{ "--qs-pane-h": `${h}px` } as CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
@@ -1746,7 +1771,7 @@ export function Questions({ hash }: { hash: string }) {
               <AskAiToPropose open={countsOf(list.data).open} />
             </div>
           )}
-          <div className="qs-split">
+          <PaneSplit>
             <section className="panel qs-pane" aria-labelledby="p-questions">
               <div className="row between">
                 <h2 id="p-questions" className="h">
@@ -1806,7 +1831,7 @@ export function Questions({ hash }: { hash: string }) {
                 <div className="state">{C.pickFromList}</div>
               )}
             </section>
-          </div>
+          </PaneSplit>
         </>
       )}
     </div>

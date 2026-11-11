@@ -5,6 +5,7 @@ import { hostBridge } from "../../api/bridge.js";
 import { COPY } from "../../copy.js";
 import type { TypeDraws } from "./Canvas.js";
 import { SplitCounts } from "../../app/decisions.js";
+import { takesText } from "../../app/ui.js";
 import { linkCounts, type CanvasGraph, type CanvasLink, type LinkBy } from "./model.js";
 import { WORDS } from "./words.js";
 import {
@@ -195,9 +196,9 @@ export function CanvasTools(p: {
       {...(drawer
         ? {
             onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
-              // Esc closes the drawer, unless a field takes it (a search box clears itself).
-              const t = e.target as HTMLElement;
-              if (e.key !== "Escape" || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+              // Esc closes the drawer, unless a text field takes it (a search box clears itself);
+              // from a checkbox, a radio or a select it closes the drawer (beta.26 review).
+              if (e.key !== "Escape" || takesText(e.target as HTMLElement)) return;
               e.preventDefault();
               drawer.onClose();
             },

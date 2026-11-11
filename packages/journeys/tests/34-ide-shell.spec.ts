@@ -291,7 +291,7 @@ test("in an editor's panel there is no second activity bar, and every page is st
   await accessible(page, "the map in an editor's panel");
 });
 
-test("the map gives its canvas the height: one bar, the legend folds and stays folded", async ({
+test("the map gives its canvas the height: one bar, the legend folded until opened", async ({
   page,
 }) => {
   await open(page, app(), "canvas");
@@ -324,15 +324,22 @@ test("the map gives its canvas the height: one bar, the legend folds and stays f
   await page.getByRole("button", { name: "Show details" }).click();
   await expect(page.locator(".viewer-aside")).toBeVisible();
 
-  // The legend folds, and stays folded on the next visit in this browser.
+  // The legend starts folded (open, it covered a box), opens, and stays open on the next visit
+  // in this browser; folded again, it stays folded.
   const legend = page.getByRole("button", { name: "Legend" });
-  await expect(legend).toHaveAttribute("aria-expanded", "true");
-  await legend.click();
   await expect(legend).toHaveAttribute("aria-expanded", "false");
+  await legend.click();
+  await expect(legend).toHaveAttribute("aria-expanded", "true");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Legend" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await accessible(page, "the map with its legend open");
+  await page.getByRole("button", { name: "Legend" }).click();
   await page.reload();
   await expect(page.getByRole("button", { name: "Legend" })).toHaveAttribute(
     "aria-expanded",
     "false",
   );
-  await accessible(page, "the map with its legend folded");
 });

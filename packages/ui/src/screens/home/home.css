@@ -481,6 +481,19 @@
 .hm-fold[open] > summary {
   margin-bottom: 8px;
 }
+/* Beta.26 review: an estate not set up, in one line at the top; its checklist folds at the foot. */
+.hm-setup-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.hm-setup-line .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
 .hm-note {
   margin: 0;
   font-size: 11.5px;

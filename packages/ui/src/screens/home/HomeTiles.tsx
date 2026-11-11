@@ -36,7 +36,9 @@ const why = (e: string | undefined) => (!e || isOffline(e) ? COPY.app.offlineSho
 
 export function HomeTile({ t }: { t: Tile }) {
   const known = t.state === "ready" && t.value !== undefined;
-  const sub = t.state === "error" ? H.tileError(why(t.error)) : t.sub;
+  // Beta.26 review: nothing under a tile while it loads ("None in flight" before the count).
+  const sub =
+    t.state === "error" ? H.tileError(why(t.error)) : t.state === "loading" ? undefined : t.sub;
   const subId = `hm-tile-${t.id}-sub`;
   const tone =
     t.state === "error" ? "error" : t.state === "loading" ? "quiet" : (t.tone ?? "plain");

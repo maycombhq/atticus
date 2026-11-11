@@ -2568,8 +2568,20 @@ export const COPY = {
       wholeListTitle: "Everything that needs a person",
       digest: "Digest",
       inChange: (title: string) => `in ${title}`,
+      /** The words before a change's name, the name its link (beta.26 review). */
+      inChangeLead: "in ",
       assistant: "Use with your assistant",
       problems: "Some files couldn't be read: see Map › Trust.",
+      /** Beta.26 review: a short list cut at its top few, the rest one link away. */
+      more: (n: number) => `+${n} more`,
+      setupLine: (done: number, all: number) =>
+        `Atticus isn't set up yet: ${done} of ${all} steps done.`,
+      setupShow: "Show the steps",
+      count: (n: number, what: string) => `${n} ${what}`,
+      topKinds: (list: string) => `Most in the catalog: ${list}`,
+      byLens: (list: string) => `Open findings by lens: ${list}`,
+      seeFindings: "See the findings",
+      seeCatalog: "Explore the catalog",
     },
   },
   explore: {

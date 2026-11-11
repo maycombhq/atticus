@@ -273,10 +273,13 @@ export function HomeEstate(p: {
   onboarding: Loaded<OnboardingData>;
   trust: Loaded<Api.TrustViewT>;
   changes: Loaded<ChangeRow[]>;
+  /** Beta.26 review: false in Home's fold, whose own panel lists the changes in flight. */
+  withInFlight?: boolean;
 }) {
+  const withInFlight = p.withInFlight ?? true;
   return (
     <div className="bento">
-      <Panel title={W.estate} span="span 5">
+      <Panel title={W.estate} span={withInFlight ? "span 5" : "1 / -1"}>
         <div className="stack" style={{ gap: 14 }}>
           <View of={p.onboarding}>{(v) => <CoverageView v={v} />}</View>
           <View
@@ -288,15 +291,17 @@ export function HomeEstate(p: {
           </View>
         </div>
       </Panel>
-      <Panel
-        title={W.inFlight}
-        span="span 7"
-        meta={
-          p.changes.state === "ready" ? String(p.changes.data.filter(inFlight).length) : undefined
-        }
-      >
-        <View of={p.changes}>{(c) => <InFlight changes={c} />}</View>
-      </Panel>
+      {withInFlight && (
+        <Panel
+          title={W.inFlight}
+          span="span 7"
+          meta={
+            p.changes.state === "ready" ? String(p.changes.data.filter(inFlight).length) : undefined
+          }
+        >
+          <View of={p.changes}>{(c) => <InFlight changes={c} />}</View>
+        </Panel>
+      )}
     </div>
   );
 }

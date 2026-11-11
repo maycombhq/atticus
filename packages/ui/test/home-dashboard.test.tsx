@@ -230,7 +230,9 @@ describe("Needs a person, its top few", () => {
     expect(count(out, /<li>/g)).toBe(TOP);
     expect(out).toContain(esc(H.needsMore(2)));
     expect(out).toContain(esc(T.blocked));
-    expect(out).toContain(esc(H.inChange("Add a daily transfer limit")));
+    expect(out).toContain(
+      `${esc(H.inChangeLead)}<a href="#/changes/add-transfer-limit">Add a daily transfer limit</a>`,
+    );
     expect(out).toContain(esc(T.noChangeGroup));
   });
 

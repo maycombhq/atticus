@@ -112,9 +112,8 @@ describe("the map's bar: one slim row", () => {
     for (const name of [COPY.addBox.open, T.show, WORDS.keep, WORDS.tidy, WORDS.reset])
       expect(out).toContain(`aria-label="${esc(name)}" title="${esc(name)}"`);
     // The tools button is a disclosure of the drawer it opens.
-    expect(out).toMatch(
-      /aria-expanded="false" aria-controls="tools-body"[^>]*aria-label="Show the tools"/,
-    );
+    // Beta.26 review: it points at the drawer only while the drawer is there.
+    expect(out).toMatch(/aria-expanded="false" aria-label="Show the tools"/);
     expect(
       bar({ tools: { open: true, bodyId: "tools-body", onToggle: noop, shown: 2, all: 2 } }),
     ).toContain(`aria-label="${esc(T.hide)}"`);
@@ -196,8 +195,8 @@ describe("the legend over a corner of the canvas", () => {
     };
   };
 
-  it("is open until it is folded, and remembers that in this browser", () => {
-    expect(readLegendOpen(store(null))).toBe(true);
+  it("is folded until it is opened, and remembers that in this browser", () => {
+    expect(readLegendOpen(store(null))).toBe(false);
     expect(readLegendOpen(store("closed"))).toBe(false);
     expect(readLegendOpen(store("open"))).toBe(true);
     const s = store(null);
@@ -207,7 +206,7 @@ describe("the legend over a corner of the canvas", () => {
     expect(s.m.get(LEGEND_KEY)).toBe("open");
   });
 
-  it("is open, and saves nothing, where storage refuses", () => {
+  it("is folded, and saves nothing, where storage refuses", () => {
     const refuses = {
       getItem: () => {
         throw new Error("denied");
@@ -216,7 +215,7 @@ describe("the legend over a corner of the canvas", () => {
         throw new Error("denied");
       },
     };
-    expect(readLegendOpen(refuses)).toBe(true);
+    expect(readLegendOpen(refuses)).toBe(false);
     expect(() => saveLegendOpen(false, refuses)).not.toThrow();
   });
 

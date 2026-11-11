@@ -20,11 +20,25 @@ const H = T.home;
 const W = COPY.work;
 
 /** A panel of Home: a small sentence-case heading, a muted line beside it, then its rows. */
-export function HomePanel(p: { id: string; title: string; meta?: ReactNode; children: ReactNode }) {
+export function HomePanel(p: {
+  id: string;
+  title: string;
+  meta?: ReactNode;
+  children: ReactNode;
+  /** Beta.26 review: the heading can take the focus (a panel opened on a click). */
+  headRef?: (el: HTMLHeadingElement | null) => void;
+  /** The section's own id (what a button that opens it controls). */
+  sectionId?: string;
+  className?: string;
+}) {
   return (
-    <section className="panel hm-panel" aria-labelledby={p.id}>
+    <section
+      {...(p.sectionId ? { id: p.sectionId } : {})}
+      className={`panel hm-panel${p.className ? ` ${p.className}` : ""}`}
+      aria-labelledby={p.id}
+    >
       <div className="hm-panel-head">
-        <h2 id={p.id} className="hm-label">
+        <h2 id={p.id} className="hm-label" {...(p.headRef ? { ref: p.headRef, tabIndex: -1 } : {})}>
           {p.title}
         </h2>
         {p.meta !== undefined && p.meta !== null && <span className="hm-meta">{p.meta}</span>}
@@ -46,6 +60,8 @@ export interface TopRow {
   title: string;
   /** The change it belongs to, by title; none for what belongs to no change. */
   change?: string;
+  /** Beta.26 review: that change's id, so its row links to the change. */
+  changeId?: string;
   count: number;
   blocking: boolean;
   href: string;
@@ -94,7 +110,7 @@ export function topWaiting(
       key: `${g.change ?? ""}|${s.kind}|${s.repo ?? ""}`,
       kind: s.kind,
       title: SECTION[s.kind](s),
-      ...(g.change ? { change: g.title } : {}),
+      ...(g.change ? { change: g.title, changeId: g.change } : {}),
       count: s.items.length,
       blocking: s.items.some((x) => x.blocking),
       href: sectionHref(s),
@@ -155,7 +171,16 @@ export function NeedsTop(p: {
                 {r.title}
               </a>
               <span className="hm-row-sub">
-                {r.change ? H.inChange(r.change) : T.noChangeGroup}
+                {r.change && r.changeId ? (
+                  <>
+                    {H.inChangeLead}
+                    <a href={`#/changes/${encodeURIComponent(r.changeId)}`}>{r.change}</a>
+                  </>
+                ) : r.change ? (
+                  H.inChange(r.change)
+                ) : (
+                  T.noChangeGroup
+                )}
               </span>
             </span>
             <span className="hm-row-end">
