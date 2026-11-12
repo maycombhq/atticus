@@ -34,6 +34,7 @@ const { disposeFirstCommits } = await import("./estate.js");
 const { withSystem } = await import("./system.js");
 const { alwaysRefuses, writesNothing } = await import("./mutants.js");
 const { runSequence } = await import("./runner.js");
+const { Model, arrowKey } = await import("./model.js");
 
 // One clock for the whole run: the scan stamps evidence with it, and a replay must give the
 // same bytes.
@@ -171,6 +172,51 @@ describe("each invariant, by a hand-written example", () => {
       T,
     );
   }
+});
+
+describe("the oracle's own rules (model.ts)", () => {
+  // ADR 0195 point 6: a legacy join leaves joins.json only when current inputs derive it again.
+  // forge-ledger (slot 0) is called by forge-payments (slot 1) on GET /accounts.
+  const join = () => {
+    const m = new Model(TWO, ["c0", "c1"]);
+    const [ledger, payments] = m.repos;
+    const key = arrowKey(payments!.base.component, ledger!.base.component, "GET", "/accounts");
+    m.legacyJoins = [
+      { kind: "Interface", id: "if-calls", arrow: { key, from: 1, to: 0 }, repos: [1] },
+    ];
+    const read = (slot: number, legacy: boolean) =>
+      m.readers.set(slot, {
+        code: TWO.repos[slot]!.code,
+        commit: `c${slot}`,
+        id: m.repos[slot]!.id,
+        ...(legacy ? { legacy: true } : {}),
+      });
+    return { m, read };
+  };
+  const written = new Set(["Interface/if-calls"]);
+
+  it("a retirement while the caller is still a legacy slot is wrong, though the callee was read afresh", () => {
+    const { m, read } = join();
+    read(0, false);
+    read(1, true);
+    expect(m.retire(new Set(), written).map((j) => j.id)).toEqual(["if-calls"]);
+    expect(m.legacyJoins.map((j) => j.id)).toEqual(["if-calls"]);
+  });
+
+  it("once the caller is read afresh and the derived arrow took the id, the retirement is right", () => {
+    const { m, read } = join();
+    read(0, true);
+    read(1, false);
+    expect(m.retire(new Set(), written)).toEqual([]);
+    expect(m.legacyJoins).toEqual([]);
+  });
+
+  it("a retirement whose derived record isn't in the catalog written is wrong", () => {
+    const { m, read } = join();
+    read(0, false);
+    read(1, false);
+    expect(m.retire(new Set(), new Set()).map((j) => j.id)).toEqual(["if-calls"]);
+  });
 });
 
 describe("the oracle fails systems that are wrong on purpose (mutants.ts)", () => {

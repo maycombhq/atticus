@@ -262,6 +262,27 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
     },
     T,
   );
+
+  it(
+    "that undo can itself be undone: catalog undo is never refused as not upgraded",
+    async () => {
+      const root = await beta26();
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      const upgraded = { generated: generated(root), sources: sources(root) };
+      expect((await run(["catalog", "undo", "--root", root, "--yes"])).code).toBe(0);
+      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
+      const back = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
+      expect(back.code, back.err).toBe(0);
+      expect(back.out).not.toMatch(/not-upgraded/);
+      expect(generated(root)).toEqual(upgraded.generated);
+      expect(sources(root)).toEqual(upgraded.sources);
+      expect((await run(["catalog", "build", "--root", root, "--check"])).code).toBe(0);
+      expect((await run(["scan", "--root", root, "--no-drift"])).err).not.toMatch(
+        /took back the upgrade/,
+      );
+    },
+    T,
+  );
 });
 
 describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {

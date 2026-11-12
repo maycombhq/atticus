@@ -43,6 +43,8 @@ const paymentsLegacy: Code = {
   ...paymentsCode,
   calls: [...paymentsCode.calls, { method: "POST", path: "/entries", host: ledger.legacyHost }],
 };
+/** forge-ledger no longer serving GET /accounts. */
+const ledgerWithout: Code = { ...ledgerCode, endpoints: [] };
 /** forge-ledger serving one more endpoint. */
 const ledgerMore: Code = {
   ...ledgerCode,
@@ -255,6 +257,26 @@ export const EXAMPLES: Example[] = [
     [lacks("the arrow from payments", callsLedger), has("ledger's GET /accounts", getAccounts)],
   ),
   seq(
+    "links-are-live",
+    "after the upgrade the callee is read afresh while the caller stays legacy: the arrow stays a legacy join, so a later change to the callee doesn't explain it away",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      // The ledger (the callee) read afresh; forge-payments (the caller) stays a legacy slot,
+      // whose records hold no call to derive the arrow from.
+      { t: "scan-subset", slots: [0] },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 0, code: ledgerWithout },
+      { t: "scan-subset", slots: [0] },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger),
+      has("the topic's arrow, kept from before the upgrade", topic),
+      lacks("ledger's GET /accounts, which its new read doesn't serve", getAccounts),
+    ],
+  ),
+  seq(
     "nothing-removed-unexplained",
     "facts checked but not written remove nothing, and an answer naming the ledger's own legacy host removes the loose end, listed",
     [
@@ -357,5 +379,17 @@ export const EXAMPLES: Example[] = [
         postRefunds(recs)?.auth === "oauth2" ? undefined : "POST /refunds hasn't auth: oauth2",
       has("the arrow", callsLedger),
     ],
+  ),
+  seq(
+    "completeness",
+    "an undo that took back the upgrade is itself undone, not refused as not upgraded, and a scan then writes",
+    [
+      { t: "seed-beta26", verify: [0] },
+      { t: "upgrade", yes: true },
+      { t: "undo", n: 0, yes: true, back: true },
+      { t: "scan" },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow", callsLedger), has("payments' POST /refunds", postRefunds)],
   ),
 ];

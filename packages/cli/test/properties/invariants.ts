@@ -253,6 +253,16 @@ const list = (xs: Iterable<string>, n = 6) => {
     : "none";
 };
 
+/**
+ * Whether a `not-upgraded` refusal is right: the metarepo holds a catalog from before the slots
+ * (seeded so, or an undo took the upgrade back) and the command is a writer, neither the upgrade
+ * that adopts it nor an undo (ADR 0195 point 7: "an undo can itself be undone", the one that
+ * took the upgrade back included).
+ */
+function notUpgradedMay(s: Step): boolean {
+  return s.modelBefore.beta26 && s.desc.t !== "upgrade" && s.desc.t !== "undo";
+}
+
 /** Why a guard's refusal of this step is not one the model accounts for (undefined: it is). */
 function unjustified(s: Step): string | undefined {
   const o = s.outcome!;
@@ -572,7 +582,12 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         "large-removals-confirmed",
         `${s.desc.t} was confirmed with --allow-removals ${n}, yet removed ${gone.size} records${edited.size ? ` (and ${edited.size} edited by hand)` : ""}`,
       );
-    const listed = new Set(s.confirmOf?.removals?.ids ?? []);
+    // What the refusal listed is what a confirmation right after it removes. A listing other
+    // commands acted after is confirmed by its count only (the CLI's flag names a count): the
+    // command works its removals out again, and writes only when they are that many (above).
+    const p = s.confirmOf;
+    if (p && p.at !== s.w.steps - 1) return;
+    const listed = new Set(p?.removals?.ids ?? []);
     const unlisted = [...gone.keys()].filter((id) => !listed.has(id));
     if (unlisted.length)
       fail(
@@ -711,13 +726,14 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       if (s.crash && !o.crashed && !o.refused)
         fail("completeness", `${t} neither crashed where asked nor refused${said()}`);
       // A metarepo not upgraded (an undo took the upgrade back): every writer refuses until
-      // `atticus upgrade --yes` runs again. Only then, and never for the upgrade itself.
-      const notUpgraded =
-        o.refused && o.guard === "not-upgraded" && s.modelBefore.beta26 && t !== "upgrade";
+      // `atticus upgrade --yes` runs again. Only then, and never for the upgrade itself, nor for
+      // an undo: point 7, "an undo can itself be undone", so the undo that took the upgrade back
+      // is taken back by `catalog undo`, not refused as not upgraded.
+      const notUpgraded = o.refused && o.guard === "not-upgraded" && notUpgradedMay(s);
       if (o.guard === "not-upgraded" && !notUpgraded)
         fail(
           "completeness",
-          `${t} refused as not upgraded, but the metarepo ${s.modelBefore.beta26 ? "is being upgraded" : "is upgraded"}${said()}`,
+          `${t} refused as not upgraded, but ${t === "undo" ? "an undo is never refused so (it can itself be undone)" : `the metarepo ${s.modelBefore.beta26 ? "is being upgraded" : "is upgraded"}`}${said()}`,
         );
       const why = notUpgraded ? undefined : unjustified(s);
       if (why)
@@ -739,9 +755,11 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         // Not upgraded comes before every other guard, and is right only then.
         const why =
           o.guard === "not-upgraded"
-            ? s.modelBefore.beta26 && t !== "upgrade"
+            ? notUpgradedMay(s)
               ? undefined
-              : "the metarepo is upgraded"
+              : t === "undo"
+                ? "an undo is never refused as not upgraded"
+                : "the metarepo is upgraded"
             : first
               ? unjustified(s)
               : `it refused for ${o.guard ?? "no guard"}`;
