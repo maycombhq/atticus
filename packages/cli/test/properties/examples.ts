@@ -1,7 +1,7 @@
 import type { Desc } from "./commands.js";
 import { POOL, type Code, type Estate } from "./estate.js";
 import { InvariantError, type Invariant } from "./invariants.js";
-import { checkOrder, runSequence } from "./runner.js";
+import { checkOrder, estateOf, runSequence } from "./runner.js";
 import { Cmd } from "./commands.js";
 import { records, type Rec, type World } from "./world.js";
 
@@ -43,6 +43,116 @@ const paymentsLegacy: Code = {
   ...paymentsCode,
   calls: [...paymentsCode.calls, { method: "POST", path: "/entries", host: ledger.legacyHost }],
 };
+/**
+ * Three repos where forge-payments calls two of forge-notify's endpoints, one of them not served:
+ * the property run's shrunk estate (seed 615329782) for a suppressed legacy join.
+ */
+const notify = POOL.find((b) => b.id === "forge-notify")!;
+const THREE: Estate = {
+  repos: [
+    {
+      base: notify,
+      code: {
+        endpoints: [{ method: "GET", path: "/notices" }],
+        calls: [{ method: "GET", path: "/accounts", host: ledger.host }],
+        publishes: [notify.topic],
+        consumes: [ledger.topic],
+      },
+    },
+    {
+      base: ledger,
+      code: { endpoints: [], calls: [], publishes: [], consumes: [notify.topic] },
+    },
+    {
+      base: payments,
+      code: {
+        endpoints: [],
+        calls: [
+          { method: "GET", path: "/channels", host: notify.host },
+          { method: "POST", path: "/templates", host: notify.host },
+        ],
+        publishes: [payments.topic],
+        consumes: [],
+      },
+    },
+  ],
+};
+
+/** The same run's shrunk estate for a derived arrow suppressed by a hand deletion made curated. */
+const FOUR: Estate = estateOf({
+  repos: [
+    {
+      base: "forge-orders",
+      code: {
+        endpoints: [{ method: "GET", path: "/orders" }],
+        calls: [{ method: "GET", path: "/payments", host: "payments.forge.example" }],
+        publishes: ["forge.orders.changed"],
+        consumes: ["forge.notify.changed"],
+      },
+    },
+    {
+      base: "forge-notify",
+      code: {
+        endpoints: [],
+        calls: [{ method: "POST", path: "/carts", host: "orders.forge.example" }],
+        publishes: [],
+        consumes: ["forge.payments.changed"],
+      },
+    },
+    {
+      base: "forge-ledger",
+      code: {
+        endpoints: [],
+        calls: [
+          { method: "GET", path: "/orders", host: "orders.forge.example" },
+          { method: "POST", path: "/carts", host: "orders.forge.example" },
+        ],
+        publishes: ["forge.ledger.changed"],
+        consumes: [],
+      },
+    },
+    {
+      base: "forge-payments",
+      code: {
+        endpoints: [{ method: "GET", path: "/payments" }],
+        calls: [{ method: "GET", path: "/orders", host: "orders.forge.example" }],
+        publishes: [],
+        consumes: ["forge.orders.changed"],
+      },
+    },
+  ],
+});
+
+/** The same run's shrunk estate for a removal listing carried through a hand-edit refusal. */
+const FILLED: Estate = estateOf({
+  repos: [
+    {
+      base: "forge-ledger",
+      code: {
+        endpoints: [],
+        calls: [],
+        publishes: [],
+        consumes: ["forge.payments.changed"],
+        filler: 10,
+      },
+    },
+    {
+      base: "forge-payments",
+      code: {
+        endpoints: [],
+        calls: [{ method: "GET", path: "/accounts", host: "ledger.forge.example" }],
+        publishes: ["forge.payments.changed"],
+        consumes: [],
+        filler: 10,
+      },
+    },
+    {
+      base: "forge-orders",
+      code: { endpoints: [], calls: [], publishes: [], consumes: [], filler: 10 },
+    },
+  ],
+});
+
 /** forge-ledger no longer serving GET /accounts. */
 const ledgerWithout: Code = { ...ledgerCode, endpoints: [] };
 /** forge-ledger serving one more endpoint. */
@@ -275,6 +385,57 @@ export const EXAMPLES: Example[] = [
       has("the topic's arrow, kept from before the upgrade", topic),
       lacks("ledger's GET /accounts, which its new read doesn't serve", getAccounts),
     ],
+  ),
+  seq(
+    "completeness",
+    "after the upgrade a person deletes a legacy join's arrow by hand and makes it curated: the suppress takes it out, and the build is not expected to keep it",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "hand-edit", pick: 37, how: "delete" },
+      { t: "curate-edits" },
+    ],
+    [
+      lacks(
+        "the arrow from payments to POST /templates, suppressed",
+        arrow("payments-api", "notify-api", "POST", "/templates"),
+      ),
+      has(
+        "the arrow from payments to GET /channels, kept from before the upgrade",
+        arrow("payments-api", "notify-api", "GET", "/channels"),
+      ),
+    ],
+    THREE,
+  ),
+  seq(
+    "completeness",
+    "after the upgrade and a scan a person deletes a derived arrow by hand and makes it curated: the build is not expected to make it",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "scan" },
+      { t: "hand-edit", pick: 35, how: "delete" },
+      { t: "curate-edits" },
+    ],
+    [
+      lacks(
+        "the arrow from payments to GET /orders, suppressed",
+        arrow("payments-api", "orders-api", "GET", "/orders"),
+      ),
+    ],
+    FOUR,
+  ),
+  seq(
+    "completeness",
+    "a removal listing carried through a confirmation that met hand edits keeps its age: a scan acted since, so the discard that confirms it is judged by its count",
+    [
+      { t: "verify-write", slot: 4, ok: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "scan-subset", slots: [0] },
+      { t: "hand-edit", pick: 0, how: "change" },
+    ],
+    [has("the topic's arrow", topic)],
+    FILLED,
   ),
   seq(
     "nothing-removed-unexplained",

@@ -297,12 +297,16 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
       const removals =
         o.removals ?? (c.allowRemovals !== undefined ? pendingBefore?.removals : undefined);
       const edits = o.edits ?? (c.discardEdits !== undefined ? pendingBefore?.edits : undefined);
+      // A removal listing carried over keeps its age: it was made when the earlier refusal listed
+      // it, and the commands acted since may have changed what the command removes (a confirmation
+      // of it is judged by its count, not by its records).
+      const carried = !o.removals && removals !== undefined && pendingBefore?.removals === removals;
       w.pending = {
         desc: acted.rerun,
         confirm: c,
         ...(removals ? { removals } : {}),
         ...(edits ? { edits } : {}),
-        at: w.steps,
+        at: carried && pendingBefore ? pendingBefore.at : w.steps,
       };
     } else if (
       ok &&
@@ -809,7 +813,12 @@ export async function act(
       const adds = m.handEdits.filter((e) => e.how === "add");
       const pre = await sut().curateEdits(w.root);
       const curate = (e: HandEdit) => {
-        const common = { target: e.id, kind: e.kind, ...(e.key ? { key: e.key } : {}) };
+        const common = {
+          target: e.id,
+          kind: e.kind,
+          ...(e.key ? { key: e.key } : {}),
+          ...(e.arrow ? { arrow: e.arrow } : {}),
+        };
         const dec: Decision =
           e.how === "delete"
             ? { action: "suppress", ...common, since: m.writes, from: "edits" }

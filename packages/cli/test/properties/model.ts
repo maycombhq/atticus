@@ -50,6 +50,8 @@ export interface Decision {
   kind: string;
   /** An Endpoint target's `component method path`: how the model knows it is built. */
   key?: string;
+  /** An Interface target's cross-repo arrow, `from|to|method|path` (a hand deletion made curated). */
+  arrow?: string;
   /** An assert's fields; an alias's folded record ids. */
   value?: Record<string, unknown> | string[];
   /** The write count when it was added: its effect is checked after a later write. */
@@ -198,13 +200,19 @@ export class Model {
 
   /**
    * The legacy joins still in force (ADR point 6): an arrow while both its repos are read, any
-   * other record while every repo its evidence names is.
+   * other record while every repo its evidence names is, and neither while a curated suppress
+   * takes it out (point 6: it leaves "through the removal guard: one of its repos removed or
+   * archived, or a curated suppress"). A suppressed join stays in joins.json, not derived, and is
+   * in force again once the suppress goes.
    */
-  liveLegacy(): LegacyJoin[] {
-    return this.legacyJoins.filter((j) =>
-      j.arrow
-        ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
-        : j.repos.every((s) => this.isLive(s)),
+  liveLegacy(withSuppressed = false): LegacyJoin[] {
+    const gone = withSuppressed ? new Set<string>() : this.suppressed();
+    return this.legacyJoins.filter(
+      (j) =>
+        !gone.has(j.id) &&
+        (j.arrow
+          ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
+          : j.repos.every((s) => this.isLive(s))),
     );
   }
 
@@ -274,6 +282,9 @@ export class Model {
         admitted.add(j.arrow.key);
         required.add(j.arrow.key);
       }
+    // A curated suppress of an arrow's Interface (a hand deletion made curated) takes it out:
+    // the build need not make it, derived or legacy (the overlay runs last).
+    for (const d of this.curated) if (d.action === "suppress" && d.arrow) required.delete(d.arrow);
     return { admitted, required, derived };
   }
 
@@ -318,7 +329,8 @@ export class Model {
     ]);
     const wrong: LegacyJoin[] = [];
     const stay: LegacyJoin[] = [];
-    const live = new Set(this.liveLegacy());
+    // A suppressed join is judged as one in force: the build may derive it again meanwhile.
+    const live = new Set(this.liveLegacy(true));
     for (const j of this.legacyJoins) {
       const took = written.has(`${j.kind}/${j.id}`) || decided.has(j.id);
       const may =
