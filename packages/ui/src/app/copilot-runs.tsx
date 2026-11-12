@@ -26,12 +26,17 @@ const T = COPY.copilotRuns;
 
 export type StartAsk = Api.StartCopilotRunRequestT;
 type Run = Api.CopilotRunViewT;
+type Limit = NonNullable<Api.CopilotRunCurrentT["limit"]>;
+type Files = NonNullable<Api.CopilotRunCurrentT["assistantFiles"]>;
 
 export interface Ctx {
   run: Run | null;
   allowed: boolean;
   why?: string;
   model?: string;
+  /** Beta.27: the model's limit, known or to ask for; and whether the assistant files are current. */
+  limit?: Limit;
+  assistantFiles?: Files;
   /** Opens the dialog; the run starts on its yes. */
   ask(a: StartAsk): void;
   stop(): Promise<void>;
@@ -131,6 +136,8 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   const [allowed, setAllowed] = useState(false);
   const [why, setWhy] = useState<string | undefined>();
   const [model, setModel] = useState<string | undefined>();
+  const [limit, setLimit] = useState<Limit | undefined>();
+  const [files, setFiles] = useState<Files | undefined>();
   const [asking, setAsking] = useState<StartAsk | undefined>();
   const [stopping, setStopping] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -181,6 +188,8 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
         setAllowed(c.allowed);
         setWhy(c.why);
         setModel(c.model);
+        setLimit(c.limit);
+        setFiles(c.assistantFiles);
       } catch {
         // An older server has no runs: the buttons stay hidden.
       }
@@ -256,7 +265,13 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       allowed,
       ...(why ? { why } : {}),
       ...(model ? { model } : {}),
-      ask: setAsking,
+      ...(limit ? { limit } : {}),
+      ...(files ? { assistantFiles: files } : {}),
+      ask: (a: StartAsk) => {
+        setAsking(a);
+        // What the dialog says of the limit and the files is read again as it opens.
+        void refresh(true);
+      },
       stop,
       stopping,
       consoleOpen,
@@ -273,7 +288,22 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       ...(stopError ? { stopError } : {}),
       ...(watched ? { watched } : {}),
     }),
-    [run, allowed, why, model, stop, stopping, consoleOpen, span, watched, notKept, stopError],
+    [
+      run,
+      allowed,
+      why,
+      model,
+      limit,
+      files,
+      refresh,
+      stop,
+      stopping,
+      consoleOpen,
+      span,
+      watched,
+      notKept,
+      stopError,
+    ],
   );
   return (
     <RunsContext.Provider value={value}>
@@ -282,6 +312,8 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
         <ConfirmRun
           ask={asking}
           {...(model ? { model } : {})}
+          {...(limit ? { limit } : {})}
+          {...(files ? { assistantFiles: files } : {})}
           onClose={() => setAsking(undefined)}
           onStarted={(r) => {
             setRun(r);
@@ -295,20 +327,42 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
 }
 
 /** The person's yes, with what the run reads, the model and what a session may do. */
+/** Beta.27: the limit typed, as a number of tokens (digits, with commas or spaces between). */
+export function limitOf(text: string): number | undefined {
+  const t = text.trim().replace(/[\s,_]/g, "");
+  if (!/^\d+$/.test(t)) return undefined;
+  const n = Number(t);
+  return Number.isSafeInteger(n) && n >= 1000 && n <= 10_000_000 ? n : undefined;
+}
+
 export function ConfirmRun(p: {
   ask: StartAsk;
   model?: string;
+  /** Beta.27: not known here, the dialog asks for it, filled with what it was last time. */
+  limit?: Limit;
+  assistantFiles?: Files;
   onClose(): void;
   onStarted(r: Run): void;
   start?: (a: StartAsk) => Promise<Run>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const askLimit = p.limit?.known === false;
+  const [tokens, setTokens] = useState(askLimit && p.limit?.tokens ? String(p.limit.tokens) : "");
+  const [badLimit, setBadLimit] = useState(false);
+  const edited = p.assistantFiles?.edited ?? [];
+  const stale = p.assistantFiles?.stale ?? [];
+  const shared = p.assistantFiles?.shared ?? [];
+  // Start is off while an assistant file is edited by hand.
+  const blocked = edited.length > 0;
   const yes = useRef<HTMLButtonElement>(null);
+  const no = useRef<HTMLButtonElement>(null);
+  const field = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    yes.current?.focus();
+    // Review of fix/b27-copilot (WCAG 2.4.3): never on a button that is off.
+    (field.current ?? (blocked ? no.current : yes.current) ?? box.current)?.focus();
     // Back where it was; that button is off once a run is under way, so then the Console's.
     return () => {
       const back =
@@ -318,6 +372,22 @@ export function ConfirmRun(p: {
       back?.focus?.();
     };
   }, []);
+  // Review of fix/b27-copilot: the limit asked for only once a refresh says it isn't known is
+  // filled with the value to offer, and takes the focus.
+  const asked = useRef(askLimit);
+  useEffect(() => {
+    if (askLimit && !asked.current) {
+      if (!tokens && p.limit?.tokens) setTokens(String(p.limit.tokens));
+      field.current?.focus();
+    }
+    asked.current = askLimit;
+  }, [askLimit]);
+  // A refresh that turns Start off under the focus (it goes to the page): Not now takes it.
+  useEffect(() => {
+    if (!blocked) return;
+    const at = document.activeElement;
+    if (!at || at === yes.current || at === document.body) no.current?.focus();
+  }, [blocked]);
   const named = (p.ask.repos ?? []).join(", ");
   // Stale or gaps narrowed to some repos says which.
   const what =
@@ -329,12 +399,23 @@ export function ConfirmRun(p: {
           ? T.confirm.what.gapsRepos(named)
           : T.confirm.what[p.ask.kind];
   const go = async () => {
+    if (edited.length) return;
+    const maxTokens = askLimit ? limitOf(tokens) : undefined;
+    if (askLimit && maxTokens === undefined) {
+      setBadLimit(true);
+      field.current?.focus();
+      return;
+    }
+    setBadLimit(false);
+    // Both buttons are off while it starts: the dialog holds the focus meanwhile.
+    box.current?.focus();
     setBusy(true);
     setError(undefined);
+    const ask: StartAsk = maxTokens !== undefined ? { ...p.ask, maxTokens } : p.ask;
     try {
       const r = p.start
-        ? await p.start(p.ask)
-        : await api<Run>("/api/copilot-runs", { method: "POST", body: p.ask });
+        ? await p.start(ask)
+        : await api<Run>("/api/copilot-runs", { method: "POST", body: ask });
       p.onStarted(r);
     } catch (e) {
       setError(
@@ -354,11 +435,23 @@ export function ConfirmRun(p: {
       p.onClose();
     }
     if (e.key === "Tab" && box.current) {
-      const f = [...box.current.querySelectorAll<HTMLElement>("button:not([disabled])")];
-      if (!f.length) return;
+      const f = [
+        ...box.current.querySelectorAll<HTMLElement>(
+          "input:not([disabled]), button:not([disabled])",
+        ),
+      ];
+      // Nothing to move to while it starts: the focus stays on the dialog.
+      if (!f.length) {
+        e.preventDefault();
+        return;
+      }
       const first = f[0]!;
       const last = f[f.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
+      // On the dialog itself (while it started, or Start turned off): into it, either way.
+      if (document.activeElement === box.current) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -371,6 +464,8 @@ export function ConfirmRun(p: {
     <div className="run-dialog-back">
       <div
         ref={box}
+        id="run-dialog"
+        tabIndex={-1}
         className="run-dialog panel"
         role="dialog"
         aria-modal="true"
@@ -383,23 +478,91 @@ export function ConfirmRun(p: {
         </h2>
         <p id="run-dialog-what">{what}</p>
         <p className="work-say">{T.confirm.model(p.model)}</p>
+        {p.limit?.known && p.limit.tokens && p.limit.from !== "last" && (
+          <p className="work-say">
+            {T.confirm.limit.known(p.limit.tokens, p.limit.from ?? "runtime.yaml")}
+          </p>
+        )}
+        {askLimit && (
+          <div className="field">
+            <label htmlFor="run-dialog-limit">{T.confirm.limit.label}</label>
+            <input
+              ref={field}
+              id="run-dialog-limit"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={tokens}
+              disabled={busy}
+              aria-invalid={badLimit}
+              aria-describedby={`run-dialog-limit-hint${badLimit ? " run-dialog-limit-bad" : ""}`}
+              onChange={(e) => {
+                setTokens(e.target.value);
+                if (badLimit) setBadLimit(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void go();
+                }
+              }}
+            />
+            <p id="run-dialog-limit-hint" className="work-say">
+              {T.confirm.limit.hint}
+              {p.limit?.tokens && p.limit.from === "last" ? ` ${T.confirm.limit.last}` : ""}
+              {p.limit?.tokens && p.limit.from === "probe" ? ` ${T.confirm.limit.probe}` : ""}
+            </p>
+            {badLimit && (
+              <p id="run-dialog-limit-bad" className="state error" role="alert">
+                {T.confirm.limit.bad}
+              </p>
+            )}
+          </div>
+        )}
         <p className="work-say">{T.confirm.may}</p>
         <p className="work-say">{T.confirm.long}</p>
+        {edited.length > 0 ? (
+          <div role="alert" className="state error">
+            <p>{T.confirm.files.edited(edited.slice(0, 3).join(", "), edited.length)}</p>
+            <details>
+              <summary>{COPY.appStep.inTerminal}</summary>
+              <p>{T.confirm.files.editedHow}</p>
+            </details>
+          </div>
+        ) : (
+          stale.length > 0 && (
+            <>
+              <p className="work-say">{T.confirm.files.stale(stale.length)}</p>
+              {/* Review of fix/b27-copilot: a file of yours it adds to is named, not counted. */}
+              {shared.length > 0 && (
+                <p className="work-say">{T.confirm.files.shared(shared.join(", "))}</p>
+              )}
+            </>
+          )
+        )}
         {error && (
           <p className="state error" role="alert">
             {T.failedToStart(error)}
           </p>
         )}
         <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" className="btn" onClick={p.onClose} disabled={busy}>
+          <button
+            ref={no}
+            id="run-dialog-no"
+            type="button"
+            className="btn"
+            onClick={p.onClose}
+            disabled={busy}
+          >
             {T.confirm.no}
           </button>
           <button
             ref={yes}
+            id="run-dialog-yes"
             type="button"
             className="btn primary"
             onClick={() => void go()}
-            disabled={busy}
+            disabled={busy || edited.length > 0}
             aria-busy={busy}
           >
             {busy ? T.starting : T.confirm.yes}
@@ -519,7 +682,38 @@ export function RunStrip() {
           {c.stopError}
         </p>
       )}
+      <StoppedOn problems={run.problems ?? []} />
     </section>
+  );
+}
+
+/** Beta.27: the repos the run stopped on, each with what verify rejected and why. */
+export function StoppedOn({ problems }: { problems: NonNullable<Run["problems"]> }) {
+  if (!problems.length) return null;
+  return (
+    <div className="run-strip-problems" role="status">
+      <p className="work-say">{T.strip.stoppedOn(problems.length)}</p>
+      <ul>
+        {problems.map((x) => (
+          <li key={`${x.repo}:${x.part ?? 0}`}>
+            <strong>{T.strip.stoppedRepo(x.repo, x.part, x.total)}</strong>{" "}
+            {x.rejectedCount ? T.strip.rejected(x.rejectedCount) : T.strip.noRejected}
+            {x.rejected.length > 0 && (
+              <ul>
+                {x.rejected.map((r, i) => (
+                  <li key={i}>
+                    <code>{r.code}</code> {r.message}
+                  </li>
+                ))}
+                {x.rejectedCount > x.rejected.length && (
+                  <li>{T.strip.moreRejected(x.rejectedCount - x.rejected.length)}</li>
+                )}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

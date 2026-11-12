@@ -5711,6 +5711,14 @@ export const COPY = {
       failedRuns: "Failed runs",
       blocking: "Blocking findings",
       rejected: "Facts the verifier rejected",
+      /** Beta.27: repos a Copilot run stopped on, after two sessions added nothing. */
+      copilotStopped: "Copilot stopped reading",
+      copilotStoppedMeta: (n: number) =>
+        n === 0
+          ? "two sessions added nothing"
+          : n === 1
+            ? "verify rejected 1 line"
+            : `verify rejected ${n.toLocaleString()} lines`,
       failedRun: (state: string, where: string, time: string) => `${state} · ${where} · ${time}`,
       rejectedFacts: (repo: string, n: number) =>
         n === 1 ? `${repo}: 1 fact rejected` : `${repo}: ${n.toLocaleString()} facts rejected`,
@@ -5754,6 +5762,28 @@ export const COPY = {
       long: "A large repo takes several sessions. Stop at any time: the next run carries on from there.",
       yes: "Start the run",
       no: "Not now",
+      /** Beta.27: a Copilot-only metarepo names no model limit; the dialog asks for it. */
+      limit: {
+        label: "Your model's limit, in tokens",
+        hint: "Atticus doesn't know it here: runtime.yaml names no limit and nothing was measured on this machine. Give the context window of the model Copilot uses (for example 128000), so each part fits it. It is kept on this machine for the next run.",
+        last: "Filled in with the limit given for the last run on this machine.",
+        probe: "Filled in with the limit measured on this machine.",
+        bad: "Give a whole number of tokens, 1,000 or more.",
+        known: (tokens: number, from: "runtime.yaml" | "probe") =>
+          `Model limit: ${tokens.toLocaleString()} tokens (${from === "probe" ? "as measured on this machine" : "runtime.yaml's maxInput"}).`,
+      },
+      /** Beta.27: the assistant files each session reads, checked before the run. */
+      files: {
+        stale: (n: number) =>
+          `The assistant files Copilot reads are out of date (${n === 1 ? "1 file" : `${n.toLocaleString()} files`}): the run writes them again from the org pack before the first session. Propose them for review with the facts.`,
+        edited: (files: string, n: number) =>
+          `Copilot's sessions would each stop at once: ${n === 1 ? `${files} was edited by hand, and only a person replaces it` : `${n.toLocaleString()} assistant files were edited by hand (${files}), and only a person replaces them`}. Put back the generated text, then start the run.`,
+        editedHow:
+          "In a terminal: atticus assistant-files --force writes the generated text over the edits.",
+        /** Review of fix/b27-copilot: a file shared with a person, named, never only counted. */
+        shared: (files: string) =>
+          `It adds Atticus's section to your ${files}, after your own lines, which it keeps as they are.`,
+      },
     },
     notAllowed: "Copilot can't be started from here",
     starting: "Starting…",
@@ -5773,6 +5803,15 @@ export const COPY = {
       stopFailed: (why: string) => `Stop didn't go through: ${why}`,
       showConsole: "Show the Console",
       dismiss: "Dismiss",
+      /** Beta.27: a repo the run stopped on after two sessions added nothing. */
+      stoppedOn: (n: number) =>
+        n === 1 ? "The run stopped on 1 repo:" : `The run stopped on ${n.toLocaleString()} repos:`,
+      stoppedRepo: (repo: string, part?: number, total?: number) =>
+        part && total ? `${repo}, part ${part} of ${total}` : repo,
+      rejected: (n: number) =>
+        n === 1 ? "verify rejected 1 line:" : `verify rejected ${n.toLocaleString()} lines:`,
+      noRejected: "Two Copilot sessions added nothing to it, and verify rejected nothing.",
+      moreRejected: (n: number) => `and ${n.toLocaleString()} more on Map › Trust`,
     },
     console: {
       title: "Console",

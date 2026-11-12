@@ -660,7 +660,7 @@ export function canaryPrompt(o: { repo: string; commit: string }): string {
     MAP_OUTLINE,
     MAP_READ_WHOLE,
     `${mapWriteStep()}\n\nEvery fact's \`repo\` is \`${o.repo}\` and its \`commit\` is \`${o.commit}\`; every \`cite.file\` is relative to the folder \`${o.repo}\`.`,
-    `${mapVerifyStep(HERE_COMMAND, "`rejected.jsonl` in this workspace")} Run it in a terminal in this workspace.`,
+    `${mapVerifyStep(HERE_COMMAND, "`rejected.jsonl` in this workspace", { moves: false })} Run it in a terminal in this workspace.`,
     mapRecallStep({
       lists: "`verify.yaml` in this workspace",
       reviewed: "`reviewed.jsonl` in this workspace",

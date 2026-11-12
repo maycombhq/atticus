@@ -49,7 +49,16 @@ export const shim = {
   useContext: (c: { _currentValue?: unknown }) => c._currentValue,
 };
 
-export function mount<P>(C: (p: P) => unknown, props: P) {
+/**
+ * Render `C` with `props` (a test may change the object and render again, as a parent would).
+ * `attach`, when given, sees each render's tree before its effects run, as React attaches refs
+ * before it runs effects: a test sets the refs to stand-in nodes there.
+ */
+export function mount<P>(
+  C: (p: P) => unknown,
+  props: P,
+  o: { attach?: (tree: unknown) => void } = {},
+) {
   slots = [];
   let tree: unknown;
   const render = () => {
@@ -58,6 +67,7 @@ export function mount<P>(C: (p: P) => unknown, props: P) {
       dirty = false;
       effects = [];
       tree = C(props);
+      o.attach?.(tree);
       for (const e of effects) e();
       if (!dirty) return;
     }

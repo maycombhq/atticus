@@ -583,7 +583,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   repo's `sources` (read in full, or kept its last good read and why). So does Apply (POST
  *   /api/facts/{repo}/apply, `verify <repo> --write`): its job's result carries the build's
  *   `refused` (BuildRefusalView) when the build refused. A refusal carries its `plan`, which
- *   both send back with a count: what was listed is what is written. Additive only.
+ *   both send back with a count: what was listed is what is written.
+ *   A Copilot run from the app (beta.27 fixes): POST /api/copilot-runs takes `maxTokens`, the
+ *   model's limit the dialog asks for when Atticus doesn't know it (no maxInput in runtime.yaml,
+ *   no limit atticus probe measured): passed as --max-tokens and kept on this machine
+ *   (.atticus/map-all/limit.json) to fill the field next time; without it there the run is
+ *   refused (400, code `limit-unknown`). GET /api/copilot-runs/current says `limit` (known, from
+ *   where, or the value to fill the field with) and `assistantFiles` (whether the /atticus-*
+ *   files are current; out-of-date ones the run writes first, as atticus assistant-files does;
+ *   one edited by hand refuses the run, 409 code `assistant-files-edited`). A run's view carries
+ *   `problems`: a repo the run stopped on after two Copilot sessions added nothing, with what
+ *   verify rejected and why. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -5800,6 +5810,12 @@ export const StartCopilotRunRequest = z.object({
   repos: z.array(z.string().min(1)).max(500).optional(),
   /** Read the repos whole again (`--force`). */
   force: z.boolean().optional(),
+  /**
+   * 3.12.0 (beta.27): the model's limit in tokens, as the person gives it in the dialog, passed
+   * as --max-tokens. Needed when Atticus doesn't know it (`limit.known` false in
+   * GET /api/copilot-runs/current); kept on this machine to fill the field next time.
+   */
+  maxTokens: z.number().int().min(1000).max(10_000_000).optional(),
 });
 export const CopilotRunState = z.enum(["running", "done", "stopped", "failed"]);
 export const CopilotRunTab = z.object({
@@ -5840,6 +5856,23 @@ export const CopilotRunView = z.object({
   }),
   /** The last thing said: the error a failed run ended on, or how it ended. */
   message: z.string().optional(),
+  /**
+   * 3.12.0 (beta.27): the repos the run stopped on, each after two Copilot sessions added nothing
+   * to a part: why, and what verify rejected (its code and reason) when it rejected something.
+   */
+  problems: z
+    .array(
+      z.object({
+        repo: z.string(),
+        part: z.number().int().min(1).optional(),
+        total: z.number().int().min(1).optional(),
+        message: z.string(),
+        rejected: z.array(z.object({ code: z.string(), message: z.string() })),
+        /** How many were rejected in all (`rejected` lists the first ones). */
+        rejectedCount: z.number().int().min(0),
+      }),
+    )
+    .optional(),
   tabs: z.array(CopilotRunTab),
 });
 export const CopilotRunCurrent = z.object({
@@ -5849,6 +5882,37 @@ export const CopilotRunCurrent = z.object({
   allowed: z.boolean(),
   why: z.string().optional(),
   model: z.string().optional(),
+  /**
+   * 3.12.0 (beta.27): the model's limit a run reads at. `known` with `tokens` and where it is set
+   * (runtime.yaml's maxInput, or what atticus probe measured); else the dialog asks for it, filled
+   * with `tokens` when there is one to offer (`last`: the value given for the last run on this
+   * machine; `probe`: a limit atticus probe measured for another assistant).
+   */
+  limit: z
+    .object({
+      known: z.boolean(),
+      tokens: z.number().int().min(1).optional(),
+      from: z.enum(["runtime.yaml", "probe", "last"]).optional(),
+    })
+    .optional(),
+  /**
+   * 3.12.0 (beta.27): the /atticus-* assistant files each Copilot session reads, as
+   * `atticus assistant-files --check` says: those missing or out of date (`stale`), which the run
+   * writes first, and those edited by hand or not Atticus's (`edited`), which refuse the run.
+   */
+  assistantFiles: z
+    .object({
+      upToDate: z.boolean(),
+      stale: z.array(z.string()),
+      edited: z.array(z.string()),
+      /**
+       * 3.12.0 (beta.27, additive): of `stale`, the files shared with a person (CLAUDE.md,
+       * .github/copilot-instructions.md, ...) with no Atticus section yet, which the run adds
+       * its section to after the person's own lines; the dialog names them.
+       */
+      shared: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type CopilotRunKindT = z.infer<typeof CopilotRunKind>;
 export type StartCopilotRunRequestT = z.infer<typeof StartCopilotRunRequest>;

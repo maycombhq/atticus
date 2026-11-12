@@ -107,6 +107,13 @@ export class CopilotRun {
         delete v.progress.session;
         break;
       }
+      case "repo.stopped": {
+        // beta.27: a Problem the page shows, and a line in the run's tab saying why.
+        const { type: _t, ...problem } = e;
+        (v.problems ??= []).push(problem);
+        out.push(this.push("run", [`Stopped: ${e.message}`]));
+        break;
+      }
       case "verify":
         v.totals.kept += e.kept;
         v.totals.rejected += e.rejected;

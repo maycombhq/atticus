@@ -254,7 +254,7 @@ describe("atticus map --all: the plan (ADR 0161)", () => {
     const o = io();
     expect(await mapAllCommand(root, { dryRun: true }, o.io)).toBe(2);
     expect(o.out).toEqual([
-      "ERR Atticus doesn't know your model's limit, and a part planned too big overflows the reader: pass --max-tokens <n> (the context window of the model Copilot Chat uses, in tokens), or set maxInput under adapters.model in runtime.yaml.",
+      "ERR Atticus doesn't know your model's limit, and a part planned too big overflows the reader: pass --max-tokens <n> (the context window of the model Copilot uses, in tokens), or set maxInput under adapters.model in runtime.yaml. From the app, the run's dialog asks for it (Your model's limit, in tokens) and remembers it on this machine.",
     ]);
   });
 

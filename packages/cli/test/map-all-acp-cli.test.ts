@@ -14,9 +14,17 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import type { AcpExec } from "@maycombhq/ai";
-import { acpStepRunner, expandSlashLine, UNATTENDED } from "../src/copilot-acp-steps.js";
 import {
+  acpStepRunner,
+  expandSlashLine,
+  UNATTENDED,
+  VERIFY_MOVES,
+} from "../src/copilot-acp-steps.js";
+import {
+  LAST_LIMIT_REL,
+  limitToOffer,
   mapAllCommand,
+  readLastLimit,
   preparedLine,
   readMapAllState,
   type MapAllEvent,
@@ -242,8 +250,9 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     // Verified as verify --write runs, and on to part 2.
     expect(text).toMatch(/forge-ledger: \d+ facts kept, 0 rejected; coverage \d+%/);
     expect(text).toContain(`===== forge-ledger, part 2 of ${ledger.total} (repo 1 of 1) =====`);
+    // beta.27: a session that added nothing is said so, and how it ended, and the next one is told.
     expect(text).toContain(
-      `forge-ledger part 2 of ${ledger.total} isn't accounted for yet: one more try in a NEW session with only what is left (${preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")}).`,
+      `forge-ledger part 2 of ${ledger.total} isn't accounted for yet (the session stopped (max_tokens) before it added anything): one more try in a NEW session with only what is left (${preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")}).`,
     );
     expect(text).toContain(`Stopped at the cap (--max-parts 3): 3 sessions run.`);
     const progress = await readPlanProgress(root, "forge-ledger");
@@ -433,4 +442,188 @@ describe("atticus questions propose under copilot-acp (ADR 0171)", () => {
     );
     expect(plain.out[1]).toMatch(/^Handed off as run run-[0-9a-z-]+ \(/);
   });
+});
+
+describe("beta.27: a Copilot-only metarepo's run, as a person hit it", () => {
+  const sessionsIn = (m: ReturnType<typeof scripted>) =>
+    m.log().filter((e) => e.event === "session").length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const jsonIn = (text: string) => JSON.parse(text.slice(text.indexOf("{"))) as Record<string, any>;
+
+  it("refuses an unknown limit saying the app asks for it, and keeps a given one on this machine", async () => {
+    const { root } = ledgerEstate();
+    const no = io();
+    expect(
+      await mapAllCommand(root, { mode: "copilot-acp" }, no.io, {
+        acp: async () => Promise.reject(new Error("no session")),
+      }),
+    ).toBe(2);
+    expect(no.text()).toContain("pass --max-tokens <n>");
+    expect(no.text()).toContain("From the app, the run's dialog asks for it");
+    expect(await readLastLimit(root)).toBeUndefined();
+    expect(await limitToOffer(root)).toBeUndefined();
+    // A limit given (here --max-tokens) fills the app's field next time; nothing else changes.
+    const m = scripted(root, { sessions: [{ steps: [{ say: "Nothing yet." }] }] });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const o = io();
+    await mapAllCommand(root, { maxTokens: 128_000, mode: "copilot-acp", maxParts: 1 }, o.io, {
+      acp: runner,
+    });
+    expect(await readLastLimit(root)).toBe(128_000);
+    expect(await limitToOffer(root)).toEqual({ tokens: 128_000, from: "last" });
+    expect(existsSync(join(root, LAST_LIMIT_REL))).toBe(true);
+  }, 60_000);
+
+  it("plans a part with the run's read plan when the session runs map --estimate without --max-tokens", async () => {
+    const { root } = ledgerEstate();
+    const plan = await dryRun(root);
+    const total = plan.items[0]!.total;
+    expect(total).toBeGreaterThan(2);
+    const planFile = join(root, "facts", "forge-ledger.read-plan.yaml");
+    const before = readFileSync(planFile, "utf8");
+    // What a part's session runs (the /atticus-map steps): no limit given, as in the run that hit it.
+    const est = io();
+    expect(
+      await main(["map", "forge-ledger", "--estimate", "--json", "--root", root], est.io),
+    ).toBe(0);
+    const j = jsonIn(est.text());
+    expect(j.parts.parts).toHaveLength(total);
+    expect(j.parts.sessionFrom).toBe("read-plan");
+    // The run's plan stands as it was planned.
+    expect(readFileSync(planFile, "utf8")).toBe(before);
+    const last = io();
+    expect(
+      await main(
+        ["map", "forge-ledger", "--part", String(total), "--estimate", "--root", root],
+        last.io,
+      ),
+    ).toBe(0);
+    expect(last.text()).toContain(`This session reads part ${total} of ${total} (--part ${total})`);
+    expect(last.text()).toContain("as the read plan on file was planned");
+    // --max-tokens still plans it again, at the limit given.
+    const bigger = io();
+    expect(
+      await main(
+        ["map", "forge-ledger", "--estimate", "--json", "--max-tokens", "400000", "--root", root],
+        bigger.io,
+      ),
+    ).toBe(0);
+    expect(jsonIn(bigger.text()).parts.parts.length).toBeLessThan(total);
+  }, 60_000);
+
+  it("tells a session why verify rejected its facts (moved, not undone), then stops the repo when two sessions add nothing", async () => {
+    const { root, head } = ledgerEstate();
+    const plan = await dryRun(root);
+    const total = plan.items[0]!.total;
+    // A fact cited on a line that doesn't say it: verify moves it to the rejected file.
+    const bad = `${factsText(head).split("\n")[0]!.replace('"line":18,', '"line":3,')}\n`;
+    const m = scripted(root, {
+      sessions: [
+        {
+          steps: [
+            { write: "facts/forge-ledger.jsonl", content: bad },
+            { run: "atticus", args: ["verify", "forge-ledger"] },
+            { say: "verify reverted my edit" },
+          ],
+          // Its next turn, after Atticus told it why: the same fact again, as the person saw.
+          then: [
+            [
+              { write: "facts/forge-ledger.jsonl", content: bad },
+              { run: "atticus", args: ["verify", "forge-ledger"] },
+              { say: "It reverted my edit again." },
+            ],
+          ],
+        },
+        { steps: [{ say: "I can't add anything." }] },
+        // Never reached: part 2 waits for the next run.
+        { steps: [{ say: "part 2" }] },
+      ],
+    });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const events: MapAllEvent[] = [];
+    const app = new CopilotRun({ runId: "r1", jobId: "j1", kind: "all", startedAt: "t" });
+    const o = io();
+    const code = await mapAllCommand(
+      root,
+      { maxTokens: LIMIT, mode: "copilot-acp" },
+      { out: (l) => (o.io.out(l), app.line(l)), err: (l) => (o.io.err(l), app.line(l)) },
+      { acp: runner, onEvent: (e) => (events.push(e), app.event(e)) },
+    );
+    const text = o.text();
+    expect(code, text).toBe(0);
+    const prompts = m
+      .log()
+      .filter((e) => e.event === "prompt")
+      .map((e) => ({ session: String(e.session), text: String(e.text) }));
+    // Every read's session is told first that verify moves a rejected fact.
+    expect(prompts[0]!.text).toContain(VERIFY_MOVES);
+    // (a) In the same session, its next turn: why, and that the facts were moved, not undone.
+    expect(prompts[1]!.session).toBe(prompts[0]!.session);
+    expect(prompts[1]!.text).toContain(
+      "`atticus verify` rejected 1 line of what was written for forge-ledger and moved it out of facts/forge-ledger.jsonl into facts/forge-ledger.rejected.jsonl",
+    );
+    expect(prompts[1]!.text).toContain("Nothing was undone");
+    expect(prompts[1]!.text).toContain("e-get-account");
+    expect(text).toContain("Atticus: verify rejected 1 line of what Copilot wrote; told it why");
+    // The same reasons are told once: the session ended after its second turn.
+    expect(prompts.filter((p) => p.session === prompts[0]!.session)).toHaveLength(2);
+    // (b) The second try, a new session, starts from the reasons.
+    expect(prompts[2]!.session).not.toBe(prompts[0]!.session);
+    expect(prompts[2]!.text).toContain(
+      "In the Copilot session before this one, `atticus verify` rejected 1 line",
+    );
+    expect(prompts[2]!.text).toContain("e-get-account");
+    // Then the run stops the repo, saying what was rejected and why, and starts no part 2.
+    expect(sessionsIn(m)).toBe(2);
+    expect(text).toContain(
+      `forge-ledger part 1 of ${total}: two Copilot sessions added nothing to it; verify rejected 1 line of what they wrote. The run stops reading forge-ledger here`,
+    );
+    expect(text).toMatch(/ {2}e-get-account: [a-z-]+: /);
+    const stop = events.find((e) => e.type === "repo.stopped");
+    expect(stop).toMatchObject({ repo: "forge-ledger", part: 1, total, rejectedCount: 1 });
+    expect(app.view.problems).toHaveLength(1);
+    expect(app.view.problems![0]!.rejected[0]!.message).toContain("e-get-account");
+    expect(app.view.tabs[0]!.lines.join("\n")).toContain("Stopped: forge-ledger part 1");
+    expect(text).toContain(`  forge-ledger part 1 of ${total}: stopped;`);
+    // The rejected fact stays on file to fix from.
+    expect(readFileSync(join(root, "facts", "forge-ledger.rejected.jsonl"), "utf8")).toContain(
+      "e-get-account",
+    );
+    expect(text).not.toContain("still not accounted for after a second session; moving on");
+  }, 90_000);
+
+  it("writes out-of-date assistant files before the first session, and refuses up front where one was edited by hand", async () => {
+    const { root } = ledgerEstate();
+    const m = scripted(root, { sessions: [{ steps: [{ say: "One." }] }, { steps: [] }] });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const o = io();
+    await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 1 }, o.io, {
+      acp: runner,
+    });
+    expect(o.text()).toContain(
+      "The assistant files the sessions read were out of date: Atticus wrote",
+    );
+    expect(o.text()).toContain("Commit them in a pull request.");
+    const prompt = join(root, ".github", "prompts", "atticus-map.prompt.md");
+    expect(existsSync(prompt)).toBe(true);
+    expect(sessionsIn(m)).toBe(1);
+    // Current now: the next run writes nothing first.
+    const again = io();
+    await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 1 }, again.io, {
+      acp: runner,
+    });
+    expect(again.text()).not.toContain("were out of date");
+    // A person's edit: only a person replaces it, and no session is started that would stop at it.
+    writeFileSync(prompt, `${readFileSync(prompt, "utf8")}\nOur own line.\n`);
+    const before = sessionsIn(m);
+    const no = io();
+    expect(
+      await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp" }, no.io, { acp: runner }),
+    ).toBe(2);
+    expect(no.text()).toContain(".github/prompts/atticus-map.prompt.md");
+    expect(no.text()).toContain("edited by hand");
+    expect(no.text()).toContain("no session was started");
+    expect(no.text()).toContain("atticus assistant-files --force");
+    expect(sessionsIn(m)).toBe(before);
+  }, 90_000);
 });
