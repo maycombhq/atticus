@@ -42,7 +42,7 @@ import {
 } from "./copilot-acp-steps.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
 import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
-import { mapCommand, mapStateOf } from "./map-commands.js";
+import { knownLimitOf, mapCommand, mapStateOf } from "./map-commands.js";
 import {
   loadReadPlan,
   partUnaccounted,
@@ -1203,6 +1203,20 @@ export async function mapAllCommand(
     return 2;
   }
   const limit = lim.limit;
+  // Review of fix/b27-copilot: a session's own `atticus map` (the /atticus-map steps) plans at the
+  // limit known here when given none (the probe's, else runtime.yaml's maxInput). Where that size
+  // isn't this run's, every line passes the run's limit, so the session sees the run's parts.
+  const knownHere = knownLimitOf(
+    op,
+    assistantTier(op.runtime, { probes: (await readProbes(root)).results }),
+  ).limit;
+  const passLimit =
+    knownHere !== undefined && sessionTokensFor(knownHere) !== sessionTokensFor(limit)
+      ? ` --max-tokens ${limit}`
+      : "";
+  /** The /atticus-map line for a repo (a part of it; its gaps or its rules top-up). */
+  const slashLine = (repo: string, part?: number, tail?: "--gaps" | "--rules") =>
+    `/atticus-map ${repo}${part !== undefined ? ` --part ${part}` : ""}${passLimit}${tail ? ` ${tail}` : ""}`;
   const allowed = modelModeAllowed(op);
   const mode = o.mode ?? (copilotAcpByDefault(op) ? "copilot-acp" : allowed ? "model" : "copilot");
   if (mode === "copilot-acp" && !copilotAcpAllowed(op) && !deps.acp) {
@@ -1503,8 +1517,8 @@ export async function mapAllCommand(
             ? forceLine(item, part)
             : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
               ? ((await restLine(item, part)) ??
-                `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`)
-              : `/atticus-map ${item.repo}`;
+                slashLine(item.repo, item.total > 1 ? part.part : undefined))
+              : slashLine(item.repo);
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
       return finishPart(item, part, ps);
@@ -1598,7 +1612,7 @@ export async function mapAllCommand(
               ? `Still not covered in ${item.repo} ${named}: ${unaccountedWords(left)}. ${
                   item.force
                     ? `r + Enter gives the line again (${line}); `
-                    : `r + Enter gives a NEW chat only what is left of the part: these files, and any line verify lists as skipped under it (/atticus-map ${item.repo} --part ${part.part} --gaps); `
+                    : `r + Enter gives a NEW chat only what is left of the part: these files, and any line verify lists as skipped under it (${slashLine(item.repo, part.part, "--gaps")}); `
                 }s + Enter skips the part; q + Enter stops.`
               : `Not done yet: nothing was written for ${item.repo} ${named} since its line was given. r + Enter gives the line again; s + Enter skips the part; q + Enter stops.`,
           );
@@ -1670,7 +1684,7 @@ export async function mapAllCommand(
               ? forceLine(item, part)
               : await restLine(item, part);
       if (rest === "done" || (rest === undefined && item.kind === "gaps")) return "done";
-      line = rest ?? `/atticus-map ${item.repo}`;
+      line = rest ?? slashLine(item.repo);
       await block(item, part, label, where, line, ps.retries);
       if (ps.retries >= RETRIES) {
         const smaller = Math.max(8000, Math.floor(limit / 2 / 1000) * 1000);
@@ -1691,7 +1705,7 @@ export async function mapAllCommand(
 
   /** ADR 0170: a --force part's line: the repo, and the part by its number when read in parts. */
   function forceLine(item: PlanItem, part: PlanPart): string {
-    return `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`;
+    return slashLine(item.repo, item.total > 1 ? part.part : undefined);
   }
 
   /** The part is accounted for: say so and save. */
@@ -1743,7 +1757,7 @@ export async function mapAllCommand(
     // beta.17: the prompt is written; the chat reads it and runs no atticus map itself.
     return g.prompt
       ? preparedLine(item.repo, g.prompt)
-      : `/atticus-map ${item.repo}${parted ? ` --part ${part.part}` : ""} --gaps`;
+      : slashLine(item.repo, parted ? part.part : undefined, "--gaps");
   }
 
   /**
@@ -1774,7 +1788,9 @@ export async function mapAllCommand(
       deps.git ? { git: deps.git } : {},
     );
     const j = code === 0 ? jsonOf<{ prompt?: string }>(c.lines) : undefined;
-    return j?.prompt ? preparedLine(item.repo, j.prompt) : `/atticus-map ${item.repo} --rules`;
+    return j?.prompt
+      ? preparedLine(item.repo, j.prompt)
+      : slashLine(item.repo, undefined, "--rules");
   }
 
   /** The gaps pass's line, its prompt planned first; undefined when there are no gaps left. */
@@ -1802,7 +1818,7 @@ export async function mapAllCommand(
       return undefined;
     }
     if (!g.sessions.length) return undefined;
-    return g.prompt ? preparedLine(item.repo, g.prompt) : `/atticus-map ${item.repo} --gaps`;
+    return g.prompt ? preparedLine(item.repo, g.prompt) : slashLine(item.repo, undefined, "--gaps");
   }
 
   async function block(
@@ -1870,8 +1886,8 @@ export async function mapAllCommand(
             ? forceLine(item, part)
             : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
               ? ((await restLine(item, part)) ??
-                `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`)
-              : `/atticus-map ${item.repo}`;
+                slashLine(item.repo, item.total > 1 ? part.part : undefined))
+              : slashLine(item.repo);
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
       return finishPart(item, part, ps);
@@ -2055,7 +2071,7 @@ export async function mapAllCommand(
       if (rest === "done" || (rest === undefined && item.kind === "gaps"))
         return finishPart(item, part, ps);
       // beta.17: with nothing left to plan from, the part itself again, never part 1.
-      line = rest ?? `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`;
+      line = rest ?? slashLine(item.repo, item.total > 1 ? part.part : undefined);
       // beta.27: the second try starts from what the first left: what was rejected and why.
       note = lastRejected.length
         ? rejectionWords(root, item.repo, lastRejected, "before")
@@ -2076,7 +2092,7 @@ export async function mapAllCommand(
       // fare no better, so the run stops it here, saying what was rejected and why, and goes on
       // with the next repo. A session cut by Atticus or that failed isn't one with nothing to add.
       const shown = allRejected.slice(0, 10);
-      const message = `${item.repo} ${label}: two Copilot sessions added nothing to it${allRejected.length ? `; verify rejected ${plural(allRejected.length, "line")} of what they wrote` : ""}. The run stops reading ${item.repo} here and goes on with the next repo. Fix ${allRejected.length ? `the rejected lines in ${factsRelOf(root)}/${item.repo}.rejected.jsonl` : "what keeps it from writing facts"} (or read the part in a new chat: /atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}), then ${resumeAs} carries on.`;
+      const message = `${item.repo} ${label}: two Copilot sessions added nothing to it${allRejected.length ? `; verify rejected ${plural(allRejected.length, "line")} of what they wrote` : ""}. The run stops reading ${item.repo} here and goes on with the next repo. Fix ${allRejected.length ? `the rejected lines in ${factsRelOf(root)}/${item.repo}.rejected.jsonl` : "what keeps it from writing facts"} (or read the part in a new chat: ${slashLine(item.repo, item.total > 1 ? part.part : undefined)}), then ${resumeAs} carries on.`;
       io.out(message);
       for (const r of shown) io.out(`  ${r.id ? `${r.id}: ` : ""}${r.code}: ${r.message}`);
       if (allRejected.length > shown.length)
@@ -2185,7 +2201,7 @@ export async function mapAllCommand(
       repo: item.repo,
       ...(item.total > 1 ? { part: part.part, total: item.total } : {}),
       end,
-      command: `atticus map --all --repos ${item.repo}${o.gaps ? " --gaps" : ""}${item.force ? " --force" : ""} (or /atticus-map ${item.repo}${o.gaps ? " --gaps" : item.force && item.total > 1 ? ` --part ${part.part}` : ""} in a new chat)`,
+      command: `atticus map --all --repos ${item.repo}${o.gaps ? " --gaps" : ""}${item.force ? " --force" : ""} (or ${o.gaps ? slashLine(item.repo, undefined, "--gaps") : slashLine(item.repo, item.force && item.total > 1 ? part.part : undefined)} in a new chat)`,
     };
   }
 

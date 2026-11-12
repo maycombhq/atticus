@@ -37,11 +37,8 @@ const write = (root: string, path: string, text: string) => {
   writeFileSync(join(root, path), text);
 };
 
-/** The Forge ledger in parts, its runtime.yaml letting Atticus drive Copilot (version 3). */
-function ledgerEstate() {
-  const root = mkdtempSync(join(tmpdir(), "atticus-acp-sessions-"));
-  temps.push(root);
-  cpSync(join(VERIFY, "metarepo", "org-pack"), join(root, "org-pack"), { recursive: true });
+/** runtime.yaml letting Atticus drive Copilot (version 3), with a model limit when given. */
+function runtimeWith(root: string, maxInput?: number) {
   write(
     root,
     "org-pack/runtime.yaml",
@@ -50,8 +47,19 @@ function ledgerEstate() {
       assistants: { allowed: ["copilot"], default: "copilot" },
       modes: { allowed: ["hand-off", "copilot-acp"], default: "copilot-acp" },
       copilotAcp: { command: "copilot --acp", maxTurns: 100 },
+      ...(maxInput
+        ? { adapters: { model: { type: "openai-compatible", settings: { maxInput } } } }
+        : {}),
     }),
   );
+}
+
+/** The Forge ledger in parts, its runtime.yaml letting Atticus drive Copilot (version 3). */
+function ledgerEstate() {
+  const root = mkdtempSync(join(tmpdir(), "atticus-acp-sessions-"));
+  temps.push(root);
+  cpSync(join(VERIFY, "metarepo", "org-pack"), join(root, "org-pack"), { recursive: true });
+  runtimeWith(root);
   const dir = join(root, "workspace", "forge-ledger");
   cpSync(join(VERIFY, "repo"), dir, { recursive: true });
   for (const m of ["accounts", "payments", "reports", "statements"])
@@ -335,4 +343,87 @@ describe("rejectionWords: verify's reasons as data (review of fix/b27-copilot)",
       "In the Copilot session before this one, `atticus verify` rejected 1 line of what was written for forge-ledger and moved it out of facts/forge-ledger.jsonl into facts/forge-ledger.rejected.jsonl, each with why. Nothing was undone: the facts verify kept are still in the facts file, and writing the same lines again only gets them rejected again.",
     );
   });
+});
+
+describe("the size a session plans at: a known limit beats the plan on file (review of fix/b27-copilot)", () => {
+  // A session's source is 45% of the model's limit (sessionTokensFor).
+  const AT_100K = 45_000;
+  const AT_400K = 180_000;
+  const estimateOf = async (root: string, ...more: string[]) => {
+    const out: string[] = [];
+    const code = await main(["map", "forge-ledger", "--estimate", ...more, "--root", root], {
+      out: (l) => out.push(l),
+      err: (l) => out.push(`ERR ${l}`),
+    });
+    return { code, text: out.join("\n") };
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const jsonIn = (text: string) => JSON.parse(text.slice(text.indexOf("{"))) as Record<string, any>;
+
+  it("plans again at runtime.yaml's maxInput when the plan on file was planned at another size, and says so", async () => {
+    const { root } = ledgerEstate();
+    const total = await totalOf(root);
+    expect(total).toBeGreaterThan(2);
+    // maxInput set (or changed) after the plan was made.
+    runtimeWith(root, 400_000);
+    const j = await estimateOf(root, "--json");
+    expect(j.code, j.text).toBe(0);
+    const parts = jsonIn(j.text).parts;
+    expect(parts.session).toBe(AT_400K);
+    expect(parts.sessionFrom).toBeUndefined();
+    expect(parts.replanned).toEqual({ was: AT_100K, limit: 400_000, from: "runtime.yaml" });
+    expect(parts.parts.length).toBeLessThan(total);
+    // The plan on file is the new one now: nothing is planned again.
+    const again = await estimateOf(root);
+    expect(again.text).not.toContain("The read plan on file was planned at");
+    // Lowered: the sessions would overflow at the plan's size, so it is planned again, said so.
+    runtimeWith(root, 100_000);
+    const back = await estimateOf(root);
+    expect(back.code, back.text).toBe(0);
+    expect(back.text).toContain(
+      `The read plan on file was planned at ${AT_400K.toLocaleString("en-US")} tokens a session; runtime.yaml's maxInput (100,000 tokens) gives ${AT_100K.toLocaleString("en-US")}, so it is planned again at that size. --max-tokens n plans it at another limit.`,
+    );
+  }, 60_000);
+
+  it("keeps the plan's size where no limit is known, and a plan with no parts pins none", async () => {
+    const { root, head } = ledgerEstate();
+    await totalOf(root);
+    const j = jsonIn((await estimateOf(root, "--json")).text);
+    expect(j.parts.session).toBe(AT_100K);
+    expect(j.parts.sessionFrom).toBe("read-plan");
+    // The plan recordNotReached makes when there is none: no parts, no estimate.
+    write(
+      root,
+      "facts/forge-ledger.read-plan.yaml",
+      stringify({
+        schemaVersion: 2,
+        repo: "forge-ledger",
+        commit: head,
+        session: 5_000,
+        plannedAt: "2026-11-12T10:00:00Z",
+        parts: [],
+      }),
+    );
+    const stub = jsonIn((await estimateOf(root, "--json")).text);
+    expect(stub.parts.sessionFrom).toBeUndefined();
+    expect(stub.parts.session).toBe(150_000);
+  }, 60_000);
+
+  it("passes the run's --max-tokens in each line where a session would plan at another size", async () => {
+    const { root } = ledgerEstate();
+    runtimeWith(root, 400_000);
+    const s = sessions([async () => undefined, async () => undefined]);
+    await run(root, s.runner, 2);
+    expect(s.seen[0]!.line).toBe(`/atticus-map forge-ledger --max-tokens ${LIMIT}`);
+    // What the line's session runs sees the run's parts.
+    const total = await totalOf(root);
+    const last = await estimateOf(root, "--part", String(total), "--max-tokens", String(LIMIT));
+    expect(last.code, last.text).toBe(0);
+    expect(last.text).toContain(`This session reads part ${total} of ${total} (--part ${total})`);
+    // Where the size is the same, the line is as it was.
+    const plain = ledgerEstate();
+    const p = sessions([async () => undefined, async () => undefined]);
+    await run(plain.root, p.runner, 2);
+    expect(p.seen[0]!.line).toBe("/atticus-map forge-ledger");
+  }, 90_000);
 });

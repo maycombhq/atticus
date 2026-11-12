@@ -936,17 +936,38 @@ function limitOf(
 ): { limit?: number; from?: "flag" | "probe" | "runtime.yaml" } {
   const given = o.maxTokens ?? currentPromptLimit();
   if (given !== undefined) return { limit: given, from: "flag" };
+  return knownLimitOf(op, tier);
+}
+
+/**
+ * The model's limit known here without a flag: what atticus probe measured, else runtime.yaml's
+ * maxInput. A step given no --max-tokens plans at it (map --all passes its own where they differ).
+ */
+export function knownLimitOf(
+  op: OrgPack,
+  tier?: TierReport,
+): { limit?: number; from?: "probe" | "runtime.yaml" } {
   if (tier?.maxTokensFrom === "probe" && tier.maxTokens !== undefined)
     return { limit: tier.maxTokens, from: "probe" };
   const maxInput = op.runtime.adapters.model?.settings.maxInput;
   return typeof maxInput === "number" ? { limit: maxInput, from: "runtime.yaml" } : {};
 }
 
+/** The size a read plan on file was planned at, when a known limit gives another one. */
+export interface Replanned {
+  was: number;
+  limit: number;
+  from: "probe" | "runtime.yaml";
+}
+
 /**
- * beta.27: the tokens of source one session reads. --max-tokens decides; without it, a read plan
- * on file at this commit keeps the size it was planned at (a Copilot session that runs
- * `atticus map <repo> --estimate` or `--part n` itself, with no limit, read a 6-part plan as 2
- * parts and wrote that over the run's plan); else the limit probe or runtime.yaml state.
+ * beta.27: the tokens of source one session reads. --max-tokens decides; else the limit the probe
+ * or runtime.yaml state, and a read plan on file at this commit planned at another size is planned
+ * again at it (`replanned`: kept at the plan's, a session after maxInput was lowered overflowed).
+ * Only where no limit is known does the plan keep the size it was planned at (a Copilot session
+ * that runs `atticus map <repo> --estimate` or `--part n` itself, with no limit, read a 6-part plan
+ * as 2 parts and wrote that over the run's plan; a run whose limit isn't the one known here passes
+ * it to every session). A plan with no parts and no estimate (recordNotReached's) pins no size.
  */
 export async function sessionTokensHere(
   root: string,
@@ -955,14 +976,31 @@ export async function sessionTokensHere(
   o: Pick<MapOptions, "maxTokens">,
   op: OrgPack,
   tier?: TierReport,
-): Promise<{ session: number; fromPlan: boolean }> {
-  const flag = o.maxTokens ?? currentPromptLimit();
-  if (flag === undefined) {
-    const plan = await loadReadPlan(root, repo);
-    if (plan && sameCommit(plan.commit, commit) && plan.session > 0)
-      return { session: plan.session, fromPlan: true };
-  }
-  return { session: sessionTokensFor(limitOf(o, op, tier).limit), fromPlan: false };
+): Promise<{ session: number; fromPlan: boolean; replanned?: Replanned }> {
+  const lim = limitOf(o, op, tier);
+  const session = sessionTokensFor(lim.limit);
+  if (lim.from === "flag") return { session, fromPlan: false };
+  const plan = await loadReadPlan(root, repo);
+  const planned =
+    plan &&
+    sameCommit(plan.commit, commit) &&
+    plan.session > 0 &&
+    (plan.parts.length > 0 || plan.estimate !== undefined);
+  if (!planned) return { session, fromPlan: false };
+  if (lim.limit === undefined) return { session: plan.session, fromPlan: true };
+  return plan.session === session || !lim.from
+    ? { session, fromPlan: false }
+    : {
+        session,
+        fromPlan: false,
+        replanned: { was: plan.session, limit: lim.limit, from: lim.from },
+      };
+}
+
+/** What `--estimate` says when the read plan on file was planned at another size. */
+function replannedLine(r: Replanned, session: number): string {
+  const n = (x: number) => x.toLocaleString("en-US");
+  return `The read plan on file was planned at ${n(r.was)} tokens a session; ${r.from === "probe" ? "the limit atticus probe measured" : "runtime.yaml's maxInput"} (${n(r.limit)} tokens) gives ${n(session)}, so it is planned again at that size. --max-tokens n plans it at another limit.`;
 }
 
 /** The tier said for this metarepo: measured on this machine, else from runtime.yaml. */
@@ -1815,7 +1853,7 @@ async function estimate(
   });
   if (c.o.part !== undefined && !parts[c.o.part - 1]) {
     io.err(
-      `${repo} is read in ${parts.length ? `parts 1 to ${parts.length}` : "one session (no parts)"} at this limit (${session} tokens a session${sized.fromPlan ? ", the read plan's" : ""}): there is no part ${c.o.part}.${sized.fromPlan ? "" : ` A read planned at another limit names its parts at that one: atticus map ${repo} --estimate --max-tokens <n>, with the limit it was planned at.`}`,
+      `${repo} is read in ${parts.length ? `parts 1 to ${parts.length}` : "one session (no parts)"} at this limit (${session} tokens a session${sized.fromPlan ? ", the read plan's" : ""}): there is no part ${c.o.part}.${sized.replanned ? ` ${replannedLine(sized.replanned, session)}` : ""}${sized.fromPlan ? "" : ` A read planned at another limit names its parts at that one: atticus map ${repo} --estimate --max-tokens <n>, with the limit it was planned at.`}`,
     );
     return 2;
   }
@@ -1851,6 +1889,8 @@ async function estimate(
             session,
             // beta.27: the size came from the read plan on file (no --max-tokens given).
             ...(sized.fromPlan ? { sessionFrom: "read-plan" } : {}),
+            // Review of fix/b27-copilot: the plan on file was of another size: planned again.
+            ...(sized.replanned ? { replanned: sized.replanned } : {}),
             parts,
             // A-ledger: the read plan on file and what the facts say each part has covered.
             ...(progress
@@ -1943,6 +1983,7 @@ async function estimate(
   io.out(
     `${plural(whole.files, "source file")}${reread ? " to read" : ""}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}${reread ? ` (the repo has ${plural(repoWhole!.files, "source file")}, about ${repoWhole!.tokens} tokens)` : ""}.`,
   );
+  if (sized.replanned) io.out(replannedLine(sized.replanned, session));
   if (proposed.proposals.length) {
     const scan = relative(root, join(orgPackDirOf(root), "scan", `${repo}.yaml`)).replace(
       /\\/g,

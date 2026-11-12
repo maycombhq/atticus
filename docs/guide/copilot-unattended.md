@@ -66,10 +66,15 @@ it ("Your model's limit, in tokens") and fills it with the one given for the las
 machine. That value is kept in `.atticus/map-all/limit.json`, on this machine only; runtime.yaml
 isn't changed.
 
-A part's session runs `atticus map <repo> --estimate` (or `--part n`) itself, without the limit.
-With a read plan on file at that commit (`facts/<repo>.read-plan.yaml`, written by the run), it
-plans at the plan's own session size, so the session sees the run's parts. `--max-tokens` plans the
-repo again at another limit.
+A part's session runs `atticus map <repo> --estimate` (or `--part n`) itself. Without a limit
+it plans at the one known here: what `atticus probe` measured, else `maxInput` in runtime.yaml. A
+read plan on file at that commit (`facts/<repo>.read-plan.yaml`) planned at another size is
+planned again at that limit, and the estimate says so, so a session after `maxInput` was lowered
+doesn't overflow. Only where no limit is known (a Copilot-only metarepo) does the session plan at
+the plan's own session size, so it sees the run's parts. Where the run's limit (`--max-tokens`, or
+the dialog's) gives another size than the one known here, the run passes it in each part's line
+(`/atticus-map <repo> --part n --max-tokens <n>`), so the run and its sessions plan the same
+parts. `--max-tokens` plans the repo again at another limit.
 
 ### Before the first session: the assistant files
 
@@ -90,11 +95,18 @@ the run checks them as `atticus assistant-files --check` does:
 `atticus verify` moves each fact it rejects out of `facts/<repo>.jsonl` into
 `facts/<repo>.rejected.jsonl`, with why. Nothing is undone: the facts it kept stay. Every read's
 session is told this first. When a session ends its turn with facts rejected, Atticus gives it one
-more turn in the same session listing each reason. The part's second session (a new one) starts
-from the reasons too; they stay in the rejected file for it.
+more turn in the same session listing each reason its own verify gave since it started. The reasons
+are verify's output and quote what the session wrote, so they come in a fenced block said to be
+data, never instructions; a line of the rejected file that isn't JSON is said to be one, never
+quoted. The part's second session (a new one) starts from the first session's reasons, said to be
+the session before's; they stay in the rejected file for it.
 
-If the second session adds nothing either (no fact and no reviewed line kept), the run stops that
-repo there instead of going on to its next part. The Console says what was rejected and why; the
+If both sessions ended their turns having added nothing (no fact and no reviewed line kept), the run
+stops that repo there instead of going on to its next part. A session that added facts counts for
+the part whatever the other did, and one Atticus stopped (its time or its tool calls ran out), one
+that stopped short (its own limit) or one that failed isn't one with nothing to add: the part is left
+incomplete, the Console says how the session ended, and the run goes on. When a repo is stopped,
+the Console says what was rejected and why; the
 app shows the repo on the run's strip and under Problems (**Copilot stopped reading**). The run
 goes on with the next repo. Fix the rejected lines (or read the part in a new chat), and the next
 run carries on from there.
