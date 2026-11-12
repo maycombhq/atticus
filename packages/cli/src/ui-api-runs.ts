@@ -128,6 +128,10 @@ export function uiModelRunRoutes(
           throw conflict(
             `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
           );
+        // Beta.27 re-review: its run-log title is the command's, by the command line's own title
+        // rules (the words a request sent never reach the record as they were).
+        const { commandTitleInputsOf } = await import("./main.js");
+        const log = { command: commandTitleInputsOf([...words, "--mode", "model"]) };
         const job = ctx.jobs.start(
           "step",
           async (c) => {
@@ -154,8 +158,11 @@ export function uiModelRunRoutes(
             let applied: string | undefined;
             if (code === 0 && repo) {
               c.progress(0, 1, `Applying to ${repo}`);
-              const v = await trackedLocal(ctx, `Applying to ${repo}`, () =>
-                runStep(["verify", repo, "--write"]),
+              const v = await trackedLocal(
+                ctx,
+                `Applying to ${repo}`,
+                () => runStep(["verify", repo, "--write"]),
+                { ids: [repo] },
               );
               raw.push(...v.out, ...v.err);
               errs.push(...v.err);
@@ -178,7 +185,7 @@ export function uiModelRunRoutes(
               errors: code === 0 ? [] : errs.length ? appLines(errs) : [],
             };
           },
-          { title: `atticus ${words.join(" ")}` },
+          { title: `atticus ${words.join(" ")}`, log },
         );
         return { status: 202, body: { jobId: job.id, model } };
       })

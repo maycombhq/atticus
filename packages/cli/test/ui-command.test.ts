@@ -1,11 +1,12 @@
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readCatalog } from "@maycombhq/scanner";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { startedLines, startUi, untilStopped } from "../src/ui-commands.js";
+import { startedLines, startUi, uiRequestLogger, untilStopped } from "../src/ui-commands.js";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 
@@ -175,5 +176,99 @@ describe("atticus ui", () => {
     alive = false;
     await stopped;
     expect(done).toBe(true);
+  });
+});
+
+/**
+ * Beta.27 re-review: the app's jobs were kept in the run log where a command run wouldn't be:
+ * `atticus ui` in a bare folder made `.atticus/logs/` there, and ATTICUS_RUN_LOG=off was not
+ * heard. A sync's job, in a bare folder and with the log off; no network (no repos to clone).
+ */
+describe("atticus ui and the run log", () => {
+  const syncAndWait = async (srv: Awaited<ReturnType<typeof startUi>>) => {
+    const h = { "X-Atticus-Token": srv.token, "Content-Type": "application/json" };
+    expect((await fetch(srv.url + "/api/health", { headers: h })).status).toBe(200);
+    const r = await fetch(srv.url + "/api/workspace/sync", {
+      method: "POST",
+      headers: h,
+      body: "{}",
+    });
+    const body = (await r.json()) as { jobId?: string };
+    for (let i = 0; body.jobId && i < 200; i++) {
+      const j = (await (
+        await fetch(`${srv.url}/api/jobs/${body.jobId}`, { headers: h })
+      ).json()) as { state?: string };
+      if (j.state !== "running" && j.state !== "queued") break;
+      await new Promise((res) => setTimeout(res, 25));
+    }
+  };
+
+  it("in a bare folder, makes nothing there", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "atticus-ui-bare-"));
+    const srv = await startUi(bare, { port: 0, user: "pat", runLog: true });
+    try {
+      await syncAndWait(srv);
+    } finally {
+      await srv.close();
+    }
+    expect(readdirSync(bare)).toEqual([]);
+    await rm(bare, { recursive: true, force: true });
+  }, 60_000);
+
+  it("with ATTICUS_RUN_LOG=off, keeps no job in the run log", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const was = process.env.ATTICUS_RUN_LOG;
+    process.env.ATTICUS_RUN_LOG = "off";
+    const srv = await startUi(root, { port: 0, user: "pat", runLog: true });
+    try {
+      await syncAndWait(srv);
+    } finally {
+      await srv.close();
+      if (was === undefined) delete process.env.ATTICUS_RUN_LOG;
+      else process.env.ATTICUS_RUN_LOG = was;
+    }
+    expect(existsSync(join(root, ".atticus", "logs", "running"))).toBe(false);
+    await rm(root, { recursive: true, force: true });
+  }, 60_000);
+});
+
+/**
+ * Beta.27 re-review (plumbing): a bare folder keeps no log, so a failed call there went nowhere.
+ * Its error, or a 500, is said on standard error instead (redacted as the log is); the metarepo's
+ * calls still go to its log, never to the terminal.
+ */
+describe("a failed call of atticus ui in a bare folder", () => {
+  const failed = {
+    method: "GET",
+    path: "/api/repos",
+    status: 500,
+    ms: 3,
+    error: new Error("can't read https://ci:hunter2secret@git.forge.example/forge-ledger.git"),
+  };
+
+  it("is said on standard error, redacted, and nothing is made there", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "atticus-ui-bare-err-"));
+    const said: string[] = [];
+    const on = uiRequestLogger(bare, (l) => said.push(l));
+    on(failed);
+    on({ method: "GET", path: "/api/health", status: 503, ms: 1 });
+    on({ method: "GET", path: "/api/health", status: 200, ms: 1 });
+    on({ method: "GET", path: "/api/nope", status: 404, ms: 1 });
+    expect(said).toHaveLength(2);
+    expect(said[0]).toMatch(/GET \/api\/repos failed \(500\): can't read/);
+    expect(said[0]).not.toContain("hunter2secret");
+    expect(said[1]).toBe("atticus ui: GET /api/health answered 503");
+    expect(readdirSync(bare)).toEqual([]);
+    await rm(bare, { recursive: true, force: true });
+  });
+
+  it("at a metarepo goes to its log, not to the terminal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-err-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const said: string[] = [];
+    uiRequestLogger(root, (l) => said.push(l))(failed);
+    expect(said).toEqual([]);
+    await rm(root, { recursive: true, force: true });
   });
 });

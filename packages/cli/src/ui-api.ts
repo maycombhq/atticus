@@ -559,7 +559,7 @@ async function artifactPath(
   root: string,
   id: string,
   artifact: string,
-  o: { orNew?: boolean; file?: string | null } = {},
+  o: { orNew?: boolean; file?: string | null; listed?: readonly string[] } = {},
 ): Promise<string> {
   const a = ChangeArtifact.safeParse(artifact);
   if (!a.success)
@@ -567,7 +567,8 @@ async function artifactPath(
       `${artifact} is not an artifact. Use one of ${ChangeArtifact.options.join(", ")}.`,
     );
   const dir = join(changesDirOf(root), id);
-  const files = await artifactFiles(dir, a.data);
+  // Beta.27 re-review: a call reading many files lists the folder once (`listed`).
+  const files = o.listed ?? (await artifactFiles(dir, a.data));
   // 2.72.0 (seventh UX walk): one file of a many-file artifact, such as a story, by its path in
   // the change folder; only a file the artifact has, never a path elsewhere.
   if (o.file) {
@@ -582,6 +583,9 @@ async function artifactPath(
   if (files.length === 0) throw notFound(`Change ${id} has no ${artifact} yet.`);
   return files[0]!;
 }
+
+/** The most files one GET .../artifacts/{artifact}/files gives (3.12.0). */
+export const ARTIFACT_FILES_MAX = 200;
 
 export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Router {
   const { root, user, jobs } = ctx;
@@ -993,6 +997,69 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           },
         };
       })
+      // 3.12.0 (beta.27 review): several files of a many-file artifact in one call; the Stories
+      // tab asked once per story. Each as the one-file read below gives it.
+      .add(
+        "GET",
+        "/api/changes/{changeId}/artifacts/{artifact}/files",
+        async ({ params, query }) => {
+          await readChange(root, params.changeId!);
+          const asked = [...new Set(query.getAll("file").filter(Boolean))];
+          if (!asked.length)
+            throw badRequest(
+              "Name the files: ?file=<path>&file=<path>, each from the change folder.",
+            );
+          if (asked.length > ARTIFACT_FILES_MAX)
+            throw badRequest(`At most ${ARTIFACT_FILES_MAX} files a call (${asked.length} asked).`);
+          const art = ChangeArtifact.safeParse(params.artifact);
+          if (!art.success) await artifactPath(root, params.changeId!, params.artifact!);
+          const dir = join(changesDirOf(root), params.changeId!);
+          // Beta.27 re-review: the folder listed once for the call, not once per file.
+          const listed = art.success ? await artifactFiles(dir, art.data) : [];
+          const files = [];
+          // Beta.27 re-review: a file that can't be read (deleted since the page listed it) is
+          // its own problem, as /api/facts gives a repo's; the others are still answered.
+          const problems: Record<string, { status: number; title: string; detail?: string }> =
+            Object.create(null);
+          const problem = (file: string, e: HttpError) => {
+            problems[file] = {
+              status: e.status,
+              title: e.title,
+              ...(e.detail ? { detail: e.detail } : {}),
+            };
+          };
+          for (const file of asked) {
+            let rel: string;
+            let content: string;
+            try {
+              rel = await artifactPath(root, params.changeId!, params.artifact!, {
+                orNew: true,
+                file,
+                listed,
+              });
+              // Gone between the listing and the read: that file's 404, never a 500 for all.
+              // Another failure reads as the one-file read gives it (empty).
+              content = await readFile(join(dir, rel), "utf8").catch((e: unknown) => {
+                if ((e as NodeJS.ErrnoException).code === "ENOENT")
+                  throw notFound(`${file} isn't there any more: it was deleted or moved.`);
+                return "";
+              });
+            } catch (e) {
+              if (!(e instanceof HttpError)) throw e;
+              problem(file, e);
+              continue;
+            }
+            files.push({
+              file,
+              artifact: params.artifact,
+              path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
+              content,
+              sha256: sha(content),
+            });
+          }
+          return { status: 200, body: { files, problems } };
+        },
+      )
       .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, query }) => {
         await readChange(root, params.changeId!);
         const rel = await artifactPath(root, params.changeId!, params.artifact!, {
@@ -1219,7 +1286,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               }),
             };
           },
-          { title: `Run the ready tasks of ${change}` },
+          { title: `Run the ready tasks of ${change}`, log: { ids: [change] } },
         );
         return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
@@ -1617,15 +1684,20 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ),
           );
         // ADR 0187: as a job, so the Console shows it while the page waits.
-        const res = await tracked(ctx, `Critic on ${params.changeId!}`, async () => {
-          let got = await once(b.gate);
-          // A change in a state with no gate of its own (define) is checked at the gate it goes to.
-          if (!b.gate && got.code === 2 && got.err.some((l) => /has no gate/.test(l))) {
-            const next = (await changeReport(root, params.changeId!)).next;
-            if (next) got = await once(next);
-          }
-          return got;
-        });
+        const res = await tracked(
+          ctx,
+          `Critic on ${params.changeId!}`,
+          async () => {
+            let got = await once(b.gate);
+            // A change in a state with no gate of its own (define) is checked at the gate it goes to.
+            if (!b.gate && got.code === 2 && got.err.some((l) => /has no gate/.test(l))) {
+              const next = (await changeReport(root, params.changeId!)).next;
+              if (next) got = await once(next);
+            }
+            return got;
+          },
+          { ids: [params.changeId!] },
+        );
         if (res.code === 2) throw refused(res);
         ctx.events.publish({
           type: "file.changed",
@@ -1828,7 +1900,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               errors: res.code === 2 ? res.err : [],
             };
           },
-          { title: scanTitle },
+          { title: scanTitle, log: { ids: b.repos ?? [] } },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -1842,17 +1914,25 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           "sync",
           async (c) => {
             c.progress(0, 1, "Syncing base clones");
-            const res = await run((io) => workspaceSync(root, b.repos, io));
+            // Beta.27 review (blocker): Stop answered 200 and the sync ran on. The job's signal
+            // goes to every git the sync starts: Stop kills it, takes a half-made clone away,
+            // gives the base clone's lock back and starts no other repo.
+            const res = await run((io) => workspaceSync(root, b.repos, io, { signal: c.signal }));
             // Review of beta.23: the code and every line, the errors too, so the page says why a
             // sync failed; its progress says Stopped then, never Synced.
             c.progress(1, 1, res.code === 0 ? "Synced" : "Stopped");
             const lines = [...res.out, ...res.err];
+            // Stopped: the job ends `cancelled` (its Console line says Stopped), not failed.
+            if (c.cancelled) return { result: { code: res.code, lines } };
             return {
               result: { code: res.code, lines },
               errors: res.code === 0 ? [] : res.err.length ? res.err : lines,
             };
           },
-          { title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones" },
+          {
+            title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones",
+            log: { ids: b.repos ?? [] },
+          },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -1875,7 +1955,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             }
             return { result, errors: res.code === 2 ? res.err : [] };
           },
-          { title: `Reconcile ${b.diagram}` },
+          // The diagram's name is the person's: in the run log, as an id only if it is one.
+          { title: `Reconcile ${b.diagram}`, log: { ids: [b.diagram] } },
         );
         return { status: 202, body: { jobId: job.id } };
       })

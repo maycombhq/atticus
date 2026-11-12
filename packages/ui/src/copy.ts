@@ -30,7 +30,28 @@ export const COPY = {
       `The server answered with something that isn't Atticus's (status ${status}). Check that the address is the one atticus ui printed.`,
     offlinePanel:
       "The Atticus server the extension started isn't answering. Run Atticus: Open the app from the Command Palette to start it again, then press Try again.",
-    offlineShort: "the server isn't answering (the note at the top says how to fix it)",
+    /**
+     * Beta.27 review: the words a section says while the server is down, beside the one note
+     * that says it (above the page in either layout; the Explorer is beside the page, not under
+     * it, so not "at the top").
+     */
+    offlineShort: "the server isn't answering (the note above the page says how to fix it)",
+    /** A section's quiet state while the server is down: the note above says the rest. */
+    notLoadedOffline:
+      "Not loaded: the server isn't answering (the note above the page says how to fix it).",
+    /**
+     * Beta.27 review (blocker): `atticus ui` started again, with a new session token, and the
+     * page couldn't read it: one note, with Reload.
+     */
+    restarted:
+      "The Atticus app restarted, so this page's session ended. Reload the page to go on where you were.",
+    // Beta.27 re-review: the app started again in another folder at the same address.
+    otherMetarepo:
+      "The Atticus app at this address now shows another metarepo, so this page sent it nothing. Reload the page to see that one.",
+    notResentTitle: "Not sent",
+    notResent:
+      "The Atticus app restarted while you did this, so it wasn't sent: nothing was changed. Do it again.",
+    reload: "Reload the page",
     online: "The server is answering again.",
     /** Review of beta.23: a write run as a job ended without its answer (stopped, or it broke). */
     jobEnded: (state: string, words: string) =>
@@ -283,8 +304,17 @@ export const COPY = {
       "pick this and the list of every repo, system and team opens below; it takes the one you name",
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
+    /**
+     * Beta.27: the questions to answer, both kinds, as Home, the activity bar and the status bar
+     * count them; the counts under it are the steps' questions only.
+     */
+    toAnswer: (total: number, steps: number, owner: number) =>
+      `${total} question${total === 1 ? "" : "s"} to answer: ${steps} from the steps, ${owner} owner question${owner === 1 ? "" : "s"}`,
     counts: {
-      label: (repo?: string) => (repo ? `Questions in ${repo}` : "Questions in the estate"),
+      label: (repo?: string) =>
+        repo ? `Questions from the steps in ${repo}` : "Questions from the steps, in the estate",
+      /** Beta.27: said above the counts, which are the steps' questions only. */
+      caption: "From the steps",
       open: "Open",
       answered: "Answered",
       retired: "Retired",
@@ -1934,14 +1964,15 @@ export const COPY = {
     tabHint: "Delete closes this tab. Ctrl+Shift+Left or Right moves it.",
     closeTab: (label: string) => `Close ${label}`,
     tabTitle: (change: string, page: string) => `${change} · ${page}`,
-    /** Activity bar badges, heard after the section's name. */
-    openCount: (n: number) => `${n} open`,
+    /** Activity bar badges, heard after the section's name (beta.27: the questions to answer). */
+    openCount: (n: number) => `${n} to answer`,
     more: "More pages",
     settings: "Settings",
     /** The status bar. */
     status: "Status",
     repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
-    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} open`,
+    /** Beta.27: the same count, in the same words, as Home's Questions to answer. */
+    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} to answer`,
     running: (title: string) => `${title} running`,
     step: (done: number, total: number) => `${done}/${total}`,
     alsoRunning: (n: number) => `+${n}`,
@@ -2034,6 +2065,15 @@ export const COPY = {
     } as Record<string, string>,
     askItem: (question: string) => `Ask: ${question}`,
     askDetail: "answer from the catalog, with the query shown",
+    /** Beta.27 review: Ctrl+K's actions, found by their words ("sync"). */
+    sync: {
+      label: "Sync the repos",
+      detail:
+        "Clone each repo's base clone, or bring it up to date; the Console shows it as it runs",
+      also: ["sync", "clone the repos", "update the repos", "workspace sync", "base clones"],
+      started: "Syncing the repos: the Console shows each repo as it goes.",
+      failed: (why: string) => `The sync didn't start: ${why}`,
+    },
     goToAScreen: "Go to a screen, change or record, or ask a question",
     goToAScreen2: "Go to a screen, change or record… or ask a question",
     nothingMatches: "Nothing matches.",
@@ -2585,6 +2625,14 @@ export const COPY = {
       waitOnYouSub: (needs: number, steps: number) =>
         `${needs} open need${needs === 1 ? "" : "s"} · ${steps} manual step${steps === 1 ? "" : "s"}`,
       needsMore: (n: number) => `${n} more group${n === 1 ? "" : "s"}`,
+      /**
+       * Beta.27: what Needs a person counts, said beside it: everything waiting on a person (the
+       * questions to answer among it), never a bare number to set against Questions to answer.
+       */
+      needsMeta: (n: number) => `${n} waiting`,
+      /** Beta.27: under Questions to answer, the two kinds it adds up. */
+      // Short enough for two lines of a tile in a 780 px editor panel.
+      questionsSub: (steps: number, owner: number) => `${steps} from steps · ${owner} to owners`,
       seeAllQuestions: "See all questions",
       wholeList: (n: number) => `Show the whole list (${n})`,
       hideWholeList: "Hide the whole list",
@@ -5088,6 +5136,14 @@ export const COPY = {
       cancelled: "cancelled",
       ended: "ended without saying",
     } as Record<string, string>,
+    // Beta.27 review: a run that refused (a scan's safety stop) neither did its work nor failed.
+    refused: "refused: nothing written",
+    /** Beta.27 review: a job of an earlier run of the app, running when that app closed. */
+    appClosedState: "stopped when the app closed",
+    appClosed:
+      "The app closed (or restarted) while this ran, so it stopped there. Its lines up to then are below; start it again from where you started it.",
+    /** Beta.27 review: Stop was asked and the job is ending. */
+    stoppingState: "stopping…",
     from: (where: string) => `from ${where}`,
     at: (time: string) => `at ${time}`,
     exitCode: (code: number) => `exit code ${code}`,
@@ -5095,6 +5151,8 @@ export const COPY = {
     stopping: "Stopping…",
     stopFailed: (why: string) => `Stop didn't go through: ${why}`,
     stopTerminal: "Stop it in its terminal (Ctrl+C).",
+    /** Beta.27 re-review: a job another `atticus ui` (another window) runs: its Stop is there. */
+    otherWindow: "Started in another Atticus window: stop it there.",
     endedWithoutSaying:
       "Its process is gone and it never said how it ended: the terminal was closed, or it crashed. Its lines up to then are below.",
     handoffWaits:
@@ -5135,6 +5193,12 @@ export const COPY = {
     } as Record<"console" | "questions" | "problems" | "runs", string>,
     /** What a tab's count says to a screen reader. */
     count: (n: number) => (n === 1 ? "1 item" : `${n.toLocaleString()} items`),
+    /**
+     * Beta.27 re-review: the Questions tab's count when the owner questions couldn't be read:
+     * the steps' questions only, and said so.
+     */
+    countStepsOnly: (n: number) =>
+      `${n === 1 ? "1 question" : `${n.toLocaleString()} questions`} from the steps; the owner questions couldn't be read`,
     expand: "Show the panel",
     collapse: "Hide the panel",
     resize: "Resize the panel",
@@ -5153,6 +5217,12 @@ export const COPY = {
       answer: "Answer",
       answerLabel: (q: string) => `Answer: ${q}`,
       more: (n: number) => `and ${n.toLocaleString()} more on the Questions page`,
+      /** Beta.27 review: the owner questions, one row, so the list adds up to the tab's count. */
+      ownerRow: (n: number) =>
+        n === 1 ? "1 owner question" : `${n.toLocaleString()} owner questions`,
+      ownerMeta: "asked of a system's owner",
+      ownerLabel: (n: number) =>
+        `Answer the ${n === 1 ? "owner question" : `${n.toLocaleString()} owner questions`}`,
     },
     problems: {
       loading: "Reading what needs attention…",
@@ -6631,6 +6701,22 @@ export const COPY = {
     /** The section's count, read after its name. */
     count: (n: number) => `${n}`,
     repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
+    /**
+     * Beta.27 review: the Systems header when the map has boxes for only some of the manifest's
+     * repos (repo-counts.ts); the rest are listed under notOnMap.
+     */
+    reposOnMap: (onMap: number, all: number) =>
+      `${onMap} of ${all} repo${all === 1 ? "" : "s"} on the map`,
+    notOnMap: "Not on the map",
+    /**
+     * Beta.27 re-review: a repo the map has a box for that the manifest doesn't name (records
+     * left for a repo taken out of it): on its row, and after the header's count.
+     */
+    notInManifest: "not in the manifest",
+    alsoOffManifest: (head: string, n: number) => `${head}, ${n} more not in the manifest`,
+    /** A system the map holds no repo of: its row says so instead of a count. */
+    noRepo: "no repo",
+    components: (n: number) => `${n} component${n === 1 ? "" : "s"}`,
     waitsOnYou: "waits on you",
     /** A row's whole name for a screen reader, its parts joined. */
     spoken: (...parts: string[]) => parts.join(", "),

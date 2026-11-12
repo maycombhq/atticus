@@ -553,7 +553,12 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                 </div>
               )}
               {v.items.length === 0 ? (
-                <div className="state">{T.empty}</div>
+                // Beta.27 review: a stage done with nothing in its conversation (a proposal
+                // written outside the app) says so in its headline; "nothing has happened" under
+                // it would say it twice, and wrongly.
+                v.state === "done" ? null : (
+                  <div className="state">{T.empty}</div>
+                )
               ) : (
                 <ol className="thread" aria-label={T.title(p.stage)}>
                   {v.items.map((it, i) => (

@@ -21,6 +21,15 @@ import { queryParam } from "./know/common.js";
 import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 import { AiChip, AiMark, isAiBy, readyView, SplitCounts, useDecisions } from "../app/decisions.js";
 import { RouteQuestion } from "./RouteQuestion.js";
+import {
+  questionsToAnswerOf,
+  STEP_QUESTIONS_PATH,
+  stepQuestionsMayHaveChanged,
+  type QuestionsToAnswer,
+  type StepQuestionsAnswer,
+} from "../app/question-counts.js";
+import { readAnswerAgain, useKnownAnswer } from "../app/shell/explorer-data.js";
+import { inEditor } from "../app/theme.js";
 import "./questions.css";
 
 /**
@@ -283,10 +292,12 @@ export function ExcerptView({ e }: { e: Excerpt }) {
           {e.lines.map((l, i) => {
             const n = e.start + i;
             const cited = n === e.line;
+            // Beta.27: a long line wraps under itself, its number kept in its own column, so the
+            // cited line is read whole (it ran past the box's right edge).
             return (
-              <span key={n} style={{ display: "block" }} aria-current={cited ? "true" : undefined}>
-                <span className="muted">{`${String(n).padStart(4)}  `}</span>
-                {cited ? <mark>{l}</mark> : l}
+              <span key={n} className="qs-line" aria-current={cited ? "true" : undefined}>
+                <span className="muted qs-ln">{`${String(n).padStart(4)}  `}</span>
+                <span className="qs-lc">{cited ? <mark>{l}</mark> : l}</span>
               </span>
             );
           })}
@@ -449,6 +460,14 @@ export function byRepo(qs: QuestionView[]): [string, QuestionView[]][] {
   for (const q of qs) out.get(q.repo)!.push(q);
   return [...out];
 }
+
+/**
+ * Beta.27 review: whether the Questions page's own read counts the estate's open questions from
+ * the steps (the open list, or every state's, whose counts say how many are open): not when it
+ * is one change's, one role's or the person's own.
+ */
+export const countsEstateSteps = (path: string): boolean =>
+  path === STEP_QUESTIONS_PATH || path === "/api/questions";
 
 /** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
 export function questionsUrl(filter: "open" | "all", whose: "all" | "mine"): string {
@@ -1542,6 +1561,15 @@ export function QuestionsAiCounts() {
   ) : null;
 }
 
+/**
+ * Beta.27: the questions to answer, both kinds, as Home's tile, the activity bar's badge and the
+ * status bar count them; nothing until both kinds are known.
+ */
+export function QuestionsToAnswerLine({ of }: { of: QuestionsToAnswer | undefined }) {
+  if (!of) return null;
+  return <p className="qs-to-answer">{C.toAnswer(of.total, of.steps, of.owner)}</p>;
+}
+
 /** The counts at the top of the page; Open and All pick the list's filter. */
 export function QuestionCounts(p: {
   counts: ReturnType<typeof questionCounts>;
@@ -1571,6 +1599,10 @@ export function QuestionCounts(p: {
     );
   return (
     <div className="q-stats" role="group" aria-label={C.counts.label(p.repo)}>
+      {/* Beta.27: these are the steps' questions only; the line above counts both kinds. */}
+      <span className="q-stats-caption hud" aria-hidden="true">
+        {C.counts.caption}
+      </span>
       {tile(C.counts.open, c.open, "warn", "open")}
       {tile(C.counts.answered, c.answered, "done")}
       {tile(C.counts.retired, c.retired, "")}
@@ -1643,7 +1675,8 @@ export function Questions({ hash }: { hash: string }) {
   // the question opened does, so opening one keeps the role picked.
   const hashScope = JSON.stringify(roleScopeOf(hash));
   useEffect(() => setScope(JSON.parse(hashScope) as ReturnType<typeof roleScopeOf>), [hashScope]);
-  const fetched = useApi<QuestionListView>(withRoleScope(questionsUrl(filter, whose), scope));
+  const ownPath = withRoleScope(questionsUrl(filter, whose), scope);
+  const fetched = useApi<QuestionListView>(ownPath);
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
   useReloadOnFiles(fetched, owner);
@@ -1655,6 +1688,27 @@ export function Questions({ hash }: { hash: string }) {
   const list = scope.change ? fetched : scopeToChange(fetched, forChange);
   const [kind, setKind] = useState<QuestionsKind>(questionsKind(hash));
   useEffect(() => setKind(questionsKind(hash)), [hash]);
+  // Beta.27: the questions to answer, both kinds, counted as Home, the badge and the status bar
+  // count them (whatever this page's filters show): the counts under it are the steps' only.
+  // Beta.27 review: from the page's own read when it counts the estate's open questions (every
+  // state's list counts them too); else the last answer to the estate's, read again after an
+  // answer here, never by an editor's panel (it has no status bar to share the read with).
+  const ownCountsSteps = countsEstateSteps(ownPath);
+  const wantSteps = !ownCountsSteps && !(typeof document !== "undefined" && inEditor(document));
+  const known = useKnownAnswer<StepQuestionsAnswer>(
+    STEP_QUESTIONS_PATH,
+    wantSteps,
+    stepQuestionsMayHaveChanged,
+  );
+  const toAnswer = questionsToAnswerOf(
+    ownCountsSteps ? (fetched.state === "ready" ? fetched.data : undefined) : known,
+    owner.state === "ready" ? owner.data : undefined,
+  );
+  /** An answer given here: the list again, and the estate's count when it is another read. */
+  const answered = () => {
+    list.reload();
+    if (wantSteps) void readAnswerAgain(STEP_QUESTIONS_PATH);
+  };
 
   const current = questionRoute(hash);
   const [text, setText] = useState("");
@@ -1699,6 +1753,7 @@ export function Questions({ hash }: { hash: string }) {
           onChange={setKind}
         />
       </div>
+      <QuestionsToAnswerLine of={toAnswer} />
       {kind === "owner" ? (
         <>
           <p className="qs-intro">{C.ownerQuestions.intro}</p>
@@ -1806,14 +1861,14 @@ export function Questions({ hash }: { hash: string }) {
                     setBulkDone(r);
                     // The answered ones are let go; what failed stays picked, to try again.
                     select(r.ok, false);
-                    list.reload();
+                    answered();
                   }}
                   onClear={() => setSelected(new Set())}
                 />
               ) : current ? (
                 <Detail
                   id={current}
-                  onAnswered={list.reload}
+                  onAnswered={answered}
                   {...(list.state === "ready" && list.data.about?.[current]?.proposal
                     ? { proposal: list.data.about[current].proposal }
                     : {})}

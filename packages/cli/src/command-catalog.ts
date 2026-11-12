@@ -234,7 +234,12 @@ const APPROVE_WHEN: Record<string, { flag: string; value: string }> = {
 const isWord = (t: string) => /^[a-z][a-z-]*$/.test(t);
 
 function parseArgs(id: string, usage: string): CommandArg[] {
-  const out: CommandArg[] = [];
+  return argsOf(id, usage).map((a) => a.arg);
+}
+
+/** A usage's arguments, each with whether the help quotes it (`"<name>"`: free text, typed). */
+function argsOf(id: string, usage: string): { arg: CommandArg; quoted: boolean }[] {
+  const out: { arg: CommandArg; quoted: boolean }[] = [];
   const kinds = KIND_BY_COMMAND[id];
   // <name>, "<name>", [name], <name...>, <a|b|c>; not an option's value (--type <type>).
   const re = /(\[|"?<)([a-z][a-z|-]*?)(\.\.\.)?(>"?|\])(\.\.\.)?/g;
@@ -249,11 +254,14 @@ function parseArgs(id: string, usage: string): CommandArg[] {
     const kind: ArgKind =
       kinds?.[out.length] ?? (isChoice ? "choice" : (KIND_BY_NAME[name] ?? "text"));
     out.push({
-      name,
-      kind,
-      optional: m[1] === "[",
-      many: !!(m[3] || m[5]),
-      ...(isChoice ? { choices: parts } : {}),
+      arg: {
+        name,
+        kind,
+        optional: m[1] === "[",
+        many: !!(m[3] || m[5]),
+        ...(isChoice ? { choices: parts } : {}),
+      },
+      quoted: m[1] === '"<',
     });
   }
   return out;
@@ -381,6 +389,130 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs" | "le
         if (!flags.some((f) => f.name === name)) flags.push({ name, required: false });
       out.push({ id, words, usage, summary, args: parseArgs(id, rest), flags });
     }
+  }
+  return out;
+}
+
+/**
+ * Beta.27 review: the places a run's title (ADR 0187) may show a typed word in, by the help: a
+ * command's words, then its arguments, in order. An argument's place shows its word only when what
+ * it takes is an id (a repo, a change, a flow, a system, a question, a finding, a record, one of a
+ * choice's values, or an argument the help names as an id: TITLE_ARG_NAMES); free text, a file, a
+ * folder, a URL, a pattern or a key never shows. A word past the places is never shown.
+ */
+const TITLE_ARG_KINDS: ReadonlySet<ArgKind> = new Set([
+  "repo",
+  "change",
+  "flow",
+  "system",
+  "question",
+  "finding",
+  "record",
+  "choice",
+]);
+const TITLE_ARG_NAMES: ReadonlySet<string> = new Set([
+  "action",
+  "batch",
+  "call",
+  "commitment",
+  "entry-points",
+  "field",
+  "from",
+  "handle",
+  "id",
+  "into",
+  "item",
+  "lesson",
+  "list",
+  "measure",
+  "n",
+  "name",
+  "new",
+  "old",
+  "party",
+  "platform",
+  "ref",
+  "role",
+  "run",
+  "run-id",
+  "source",
+  "stage",
+  "step",
+  "story",
+  "tags",
+  "task",
+  "team",
+  "term",
+  "type",
+]);
+
+/** One argument's place in a title: whether it shows an id, the values of a choice, many. */
+export interface TitleSlot {
+  id: boolean;
+  many: boolean;
+  choices?: string[];
+}
+
+/** Each command's argument places, by its words (`map`, `task run`); same words share the most. */
+export function titleSlotsOf(help: string): Map<string, TitleSlot[]> {
+  const out = new Map<string, TitleSlot[]>();
+  for (const c of parseHelp(help)) {
+    // Beta.27 re-review: an argument the help quotes (`alias "<name>" <id>`, `feature name <id>
+    // "<name>"`) is free text, whatever its name: never an id's place.
+    const quoted = argsOf(c.id, c.usage).map((a) => a.quoted);
+    const slots = c.args.map((a, i): TitleSlot => ({
+      id:
+        !quoted[i] &&
+        (TITLE_ARG_KINDS.has(a.kind) || (a.kind === "text" && TITLE_ARG_NAMES.has(a.name))),
+      many: a.many,
+      ...(a.choices ? { choices: a.choices } : {}),
+    }));
+    // Beta.27 re-review: a command named another way (`join shared refresh <team>` is `estate
+    // shared refresh`, aliasArgv) gives its places to the command that runs, which is the one a
+    // run's words name: both spellings show the same words.
+    const named = c.words.join(" ");
+    const runs = aliasArgv(
+      c.words,
+      c.words.map((_, i) => i),
+    ).join(" ");
+    for (const key of new Set([named, runs])) {
+      const had = out.get(key);
+      if (!had || had.length < slots.length) out.set(key, slots);
+    }
+  }
+  return out;
+}
+
+/**
+ * Beta.27 review: the positional words a run's title may show, by the command's places
+ * (titleSlotsOf): the command's words (the longest the help knows), then a word in each argument's
+ * place that takes an id, `…` for one that doesn't and for every word past them (more than one
+ * `…` together are one). A command the help doesn't know shows its first word only. Each word kept
+ * is still checked by the title (core's titleWord).
+ */
+export function titleWordsByHelp(words: readonly string[], slots: Map<string, TitleSlot[]>) {
+  let k = 0;
+  for (let n = Math.min(words.length, 3); n > 0; n--)
+    if (words.slice(0, n).every(isWord) && slots.has(words.slice(0, n).join(" "))) {
+      k = n;
+      break;
+    }
+  const out: string[] = [];
+  const add = (w: string) => {
+    if (w !== "…" || out.at(-1) !== "…") out.push(w);
+  };
+  if (k === 0) {
+    if (words[0] !== undefined) add(isWord(words[0]) ? words[0] : "…");
+    if (words.length > 1) add("…");
+    return out;
+  }
+  for (const w of words.slice(0, k)) add(w);
+  const places = slots.get(words.slice(0, k).join(" "))!;
+  for (let i = k; i < words.length; i++) {
+    const at = i - k;
+    const slot = at < places.length ? places[at] : places.at(-1)?.many ? places.at(-1) : undefined;
+    const w = words[i]!;
+    add(slot?.id && (!slot.choices || slot.choices.includes(w)) ? w : "…");
   }
   return out;
 }

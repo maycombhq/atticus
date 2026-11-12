@@ -496,8 +496,11 @@ export function uiKnowledgeRoutes(
             printToCurrent(l);
           },
         };
-        const code = await tracked(ctx, `Sync the wiki ${id}`, () =>
-          sourcesSync(root, io, { source: id, now: stamp(now()) }),
+        const code = await tracked(
+          ctx,
+          `Sync the wiki ${id}`,
+          () => sourcesSync(root, io, { source: id, now: stamp(now()) }),
+          { ids: [id] },
         );
         if (code === 2)
           throw new HttpError(422, "Atticus refused", c.problems.join("\n") || "Nothing to sync.");

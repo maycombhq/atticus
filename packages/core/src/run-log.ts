@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  accessSync,
   appendFileSync,
   closeSync,
+  constants as fsConstants,
+  existsSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -14,7 +19,9 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import { hasSecretShape, hasTokenPrefix, keyIsSecret, maskSecretShapes } from "./cite.js";
 import { ignoreLocalSync, redactText } from "./log.js";
+import { atticusHandles, onAtticusSignal, stopPending } from "./process-trees.js";
 
 /**
  * ADR 0187: what a command run outside the app prints, for the app's Console. A long command
@@ -25,8 +32,11 @@ import { ignoreLocalSync, redactText } from "./log.js";
  *   (ADR 0050's redactText: no secrets, tokens, credentials in URLs or home folder), with no
  *   colour codes; bounded (its last lines are kept past RUN_LOG_MAX_BYTES).
  * - `.atticus/logs/running/<runId>.json`: who and what — the command words, the ids it was given
- *   (repo, change, run and task ids: words that look like an id and nothing else), the names of
- *   its flags (never their values), the process and a hash of the machine's name, when it
+ *   (repo, change, run and task ids; beta.27 review: only in the places the command declares for
+ *   them, each an id's strict shape and no secret's, titleWord; the rest `…`), the names of
+ *   its flags (in `flags`, never their values; beta.27: the title keeps the value of a flag on
+ *   an allow-list, TITLE_VALUE_FLAGS, when it is an id, a name or a date: titleValue), the process and a hash of the
+ *   machine's name, when it
  *   started, and how it ended (its exit code), written again when it ends. While it runs it is
  *   written again every RUN_HEARTBEAT_MS (`beatAt`), and on Linux it keeps when its process
  *   started (`procStart`, from /proc): a process id used again by another process, or a run
@@ -54,7 +64,11 @@ export const TERMINAL_RUN_ID = /^\d{8}-\d{6}-\d{1,10}-[0-9a-f]{4}$/;
 export const runLogsDirOf = (root: string) => join(root, ".atticus", "logs", "runs");
 export const runningDirOf = (root: string) => join(root, ".atticus", "logs", "running");
 
-export type StartedBy = "terminal" | "vscode" | "intellij" | "copilot";
+/**
+ * `app` (beta.27 review): a job the app started (a sync, a scan, an AI step), kept here too, so
+ * it is still in the Console after the app restarts; its `job` says which.
+ */
+export type StartedBy = "terminal" | "vscode" | "intellij" | "copilot" | "app";
 export type TerminalRunState = "running" | "done" | "failed" | "cancelled";
 
 export interface TerminalRunRecord {
@@ -79,6 +93,13 @@ export interface TerminalRunRecord {
   procStart?: string;
   /** When a running command last wrote its record (every RUN_HEARTBEAT_MS). */
   beatAt?: string;
+  /**
+   * A job the app started (startedBy `app`): its id in that app's run and its kind. Beta.27
+   * re-review: `ids`, the ids its title shows (each a title's word, else `…`: appRunTitle).
+   */
+  job?: { id: string; kind: string; ids?: string[] };
+  /** A job the app started that was still running when the app closed. */
+  appClosed?: true;
 }
 
 /** A record as read: `stale` when its process is gone though it never said it ended. */
@@ -157,7 +178,6 @@ const RECORDED: Record<string, Rule> = {
   diagram: all,
   "assistant-files": all,
   site: only("build"),
-  secret: only("set", "forget"),
   init: all,
   adopt: all,
   unadopt: all,
@@ -184,25 +204,404 @@ export function recordedCommand(positionals: readonly string[], flags: readonly 
     : !(rule as { except: ReadonlySet<string> }).except.has(command);
 }
 
-/** A word kept in a title: an id (repo, change, run, task), nothing that could be a value. */
-const ID_WORD = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_WORDS = 8;
 /** The flags that say where a command ran, left out of its title. */
 const WHERE_FLAGS = new Set(["root", "metarepo"]);
-const safeWord = (w: string) =>
-  ID_WORD.test(w) && !w.includes("//") && redactText(w, { home: "", user: "" }) === w ? w : "…";
+type Redaction = { home?: string; user?: string };
 
-/** The command words, ids and flag names of a run, and its title. */
+/**
+ * Beta.27 review: the flags whose value a run's title keeps — an allow-list, never a deny-list.
+ * Each is a string option the command line declares (cli-options' OPTIONS; a test holds the two
+ * together) whose value, by its name and what it means, is an id, a name, a handle, a date or a
+ * small number: a repo, a change, a run, a stage's kind, a lens, a person (`--by @bao`). Free text
+ * (`--note`, `--answer`, `--with`, `--value`), a file, a folder, a host or a URL (`--from`,
+ * `--path`, `--host`), a key (`--key`), anything an organisation's secret could be typed into and
+ * every flag the command line doesn't know (`--pass=hunter2`) keep their name only.
+ */
+export const TITLE_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  "area",
+  "audience",
+  "base",
+  "by",
+  "change",
+  "component",
+  "depth",
+  "epic",
+  "estate",
+  "format",
+  "framework",
+  "gate",
+  "group",
+  "hops",
+  "iteration",
+  "journey",
+  "kind",
+  "language",
+  "lens",
+  "level",
+  "limit",
+  "mode",
+  "model",
+  "models",
+  "owner",
+  "platform",
+  "pr",
+  "release",
+  "repo",
+  "repos",
+  "round",
+  "run",
+  "scope",
+  "state",
+  "step",
+  "story",
+  "system",
+  "tag",
+  "target",
+  "task",
+  "team",
+  "template",
+  "type",
+]);
+/** A value kept is cut to this many characters. */
+export const TITLE_VALUE_MAX = 48;
+/** A handle: `@bao`, never `bao@bank.example`. */
+const HANDLE = /^@[\w.-]+$/;
+/**
+ * Long runs of hex or of digits (a digest, a random id, a card or account number), a card number
+ * written in fours, a national id number.
+ */
+const LONG_RUN = /[0-9a-f]{16,}|[0-9A-F]{16,}|\d{9,}|\d{4}(?:[ -]?\d{4}){3}|\b\d{3}-\d{2}-\d{4}\b/;
+/**
+ * Beta.27 re-review: a work item's reference, by the trackers C1's ExternalRef names (a test
+ * holds the two together) and nothing else: `pin:1234`, `pass:1234` or `otp:123456` is no id.
+ */
+export const WORK_ITEM_SYSTEMS = ["ado", "jira"] as const;
+const WORK_ITEM_REF = new RegExp(
+  `^(?:${WORK_ITEM_SYSTEMS.join("|")}):(?:\\d{1,7}|[A-Z][A-Z0-9]{1,9}-\\d{1,7})$`,
+);
+/**
+ * The ids a title knows by their whole form, whatever their digits: a date, a version, a task's
+ * label (1.2), a question (q- and up to 12 hex), a run (Atticus's own two kinds), a change's or a
+ * model's slug of words and small numbers (`fix-limits-2027-q1`, `sonnet-4-5`) and a work item's
+ * reference (`ado:1234`, `jira:PAY-12`: WORK_ITEM_REF). Each is still checked for a token's
+ * prefix first.
+ */
+const ID_FORMS: readonly RegExp[] = [
+  /^\d{4}-\d{2}-\d{2}$/,
+  /^v?\d{1,3}\.\d{1,3}\.\d{1,3}(?:-[a-z]{1,12}(?:\.\d{1,3})?)?$/,
+  /^\d{1,3}(?:\.\d{1,3}){1,2}$/,
+  /^q-[0-9a-f]{1,12}$/,
+  /^run-\d{14}-(?:\d{4}|[0-9a-f]{6})$/,
+  TERMINAL_RUN_ID,
+  /^[a-z]{1,24}(?:[-.](?:[a-z]{1,24}\d{0,3}|\d{1,4}))+$/,
+  WORK_ITEM_REF,
+];
+/** `link:<repo>:<call>`: a link's id, each part an id-like word (idShaped). */
+const LINK_REF = /^link:([^:]+):([^:]+)$/;
+/**
+ * One part of an id-like word (split at `-`, `.`, `_` and `/`): a lowercase word with a small
+ * number after it (`v2`, `beta27`), a capitalised word, an acronym, or a number.
+ */
+const PART = /^(?:[a-z]{1,24}\d{0,3}|[A-Z][a-z]{1,23}|[A-Z]{1,8}|\d{1,6})$/;
+
+/**
+ * Beta.27 review: the strict shape a title's word must have, past every check for a secret: an
+ * id-like word, parts (PART) joined by `-`, `.`, `_` or `/`, with at most one run of digits. A
+ * random-looking string (mixed case and digits, `Zx9Kq2Lm…`, `Summer2026`) has none of these
+ * shapes, so it is dropped whatever its length; a harmless word dropped is the price.
+ */
+function idShaped(w: string): boolean {
+  if (!w || w.length > 100) return false;
+  if (!w.split(/[-._/]/).every((p) => PART.test(p))) return false;
+  return (w.match(/\d+/g) ?? []).length <= 1;
+}
+
+/**
+ * Beta.27 review: whether a word may show in a run's title, as a positional word or as one item
+ * of an allowed flag's value (titleValue). Never: a word with an `@` but a leading handle's, a
+ * `\`, a `//`, a space, one of core's token prefixes (cite.ts's TOKEN_PREFIXES) or shapes
+ * (hasSecretShape), or anything the log's redaction (with this machine's home folder and user
+ * name) would change. Then one of the ids it knows by their form (ID_FORMS, a link's), or no `:`,
+ * no long run of hex or digits, no key-like shape (keyIsSecret) and an id's strict shape
+ * (idShaped). The word as given, or undefined.
+ */
+export function titleWord(word: string | undefined, redact: Redaction = {}): string | undefined {
+  if (!word || word.length > 100 || /[\s\\]/.test(word) || word.includes("//")) return undefined;
+  const handle = HANDLE.test(word);
+  if (word.includes("@") && !handle) return undefined;
+  if (hasTokenPrefix(word) || hasSecretShape(word)) return undefined;
+  if (redactText(word, redact) !== word) return undefined;
+  const bare = handle ? word.slice(1) : word;
+  if (ID_FORMS.some((re) => re.test(bare))) return word;
+  const link = LINK_REF.exec(bare);
+  if (link) return idShaped(link[1]!) && idShaped(link[2]!) ? word : undefined;
+  if (bare.includes(":") || LONG_RUN.test(bare) || keyIsSecret(bare)) return undefined;
+  return idShaped(bare) ? word : undefined;
+}
+
+/**
+ * Beta.27: a flag's value kept in a title, as typed (`--target 2027-03-31`, `--by @bao`,
+ * `--repos forge-ledger,forge-teller`). Beta.27 review: only for a flag of TITLE_VALUE_FLAGS;
+ * never a value with a `:` (a host's path, a user and password, a reference to a variable) or
+ * starting with `-` (the next flag, read as this one's value); a list (`a,b`) only when each of
+ * its items is a title's word (titleWord); one kept is cut to TITLE_VALUE_MAX.
+ */
+export function titleValue(
+  flag: string,
+  value: string | undefined,
+  redact: Redaction = {},
+): string | undefined {
+  if (value === undefined || !value || !TITLE_VALUE_FLAGS.has(flag)) return undefined;
+  if (value.includes(":") || value.startsWith("-") || value.length > 400) return undefined;
+  if (!value.split(",").every((i) => titleWord(i, redact) !== undefined)) return undefined;
+  if (hasSecretShape(value) || keyIsSecret(value)) return undefined;
+  return value.length > TITLE_VALUE_MAX ? `${value.slice(0, TITLE_VALUE_MAX)}…` : value;
+}
+
+/**
+ * The command words, ids and flag names of a run, and its title. Beta.27: with the flags'
+ * values (`values`, by flag name; a boolean flag has none), each kept when titleValue keeps it, so
+ * the title reads as the command was typed; beta.26 dropped them all ("--target --by"). Beta.27
+ * review: each word is a title's word (titleWord) or `…` (words dropped one after another are one
+ * `…`); the command line gives only the words a command declares (its words and its arguments'
+ * places, by the help), the rest as `…`. The words and values are redacted as the log is
+ * (`redact`: this machine's home folder and user name by default; a test gives its own).
+ */
 export function runTitle(
   positionals: readonly string[],
   flags: readonly string[],
+  values: Readonly<Record<string, string | undefined>> = {},
+  redact: Redaction = {},
 ): { command: string[]; title: string } {
-  const command = positionals.slice(0, MAX_WORDS).map(safeWord);
+  const command: string[] = [];
+  const add = (w: string) => {
+    if (w !== "…" || command.at(-1) !== "…") command.push(w);
+  };
+  for (const w of positionals.slice(0, MAX_WORDS)) add(titleWord(w, redact) ?? "…");
+  if (positionals.length > MAX_WORDS) add("…");
   // Where it ran (the metarepo's folder) isn't what ran (beta.26 review).
   const names = flags
     .filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f) && !WHERE_FLAGS.has(f))
-    .map((f) => `--${f}`);
+    .map((f) => {
+      const v = Object.hasOwn(values, f) ? titleValue(f, values[f], redact) : undefined;
+      return v === undefined ? `--${f}` : `--${f} ${v}`;
+    });
+  // Beta.27 re-review: a flag the command line doesn't declare is given as `…` (its name may be
+  // a secret: `--correct-horse-battery-staple`), and shows as one `--…` after the others.
+  if (flags.includes("…")) names.push("--…");
   return { command, title: ["atticus", ...command, ...names].join(" ") };
+}
+
+/**
+ * Beta.27 re-review: the words an app's job is named by in the run log, by its kind (the
+ * server's job kinds). Never the job's own title, which may carry what a person typed.
+ */
+export const APP_JOB_WORDS: Readonly<Record<string, string>> = {
+  scan: "Scan",
+  sync: "Sync",
+  reconcile: "Reconcile",
+  index: "Index",
+  intake: "Intake",
+  step: "AI step",
+  local: "Local step",
+  work: "Request",
+};
+
+/**
+ * Beta.27 re-review: an app job's title in the run log, by the rules a command's title follows:
+ * its kind's words (APP_JOB_WORDS), then the ids it names (a repo, a change, a run), each kept
+ * when it is a title's word (titleWord: an id's strict shape, no secret's) and `…` otherwise.
+ * The app's titles (`Reconcile <diagram>`, `A question for <team>`, the words a request sent)
+ * went to the record as they were, past every rule a terminal's run is held to.
+ */
+export function appRunTitle(
+  kind: string,
+  ids: readonly string[] = [],
+  redact: Redaction = {},
+): { title: string; ids: string[] } {
+  const kept: string[] = [];
+  for (const id of ids.slice(0, MAX_WORDS)) {
+    const w = titleWord(id, redact) ?? "…";
+    if (w !== "…" || kept.at(-1) !== "…") kept.push(w);
+  }
+  if (ids.length > MAX_WORDS && kept.at(-1) !== "…") kept.push("…");
+  const words = Object.hasOwn(APP_JOB_WORDS, kind) ? APP_JOB_WORDS[kind]! : "Job";
+  return { title: [words, ...kept].join(" "), ids: kept };
+}
+
+/**
+ * Beta.27 re-review: whether a run log is kept at `root`: a metarepo (its org pack at the root
+ * or, adopted in place, in `.atticus/`) where ATTICUS_RUN_LOG isn't `off`. The command line and
+ * the app's jobs ask the same: `atticus ui` in a bare folder makes nothing there.
+ */
+export function runLogKept(root: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.ATTICUS_RUN_LOG === "off") return false;
+  return isMetarepoRoot(root);
+}
+
+/** A metarepo, or a repo adopted in place: where Atticus keeps its logs (never a bare folder). */
+export function isMetarepoRoot(root: string): boolean {
+  return existsSync(join(root, "org-pack")) || existsSync(join(root, ".atticus", "org-pack"));
+}
+
+/** Beside the records: the first run of beta.27 re-titled the runs kept before it. */
+export const RETITLED_MARK = ".retitled-beta27";
+/** A record bigger than this is no record beta.26 wrote: left as it is, never read. */
+export const RETITLE_MAX_BYTES = 1024 * 1024;
+/** The most records the migration reads: beta.26 kept RUN_LOG_KEEP. */
+const RETITLE_MAX_RECORDS = 1000;
+/** The folders whose mark couldn't be written: not tried again by this process. */
+const retitleTried = new Set<string>();
+
+/**
+ * A small regular file's text, never through a link (O_NOFOLLOW where there is one), never a
+ * FIFO or a device (opened without waiting, then checked by its own descriptor), never one
+ * bigger than `max`. Undefined otherwise.
+ */
+function readSmallFile(file: string, max: number): string | undefined {
+  const before = lstatSync(file, { throwIfNoEntry: false });
+  if (!before?.isFile() || before.size > max) return undefined;
+  const fd = openSync(
+    file,
+    fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > max) return undefined;
+    const buf = Buffer.alloc(st.size);
+    let at = 0;
+    while (at < buf.length) {
+      const n = readSync(fd, buf, at, buf.length - at, at);
+      if (n <= 0) break;
+      at += n;
+    }
+    return buf.subarray(0, at).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Beta.27 review: beta.26 kept every word that looked like an id in a run's title and words, a
+ * key typed after `secret set` among them. The first command of beta.27 at a metarepo writes each
+ * record kept again with the title, words and flag names the new rules give (`retitle`, the
+ * command line's: it knows each command's arguments and options), and nothing else of it (its
+ * log, state and times stay); RETITLED_MARK says it was done. How many it wrote again or removed.
+ *
+ * Beta.27 re-review: a run of `secret` is removed, record and log (beta.26 printed a mistyped
+ * key back into its log). Only a regular file of at most RETITLE_MAX_BYTES is read (never a link,
+ * a FIFO or a folder), a record whose process is still running is left to it (and the mark
+ * waits, so the next command tries again; a run killed under beta.26 is titled again), a removal
+ * that fails is tried again the same way, and a record is written
+ * beside itself and put in place, never through a link. A folder that can't be written is left
+ * alone (nothing could change), and one whose mark can't be written isn't tried again by this
+ * process. Never throws: a record that can't be read or written is left as it is.
+ */
+export function retitleTerminalRuns(
+  root: string,
+  retitle: (r: { command: string[]; flags: string[] }) => {
+    command: string[];
+    title: string;
+    flags?: string[];
+  },
+): number {
+  const dir = runningDirOf(root);
+  const mark = join(dir, RETITLED_MARK);
+  if (retitleTried.has(dir)) return 0;
+  let names: string[];
+  try {
+    if (lstatSync(mark, { throwIfNoEntry: false })) return 0;
+    if (!lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()) return 0;
+    // A metarepo that can't be written (read-only): nothing here could change, now or later.
+    accessSync(dir, fsConstants.W_OK);
+    names = readdirSync(dir)
+      .filter((n) => n.endsWith(".json") && TERMINAL_RUN_ID.test(n.slice(0, -5)))
+      .sort()
+      .slice(-RETITLE_MAX_RECORDS);
+  } catch {
+    // no runs kept, or none that could be written: nothing to do
+    return 0;
+  }
+  let changed = 0;
+  // A record left for later (its run is still alive, or its removal failed): no mark is written,
+  // so the next command tries again. A run that never ends is gone after goneRun's 7 days.
+  let later = false;
+  const here = hostHash();
+  const now = Date.now();
+  for (const n of names) {
+    const file = join(dir, n);
+    const id = n.slice(0, -5);
+    try {
+      const text = readSmallFile(file, RETITLE_MAX_BYTES);
+      if (text === undefined) continue;
+      const raw = JSON.parse(text) as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      if (raw.state === "running") {
+        // Beta.27 re-review 4: only a run whose process is still there is left to it; a run
+        // killed under beta.26 (Ctrl-C, a closed terminal) stays "running" for ever and is
+        // titled again like any other.
+        const r = readRecord(root, id);
+        if (r && !goneRun(r, here, pidAlive, now, root)) {
+          later = true;
+          continue;
+        }
+      }
+      const words = Array.isArray(raw.command) ? raw.command.map((w) => `${w}`) : [];
+      // Beta.27 re-review: an app's job with no command words is titled by its kind and the
+      // ids it names (appRunTitle), never by the title it was kept with.
+      if (raw.startedBy === "app" && !words.length) {
+        const job =
+          raw.job && typeof raw.job === "object" ? (raw.job as Record<string, unknown>) : {};
+        const kind = typeof job.kind === "string" ? job.kind : "";
+        const ids = Array.isArray(job.ids) ? job.ids.map((w) => `${w}`) : [];
+        const got = appRunTitle(kind, ids);
+        const next: Record<string, unknown> = {
+          ...raw,
+          title: got.title,
+          command: [],
+          ...(raw.job && typeof raw.job === "object"
+            ? { job: { ...job, ...(got.ids.length ? { ids: got.ids } : {}) } }
+            : {}),
+        };
+        if (!got.ids.length && next.job) delete (next.job as Record<string, unknown>).ids;
+        if (JSON.stringify(next) === JSON.stringify(raw)) continue;
+        writeJson(file, next);
+        changed++;
+        continue;
+      }
+      // A run of `secret` (beta.26 kept them): its record and its log go, whatever its title.
+      // The log first, then the record, so a failed removal leaves the record to try again with.
+      if (words[0] === "secret" || (words[0] === "legacy" && words[1] === "secret")) {
+        try {
+          rmSync(join(runLogsDirOf(root), `${id}.log`), { force: true });
+          rmSync(file, { force: true });
+          changed++;
+        } catch {
+          later = true;
+        }
+        continue;
+      }
+      if (typeof raw.title !== "string") continue;
+      const flags = Array.isArray(raw.flags) ? raw.flags.map((f) => `${f}`) : [];
+      const got = retitle({ command: words, flags });
+      const next: Record<string, unknown> = { ...raw, title: got.title, command: got.command };
+      if (got.flags) next.flags = got.flags;
+      if (JSON.stringify(next) === JSON.stringify(raw)) continue;
+      writeJson(file, next);
+      changed++;
+    } catch {
+      // left as it is
+    }
+  }
+  if (later) return changed;
+  try {
+    // Made new, never written through a link or over a file put there.
+    writeFileSync(mark, `${new Date().toISOString()}\n`, { encoding: "utf8", flag: "wx" });
+  } catch {
+    retitleTried.add(dir);
+  }
+  return changed;
 }
 
 /** Where the run was started, as its environment says. */
@@ -246,13 +645,18 @@ const idAt = (d: Date, pid: number) =>
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
 
-/** A printed text as the lines the log keeps: no colour codes, no \r, each redacted and cut. */
+/**
+ * A printed text as the lines the log keeps: no colour codes, no \r, each redacted and cut.
+ * Beta.27 re-review: a token by its shape alone (hasSecretShape: an access key id, a Git host's
+ * token, a JWT, a URL's password) is masked too, wherever it is on the line (an echoed path), for
+ * a terminal's run and an app's job alike.
+ */
 export function runLogLines(text: string, o: { home?: string; user?: string } = {}): string[] {
   return text
     .replace(ANSI, "")
     .split(/\r?\n|\r/)
     .map((l) => {
-      const r = redactText(l, o);
+      const r = maskSecretShapes(redactText(l, o));
       return r.length > RUN_LOG_LINE_MAX ? `${r.slice(0, RUN_LOG_LINE_MAX)}…` : r;
     });
 }
@@ -262,12 +666,14 @@ export interface TerminalRunRecorder {
   /** Print a line (or several, split at newlines) to the run's log. */
   line(text: string): void;
   /** Record how it ended: 0 done, 130 or 143 (Ctrl+C, a stop) cancelled, else failed. */
-  end(code: number, how?: "crash"): void;
+  end(code: number, how?: "crash" | "app-closed"): void;
 }
 
 export interface StartRunOptions {
   positionals: readonly string[];
   flags: readonly string[];
+  /** Beta.27: the flags' values, by name, for the title (runTitle keeps the safe ones). */
+  values?: Readonly<Record<string, string | undefined>>;
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   pid?: number;
@@ -285,17 +691,28 @@ export interface StartRunOptions {
   procStart?: () => string | undefined;
   /** Whether a process is there (pidAlive), for the runs pruned as this one starts. */
   alive?: (pid: number) => boolean;
+  /**
+   * Beta.27 review: a job the app started (startAppRun): its job, and `app` as where it started.
+   * Beta.27 re-review: titled by the rules a command's title follows (never the app's own words):
+   * by the command it runs (`command`: the positionals, flags and values given), else by its kind
+   * and the ids it names (appRunTitle).
+   */
+  app?: { job: { id: string; kind: string }; ids?: readonly string[]; command?: true };
 }
 
 const writeJson = (file: string, v: unknown) => {
   const text = `${JSON.stringify(v, null, 2)}\n`;
   const tmp = `${file}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, text, "utf8");
+    // Made new (a link left at its name is removed, never written through).
+    rmSync(tmp, { force: true });
+    writeFileSync(tmp, text, { encoding: "utf8", flag: "wx" });
     renameSync(tmp, file);
   } catch {
-    // Windows may hold the file a moment while the app reads it: written in place instead.
+    // Windows may hold the file a moment while the app reads it: written in place instead,
+    // never through a link (beta.27 re-review).
     rmSync(tmp, { force: true });
+    if (lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) return;
     writeFileSync(file, text, "utf8");
   }
 };
@@ -348,7 +765,10 @@ export function startTerminalRun(
   const keep = Math.max(o.keep ?? RUN_LOG_KEEP, 1);
   const maxBytes = Math.max(o.maxBytes ?? RUN_LOG_MAX_BYTES, 256);
   const started = now();
-  const runId = idAt(started, pid);
+  // An app starts several jobs in a second: an id already taken is drawn again.
+  let runId = idAt(started, pid);
+  for (let n = 0; n < 8 && existsSync(join(runningDirOf(root), `${runId}.json`)); n++)
+    runId = idAt(started, pid);
   const heartbeatMs = o.heartbeatMs ?? (o.hookProcess ? RUN_HEARTBEAT_MS : undefined);
   // When this process started: only for its own pid (a test's made-up pid has none).
   const procStart = o.procStart
@@ -356,7 +776,13 @@ export function startTerminalRun(
     : pid === process.pid
       ? procStartOf(pid)
       : undefined;
-  const { command, title } = runTitle(o.positionals, o.flags);
+  // Beta.27 re-review: an app's job by the title rules too: the command it runs (its words as
+  // the command line gives them), else its kind and the ids it names (appRunTitle).
+  const app =
+    o.app && !o.app.command ? appRunTitle(o.app.job.kind, o.app.ids, o.redact) : undefined;
+  const { command, title } = app
+    ? { command: [] as string[], title: app.title }
+    : runTitle(o.positionals, o.flags, o.values, o.redact);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
     runId,
@@ -365,13 +791,22 @@ export function startTerminalRun(
     title,
     command,
     flags: o.flags.filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f)),
-    startedBy: startedByOf(o.env),
+    startedBy: o.app ? "app" : startedByOf(o.env),
     startedAt: started.toISOString(),
     state: "running",
     lines: 0,
     dropped: 0,
     ...(procStart ? { procStart } : {}),
     ...(heartbeatMs ? { beatAt: started.toISOString() } : {}),
+    ...(o.app
+      ? {
+          job: {
+            id: o.app.job.id,
+            kind: o.app.job.kind,
+            ...(app?.ids.length ? { ids: app.ids } : {}),
+          },
+        }
+      : {}),
   };
   const jsonFile = join(runningDirOf(root), `${runId}.json`);
   const logFile = join(runLogsDirOf(root), `${runId}.log`);
@@ -468,6 +903,7 @@ export function startTerminalRun(
               ? "cancelled"
               : "failed";
       rec.exitCode = code;
+      if (how === "app-closed") rec.appClosed = true;
       rec.finishedAt = now().toISOString();
       save();
     },
@@ -482,17 +918,53 @@ export function startTerminalRun(
       ["SIGTERM", 143],
     ] as const) {
       const on = () => {
-        // Another handler (map --all's: stop after the step under way) has the signal: it ends
-        // the command, and the end is recorded then. Alone, this ends it as the default would.
-        if (process.listenerCount(sig) > 1) return;
+        // Another handler of Atticus's own (map --all's: stop after the step under way) has the
+        // signal: it ends the command, and the end is recorded then. Alone, this ends it as the
+        // default would. Beta.27 re-review: a library's listener (signal-exit) never counts; the
+        // trees a task run or a sync started end it once they have stopped and the run recorded
+        // it (stopPending: they raise the signal again then, and this hears it alone).
+        if (atticusHandles(sig, on) || stopPending()) return;
         recorder.end(code);
         process.exit(code);
       };
-      process.on(sig, on);
-      unhook.push(() => process.off(sig, on));
+      unhook.push(onAtticusSignal(sig, on, { fallback: true }));
     }
   }
   return recorder;
+}
+
+/**
+ * Beta.27 review: a job the app started, kept in the run log as a command run is (ADR 0187), so
+ * the Console, Runs and Problems still have it after the app restarts; it beats while it runs,
+ * so one left running by an app that crashed reads as ended. Beta.27 re-review: its title follows
+ * a command's rules: the command it runs (`command`, the words the command line's title rules
+ * kept: titleInputsOf), else its kind and the ids it names (`ids`, each checked: appRunTitle).
+ * The caller checks runLogKept first.
+ */
+export function startAppRun(
+  root: string,
+  o: {
+    job: { id: string; kind: string };
+    ids?: readonly string[];
+    command?: {
+      positionals: string[];
+      flags: string[];
+      values?: Readonly<Record<string, string | undefined>>;
+    };
+    now?: () => Date;
+    redact?: { home?: string; user?: string };
+    heartbeatMs?: number;
+  },
+): TerminalRunRecorder | undefined {
+  return startTerminalRun(root, {
+    positionals: o.command?.positionals ?? [],
+    flags: o.command?.flags ?? [],
+    ...(o.command?.values ? { values: o.command.values } : {}),
+    app: { job: o.job, ...(o.ids ? { ids: o.ids } : {}), ...(o.command ? { command: true } : {}) },
+    heartbeatMs: o.heartbeatMs ?? RUN_HEARTBEAT_MS,
+    ...(o.now ? { now: o.now } : {}),
+    ...(o.redact ? { redact: o.redact } : {}),
+  });
 }
 
 /** Whether a process is there: signal 0 asks without sending anything. */
@@ -559,14 +1031,22 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
       !["running", "done", "failed", "cancelled"].includes(r.state as string)
     )
       return undefined;
+    const { job, appClosed, ...rest } = r as TerminalRunRecord;
+    const jobOk =
+      !!job &&
+      typeof job === "object" &&
+      typeof job.id === "string" &&
+      typeof job.kind === "string";
     return {
-      ...(r as TerminalRunRecord),
+      ...(rest as TerminalRunRecord),
       command: Array.isArray(r.command) ? r.command.map(String) : [],
       flags: Array.isArray(r.flags) ? r.flags.map(String) : [],
       lines: Number(r.lines) || 0,
       dropped: Number(r.dropped) || 0,
       ...(typeof r.procStart === "string" ? { procStart: r.procStart } : {}),
       ...(typeof r.beatAt === "string" ? { beatAt: r.beatAt } : {}),
+      ...(jobOk ? { job: { id: job.id, kind: job.kind } } : {}),
+      ...(appClosed === true ? { appClosed: true as const } : {}),
     };
   } catch {
     return undefined;

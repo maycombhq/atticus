@@ -1,4 +1,4 @@
-import { printToCurrent, withPrinter, withSignal } from "@maycombhq/core";
+import { maskSecretShapes, printToCurrent, withPrinter, withSignal } from "@maycombhq/core";
 
 /**
  * Long work (scans, syncs, reconciles, intake) runs as a job (ADR 0015): the call returns 202 with
@@ -33,6 +33,8 @@ export interface Job {
   finishedAt?: string;
   errors: string[];
   result?: Record<string, unknown>;
+  /** Beta.27 review: Stop was asked and it is ending (until it ends). */
+  stopping?: boolean;
 }
 
 export interface JobControl {
@@ -40,7 +42,52 @@ export interface JobControl {
   /** Print a line to the job's Console entry (ADR 0187). */
   line(text: string): void;
   readonly cancelled: boolean;
+  /**
+   * Beta.27 review: the job's signal, aborted on Stop. Work that starts a process (git, a
+   * model's CLI) passes it on, so Stop ends that process too, not only the next step.
+   */
+  readonly signal: AbortSignal;
 }
+
+/**
+ * Beta.27 review: where a job is kept beyond this process (the run log, ADR 0187), so the app's
+ * Console still has it after a restart: told of its start, each line it prints and its end.
+ */
+export interface JobRecorder {
+  /** The run log's id for it, so the Console lists it once (as this job, not from the log). */
+  readonly runId?: string;
+  line(text: string): void;
+  /** `app-closed`: it was still running when the server closed. */
+  end(state: JobState, how?: "app-closed"): void;
+}
+export interface JobManagerOptions {
+  record?: (
+    job: Job,
+    meta: Record<string, string> | undefined,
+    log: JobLogTitle,
+  ) => JobRecorder | undefined;
+}
+
+/**
+ * Beta.27 re-review: what a job's run-log title is made of, by the rules a command's title
+ * follows (core's appRunTitle and runTitle): the ids it names (a repo, a change, a run: each kept
+ * when it has an id's strict shape, else `…`), or the command it runs, its words as the command
+ * line's title rules give them (titleInputsOf). Never `title`, the app's own words.
+ */
+export interface JobLogTitle {
+  ids?: string[];
+  command?: {
+    positionals: string[];
+    flags: string[];
+    values?: Record<string, string>;
+  };
+}
+
+/** What a job prints when Stop is asked, and when it has stopped. */
+export const STOPPING = "Stopping…";
+export const STOPPED = "Stopped.";
+/** What a job's record says when the app closed while it ran. */
+export const CLOSED = "Stopped when the app closed.";
 
 export type JobWork = (
   c: JobControl,
@@ -54,7 +101,10 @@ export const JOB_LINES = 5000;
 export const JOBS_KEPT = 100;
 
 export interface JobStartOptions {
+  /** Shown in this app (its Console, its jobs); never kept in the run log (`log` is). */
   title?: string;
+  /** Beta.27 re-review: what its run-log title is made of; its kind alone without. */
+  log?: JobLogTitle;
   /** What the job belongs to (ADR 0187): `copilotRunId`, `handoffRun`. */
   meta?: Record<string, string>;
 }
@@ -76,10 +126,19 @@ export class JobManager {
   private metas = new Map<string, Record<string, string>>();
   private listeners = new Set<(c: JobChange) => void>();
   private ends = new Map<string, () => void>();
+  private recorders = new Map<string, JobRecorder>();
+  /** Each run log record this manager made, and its job. */
+  private runIds = new Map<string, string>();
+
+  /** Whether a run in the run log is one of this manager's jobs (its recorder made it). */
+  ownsRun(runId: string): boolean {
+    return this.runIds.has(runId);
+  }
 
   constructor(
     private readonly publish: Publish,
     private readonly now: () => Date = () => new Date(),
+    private readonly o: JobManagerOptions = {},
   ) {}
 
   /**
@@ -141,7 +200,12 @@ export class JobManager {
   private print(job: Job, text: string) {
     const p = this.printed.get(job.id);
     if (!p) return;
-    const lines = String(text).split(/\r?\n/);
+    this.recorded(job.id, (r) => r.line(String(text)));
+    // Beta.27 re-review (round 2): masked as the run log's record is (a token by its shape), so
+    // the Console shows live what the record keeps.
+    const lines = String(text)
+      .split(/\r?\n/)
+      .map((l) => maskSecretShapes(l));
     const at = p.from + p.lines.length;
     p.lines.push(...lines);
     if (p.lines.length > JOB_LINES) {
@@ -150,6 +214,17 @@ export class JobManager {
       p.from += drop;
     }
     this.tell({ type: "lines", job, at, lines });
+  }
+
+  /** Tell a job's recorder, never failing the job (a recorder that throws is dropped). */
+  private recorded(id: string, f: (r: JobRecorder) => void) {
+    const r = this.recorders.get(id);
+    if (!r) return;
+    try {
+      f(r);
+    } catch {
+      this.recorders.delete(id);
+    }
   }
 
   /** Finished jobs past JOBS_KEPT go, oldest first; running ones stay. */
@@ -163,6 +238,8 @@ export class JobManager {
       this.printed.delete(id);
       this.metas.delete(id);
       this.cancelledIds.delete(id);
+      // Forgotten here, it is listed from the run log again.
+      for (const [run, job] of this.runIds) if (job === id) this.runIds.delete(run);
       over--;
     }
   }
@@ -181,6 +258,18 @@ export class JobManager {
     this.jobs.set(id, job);
     this.printed.set(id, { from: 0, lines: [] });
     if (o.meta) this.metas.set(id, { ...o.meta });
+    try {
+      // Without a `log`, the ids it belongs to (its meta: a run's id) are what it names.
+      const r = this.o.record?.(
+        job,
+        o.meta,
+        o.log ?? (o.meta ? { ids: Object.values(o.meta) } : {}),
+      );
+      if (r) this.recorders.set(id, r);
+      if (r?.runId) this.runIds.set(r.runId, id);
+    } catch {
+      // kept in memory only
+    }
     this.forget();
     const ofKind = this.running.get(kind) ?? new Set<string>();
     ofKind.add(id);
@@ -190,7 +279,9 @@ export class JobManager {
     const cancelled = this.cancelledIds;
     const line = (text: string) => this.print(job, text);
     const control: JobControl = {
-      progress: (done, total, message) => {
+      progress: (done, total, given) => {
+        // Stopping, it says so until it ends, whatever step it reaches meanwhile.
+        const message = job.stopping ? STOPPING : given;
         job.progress = { done, total, message };
         this.publish({ type: "job.progress", jobId: id, done, total, message });
         this.tell({ type: "state", job });
@@ -199,6 +290,7 @@ export class JobManager {
       get cancelled() {
         return cancelled.has(id);
       },
+      signal: abort.signal,
     };
     this.tell({ type: "state", job });
     void (async () => {
@@ -225,11 +317,15 @@ export class JobManager {
         ];
         if (end.length) line(end.join("\n"));
       }
+      if (job.state === "cancelled") line(STOPPED);
+      delete job.stopping;
       job.finishedAt = this.now().toISOString();
       ofKind.delete(id);
       if (!ofKind.size && this.running.get(kind) === ofKind) this.running.delete(kind);
       this.publish({ type: "job.done", jobId: id, state: job.state });
       this.tell({ type: "state", job });
+      this.recorded(id, (r) => r.end(job.state));
+      this.recorders.delete(id);
       this.ends.get(id)?.();
       this.ends.delete(id);
     })();
@@ -264,13 +360,40 @@ export class JobManager {
     });
   }
 
-  /** Ask a running job to stop; false when it already finished. */
+  /**
+   * Ask a running job to stop; false when it already finished. Beta.27 review: it says
+   * "Stopping…" (its progress, a line, `stopping`) until it ends, so the Console and the strip
+   * show the stop was heard; a second ask while it stops is the same stop.
+   */
   cancel(id: string): boolean {
     const j = this.jobs.get(id);
     if (!j || j.state !== "running") return false;
+    if (j.stopping) return true;
     this.cancelledIds.add(id);
+    j.stopping = true;
+    j.progress = { ...j.progress, message: STOPPING };
+    this.print(j, STOPPING);
+    this.publish({ type: "job.progress", jobId: id, ...j.progress });
+    this.tell({ type: "state", job: j });
     this.aborts.get(id)?.abort();
     return true;
+  }
+
+  /**
+   * Beta.27 review: the server is closing. Each job still running is stopped, and its record in
+   * the run log ends there, so a later run of the app shows it stopped when the app closed.
+   */
+  closeAll(): void {
+    for (const j of this.jobs.values()) {
+      if (j.state !== "running") continue;
+      // Written now: the process may end before the job's own end is.
+      this.recorded(j.id, (r) => {
+        r.line(CLOSED);
+        r.end("cancelled", "app-closed");
+      });
+      this.recorders.delete(j.id);
+      this.cancel(j.id);
+    }
   }
 
   /** Wait for a job to finish (tests and the CLI). */

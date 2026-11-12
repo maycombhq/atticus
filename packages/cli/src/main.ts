@@ -3,11 +3,17 @@ import { parseArgs } from "node:util";
 // (test/startup.test.ts holds this). The rest loads below, when its command runs.
 import {
   createLog,
+  onAtticusSignal,
   printToCurrent,
   recordedCommand,
+  retitleTerminalRuns,
+  runLogKept,
+  runTitle,
   SCHEMA_VERSION,
   startTerminalRun,
+  TITLE_VALUE_FLAGS,
 } from "@maycombhq/core/light";
+import { titleSlotsOf, titleWordsByHelp, type TitleSlot } from "./command-catalog.js";
 import { basename, join, resolve } from "node:path";
 import type { Output } from "./commands.js";
 import type { AiRuntime } from "@maycombhq/ai";
@@ -897,6 +903,16 @@ export async function main(
   );
   const log = () =>
     isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
+  // Beta.27 review: the runs beta.26 kept are titled again once, by the new rules (retitled).
+  // Beta.27 re-review: by the command line's own process only (never a job the app's server runs
+  // in itself), and not when the run log is off.
+  if (o.record && runLogKept(root)) {
+    try {
+      retitleTerminalRuns(root, retitled);
+    } catch {
+      // never fails the command it runs before
+    }
+  }
   // ADR 0187: the command words and ids, its flag names (never their values), what it prints.
   const said = o.record ? recorderFor(argv, flags, root) : undefined;
   // Run in the app's server, inside a job, each line also goes to the job's Console entry.
@@ -972,20 +988,166 @@ function positionalsAt(argv: string[]): number[] {
   return tokens.filter((t) => t.kind === "positional").map((t) => t.index);
 }
 
+/** Each command's argument places, by the help (titleSlotsOf), read once when a title needs them. */
+let slots: Map<string, TitleSlot[]> | undefined;
+const helpSlots = () => (slots ??= titleSlotsOf(HELP));
+
+/** Argv up to `--`, as the parser reads it: nothing after it is a title's (beta.27 review). */
+function beforeTerminator(argv: string[]): string[] {
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: optionsFor(argv),
+    strict: false,
+    tokens: true,
+  });
+  const cut = tokens.find((t) => t.kind === "option-terminator");
+  return cut ? argv.slice(0, cut.index) : argv;
+}
+
+/**
+ * Argv's positional words as a run's title may show them. Beta.27 review: the words the
+ * command declares only (titleWordsByHelp: its words, then a word in each argument's place that
+ * takes an id; `…` for the rest), never one after `--`, never one right after a flag the command
+ * line doesn't know given without `=` (`--pass hunter2`: its value as the person meant it), nor
+ * after a known flag that took the next flag as its value (`--note --pass hunter2`). A word left
+ * out is said as `…` at the end.
+ */
+export function titleWordsOf(argv: string[]): string[] {
+  const options = optionsFor(argv);
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options,
+    strict: false,
+    tokens: true,
+  });
+  const words: string[] = [];
+  let hidden = false;
+  let prev: (typeof tokens)[number] | undefined;
+  for (const t of tokens) {
+    if (t.kind === "option-terminator") {
+      hidden ||= t.index < argv.length - 1;
+      break;
+    }
+    if (t.kind === "positional") {
+      const flagValue =
+        prev?.kind === "option" &&
+        prev.inlineValue !== true &&
+        (!Object.hasOwn(options, prev.name) || (prev.value ?? "").startsWith("-"));
+      if (flagValue) hidden = true;
+      else words.push(argv[t.index]!);
+    }
+    prev = t;
+  }
+  const out = titleWordsByHelp(words, helpSlots());
+  return hidden && out.at(-1) !== "…" ? [...out, "…"] : out;
+}
+
+/**
+ * A record's words and flag names as the new rules title them (beta.27 review: the runs beta.26
+ * kept); a flag the command line doesn't declare is `…` in its title and left out of its flags.
+ */
+const retitled = (r: { command: string[]; flags: string[] }) => {
+  const flags = declaredFlags(r.command, r.flags);
+  return {
+    ...runTitle(titleWordsByHelp(r.command, helpSlots()), flags),
+    flags: flags.filter((f) => f !== "…"),
+  };
+};
+
+/**
+ * Beta.27 re-review: each flag name as a title may show it: one the command line declares
+ * (OPTIONS, with the command's own), else `…` (a name typed is the person's: `--hunter2`).
+ */
+export function declaredFlags(argv: readonly string[], flags: readonly string[]): string[] {
+  const known = optionsFor(argv);
+  return flags.map((f) => (Object.hasOwn(known, f) ? f : "…"));
+}
+
 /**
  * ADR 0187: a long command's run files, when it is one (recordedCommand) at a metarepo; else
- * nothing is written. Its positional words as the parser reads them (an option's value isn't one).
+ * nothing is written. Its positional words as its title may show them (titleWordsOf), the names
+ * and values of its flags before `--`.
  */
 function recorderFor(argv: string[], flags: string[], root: string) {
-  if (process.env.ATTICUS_RUN_LOG === "off") return undefined;
-  let positionals: string[];
+  if (!runLogKept(root)) return undefined;
+  let title: ReturnType<typeof titleInputsOf>;
   try {
-    positionals = positionalsAt(argv).map((i) => argv[i]!);
+    title = titleInputsOf(argv, flags);
   } catch {
     return undefined;
   }
-  if (!recordedCommand(positionals, flags) || !isMetarepoRoot(root)) return undefined;
-  return startTerminalRun(root, { positionals, flags, hookProcess: true });
+  if (!recordedCommand(title.positionals, flags)) return undefined;
+  // Beta.27: the values go to the title, which keeps an id or a name and drops a secret.
+  return startTerminalRun(root, { ...title, hookProcess: true });
+}
+
+/**
+ * Beta.27 re-review: the title inputs of `atticus <given>` exactly as a terminal run of it gets
+ * them (its aliases, flag names and titleInputsOf), for a job the app runs a command in (an AI
+ * step's job): its run-log title by the same rules, never the words a request sent as they were.
+ */
+export function commandTitleInputsOf(given: string[]): ReturnType<typeof titleInputsOf> {
+  const argv = aliasArgv(given, positionalsAt(given));
+  const flags = [
+    ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
+  ];
+  try {
+    return titleInputsOf(argv, flags);
+  } catch {
+    return { positionals: [], flags: [], values: {} };
+  }
+}
+
+/**
+ * What a run's title is made from (core's runTitle): the words it may show (titleWordsOf), and the
+ * names and values (optionValuesOf) of the flags given before `--` (beta.27 review).
+ */
+export function titleInputsOf(
+  argv: string[],
+  flags: string[],
+): { positionals: string[]; flags: string[]; values: Record<string, string> } {
+  const shown = beforeTerminator(argv);
+  return {
+    positionals: titleWordsOf(argv),
+    flags: declaredFlags(
+      argv,
+      flags.filter((f) => shown.some((a) => a === `--${f}` || a.startsWith(`--${f}=`))),
+    ),
+    values: optionValuesOf(shown),
+  };
+}
+
+/**
+ * Beta.27: the value of each option a title may show (the last one given), by its name. Beta.27
+ * review: only an option the command line declares as taking a string (OPTIONS) and the title's
+ * allow-list names (core's TITLE_VALUE_FLAGS); an unknown `--x=v` (parseArgs, not strict, reads
+ * it) and every other flag give none, so their values never reach the run's record; nor does a
+ * value that is the next flag (`--by --pass`).
+ */
+export function optionValuesOf(argv: string[]): Record<string, string> {
+  const options = optionsFor(argv);
+  const declared = options as Record<string, { type: string }>;
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options,
+    strict: false,
+    tokens: true,
+  });
+  const out: Record<string, string> = {};
+  for (const t of tokens)
+    if (
+      t.kind === "option" &&
+      typeof t.value === "string" &&
+      !(t.inlineValue === false && t.value.startsWith("-")) &&
+      Object.hasOwn(declared, t.name) &&
+      declared[t.name]!.type === "string" &&
+      TITLE_VALUE_FLAGS.has(t.name)
+    )
+      out[t.name] = t.value;
+  return out;
 }
 
 /** A metarepo, or a repo adopted in place: where Atticus keeps a log. */
@@ -1703,7 +1865,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       ac.abort();
       io.err("Stopping after this step (Ctrl+C again stops at once)...");
     };
-    process.on("SIGINT", onInt);
+    // Beta.27 re-review: Atticus's own (process-trees and the run log leave the end to it).
+    const offInt = onAtticusSignal("SIGINT", onInt);
     try {
       return await mapAllCommand(root, o, io, {
         clipboard: copyToClipboard,
@@ -1721,7 +1884,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       }
       throw e;
     } finally {
-      process.off("SIGINT", onInt);
+      offInt();
       rl?.close();
     }
   };
@@ -3713,8 +3876,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "questions" && command === "propose") {
     const { questionsProposeCommand } = await import("./copilot-acp-steps.js");
     const ac = new AbortController();
-    const onInt = () => ac.abort();
-    process.on("SIGINT", onInt);
+    const offInt = onAtticusSignal("SIGINT", () => ac.abort());
     try {
       return await questionsProposeCommand(
         root,
@@ -3727,7 +3889,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         () => questionsFiles(root, ["questions", "proposed", "--root", root], io),
       );
     } finally {
-      process.off("SIGINT", onInt);
+      offInt();
     }
   }
   // ADR 0191: a person moves a question to the role that answers it.

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api, parseCorrections, parseFacts, QuestionDraft, raiseQuestions } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { uiFactsRoutes } from "../src/ui-api-facts.js";
+import { FACTS_BATCH_MAX, uiFactsRoutes } from "../src/ui-api-facts.js";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -64,6 +64,42 @@ beforeAll(async () => {
   });
 });
 afterAll(() => srv?.close());
+
+/** 3.12.0 (beta.27 review): the Map asked once per repo (65 calls on a large estate). */
+describe("several repos' facts in one call", () => {
+  it("gives each repo as its own call does, and the problem of each that can't be read", async () => {
+    const one = await call("GET", "/api/facts/forge-ledger");
+    const r = await call("GET", "/api/facts?repo=forge-ledger&repo=forge-portal,bad%20name");
+    expect(r.status).toBe(200);
+    const v = Api.RepoFactsBatch.parse(r.body);
+    expect(v.facts["forge-ledger"]).toEqual(one.body);
+    // A repo with no facts file is as its own call answers it; a name refused is a problem.
+    const portal = await call("GET", "/api/facts/forge-portal");
+    if (portal.status === 200) expect(v.facts["forge-portal"]).toEqual(portal.body);
+    else expect(v.problems["forge-portal"]?.status).toBe(portal.status);
+    expect(v.problems["bad name"]).toMatchObject({ status: 400 });
+    expect(Object.keys(v.facts)).not.toContain("bad name");
+  });
+
+  it("refuses a call that names no repo, or too many", async () => {
+    expect((await call("GET", "/api/facts")).status).toBe(400);
+    // Beta.27 re-review: at most 100 (FACTS_BATCH_MAX), well inside a request head's 16 KB.
+    expect(FACTS_BATCH_MAX).toBe(100);
+    const many = Array.from({ length: 101 }, (_, i) => `repo=forge-${i}`).join("&");
+    expect((await call("GET", `/api/facts?${many}`)).status).toBe(400);
+    const most = Array.from({ length: 100 }, (_, i) => `repo=forge-${i}`).join("&");
+    expect((await call("GET", `/api/facts?${most}`)).status).toBe(200);
+  });
+
+  it("a repo named __proto__ is a problem like any other name refused (null-prototype answer)", async () => {
+    const r = await call("GET", "/api/facts?repo=__proto__&repo=forge-ledger");
+    expect(r.status).toBe(200);
+    const body = r.body as { problems: Record<string, unknown>; facts: Record<string, unknown> };
+    expect(Object.hasOwn(body.problems, "__proto__")).toBe(true);
+    expect(body.problems["__proto__"]).toMatchObject({ status: 400 });
+    expect(Object.hasOwn(body.facts, "forge-ledger")).toBe(true);
+  });
+});
 
 describe("a repo's facts as the Map cites them", () => {
   it("gives each fact's line, quote, claim and who checked it, a flow's steps, and the open questions", async () => {

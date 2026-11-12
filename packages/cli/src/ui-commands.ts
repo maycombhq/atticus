@@ -4,7 +4,10 @@ import {
   catalogDirOf,
   catalogMayHaveChangedAt,
   createLog,
+  isMetarepoRoot,
   DEFAULT_PORT,
+  onAtticusSignal,
+  redactText,
   keptFilesMayHaveChanged,
   trustKeptFiles,
 } from "@maycombhq/core";
@@ -182,6 +185,39 @@ export function extendUiRoutes(
 }
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
+/**
+ * What the app's server does with each API call when it ends: a call that may have written makes
+ * the kept answers be worked out again, and the call goes in the metarepo's log. Beta.27
+ * re-review: a bare folder gets no log (nor anything else), as the command line; a failed call
+ * (its error, a 500) is said on the terminal there instead (`err`, standard error), redacted as
+ * the log is, so it isn't lost.
+ */
+export function uiRequestLogger(
+  root: string,
+  err: (line: string) => void = (l) => process.stderr.write(`${l}\n`),
+): (r: { method: string; path: string; status: number; ms: number; error?: Error }) => void {
+  const log = createLog(root);
+  return (r) => {
+    // beta.23: a call that may have written: the answers kept are worked out again.
+    if (r.method !== "GET" && r.method !== "HEAD") {
+      answersMayHaveChanged();
+      keptFilesMayHaveChanged();
+    }
+    if (!isMetarepoRoot(root)) {
+      if (r.error)
+        err(
+          redactText(`atticus ui: ${r.method} ${r.path} failed (${r.status}): ${r.error.message}`),
+        );
+      else if (r.status >= 500) err(`atticus ui: ${r.method} ${r.path} answered ${r.status}`);
+      return;
+    }
+    const fields = { method: r.method, path: r.path, status: r.status, ms: r.ms };
+    if (r.error) log.error("request", r.error, fields);
+    else if (r.status >= 500) log.warn("request", fields);
+    else log.debug("request", fields);
+  };
+}
+
 export async function startUi(
   root: string,
   o: {
@@ -200,6 +236,8 @@ export async function startUi(
      * editor serves from its own files asks for the person's confirmations with it.
      */
     pageKey?: string;
+    /** Beta.27 review: keep each job in the run log (ServerOptions.runLog). */
+    runLog?: boolean;
     /** Start the machine checks as the server starts, for the Set up page's first load. */
     warm?: boolean;
   } = {},
@@ -212,23 +250,11 @@ export async function startUi(
     ...(o.full ? { full: true } : {}),
     ...(o.token ? { token: o.token } : {}),
     ...(o.pageKey ? { pageKey: o.pageKey } : {}),
+    ...(o.runLog ? { runLog: true } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
-    onRequest: (() => {
-      const log = createLog(root);
-      return (r) => {
-        // beta.23: a call that may have written: the answers kept are worked out again.
-        if (r.method !== "GET" && r.method !== "HEAD") {
-          answersMayHaveChanged();
-          keptFilesMayHaveChanged();
-        }
-        const fields = { method: r.method, path: r.path, status: r.status, ms: r.ms };
-        if (r.error) log.error("request", r.error, fields);
-        else if (r.status >= 500) log.warn("request", fields);
-        else log.debug("request", fields);
-      };
-    })(),
+    onRequest: uiRequestLogger(root),
     extend: (r, ctx) => extendUiRoutes(r, ctx, deps, { warm: o.warm === true }),
   });
   // ADR 0119: the catalog is read once and kept while the server runs; any file change it
@@ -321,8 +347,8 @@ export function untilStopped(
         : undefined;
     const stop = () => {
       if (watch) clearInterval(watch);
-      process.off("SIGINT", stop);
-      process.off("SIGTERM", stop);
+      offInt();
+      offTerm();
       if (embedded) {
         stdin.off("end", stop);
         stdin.off("close", stop);
@@ -330,8 +356,9 @@ export function untilStopped(
       }
       resolve();
     };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
+    // Beta.27 re-review: Atticus's own, so process-trees leaves the end to it.
+    const offInt = onAtticusSignal("SIGINT", stop, { once: true });
+    const offTerm = onAtticusSignal("SIGTERM", stop, { once: true });
     if (embedded) {
       stdin.once("end", stop);
       stdin.once("close", stop);
@@ -403,6 +430,8 @@ export async function uiCommand(
       ...(given ? { token: given } : {}),
       ...(pageKey ? { pageKey } : {}),
       warm: true,
+      // Beta.27 review: the jobs it starts are kept in the run log, for after a restart.
+      runLog: true,
       ...(o.full ? { full: true } : {}),
       ...(o.port !== undefined ? { port: o.port } : {}),
       ...(o.user ? { user: o.user } : {}),

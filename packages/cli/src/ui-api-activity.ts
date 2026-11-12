@@ -65,11 +65,16 @@ export function tracked<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { kind?: JobKind; meta?: Record<string, string> } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function") return work();
-  const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
+  const opts: JobStartOptions = {
+    title,
+    ...(o.meta ? { meta: o.meta } : {}),
+    // Beta.27 re-review: the run log is titled by the ids it names, never by `title`.
+    ...(o.ids ? { log: { ids: o.ids } } : {}),
+  };
   return ctx.jobs.track(o.kind ?? "work", (c) => work(c), opts);
 }
 
@@ -84,9 +89,13 @@ export function answerAsJob(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: () => Promise<Record<string, unknown>>,
-  o: { kind?: JobKind; meta?: Record<string, string> } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): { status: 202; body: { jobId: string } } {
-  const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
+  const opts: JobStartOptions = {
+    title,
+    ...(o.meta ? { meta: o.meta } : {}),
+    ...(o.ids ? { log: { ids: o.ids } } : {}),
+  };
   const job = ctx.jobs.start(
     o.kind ?? "work",
     async () => {
@@ -119,7 +128,7 @@ export async function trackedLocal<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { meta?: Record<string, string>; wait?: (ms: number) => Promise<void> } = {},
+  o: { meta?: Record<string, string>; ids?: string[]; wait?: (ms: number) => Promise<void> } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown; runningOf?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function" || typeof jobs.runningOf !== "function")
@@ -140,7 +149,7 @@ export async function trackedLocal<T>(
       c?.progress(0, 1, title);
       return work(c);
     },
-    { kind: "local", ...(o.meta ? { meta: o.meta } : {}) },
+    { kind: "local", ...(o.meta ? { meta: o.meta } : {}), ...(o.ids ? { ids: o.ids } : {}) },
   );
 }
 
@@ -233,6 +242,15 @@ const handoffState = (s: string): Api.ActivityStateT =>
         ? "cancelled"
         : "waiting";
 
+const APP_KINDS = new Set<string>(Api.ActivityKind.options);
+/** The Console kind of a job an app started, kept in the run log; undefined for a command. */
+const appKind = (t: TerminalRunView): Api.ActivityKindT | undefined =>
+  t.startedBy === "app" && t.job && APP_KINDS.has(t.job.kind)
+    ? (t.job.kind as Api.ActivityKindT)
+    : t.startedBy === "app"
+      ? "work"
+      : undefined;
+
 const newestFirst = (a: Entry, b: Entry) =>
   b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id);
 
@@ -257,6 +275,16 @@ export function uiActivityRoutes(
   const root = ctx.root;
   const now = deps.now ?? (() => new Date());
   const readOpts = { ...(deps.alive ? { alive: deps.alive } : {}), now };
+  /**
+   * Beta.27 review: whether a run is listed from the run log: not one of this server's own jobs
+   * (its JobManager lists it, with Stop and its lines live); a job an earlier run of the app
+   * started is.
+   */
+  const fromLog = (t: TerminalRunView): boolean =>
+    !(
+      t.startedBy === "app" &&
+      (ctx.jobs as { ownsRun?: (id: string) => boolean }).ownsRun?.(t.runId)
+    );
 
   // ---------------------------------------------------------------- the app's jobs
   const jobEntry = (j: Job): Entry => {
@@ -291,6 +319,7 @@ export function uiActivityRoutes(
       lines: lines?.total ?? 0,
       from: lines?.from ?? 0,
       ...(j.state === "running" ? { stop: `/api/jobs/${encodeURIComponent(j.id)}/cancel` } : {}),
+      ...(j.state === "running" && j.stopping ? { stopping: true } : {}),
       ...(meta.handoffRun ? { runId: meta.handoffRun } : {}),
     };
   };
@@ -306,10 +335,12 @@ export function uiActivityRoutes(
   >();
   const terminalEntry = (t: TerminalRunView, total?: number): Entry => ({
     id: `${TERM}${t.runId}`,
-    kind: "command",
+    // Beta.27 review: a job an earlier run of the app started, kept in the run log, by its kind;
+    // one still running when that app closed (or crashed) has `ended`.
+    kind: appKind(t) ?? "command",
     title: t.title,
     where: t.startedBy,
-    state: t.stale ? "ended" : t.state,
+    state: t.stale || t.appClosed ? "ended" : t.state,
     startedAt: t.startedAt,
     ...(t.finishedAt ? { finishedAt: t.finishedAt } : {}),
     ...(t.exitCode !== undefined ? { exitCode: t.exitCode } : {}),
@@ -334,13 +365,13 @@ export function uiActivityRoutes(
   const tick = () => {
     let runs: TerminalRunView[];
     try {
-      runs = readTerminalRuns(root, readOpts);
+      runs = readTerminalRuns(root, readOpts).filter(fromLog);
     } catch {
       return;
     }
     for (const t of runs) {
       const was = tails.get(t.runId);
-      const state = t.stale ? "ended" : t.state;
+      const state = t.stale || t.appClosed ? "ended" : t.state;
       const { size, ino } = logStat(t.runId);
       if (was && !was.more && was.state === state && was.size === size && was.ino === ino) continue;
       let total = was?.total ?? 0;
@@ -534,7 +565,9 @@ export function uiActivityRoutes(
     tick();
     const entries: Entry[] = [
       ...ctx.jobs.list().map(jobEntry),
-      ...readTerminalRuns(root, readOpts).map((t) => terminalEntry(t)),
+      ...readTerminalRuns(root, readOpts)
+        .filter(fromLog)
+        .map((t) => terminalEntry(t)),
       ...handoffEntries(),
     ];
     const kept = newestKeepingRunning(entries, MAX_ENTRIES);
@@ -547,7 +580,7 @@ export function uiActivityRoutes(
       const t = readTerminalRuns(root, readOpts).find((x) => x.runId === runId);
       const l = t ? readTerminalRunLines(root, runId, from) : undefined;
       if (!t || !l) throw notFound(`There is no activity ${id}.`);
-      return { id, ...l, state: t.stale ? "ended" : t.state };
+      return { id, ...l, state: t.stale || t.appClosed ? "ended" : t.state };
     }
     if (RUN_DIR.test(id)) {
       handoffCache = undefined;

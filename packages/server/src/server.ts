@@ -2,10 +2,17 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
-import { Api, catalogMayHaveChangedAt, DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
+import {
+  Api,
+  catalogMayHaveChangedAt,
+  DEFAULT_PORT,
+  FileChangedError,
+  runLogKept,
+  startAppRun,
+} from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
-import { JobManager, type JobKind } from "./jobs.js";
+import { JobManager, type JobKind, type JobLogTitle, type JobRecorder } from "./jobs.js";
 
 /** Every kind of job, so RunningServer.quiet asks after each (a new kind must be added here). */
 const JOB_KINDS: Record<JobKind, true> = {
@@ -129,6 +136,12 @@ export interface ServerOptions {
    * updates when an assistant or the CLI writes. Default true.
    */
   watch?: boolean;
+  /**
+   * Beta.27 review: keep each job the app starts in the metarepo's run log (ADR 0187,
+   * .atticus/logs/), so the Console, Runs and Problems still have it after a restart. `atticus ui`
+   * turns it on; default off (a test's server writes nothing it didn't ask for).
+   */
+  runLog?: boolean;
   /** Told about every API call when it ends: method, path (no query), status and time. */
   onRequest?: (r: {
     method: string;
@@ -241,6 +254,34 @@ function send(res: ServerResponse, status: number, body: unknown, type = "applic
 }
 
 /**
+ * Beta.27 review: a job kept in the run log (ADR 0187) as it runs, so the Console, Runs and
+ * Problems still have it after the app restarts. Undefined when the log can't be written.
+ * Beta.27 re-review: only where a command run would keep one (core's runLogKept: a metarepo,
+ * ATTICUS_RUN_LOG not `off`), asked as each job starts (a folder made a metarepo meanwhile keeps
+ * the jobs after it); titled by a command's rules (`log`: the ids it names, or the command it
+ * runs), never by the job's own title.
+ */
+export function appRunRecorder(
+  root: string,
+  job: { id: string; kind: JobKind },
+  log: JobLogTitle = {},
+  env: NodeJS.ProcessEnv = process.env,
+): JobRecorder | undefined {
+  if (!runLogKept(root, env)) return undefined;
+  const r = startAppRun(root, {
+    job: { id: job.id, kind: job.kind },
+    ...(log.ids ? { ids: log.ids } : {}),
+    ...(log.command ? { command: log.command } : {}),
+  });
+  if (!r) return undefined;
+  return {
+    runId: r.runId,
+    line: (t) => r.line(t),
+    end: (state, how) => r.end(state === "done" ? 0 : state === "cancelled" ? 143 : 1, how),
+  };
+}
+
+/**
  * The local server (ADR 0015): binds 127.0.0.1 only, every API call carries the session token,
  * and requests from other sites or host names are refused, so neither another program's web
  * page nor a DNS-rebinding page can drive it.
@@ -257,7 +298,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       : randomBytes(32).toString("base64url");
   const events = new EventHub(o.root);
   let writing = 0;
-  const jobs = new JobManager((e) => events.publish(e));
+  const jobs = new JobManager((e) => events.publish(e), undefined, {
+    ...(o.runLog ? { record: (job, _meta, log) => appRunRecorder(o.root, job, log) } : {}),
+  });
   const confirmations = new Confirmations();
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);
   const runLogs = new Signal();
@@ -449,6 +492,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     close: () =>
       new Promise<void>((resolve) => {
         watcher?.close();
+        // Beta.27 review: a job still running ends here; its run log says the app closed.
+        jobs.closeAll();
         for (const f of onClose) {
           try {
             f();

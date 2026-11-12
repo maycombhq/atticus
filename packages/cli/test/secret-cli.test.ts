@@ -65,4 +65,36 @@ describe("atticus secret (ADR 0121)", () => {
     expect((await run(["set", "OK_NAME"], { stdin: "  \n", store })).code).toBe(2);
     expect(store.kept.size).toBe(0);
   });
+
+  it("beta.27 re-review: never says back what was typed where a name goes, nor a key after it", async () => {
+    const store = memory();
+    // A key typed as the name: refused, and not said back (it goes to the run's log and the screen).
+    const keyLike = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
+    for (const name of [KEY, keyLike, "has spaces", "pat@bank.example"]) {
+      const r = await run(["set", name], { stdin: KEY, store });
+      expect(r.code, name).toBe(2);
+      expect(r.out + r.err, name).not.toContain(name);
+      expect(r.err).toMatch(/isn't a variable's name/);
+    }
+    // A key typed on the command line after the name: refused before anything is read or kept.
+    let read = false;
+    const out: string[] = [];
+    const code = await secretCommand(
+      ["set", "ATTICUS_MODEL_KEY", keyLike],
+      { out: (l) => out.push(l), err: (l) => out.push(l) },
+      {
+        store,
+        env: {},
+        read: async () => {
+          read = true;
+          return KEY;
+        },
+      },
+    );
+    expect(code).toBe(2);
+    expect(read).toBe(false);
+    expect(out.join("\n")).not.toContain(keyLike);
+    expect(out.join("\n")).toMatch(/never given on the command line/);
+    expect(store.kept.size).toBe(0);
+  });
 });

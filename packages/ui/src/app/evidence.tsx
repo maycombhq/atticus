@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useLiveEvents, type Loaded } from "../api/client.js";
+import { repoFacts } from "../api/batch.js";
 import { COPY } from "../copy.js";
 import { CorrectionNext } from "./correction-next.js";
 import { message } from "../screens/run/shared.js";
@@ -54,6 +55,22 @@ export interface Evidence {
 export const EvidenceContext = createContext<Evidence | undefined>(undefined);
 export const useEvidence = () => useContext(EvidenceContext);
 
+const ALL = Symbol("all repos");
+/**
+ * Beta.27 review: the repo whose facts a changed file holds (facts/<repo>.jsonl and its
+ * .corrections, .rejected, .reviewed and .questions files), ALL for the facts folder itself (the
+ * watcher names a folder when many files change), undefined for a file elsewhere.
+ */
+export function factsRepoOf(path: string): string | typeof ALL | undefined {
+  const p = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+  if (/(^|\/)facts$/.test(p)) return ALL;
+  const m =
+    /(?:^|\/)facts\/([^/]+?)(?:\.(?:corrections|rejected|reviewed|questions))?\.jsonl$/.exec(p);
+  if (m) return m[1];
+  return /(^|\/)facts\//.test(p) ? ALL : undefined;
+}
+export const ALL_REPOS = ALL;
+
 /** Loads each repo's facts once, when a citation first needs them; reads again when facts/ changes. */
 export function EvidenceProvider({ children }: { children: ReactNode }) {
   const [views, setViews] = useState<Map<string, Loaded<FactsView>>>(new Map());
@@ -64,14 +81,20 @@ export function EvidenceProvider({ children }: { children: ReactNode }) {
       if (m.get(repo)?.state === "ready") return m;
       return new Map(m).set(repo, { state: "loading" });
     });
-    api<FactsView>(`/api/facts/${encodeURIComponent(repo)}`).then(
+    // Beta.27 review: with every other repo asked in the same moment, one call (api/batch.ts);
+    // the Map asked once per repo, 65 calls on a large estate.
+    (repoFacts(repo) as Promise<FactsView>).then(
       (data) => setViews((m) => new Map(m).set(repo, { state: "ready", data })),
       (e: unknown) => setViews((m) => new Map(m).set(repo, { state: "error", error: message(e) })),
     );
   }, []);
+  // Only the repos whose facts files changed are read again (all of them only when the event
+  // names the facts folder itself, as the watcher does when many files change at once).
   useLiveEvents((e) => {
-    if (e.type === "file.changed" && typeof e.path === "string" && /(^|\/)facts\//.test(e.path))
-      for (const r of asked.current) load(r);
+    if (e.type !== "file.changed" || typeof e.path !== "string") return;
+    const changed = factsRepoOf(e.path);
+    if (changed === undefined) return;
+    for (const r of asked.current) if (changed === ALL || r === changed) load(r);
   });
   const value = useMemo<Evidence>(
     () => ({

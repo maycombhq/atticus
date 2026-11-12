@@ -187,6 +187,28 @@ describe("GET .../stages/{stage}/thread", () => {
     expect(v.headline).toMatch(/hasn't started/);
   });
 
+  it("beta.27: a proposal written outside the app is written, as the change's page says, not unstarted", async () => {
+    // Beta.26: At a glance said "The proposal stage hasn't started" while All changes said
+    // Written; both read the one check now (artifactWritten).
+    const v = await thread("proposal");
+    expect(v.state).toBe("done");
+    expect(v.headline).toBe(
+      `The proposal is written (${REL}/proposal.md): it was written outside the app, so this conversation has nothing in it.`,
+    );
+    expect(v.headline).not.toMatch(/hasn't started/);
+    // Without its file (or with only the template) it hasn't started.
+    const file = join(root, REL, "proposal.md");
+    const text = await readFile(file, "utf8");
+    await writeFile(file, "");
+    try {
+      const empty = await thread("proposal");
+      expect(empty.state).toBe("not-started");
+      expect(empty.headline).toMatch(/hasn't started/);
+    } finally {
+      await writeFile(file, text);
+    }
+  });
+
   it("refuses a stage that isn't one, and a change that isn't there", async () => {
     expect((await call("GET", `/api/changes/${CHANGE}/stages/tasks/thread`)).status).toBe(400);
     expect((await call("GET", `/api/changes/nope/stages/feature/thread`)).status).toBe(404);

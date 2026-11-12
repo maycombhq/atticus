@@ -7,5 +7,17 @@
 export { SCHEMA_VERSION } from "./schema/version.js";
 export { createLog, logFileOf, NO_LOG, type Log, type LogEntry, type LogLevel } from "./log.js";
 // ADR 0187: a long command keeps what it prints for the app's Console.
-export { recordedCommand, startTerminalRun, type TerminalRunRecorder } from "./run-log.js";
+export {
+  recordedCommand,
+  retitleTerminalRuns,
+  runLogKept,
+  runTitle,
+  startTerminalRun,
+  TITLE_VALUE_FLAGS,
+  type TerminalRunRecorder,
+} from "./run-log.js";
 export { printToCurrent, withPrinter } from "./printer.js";
+// Beta.27 re-review: Atticus's own signal handlers (Ctrl+C), told from a library's.
+export { atticusHandles, onAtticusSignal } from "./process-trees.js";
+// Beta.27 review: whether a word typed where a name goes is a key (`atticus secret`).
+export { keyIsSecret } from "./cite.js";

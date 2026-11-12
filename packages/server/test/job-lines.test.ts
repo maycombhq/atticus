@@ -41,6 +41,33 @@ describe("a job's lines", () => {
     expect(jobs.list().map((x) => x.id)).toEqual([j.id]);
   });
 
+  it("masks a token by its shape in the live lines, as the run log's record does", async () => {
+    const jobs = new JobManager(() => undefined);
+    const heard: string[] = [];
+    jobs.subscribe((c) => {
+      if (c.type === "lines") heard.push(...c.lines);
+    });
+    const token = ["ghp", "Forge".repeat(5)].join("_");
+    const key = ["AKIA", "FORGE0LEDGER0KEY"].join("");
+    const j = jobs.start("sync", async (c) => {
+      c.line(`Can't read /work/${token}/notes`);
+      c.line(`fetch https://ci:${"hunter2-forge"}@git.northwind.example/forge-ledger.git\n${key}`);
+    });
+    await jobs.settle(j.id);
+    const lines = jobs.linesOf(j.id)!.lines;
+    expect(lines).toEqual([
+      "Can't read /work/***/notes",
+      "fetch https://ci:***@git.northwind.example/forge-ledger.git",
+      "***",
+    ]);
+    expect(heard).toEqual(lines);
+    for (const l of [...lines, ...heard]) {
+      expect(l).not.toContain(token);
+      expect(l).not.toContain("hunter2-forge");
+      expect(l).not.toContain(key);
+    }
+  });
+
   it("gives a job that printed nothing its result's lines and errors when it ends", async () => {
     const jobs = new JobManager(() => undefined);
     const a = jobs.start("local", async () => ({ result: { lines: ["Applied 3 facts"] } }));

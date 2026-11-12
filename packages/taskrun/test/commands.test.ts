@@ -13,6 +13,8 @@ import { shellCommandRunner, tail } from "../src/commands.js";
  * shell, no network.
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
+/** Core's process-trees, the one the runner's own @maycombhq/core loads (its registry of handlers). */
+const trees = JSON.stringify(pathToFileURL(join(HERE, "../../core/dist/process-trees.js")).href);
 const posix = process.platform !== "win32";
 const node = JSON.stringify(process.execPath);
 const alive = (pid: number) => {
@@ -53,6 +55,34 @@ describe("the build command runner", () => {
     expect(r.exitCode === null || r.exitCode !== 0).toBe(true);
   }, 30_000);
 
+  // Beta.27 review: Stop in the app (the job's signal) stopped nothing while a build ran.
+  it("stops the build when its job is stopped (the app's Stop), and says it was stopped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
+    const stop = new AbortController();
+    const started = Date.now();
+    const run = shellCommandRunner()(
+      `${node} -e "require('fs').writeFileSync('pid', String(process.pid)); setTimeout(() => {}, 20000)"`,
+      dir,
+      { signal: stop.signal },
+    );
+    await until(() => existsSync(join(dir, "pid")));
+    stop.abort();
+    const r = await run;
+    expect(Date.now() - started).toBeLessThan(12_000);
+    expect(r.stopped).toBe(true);
+    const pid = Number(await readFile(join(dir, "pid"), "utf8"));
+    await until(() => !alive(pid));
+    expect(alive(pid)).toBe(false);
+  }, 30_000);
+
+  it("a build asked for after its job was stopped doesn't start", async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const r = await shellCommandRunner()("echo never", tmpdir(), { signal: stop.signal });
+    expect(r).toMatchObject({ exitCode: null, stopped: true });
+    expect(r.stdout).toBe("");
+  });
+
   it.runIf(posix)(
     "stops the build when Atticus gets Ctrl+C, and Atticus still ends",
     async () => {
@@ -87,10 +117,12 @@ setTimeout(() => process.kill(process.pid, "SIGINT"), 800);
       const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
       const script = join(dir, "parent.mjs");
       const runner = JSON.stringify(pathToFileURL(join(HERE, "../dist/commands.js")).href);
-      // As atticus ui does: process.once, which Node removes before calling it.
+      // As atticus ui does (beta.27 re-review: as one of Atticus's own handlers, onAtticusSignal):
+      // a once listener, which Node removes before calling it.
       await writeFile(
         script,
-        `process.once("SIGINT", () => setTimeout(() => { console.log("Stopped."); process.exit(0); }, 200));
+        `const { onAtticusSignal } = await import(${trees});
+onAtticusSignal("SIGINT", () => setTimeout(() => { console.log("Stopped."); process.exit(0); }, 200), { once: true });
 const { shellCommandRunner } = await import(${runner});
 shellCommandRunner()(${JSON.stringify(`sleep 3; echo survived > ${join(dir, "f")}`)}, ${JSON.stringify(dir)});
 setTimeout(() => process.kill(process.pid, "SIGINT"), 800);
@@ -116,10 +148,12 @@ setTimeout(() => process.kill(process.pid, "SIGINT"), 800);
       const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
       const script = join(dir, "parent.mjs");
       const runner = JSON.stringify(pathToFileURL(join(HERE, "../dist/commands.js")).href);
-      // As atticus ui does: a once listener that doesn't exit; what the build said is printed.
+      // As atticus ui does: a once listener of Atticus's own that doesn't exit; what the build
+      // said is printed.
       await writeFile(
         script,
-        `process.once("SIGINT", () => console.log("Stopped."));
+        `const { onAtticusSignal } = await import(${trees});
+onAtticusSignal("SIGINT", () => console.log("Stopped."), { once: true });
 const { shellCommandRunner, stopRequested } = await import(${runner});
 const run = shellCommandRunner();
 const r = await run("sleep 3", ${JSON.stringify(dir)});

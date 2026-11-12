@@ -135,6 +135,16 @@
   margin: 0;
   gap: 6px;
 }
+/* Beta.27: the counts are the steps' questions only; the line under the title counts both kinds. */
+.q-stats-caption {
+  flex-basis: 100%;
+  font-size: 10.5px;
+}
+.qs-to-answer {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
 .qs .q-stat {
   min-width: 72px;
   padding: 6px 10px;
@@ -447,9 +457,20 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-.qs-code > span {
+/* Beta.27: each line a row of its number and its code; the code wraps (a cited line ran past the
+   box's right edge, read only by scrolling sideways), its number kept in its own column. */
+.qs-code > .qs-line {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   padding: 0 10px 0 0;
+}
+.qs-ln {
   white-space: pre;
+}
+.qs-lc {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .qs-code > span[aria-current="true"] {
   background: var(--picked-strong);

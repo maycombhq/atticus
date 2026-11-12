@@ -83,6 +83,32 @@ export function fitRect(
   };
 }
 
+/**
+ * Beta.27: a fit that keeps the words legible. The picture is fitted, but never below `min` (the
+ * smallest zoom whose words can be read); a picture too big for the view at that zoom starts at
+ * its top-left corner (each axis that doesn't fit), to be panned, rather than centred with its
+ * first boxes cut off above and to the left.
+ */
+export function fitLegibly(
+  content: Rect,
+  view: Size,
+  o: { pad?: number; min: number; max?: number },
+): Viewport {
+  const pad = o.pad ?? 24;
+  const v = fitRect(content, view, {
+    pad,
+    min: o.min,
+    ...(o.max !== undefined ? { max: o.max } : {}),
+  });
+  const wide = content.w * v.k > view.width - pad * 2;
+  const tall = content.h * v.k > view.height - pad * 2;
+  return {
+    k: v.k,
+    x: wide ? pad - content.x * v.k : v.x,
+    y: tall ? pad - content.y * v.k : v.y,
+  };
+}
+
 /** Zoom by `factor` keeping the screen point `at` still (the cursor, a pinch's middle). */
 export function zoomAt(v: Viewport, factor: number, at: { x: number; y: number }): Viewport {
   const k = clampZoom(v.k * factor);
@@ -269,9 +295,19 @@ export function useFullScreen(initial = false): [boolean, (on?: boolean) => void
  * of a screen; never under `min`.
  */
 export const MAX_TOP = 160;
+/** Beta.27: the keys line's one line, which availableHeight leaves room for under the picture. */
+export const KEYS_LINE = 16;
+/** The margin under the keys line. */
+const UNDER_KEYS = 8;
 export function availableHeight(windowHeight: number, top: number, min = 420): number {
-  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, MAX_TOP) - 24));
+  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, MAX_TOP) - KEYS_LINE - UNDER_KEYS));
 }
+/**
+ * The picture's height with the keys line under it: what the line takes past its one line
+ * (KEYS_LINE, a narrow frame wrapping it) is the picture's.
+ */
+export const stageHeight = (height: number, keys: number) =>
+  Math.max(160, height - Math.max(0, keys - KEYS_LINE));
 
 /**
  * The height a picture gets inside the area that scrolls it (beta.26: the IDE layout's page,
@@ -525,6 +561,19 @@ export function DiagramFrame(p: {
   const asideId = useId();
   const own = useRef<HTMLDivElement | null>(null);
   const ref = p.frameRef ?? own;
+  // Beta.27: the keys line wraps in a narrow frame; the picture gives it the room it takes, so
+  // the line under the picture is never cut off.
+  const keys = useRef<HTMLParagraphElement | null>(null);
+  const [keysH, setKeysH] = useState(KEYS_LINE);
+  useEffect(() => {
+    const el = keys.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setKeysH(Math.ceil(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Beside the picture, closing the details gives the focus to Show details, and opening them to
   // their close button, so it is never left on a button that went away.
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -617,7 +666,7 @@ export function DiagramFrame(p: {
       )}
       <div
         className={`viewer-stage${p.aside && p.asideBeside ? " beside" : ""}`}
-        style={p.full ? undefined : { height: p.height }}
+        style={p.full ? undefined : { height: stageHeight(p.height, keysH) }}
       >
         {p.children}
         {p.aside && p.asideBeside && (
@@ -668,7 +717,9 @@ export function DiagramFrame(p: {
           </>
         )}
       </div>
-      <p className="hud viewer-keys">{T.keys}</p>
+      <p ref={keys} className="viewer-keys">
+        {T.keys}
+      </p>
     </div>
   );
 }

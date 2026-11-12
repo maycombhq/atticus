@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { FlashLine } from "./flash.js";
+import { flash, FlashLine } from "./flash.js";
 import { LoadingBar } from "./loading-bar.js";
-import { api, SERVER_EVENT, useApi } from "../api/client.js";
+import {
+  api,
+  onSession,
+  SERVER_EVENT,
+  sessionMoved,
+  sessionStale,
+  useApi,
+  type Loaded,
+} from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
@@ -116,6 +124,47 @@ function useServer(): { down: boolean; epoch: number } {
   return s;
 }
 
+/** Whether the page's session token is one the server refused and no new one could be read. */
+function useSessionStale(): boolean {
+  const [stale, set] = useState(sessionStale);
+  useEffect(() => onSession((s) => set(s === "stale")), []);
+  return stale;
+}
+
+/**
+ * Beta.27 review: the one note about the connection, above the page in either layout: the
+ * server not answering (with Try again), or the app restarted with a session this page couldn't
+ * take up (with Reload). Sections only say quietly that they aren't loaded.
+ */
+export function ConnectionNote({
+  down,
+  stale,
+  inPanel,
+  moved = false,
+}: {
+  down: boolean;
+  stale: boolean;
+  inPanel: boolean;
+  /** Beta.27 re-review: the server at this address now serves another metarepo. */
+  moved?: boolean;
+}) {
+  if (down) return <ServerDown inPanel={inPanel} />;
+  if (!stale) return null;
+  return (
+    <div className="state error" role="alert" style={{ marginBottom: 12 }}>
+      <p style={{ margin: 0 }}>{moved ? COPY.app.otherMetarepo : COPY.app.restarted}</p>
+      <button
+        type="button"
+        className="btn"
+        style={{ marginTop: 8 }}
+        onClick={() => location.reload()}
+      >
+        {COPY.app.reload}
+      </button>
+    </div>
+  );
+}
+
 export function ServerDown({ inPanel }: { inPanel: boolean }) {
   const [trying, setTrying] = useState(false);
   return (
@@ -162,6 +211,53 @@ export function ScreenOf({
   );
 }
 
+/**
+ * The metarepo the tour is for: the root health names once it answered, else undefined (the
+ * tour waits). Never on a failed health: a server down or a session refused isn't a first run.
+ */
+export function tourMetarepo(health: Loaded<Health>): string | undefined {
+  return health.state === "ready" ? health.data.root : undefined;
+}
+
+/**
+ * Beta.27 review: Ctrl+K's Sync the repos ("sync" found nothing): it starts the sync as Set up's
+ * button does, and the Console shows it as it runs (the IDE layout's panel opens on it).
+ */
+export function syncCommand(layout: Layout): PaletteCommand {
+  const S = COPY.palette.sync;
+  return {
+    label: S.label,
+    detail: S.detail,
+    also: S.also,
+    run: () => {
+      void api("/api/workspace/sync", { method: "POST", body: {} }).then(
+        () => {
+          flash({ text: S.started });
+          if (layout === "ide") showPanelTab("console");
+        },
+        (e: unknown) => flash({ text: S.failed(e instanceof Error ? e.message : String(e)) }),
+      );
+    },
+  };
+}
+
+/**
+ * Ctrl+K's own commands: the other layout, the IDE layout's panel tabs, and Sync the repos.
+ * Beta.27 re-review: Sync the repos only at a metarepo (`metarepo`, as health says): a bare
+ * folder has no repos to sync, and its Ctrl+K offered a sync that could only fail.
+ */
+export function appCommands(
+  layout: Layout,
+  setLayout: (l: Layout) => void,
+  metarepo: boolean,
+): PaletteCommand[] {
+  return [
+    ...layoutCommands(layout, setLayout),
+    ...(layout === "ide" ? panelCommands() : []),
+    ...(metarepo ? [syncCommand(layout)] : []),
+  ];
+}
+
 /** ADR 0194: Ctrl+K's way to the other layout, in either one. */
 export function layoutCommands(layout: Layout, set: (l: Layout) => void): PaletteCommand[] {
   const L = COPY.ide.layout;
@@ -200,11 +296,21 @@ export function App() {
   // The server says whether it was started with --full (every page a tab, More pages open).
   const full = health.state === "ready" && health.data.full === true;
   const server = useServer();
+  const stale = useSessionStale();
+  const connection = (
+    <ConnectionNote
+      down={server.down}
+      stale={stale}
+      moved={stale && sessionMoved()}
+      inPanel={!!hostBridge()}
+    />
+  );
   // ADR 0190: a folder that isn't a metarepo yet shows Create the metarepo here, nothing else.
   const bare = health.state === "ready" && health.data.metarepo === false;
+  const atMetarepo = health.state === "ready" && health.data.metarepo !== false;
   const commands = useMemo(
-    () => [...layoutCommands(layout, setLayout), ...(layout === "ide" ? panelCommands() : [])],
-    [layout, setLayout],
+    () => appCommands(layout, setLayout, atMetarepo),
+    [layout, setLayout, atMetarepo],
   );
   const reloadHealth = health.reload;
   useEffect(() => {
@@ -233,13 +339,10 @@ export function App() {
     shownLayout.current = layout;
     focusAfterLayoutSwitch(document);
   }, [layout]);
-  const tour = !bare && (
-    <Tour
-      metarepo={
-        health.state === "ready" ? health.data.root : health.state === "error" ? null : undefined
-      }
-    />
-  );
+  // Beta.27 review (blocker): the tour waits for the metarepo the server serves. A health that
+  // failed (the server down, a session refused after a restart) is no first run: the tour
+  // opened over the page then, as if the metarepo were new.
+  const tour = !bare && <Tour metarepo={tourMetarepo(health)} />;
   const skip = (
     <a
       className="skip"
@@ -284,12 +387,12 @@ export function App() {
                 <CommandPalette commands={commands} />
                 {tour}
                 <main id="main" className="main" tabIndex={-1}>
+                  {connection}
                   <FlashLine />
                   <TopBar health={health.state === "ready" ? health.data : undefined} />
                   <ActivityStrip />
                   <h1 className="sr">{bare ? COPY.setup.title : current.label}</h1>
                   {!bare && <SectionTabs current={current} hash={hash} full={full} />}
-                  {server.down && <ServerDown inPanel={!!hostBridge()} />}
                   {page}
                 </main>
                 <ActivityConsole />
@@ -308,11 +411,12 @@ export function App() {
                   heading={bare ? COPY.setup.title : current.label}
                   top={
                     <>
+                      {/* Beta.27 review: the connection's one note, first above the page. */}
+                      {connection}
                       <FlashLine />
                       {/* What runs (a Copilot run's own strip, ADR 0173), above the page. */}
                       <ActivityStrip />
                       {!bare && <SectionTabs current={current} hash={hash} full={full} />}
-                      {server.down && <ServerDown inPanel={!!hostBridge()} />}
                     </>
                   }
                 >

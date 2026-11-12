@@ -7,9 +7,27 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { catalogMayHaveChanged, isOffline, useFileChanges } from "../../api/client.js";
+import {
+  catalogMayHaveChanged,
+  isOffline,
+  useFileChanges,
+  useServerBack,
+} from "../../api/client.js";
 import { COPY } from "../../copy.js";
-import { useLazyApi, type Lazy } from "./explorer-data.js";
+import { useKnownAnswer, useLazyApi, type Lazy } from "./explorer-data.js";
+import {
+  MANIFEST_REPOS_PATH,
+  manifestMayHaveChanged,
+  repoCountsOf,
+  type ManifestReposAnswer,
+  type RepoCounts,
+} from "../repo-counts.js";
+import {
+  OWNER_QUESTIONS_PATH,
+  questionsToAnswerOf,
+  STEP_QUESTIONS_PATH,
+  type StepQuestionsAnswer,
+} from "../question-counts.js";
 import {
   changeItems,
   domId,
@@ -46,8 +64,8 @@ const E = COPY.explorer;
 /** The map's own estate view, three levels down: systems, their repos, the repos' components. */
 export const ESTATE_PATH = "/api/graph/node/estate?lens=architecture&depth=3";
 export const CHANGES_PATH = "/api/changes";
-export const QUESTIONS_PATH = "/api/questions?state=open";
-export const OWNER_PATH = "/api/owner-questions";
+export const QUESTIONS_PATH = STEP_QUESTIONS_PATH;
+export const OWNER_PATH = OWNER_QUESTIONS_PATH;
 
 /** Which sections the viewer left open, per viewer, as the menu keeps More pages. */
 export const OPEN_KEY = "atticus.explorer.sections";
@@ -124,7 +142,15 @@ function spoken(item: ExItem): string {
     ...(item.title ? [item.title] : []),
     ...(item.detail ? [item.detail] : []),
     ...(item.kind ? [E.kindWords[item.kind]] : []),
-    ...(item.count !== undefined ? [E.items(item.count)] : []),
+    ...(item.count !== undefined
+      ? [
+          item.countOf === "repos"
+            ? E.repos(item.count)
+            : item.countOf === "components"
+              ? E.components(item.count)
+              : E.items(item.count),
+        ]
+      : []),
     ...(item.waits ? [E.waitsOnYou] : []),
   );
 }
@@ -227,12 +253,14 @@ function SectionBody(p: ExplorerViewProps & { s: SectionModel; title: string }):
         <span className="skeleton" style={{ width: "64%" }} />
       </div>
     );
+  // Beta.27 review: the server down is said once, by the note above the page; each section says
+  // quietly that it isn't loaded, and reads again when the server answers (useServerBack).
+  if (s.state === "error" && (!s.error || isOffline(s.error)))
+    return <p className="ex-state">{COPY.app.notLoadedOffline}</p>;
   if (s.state === "error")
     return (
       <div className="ex-state error" role="alert">
-        <span>
-          {E.couldntLoad(!s.error || isOffline(s.error) ? COPY.app.offlineShort : s.error)}
-        </span>
+        <span>{E.couldntLoad(s.error ?? "")}</span>
         <button
           type="button"
           className="btn ex-retry"
@@ -361,11 +389,17 @@ function statusOf(l: Lazy<unknown>, notYetIsEmpty = false): Status {
   return { state: "loading" };
 }
 
-const countRepos = (items: readonly ExItem[]): number =>
-  items.reduce(
-    (n, i) => n + (i.id.startsWith("systems/repo:") ? 1 : 0) + countRepos(i.children ?? []),
-    0,
-  );
+/**
+ * Beta.27 review: the Systems header, in the manifest's repos (repo-counts.ts): all of them when
+ * the map has a box for each, else how many of them it has; none until both reads are known.
+ */
+export function systemsHeader(c: RepoCounts | undefined): string | undefined {
+  if (!c) return undefined;
+  const head = c.onMap === c.repos ? E.repos(c.repos) : E.reposOnMap(c.onMap, c.repos);
+  // Beta.27 re-review: boxes for repos the manifest doesn't name are said, never counted.
+  const off = c.offManifest?.length ?? 0;
+  return off ? E.alsoOffManifest(head, off) : head;
+}
 
 /**
  * The Explorer the shell shows. `current` is the active hash route; `onOpen(hash)` opens a page.
@@ -390,14 +424,25 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
     want("systems"),
     defer("systems"),
   );
-  const questions = useLazyApi<{ questions: { repo: string }[] }>(
-    QUESTIONS_PATH,
-    want("questions"),
-    defer("questions"),
-  );
+  const questions = useLazyApi<
+    { questions: { repo: string; state?: string }[] } & StepQuestionsAnswer
+  >(QUESTIONS_PATH, want("questions"), defer("questions"));
   const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
+  // Beta.27 review: the manifest's repos (Map › Trust's read, the status bar's too), so the
+  // header and the tree count repos as the status bar does.
+  const manifest = useKnownAnswer<ManifestReposAnswer>(
+    MANIFEST_REPOS_PATH,
+    want("systems"),
+    manifestMayHaveChanged,
+  );
+  const repoCounts = repoCountsOf(manifest, estate.state === "ready" ? estate.data : undefined);
   const pins = usePins();
 
+  // Beta.27 review: the server answering again reads the sections again (each said quietly that
+  // it wasn't loaded while the server was down).
+  useServerBack(() => {
+    for (const s of [changes, estate, questions, owner]) if (s.state === "error") s.reload();
+  });
   // What an assistant, the CLI or another page writes shows here without a reload.
   useFileChanges((events) => {
     const files = events.some((e) => e.type === "file.changed");
@@ -412,14 +457,17 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const all = useMemo(
     () => ({
       changes: changes.state === "ready" ? changeItems(changes.data) : [],
-      systems: estate.state === "ready" ? systemItems(estate.data) : [],
+      systems:
+        estate.state === "ready"
+          ? systemItems(estate.data, repoCounts?.notOnMap ?? [], repoCounts?.offManifest ?? [])
+          : [],
       questions:
         questions.state === "ready"
           ? questionItems(questions.data, owner.state === "ready" ? owner.data : undefined)
           : [],
       pinned: pinnedItems(pins),
     }),
-    [changes, estate, questions, owner, pins],
+    [changes, estate, questions, owner, pins, manifest],
   );
   const shown = useMemo(() => {
     const out = {} as Record<SectionId, ExItem[]>;
@@ -444,11 +492,15 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   };
   const counts: Record<SectionId, string | undefined> = {
     changes: changes.state === "ready" ? E.count(all.changes.length) : undefined,
-    systems: estate.state === "ready" ? E.repos(countRepos(all.systems)) : undefined,
-    questions:
-      questions.state === "ready"
-        ? E.count(all.questions.reduce((n, i) => n + (i.count ?? 0), 0))
-        : undefined,
+    systems: systemsHeader(repoCounts),
+    // Beta.27: the questions to answer, as the badge, the status bar and Home count them.
+    questions: (() => {
+      const q = questionsToAnswerOf(
+        questions.state === "ready" ? questions.data : undefined,
+        owner.state === "ready" ? owner.data : undefined,
+      );
+      return q ? E.count(q.total) : undefined;
+    })(),
     pinned: undefined,
   };
   const sections: SectionModel[] = SECTION_IDS.map((id) => ({

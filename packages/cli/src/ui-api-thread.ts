@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { Api, ChangeArtifact, changesRelOf, runsRelOf } from "@maycombhq/core";
-import { changeFolder, loadChangeContext } from "@maycombhq/changes";
+import { artifactWritten, changeFolder, loadChangeContext } from "@maycombhq/changes";
 import {
   commentOnFinding,
   keepDroppedQuestion,
@@ -272,6 +272,14 @@ export async function stageThreadView(
     items.push({ kind: "reply", at: r.at, text: r.text, by: r.by, read: r.read });
   items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   if (waiting) state = "waiting";
+  // Beta.27: a proposal written outside the app (by hand, or before the app drafted proposals)
+  // is written, as the change's page says (artifactWritten, the check All changes reads): its
+  // conversation is empty, not "hasn't started", and Start would only write it again.
+  const writtenElsewhere =
+    stage === "proposal" &&
+    state === "not-started" &&
+    (await artifactWritten(root, change, "proposal").catch(() => false));
+  if (writtenElsewhere) state = "done";
   const open = items.filter((i) => i.kind === "finding" && i.view.finding.state === "open").length;
   const questions = items.filter(
     (i) => i.kind === "question" && i.question.state === "open",
@@ -282,8 +290,9 @@ export async function stageThreadView(
       ? "critic"
       : "drafter"
     : undefined;
-  const headline =
-    state === "not-started"
+  const headline = writtenElsewhere
+    ? `The proposal is written (${rel}/proposal.md): it was written outside the app, so this conversation has nothing in it.`
+    : state === "not-started"
       ? `The ${stage} stage hasn't started for this change. Start it: Atticus writes the prompt for your assistant.`
       : waiting
         ? waitingWho === "critic"

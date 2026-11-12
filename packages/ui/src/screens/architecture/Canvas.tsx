@@ -29,6 +29,8 @@ import {
 import { COPY } from "../../copy.js";
 import {
   DiagramFrame,
+  FIT_MAX,
+  fitLegibly,
   LABELS_FROM,
   MINIMAP_FROM,
   panBy,
@@ -38,7 +40,10 @@ import {
   useAvailableHeight,
   useFitOnResize,
   useFullScreen,
+  type Rect,
+  type Size,
   type ViewerAction,
+  type Viewport,
 } from "../../app/viewer.js";
 import { boxSize, type CanvasBox, type CanvasGraph, type CanvasLink } from "./model.js";
 import { WORDS } from "./words.js";
@@ -223,6 +228,102 @@ function polyline(points: Point[]): [string, number, number] {
   return [d, (a.x + b.x) / 2, (a.y + b.y) / 2];
 }
 
+/** A box on the canvas, in canvas coordinates. */
+export interface BoxRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The room a link's label takes: its words at 11 px monospace, and the warning mark when shown. */
+export const linkLabelSize = (l: Pick<CanvasLink, "label" | "gaps">) => ({
+  width: Math.ceil((l.label.length + (l.gaps.length ? 2 : 0)) * 6.6) + 16,
+  height: 20,
+});
+
+/** Room kept between a label and a box, or another label. */
+const LABEL_GAP = 4;
+const PLACES = [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9];
+/** Beta.27 review: the most spots a label tries (a long route has many segments). */
+export const LABEL_TRIES = 40;
+
+/** A label's room, its centre at `c`. */
+const labelRect = (c: Point, size: { width: number; height: number }): BoxRect => ({
+  x: c.x - size.width / 2,
+  y: c.y - size.height / 2,
+  width: size.width,
+  height: size.height,
+});
+
+/**
+ * Beta.27: where a link's label goes (its centre): on its route, clear of every box. Beta.26 put
+ * it at the middle of the route's middle segment, which can run beside a box ("2 × calls" under
+ * payments.initiated). The middle segment's middle first, then along it, then along the other
+ * segments nearest the middle; where nothing on the route is clear, the middle as before.
+ * Beta.27 review: clear of the labels already placed (`placed`) too, so two links' words never
+ * lie on each other; at most LABEL_TRIES spots are tried, and where none is clear of both, the
+ * first clear of the boxes, else the middle.
+ */
+export function labelSpot(
+  points: readonly Point[],
+  size: { width: number; height: number },
+  boxes: readonly BoxRect[],
+  placed: readonly BoxRect[] = [],
+): Point {
+  const mid = Math.max(0, Math.floor(points.length / 2) - 1);
+  const at = (i: number, t: number): Point => {
+    const a = points[i]!;
+    const b = points[i + 1] ?? a;
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  };
+  const clearOf = (c: Point, rects: readonly BoxRect[]) =>
+    !rects.some(
+      (r) =>
+        c.x - size.width / 2 < r.x + r.width + LABEL_GAP &&
+        c.x + size.width / 2 > r.x - LABEL_GAP &&
+        c.y - size.height / 2 < r.y + r.height + LABEL_GAP &&
+        c.y + size.height / 2 > r.y - LABEL_GAP,
+    );
+  const segments = [...Array(Math.max(1, points.length - 1)).keys()].sort(
+    (a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b,
+  );
+  let ofBoxes: Point | undefined;
+  let tries = 0;
+  for (const i of segments)
+    for (const t of PLACES) {
+      if (tries++ >= LABEL_TRIES) return ofBoxes ?? at(mid, 0.5);
+      const c = at(i, t);
+      if (!clearOf(c, boxes)) continue;
+      if (clearOf(c, placed)) return c;
+      ofBoxes ??= c;
+    }
+  return ofBoxes ?? at(mid, 0.5);
+}
+
+/**
+ * Beta.27 review: every link's label spot, in order, each clear of the boxes and of the labels
+ * placed before it (labelSpot). Links without a route of two points or more get none.
+ */
+export function labelSpots(
+  links: readonly {
+    id: string;
+    points?: readonly Point[];
+    size: { width: number; height: number };
+  }[],
+  boxes: readonly BoxRect[],
+): Map<string, Point> {
+  const out = new Map<string, Point>();
+  const placed: BoxRect[] = [];
+  for (const l of links) {
+    if (!l.points || l.points.length < 2) continue;
+    const c = labelSpot(l.points, l.size, boxes, placed);
+    out.set(l.id, c);
+    placed.push(labelRect(c, l.size));
+  }
+  return out;
+}
+
 /**
  * An edge on the engine's route while both its boxes stay where the layout put them; once
  * either is dragged, a stepped line between them, so edges follow the boxes.
@@ -235,7 +336,7 @@ function LinkView(p: EdgeProps<LinkEdge>) {
     d.points &&
     near(s?.internals.positionAbsolute, d.ends?.from) &&
     near(t?.internals.positionAbsolute, d.ends?.to);
-  const [path, lx, ly] = still
+  const [path, mx, my] = still
     ? polyline(d.points!)
     : getSmoothStepPath({
         sourceX: p.sourceX,
@@ -245,6 +346,9 @@ function LinkView(p: EdgeProps<LinkEdge>) {
         sourcePosition: p.sourcePosition,
         targetPosition: p.targetPosition,
       });
+  // Beta.27: on the engine's route, the spot kept clear of the boxes.
+  const lx = still && d.labelAt ? d.labelAt.x : mx;
+  const ly = still && d.labelAt ? d.labelAt.y : my;
   // ADR 0174: a person's word (declared, or paired on the canvas) is drawn dashed; ADR 0181: the
   // AI's pairing dotted, with ◆ and the words in its label.
   const word = d.link.declared || d.link.paired;
@@ -277,9 +381,31 @@ function LinkView(p: EdgeProps<LinkEdge>) {
 }
 
 const nodeTypes = { box: BoxView };
-/** The smallest zoom a fit goes to: below it a box's words are too small to read. */
-export const FIT_MIN_ZOOM = 0.6;
+/**
+ * The smallest zoom a fit goes to: below it a box's words are too small to read. Beta.27: 0.6
+ * drew a box's name at about 8 px and its kind at 6 px; at 0.9 they are 11 px and 10 px, and a
+ * picture bigger than that is panned (fitLegibly starts it at its top-left).
+ */
+export const FIT_MIN_ZOOM = 0.9;
 const edgeTypes = { link: LinkView };
+
+/** The room round a fitted picture, as React Flow's fitView padding (a share of the view). */
+export const FIT_PADDING = 0.08;
+/**
+ * Beta.27 review: FIT_PADDING in pixels on each side, as fitView makes it: the picture takes
+ * the view's size over (1 + padding), so each side keeps half of the rest.
+ */
+export const fitPad = (view: Size): number =>
+  Math.round((Math.min(view.width, view.height) * (1 - 1 / (1 + FIT_PADDING))) / 2);
+
+/**
+ * Beta.27 review: the canvas's fit (Fit, the first fit, a resize's): legible (never below
+ * FIT_MIN_ZOOM; a bigger picture starts at its top-left), never zoomed in past actual size
+ * (FIT_MAX: beta.27's first cut let a small estate fit at 300 %), with fitView's padding.
+ */
+export function canvasFit(content: Rect, view: Size): Viewport {
+  return fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad: fitPad(view) });
+}
 
 /** The input the layout gets for a canvas graph. */
 export function layoutInput(g: CanvasGraph) {
@@ -296,7 +422,7 @@ export function layoutInput(g: CanvasGraph) {
       id: l.id,
       from: l.from,
       to: l.to,
-      label: { width: Math.ceil(l.label.length * 6.6) + 16, height: 20 },
+      label: linkLabelSize(l),
     })),
   };
 }
@@ -331,25 +457,39 @@ export function flowElements(
       return n;
     })
     .sort((a, b) => depth(a.id) - depth(b.id));
-  const edges = g.links
-    .filter((l) => laid.boxes[l.from] && laid.boxes[l.to] && l.from !== l.to)
-    .map((l): LinkEdge => {
-      const r = laid.routes[l.id];
-      const data: LinkData = { link: l };
-      if (r) {
-        data.points = r.points;
-        data.ends = { from: absolute(laid.boxes, l.from), to: absolute(laid.boxes, l.to) };
-      }
-      return {
-        id: l.id,
-        source: l.from,
-        target: l.to,
-        type: "link",
-        data,
-        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-        ariaLabel: `${l.from} ${l.label} ${l.to}`,
-      };
-    });
+  // Beta.27: the boxes a label keeps clear of (a group holds them, so it isn't one).
+  const rects: BoxRect[] = Object.values(laid.boxes)
+    .filter((b) => !b.group)
+    .map((b) => ({ ...absolute(laid.boxes, b.id), width: b.width, height: b.height }));
+  const drawn = g.links.filter((l) => laid.boxes[l.from] && laid.boxes[l.to] && l.from !== l.to);
+  // Beta.27 review: each label clear of the boxes and of the labels placed before it.
+  const spots = labelSpots(
+    drawn.map((l) => ({
+      id: l.id,
+      ...(laid.routes[l.id] ? { points: laid.routes[l.id]!.points } : {}),
+      size: linkLabelSize(l),
+    })),
+    rects,
+  );
+  const edges = drawn.map((l): LinkEdge => {
+    const r = laid.routes[l.id];
+    const data: LinkData = { link: l };
+    if (r) {
+      data.points = r.points;
+      const at = spots.get(l.id);
+      if (at) data.labelAt = at;
+      data.ends = { from: absolute(laid.boxes, l.from), to: absolute(laid.boxes, l.to) };
+    }
+    return {
+      id: l.id,
+      source: l.from,
+      target: l.to,
+      type: "link",
+      data,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+      ariaLabel: `${l.from} ${l.label} ${l.to}`,
+    };
+  });
   return { nodes, edges };
 }
 
@@ -421,7 +561,32 @@ export function ArchitectureCanvas(p: {
   // Beta.26 review: the picture fits the measured height (not the guess before it), and again
   // as that height changes, until the person pans or zooms it themselves.
   const moved = useRef(false);
-  useFitOnResize(rf, {
+  // Beta.27: every fit is a legible one (fitLegibly), in the canvas's own size.
+  const stage = useRef<HTMLDivElement | null>(null);
+  const fitNow = (duration?: number) => {
+    const i = rf.current;
+    const el = stage.current;
+    const ids = i?.getNodes().map((n) => n.id) ?? [];
+    if (!i || !el || !ids.length || !el.clientWidth || !el.clientHeight) {
+      void i?.fitView({
+        padding: FIT_PADDING,
+        minZoom: FIT_MIN_ZOOM,
+        maxZoom: FIT_MAX,
+        ...(duration ? { duration } : {}),
+      });
+      return;
+    }
+    const b = i.getNodesBounds(ids);
+    const v = canvasFit(
+      { x: b.x, y: b.y, w: b.width, h: b.height },
+      { width: el.clientWidth, height: el.clientHeight },
+    );
+    void i.setViewport({ x: v.x, y: v.y, zoom: v.k }, duration ? { duration } : undefined);
+  };
+  const fitRef = useRef(fitNow);
+  fitRef.current = fitNow;
+  const fitter = useRef({ fitView: () => fitRef.current() });
+  useFitOnResize(fitter, {
     height,
     ready: state.state === "ready" && nodes.length > 0,
     full,
@@ -471,9 +636,7 @@ export function ArchitectureCanvas(p: {
         // A new layout is fitted again, whatever the person did with the last one.
         moved.current = false;
         // Fit, but never so small the words can't be read: a bigger picture pans instead.
-        requestAnimationFrame(
-          () => void rf.current?.fitView({ padding: 0.08, duration: 200, minZoom: FIT_MIN_ZOOM }),
-        );
+        requestAnimationFrame(() => fitRef.current(200));
       },
       (e: unknown) =>
         live && setState({ state: "failed", error: e instanceof Error ? e.message : String(e) }),
@@ -550,7 +713,7 @@ export function ArchitectureCanvas(p: {
         void i?.zoomTo(1, d);
         return;
       case "fit":
-        void i?.fitView({ padding: 0.08, minZoom: FIT_MIN_ZOOM, ...d });
+        fitNow(d.duration);
         return;
       case "fit-selection":
         if (p.selected) void i?.fitView({ nodes: [{ id: p.selected }], maxZoom: 1.2, ...d });
@@ -615,6 +778,7 @@ export function ArchitectureCanvas(p: {
       }
     >
       <div
+        ref={stage}
         className={`arch-canvas ${zoom < LABELS_FROM ? "far" : ""} ${lit ? "focusing" : ""}`}
         style={{ height: "100%", ...labelScale(zoom) }}
         aria-busy={state.state === "running"}
@@ -678,7 +842,7 @@ export function ArchitectureCanvas(p: {
             minZoom={ZOOM.min}
             maxZoom={ZOOM.max}
             fitView
-            fitViewOptions={{ padding: 0.08, minZoom: FIT_MIN_ZOOM }}
+            fitViewOptions={{ padding: FIT_PADDING, minZoom: FIT_MIN_ZOOM, maxZoom: FIT_MAX }}
             colorMode="dark"
             aria-label={WORDS.canvasLabel}
           >

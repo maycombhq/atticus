@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, BUSY_EVENT, rememberAnswer, requestsInFlight } from "../../api/client.js";
+import {
+  api,
+  ApiError,
+  BUSY_EVENT,
+  isPathRead,
+  readCoalescer,
+  readingPath,
+  rememberAnswer,
+  requestsInFlight,
+  useFileChanges,
+  useLastAnswer,
+  type LiveEvent,
+} from "../../api/client.js";
 
 /**
  * The Explorer's reads (beta.26). Each is a GET the app already makes (Home's /api/changes and
@@ -22,9 +34,51 @@ export type Lazy<T> =
   | { state: "ready"; data: T };
 
 const kept = new Map<string, unknown>();
+/**
+ * Beta.27 review: a GET of a path shared by whoever asks (an Explorer section, each count the
+ * shell shows, a page's answer read again), as the app's every GET is (readCoalescer): asks in
+ * one moment share one read; an ask while one is under way gets the one read queued after it,
+ * never the read already under way, whose answer may be from before the write or the change the
+ * asker heard of (beta.27 re-review: an answer read again after a write could stay stale).
+ */
+let shared = readCoalescer();
+/** Until when a path's answer is fresh: read again just now by its page (readAnswerAgain). */
+const freshUntil = new Map<string, number>();
+/**
+ * How long an answer read again after a page's own write stays fresh: the file events that write
+ * makes come within this (FILE_QUIET_MS after the server's watcher), and read nothing again.
+ */
+export const FRESH_MS = 1500;
 
 /** Forget every kept answer (tests, and a server that came back). */
-export const forgetExplorerAnswers = () => kept.clear();
+export const forgetExplorerAnswers = () => {
+  kept.clear();
+  shared = readCoalescer();
+  freshUntil.clear();
+};
+
+/**
+ * GET `path`, shared (readCoalescer): the answer is of a read sent after this ask, kept and told.
+ * `signal`: the asker went (a section closed, the page left); the read stops once no one waits.
+ */
+export function sharedRead<T>(
+  path: string,
+  signal?: AbortSignal,
+  /** `after`: a read sent after this ask, never one under way (a page's own write before it). */
+  o: { after?: boolean } = {},
+): Promise<T> {
+  return shared<T>(
+    path,
+    (s) =>
+      api<T>(path, { signal: s, ...(o.after ? { after: true } : {}) }).then((data) => {
+        kept.set(path, data);
+        rememberAnswer(path, data);
+        return data;
+      }),
+    signal,
+    o,
+  );
+}
 
 /** How long the page must be quiet before a deferred read goes, and the longest it waits. */
 export const QUIET_MS = 300;
@@ -70,7 +124,11 @@ export function useLazyApi<T>(
   path: string,
   want: boolean,
   defer: boolean,
+  /** Beta.27 review: counted as a read that follows its path (readingPath); not the shell's own. */
+  o: { counted?: boolean } = {},
 ): Lazy<T> & { reload: () => void } {
+  const counted = o.counted ?? true;
+  useEffect(() => (want && counted ? readingPath(path) : undefined), [path, want, counted]);
   const [s, set] = useState<Lazy<T>>(() =>
     kept.has(path) ? { state: "ready", data: kept.get(path) as T } : { state: "idle" },
   );
@@ -94,15 +152,15 @@ export function useLazyApi<T>(
     set((o) => (o.state === "ready" ? o : { state: "loading" }));
     const go = () => {
       asked.current = true;
-      api<T>(path, { signal: ctl.signal }).then(
+      // Beta.27 review: shared with every other ask of the path (sharedRead), and stopped when
+      // this goes and no one else waits for it.
+      sharedRead<T>(path, ctl.signal).then(
         (data) => {
-          kept.set(path, data);
-          rememberAnswer(path, data);
           if (live) set({ state: "ready", data });
         },
         (e: unknown) => {
           // A read behind a kept answer that fails keeps the answer shown.
-          if (!live || ctl.signal.aborted || cached) return;
+          if (!live || cached) return;
           set({
             state: "error",
             error: e instanceof Error ? e.message : String(e),
@@ -119,4 +177,72 @@ export function useLazyApi<T>(
     };
   }, [path, want, tick]);
   return { ...s, reload };
+}
+
+/**
+ * Beta.27: an answer the shell shows a count from (the badge, the status bar), on every page and
+ * not only on the pages that load it: the last answer a page (or the Explorer) had to the path,
+ * else one read of its own once the page is quiet (as a section open from the start reads), so a
+ * page that loads the path itself (Home loads /api/trust) is never asked twice. Nothing while
+ * `want` is false (an editor's panel has no status bar).
+ */
+export function useKnownAnswer<T>(
+  path: string,
+  want = true,
+  /**
+   * Beta.27 review: whether a burst of file events can change what the path answers
+   * (repo-counts.ts's manifestMayHaveChanged, question-counts.ts's); any burst by default.
+   */
+  relevant: (events: LiveEvent[]) => boolean = () => true,
+): T | undefined {
+  const last = useLastAnswer<T>(path);
+  // Beta.27 review: file events that can change the answer read it again (beta.27's first cut
+  // never did, so a count shown from an earlier page's answer stayed stale), unless a read on the
+  // page follows the path itself (isPathRead: its answer comes here too) or the page read it again
+  // just now (readAnswerAgain, FRESH_MS). Every count shown from the path shares one read
+  // (sharedRead), so a burst asks the path once.
+  const [stale, setStale] = useState(0);
+  const own = useLazyApi<T>(path, want && (last === undefined || stale > 0), true, {
+    counted: false,
+  });
+  const reload = own.reload;
+  // Beta.27 re-review: a burst heard while the answer is fresh (read again just now after the
+  // page's own write) is not dropped: it may be another process's change (a scan in a terminal
+  // writing facts/). It is read once the window ends, however many bursts came meanwhile.
+  const later = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(later.current), []);
+  const readNow = () => {
+    later.current = undefined;
+    const wait = (freshUntil.get(path) ?? 0) - Date.now();
+    if (wait > 0) {
+      later.current = setTimeout(readNow, wait);
+      return;
+    }
+    setStale((n) => n + 1);
+    reload();
+  };
+  useFileChanges((events) => {
+    if (!want || isPathRead(path) || !relevant(events)) return;
+    if (later.current) return;
+    readNow();
+  });
+  return last ?? (own.state === "ready" ? own.data : undefined);
+}
+
+/**
+ * Beta.27 review: read `path` again now and tell every count shown from it (useLastAnswer), as a
+ * page does after it changed what the path answers (Questions, after an answer, scoped to a
+ * change, where its own read is another path). Never throws: a failed read keeps the last answer.
+ */
+export function readAnswerAgain(path: string): Promise<void> {
+  // Beta.27 review: the file events the answer's write makes don't read it again at once
+  // (freshUntil): fresh while this read is under way, and FRESH_MS from when its answer came (a
+  // burst heard meanwhile is read at the end, useKnownAnswer). The read is one sent after this
+  // ask (sharedRead), so its answer is from after the write.
+  const fresh = () =>
+    freshUntil.set(path, Math.max(freshUntil.get(path) ?? 0, Date.now() + FRESH_MS));
+  fresh();
+  return sharedRead<unknown>(path, undefined, { after: true })
+    .then(fresh, () => undefined)
+    .then(() => undefined);
 }

@@ -1,4 +1,7 @@
-import { hasSecretShape, looksLikeSecret } from "@maycombhq/core";
+import { hasSecretShape, keyIsSecret, looksLikeSecret } from "@maycombhq/core";
+
+/** Beta.27: moved to core (cite.ts), where a run's title uses it too; still exported here. */
+export { keyIsSecret };
 
 /**
  * Beta.24: a config file's line that holds what looks like a live secret, said when the repo is
@@ -72,37 +75,6 @@ function tokenKeyNear(lines: readonly string[], i: number): string | undefined {
       if (/[{}]/.test(l)) break;
     }
   return undefined;
-}
-
-/**
- * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
- * well-known token shape (an access key id written as a credentials file's key), a run of 24 hex
- * digits or more (a random id, a digest), a run of 16 letters and digits or more that switches
- * between them as a random token does (`q7Xf3Kd9…`), or (round 4) 32 characters or more of one
- * piece (no `_`, `-` or `.`) in base64's or hex's alphabet, digits and letters both, or 32
- * characters or more of base64url's alphabet with digits and both cases.
- * A key of words, however abbreviated (`MSSQL_SA_PWD_2019`, `x509Certificate2Path`), is shown.
- */
-export function keyIsSecret(key: string): boolean {
-  if (hasSecretShape(key)) return true;
-  for (const run of key.match(/[0-9a-f]{24,}|[0-9A-F]{24,}/g) ?? [])
-    if (/\d/.test(run) && /[a-f]/i.test(run)) return true;
-  const digitsAndLetters = /\d/.test(key) && /[A-Za-z]/.test(key);
-  if (key.length >= 32 && /^[A-Za-z0-9+/=]+$/.test(key) && digitsAndLetters) return true;
-  // base64url (a JWT's parts, many API tokens): `-` and `_` too, so digits and both cases.
-  if (
-    key.length >= 32 &&
-    /^[A-Za-z0-9_-]+$/.test(key) &&
-    /\d/.test(key) &&
-    /[a-z]/.test(key) &&
-    /[A-Z]/.test(key)
-  )
-    return true;
-  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
-  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
-  let switches = 0;
-  for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
-  return switches >= key.length / 2;
 }
 
 /**

@@ -11,6 +11,12 @@ import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { inboxOf, type InboxData, type InboxItem } from "../inbox.js";
 import {
+  openStepQuestions,
+  OWNER_QUESTIONS_PATH,
+  questionsToAnswerOf,
+  type OwnerQuestionsAnswer,
+} from "../question-counts.js";
+import {
   ActivityEntryView,
   ActivityStates,
   EntryMeta,
@@ -162,6 +168,30 @@ export interface PanelQuestions {
 export type PanelFinding = InboxData["findings"][number];
 
 export const QUESTIONS_URL = "/api/questions?state=open";
+/** Beta.27 review: the owner questions, the other kind the tab's count is made of. */
+export const OWNER_QUESTIONS_URL = OWNER_QUESTIONS_PATH;
+
+/**
+ * Beta.27 review: the Questions tab's count is the questions to answer, both kinds, as the badge,
+ * the status bar, the Explorer, Home and Questions count them (question-counts.ts); beta.27's
+ * first cut counted the steps' only (4 where everything else said 7). None until both are read.
+ * Beta.27 re-review: when the owner questions can't be read, the steps' count (said as theirs
+ * only, panelCountIsStepsOnly), never no count at all.
+ */
+export function panelQuestionCount(
+  steps: Loaded<PanelQuestions>,
+  owner: Loaded<OwnerQuestionsAnswer>,
+): number | undefined {
+  const fromSteps = steps.state === "ready" ? steps.data : undefined;
+  if (owner.state === "error") return openStepQuestions(fromSteps);
+  return questionsToAnswerOf(fromSteps, owner.state === "ready" ? owner.data : undefined)?.total;
+}
+
+/** Whether the Questions tab's count is the steps' only: the owner questions couldn't be read. */
+export const panelCountIsStepsOnly = (
+  steps: Loaded<PanelQuestions>,
+  owner: Loaded<OwnerQuestionsAnswer>,
+): boolean => owner.state === "error" && steps.state === "ready";
 export const FINDINGS_URL = "/api/findings?state=open";
 export const TRUST_URL = "/api/trust";
 /** How many open questions the panel lists; the Questions page has them all. */
@@ -215,8 +245,12 @@ const focusId = (id: string) => {
 
 const errorOf = (l: Loaded<unknown>) => (l.state === "error" ? l.error : "");
 
-/** The open questions, each with a link to answer it on the Questions page. */
-export function QuestionsList(p: { of: Loaded<PanelQuestions>; onRetry(): void }) {
+/**
+ * The open questions, each with a link to answer it on the Questions page. Beta.27 review: with
+ * the owner questions (`owner`, how many wait) said too, in a row of their own, so the list adds
+ * up to the tab's count.
+ */
+export function QuestionsList(p: { of: Loaded<PanelQuestions>; owner?: number; onRetry(): void }) {
   const Q = P.questions;
   if (p.of.state === "loading")
     return (
@@ -236,15 +270,35 @@ export function QuestionsList(p: { of: Loaded<PanelQuestions>; onRetry(): void }
       </div>
     );
   const open = p.of.data.questions.filter((q) => !q.state || q.state === "open");
-  if (!open.length) return <p className="bp-empty">{Q.empty}</p>;
+  const owner = p.owner ?? 0;
+  if (!open.length && !owner) return <p className="bp-empty">{Q.empty}</p>;
   const shown = open.slice(0, QUESTIONS_SHOWN);
   return (
     <>
       <div className="bp-list-head">
-        <span>{Q.intro(open.length)}</span>
+        <span>
+          {p.owner !== undefined
+            ? COPY.questions.toAnswer(open.length + owner, open.length, owner)
+            : Q.intro(open.length)}
+        </span>
         <a href="#/questions">{Q.openAll}</a>
       </div>
       <ul className="bp-list">
+        {owner > 0 && (
+          <li className="bp-row">
+            <span className="bp-row-main">
+              <span className="bp-row-title">{Q.ownerRow(owner)}</span>
+              <span className="bp-row-meta">{Q.ownerMeta}</span>
+            </span>
+            <a
+              className="btn bp-row-act"
+              href="#/questions?kind=owner"
+              aria-label={Q.ownerLabel(owner)}
+            >
+              {Q.answer}
+            </a>
+          </li>
+        )}
         {shown.map((q) => (
           <li key={q.id} className="bp-row">
             <span className="bp-row-main">
@@ -500,9 +554,12 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     if (open && !seen[tab]) setSeen((s) => ({ ...s, [tab]: true }));
   }, [open, tab, seen]);
   const questions = useApi<PanelQuestions>(shownNow("questions") ? QUESTIONS_URL : undefined);
+  const owner = useApi<OwnerQuestionsAnswer>(
+    shownNow("questions") ? OWNER_QUESTIONS_URL : undefined,
+  );
   const findings = useApi<PanelFinding[]>(shownNow("problems") ? FINDINGS_URL : undefined);
   const trust = useApi<Api.TrustViewT>(shownNow("problems") ? TRUST_URL : undefined);
-  useReloadOnFiles(questions, findings, trust);
+  useReloadOnFiles(questions, owner, findings, trust);
 
   // The Console's open is the panel's: the panel reads the shown run's lines only while open,
   // and Show in the Console (from anywhere) opens the panel on the Console.
@@ -626,12 +683,10 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     ...(findings.state === "ready" ? { findings: findings.data } : {}),
     ...(trust.state === "ready" ? { trust: trust.data } : {}),
   });
+  const toAnswer = panelQuestionCount(questions, owner);
+  const stepsOnly = panelCountIsStepsOnly(questions, owner);
   const counts: Partial<Record<PanelTab, number>> = {
-    ...(questions.state === "ready"
-      ? {
-          questions: questions.data.questions.filter((q) => !q.state || q.state === "open").length,
-        }
-      : {}),
+    ...(toAnswer !== undefined ? { questions: toAnswer } : {}),
     ...(findings.state === "ready" && trust.state === "ready"
       ? { problems: problemCount(problems) }
       : {}),
@@ -681,10 +736,20 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
               <span>{P.tab[t]}</span>
               {counts[t] !== undefined && (
                 <>
-                  <span className="bp-count" aria-hidden="true">
+                  <span
+                    className="bp-count"
+                    aria-hidden="true"
+                    {...(t === "questions" && stepsOnly
+                      ? { title: P.countStepsOnly(counts[t]!) }
+                      : {})}
+                  >
                     {counts[t]!.toLocaleString()}
                   </span>
-                  <span className="sr">{P.count(counts[t]!)}</span>
+                  <span className="sr">
+                    {t === "questions" && stepsOnly
+                      ? P.countStepsOnly(counts[t]!)
+                      : P.count(counts[t]!)}
+                  </span>
                 </>
               )}
             </button>
@@ -730,7 +795,13 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
           >
             {open && t === tab && t === "console" && <ConsoleTab a={a} />}
             {open && t === tab && t === "questions" && (
-              <QuestionsList of={questions} onRetry={questions.reload} />
+              <QuestionsList
+                of={questions}
+                {...(owner.state === "ready" && typeof owner.data.open === "number"
+                  ? { owner: owner.data.open }
+                  : {})}
+                onRetry={questions.reload}
+              />
             )}
             {open && t === tab && t === "problems" && (
               <ProblemsList

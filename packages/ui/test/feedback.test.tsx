@@ -129,14 +129,27 @@ describe("a screen that works on a change, before it has one", () => {
   it("says why the changes didn't load, with Try again, instead of waiting forever", () => {
     const out = html(
       <ChangeWaiting
-        list={{ state: "error", error: A.offline, reload: () => undefined }}
+        list={{ state: "error", error: "The server answered 500: broken", reload: () => undefined }}
         title="Test trace"
       />,
     );
     expect(out).toContain('role="alert"');
-    // The page-wide note says how to fix a stopped server; the panel only says it is down.
-    expect(out).toContain(esc(A.cantLoad(A.offlineShort)));
+    expect(out).toContain(esc(A.cantLoad("The server answered 500: broken")));
     expect(out).toContain(A.tryAgain);
+  });
+
+  it("with the server down, says so quietly: the one note above the page is the alert (beta.27)", () => {
+    const out = html(
+      <ChangeWaiting
+        list={{ state: "error", error: A.offline, reload: () => undefined }}
+        title="Test trace"
+      />,
+    );
+    // The page-wide note says how to fix a stopped server; the panel only says it isn't loaded.
+    expect(out).not.toContain('role="alert"');
+    expect(out).toContain(esc(A.notLoadedOffline));
+    expect(out).not.toContain(A.tryAgain);
+    expect(A.notLoadedOffline).toContain("the note above the page");
   });
 });
 

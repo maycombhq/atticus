@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -193,8 +193,29 @@ function summary(c: ChangeLifecycle, findings: Finding[], fast = false) {
   };
 }
 
+/**
+ * Beta.27 re-review: the root as one key (health's `rootKey`): its real path, so a page tells
+ * this metarepo from another after a restart however the folder was written (a link, an 8.3
+ * name, `c:\work` for `C:\Work`). Beta.27 re-review (round 2): the real path as the file system
+ * gives it, compared exactly (the system's own real path already has the folder's own case, and
+ * a volume that has case may hold `Work` and `work` both), with only a Windows drive letter
+ * folded (`c:` and `C:` are one drive).
+ */
+export function rootKeyOf(root: string, platform: NodeJS.Platform = process.platform): string {
+  let p = root;
+  try {
+    p = realpathSync.native(root);
+  } catch {
+    // gone or unreadable: as given
+  }
+  return platform === "win32"
+    ? p.replace(/^([A-Za-z]):/, (_, d: string) => `${d.toUpperCase()}:`)
+    : p;
+}
+
 export function apiRoutes(r: Router, ctx: Context): Router {
   const { root } = ctx;
+  const rootKey = rootKeyOf(root);
   return r
     .add("GET", "/api/health", () => ({
       status: 200,
@@ -203,6 +224,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         apiVersion: API_VERSION,
         schemaVersion: SCHEMA_VERSION,
         root,
+        rootKey,
         openspec: layoutOf(root).openspec.replace(/\/+$/, ""),
         user: ctx.user,
         full: ctx.full === true,

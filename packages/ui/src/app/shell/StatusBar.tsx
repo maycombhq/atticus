@@ -18,7 +18,7 @@ export interface StatusFacts {
   /** Who Atticus records the person as, and the role they picked, when they did. */
   user?: string;
   role?: string;
-  /** Counts the app has loaded already (never asked for by the bar): undefined until then. */
+  /** The repos and the questions to answer (useCounts): undefined until known. */
   repos?: number;
   questions?: number;
   /** The first thing running (the Console's), how far it is, and how many more run. */
@@ -45,7 +45,8 @@ export function healthFacts(
 /**
  * The status bar (ADR 0194), at the foot: the metarepo, how many repos and open questions, what
  * runs (a click opens it in the Console), the local API's version, who you are, the version.
- * Counts show once a page has loaded them; the bar asks the server for nothing.
+ * Counts show once known (beta.27: on every page, the shell reading what the page didn't once the
+ * page is quiet, useCounts); the bar itself asks the server for nothing.
  */
 export function StatusBar({
   facts,

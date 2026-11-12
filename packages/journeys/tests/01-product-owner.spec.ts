@@ -34,7 +34,7 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "Home",
     "Map",
     "Change",
-    /^Questions(, \d+ open)?$/,
+    /^Questions(, \d+ to answer)?$/,
     "Knowledge",
     "Set up",
   ]);

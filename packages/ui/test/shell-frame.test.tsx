@@ -111,7 +111,7 @@ describe("the activity bar", () => {
 
   it("counts open questions when a page loaded them, and says so to a screen reader", () => {
     const html = bar("#/home", 36);
-    expect(html).toContain('<span class="sr">Questions, 36 open</span>');
+    expect(html).toContain('<span class="sr">Questions, 36 to answer</span>');
     expect(html).toContain('<span class="sh-badge" aria-hidden="true" data-n="36"></span>');
     expect(bar("#/home", 140)).toContain('data-n="99+"');
     // Unknown, or none: no badge.
@@ -217,7 +217,7 @@ describe("the status bar", () => {
     expect(html).toMatch(/^<footer class="sh-status" aria-label="Status">/);
     expect(html).toContain(">forge-metarepo<");
     expect(html).toContain('href="#/trust">12 repos<');
-    expect(html).toContain('href="#/questions">36 questions open<');
+    expect(html).toContain('href="#/questions">36 questions to answer<');
     expect(html).toMatch(/<button type="button" class="sh-status-item">.*Verify running 5\/12 \+1/);
     expect(html).toContain(">local API 3.10.0<");
     expect(html).toContain(">pat · Delivery<");

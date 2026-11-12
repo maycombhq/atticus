@@ -222,6 +222,48 @@ const TOKEN_SHAPES = [
   /\bAIza[0-9A-Za-z_-]{35}/g,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
 ];
+
+/**
+ * Beta.27 review: the well-known token prefixes, whatever follows them (TOKEN_SHAPES want the
+ * whole token, so a token cut short or typed in part passes them): a Git host's personal, project
+ * and deploy tokens, a package registry's, a model hub's, a payment provider's secret, restricted,
+ * publishable and webhook keys, a chat workspace's bot, user and app tokens, a cloud's access key
+ * ids, API keys and OAuth access tokens, a JWT's header, a mail service's key, a point-of-sale
+ * provider's access and secret keys, a telephony provider's API key and account ids, a data
+ * platform's token, a storage account's key in a connection string, a shared access signature,
+ * and a bearer or Basic authorization. One list: a run's title (run-log.ts) drops a word with one.
+ */
+export const TOKEN_PREFIXES: readonly RegExp[] = [
+  /\bgh[pousr]_/,
+  /\bgithub_pat_/,
+  /\bgl(?:pat|ptt|dt|rt|cbt|imt|soat|ffct|agent)-/,
+  /\bnpm_/,
+  /\bpypi-/,
+  /\bhf_/,
+  /\b(?:sk|rk|pk)[-_]/,
+  /\bwhsec_/,
+  /\bxox[abeprs]-/,
+  /\bxapp-/,
+  /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{4}/,
+  /\bAIza/,
+  /\beyJ/,
+  /\bya29\./,
+  /\bshp(?:at|ss|ca|pa)_/,
+  /\bdop_v1_/,
+  /\bSG\./,
+  /\bsq0(?:atp|csp|idp)-/,
+  /\bEAAA[A-Za-z0-9]/,
+  /\bSK[0-9a-fA-F]{8}/,
+  /\bAC[0-9a-f]{8}/,
+  /\bdapi[0-9a-f]{8}/,
+  /AccountKey=/i,
+  /SharedAccessSignature|[?&]sig=/i,
+  /\bBearer\s/i,
+  /\bBasic\s/i,
+];
+
+/** Whether a text holds one of TOKEN_PREFIXES anywhere (beta.27 review). */
+export const hasTokenPrefix = (text: string): boolean => TOKEN_PREFIXES.some((re) => re.test(text));
 /**
  * Whether a text holds a secret by its shape alone, whatever names it (beta.24 review): a URL's
  * password (`jdbc:postgresql://user:pass@host`), a bearer or Basic token or one of the well-known token
@@ -235,6 +277,52 @@ export function hasSecretShape(text: string, o: { basic?: boolean } = {}): boole
   // Beta.25 review: a Basic authorization value (`Basic dXNlcjpw…`) is a user and password.
   if (o.basic !== false && new RegExp(BASIC.source).test(text)) return true;
   return TOKEN_SHAPES.some((re) => new RegExp(re.source).test(text));
+}
+
+/**
+ * Beta.27 re-review: a text with what hasSecretShape finds in it masked (`***`, keeping what names
+ * it): a URL's password, a bearer or Basic token, the well-known token shapes. A run's log line
+ * goes through it, so an echoed error ("Can't read <root>/AKIA…") never keeps a key.
+ */
+export function maskSecretShapes(text: string, mask = "***"): string {
+  let out = text.replace(URL_CREDENTIALS, (all, head: string, pass: string) =>
+    refersOnly(pass) ? all : `${head}${mask}`,
+  );
+  out = out.replace(BEARER, `$1${mask}`).replace(BASIC, `$1${mask}`);
+  for (const re of TOKEN_SHAPES) out = out.replace(re, mask);
+  return out;
+}
+
+/**
+ * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
+ * well-known token shape (an access key id written as a credentials file's key), a run of 24 hex
+ * digits or more (a random id, a digest), a run of 16 letters and digits or more that switches
+ * between them as a random token does (`q7Xf3Kd9…`), or (round 4) 32 characters or more of one
+ * piece (no `_`, `-` or `.`) in base64's or hex's alphabet, digits and letters both, or 32
+ * characters or more of base64url's alphabet with digits and both cases.
+ * A key of words, however abbreviated (`MSSQL_SA_PWD_2019`, `x509Certificate2Path`), is shown.
+ * Beta.27: here in core (it was the verifier's), so a run's title drops a value shaped so too.
+ */
+export function keyIsSecret(key: string): boolean {
+  if (hasSecretShape(key)) return true;
+  for (const run of key.match(/[0-9a-f]{24,}|[0-9A-F]{24,}/g) ?? [])
+    if (/\d/.test(run) && /[a-f]/i.test(run)) return true;
+  const digitsAndLetters = /\d/.test(key) && /[A-Za-z]/.test(key);
+  if (key.length >= 32 && /^[A-Za-z0-9+/=]+$/.test(key) && digitsAndLetters) return true;
+  // base64url (a JWT's parts, many API tokens): `-` and `_` too, so digits and both cases.
+  if (
+    key.length >= 32 &&
+    /^[A-Za-z0-9_-]+$/.test(key) &&
+    /\d/.test(key) &&
+    /[a-z]/.test(key) &&
+    /[A-Z]/.test(key)
+  )
+    return true;
+  if (key.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(key) || !/\d/.test(key)) return false;
+  const kind = (c: string) => (/\d/.test(c) ? 0 : /[a-z]/.test(c) ? 1 : 2);
+  let switches = 0;
+  for (let i = 1; i < key.length; i++) if (kind(key[i]!) !== kind(key[i - 1]!)) switches++;
+  return switches >= key.length / 2;
 }
 
 /** A value that only refers to a secret: `${X}`, `{{ x }}`, `env:X`, `vault:...`, `<...>`. */

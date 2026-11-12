@@ -28,3 +28,8 @@ The app grew to 57 pages under six sections, More pages and Ctrl+K. People work 
 - A page's state other than what point 3 keeps (an open popover, a half-made selection on the canvas) is gone when its tab is left, as it was when moving between pages before.
 - The status bar shows no Git branch: the app has no request for it, and the shell adds none.
 - The classic layout is removed in a later release, with its own note in the changelog.
+
+## Addendum (beta.27, 2026-11-11)
+
+- The status bar's counts (repos, questions to answer) and the activity bar's badge show on every page, not only once a page loaded them: the shell takes the answer a page already had and otherwise reads it itself once the page is quiet (as the Explorer's sections do), so Home's requests are unchanged and nothing is asked twice. An editor's panel, which has no status bar, reads nothing.
+- The questions to answer are counted one way everywhere (the badge, the status bar, the Explorer, Home's tile and Questions' own line): the open questions from the steps and the owner questions not answered yet (`packages/ui/src/app/question-counts.ts`).

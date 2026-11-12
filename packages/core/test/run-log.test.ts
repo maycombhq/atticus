@@ -1,20 +1,44 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   readTerminalRunLines,
+  RETITLE_MAX_BYTES,
+  RETITLED_MARK,
+  retitleTerminalRuns,
   readTerminalRuns,
   recordedCommand,
   runningDirOf,
+  runLogKept,
+  runLogLines,
   runLogsDirOf,
   runTitle,
+  startAppRun,
   startedByOf,
   startTerminalRun,
   tailTerminalRunLines,
   TERMINAL_RUN_ID,
+  TITLE_VALUE_FLAGS,
+  TITLE_VALUE_MAX,
+  titleValue,
+  titleWord,
+  WORK_ITEM_SYSTEMS,
 } from "../src/run-log.js";
+import { ExternalRef } from "../src/schema/kinds.js";
+import { hasSecretShape, hasTokenPrefix, TOKEN_PREFIXES } from "../src/cite.js";
 
 /**
  * ADR 0187: a command run in a terminal (or by an editor, or a Copilot session) keeps what it
@@ -28,7 +52,7 @@ const fresh = async () => {
   return root;
 };
 const at = (s: string) => () => new Date(s);
-const HOME = { home: "/home/tom", user: "tom" };
+const HOME = { home: "/home/kit", user: "kit" };
 
 describe("which commands keep a run log", () => {
   it("keeps the long ones and never the quick, read-only ones", () => {
@@ -98,15 +122,194 @@ describe("which commands keep a run log", () => {
     const t = runTitle(
       [
         "map",
-        "C:\\Users\\tom\\x",
+        "C:\\Users\\kit\\x",
         "https://u:p@host/x",
         "two words",
         "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3",
       ],
       ["max-tokens"],
     );
-    expect(t.title).toBe("atticus map … … … … --max-tokens");
-    expect(t.command).toEqual(["map", "…", "…", "…", "…"]);
+    // Beta.27 re-review: words dropped one after another read as one `…`.
+    expect(t.title).toBe("atticus map … --max-tokens");
+    expect(t.command).toEqual(["map", "…"]);
+  });
+
+  it("beta.27: keeps a flag's value that is an id, a name or a date, so the title reads as typed", () => {
+    // Beta.26 dropped every value: "atticus initiative plan transfer-limits-rollout --target --by".
+    expect(
+      runTitle(["initiative", "plan", "transfer-limits-rollout"], ["target", "by"], {
+        target: "2027-03-31",
+        by: "@bao",
+      }).title,
+    ).toBe("atticus initiative plan transfer-limits-rollout --target 2027-03-31 --by @bao");
+    expect(
+      runTitle(["map"], ["repos", "handoff"], { repos: "forge-ledger,forge-teller" }).title,
+    ).toBe("atticus map --repos forge-ledger,forge-teller --handoff");
+    // A boolean flag has no value; --root's folder is still left out.
+    expect(runTitle(["map"], ["root", "all"], { root: "/work/forge" }).title).toBe(
+      "atticus map --all",
+    );
+  });
+
+  it("beta.27: drops a value that looks secret, by its flag's name or its own shape", () => {
+    const t = (flag: string, value: string) => runTitle(["sync"], [flag], { [flag]: value }).title;
+    // By the flag's name, whatever the value.
+    expect(t("token", "forge")).toBe("atticus sync --token");
+    expect(t("api-key", "abc")).toBe("atticus sync --api-key");
+    expect(t("client-secret", "x1")).toBe("atticus sync --client-secret");
+    expect(t("password", "hunter2")).toBe("atticus sync --password");
+    // By the value's shape: a token, a random string, a URL with a password, a path, words.
+    expect(t("with", "ghp_abcdefghijklmnopqrstuvwxyz0123")).toBe("atticus sync --with");
+    expect(t("with", "q7Xf3Kd9Lm2Np8Rs4Tv6")).toBe("atticus sync --with");
+    expect(t("with", "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3")).toBe("atticus sync --with");
+    expect(t("with", "https://u:p@host/x")).toBe("atticus sync --with");
+    expect(t("with", "C:\\Users\\kit\\x")).toBe("atticus sync --with");
+    expect(t("with", "two words")).toBe("atticus sync --with");
+    expect(t("with", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")).toBe("atticus sync --with");
+  });
+
+  it("beta.27 review: keeps a value only for a flag on the allow-list, never an unknown one's", () => {
+    const t = (flag: string, value: string) =>
+      runTitle(
+        ["map", "forge-ledger"],
+        [flag],
+        { [flag]: value },
+        { home: "/home/bao", user: "bao" },
+      ).title;
+    // The reviewer's command line: every value was in the title.
+    expect(
+      runTitle(
+        ["map", "forge-ledger"],
+        ["pass", "client-key", "by", "from", "pw"],
+        {
+          pass: "hunter2",
+          "client-key": "abc",
+          by: "bao@northwind.example",
+          // Made as the test runs: no token-shaped text in the source (push protection).
+          from: `oauth2:${["glpat", "Forge".repeat(4)].join("-")}@git.northwind.example:org/repo.git`,
+          pw: "Tr0ub4dor",
+        },
+        { home: "/home/bao", user: "bao" },
+      ).title,
+    ).toBe("atticus map forge-ledger --pass --client-key --by --from --pw");
+    // Flags off the list keep their name only, whatever the value.
+    for (const flag of [
+      "pass",
+      "pw",
+      "pat",
+      "passphrase",
+      "key",
+      "client-key",
+      "bearer",
+      "jwt",
+      "with",
+      "value",
+      "note",
+      "answer",
+      "text",
+      "header",
+      "host",
+      "url",
+      "users",
+      "file",
+      "from",
+      "max-tokens",
+      "confirm",
+    ])
+      expect(t(flag, "forge-ledger"), flag).toBe(`atticus map forge-ledger --${flag}`);
+    expect(TITLE_VALUE_FLAGS.has("by")).toBe(true);
+    expect(TITLE_VALUE_FLAGS.has("pass")).toBe(false);
+  });
+
+  it("beta.27 review: drops an allowed flag's value shaped like a secret or a person's address", () => {
+    const t = (flag: string, value: string) =>
+      titleValue(flag, value, { home: "/home/bao", user: "bao" });
+    // A person: a handle is kept, an email never.
+    expect(t("by", "@bao")).toBe("@bao");
+    expect(t("by", "bao.nguyen")).toBe("bao.nguyen");
+    expect(t("by", "bao@northwind.example")).toBeUndefined();
+    expect(t("by", "@bao@northwind.example")).toBeUndefined();
+    expect(t("owner", "team-ledger@northwind.example")).toBeUndefined();
+    // Credentials in a place: a scheme, a user and password before a host, with or without one.
+    expect(t("repo", "https://git.northwind.example/forge")).toBeUndefined();
+    expect(t("repo", "svc:hunter2@git.northwind.example")).toBeUndefined();
+    expect(t("repo", "postgres:hunter2@db")).toBeUndefined();
+    // Beta.27 re-review: no value with a `:` (a host's path too), whatever follows it.
+    expect(t("repo", "git.northwind.example:org/repo.git")).toBeUndefined();
+    // Token shapes, short or long.
+    for (const v of [
+      "glpat-abcdefghij1234567890",
+      "glpat-x",
+      "ghp_short",
+      "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+      "github_pat_11AAAA",
+      "sk_live_abc123",
+      "sk-proj-abcdefghijklmnopqrstuvwxyz012345",
+      "sk-ant-api03-abcDEF123",
+      "npm_abcdefghijklmnopqrstuvwxyz0123456789",
+      "xoxb-123456789012-abcdef",
+      "AKIAIOSFODNN7EXAMPLE",
+      "AIzaSyA1234567890abcdefghijklmnopqrstu",
+      "hf_abcdefghijklmnopqrstuvwxyz01234567",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "0123456789abcdef",
+      "0123456789abcdef0123",
+      "q7Xf3Kd9Lm2Np8Rs4Tv6",
+      "4111111111111111",
+      "123-45-6789",
+      "dXNlcjpwYXNzd29yZA==",
+      "forge-ledger,ghp_short",
+    ])
+      expect(t("change", v), v).toBeUndefined();
+    // This machine's home folder or user name in a path.
+    expect(t("repos", "home/bao/forge")).toBeUndefined();
+    // Ids, names, dates and lists of them stay, cut when long.
+    expect(t("target", "2027-03-31")).toBe("2027-03-31");
+    expect(t("repos", "forge-ledger,forge-teller")).toBe("forge-ledger,forge-teller");
+    expect(t("lens", "security")).toBe("security");
+    expect(t("pr", "42")).toBe("42");
+    const long = Array.from({ length: 8 }, (_, i) => `forge-repo-${i}`).join(",");
+    expect(t("repos", long)).toBe(`${long.slice(0, TITLE_VALUE_MAX)}…`);
+  });
+
+  it("beta.27 review: never keeps a value of a flag it doesn't know, whatever the value (fuzz)", () => {
+    // A seeded generator, so a failure can be run again.
+    let seed = 27;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const pick = (al: string, n: number) =>
+      Array.from({ length: n }, () => al[Math.floor(next() * al.length)]).join("");
+    const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const shapes = [
+      () => `glpat-${pick(A + "-_", 20)}`,
+      () => `npm_${pick(A, 36)}`,
+      () => `sk_live_${pick(A, 24)}`,
+      () => pick("0123456789abcdef", 16),
+      () => pick("abcdefghijklmnopqrstuvwxyz0123456789", 20),
+      () => pick(A + "!@#", 12),
+      () => pick(A, 10),
+      () => pick(A, 6),
+      () => `svc:${pick(A, 16)}@git.northwind.example`,
+      () => `${pick("abcdefghij", 6)}@northwind.example`,
+      () => "forge-ledger",
+    ];
+    const flags = ["pass", "pw", "secret-ish", "client-key", "with", "x", "token2", "k"];
+    for (let i = 0; i < 2000; i++) {
+      const flag = flags[i % flags.length]!;
+      const value = shapes[i % shapes.length]!();
+      const { title } = runTitle(["sync"], [flag], { [flag]: value });
+      expect(title, `${flag}=${value}`).toBe(`atticus sync --${flag}`);
+    }
+    // Secret-shaped tokens are dropped from an allowed flag too.
+    for (let i = 0; i < 500; i++) {
+      const v = [
+        `glpat-${pick(A, 20)}`,
+        `npm_${pick(A, 36)}`,
+        `sk_live_${pick(A, 24)}`,
+        pick("0123456789abcdef", 16),
+        `svc:${pick(A, 16)}@git.northwind.example`,
+      ][i % 5]!;
+      expect(titleValue("change", v), v).toBeUndefined();
+    }
   });
 
   it("leaves where it ran out of a title: --root and --metarepo say a folder, not what ran", () => {
@@ -141,7 +344,7 @@ describe("a terminal run's files", () => {
     expect(rec).toBeDefined();
     expect(rec.runId).toMatch(TERMINAL_RUN_ID);
     expect(rec.runId).not.toContain(":");
-    rec.line("Reading forge-ledger at /home/tom/work/forge");
+    rec.line("Reading forge-ledger at /home/kit/work/forge");
     rec.line("token=abc123secret and https://me:hunter2@git.example/x.git");
     rec.line("\u001b[32mgreen\u001b[0m\r\ntwo\nlines");
     const [r] = readTerminalRuns(root, { alive: () => true });
@@ -156,7 +359,7 @@ describe("a terminal run's files", () => {
       pid: 4242,
     });
     const text = readFileSync(join(runLogsDirOf(root), `${rec.runId}.log`), "utf8");
-    expect(text).not.toContain("/home/tom");
+    expect(text).not.toContain("/home/kit");
     expect(text).not.toContain("abc123secret");
     expect(text).not.toContain("hunter2");
     expect(text).toContain("~/work/forge");
@@ -404,5 +607,598 @@ describe("tailing a run's log from where it was read", () => {
     expect(b.lines[0]).toContain(`line ${b.from - 1} `);
     expect(b.lines.at(-1)).toContain("line 59 ");
     expect(b.at.line).toBe(61);
+  });
+});
+
+/**
+ * Beta.27 re-review: the reviewer's adversarial command lines (scratch adv.mjs), as tests. Every
+ * token-shaped string is made as the test runs (push protection rejects them as literals).
+ */
+const tok = (...parts: string[]) => parts.join("");
+/** A seeded generator, so a failure can be run again. */
+const seeded = (seed: number) => () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+const BASE62 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+describe("beta.27 re-review: a run's title shows no secret, however it was typed", () => {
+  it("never keeps `secret` (a quick command: its key goes to stdin, never a title)", () => {
+    expect(recordedCommand(["secret", "set", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+    expect(recordedCommand(["secret", "forget", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+    expect(recordedCommand(["secret", "check", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+  });
+
+  it("drops a positional word shaped as a key, a token, a password or a number", () => {
+    const words = [
+      "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "AbCdEfGhIjKlMnOpQrStUvWx",
+      "abcdefghijklmnopqrstuvwxyzabcdef",
+      "Summer2026",
+      "summer2026",
+      "Summer2026!",
+      "0123456789abcdef0123456789abcdef",
+      tok("gh", "p_", "16C7e42F292c6912E7710c838347Ae178B4a"),
+      tok("gl", "pat-", "x".repeat(20)),
+      tok("AK", "IA", "IOSFODNN7EXAMPLE"),
+      tok("xo", "xb-", "123456789012-abcdefABCDEF"),
+      tok("sk", "-ant-", "abc"),
+      tok("sq0", "atp-", "AbCdEf123456"),
+      tok("SG", ".abc.def"),
+      tok("SK", "1234567890"),
+      tok("da", "pi", "1234567890abcdef"),
+      tok("wJalrXUtnFEMI", "/K7MDENG/", "bPxRfiCY", "EXAMPLEKEY"),
+      "4111111111111111",
+      "4111-1111-1111-1111",
+      "123-45-6789",
+      "user:pw",
+      "pat@bank.example",
+      "a,b",
+      "${API_KEY}",
+    ];
+    for (const w of words) {
+      expect(titleWord(w), w).toBeUndefined();
+      const { title, command } = runTitle(["map", w], []);
+      expect(title, w).toBe("atticus map …");
+      expect(command, w).toEqual(["map", "…"]);
+    }
+  });
+
+  it("keeps an id: a repo, a change, a task's label, a question, a run, a date, a version", () => {
+    for (const w of [
+      "forge-ledger",
+      "add-transfer-limit",
+      "fix-limits-2027-q1",
+      "c1",
+      "t1",
+      "1.2",
+      "1.2.3",
+      "v0.27.0",
+      "1.0.0-beta.27",
+      "q-0123456789ab",
+      "run-20261109101530-ab12cd",
+      "run-20261109101530-0003",
+      "20261109-101530-4242-ab12",
+      "2027-03-31",
+      "ado:1234",
+      "jira:4711",
+      "jira:PAY-12",
+      "link:forge-teller:ledger-post",
+      "ATTICUS_MODEL_KEY",
+      "forge/ledger",
+      "Ledger",
+      "@bao",
+    ])
+      expect(titleWord(w), w).toBe(w);
+    expect(titleWord("link:forge-teller:Zx9Kq2Lm8Pw4Rt6")).toBeUndefined();
+  });
+
+  it("knows a work item's reference by a tracker C1 names, never any word and a number", () => {
+    expect([...WORK_ITEM_SYSTEMS].every((s) => ExternalRef.shape.system.options.includes(s))).toBe(
+      true,
+    );
+    for (const w of ["pin:1234", "pass:1234", "otp:123456", "code:42", "ado:12345678", "ADO:12"])
+      expect(titleWord(w), w).toBeUndefined();
+  });
+
+  it("shows a flag the command line doesn't declare (given as `…`) as one `--…`, last", () => {
+    expect(runTitle(["map", "forge-ledger"], ["…", "json", "…"]).title).toBe(
+      "atticus map forge-ledger --json --…",
+    );
+    expect(runTitle(["map"], ["json"]).title).toBe("atticus map --json");
+  });
+
+  it("drops an allowed flag's value that isn't an id, deterministically", () => {
+    const t = (flag: string, value: string) => titleValue(flag, value);
+    for (const v of [
+      "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "AbCdEfGhIjKlMnOpQrStUvWx",
+      "abcdefghijklmnopqrstuvwxyzabcdef",
+      "Summer2026",
+      "Summer2026!",
+      "pat@bank.example",
+      "pat%40bank.example",
+      "pat＠bank.example",
+      tok("sk", "-ant-abc"),
+      "azure/https:x",
+      "user:pw",
+      tok("AC", "1234567890abcdef", "1234567890abcdef"),
+      "4111111111111111",
+      "4111-1111-1111-1111",
+      "4111 1111 1111 1111",
+      tok("SG", ".abc.def"),
+      tok("xo", "xb-123-456-abc"),
+      tok("sq0", "atp-AbCdEf123456"),
+      tok("sq0", "csp-AbCdEf123456"),
+      tok("SK", "1234567890"),
+      "AccountKey/abc+def/ghij",
+      tok("Account", "Key=abc"),
+      tok("wJalrXUtnFEMI", "/K7MDENG/", "bPxRfiCY", "EXAMPLEKEY"),
+      tok("da", "pi1234567890abcdef"),
+      "ATTICUS_KEY:Zx9Kq2Lm",
+      "a,Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "123-45-6789",
+      tok("ey", "JhbGciOi"),
+      "role=a,b",
+      "${API_KEY}",
+      "env:API_KEY",
+      tok("rk", "_live_x"),
+      tok("pk", "_test_x"),
+      tok("wh", "sec_x"),
+      tok("Bea", "rer abc"),
+      "--pass",
+      "a".repeat(60),
+    ])
+      expect(t("target", v), v).toBeUndefined();
+    expect(t("by", "@bao.ops")).toBe("@bao.ops");
+    expect(t("release", "2027-03-31")).toBe("2027-03-31");
+    expect(t("repos", "forge-ledger,forge-teller")).toBe("forge-ledger,forge-teller");
+    expect(t("model", "sonnet-4-5")).toBe("sonnet-4-5");
+    expect(
+      runTitle(["map", "forge-ledger"], ["system"], { system: "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0" })
+        .title,
+    ).toBe("atticus map forge-ledger --system");
+  });
+
+  it("drops every random base62 string of 16 to 31 characters, as a word or a value (fuzz)", () => {
+    const next = seeded(2027);
+    for (let n = 16; n <= 31; n++)
+      for (let i = 0; i < 400; i++) {
+        const s = Array.from({ length: n }, () => BASE62[Math.floor(next() * 62)]).join("");
+        expect(titleWord(s), s).toBeUndefined();
+        expect(titleValue("target", s), s).toBeUndefined();
+        expect(runTitle(["map", s], []).command, s).toEqual(["map", "…"]);
+      }
+  });
+
+  it("has one list of token prefixes, core's, that every check reads", () => {
+    expect(TOKEN_PREFIXES.length).toBeGreaterThan(10);
+    for (const w of [
+      tok("gh", "p_x"),
+      tok("github", "_pat_x"),
+      tok("gl", "pat-x"),
+      tok("np", "m_x"),
+      tok("sk", "-x"),
+      tok("rk", "_x"),
+      tok("pk", "_x"),
+      tok("wh", "sec_x"),
+      tok("xo", "xp-x"),
+      tok("AK", "IA", "ABCD"),
+      tok("AI", "za"),
+      tok("ey", "J"),
+      tok("SG", ".x"),
+      tok("sq0", "atp-x"),
+      tok("sq0", "csp-x"),
+      tok("SK", "0123abcd"),
+      tok("Account", "Key=x"),
+      tok("Bea", "rer x"),
+    ])
+      expect(hasTokenPrefix(w), w).toBe(true);
+    for (const w of ["forge-ledger", "task-run", "risk-limits", "Ledger", "ask"])
+      expect(hasTokenPrefix(w), w).toBe(false);
+  });
+});
+
+describe("beta.27 re-review: the runs beta.26 kept are titled again once", () => {
+  const record = (runId: string, command: string[], flags: string[] = []) => ({
+    schemaVersion: 1,
+    runId,
+    pid: 4242,
+    host: "abc",
+    title: ["atticus", ...command, ...flags.map((f) => `--${f}`)].join(" "),
+    command,
+    flags,
+    startedBy: "terminal",
+    startedAt: "2026-11-01T10:00:00.000Z",
+    state: "done",
+    finishedAt: "2026-11-01T10:00:01.000Z",
+    exitCode: 2,
+    lines: 1,
+    dropped: 0,
+  });
+  const key = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
+  const keep = (root: string, recs: ReturnType<typeof record>[], log = "a line\n") => {
+    mkdirSync(runningDirOf(root), { recursive: true });
+    mkdirSync(runLogsDirOf(root), { recursive: true });
+    for (const r of recs) {
+      writeFileSync(join(runningDirOf(root), `${r.runId}.json`), JSON.stringify(r));
+      writeFileSync(join(runLogsDirOf(root), `${r.runId}.log`), log);
+    }
+  };
+  const read = (root: string, id: string) =>
+    JSON.parse(readFileSync(join(runningDirOf(root), `${id}.json`), "utf8")) as Record<
+      string,
+      unknown
+    >;
+  // The command line's rule: here, at most the command and one argument (a test's own).
+  const short = (r: { command: string[]; flags: string[] }) =>
+    runTitle(r.command.slice(0, 2), r.flags);
+
+  it("writes each title and its words again by the new rules, and nothing else of it", async () => {
+    const root = await fresh();
+    const long = record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]);
+    const fine = record("20261101-100100-4242-cd34", ["map", "forge-ledger"], ["handoff"]);
+    keep(root, [long, fine]);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    const after = read(root, long.runId);
+    expect(after.title).toBe("atticus map forge-ledger");
+    expect(JSON.stringify(after)).not.toContain(key);
+    // Everything else of the record as it was; its log untouched.
+    const { title: _t, command: _c, ...rest } = after;
+    const { title: _t0, command: _c0, ...was } = long;
+    expect(rest).toEqual(was);
+    expect(read(root, fine.runId)).toEqual(fine);
+    expect(readFileSync(join(runLogsDirOf(root), `${long.runId}.log`), "utf8")).toBe("a line\n");
+    // Once: the mark says it was done, so a record written after it is left alone.
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+    writeFileSync(join(runningDirOf(root), `${long.runId}.json`), JSON.stringify(long));
+    expect(retitleTerminalRuns(root, (r) => runTitle([], r.flags))).toBe(0);
+    expect(read(root, long.runId).title).toBe(long.title);
+  });
+
+  it("removes a run of `secret`, its record and its log (beta.26 printed a mistyped key there)", async () => {
+    const root = await fresh();
+    const set = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    const check = record("20261101-100100-4242-cd34", ["secret", "check", "ATTICUS_MODEL_KEY"]);
+    const fine = record("20261101-100200-4242-ef56", ["map", "forge-ledger"]);
+    keep(root, [set, check, fine], `atticus: ${key} isn't a variable's name\n`);
+    expect(retitleTerminalRuns(root, short)).toBe(2);
+    expect(readdirSync(runningDirOf(root)).sort()).toEqual([
+      ".retitled-beta27",
+      `${fine.runId}.json`,
+    ]);
+    expect(readdirSync(runLogsDirOf(root))).toEqual([`${fine.runId}.log`]);
+    expect(readTerminalRuns(root, { alive: () => false }).map((r) => r.title)).toEqual([
+      "atticus map forge-ledger",
+    ]);
+  });
+
+  it("gives the flag names the command line's rule gives", async () => {
+    const root = await fresh();
+    const odd = record("20261101-100000-4242-ab12", ["map", "forge-ledger"], ["json", "hunter2"]);
+    keep(root, [odd]);
+    const n = retitleTerminalRuns(root, (r) => {
+      const flags = r.flags.map((f) => (f === "json" ? f : "…"));
+      return { ...runTitle(r.command, flags), flags: flags.filter((f) => f !== "…") };
+    });
+    expect(n).toBe(1);
+    expect(read(root, odd.runId)).toMatchObject({
+      title: "atticus map forge-ledger --json --…",
+      flags: ["json"],
+    });
+  });
+
+  it("does nothing where no run was kept, and never throws on a record it can't read", async () => {
+    const root = await fresh();
+    expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
+    mkdirSync(runningDirOf(root), { recursive: true });
+    writeFileSync(join(runningDirOf(root), "20261101-100000-4242-ab12.json"), "{not json");
+    writeFileSync(join(runningDirOf(root), "20261101-100001-4242-ab13.json"), "null");
+    writeFileSync(join(runningDirOf(root), "20261101-100002-4242-ab14.json"), "[1]");
+    expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
+    expect(readdirSync(runningDirOf(root)).sort()).toEqual([
+      ".retitled-beta27",
+      "20261101-100000-4242-ab12.json",
+      "20261101-100001-4242-ab13.json",
+      "20261101-100002-4242-ab14.json",
+    ]);
+  });
+
+  it("writes the mark when nothing changed", async () => {
+    const root = await fresh();
+    const fine = record("20261101-100000-4242-ab12", ["map", "forge-ledger"]);
+    keep(root, [fine]);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(read(root, fine.runId)).toEqual(fine);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("leaves a live run to its process and tries again later; a run killed under beta.26 is titled again", async () => {
+    const root = await fresh();
+    // Started minutes ago on another machine: its process can't be looked for, so it is live.
+    const live = {
+      ...record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]),
+      state: "running",
+      startedAt: new Date(Date.now() - 60_000).toISOString(),
+    };
+    // Ctrl-C under beta.26 days ago: still "running" in its record, its process long gone.
+    const killed = {
+      ...record("20261101-100100-4242-cd34", ["map", "forge-ledger", key]),
+      state: "running",
+    };
+    keep(root, [live, killed]);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    expect(read(root, live.runId)).toEqual(live);
+    expect(read(root, killed.runId).title).toBe("atticus map forge-ledger");
+    expect(JSON.stringify(read(root, killed.runId))).not.toContain(key);
+    // The live one waits: no mark, so the next command looks at it again.
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(false);
+    writeFileSync(
+      join(runningDirOf(root), `${live.runId}.json`),
+      JSON.stringify({ ...live, state: "done" }),
+    );
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    expect(read(root, live.runId).title).toBe("atticus map forge-ledger");
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("tries a `secret` run's removal again when it failed, and writes no mark until it is gone", async () => {
+    const root = await fresh();
+    const set = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    keep(root, [set]);
+    // Something in the log's place that can't be removed as a file (as a file held open on
+    // Windows can't): the record stays, and so does the chance to remove it.
+    const log = join(runLogsDirOf(root), `${set.runId}.log`);
+    rmSync(log);
+    mkdirSync(log);
+    writeFileSync(join(log, "held"), key);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(join(runningDirOf(root), `${set.runId}.json`))).toBe(true);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(false);
+    rmSync(log, { recursive: true });
+    writeFileSync(log, `atticus: ${key} isn't a variable's name\n`);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    expect(existsSync(join(runningDirOf(root), `${set.runId}.json`))).toBe(false);
+    expect(existsSync(log)).toBe(false);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("reads only a small regular file: never a link, a FIFO, a folder or a big file", async () => {
+    const root = await fresh();
+    const dir = runningDirOf(root);
+    keep(root, []);
+    // Outside the metarepo, linked to from inside it: never read nor written through.
+    const outside = join(await mkdtemp(join(tmpdir(), "atticus-run-log-out-")), "theirs.json");
+    const theirs = JSON.stringify(
+      record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]),
+    );
+    writeFileSync(outside, theirs);
+    const linked = join(dir, "20261101-100000-4242-ab12.json");
+    let links = true;
+    try {
+      symlinkSync(outside, linked);
+    } catch {
+      links = false; // Windows without the right to make links
+    }
+    // A FIFO (it would block every command), where the platform has them.
+    const fifo = join(dir, "20261101-100001-4242-ab13.json");
+    let fifos = false;
+    if (process.platform !== "win32")
+      try {
+        execFileSync("mkfifo", [fifo]);
+        fifos = true;
+      } catch {
+        // no mkfifo here
+      }
+    mkdirSync(join(dir, "20261101-100002-4242-ab14.json"));
+    const big = record("20261101-100003-4242-ab15", ["map", "forge-ledger", key]);
+    writeFileSync(
+      join(dir, `${big.runId}.json`),
+      JSON.stringify({ ...big, pad: "x".repeat(RETITLE_MAX_BYTES) }),
+    );
+    const started = Date.now();
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+    if (links) {
+      expect(lstatSync(linked).isSymbolicLink()).toBe(true);
+      expect(readFileSync(outside, "utf8")).toBe(theirs);
+    }
+    if (fifos) expect(lstatSync(fifo).isFIFO()).toBe(true);
+    expect(readFileSync(join(dir, `${big.runId}.json`), "utf8")).toContain(key);
+    expect(existsSync(join(dir, RETITLED_MARK))).toBe(true);
+  });
+
+  it("never writes the mark through a link left at its name", async () => {
+    const root = await fresh();
+    keep(root, [record("20261101-100000-4242-ab12", ["map", "forge-ledger"])]);
+    const outside = join(await mkdtemp(join(tmpdir(), "atticus-run-log-out-")), "mark");
+    try {
+      symlinkSync(outside, join(runningDirOf(root), RETITLED_MARK));
+    } catch {
+      return; // Windows without the right to make links
+    }
+    // A link there (dangling) is a mark: nothing is done, nothing is made outside.
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "leaves a metarepo it can't write alone, and tries no more in this process",
+    async () => {
+      const root = await fresh();
+      const long = record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]);
+      keep(root, [long]);
+      chmodSync(runningDirOf(root), 0o555);
+      try {
+        let calls = 0;
+        const counted = (r: { command: string[]; flags: string[] }) => {
+          calls++;
+          return short(r);
+        };
+        expect(retitleTerminalRuns(root, counted)).toBe(0);
+        expect(retitleTerminalRuns(root, counted)).toBe(0);
+        // Not read at all: nothing there could be written.
+        expect(calls).toBe(0);
+        expect(read(root, long.runId)).toEqual(long);
+      } finally {
+        chmodSync(runningDirOf(root), 0o755);
+      }
+    },
+  );
+});
+
+/**
+ * Beta.27 review: the app's jobs were in memory only, so a restart of the app lost them from the
+ * Console, Runs and Problems. Each is kept in the run log as a command run is, `app` as where it
+ * started, with its job; one still running when the app closed says so. Beta.27 re-review: its
+ * title follows a command's rules (its kind and the ids it names, or the command it runs), never
+ * the app's own words.
+ */
+/**
+ * Beta.27 re-review (plumbing): an echoed error kept a token whose shape alone says it is one
+ * ("Can't read <root>/AKIA…": all capitals and digits, which the log's mixed-case rule passes).
+ * Every line a run keeps has what hasSecretShape finds masked, a terminal's and an app's alike.
+ */
+describe("a run's lines never keep a token by its shape", () => {
+  const key = ["AKIA", "Q7XF3KD9ZB2MW4PL"].join("");
+  const gh = ["ghp", "_", "q7Xf3Kd9Zb2Mw4PlR8sT1vY6nC0eJ5hA"].join("");
+  const echoed = [
+    `Can't read /work/forge-metarepo/${key}/config.yaml`,
+    `git fetch failed: https://ci:${gh}@git.forge.example/forge-ledger.git`,
+    `Authorization: ${gh} was refused`,
+  ];
+
+  it("masks them in runLogLines, keeping the rest of the line", () => {
+    const lines = runLogLines(echoed.join("\n"), HOME);
+    for (const l of lines) {
+      expect(hasSecretShape(l)).toBe(false);
+      expect(l).not.toContain(key);
+      expect(l).not.toContain(gh);
+    }
+    expect(lines[0]).toBe("Can't read /work/forge-metarepo/***/config.yaml");
+    expect(lines[2]).toBe("Authorization: *** was refused");
+  });
+
+  it("a terminal's run and an app's job alike", async () => {
+    const root = await fresh();
+    const term = startTerminalRun(root, { positionals: ["map", "forge-ledger"], flags: [] })!;
+    const app = startAppRun(root, { job: { id: "job-9", kind: "sync" }, ids: ["forge-ledger"] })!;
+    for (const rec of [term, app]) {
+      for (const l of echoed) rec.line(l);
+      rec.end(1);
+      const text = readFileSync(join(runLogsDirOf(root), `${rec.runId}.log`), "utf8");
+      expect(text).not.toContain(key);
+      expect(text).not.toContain(gh);
+      expect(text).toContain("/work/forge-metarepo/***/config.yaml");
+    }
+  });
+});
+
+describe("a job the app started, in the run log", () => {
+  it("records its title (kind and ids), job, lines and end; retitling keeps it", async () => {
+    const root = await fresh();
+    const rec = startAppRun(root, {
+      job: { id: "job-3", kind: "sync" },
+      ids: ["forge-ledger", "forge-portal"],
+      now: at("2026-11-11T10:00:00.000Z"),
+      redact: HOME,
+    })!;
+    rec.line("forge-ledger: cloned into /home/kit/work/forge");
+    rec.end(0);
+    const [r] = readTerminalRuns(root, { alive: () => true });
+    expect(r).toMatchObject({
+      title: "Sync forge-ledger forge-portal",
+      startedBy: "app",
+      job: { id: "job-3", kind: "sync" },
+      state: "done",
+      command: [],
+    });
+    // The ids it names are kept with it, for its title to be made again by the same rules.
+    const kept = JSON.parse(
+      readFileSync(join(runningDirOf(root), `${rec.runId}.json`), "utf8"),
+    ) as { job: unknown };
+    expect(kept.job).toEqual({ id: "job-3", kind: "sync", ids: ["forge-ledger", "forge-portal"] });
+    expect(readTerminalRunLines(root, rec.runId)!.lines[0]).not.toContain("/home/kit");
+    expect(retitleTerminalRuns(root, () => ({ command: ["x"], title: "atticus x" }))).toBe(0);
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe(
+      "Sync forge-ledger forge-portal",
+    );
+  });
+
+  it("free text and secrets in a job's inputs never reach its record", async () => {
+    const root = await fresh();
+    const secret = "ghp_" + "Zx9Kq2Lm".repeat(5);
+    const rec = startAppRun(root, {
+      job: { id: "job-4", kind: "reconcile" },
+      ids: ["Summer2026!", secret, "forge ledger diagram", "forge-ledger-context", "pass:hunter2"],
+    })!;
+    rec.end(0);
+    const text = readFileSync(join(runningDirOf(root), `${rec.runId}.json`), "utf8");
+    for (const bad of ["Summer2026", secret, "forge ledger", "hunter2"])
+      expect(text).not.toContain(bad);
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe(
+      "Reconcile … forge-ledger-context …",
+    );
+    // A job that runs a command: titled as that command is in a terminal.
+    const step = startAppRun(root, {
+      job: { id: "job-5", kind: "step" },
+      command: {
+        positionals: ["map", "forge-ledger"],
+        flags: ["lens", "note"],
+        values: { lens: "security", note: "my pin 1234" },
+      },
+    })!;
+    step.end(0);
+    const s = readTerminalRuns(root, { alive: () => true }).find((x) => x.runId === step.runId)!;
+    expect(s.title).toBe("atticus map forge-ledger --lens security --note");
+    expect(s.command).toEqual(["map", "forge-ledger"]);
+    expect(JSON.stringify(s)).not.toContain("1234");
+  });
+
+  it("an app record kept under the old rules is titled again by its kind and ids", async () => {
+    const root = await fresh();
+    const rec = startAppRun(root, { job: { id: "job-6", kind: "work" } })!;
+    rec.end(0);
+    const file = join(runningDirOf(root), `${rec.runId}.json`);
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    // What the app wrote before: the job's own title, free text and all.
+    writeFileSync(
+      file,
+      JSON.stringify({ ...raw, title: "A question for the Payments Guild (pin 4321)" }),
+    );
+    expect(retitleTerminalRuns(root, () => ({ command: ["x"], title: "atticus x" }))).toBe(1);
+    const again = readFileSync(file, "utf8");
+    expect(again).not.toContain("4321");
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe("Request");
+  });
+
+  it("one running when the app closed says so; one whose app crashed reads as stale", async () => {
+    const root = await fresh();
+    const closed = startAppRun(root, { job: { id: "job-1", kind: "scan" } })!;
+    closed.end(143, "app-closed");
+    const crashed = startAppRun(root, { job: { id: "job-2", kind: "sync" } })!;
+    const runs = readTerminalRuns(root, { alive: () => false });
+    const byId = new Map(runs.map((r) => [r.runId, r]));
+    expect(byId.get(closed.runId)).toMatchObject({ state: "cancelled", appClosed: true });
+    expect(byId.get(crashed.runId)).toMatchObject({ state: "running", stale: true });
+  });
+
+  it("several jobs started in one second each get their own record", async () => {
+    const root = await fresh();
+    const now = at("2026-11-11T10:00:00.000Z");
+    const ids = new Set<string>();
+    for (let i = 0; i < 20; i++)
+      ids.add(startAppRun(root, { job: { id: `job-${i}`, kind: "work" }, now })!.runId);
+    expect(ids.size).toBe(20);
+  });
+});
+
+describe("runLogKept", () => {
+  it("only at a metarepo, and never with ATTICUS_RUN_LOG=off", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "atticus-run-log-bare-"));
+    expect(runLogKept(bare, {})).toBe(false);
+    mkdirSync(join(bare, "org-pack"));
+    expect(runLogKept(bare, {})).toBe(true);
+    expect(runLogKept(bare, { ATTICUS_RUN_LOG: "off" })).toBe(false);
+    const adopted = await mkdtemp(join(tmpdir(), "atticus-run-log-adopted-"));
+    mkdirSync(join(adopted, ".atticus", "org-pack"), { recursive: true });
+    expect(runLogKept(adopted, {})).toBe(true);
   });
 });

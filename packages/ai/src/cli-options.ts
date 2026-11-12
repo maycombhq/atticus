@@ -53,6 +53,8 @@ export const OPTIONS = {
   search: { type: "boolean" },
   regex: { type: "boolean" },
   "ignore-case": { type: "boolean" },
+  // Beta.27 re-review: `questions answer <id> --ignore` (beta.24) was read as an unknown switch.
+  ignore: { type: "boolean" },
   paths: { type: "string" },
   // atticus context (ADR 0107 addendum): the context tools.
   input: { type: "string" },

@@ -68,7 +68,12 @@ export async function workspaceSync(
   root: string,
   repoIds: string[] | undefined,
   io: Output,
-  o: { from?: string; lockWaitMs?: number } = {},
+  o: {
+    from?: string;
+    lockWaitMs?: number;
+    /** Beta.27 review: stops the sync (the app's Stop): each git under way is killed. */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<number> {
   const all = await loadRepos(root);
   if (all.length === 0) {
@@ -79,10 +84,10 @@ export async function workspaceSync(
   if (!repos) return 2;
   // --from <folder>: copy each missing base clone from your own clone there, with no network.
   // Round 50: the app waits for another sync of a base clone only briefly (lockWaitMs).
-  const results = await createWorkspace(root, undefined, lockWait(o)).sync(
-    repos,
-    o.from ? { from: o.from } : {},
-  );
+  const results = await createWorkspace(root, undefined, {
+    ...lockWait(o),
+    ...(o.signal ? { signal: o.signal } : {}),
+  }).sync(repos, o.from ? { from: o.from } : {});
   for (const r of results) {
     const sha = r.sha ? ` ${r.sha.slice(0, 12)}` : "";
     const why = r.from ? `copied from your clone at ${r.from}` : r.reason;
@@ -95,6 +100,11 @@ export async function workspaceSync(
       io.err(
         `${r.id}: the manifest says ${named}, the remote's default is ${r.remoteDefault}. The catalog is read from ${named}; if ${r.remoteDefault} is the one to read, set defaultBranch: ${r.remoteDefault} in the manifest (or on Set up › Repos).`,
       );
+  }
+  // Beta.27 review: stopped (the app's Stop), it says so once, and ends as a stop does (130).
+  if (results.some((r) => r.action === "stopped")) {
+    io.err("Stopped: nothing more was synced. Sync again to finish.");
+    return 130;
   }
   return results.some((r) => r.action === "failed") ? 1 : 0;
 }

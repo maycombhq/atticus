@@ -1,4 +1,5 @@
 import { defaultKeyStore, type KeyStore } from "@maycombhq/model-providers";
+import { keyIsSecret } from "@maycombhq/core/light";
 import type { Output } from "./commands.js";
 
 /**
@@ -35,9 +36,18 @@ export async function secretCommand(
     io.err("Usage: atticus secret set|check|forget <name>, the name runtime.yaml gives as keyEnv.");
     return 2;
   }
-  if (!NAME.test(name)) {
+  // Beta.27 review: what was typed is never said back (it may be the key itself), nor kept: a
+  // word after the name (the key typed on the command line), a name that isn't a variable's, or
+  // one shaped as a key.
+  if (args.length > 2) {
     io.err(
-      `${name} isn't a variable's name: use letters, digits and _, such as ATTICUS_MODEL_KEY.`,
+      "The key is never given on the command line: run atticus secret set <name> and paste it, or pipe it in. Clear it from your shell's history if you typed it.",
+    );
+    return 2;
+  }
+  if (!NAME.test(name) || keyIsSecret(name)) {
+    io.err(
+      "That isn't a variable's name: use letters, digits and _, such as ATTICUS_MODEL_KEY (the name runtime.yaml gives as keyEnv, never the key).",
     );
     return 2;
   }

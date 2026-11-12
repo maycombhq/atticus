@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { paletteItems } from "../src/app/palette.js";
+import { matchScore, paletteItems, PALETTE_RECORDS, searchWords } from "../src/app/palette.js";
+import { COPY } from "../src/copy.js";
 
 describe("the command palette", () => {
   const changes = [
@@ -10,11 +11,12 @@ describe("the command palette", () => {
     { kind: "Capability", id: "feature.transfers", name: "Transfers" },
   ];
 
-  it("lists screens first, then changes and records, then an Ask line", () => {
+  it("lists the best match first (beta.27), then screens, changes and records, then an Ask line", () => {
     const items = paletteItems("trans", changes, records);
-    expect(items.map((i) => i.kind)).toEqual(["change", "record", "record", "ask"]);
-    expect(items[0]!.href).toBe("#/changes/add-transfer-limit");
-    expect(items[2]!.href).toBe("#/features?id=feature.transfers");
+    expect(items.map((i) => i.kind)).toEqual(["record", "change", "record", "ask"]);
+    // "Transfers" starts with the words; the change only has them in a word of its title.
+    expect(items[0]!.href).toBe("#/features?id=feature.transfers");
+    expect(items[1]!.href).toBe("#/changes/add-transfer-limit");
     expect(items.at(-1)!.href).toBe("#/explore?ask=trans");
   });
 
@@ -65,5 +67,54 @@ describe("the command palette", () => {
   it("matches screens by name and offers no Ask line for an empty box", () => {
     expect(paletteItems("impact", [], [])[0]).toMatchObject({ kind: "screen", href: "#/impact" });
     expect(paletteItems("", [], []).some((i) => i.kind === "ask")).toBe(false);
+  });
+});
+
+/**
+ * Beta.27 review: Ctrl+K couldn't find a system by its name (rows came by kind, six of them,
+ * after every page and change holding the word), and "sync" didn't find the Sync action.
+ */
+describe("Ctrl+K, best match first", () => {
+  // As /api/search ranks the Forge catalog's rows for "ledger": the system first.
+  const ledgerRows = [
+    { kind: "System", id: "ledger", name: "Ledger" },
+    { kind: "Component", id: "ledger-api" },
+    { kind: "DataStore", id: "ledger-db" },
+    { kind: "Column", id: "ledger-db.account.holder-name" },
+  ];
+
+  it("puts a system typed by its name first, before pages and changes that hold the word", () => {
+    const changes = [{ id: "ledger-cleanup", title: "Clean up the ledger jobs", state: "plan" }];
+    const items = paletteItems("Ledger", changes, ledgerRows);
+    expect(items[0]).toMatchObject({ kind: "record", label: "ledger · Ledger", detail: "System" });
+    const kinds = items.map((i) => `${i.kind}:${i.detail}`);
+    expect(kinds.indexOf("record:Component")).toBeLessThan(kinds.indexOf("record:Column"));
+    expect(items.at(-1)!.kind).toBe("ask");
+  });
+
+  it("scores exact, then the start, then a word, then inside", () => {
+    expect(matchScore("ledger", ["Ledger"])).toBe(0);
+    expect(matchScore("ledger", ["ledger-api"])).toBe(1);
+    expect(matchScore("ledger", ["forge-ledger"])).toBe(2);
+    expect(matchScore("ledger", ["Clean up the ledger jobs"])).toBe(2);
+    expect(matchScore("edge", ["ledger"])).toBe(3);
+    expect(matchScore("ledger", ["portal"])).toBe(4);
+  });
+
+  it('finds the Sync action by "sync", first', () => {
+    const S = COPY.palette.sync;
+    const cmds = [{ label: S.label, detail: S.detail, run: () => undefined, also: S.also }];
+    expect(paletteItems("sync", [], [], cmds)[0]).toMatchObject({
+      kind: "command",
+      label: S.label,
+    });
+    expect(paletteItems("clone", [], [], cmds)[0]).toMatchObject({ kind: "command" });
+  });
+
+  it("sends the words typed as free text, never as the query language", () => {
+    expect(searchWords("Northwind Pay")).toBe("Northwind Pay");
+    expect(searchWords('kind:system "ledger"')).toBe("kind system ledger");
+    expect(searchWords("-ledger")).toBe("ledger");
+    expect(PALETTE_RECORDS).toBeGreaterThanOrEqual(20);
   });
 });

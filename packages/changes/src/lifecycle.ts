@@ -278,10 +278,23 @@ const FILE: Record<Artifact, string> = {
   snow: "snow.md",
 };
 
+/**
+ * Beta.27: whether a change's artifact is written (there, and more than its template), as
+ * checkArtifacts and the change's page (All changes: Written) say it; a stage's conversation
+ * that never ran says the same of the file rather than "hasn't started".
+ */
+export async function artifactWritten(
+  root: string,
+  change: string,
+  artifact: Artifact,
+): Promise<boolean> {
+  return (await checkArtifacts(root, { id: change }, [artifact])).length === 0;
+}
+
 /** Missing or still-template artifacts, in the type's order. */
 export async function checkArtifacts(
   root: string,
-  change: ChangeLifecycle,
+  change: Pick<ChangeLifecycle, "id">,
   artifacts: Artifact[],
 ): Promise<Reason[]> {
   const dir = changeFolder(root, change.id);
