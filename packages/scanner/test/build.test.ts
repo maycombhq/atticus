@@ -5,16 +5,19 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
-import { parseFacts } from "@maycombhq/core";
+import { loadOrgPack, parseFacts, trustKeptFiles } from "@maycombhq/core";
 import {
   applyUndo,
   buildAndWrite,
   buildCatalog,
   factsSnapshotWrites,
+  keepCatalogsInMemory,
   listUndo,
   loadBuildInputs,
   parseReadersSlot,
   planUndo,
+  readBuildReport,
+  readCatalog,
   readersSlotPath,
   serializeBuildManifest,
   serializeReadersSlot,
@@ -43,10 +46,11 @@ afterAll(async () => {
 const expected = (
   parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<string, unknown>[]
 ).map(
-  (r) => ({ status: "current", ...r }) as unknown as Record<string, unknown> & {
-    kind: string;
-    id: string;
-  },
+  (r) =>
+    ({ status: "current", ...r }) as unknown as Record<string, unknown> & {
+      kind: string;
+      id: string;
+    },
 );
 
 /** A metarepo of the Forge org pack and the golden readers slots, and no catalog yet. */
@@ -273,7 +277,11 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       });
       expect(wrong.guard.refused?.reasons).toEqual(["large-removals"]);
       expect(await snap(root)).toEqual(before);
-      const ok = await buildAndWrite(root, { command: "atticus scan", slots: [w], allowRemovals: n });
+      const ok = await buildAndWrite(root, {
+        command: "atticus scan",
+        slots: [w],
+        allowRemovals: n,
+      });
       expect(ok.write!.removals).toHaveLength(n);
       expect(ok.write!.slots).toEqual(["catalog/sources/readers/forge-ledger.json"]);
     },
@@ -316,11 +324,13 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       const before = await snap(root);
       const r = await buildAndWrite(root, { command: "atticus catalog build" });
       expect(r.guard.refused?.reasons).toEqual(["hand-edits"]);
-      expect(r.guard.refused?.edits?.map((e) => `${e.how} ${e.path}`)).toEqual([
-        `changed catalog/generated/endpoint/${changed}`,
-        "added catalog/generated/endpoint/added-by-hand.yaml",
-        `deleted catalog/generated/table/${deleted}`,
-      ].sort((a, b) => (a.split(" ")[1]! < b.split(" ")[1]! ? -1 : 1)));
+      expect(r.guard.refused?.edits?.map((e) => `${e.how} ${e.path}`)).toEqual(
+        [
+          `changed catalog/generated/endpoint/${changed}`,
+          "added catalog/generated/endpoint/added-by-hand.yaml",
+          `deleted catalog/generated/table/${deleted}`,
+        ].sort((a, b) => (a.split(" ")[1]! < b.split(" ")[1]! ? -1 : 1)),
+      );
       expect(await snap(root)).toEqual(before);
       expect(
         (await buildAndWrite(root, { command: "atticus catalog build", discardEdits: 2 })).guard
@@ -341,14 +351,21 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       const root = await forge();
       await buildAndWrite(root, { command: "atticus catalog build" });
       const w = await dropRecords(root, "forge-ledger", (k) => k !== "Setting");
-      const r = await buildAndWrite(root, { command: "atticus scan", slots: [w], allowRemovals: 0 });
+      const r = await buildAndWrite(root, {
+        command: "atticus scan",
+        slots: [w],
+        allowRemovals: 0,
+      });
       const n = r.guard.refused?.allowRemovals ?? 0;
       // The write runs, then build.json is put back as if the build stopped before its last step.
       const manifest = join(root, "catalog/sources/build.json");
       const old = await readFile(manifest, "utf8");
       await buildAndWrite(root, { command: "atticus scan", slots: [w], allowRemovals: n });
       await writeFile(manifest, old);
-      const again = await buildAndWrite(root, { command: "atticus catalog build", allowRemovals: n });
+      const again = await buildAndWrite(root, {
+        command: "atticus catalog build",
+        allowRemovals: n,
+      });
       expect(again.guard.refused?.reasons ?? []).not.toContain("hand-edits");
     },
     T,
@@ -381,7 +398,9 @@ describe("atticus catalog undo restores the last builds (ADR 0195 point 7)", () 
       await applyUndo(root, undoDir, back, "atticus catalog undo");
       expect(await snap(root)).toEqual(s2);
       // Back to before build 1: the catalog and the build manifest go, the slots stay as before.
-      const all = await planUndo(undoDir, 1);
+      // `undo <n>` takes back the n latest (two builds and two undos so far).
+      expect((await listUndo(undoDir)).length).toBe(4);
+      const all = await planUndo(undoDir, 4);
       if ("problem" in all) throw new Error(all.problem);
       await applyUndo(root, undoDir, all, "atticus catalog undo 1");
       expect(await snap(root)).toEqual(s0);
@@ -408,7 +427,11 @@ describe("writeCatalog is the build's alone (ADR 0195, CS2)", () => {
           if (e.isDirectory()) await walk(f);
           else if (/\.tsx?$/.test(e.name)) {
             const t = await readFile(f, "utf8");
-            if (/\bwriteCatalog\b/.test(t) && !f.endsWith(join("scanner", "src", "build.ts")) && !f.endsWith(join("scanner", "src", "files.ts")))
+            if (
+              /\bwriteCatalog\b/.test(t) &&
+              !f.endsWith(join("scanner", "src", "build.ts")) &&
+              !f.endsWith(join("scanner", "src", "files.ts"))
+            )
               hits.push(f.slice(pkgs.length + 1));
           }
         }
@@ -430,6 +453,140 @@ describe("writeCatalog is the build's alone (ADR 0195, CS2)", () => {
       const other = await forge();
       await buildAndWrite(other, { command: "atticus catalog build" });
       expect((await snap(other)).generated).toEqual(a.generated);
+    },
+    T,
+  );
+});
+
+describe("a long-running server's kept reads never reach a build (CS3, with ADR 0119)", () => {
+  it(
+    "a curated decision and a manifest change written after the app read them are what the next build reads",
+    async () => {
+      const root = await forge();
+      // The app's server: catalogs and small files kept in memory, its watcher quiet.
+      keepCatalogsInMemory(true);
+      trustKeptFiles(() => true);
+      try {
+        await buildAndWrite(root, { command: "atticus catalog build" });
+        // A page read the curated folder and the org pack: both are kept.
+        await readCatalog(join(root, "catalog/curated"), { cacheRoot: root });
+        await loadOrgPack(join(root, "org-pack"));
+        // Then `catalog edits --curate` writes a decision, before the watcher says anything.
+        await mkdir(join(root, "catalog/curated/curateddecision"), { recursive: true });
+        await writeFile(
+          join(root, "catalog/curated/curateddecision/cd-ledger-api-type.yaml"),
+          [
+            "schemaVersion: 5",
+            "kind: CuratedDecision",
+            "id: cd-ledger-api-type",
+            "status: current",
+            "confidence: asserted",
+            "target: ledger-api",
+            "action: assert",
+            "value:",
+            "  type: forge-batch",
+            "reason: a person said so",
+            "by: pat",
+            "at: 2026-11-11T10:00:00Z",
+            "",
+          ].join("\n"),
+        );
+        const r = await buildAndWrite(root, { command: "atticus catalog build" });
+        expect(r.guard.refused).toBeUndefined();
+        const ledger = r.build.records.find((x) => x.kind === "Component" && x.id === "ledger-api");
+        expect(ledger).toMatchObject({ type: "forge-batch", confidence: "asserted" });
+        // And a repo archived in the manifests: the build reads the manifest as it is now.
+        const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+        const text = await readFile(manifest, "utf8");
+        await writeFile(
+          manifest,
+          text.replace("  - id: forge-infra\n", "  - id: forge-infra\n    archived: true\n"),
+        );
+        const a = await buildAndWrite(root, { command: "atticus catalog build" });
+        const removals = a.guard.refused?.removals ?? a.guard.removals;
+        expect(removals.length).toBeGreaterThan(0);
+        expect(removals.every((x) => x.reasons.includes("archived"))).toBe(true);
+      } finally {
+        trustKeptFiles(undefined);
+        keepCatalogsInMemory(false);
+      }
+    },
+    T,
+  );
+});
+
+describe("every build leaves its report, refusals included (CS3: the app reads it)", () => {
+  it(
+    "a written build lists what it added, changed and removed with why; a refused one its reason, counts and the command to run; a check writes none",
+    async () => {
+      const root = await forge();
+      expect(await readBuildReport(root)).toBeUndefined();
+      await buildAndWrite(root, { command: "atticus catalog build", check: true });
+      expect(await readBuildReport(root)).toBeUndefined();
+      const first = await buildAndWrite(root, {
+        command: "atticus catalog build",
+        now: new Date("2026-11-11T10:00:00Z"),
+      });
+      const r1 = await readBuildReport(root);
+      expect(r1).toMatchObject({
+        version: 1,
+        at: "2026-11-11T10:00:00.000Z",
+        command: "atticus catalog build",
+        outcome: "written",
+        run: [],
+        undo: first.write!.undo,
+      });
+      expect(r1!.counts).toEqual({
+        records: first.build.files.size,
+        added: first.build.files.size,
+        changed: 0,
+        removed: 0,
+        written: first.write!.written,
+        unchanged: first.write!.unchanged,
+      });
+      expect(r1!.added[0]).toMatchObject({ path: expect.stringMatching(/^catalog\/generated\//) });
+      expect(r1!.added.every((x) => x.kind && x.id)).toBe(true);
+
+      // A large removal refuses: the report says so, with the count to confirm and the command.
+      const w = await dropRecords(root, "forge-ledger", (k) => k === "Component");
+      const refused = await buildAndWrite(root, { command: "atticus scan", slots: [w] });
+      const n = refused.guard.refused!.allowRemovals!;
+      const r2 = await readBuildReport(root);
+      expect(r2).toMatchObject({
+        command: "atticus scan",
+        outcome: "refused",
+        refused: { reasons: ["large-removals"], allowRemovals: n },
+        run: [`atticus scan --allow-removals ${n}`],
+      });
+      expect(r2!.counts.removed).toBe(n);
+      expect(r2!.removed).toHaveLength(n);
+      expect(r2!.removed.every((x) => x.reasons.includes("slot") && x.explainedBy.length)).toBe(
+        true,
+      );
+      expect(r2!.undo).toBeUndefined();
+
+      // Confirmed, it is written, and the removals are listed with their reasons.
+      await buildAndWrite(root, { command: "atticus scan", slots: [w], allowRemovals: n });
+      const r3 = await readBuildReport(root);
+      expect(r3).toMatchObject({ outcome: "written", counts: { removed: n } });
+
+      // A hand edit: the two ways on, curate or discard with the count.
+      const gen = join(root, "catalog/generated");
+      const [changed] = readdirSync(join(gen, "endpoint")).sort();
+      await appendFile(join(gen, "endpoint", changed!), "# edited by hand\n");
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      expect(await readBuildReport(root)).toMatchObject({
+        outcome: "refused",
+        refused: { reasons: ["hand-edits"], discardEdits: 1 },
+        run: ["atticus catalog edits --curate", "atticus catalog build --discard-edits 1"],
+      });
+      // Nothing to do: the report says unchanged.
+      await buildAndWrite(root, { command: "atticus catalog build", discardEdits: 1 });
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      expect(await readBuildReport(root)).toMatchObject({
+        outcome: "unchanged",
+        counts: { added: 0, changed: 0, removed: 0 },
+      });
     },
     T,
   );

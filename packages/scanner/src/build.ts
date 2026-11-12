@@ -14,6 +14,7 @@ import {
   factsDirOf,
   factsRelOf,
   joinSharedMaps,
+  keptFilesMayHaveChanged,
   linkEvidenceOf,
   loadOrgPack,
   mergeCatalog,
@@ -59,7 +60,7 @@ import {
   targetsFromAnswers,
 } from "./facts-catalog.js";
 import { pairsOfRepo } from "./facts-scan.js";
-import { readCatalog, writeCatalog } from "./files.js";
+import { forgetCatalogs, readCatalog, writeCatalog } from "./files.js";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { joinAnswerQuestions } from "./join-host-questions.js";
 import {
@@ -299,6 +300,19 @@ async function packOf(root: string): Promise<{ orgPackDir: string; stateDir: str
  * disk with what a command is about to write (a scan's new reads, a verify's snapshot, a
  * rename's new ids), so the build and its guards run before anything is written.
  */
+/**
+ * CS3 (with ADR 0119): the app's server keeps catalogs and small files in memory until its
+ * watcher hears a change, and a writer it runs (`edits --curate`, an answer, a rename, a verify
+ * --write) can build before the watcher fires. Every kept read is forgotten (the catalogs) or
+ * checked against its file again (the org pack, the questions, the facts) when a build loads its
+ * inputs, so no caller can build from a kept copy. A writer that reads an input itself before
+ * it builds (the org pack it passes as `op`) calls this first.
+ */
+export function forgetKeptReads(): void {
+  forgetCatalogs();
+  keptFilesMayHaveChanged();
+}
+
 export async function loadBuildInputs(
   root: string,
   o: {
@@ -312,6 +326,7 @@ export async function loadBuildInputs(
     federated?: { id: string; dir: string }[];
   } = {},
 ): Promise<BuildInputs> {
+  forgetKeptReads();
   const pack = await packOf(root);
   const orgPackDir = o.orgPackDir ?? pack.orgPackDir;
   const stateDir = o.stateDir ?? pack.stateDir;
@@ -322,7 +337,7 @@ export async function loadBuildInputs(
   const curatedDir = o.curatedDir ?? curatedDirOf(root, op);
   const curated = o.curated
     ? { records: o.curated, problems: [] }
-    : await readCatalog(curatedDir, { cacheRoot: root });
+    : await readCatalog(curatedDir, { cacheRoot: root, fresh: true });
   const questions = await joinAnswerQuestions(root);
   const corrections = new Map<string, string>();
   for (const n of (await readdir(factsDirOf(root)).catch(() => [] as string[])).sort())
@@ -1188,7 +1203,7 @@ export async function guardBuild(
     for (const f of b.manifest.files)
       for (const s of f.sources) nowSources.add(`${s.path}\u0000${s.sha256}`);
     const oldRecords = new Map<string, CatalogRecord>();
-    const cat = await readCatalog(target.generated, { cacheRoot: root });
+    const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
     for (const r of cat.records) oldRecords.set(recordPath(r), r);
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
     for (const f of last.manifest.files) {
@@ -1281,7 +1296,7 @@ export async function guardBuild(
   // ---- no empty catalog over a full one
   const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
   const hadCode = last.manifest
-    ? (await readCatalog(target.generated, { cacheRoot: root })).records.some(fromCode)
+    ? (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records.some(fromCode)
     : false;
   if (hadCode && !b.records.some(fromCode) && b.listed.length > 0) {
     reasons.push("empty");
@@ -1764,16 +1779,220 @@ export async function buildAndWrite(
       (await readText(target.manifest)) === serializeBuildManifest(manifestAt(build, target));
     return { build, guard, upToDate: same };
   }
-  if (guard.refused) return { build, guard };
-  const write = await writeBuiltCatalog(build, {
-    undoDir,
+  const report = await buildReportOf(root, build, guard, {
     command: o.command,
-    guard,
-    ...(o.slots ? { slots: o.slots } : {}),
-    ...(o.target ? { target: o.target } : {}),
+    target: o.target ?? baselineTarget(root),
     ...(o.now ? { now: o.now } : {}),
   });
+  if (guard.refused) {
+    await writeBuildReport(undoDir, report);
+    return { build, guard };
+  }
+  let write: WriteResult;
+  try {
+    write = await writeBuiltCatalog(build, {
+      undoDir,
+      command: o.command,
+      guard,
+      ...(o.slots ? { slots: o.slots } : {}),
+      ...(o.target ? { target: o.target } : {}),
+      ...(o.now ? { now: o.now } : {}),
+    });
+  } catch (e) {
+    await writeBuildReport(undoDir, {
+      ...report,
+      outcome: "stopped",
+      stopped: e instanceof Error ? e.message : String(e),
+      run: ["atticus catalog build"],
+    }).catch(() => undefined);
+    throw e;
+  }
+  const changedNothing = write.written === 0 && write.removed === 0 && write.slots.length === 0;
+  await writeBuildReport(undoDir, {
+    ...report,
+    outcome: changedNothing ? "unchanged" : "written",
+    counts: { ...report.counts, written: write.written, unchanged: write.unchanged },
+    slots: write.slots,
+    ...(write.undo !== undefined ? { undo: write.undo } : {}),
+    ...(write.discarded.length ? { discarded: write.discarded } : {}),
+  });
   return { build, guard, write };
+}
+
+/** A record file a build adds or changes, as its report lists it. */
+export interface BuildReportFile {
+  /** Relative to the root (catalog/generated/<kind>/<id>.yaml). */
+  path: string;
+  kind: string;
+  id: string;
+}
+
+/**
+ * What the latest build did or refused (CS3: the app shows it after any writer, a terminal
+ * command's included). Written by `buildAndWrite` on every build but a check, at
+ * `.index/build-report.json` in the state folder, beside the undo copies; read with
+ * `readBuildReport`. Local to this machine, like the undo copies, and never committed.
+ */
+export interface BuildReport {
+  version: 1;
+  /** When the build ran (ISO). */
+  at: string;
+  /** The command that built, as the writer named it (`atticus scan`, `atticus verify x --write`). */
+  command: string;
+  /** The catalog folder built, relative to the root (a branch's for `scan --ref`). */
+  generated: string;
+  /**
+   * `written`: the build changed files; `unchanged`: it had nothing to change; `refused`: a guard
+   * refused it and nothing was written; `stopped`: the write threw part way (an undo copy holds
+   * what it replaced; the next build finishes it).
+   */
+  outcome: "written" | "unchanged" | "refused" | "stopped";
+  /** The refusal, with its reasons, message and lists, when refused. */
+  refused?: BuildRefusal;
+  /** The error a stopped write threw. */
+  stopped?: string;
+  /** The commands that go on from here, the first the one to suggest; none when nothing waits. */
+  run: string[];
+  counts: {
+    /** Record files the build makes. */
+    records: number;
+    added: number;
+    changed: number;
+    removed: number;
+    /** Files written and left as they were (a written build's; 0 otherwise). */
+    written: number;
+    unchanged: number;
+  };
+  /** Against catalog/generated as it was before the build (for a refusal, what it would do). */
+  added: BuildReportFile[];
+  changed: BuildReportFile[];
+  /** Every removal, with why (for a refusal, those it would make, unexplained ones included). */
+  removed: Removal[];
+  /** The slot files written or removed. */
+  slots: string[];
+  /** The undo copy a written build took. */
+  undo?: number;
+  /** Hand edits a confirmed discard replaced. */
+  discarded?: HandEdit[];
+}
+
+/** Where the latest build's report is (beside the undo copies, in the state folder's .index). */
+export const buildReportPathOf = (undoDir: string) => join(dirname(undoDir), "build-report.json");
+
+/** The latest build's report, or undefined when no build has run here (or it doesn't read). */
+export async function readBuildReport(root: string): Promise<BuildReport | undefined> {
+  const t = await readText(buildReportPathOf(await undoDirOf(root)));
+  if (!t) return undefined;
+  try {
+    const r = JSON.parse(t) as BuildReport;
+    return r && r.version === 1 ? r : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Write a build's report (a scan that read nothing writes its own, through this). */
+export async function writeBuildReport(undoDir: string, report: BuildReport): Promise<void> {
+  const path = buildReportPathOf(undoDir);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFileAtomic(path, JSON.stringify(report, null, 2) + "\n");
+}
+
+/**
+ * The report of a writer that refused before it built (a scan that read no repo in full): the
+ * same shape, nothing added, changed or removed.
+ */
+export async function writeRefusedReport(
+  root: string,
+  command: string,
+  refused: BuildRefusal,
+  o: { now?: Date } = {},
+): Promise<void> {
+  await writeBuildReport(await undoDirOf(root), {
+    version: 1,
+    at: (o.now ?? new Date()).toISOString(),
+    command,
+    generated: relOf(root, generatedDirOf(root)),
+    outcome: "refused",
+    refused,
+    run: refusalCommands(refused, command),
+    counts: { records: 0, added: 0, changed: 0, removed: 0, written: 0, unchanged: 0 },
+    added: [],
+    changed: [],
+    removed: [],
+    slots: [],
+  });
+}
+
+/** The commands that go on from a refusal: what confirms, curates, discards or upgrades. */
+export function refusalCommands(r: BuildRefusal, command: string): string[] {
+  if (r.reasons.includes("not-upgraded")) return ["atticus upgrade", "atticus upgrade --yes"];
+  if (r.reasons.includes("unexplained-removals")) return ["atticus support bundle"];
+  const allow = r.reasons.includes("large-removals")
+    ? ` --allow-removals ${r.allowRemovals ?? 0}`
+    : "";
+  if (r.reasons.includes("hand-edits"))
+    return [
+      "atticus catalog edits --curate",
+      `${command} --discard-edits ${r.discardEdits ?? 0}${allow}`,
+    ];
+  return allow ? [`${command}${allow}`] : [];
+}
+
+/** A build's report before it is written: what it adds, changes and removes against the disk. */
+async function buildReportOf(
+  root: string,
+  b: Build,
+  guard: GuardResult,
+  o: { command: string; target: CatalogTarget; now?: Date },
+): Promise<BuildReport> {
+  const genRel = relOf(root, o.target.generated);
+  const onDisk = await hashFiles(o.target.generated);
+  const byPath = new Map<string, CatalogRecord>();
+  for (const r of b.records) byPath.set(recordPath(r), r);
+  const file = (p: string): BuildReportFile => {
+    const r = byPath.get(p);
+    const [kind = "", rest = ""] = p.split("/");
+    return {
+      path: `${genRel}/${p}`,
+      kind: r?.kind ?? kind,
+      id: r?.id ?? rest.replace(/\.ya?ml$/, ""),
+    };
+  };
+  const added: BuildReportFile[] = [];
+  const changed: BuildReportFile[] = [];
+  for (const [p, text] of [...b.files].sort(([a], [c]) => cmpText(a, c))) {
+    const was = onDisk.get(p);
+    if (!was) added.push(file(p));
+    else if (was.sha !== sha(text)) changed.push(file(p));
+  }
+  const refused = guard.refused;
+  const removed = refused
+    ? [...(refused.removals ?? []), ...(refused.unexplained ?? [])].sort((a, c) =>
+        cmpText(a.path, c.path),
+      )
+    : guard.removals;
+  return {
+    version: 1,
+    at: (o.now ?? new Date()).toISOString(),
+    command: o.command,
+    generated: genRel,
+    outcome: refused ? "refused" : "written",
+    ...(refused ? { refused } : {}),
+    run: refused ? refusalCommands(refused, o.command) : [],
+    counts: {
+      records: b.files.size,
+      added: added.length,
+      changed: changed.length,
+      removed: removed.length,
+      written: 0,
+      unchanged: 0,
+    },
+    added,
+    changed,
+    removed,
+    slots: [],
+  };
 }
 
 /** The undo folder of a metarepo (its state folder's `.index/build-undo`). */

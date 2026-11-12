@@ -36,14 +36,19 @@ export function forgetCatalogs(): void {
  * Read every record file under a catalog folder. Files that fail C1 are reported, not returned.
  * `cacheRoot` is the metarepo this run is working in, and the only place the parses are kept
  * (record-cache.ts): a catalog read out of another team's estate names no root, so nothing of
- * ours is written into it.
+ * ours is written into it. `fresh` reads the files even when the server keeps catalogs, and
+ * forgets what it kept of this folder (ADR 0195, CS2: a build never reads a kept copy).
  */
 export async function readCatalog(
   dir: string,
-  o: { cacheRoot?: string } = {},
+  o: { cacheRoot?: string; fresh?: boolean } = {},
 ): Promise<CatalogRead> {
   if (!keeping) return readCatalogFiles(dir, o.cacheRoot);
   const key = resolve(dir);
+  if (o.fresh) {
+    kept.delete(key);
+    return readCatalogFiles(dir, o.cacheRoot);
+  }
   let read = kept.get(key);
   if (!read) {
     read = readCatalogFiles(dir, o.cacheRoot);

@@ -57,6 +57,7 @@ import {
   buildLines,
   diffCatalogs,
   factsSnapshotWrites,
+  forgetKeptReads,
   loadBuildInputs,
   withSlotWrites,
   diffIsEmpty,
@@ -616,6 +617,8 @@ export async function writeFactsIntoCatalog(
     throw e;
   }
   try {
+    // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
+    forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
     const existing = await readCatalog(generated, { cacheRoot: root });

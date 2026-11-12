@@ -231,6 +231,14 @@ describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)"
       expect(report.refused.repos.every((r) => r.why === "not-cloned")).toBe(true);
       expect(report.refused.message).toMatch(/read no repo in full/);
       expect({ g: files(generated(root)), s: files(sources(root)) }).toEqual(before);
+      // CS3: the refusal is the latest build's report, for the app to show.
+      const { readBuildReport } = await import("@maycombhq/scanner");
+      expect(await readBuildReport(root)).toMatchObject({
+        outcome: "refused",
+        command: "atticus scan",
+        refused: { reasons: ["nothing-read"] },
+        counts: { added: 0, changed: 0, removed: 0 },
+      });
     },
     T,
   );
@@ -335,7 +343,12 @@ describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)"
   it("scanRefusal refuses only a scan that read no repo in full", () => {
     const full = { repo: "a", full: true } as never;
     const none = { repo: "b", full: false, why: "not-cloned" } as never;
-    expect(scanRefusal({ unread: [], observations: [] })).toBeUndefined();
+    // A scan with no repo to read reads none in full either (the CS4 invariant "a scan that
+    // observes no repo in full writes nothing" holds with no repo too): it refuses.
+    expect(scanRefusal({ unread: [], observations: [] })).toMatchObject({
+      reasons: ["nothing-read"],
+      repos: [],
+    });
     expect(scanRefusal({ unread: [], observations: [full, none] })).toBeUndefined();
     expect(
       scanRefusal({ unread: [{ repo: "b", why: "not-cloned" }], observations: [none] }),
