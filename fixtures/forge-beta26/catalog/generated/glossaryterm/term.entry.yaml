@@ -12,6 +12,14 @@ evidence:
     repo: forge-ledger
     scannedAt: 2026-10-18T09:00:00Z
     source: migration
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 14
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
 fields: []
 flags:
   - undefined

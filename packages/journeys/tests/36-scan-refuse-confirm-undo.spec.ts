@@ -18,9 +18,10 @@ import {
  * table, its columns and indexes out of the catalog: more than 10% of the repo's records. The
  * check started from Set up › Scans writes nothing and the Console lists the removals with the
  * count that confirms them; the person confirms in a terminal (`atticus scan --allow-removals
- * <n>`) and takes it back (`atticus catalog undo --yes`), and the Console shows both runs. The
- * app's own confirm and undo steps are CS3's (a placeholder below). Invented Forge estate only
- * (CLAUDE.md rule 3); no network.
+ * <n>`) and takes it back (`atticus catalog undo --yes`), and the Console shows both runs. Then
+ * the same refusal is confirmed in the app, with the count it lists (Set up › Scans, CS3's confirm
+ * step), and undone on Catalog builds, its files listed first. Invented Forge estate only
+ * (CLAUDE.md rule 3); no network. (Journey 35 is CS3's own: the cross-check and Catalog builds.)
  */
 const app = forgeSlotsJourney();
 
@@ -77,12 +78,10 @@ test("a large removal is refused in the app, confirmed with its count, then undo
   await accessible(page, "the Console after the undo");
 });
 
-// WAITS FOR CS2: the Console keeps every command that writes (ADR 0187), but the run log's list
-// (packages/core/src/run-log.ts, `catalog: only("migrate")`) doesn't have CS2's new writers yet:
-// `atticus catalog build`, `undo`, `prune` and `edits --curate`. Turns green when they are
-// recorded; test.fail then fails, as the reminder to drop it.
-test("WAITS FOR CS2: the Console shows the undo run from a terminal", async ({ page }) => {
-  test.fail(true, "CS2: catalog undo isn't recorded for the Console yet");
+// ADR 0187: the Console keeps every command that writes, and the run log's list
+// (packages/core/src/run-log.ts) has the build's commands: `atticus catalog build`, `edits`,
+// `undo`, `prune` and `crosscheck`.
+test("the Console shows the undo run from a terminal", async ({ page }) => {
   await open(page, app(), "scans");
   const panel = page.getByRole("region", { name: "Panel" });
   await panel.getByRole("button", { name: "Show the panel" }).click();
@@ -95,9 +94,50 @@ test("WAITS FOR CS2: the Console shows the undo run from a terminal", async ({ p
 });
 
 // CS3 (ADR 0195 point 4 and "Plan for beta.27"): the app's confirm step lists the refused
-// build's removals and confirms exactly that list, and its undo step lists what it will put
-// back. CS3 builds the view and its C4 routes; this step is filled in when it lands.
-test.skip("CS3: the refused build's confirm step and the undo step in the app", async () => {
-  // Waits for CS3: Set up › Scans' confirm step (removals listed, confirm with the count) and
-  // the undo step, over the routes CS3 adds to the local API.
+// scan's removals and confirms exactly that list with its count, and Catalog builds' undo step
+// lists what it will put back before it puts it back.
+test("the refused scan's confirm step and the undo step in the app", async ({ page }) => {
+  const root = app().root;
+  // Back to before the confirmed scan (the test above undid the undo): the clone still lacks
+  // the migration, so a check with the built-in readers is refused again.
+  expect(atticus(root, "catalog", "undo", "--yes")).toMatch(/Put back \d+ files?/);
+  const before = catalogFiles(root);
+  expect(Object.keys(before)).toContain(ENTRY);
+
+  await open(page, app(), "scans");
+  await page.getByRole("button", { name: "Check with the built-in readers" }).click();
+  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+    timeout: 90_000,
+  });
+  const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
+  await expect(review).toBeVisible();
+  const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+  expect(n).toBeGreaterThan(0);
+  await review.click();
+  const dialog = page.getByRole("dialog", { name: `Confirm ${n} removals` });
+  await expect(
+    dialog.getByRole("table", { name: "The records the build would remove" }),
+  ).toContainText("Table/ledger-db.entry");
+  await accessible(page, "the refused scan's confirm step");
+  const confirm = dialog.getByRole("button", { name: `Scan again, removing ${n} records` });
+  // A wrong count confirms nothing.
+  await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n + 1));
+  await expect(confirm).toBeDisabled();
+  expect(catalogFiles(root)).toEqual(before);
+  await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+  await confirm.click();
+  await expect(dialog).toBeHidden({ timeout: 90_000 });
+  await expect
+    .poll(() => existsSync(join(root, "catalog", "generated", ENTRY)), { timeout: 90_000 })
+    .toBe(false);
+
+  // Undone on Catalog builds: the files it puts back are listed first.
+  await open(page, app(), "catalog-builds");
+  await page.getByRole("button", { name: "Undo the latest build" }).first().click();
+  const undo = page.getByRole("dialog", { name: "Undo the latest build" });
+  await expect(undo.getByRole("list", { name: "The files undo puts back" })).toBeVisible();
+  await accessible(page, "the undo step after the app's confirmed scan");
+  await undo.getByRole("button", { name: /^Put back \d+ files?$/ }).click();
+  await expect(undo).toBeHidden({ timeout: 60_000 });
+  expect(catalogFiles(root)).toEqual(before);
 });

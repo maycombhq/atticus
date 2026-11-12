@@ -1917,8 +1917,9 @@ export const CatalogPruneRequest = z.strictObject({
  * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
  * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
  * writes with its size and hash, the copy of catalog/generated kept in
- * generated-before-upgrade/, and what the first build would change (nothing, or it refuses).
- * `plan` is a hash of the files listed, which the confirm sends back.
+ * generated-before-upgrade/, and what the first build would change (nothing; else each file,
+ * accepted with their count). `plan` is a hash of the files listed and the changes, which the
+ * confirm sends back.
  */
 export const CatalogUpgradeView = z.object({
   pending: z.boolean(),
@@ -1936,6 +1937,13 @@ export const CatalogUpgradeView = z.object({
   ),
   copy: z.object({ dir: z.string(), files: z.number().int() }),
   firstBuildChanges: z.array(z.string()),
+  /** The record files the first build gives differently, each with how (relative to catalog/generated). */
+  changes: z.array(z.object({ path: z.string(), how: z.enum(["added", "changed", "removed"]) })),
+  /**
+   * The count of `changes` the confirm accepts (`atticus upgrade --yes --accept-changes <n>`);
+   * 0 when the first build changes nothing and plain `--yes` applies it.
+   */
+  acceptChanges: z.number().int(),
   applies: z.boolean(),
   run: z.string(),
   verifiable: z.array(z.string()),
@@ -1948,10 +1956,15 @@ export const CatalogUpgradeView = z.object({
   others: z.array(z.object({ id: z.string(), summary: z.string() })),
 });
 export type CatalogUpgradeViewT = z.infer<typeof CatalogUpgradeView>;
-/** 3.12.0: apply the upgrade listed: `count` files (typed by the person) and the listing's `plan`. */
+/**
+ * 3.12.0: apply the upgrade listed: `count` files (typed by the person) and the listing's `plan`;
+ * when the first build changes the catalog, `acceptChanges` is the count of `changes` the person
+ * accepted (typed), as `atticus upgrade --yes --accept-changes <n>` names it.
+ */
 export const CatalogUpgradeRequest = z.strictObject({
   count: z.number().int().min(1),
   plan: z.string().regex(/^[0-9a-f]{64}$/),
+  acceptChanges: z.number().int().min(1).optional(),
 });
 
 /**

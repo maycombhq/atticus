@@ -1019,7 +1019,7 @@ export const COPY = {
       "unexplained-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
       "not-upgraded": (n: number) =>
-        `This catalog was written before beta.27 (${n} record files): upgrade the metarepo first, which shows what it would do.`,
+        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again. The upgrade lists every file it writes first.`,
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
@@ -1053,6 +1053,8 @@ export const COPY = {
     confirmDiscard: (n: number) => `Discard ${n} ${n === 1 ? "edit" : "edits"}`,
     upgradeTodo:
       "Review the upgrade below: it shows every file it writes before it writes one. In a terminal:",
+    upgradeElsewhere: "Upgrade from the app on",
+    upgradeOn: "Set up › Catalog builds",
     lastTitle: "The last build here",
     lastNone: "No build has run on this machine yet.",
     lastIntro:
@@ -1106,13 +1108,28 @@ export const COPY = {
     upgradeOthers:
       "Other upgrade steps wait first, and may change what this one writes. Run them here (as Home offers), then confirm this list.",
     upgradeDiffers: (n: number) =>
-      `Its first build would give ${n} record ${n === 1 ? "file" : "files"} differently, so the upgrade refuses and writes nothing:`,
+      `Its first build would give ${n} record ${n === 1 ? "file" : "files"} differently. The files as they are now stay in the copy; the upgrade writes nothing until you accept exactly ${n === 1 ? "this change" : `these ${n}`}:`,
+    upgradeChangesCaption: "The record files the first build changes",
+    upgradeHow: { added: "added", changed: "changed", removed: "removed" } as Record<
+      string,
+      string
+    >,
+    upgradeAccept: (n: number) => `Accept the ${n} ${n === 1 ? "change" : "changes"}…`,
+    upgradeAcceptTitle: (n: number) =>
+      `Accept ${n} ${n === 1 ? "change" : "changes"} of the first build`,
+    upgradeAcceptIntro:
+      "The upgrade's first build gives these record files differently from catalog/generated now. Accepting them writes nothing yet: the files it writes are confirmed next, as atticus upgrade --yes --accept-changes does.",
+    confirmAccept: (n: number) => `Accept ${n} ${n === 1 ? "change" : "changes"}`,
+    upgradeAccepted: (n: number) =>
+      `${n} ${n === 1 ? "change" : "changes"} accepted. Review the files it writes to upgrade.`,
     upgradeVerifiable: (repos: string) =>
       `These repos' facts passed verify as they are; Apply each next to put its facts in: ${repos}.`,
     upgradeReview: (n: number) => `Review the ${n} files it writes…`,
     upgradeConfirmTitle: (n: number) => `Upgrade: write ${n} ${n === 1 ? "file" : "files"}`,
     upgradeConfirmIntro:
       "atticus upgrade --yes writes exactly these files, after an undo copy. catalog/generated is left as it is.",
+    upgradeConfirmIntroChanges: (n: number) =>
+      `atticus upgrade --yes --accept-changes ${n} writes exactly these files, after an undo copy, then the first build's catalog with the ${n} ${n === 1 ? "change" : "changes"} you accepted (undo takes it all back).`,
     upgradeFilesCaption: "Every file the upgrade writes",
     upgradeWhat: {
       "readers-slot": "readers slot",

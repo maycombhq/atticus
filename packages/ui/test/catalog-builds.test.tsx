@@ -7,6 +7,8 @@ import {
   ConfirmDialog,
   RefusalView,
   RemovalsTable,
+  UpgradeChangesList,
+  UpgradePanel,
   whyWords,
 } from "../src/screens/setup/CatalogBuild.js";
 import { scanBuildRefusal, scanSources, ScanSourcesTable } from "../src/screens/know/Know.js";
@@ -322,6 +324,8 @@ const UPGRADE: Api.CatalogUpgradeViewT = {
   ],
   copy: { dir: "catalog/sources/legacy/generated-before-upgrade", files: 1 },
   firstBuildChanges: [],
+  changes: [],
+  acceptChanges: 0,
   applies: true,
   run: "atticus upgrade --yes",
   verifiable: ["forge-ledger"],
@@ -372,11 +376,68 @@ describe("the upgrade to source slots, shown first and confirmed with its count"
     expect(out).not.toContain('role="dialog"');
   });
 
-  it("refuses with the records the first build would change, and offers no confirm", () => {
-    const out = upgrade({ applies: false, firstBuildChanges: ["system/reports.yaml"] });
-    expect(out).toContain(esc(B.upgradeDiffers(1)));
-    expect(out).toContain("system/reports.yaml");
+  // As CS2's CLI: atticus upgrade --yes --accept-changes <n> (ADR 0195 CS2 addendum, types for CS3).
+  const CHANGES: Partial<Api.CatalogUpgradeViewT> = {
+    applies: false,
+    firstBuildChanges: ["system/reports.yaml", "system/northwind-pay.yaml"],
+    changes: [
+      { path: "system/northwind-pay.yaml", how: "added" },
+      { path: "system/reports.yaml", how: "changed" },
+    ],
+    acceptChanges: 2,
+    run: "atticus upgrade --yes --accept-changes 2",
+  };
+
+  it("lists the records the first build would change, and asks to accept their count before the files", () => {
+    const out = upgrade(CHANGES);
+    expect(out).toContain(esc(B.upgradeDiffers(2)));
+    expect(out).toContain("added: catalog/generated/system/northwind-pay.yaml");
+    expect(out).toContain("changed: catalog/generated/system/reports.yaml");
+    expect(out).toContain(esc(B.upgradeAccept(2)));
+    // The files' confirm waits for the accept step; the terminal's command names the count.
     expect(out).not.toContain(esc(B.upgradeReview(4)));
+    expect(out).toContain("atticus upgrade --yes --accept-changes 2");
+    expect(out).not.toContain('role="dialog"');
+  });
+
+  it("offers the files' review once the changes are accepted with their count", () => {
+    const out = html(
+      <UpgradePanel of={ready({ ...UPGRADE, ...CHANGES })} onUpgrade={fail} accepted={2} />,
+    );
+    expect(out).toContain(esc(B.upgradeAccepted(2)));
+    expect(out).toContain(esc(B.upgradeReview(4)));
+    expect(out).not.toContain(esc(B.upgradeAccept(2)));
+    // Accepted for another count, it asks again.
+    const other = html(
+      <UpgradePanel of={ready({ ...UPGRADE, ...CHANGES })} onUpgrade={fail} accepted={3} />,
+    );
+    expect(other).toContain(esc(B.upgradeAccept(2)));
+    expect(other).not.toContain(esc(B.upgradeReview(4)));
+  });
+
+  it("the accept step lists each change and asks for their count", () => {
+    const out = html(
+      <ConfirmDialog
+        title={B.upgradeAcceptTitle(2)}
+        intro={B.upgradeAcceptIntro}
+        confirm={B.confirmAccept(2)}
+        count={2}
+        onConfirm={fail}
+        onClose={() => undefined}
+      >
+        <UpgradeChangesList changes={CHANGES.changes!} />
+      </ConfirmDialog>,
+    );
+    expect(out).toContain(esc(B.upgradeAcceptTitle(2)));
+    expect(out).toContain(esc(B.typeCount(2)));
+    expect(out).toContain("added: catalog/generated/system/northwind-pay.yaml");
+    expect(out).toMatch(/disabled=""[^>]*>Accept 2 changes/);
+  });
+
+  it("offers no accept while the other upgrade steps wait", () => {
+    const out = upgrade({ ...CHANGES, others: [{ id: "q", summary: "Move the questions" }] });
+    expect(out).toContain(esc(B.upgradeDiffers(2)));
+    expect(out).not.toContain(esc(B.upgradeAccept(2)));
   });
 
   it("waits for the other upgrade steps first, and offers no confirm until they ran", () => {
@@ -477,7 +538,32 @@ describe("a refused build: its list and its ways on, nothing written until confi
       />,
     );
     expect(out).toContain(esc(B.reason["not-upgraded"]!(96)));
-    expect(out).toContain("atticus upgrade");
+    // CS2's words: run atticus upgrade --yes (or Upgrade on Set up › Catalog builds).
+    expect(B.reason["not-upgraded"]!(96)).toContain(
+      "run atticus upgrade --yes (or Upgrade on Set up › Catalog builds)",
+    );
+    expect(out).toContain("atticus upgrade --yes");
+    // Away from Catalog builds, a link to its upgrade step.
+    expect(out).toContain('href="#/catalog-builds"');
+    expect(out).toContain(esc(B.upgradeOn));
+  });
+
+  it("on Catalog builds, a refusal as not upgraded points to the upgrade step below", () => {
+    const out = html(
+      <RefusalView
+        refused={{
+          reasons: ["not-upgraded"],
+          message: "x",
+          edits: [],
+          discardEdits: 96,
+          command: "atticus upgrade",
+        }}
+        upgradeHere
+        onAllowRemovals={fail}
+      />,
+    );
+    expect(out).toContain(esc(B.upgradeTodo));
+    expect(out).not.toContain('href="#/catalog-builds"');
   });
 });
 

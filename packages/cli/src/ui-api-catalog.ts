@@ -32,7 +32,7 @@ import { captured, type LocalJob } from "./ui-api-steps.js";
  * Each confirms exactly what the page listed: the build with the counts the refusal named (the
  * command refuses any other), undo with the builds and the number of files listed, prune and the
  * hand edits' curate with the count listed, the upgrade with the count of files listed and the
- * listing's hash, a promote with the hash of the fact line previewed (409 and nothing run when it
+ * listing's hash (and, when its first build changes the catalog, the count of those changes), a promote with the hash of the fact line previewed (409 and nothing run when it
  * is no longer that). A promote is the person's own fact: refused inside a Copilot session
  * (`ai/src/person-only.ts`), as the command line refuses it.
  * Everything here writes the metarepo's own files or this machine's, for review in the catalog
@@ -261,17 +261,34 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         throw conflict(
           `Other upgrade steps wait first (${v.others.map((s) => s.summary).join("; ")}): run the upgrade (Run the upgrade, on Home or on Catalog builds) first, then look at this list again. Nothing written.`,
         );
-      if (!v.applies)
+      // A first build that changes the catalog is accepted with the count of its changes, as
+      // `atticus upgrade --yes --accept-changes <n>` names it; any other count writes nothing.
+      const accept = v.acceptChanges;
+      if (accept > 0 && b.acceptChanges !== accept)
         throw conflict(
-          `The upgrade would refuse: its first build gives ${v.firstBuildChanges.length} record ${v.firstBuildChanges.length === 1 ? "file" : "files"} differently. Nothing written.`,
+          b.acceptChanges === undefined
+            ? `The first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently: accept exactly ${accept === 1 ? "it" : "these"} with their count first. Nothing written.`
+            : `The page accepted ${b.acceptChanges} ${b.acceptChanges === 1 ? "change" : "changes"}; the first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently now. Nothing written: look at the list again.`,
+        );
+      if (accept === 0 && b.acceptChanges !== undefined)
+        throw conflict(
+          "The first build changes nothing now, so there is nothing to accept. Nothing written: look at the list again.",
         );
       if (v.writes.length !== b.count || v.plan !== b.plan)
         throw conflict(
           `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to write; the upgrade writes ${v.writes.length === b.count ? "other files" : `${v.writes.length}`} now. Nothing written: look at the list again.`,
         );
       const { upgradeCommand } = await import("./upgrade.js");
-      return asJob("atticus upgrade --yes", () =>
-        captured((io) => upgradeCommand(root, { by: ctx.user, yes: true }, io)),
+      return asJob(
+        accept ? `atticus upgrade --yes --accept-changes ${accept}` : "atticus upgrade --yes",
+        () =>
+          captured((io) =>
+            upgradeCommand(
+              root,
+              { by: ctx.user, yes: true, ...(accept ? { acceptChanges: accept } : {}) },
+              io,
+            ),
+          ),
       );
     });
 }

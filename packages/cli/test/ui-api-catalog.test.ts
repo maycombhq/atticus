@@ -519,3 +519,85 @@ describe("the upgrade to source slots as the app's confirm step (ADR 0195 point 
     expect(again.status).toBe(409);
   });
 });
+
+describe("an upgrade whose first build changes the catalog waits for the count of its changes (ADR 0195 point 6)", () => {
+  let up: string;
+  let upSrv: RunningServer;
+  const callUp = callOn(() => upSrv);
+  const jobUp = jobOn(callUp);
+  beforeAll(async () => {
+    // A catalog from before beta.27 that lacks a record the build makes from the org pack alone
+    // (the vendor's System): the upgrade's first build adds it, so --yes waits for
+    // --accept-changes 1, as CS2's CLI does.
+    up = await mkdtemp(join(tmpdir(), "atticus-cs3-accept-"));
+    await cp(join(FORGE, "metarepo/org-pack"), join(up, "org-pack"), { recursive: true });
+    await writeFile(join(up, "org-pack/sources.yaml"), "schemaVersion: 1\nwikis: []\n");
+    await cp(join(SLOTS, "readers"), join(up, "catalog/sources/readers"), { recursive: true });
+    expect(await catalogBuild(up, {}, quiet)).toBe(0);
+    await rm(join(up, "catalog/sources"), { recursive: true });
+    await rm(join(up, ".index"), { recursive: true, force: true });
+    await rm(join(up, "catalog/generated/system/northwind-pay.yaml"));
+    upSrv = await startServer({
+      root: up,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) => extendUiRoutes(r, ctx),
+    });
+    // The upgrade's other steps run first (Run the upgrade), as the page offers.
+    if ((await callUp("/api/build/upgrade")).body.others.length) {
+      const settings = await jobUp("/api/upgrade", {});
+      expect(settings.state, settings.result?.lines.join("\n")).toBe("done");
+    }
+  }, 240_000);
+  afterAll(async () => {
+    await upSrv?.close();
+    await rm(up, { recursive: true, force: true });
+  });
+
+  it("lists each change, refuses without the count or with another, then upgrades with it", async () => {
+    const before = await tree(join(up, "catalog/generated"));
+    const v = await callUp("/api/build/upgrade");
+    expect(v.status).toBe(200);
+    expect(v.body).toMatchObject({
+      pending: true,
+      applies: false,
+      others: [],
+      changes: [{ path: "system/northwind-pay.yaml", how: "added" }],
+      acceptChanges: 1,
+      firstBuildChanges: ["system/northwind-pay.yaml"],
+      run: "atticus upgrade --yes --accept-changes 1",
+    });
+    const n = v.body.writes.length as number;
+    const plan = v.body.plan as string;
+    // Without the count of changes, or with another, nothing is written.
+    for (const wrong of [
+      { count: n, plan },
+      { count: n, plan, acceptChanges: 2 },
+    ])
+      expect((await callUp("/api/build/upgrade", "POST", wrong)).status).toBe(409);
+    expect(
+      (await callUp("/api/build/upgrade", "POST", { count: n, plan, acceptChanges: 0 })).status,
+    ).toBe(400);
+    expect(existsSync(join(up, "catalog/sources"))).toBe(false);
+    expect(await tree(join(up, "catalog/generated"))).toEqual(before);
+    // Accepted with their count: the slots, the copy of the catalog as it was, and the first
+    // build's catalog (the change it listed) are written, with an undo copy.
+    const j = await jobUp("/api/build/upgrade", { count: n, plan, acceptChanges: 1 });
+    expect(j.state, j.result?.lines.join("\n")).toBe("done");
+    expect(existsSync(join(up, "catalog/sources/build.json"))).toBe(true);
+    const after = await tree(join(up, "catalog/generated"));
+    expect(Object.keys(after).sort()).toEqual(
+      [...Object.keys(before), "system/northwind-pay.yaml"].sort(),
+    );
+    for (const [p, text] of Object.entries(before)) expect(after[p]).toBe(text);
+    expect(await tree(join(up, "catalog/sources/legacy/generated-before-upgrade"))).toEqual(before);
+    const b = await callUp("/api/build");
+    expect(b.body.upgrade).toBeUndefined();
+    expect(b.body.pending.upToDate).toBe(true);
+    // Its undo copy, for Catalog builds' Undo (every write can be undone, point 7).
+    expect((await callUp("/api/build/undo")).body.copies[0]).toMatchObject({
+      command: "atticus upgrade --yes --accept-changes 1",
+    });
+  });
+});

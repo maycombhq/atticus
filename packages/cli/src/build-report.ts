@@ -12,6 +12,7 @@ import {
   listUndo,
   planUndo,
   readBuildReport,
+  refusalCommands,
   undoDirOf,
   upgradeSlotsView,
   type BuildRefusal,
@@ -95,15 +96,8 @@ export function refusalView(
   command = BUILD,
   run?: readonly string[],
 ): Api.BuildRefusalViewT {
-  const next =
-    run?.[0] ??
-    (r.reasons.includes("not-upgraded")
-      ? "atticus upgrade"
-      : r.reasons.includes("hand-edits")
-        ? "atticus catalog edits --curate"
-        : r.reasons.includes("large-removals")
-          ? `${command} --allow-removals ${r.allowRemovals ?? 0}`
-          : command);
+  // The commands that go on from it, as the CLI says them (CS2's refusalCommands).
+  const next = run?.[0] ?? refusalCommands(r, command)[0] ?? command;
   return {
     reasons: r.reasons,
     message: r.message,
@@ -170,11 +164,17 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
   };
 }
 
-/** The hash a confirm of the upgrade sends back: of every file listed, by path and content hash. */
-export function upgradePlanHash(writes: readonly { path: string; sha256: string }[]): string {
-  return createHash("sha256")
-    .update(writes.map((w) => `${w.path}\u0000${w.sha256}`).join("\n"), "utf8")
-    .digest("hex");
+/**
+ * The hash a confirm of the upgrade sends back: of every file listed, by path and content hash,
+ * and of each change the first build makes (by path and how), when it makes any.
+ */
+export function upgradePlanHash(
+  writes: readonly { path: string; sha256: string }[],
+  changes: readonly { path: string; how: string }[] = [],
+): string {
+  const lines = writes.map((w) => `${w.path}\u0000${w.sha256}`);
+  if (changes.length) lines.push("changes", ...changes.map((c) => `${c.path}\u0000${c.how}`));
+  return createHash("sha256").update(lines.join("\n"), "utf8").digest("hex");
 }
 
 /**
@@ -189,7 +189,7 @@ export async function catalogUpgradeView(root: string): Promise<Api.CatalogUpgra
   const c = await upgradeCheck(root);
   return {
     ...v,
-    plan: upgradePlanHash(v.writes),
+    plan: upgradePlanHash(v.writes, v.changes),
     others: c.pending.map((p) => ({ id: p.id, summary: p.summary })),
   };
 }

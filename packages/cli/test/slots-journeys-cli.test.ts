@@ -538,20 +538,17 @@ describe("hand edits to catalog/generated are never overwritten (ADR 0195 point 
       expect(readFileSync(edited(root), "utf8")).toBe(built);
       const undo = files(await undoDirOf(root));
       expect(Object.values(undo)).toContain(mine);
-      // And undo puts the edit back (its exit code waits for CS2, below).
+      // And undo puts the edit back.
       await atticus(root, "catalog", "undo", "--yes");
       expect(readFileSync(edited(root), "utf8")).toBe(mine);
     },
     T,
   );
 
-  // WAITS FOR CS2: catalogUndo checks every restored record file against the restored
-  // build.json, and a discarded hand edit it puts back is, by design, not what that build wrote,
-  // so the undo says "doesn't match the restored build.json" and exits 1 (ADR 0195 point 7: an
-  // undo of a discard restores the edit). Turns green when the check accepts the edits the copy
-  // holds as discarded (packages/cli/src/catalog-build-commands.ts).
-  it.fails(
-    "WAITS FOR CS2: undo of a confirmed discard puts the hand edit back and succeeds",
+  // ADR 0195 point 7: an undo of a discard restores the edit, and its check against the
+  // restored build.json accepts the edits the copy holds as discarded.
+  it(
+    "undo of a confirmed discard puts the hand edit back and succeeds",
     async () => {
       const root = await scannedForge();
       const mine = await handEdit(root);
@@ -851,12 +848,10 @@ describe("atticus repo rename keeps the curated decisions (ADR 0195 point 2)", (
     T,
   );
 
-  // WAITS FOR CS2: after a rename, catalog/generated is the build's, but build.json still names
-  // the old slot paths as the records' sources, so `catalog build --check` exits 1 and the next
-  // build writes only build.json (with an undo copy). Turns green when the rename writes the
-  // build.json of the build it checked (packages/cli/src/repo-rename.ts).
-  it.fails(
-    "WAITS FOR CS2: right after a rename, catalog build --check passes",
+  // ADR 0195 point 2: the rename writes the build.json of the build it checked, so the records'
+  // sources name the new slot paths and the next check has nothing to do.
+  it(
+    "right after a rename, catalog build --check passes",
     async () => {
       const root = await scannedForge();
       await cp(join(BETA26, "curated"), join(root, "catalog", "curated"), { recursive: true });

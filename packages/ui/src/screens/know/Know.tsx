@@ -1346,11 +1346,14 @@ export function scanBuildRefusal(job: Pick<Job, "state" | "result"> | undefined)
   const r = job.result?.refused as Api.BuildRefusalViewT | undefined;
   if (!r || !Array.isArray(r.reasons) || r.reasons.every((x) => x === "nothing-read"))
     return undefined;
-  const command = r.reasons.includes("large-removals")
-    ? `atticus scan --allow-removals ${r.allowRemovals ?? 0}`
-    : r.reasons.includes("hand-edits")
-      ? "atticus catalog edits --curate"
-      : "atticus scan";
+  // As CS2's refusalCommands says them: the upgrade first, then what confirms or curates.
+  const command = r.reasons.includes("not-upgraded")
+    ? "atticus upgrade --yes"
+    : r.reasons.includes("large-removals")
+      ? `atticus scan --allow-removals ${r.allowRemovals ?? 0}`
+      : r.reasons.includes("hand-edits")
+        ? "atticus catalog edits --curate"
+        : "atticus scan";
   return { ...r, command: r.command ?? command };
 }
 

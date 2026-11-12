@@ -31,6 +31,14 @@ evidence:
     scannedAt: 2026-10-18T09:00:00Z
     side: callee
     source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 14
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
 externalRefs: []
 name: Payments
 namedBy: detected

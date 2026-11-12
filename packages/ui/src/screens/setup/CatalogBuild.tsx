@@ -14,7 +14,8 @@ import "../map/crosscheck.css";
  * come from, what the next build would do, and the confirm steps: a refused build's removals
  * (listed, confirmed with their count), its hand edits (made curated, or discarded with their
  * count), the upgrade to source slots for a catalog from before beta.27 (every file it writes,
- * the copy it keeps and the first build's changes listed, confirmed with the count of files),
+ * the copy it keeps and the first build's changes listed; the changes, when there are any,
+ * accepted with their count, then the files confirmed with theirs),
  * undo of the last five builds (the files listed first) and prune (the files listed first); and
  * the last build's own report, whichever command built, a terminal's refusals included. Every
  * step is the CLI's own command, run as a local job whose lines are in the Console; nothing
@@ -227,6 +228,8 @@ export function RefusalView(p: {
   onDiscard?: (n: number) => Promise<void>;
   /** The words of a step's button that confirms the removals (a scan's: Scan again…). */
   confirmLabel?: (n: number) => string;
+  /** On Catalog builds, where the upgrade's own step is below; elsewhere, a link to it. */
+  upgradeHere?: boolean;
 }) {
   const r = p.refused;
   const [dialog, setDialog] = useState<"removals" | "discard" | undefined>();
@@ -309,9 +312,15 @@ export function RefusalView(p: {
       {r.reasons.includes("not-upgraded") && (
         <div className="stack" style={{ gap: 4 }}>
           <p className="work-say" style={{ margin: 0 }}>
-            {B.upgradeTodo}
+            {p.upgradeHere ? (
+              B.upgradeTodo
+            ) : (
+              <>
+                {B.upgradeElsewhere} <a href="#/catalog-builds">{B.upgradeOn}</a>
+              </>
+            )}
           </p>
-          <Command text="atticus upgrade" label={COPY.runNext.copy} noRun />
+          <Command text="atticus upgrade --yes" label={COPY.runNext.copy} noRun />
         </div>
       )}
       {error && (
@@ -620,16 +629,43 @@ export function LastBuild({ last: l }: { last: Api.BuildReportViewT }) {
   );
 }
 
+/** The record files the upgrade's first build gives differently, each with how. */
+export function UpgradeChangesList(p: { changes: Api.CatalogUpgradeViewT["changes"] }) {
+  return (
+    <ul className="cb-list mono" aria-label={B.upgradeChangesCaption}>
+      {p.changes.map((c) => (
+        <li key={c.path}>
+          {B.upgradeHow[c.how] ?? c.how}: catalog/generated/{c.path}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * The upgrade to source slots (ADR 0195 point 6) as a confirm step: each slot it writes and the
  * records it adopts, the copy kept in generated-before-upgrade/, what the first build would change
- * (nothing, else it refuses), then every file it writes, confirmed with their count.
+ * (nothing; else each file, accepted with their count first, as `atticus upgrade --yes
+ * --accept-changes <n>` does), then every file it writes, confirmed with their count.
  */
 export function UpgradePanel(p: {
   of: Loaded<Api.CatalogUpgradeViewT> & { reload?: () => void };
-  onUpgrade: (count: number, plan: string) => Promise<void>;
+  /** `acceptChanges`: the count of the first build's changes the person accepted, when any. */
+  onUpgrade: (count: number, plan: string, acceptChanges?: number) => Promise<void>;
+  /** The count of changes already accepted (the accept step's own state; tests render it). */
+  accepted?: number;
 }) {
   const [asking, setAsking] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  // The first build's changes the person accepted with their count, for the listing's plan:
+  // a new listing (another plan) asks again.
+  const [accepted, setAccepted] = useState<{ n: number; plan?: string } | undefined>(
+    p.accepted !== undefined ? { n: p.accepted } : undefined,
+  );
+  const isAccepted = (v: Api.CatalogUpgradeViewT) =>
+    v.acceptChanges > 0 &&
+    accepted?.n === v.acceptChanges &&
+    (accepted.plan === undefined || accepted.plan === v.plan);
   return (
     <Panel title={B.upgradeTitle} span="1 / -1">
       <p className="work-why" style={{ marginTop: 0 }}>
@@ -663,18 +699,31 @@ export function UpgradePanel(p: {
               </tbody>
             </table>
             <p style={{ margin: 0 }}>{B.upgradeCopy(v.copy.dir, v.copy.files)}</p>
-            {v.firstBuildChanges.length === 0 ? (
+            {v.acceptChanges === 0 ? (
               <p className="state" style={{ margin: 0 }}>
                 {B.upgradeFirstBuild}
               </p>
             ) : (
-              <div className="state error" role="note">
-                <p style={{ margin: 0 }}>{B.upgradeDiffers(v.firstBuildChanges.length)}</p>
-                <ul className="cb-list mono">
-                  {v.firstBuildChanges.map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
+              <div className="state" role="note">
+                <p style={{ margin: 0 }}>{B.upgradeDiffers(v.acceptChanges)}</p>
+                <UpgradeChangesList changes={v.changes} />
+                {isAccepted(v) ? (
+                  <p className="work-say" style={{ margin: "6px 0 0" }}>
+                    {B.upgradeAccepted(v.acceptChanges)}
+                  </p>
+                ) : (
+                  v.others.length === 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={() => setAccepting(true)}
+                      >
+                        {B.upgradeAccept(v.acceptChanges)}
+                      </button>
+                    </div>
+                  )
+                )}
               </div>
             )}
             {v.verifiable.length > 0 && (
@@ -690,7 +739,7 @@ export function UpgradePanel(p: {
                 <UpgradeOffer />
               </div>
             )}
-            {v.applies && v.others.length === 0 && (
+            {(v.applies || isAccepted(v)) && v.others.length === 0 && (
               <div>
                 <button type="button" className="btn primary" onClick={() => setAsking(true)}>
                   {B.upgradeReview(v.writes.length)}
@@ -701,14 +750,38 @@ export function UpgradePanel(p: {
               <summary>{B.inTerminal}</summary>
               <Command text={v.run} label={COPY.runNext.copy} noRun />
             </details>
+            {accepting && (
+              <ConfirmDialog
+                title={B.upgradeAcceptTitle(v.acceptChanges)}
+                intro={B.upgradeAcceptIntro}
+                confirm={B.confirmAccept(v.acceptChanges)}
+                count={v.acceptChanges}
+                onConfirm={async () => {
+                  // Nothing is written yet: the files' confirm follows, and sends this count.
+                  setAccepted({ n: v.acceptChanges, plan: v.plan });
+                  setAccepting(false);
+                }}
+                onClose={() => setAccepting(false)}
+              >
+                <UpgradeChangesList changes={v.changes} />
+              </ConfirmDialog>
+            )}
             {asking && (
               <ConfirmDialog
                 title={B.upgradeConfirmTitle(v.writes.length)}
-                intro={B.upgradeConfirmIntro}
+                intro={
+                  v.acceptChanges
+                    ? B.upgradeConfirmIntroChanges(v.acceptChanges)
+                    : B.upgradeConfirmIntro
+                }
                 confirm={B.confirmUpgrade(v.writes.length)}
                 count={v.writes.length}
                 onConfirm={async () => {
-                  await p.onUpgrade(v.writes.length, v.plan);
+                  await p.onUpgrade(
+                    v.writes.length,
+                    v.plan,
+                    v.acceptChanges ? v.acceptChanges : undefined,
+                  );
                   setAsking(false);
                 }}
                 onClose={() => setAsking(false)}
@@ -768,6 +841,7 @@ export function CatalogBuildsPage(p: {
               {v.pending.refused ? (
                 <RefusalView
                   refused={v.pending.refused}
+                  upgradeHere
                   onAllowRemovals={(n) => p.run("/api/build", { allowRemovals: n })}
                   onCurate={(n) => p.run("/api/build/edits/curate", { count: n })}
                   onDiscard={(n) => p.run("/api/build", { discardEdits: n })}
@@ -871,7 +945,13 @@ export function CatalogBuildsPage(p: {
       {p.upgrade && (
         <UpgradePanel
           of={p.upgrade}
-          onUpgrade={(count, plan) => p.run("/api/build/upgrade", { count, plan })}
+          onUpgrade={(count, plan, acceptChanges) =>
+            p.run("/api/build/upgrade", {
+              count,
+              plan,
+              ...(acceptChanges ? { acceptChanges } : {}),
+            })
+          }
         />
       )}
       <Panel title={B.lastTitle} span="1 / -1">

@@ -32,6 +32,22 @@ evidence:
     scannedAt: 2026-10-18T09:00:00Z
     side: definition
     source: spec
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: apigee@1.0.0
+    line: 9
+    path: proxies/ledger-v1/apiproxy/proxies/default.xml
+    repo: forge-gateway
+    scannedAt: 2026-10-18T09:00:00Z
+    side: gateway
+    source: gateway
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: frontend@1.2.0
+    line: 3
+    path: src/api/balance.ts
+    repo: forge-portal-ui
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
 externalRefs: []
 name: Account balance
 namedBy: detected

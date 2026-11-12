@@ -49,6 +49,22 @@ evidence:
     scannedAt: 2026-10-18T09:00:00Z
     side: callee
     source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: apigee@1.0.0
+    line: 9
+    path: proxies/ledger-v1/apiproxy/proxies/default.xml
+    repo: forge-gateway
+    scannedAt: 2026-10-18T09:00:00Z
+    side: gateway
+    source: gateway
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 11
+    path: src/main/java/forge/portal/LedgerClient.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
 externalRefs: []
 name: Transfers
 namedBy: detected

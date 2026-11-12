@@ -5803,6 +5803,11 @@
                   "plan": {
                     "type": "string",
                     "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "acceptChanges": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -46978,6 +46983,35 @@
               "type": "string"
             }
           },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "how": {
+                  "type": "string",
+                  "enum": [
+                    "added",
+                    "changed",
+                    "removed"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "how"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "acceptChanges": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
           "applies": {
             "type": "boolean"
           },
@@ -47020,6 +47054,8 @@
           "writes",
           "copy",
           "firstBuildChanges",
+          "changes",
+          "acceptChanges",
           "applies",
           "run",
           "verifiable",
