@@ -633,6 +633,12 @@
   line-height: 1.55;
   color: var(--text-2);
 }
+/* Beta.27 review: why Raise hand-off waits, beside it. */
+.cw-held {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
 
 /* A compact table: the artifacts, a stage's files and tasks. */
 .cw .run-table,

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
 import { changeOf } from "../../app/screens.js";
-import { Panel, View } from "../../app/ui.js";
+import { GlanceLink, Panel, View } from "../../app/ui.js";
 import {
   ExportEvidence,
   NotesPanel,
@@ -76,6 +76,8 @@ interface ReleaseDetail {
     state: string;
     phase?: string;
     nextStep: string;
+    /** Beta.27 review: nothing blocks the gate, yet another step comes first. */
+    stepFirst?: boolean;
     risk: { level: string; score: number };
     blockers: Reason[];
     reasons: Reason[];
@@ -224,6 +226,12 @@ export function Detail({ id }: { id: string }) {
                     {T.next}
                   </span>
                   {r.status.nextStep}
+                  {r.status.stepFirst && (
+                    <>
+                      {" "}
+                      <GlanceLink change={r.change.id} />
+                    </>
+                  )}
                 </p>
                 <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
                   <span className="chip dim">{T.type(r.change.type.toUpperCase())}</span>

@@ -138,14 +138,23 @@ const RELEASE_GATE_STEPS = new Set(["release", "release-prs", "release-prs-merge
  * "Ready to raise "Plan ready"" over "Answer 1 question, then run the stories stage again".
  * While the next step is anything but the gate's own, the sentence says it isn't ready yet.
  * Beta.27 review: readiness is the report's `ready`, never a match on its sentence's words.
+ * "The step below" is At a glance's, which shows it under the sentence; every other page and
+ * `change status` (`where: "page"`) say the step's own words: "…yet: first, <why>".
  */
 export function glanceNextStep(
   report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
-  next: Pick<NextStep, "step"> | undefined,
+  next: (Pick<NextStep, "step"> & Partial<Pick<NextStep, "why">>) | undefined,
+  where: "glance" | "page" = "glance",
 ): string {
   if (!report.ready || !report.phase || glanceReady(report, next)) return report.nextStep;
-  return `Not ready to raise "${handoffName(report.type, report.phase)}" yet: the step below comes first.`;
+  const not = `Not ready to raise "${handoffName(report.type, report.phase)}" yet`;
+  const why = next?.why?.trim();
+  if (where === "page" && why) return `${not}: first, ${lowerFirst(why)}`;
+  return `${not}: the step below comes first.`;
 }
+
+/** A sentence's first word lower-cased to follow "first,"; an acronym (SNOW, PR) is kept. */
+const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0]!.toLowerCase() + s.slice(1) : s);
 
 /**
  * Beta.27 review: the phase's hand-off can be raised now: nothing in its checks blocks (the
@@ -163,20 +172,22 @@ export function glanceReady(
 /**
  * Beta.27 review: the one next-step sentence every page says of a change (At a glance, All
  * changes, the brief's Gate, Across, Release), and whether its hand-off can be raised now. Pass
- * `state` when saying it of many changes, so the metarepo is read once.
+ * `state` when saying it of many changes, so the metarepo is read once; `where: "page"` for any
+ * page but At a glance (and `change status`), which says the step itself, not "the step below".
  */
 export async function changeNextStep(
   root: string,
   id: string,
   report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
   state?: NextState,
+  where: "glance" | "page" = "glance",
 ): Promise<{ nextStep: string; ready: boolean; stepFirst: boolean; next?: NextStep }> {
   const s = state ?? (await readNextState(root).catch(() => undefined));
   const own = s?.changes.find((c) => c.id === id);
   const next = own ? changeSteps(own)[0] : undefined;
   const ready = glanceReady(report, next);
   return {
-    nextStep: glanceNextStep(report, next),
+    nextStep: glanceNextStep(report, next, where),
     ready,
     // Nothing in the gate's checks blocks, yet another step comes first.
     stepFirst: report.ready && !ready,

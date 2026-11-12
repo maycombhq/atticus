@@ -6,7 +6,7 @@ import { inAppWords } from "../../app/app-words.js";
 import { message } from "../run/shared.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
-import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
+import { Bar, Donut, ExternalLink, GlanceLink, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
   artifactUrl,
@@ -120,6 +120,13 @@ export function GateHeader(p: {
                 <ManualHandoff phase={s.handoff.phase} />
               ) : (
                 s.nextStep
+              )}
+              {/* Beta.27 review: the step that comes first, with its button, is on At a glance. */}
+              {s.stepFirst && (
+                <>
+                  {" "}
+                  <GlanceLink change={p.id} />
+                </>
               )}
             </p>
             {s.blockers.length > 0 && (

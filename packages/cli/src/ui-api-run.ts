@@ -725,7 +725,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               ...(rep.phase ? { phase: rep.phase } : {}),
               ...(rep.next ? { next: rep.next } : {}),
               // Beta.27 review: the sentence At a glance says (changeNextStep).
-              ...(await changeNextStep(root, id, rep).then((s) => ({
+              ...(await changeNextStep(root, id, rep, undefined, "page").then((s) => ({
                 nextStep: s.nextStep,
                 ...(s.stepFirst ? { stepFirst: true } : {}),
               }))),

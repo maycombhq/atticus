@@ -27,6 +27,7 @@ import { BrokenChangesView } from "../src/screens/work/BrokenChanges.js";
 import { problemsOf } from "../src/app/shell/BottomPanel.js";
 import { estateLabels, pageLabel, pinnedItems } from "../src/app/shell/explorer-model.js";
 import { stateWords } from "../src/app/activity.js";
+import { nextCell } from "../src/screens/Across.js";
 
 /**
  * Beta.27 review of the screens, over invented Forge names: the stage state a person's planning
@@ -90,6 +91,28 @@ describe("4: one next step", () => {
     expect(out).toContain(esc(first));
     const free = renderToStaticMarkup(<RaiseHandoff change="add-transfer-limit" blockers={0} />);
     expect(free).not.toMatch(/<button[^>]*disabled=""/);
+  });
+
+  it("away from At a glance, says the step's own words and links to At a glance", () => {
+    const said =
+      'Not ready to raise "Plan ready" yet: first, 1 question is waiting for a person (see Questions).';
+    const row = { change: "add-transfer-limit", changeTitle: "", changeState: "plan" };
+    const held = renderToStaticMarkup(<>{nextCell({ ...row, nextStep: said, stepFirst: true })}</>);
+    expect(held).toContain(esc(said));
+    expect(held).not.toContain("the step below");
+    expect(held).toContain('href="#/cockpit?change=add-transfer-limit"');
+    expect(held).toContain(COPY.changes.seeGlance);
+    const free = renderToStaticMarkup(
+      <>{nextCell({ ...row, nextStep: 'Ready to raise "Plan ready".' })}</>,
+    );
+    expect(free).not.toContain("#/cockpit");
+    // The held Raise hand-off on All changes says why in words it points at, not a title.
+    const src = readFileSync(new URL("../src/screens/Changes.tsx", import.meta.url), "utf8");
+    expect(src).toMatch(/<p id=\{heldId\} className="cw-held">/);
+    expect(src).toMatch(
+      /aria-describedby=\{\s*s\.blockers\.length > 0 \|\| s\.stepFirst \? heldId/,
+    );
+    expect(src).not.toMatch(/title=\{\s*s\.blockers\.length > 0/);
   });
 });
 

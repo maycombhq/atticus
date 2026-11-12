@@ -165,11 +165,27 @@ describe("one next step on every page (beta.27 review)", () => {
             nextStep: string;
             stepFirst?: boolean;
           };
-        const glance = (await get(`/api/changes/${ID}/cockpit`)).nextStep as string;
+        const cockpit = (await get(`/api/changes/${ID}/cockpit`)) as unknown as {
+          nextStep: string;
+          next?: { why: string };
+        };
+        const glance = cockpit.nextStep;
         const status = await get(`/api/changes/${ID}/status`);
-        expect(glance).toMatch(/^Not ready to raise "Plan ready" yet/);
-        expect(status.nextStep).toBe(glance);
+        // At a glance shows the step under its sentence; every other page says the step itself.
+        expect(glance).toBe('Not ready to raise "Plan ready" yet: the step below comes first.');
+        const why = cockpit.next!.why;
+        const first = `Not ready to raise "Plan ready" yet: first, ${why[0]!.toLowerCase()}${why.slice(1)}`;
+        expect(status.nextStep).toBe(first);
         expect(status.stepFirst).toBe(true);
+        // Review of the fix: change status says the same, and its --json says stepFirst.
+        const { changeStatus } = await import("../src/change-commands.js");
+        const out: string[] = [];
+        const say = { out: (l: string) => out.push(l), err: () => undefined };
+        expect(await changeStatus(other, ID, {}, say)).toBe(0);
+        expect(out).toContain(`Next: ${first}`);
+        out.length = 0;
+        expect(await changeStatus(other, ID, { json: true }, say)).toBe(0);
+        expect(JSON.parse(out.join("\n"))).toMatchObject({ nextStep: first, stepFirst: true });
       } finally {
         await s.close();
       }

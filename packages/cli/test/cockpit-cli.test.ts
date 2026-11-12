@@ -101,6 +101,30 @@ describe("the change cockpit (WP7.1)", () => {
     );
   });
 
+  it('beta.27 review: away from At a glance, says the step\'s own words, not "the step below"', () => {
+    const type = { phases: ["define", "design", "plan", "build"] } as never;
+    const report = { nextStep: 'Ready to raise "Plan ready".', ready: true, type, phase: "plan" };
+    const answer = { step: "answer", why: "1 question is waiting for a person (see Questions)." };
+    expect(glanceNextStep(report as never, answer, "page")).toBe(
+      'Not ready to raise "Plan ready" yet: first, 1 question is waiting for a person (see Questions).',
+    );
+    // A sentence's first word is lower-cased after "first,", an acronym's isn't.
+    expect(
+      glanceNextStep(
+        report as never,
+        { step: "stories", why: "Run the stories stage again." },
+        "page",
+      ),
+    ).toBe('Not ready to raise "Plan ready" yet: first, run the stories stage again.');
+    expect(glanceNextStep(report as never, { step: "x", why: "SNOW fields wait." }, "page")).toBe(
+      'Not ready to raise "Plan ready" yet: first, SNOW fields wait.',
+    );
+    // At a glance, the step is shown below the sentence.
+    expect(glanceNextStep(report as never, answer)).toBe(
+      'Not ready to raise "Plan ready" yet: the step below comes first.',
+    );
+  });
+
   it("beta.27 review: reads the report's ready, never its sentence's words", () => {
     const type = { phases: ["define", "design", "plan", "build"] } as never;
     // A sentence worded otherwise (a later rewording, another language) still reads as ready.

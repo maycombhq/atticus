@@ -998,7 +998,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         await readChange(root, params.changeId!);
         const rep = await changeReport(root, params.changeId!);
         // Beta.27 review: the sentence At a glance says, on every page (changeNextStep).
-        const said = await changeNextStep(root, params.changeId!, rep);
+        const said = await changeNextStep(root, params.changeId!, rep, undefined, "page");
         return {
           status: 200,
           body: {

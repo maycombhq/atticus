@@ -524,10 +524,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
- * 3.11.0 (beta.27 review of the screens): GET /api/changes/{id}/status says At a glance's
- *   sentence in `nextStep` (as GET /api/release/{id} and the releases view do) and `stepFirst`
- *   when nothing blocks the gate yet another step comes first; a cockpit stage may be `person`
- *   (planning files a person wrote, named in `files`) or `skipped`; a stage thread names
+ * 3.11.0 (beta.27 review of the screens): GET /api/changes/{id}/status says the change's one
+ *   next step in `nextStep` (as GET /api/release/{id} and the releases view do, a releases row
+ *   with `stepFirst` too) and `stepFirst` when nothing blocks the gate yet another step comes
+ *   first: then At a glance says "the step below comes first" and the others "…yet: first,
+ *   <that step's why>". A cockpit stage may be `person` (planning files a person wrote, named
+ *   in `files`) or `skipped`; a stage thread names
  *   `byPerson`. GET /api/change-problems lists the changes whose change.yaml doesn't read. An
  *   activity entry may say `outcome: refused`. An owner question carries `ownerName` and
  *   `sentAt`; propose takes scope `upgrade`. Additive only.
@@ -3231,8 +3233,8 @@ export const ProposeScope = z.enum([
   /** 2.67.0 (UX review): the changes' snow.md, after filling a service-desk draft's fields. */
   "service-desk",
   /**
-   * 3.11.0 (beta.27 review): what `atticus upgrade` changed and its stamp,
-   * .atticus/metarepo.yaml, for the upgrade panel's Propose.
+   * 3.11.0 (beta.27 review): exactly the paths `atticus upgrade` changed (kept with its run) and
+   * its stamp, .atticus/metarepo.yaml, for the upgrade panel's Propose; never other pending work.
    */
   "upgrade",
 ]);

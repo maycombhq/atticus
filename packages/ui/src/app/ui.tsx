@@ -179,6 +179,18 @@ export function LoadError({ error, retry }: { error: string; retry?: (() => void
 }
 
 /**
+ * Beta.27 review: where a page says "Not ready to raise … yet: first, <the step>", the link to
+ * the change's At a glance, which shows that step with its button.
+ */
+export function GlanceLink({ change }: { change: string }) {
+  return (
+    <a className="glance-link" href={`#/cockpit?change=${encodeURIComponent(change)}`}>
+      {COPY.changes.seeGlance}
+    </a>
+  );
+}
+
+/**
  * A link that leaves the app (a PR, a wiki page, a service-desk ticket): in a browser it opens a
  * new tab so the app stays where it was; in a VS Code panel the editor opens it, with its own
  * prompt. The words say so, never the icon alone.

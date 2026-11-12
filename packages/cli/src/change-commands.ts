@@ -402,6 +402,9 @@ export async function changeStatus(
   }
   for (const p of r.problems) io.err(p);
   const critic = await usedUpGates(root, r.change.id);
+  // Beta.27 review: the sentence every page says (changeNextStep), in the step's own words.
+  const { changeNextStep } = await import("./cockpit.js");
+  const said = await changeNextStep(root, r.change.id, r, undefined, "page");
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -411,7 +414,8 @@ export async function changeStatus(
           phase: r.phase,
           next: r.next,
           ...(r.progress ? { progress: r.progress } : {}),
-          nextStep: r.nextStep,
+          nextStep: said.nextStep,
+          ...(said.stepFirst ? { stepFirst: true } : {}),
           reasons: r.reasons,
           risk: r.risk,
           tests: r.tests,
@@ -430,7 +434,7 @@ export async function changeStatus(
   io.out(`State: ${r.state}`);
   // B-change: where the stages' work is, when it ran ahead of the gates.
   if (r.progress) io.out(`Work: ${r.progress.summary}`);
-  io.out(`Next: ${r.nextStep}`);
+  io.out(`Next: ${said.nextStep}`);
   io.out(
     `Risk: ${r.risk.level} (${r.risk.score})${r.risk.factors.length ? ": " : ""}${r.risk.factors
       .map((f) => `${f.detail} +${f.points}${f.cites?.length ? ` (${f.cites.join(", ")})` : ""}`)

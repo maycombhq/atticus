@@ -2371,6 +2371,10 @@ export const COPY = {
     /** UX review: Raise hand-off waits until nothing blocks it, and says why. */
     blockedBy: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,
+    /** Beta.27 review: why Raise hand-off waits while another step comes first, in words. */
+    heldFirst: "Raise hand-off waits until the next step above is done.",
+    /** Beta.27 review: away from At a glance, the next step's own page. */
+    seeGlance: "See the step on At a glance",
     raiseHandOff: "Raise hand-off",
     syncAndMergeWhen: "Sync and merge when approved",
     runTheCriticYour: "Run the critic (your assistant)",

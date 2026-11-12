@@ -164,13 +164,16 @@ export async function acrossRows(root: string, view: AcrossView): Promise<Across
       case "releases": {
         const rep = await changeReport(root, c.id);
         const h = liveHandoff(c);
+        // Beta.27 review: the change's one next step (changeNextStep), the metarepo read once, in
+        // the step's own words; `stepFirst` when another step comes first (At a glance has it).
+        const said = await changeNextStep(root, c.id, rep, await nextState(), "page");
         rows.push({
           ...base,
           atRelease: AT_RELEASE.has(c.state),
           ...(rep.phase ? { phase: rep.phase } : {}),
           ...(rep.next ? { next: rep.next } : {}),
-          // Beta.27 review: the sentence At a glance says (changeNextStep), the metarepo read once.
-          nextStep: (await changeNextStep(root, c.id, rep, await nextState())).nextStep,
+          nextStep: said.nextStep,
+          ...(said.stepFirst ? { stepFirst: true } : {}),
           risk: rep.risk.level,
           blockers: rep.blockers.length,
           ...(h ? { handoff: { phase: h.phase, pr: h.pr.url, state: h.state } } : {}),

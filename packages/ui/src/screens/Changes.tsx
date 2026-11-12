@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, callAsJob, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
@@ -6,7 +6,7 @@ import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
-import { escapeCloses, ExternalLink, Panel, View } from "../app/ui.js";
+import { escapeCloses, ExternalLink, GlanceLink, Panel, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
 import { ChangeInputs } from "./ChangeInputs.js";
@@ -619,6 +619,7 @@ function Detail({ id }: { id: string }) {
   const critic = useAction();
   const runAct = useAction();
   const findingSaid = useSaid();
+  const heldId = useId();
   const reloadAll = () => {
     detail.reload();
     status.reload();
@@ -653,6 +654,13 @@ function Detail({ id }: { id: string }) {
                         ) : (
                           s.nextStep
                         )}
+                        {/* Beta.27 review: the step that comes first, with its button, is there. */}
+                        {s.stepFirst && (
+                          <>
+                            {" "}
+                            <GlanceLink change={id} />
+                          </>
+                        )}
                       </span>
                     </p>
                     <div className="cw-chips">
@@ -674,18 +682,18 @@ function Detail({ id }: { id: string }) {
                         ))}
                       </ul>
                     )}
+                    {/* Beta.27 review: why Raise hand-off waits, in words on the page, not a title. */}
+                    {(s.blockers.length > 0 || s.stepFirst) && (
+                      <p id={heldId} className="cw-held">
+                        {s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : T.heldFirst}
+                      </p>
+                    )}
                     <div className="cw-actions">
                       <button
                         type="button"
                         className="btn primary"
                         disabled={handoff.busy || s.blockers.length > 0 || !!s.stepFirst}
-                        title={
-                          s.blockers.length > 0
-                            ? T.blockedBy(s.blockers.length)
-                            : s.stepFirst
-                              ? s.nextStep
-                              : undefined
-                        }
+                        aria-describedby={s.blockers.length > 0 || s.stepFirst ? heldId : undefined}
                         onClick={() =>
                           void handoff.run(
                             async () =>
