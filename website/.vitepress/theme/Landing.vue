@@ -55,8 +55,16 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.26";
+const release = "2.0.0-beta.27";
 const news = [
+  {
+    body: "The catalog is built from each repo's own source: a scan replaces only what it read, nothing is removed or overwritten without being shown first, and the last five builds can be undone, from the app or a terminal.",
+    link: "/guide/troubleshooting.html",
+  },
+  {
+    body: "Canaries measure the silent error rate: made-up entries planted in a copy of a repo show how often a read misses or invents what the code serves, beside the verifier's own audit.",
+    link: "/guide/correcting-the-map.html",
+  },
   {
     body: "The app is laid out like an editor: a title bar with Ctrl+K, an activity bar, an Explorer of changes, systems and questions, a tab for each page you open, and the Console, Questions, Problems and Runs in a bottom panel.",
     link: "/guide/roles.html",

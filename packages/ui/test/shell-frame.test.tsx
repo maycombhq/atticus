@@ -202,7 +202,7 @@ describe("the status bar", () => {
     <StatusBar
       facts={{
         root: "/work/forge-metarepo",
-        version: "2.0.0-beta.26",
+        version: "2.0.0-beta.27",
         apiVersion: "3.10.0",
         user: "pat",
         role: "Delivery",
@@ -221,7 +221,7 @@ describe("the status bar", () => {
     expect(html).toMatch(/<button type="button" class="sh-status-item">.*Verify running 5\/12 \+1/);
     expect(html).toContain(">local API 3.10.0<");
     expect(html).toContain(">pat · Delivery<");
-    expect(html).toContain(">v2.0.0-beta.26<");
+    expect(html).toContain(">v2.0.0-beta.27<");
   });
 
   it("leaves out what isn't known yet, rather than asking for it", () => {
