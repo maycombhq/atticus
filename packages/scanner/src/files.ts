@@ -115,15 +115,24 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
 export async function writeCatalog(
   dir: string,
   records: CatalogRecord[],
+  o: {
+    /** The records' files as already serialized, by path (the build's). */
+    texts?: ReadonlyMap<string, string>;
+    /** The folder's record files as already read (LF), by path: none other is there. */
+    onDisk?: ReadonlyMap<string, { text: string }>;
+  } = {},
 ): Promise<{ written: number; unchanged: number; removed: number }> {
   // What a reader kept is out of date once this writes.
   forgetCatalogs();
-  const wanted = new Map(records.map((r) => [recordPath(r), serializeRecord(r)]));
+  const wanted =
+    o.texts ?? new Map(records.map((r) => [recordPath(r), serializeRecord(r)] as const));
   let written = 0;
   let unchanged = 0;
   for (const [rel, text] of wanted) {
     const full = join(dir, ...rel.split("/"));
-    const current = await readFile(full, "utf8").catch(() => undefined);
+    const current = o.onDisk
+      ? o.onDisk.get(rel)?.text
+      : await readFile(full, "utf8").catch(() => undefined);
     // Line endings aside: a Windows checkout (core.autocrlf) of an unchanged record isn't rewritten.
     if (current?.replace(/\r\n?/g, "\n") === text) {
       unchanged++;
@@ -135,7 +144,7 @@ export async function writeCatalog(
     written++;
   }
   let removed = 0;
-  const existing = await readCatalogPaths(dir);
+  const existing = o.onDisk ? [...o.onDisk.keys()] : await readCatalogPaths(dir);
   for (const rel of existing) {
     if (!wanted.has(rel)) {
       await rm(join(dir, ...rel.split("/")), { force: true });

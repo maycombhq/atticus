@@ -891,7 +891,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
 
   // ---- the files and build.json
   const files = new Map<string, string>();
-  for (const r of out) files.set(recordPath(r), serializeRecord(r));
+  for (const r of out) files.set(recordPath(r), serializedOf(r));
   // joins.json as this build leaves it (its retired joins out): what the next build reads.
   const manifest = manifestOf(
     root,
@@ -994,6 +994,27 @@ function currentHashOf(
   for (const xs of used.values()) for (const x of xs) if (x.path === path) return x.sha256;
   return i.inputHashes.get(path);
 }
+
+/**
+ * A record's canonical YAML, kept by its JSON for the next builds in this process: most records
+ * of a build are the last build's, and the YAML writer was most of a build's time (ADR 0195,
+ * CS2: the budgets). The text is what `serializeRecord` gives; only the work is saved.
+ */
+function serializedOf(r: CatalogRecord): string {
+  const key = JSON.stringify(r);
+  const hit = SERIALIZED.get(key);
+  if (hit !== undefined) {
+    SERIALIZED.delete(key);
+    SERIALIZED.set(key, hit);
+    return hit;
+  }
+  const text = serializeRecord(r);
+  SERIALIZED.set(key, text);
+  if (SERIALIZED.size > SERIALIZED_MAX) SERIALIZED.delete(SERIALIZED.keys().next().value!);
+  return text;
+}
+const SERIALIZED = new Map<string, string>();
+const SERIALIZED_MAX = 20_000;
 
 /** The single hash of every slot the build used (what a join with any repo may rest on). */
 const ALL_SLOTS = "catalog/sources";
@@ -1363,7 +1384,8 @@ export async function guardBuild(
           }
         }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      if (estate && !why.size) {
+      // (Said even when an input changed too: the slot is the more telling.)
+      if (estate && !kinds.has("slot")) {
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }
@@ -1662,7 +1684,7 @@ export async function writeBuiltCatalog(
       await writeFileAtomic(t.path, t.text!);
     throw new BuildCrash(crash);
   }
-  const w = await writeCatalog(target.generated, b.records);
+  const w = await writeCatalog(target.generated, b.records, { texts: b.files, onDisk });
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
   if ((await readText(target.manifest)) !== manifestText)
     await writeFileAtomic(target.manifest, manifestText);

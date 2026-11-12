@@ -51,6 +51,9 @@ export function keptFilesMayHaveChanged(path?: string): void {
     changes++;
     return;
   }
+  // A file's stamp is checked on every ask unless a server trusts what it heard (`quiet`): only
+  // then does marking it matter (a one-shot command or a test keeps many files, and writes many).
+  if (!quiet) return;
   const p = resolve(path);
   for (const [key, e] of kept) {
     const f = key.slice(key.indexOf("\u0000") + 1);
