@@ -236,6 +236,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     byKey.set(key, byKey.has(key) ? combine(byKey.get(key)!, r, known) : r);
   const loose: Rec[] = [];
   const dialectInterfaces: Rec[] = [];
+  const topicEndpoints: Rec[] = [];
 
   // ---- 0. a store name claimed by two owning components (e.g. the <system>-db fallback for two
   //         services of one system) is two stores: each becomes <owner>-db, with its tables,
@@ -285,8 +286,29 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       });
     } else if (r.kind === "Endpoint" && BY_ID_ENDPOINTS.has(String(r.endpointType)))
       put(`Typed|${r.id}`, r);
-    else if (r.kind === "Endpoint") put(`Topic|${r.pathOrTopic}`, r);
+    else if (r.kind === "Endpoint") topicEndpoints.push(r);
     else put(`${r.kind}|${r.id}`, r);
+  }
+  // A topic's Endpoints (ADR 0195, locality): a topic with a definition (an event config, a
+  // spec) is one Endpoint, every record of it combined in input order, as before. A topic with
+  // none has one Endpoint per component that serves it (a consumer's facts entry,
+  // `<component>.on-<topic>`), so a second consumer's verify --write adds its own Endpoint and
+  // changes nothing of the first's or of the first's arrow.
+  const defined = new Set(
+    topicEndpoints
+      .filter((r) => r.evidence.some((e) => e.side === "definition"))
+      .map((r) => String(r.pathOrTopic)),
+  );
+  const ownTopicKeys = new Map<string, string[]>();
+  for (const r of topicEndpoints) {
+    const topic = String(r.pathOrTopic);
+    if (defined.has(topic)) {
+      put(`Topic|${topic}`, r);
+      continue;
+    }
+    const key = `Topic|${topic}|${String(r.component ?? "")}`;
+    if (!byKey.has(key)) ownTopicKeys.set(topic, [...(ownTopicKeys.get(topic) ?? []), key]);
+    put(key, r);
   }
 
   // ---- 2. canonical endpoint ids (collisions get a short path hash)
@@ -642,11 +664,19 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     )?.[0];
     if (ep && (ep.component === "unknown" || !ep.component) && firstCodePub)
       ep.component = firstCodePub;
+    // With no definition, each pair's own Endpoint: the subscriber's, else the publisher's.
+    const own = (ownTopicKeys.get(topic) ?? []).map((k) => byKey.get(k)!);
+    if (!ep && firstCodePub)
+      for (const x of own)
+        if (x.component === "unknown" || !x.component) x.component = firstCodePub;
+    const epOf = (p: string, s: string) =>
+      ep ?? own.find((x) => x.component === s) ?? own.find((x) => x.component === p);
     for (const [p, pev] of [...pub.entries()].sort()) {
       for (const [s, sev] of [...sub.entries()].sort()) {
         if (p === s) continue;
         const pc = pev.filter((e) => e.source === "code");
         const sc = sev.filter((e) => e.source === "code");
+        const pairEp = epOf(p, s);
         addInterface({
           schemaVersion: 1,
           kind: "Interface",
@@ -658,8 +688,8 @@ export function mergeCatalog(input: MergeInput): MergeResult {
           // The topic's Endpoint: its definition's, or one either end of this pair serves. Another
           // consumer's own endpoint for the topic (a facts entry) isn't this pair's (ADR 0195,
           // locality: a repo's read changes only the joins it is part of).
-          ...(ep && (def.length > 0 || ep.component === p || ep.component === s)
-            ? { endpoint: ep.id }
+          ...(pairEp && (def.length > 0 || pairEp.component === p || pairEp.component === s)
+            ? { endpoint: pairEp.id }
             : {}),
           via: "event-bus",
           normalizedPath: topic,
