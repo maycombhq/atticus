@@ -48,35 +48,8 @@ export type Invariant = (typeof INVARIANTS)[number];
  * says so when it starts passing); the examples that fail today are FAILS_TODAY in examples.ts.
  * CS2 turns them green and takes them off both lists.
  */
-export const KNOWN_FAILURES: ReadonlySet<Invariant> = new Set<Invariant>([
-  // A hand edit can't be discarded (there is no catalog build), so a deleted record file stays
-  // deleted, unlike a fresh build of the same reads.
-  "equivalence",
-  // After a rename, a scan that observed nothing new rewrites the renamed repo's System record.
-  "locality",
-  // verify --write of two repos, in either order, gives different Component and System records.
-  "order-independence",
-  // A scan after verify --write joins the facts' loose end with another repo's readers.
-  "readers-never-destroy-facts",
-  // A rename rewrites record files without applying the curated decisions: a suppress is undone.
-  "curation-survives",
-  // verify --write joins with another repo's facts that verify checked but nothing wrote.
-  "links-are-live",
-  // The scan reads facts verify checked but didn't write, and drops a loose end nothing explains
-  // (nor does any writer report its removals).
-  "nothing-removed-unexplained",
-  // There are no slots: atticus upgrade adopts nothing.
-  "upgrade-is-lossless",
-  // There is no atticus catalog undo.
-  "undo-restores",
-  // The next scan rewrites a hand-edited file.
-  "hand-edits-never-silently-lost",
-  // verify --write replaces a repo's readers records with its facts' and confirms nothing.
-  "large-removals-confirmed",
-  // There is no atticus catalog build (nor undo, prune, edits --curate or a confirmation flag):
-  // the build that settles even an empty sequence fails.
-  "completeness",
-]);
+// CS2 (ADR 0195): every invariant holds against the build; the counterexamples stay as regressions.
+export const KNOWN_FAILURES: ReadonlySet<Invariant> = new Set<Invariant>([]);
 
 /** What one command did, for the checks. */
 export interface Step extends Acted {

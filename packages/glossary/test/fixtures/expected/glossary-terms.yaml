@@ -83,8 +83,8 @@ terms:
     fields: []
     flags: [ai-proposed]
     evidence:
-      - inputs/partner-specs/northwind-pay-openapi.yaml:6
       - forge-events/topics/payments.initiated.yaml:1
+      - inputs/partner-specs/northwind-pay-openapi.yaml:6
   - id: term.remaining-limit
     term: Remaining limit
     definition: "What an account can still send today: its daily limit minus today's outgoing transfers."
@@ -102,8 +102,8 @@ terms:
     evidence:
       - inputs/wiki/ledger-glossary.md:16
       - inputs/wiki/portal-help.md:8
-      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
       - forge-events/topics/transfers.completed.yaml:1
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
 columnLinks:
   - { column: ledger-db.account.account-number, term: term.account-number, how: name }
   - { column: ledger-db.account.daily-limit, term: term.daily-limit, how: name }

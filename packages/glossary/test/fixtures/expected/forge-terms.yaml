@@ -44,16 +44,16 @@ terms:
     fields: []
     flags: [undefined]
     evidence:
-      - inputs/partner-specs/northwind-pay-openapi.yaml:6
       - forge-events/topics/payments.initiated.yaml:1
+      - inputs/partner-specs/northwind-pay-openapi.yaml:6
   - id: term.transfer
     term: Transfer
     definition: "Not defined yet. Found in code: ledger-api.post-transfer, topic.transfers-completed."
     fields: []
     flags: [undefined]
     evidence:
-      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
       - forge-events/topics/transfers.completed.yaml:1
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
 columnLinks:
   - { column: ledger-db.account.account-number, term: term.account-number, how: name }
   - { column: ledger-db.account.holder-name, term: term.holder-name, how: name }

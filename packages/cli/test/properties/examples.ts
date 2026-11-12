@@ -53,18 +53,7 @@ const ledgerMore: Code = {
  * The examples today's writers fail: each is of an invariant in KNOWN_FAILURES, and must fail
  * with it (the test says so when one starts passing). CS2 empties this list.
  */
-export const FAILS_TODAY: ReadonlySet<Invariant> = new Set<Invariant>([
-  "equivalence",
-  "readers-never-destroy-facts",
-  "curation-survives",
-  "links-are-live",
-  "nothing-removed-unexplained",
-  "upgrade-is-lossless",
-  "undo-restores",
-  "hand-edits-never-silently-lost",
-  "large-removals-confirmed",
-  "completeness",
-]);
+export const FAILS_TODAY: ReadonlySet<Invariant> = new Set<Invariant>([]);
 
 export interface Example {
   invariant: Invariant;

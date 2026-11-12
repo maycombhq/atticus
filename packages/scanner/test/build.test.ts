@@ -10,6 +10,7 @@ import {
   applyUndo,
   buildAndWrite,
   buildCatalog,
+  buildWriteHooks,
   factsSnapshotWrites,
   keepCatalogsInMemory,
   listUndo,
@@ -341,6 +342,25 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       const undo = await tree(await undoDirOf(root));
       expect(Object.values(undo)).toContain(before.generated[`endpoint/${changed}`]);
       expect(Object.values(undo)).toContain("kind: Endpoint\n");
+    },
+    T,
+  );
+
+  it(
+    "the very first build cut short part way through its records is caught up, not refused as a catalog from before the slots",
+    async () => {
+      const root = await forge();
+      buildWriteHooks.crash = "mid-records";
+      await expect(buildAndWrite(root, { command: "atticus scan" })).rejects.toThrow(
+        /the write stopped mid-records/,
+      );
+      expect(existsSync(join(root, "catalog/sources/build.json"))).toBe(false);
+      expect(readdirSync(join(root, "catalog/generated")).length).toBeGreaterThan(0);
+      const r = await buildAndWrite(root, { command: "atticus catalog build" });
+      expect(r.guard.refused).toBeUndefined();
+      const other = await forge();
+      await buildAndWrite(other, { command: "atticus catalog build" });
+      expect((await snap(root)).generated).toEqual((await snap(other)).generated);
     },
     T,
   );
