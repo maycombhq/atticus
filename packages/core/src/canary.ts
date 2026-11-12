@@ -278,14 +278,14 @@ const withMethod = (method: unknown, path: string) =>
   typeof method === "string" && foldCanary(method) ? `${foldCanary(method)} ${path}` : path;
 
 /**
- * A method that is any method: none, ASP.NET's and the bench's `ANY`, or `*` (which folds to
- * nothing, so its needle has no method). Third review of ADR 0196.
+ * A method that is any method: none, ASP.NET's and the bench's `ANY`, Express's `ALL`
+ * (`router.all(...)`, fourth review), or `*` (which folds to nothing, so its needle has no
+ * method). Third review of ADR 0196.
  */
-const anyMethod = (m: string | undefined) => m === undefined || m === "any";
+const anyMethod = (m: string | undefined) => m === undefined || m === "any" || m === "all";
 
 /** Two needles alike: the same path or key, and the same method unless either is any method. */
 function sameNeedle(a: string, b: string): boolean {
-  if (a === b) return true;
   const [am, ap] = a.includes(" ") ? a.split(" ") : [undefined, a];
   const [bm, bp] = b.includes(" ") ? b.split(" ") : [undefined, b];
   return ap === bp && (anyMethod(am) || anyMethod(bm) || am === bm);

@@ -67,22 +67,79 @@ export function notReadForSkipped(path: string, rules: ReadRules = DEFAULT_READ_
 }
 
 /**
- * A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive or a shebang, nor in a PHP
- * or Rust file an attribute, `#[Route('/api')]`: second and third reviews of ADR 0196; in Python,
- * Ruby, YAML or a shell script `#[` opens a comment), `<!--` or SQL's `-- `. A block comment closed
- * on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`) is code. `file`
- * is the path of the file the line is in.
+ * How a file's comments are written, by its name (fourth review of ADR 0196: the markers were
+ * language-blind, so Python's `*, session: …` read as a JSDoc line and a class's `#private` field
+ * as a `#` comment):
+ * - `hash`: `#` only (Python, Ruby, shell, YAML, TOML, Dockerfile, Makefile, R, Perl…); an INI
+ *   file's `;` and a properties file's `!` too.
+ * - `c`: `//`, `/*` and a doc block's leading `*` (JavaScript, TypeScript, Java, Kotlin, Scala, C#,
+ *   Go, Rust, Swift, C, C++, Dart…); `#` never (a C# directive, a C include, Rust's `#[`/`#!`, a
+ *   JavaScript `#private` field are code).
+ * - `php`: C's, and `#` but not PHP 8's `#[` attribute.
+ * - `sql`: `--` and `/*`.
+ * - `xml`: `<!--` (XML, XAML, MSBuild, SVG, WSDL).
+ * - anything else (HTML, whose scripts hold `//` comments, Markdown, Vue, Razor, Terraform, a
+ *   name not known): every marker, as before.
  */
-export const isCommentLine = (l: string, file: string) =>
-  (ATTRIBUTE_FILE.test(file) ? COMMENT_NOT_ATTRIBUTE : COMMENT).test(l) && !BLOCK_THEN_CODE.test(l);
+export type CommentStyle = "hash" | "c" | "php" | "sql" | "xml" | "generic";
 
-/** Files whose `#[` opens an attribute, not a comment: PHP 8 and Rust. */
-const ATTRIBUTE_FILE = /\.(php|phtml|rs)$/i;
-const COMMENT_START =
-  "^\\s*(\\/\\/|\\/\\*|\\*|<!--|-- |#(?!\\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\\b)(?!!)";
-const COMMENT = new RegExp(`${COMMENT_START})`);
-const COMMENT_NOT_ATTRIBUTE = new RegExp(`${COMMENT_START}(?!\\[))`);
+const HASH_EXT =
+  /\.(py|pyi|pyw|pyx|rb|rake|gemspec|ru|sh|bash|zsh|ksh|fish|ya?ml|toml|conf|cfg|ini|properties|env|r|pl|pm|ps1|psm1|coffee|ex|exs|jl|cr|nim|tcl|awk|gql|graphql|cmake|mk|dockerfile|gitignore|dockerignore|editorconfig|gitattributes)$/i;
+const HASH_NAME =
+  /(^|\/)(Dockerfile(\.[\w.-]+)?|Containerfile|Makefile|GNUmakefile|Caddyfile|Gemfile|Rakefile|Podfile|Vagrantfile|Procfile|Brewfile|Fastfile|Appfile|Pipfile|CMakeLists\.txt|requirements[\w.-]*\.(txt|in)|\.env(\.[\w.-]+)?)$/;
+const C_EXT =
+  /\.(m?[jt]sx?|c[jt]s|mts|java|kt|kts|scala|sc|groovy|gradle|cs|csx|go|rs|swift|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|m|mm|dart|proto|scss|less|css|json5|jsonc|zig|sol|hx|fs|fsx)$/i;
+const C_NAME = /(^|\/)Jenkinsfile(\.[\w.-]+)?$/;
+const PHP_EXT = /\.(php|phtml|php[3-8]|phps|phpt|inc|module)$/i;
+const SQL_EXT = /\.(sql|ddl|dml|pgsql|psql|plsql|hql|cql)$/i;
+const XML_EXT =
+  /\.(xml|xaml|axaml|csproj|vbproj|fsproj|props|targets|nuspec|resx|xsd|xslt?|wsdl|plist|svg|config|tld|jspx)$/i;
+
+export function commentStyleOf(file: string): CommentStyle {
+  if (PHP_EXT.test(file)) return "php";
+  if (C_EXT.test(file) || C_NAME.test(file)) return "c";
+  if (SQL_EXT.test(file)) return "sql";
+  if (XML_EXT.test(file)) return "xml";
+  if (HASH_EXT.test(file) || HASH_NAME.test(file)) return "hash";
+  return "generic";
+}
+
+/**
+ * A line that is all comment, in its file's own markers (`commentStyleOf`). A shebang is no
+ * comment, nor, where `#` is a comment, a C# or C directive in a file of no known type. A block
+ * comment closed on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`,
+ * `<!-- a --> <route …>`) is code. `file` is the path of the file the line is in.
+ */
+export const isCommentLine = (l: string, file: string) => {
+  const style = commentStyleOf(file);
+  const marker =
+    style !== "hash"
+      ? COMMENT_OF[style]
+      : /\.ini$/i.test(file)
+        ? INI_COMMENT
+        : /\.properties$/i.test(file)
+          ? PROPERTIES_COMMENT
+          : COMMENT_OF.hash;
+  return marker.test(l) && !(style === "xml" ? XML_THEN_CODE : BLOCK_THEN_CODE).test(l);
+};
+
+const DIRECTIVE =
+  "(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)";
+/** A doc block's leading `*` (` * text`, ` *\/`, `*@see`), not a generator method (`*entries()`, `*[Symbol.iterator]()`). */
+const DOC_STAR = "\\*(?![A-Za-z_$[])";
+const COMMENT_OF: Record<CommentStyle, RegExp> = {
+  hash: /^\s*#(?!!)/,
+  c: new RegExp(`^\\s*(\\/\\/|\\/\\*|${DOC_STAR})`),
+  php: new RegExp(`^\\s*(\\/\\/|\\/\\*|${DOC_STAR}|#(?![[!]))`),
+  sql: /^\s*(--|\/\*)/,
+  xml: /^\s*<!--/,
+  generic: new RegExp(`^\\s*(\\/\\/|\\/\\*|\\*|<!--|-- |#(?!\\s*${DIRECTIVE}\\b)(?!!))`),
+};
+/** An INI file's `;` or `#`, a properties file's `#` or `!`. */
+const INI_COMMENT = /^\s*[;#]/;
+const PROPERTIES_COMMENT = /^\s*[#!]/;
 const BLOCK_THEN_CODE = /^\s*\/\*.*?\*\/\s*[^\s/]/;
+const XML_THEN_CODE = /^\s*<!--.*?-->\s*\S/;
 
 /** A line that imports: its strings name modules, not routes. */
 const IMPORT_LINE =
@@ -207,6 +264,42 @@ function topicOf(s: string, context: boolean): string | undefined {
     if (!s.includes(".") || !NOT_TOPIC_LAST.has(last)) return s;
   }
   return undefined;
+}
+
+/**
+ * Which of a file's lines are all comment: `isCommentLine`, and in a C-family file (`c`) a line
+ * inside a block comment opened on a line above, unless code follows the block's close on it
+ * (fourth review of ADR 0196: `/* removed:` then `   @GetMapping("/balances") *\/`, a line with no
+ * leading `*`, read as code). A block opens as `candidatesIn` reads one, at the line's start or
+ * after a space (so `"/api/*"` opens none), and never after a `//` that starts a line comment.
+ * Python's docstrings are not read as comments (a canary comments out single lines only).
+ */
+export function commentLinesOf(file: string, lines: readonly string[]): boolean[] {
+  if (commentStyleOf(file) !== "c") return lines.map((l) => isCommentLine(l, file));
+  let inBlock = false;
+  return lines.map((raw) => {
+    const was = inBlock;
+    let s = raw;
+    let code = "";
+    for (;;) {
+      if (inBlock) {
+        const i = s.indexOf("*/");
+        if (i < 0) break;
+        s = s.slice(i + 2);
+        inBlock = false;
+      }
+      const m = /(^|\s)(\/\*|\/\/)/.exec(s);
+      if (!m) {
+        code += s;
+        break;
+      }
+      code += s.slice(0, m.index + m[1]!.length);
+      if (m[2] === "//") break;
+      s = s.slice(m.index + m[0].length);
+      inBlock = true;
+    }
+    return was ? !code.trim() : isCommentLine(raw, file);
+  });
 }
 
 /** The line with its comments taken out; `inBlock` carries a block comment across lines. */

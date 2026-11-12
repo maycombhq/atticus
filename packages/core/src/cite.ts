@@ -384,14 +384,20 @@ export function partsNamePath(lines: readonly string[], path: string): boolean {
 }
 
 /**
- * Whether a part's value or line declares a conventional route, one whose action is its method's
- * name (third review of ADR 0196): a template with an action token (`{controller}/{action}/{id}`,
- * `{controller=Home}/{action=Index}/{id?}`, attribute routing's `[action]`), or a call that sets the
- * default template (`MapDefaultControllerRoute()`). `[controller]` alone is not one: an attribute
- * route names its action in its own attribute, not by the method.
+ * Whether a part's value or line, or a code line in the cite window, declares a conventional
+ * route, one whose action is its method's name (third and fourth reviews of ADR 0196): a template
+ * with an action token (`{controller}/{action}/{id}`, `{controller=Home}/{action=Index}/{id?}`,
+ * attribute routing's `[action]`, on the class or the method's own `[Route("[action]")]`), a call
+ * that sets the default template (`MapDefaultControllerRoute()`), or a DRF `@action(` that sets no
+ * `url_path=` (its path is the method's name). `[controller]` alone is not one: an attribute route
+ * names its action in its own attribute, not by the method.
  */
 export function declaresConventionalRoute(texts: readonly string[]): boolean {
-  return texts.some((t) => /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t));
+  return texts.some(
+    (t) =>
+      /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t) ||
+      (/@action\s*\(/.test(t) && !/\burl_path\s*=/.test(t)),
+  );
 }
 
 /** A comment line's text with its marker taken off (`// `, `/* `, `* `, `# `, `<!-- `, `-- `). */
@@ -413,13 +419,14 @@ const writesPieceAsPath = (l: string, p: string) =>
  */
 export function pathPieceOnlyInComment(
   rawNear: readonly string[],
-  isComment: (l: string) => boolean,
+  /** Whether a line of the window (and its index in it) is all comment. */
+  isComment: (l: string, i: number) => boolean,
   partLines: readonly string[],
   path: string,
 ): string | undefined {
-  const comments = rawNear.filter(isComment).map(commentText);
+  const comments = rawNear.filter((l, i) => isComment(l, i)).map(commentText);
   if (!comments.length) return undefined;
-  const code = rawNear.filter((l) => !isComment(l));
+  const code = rawNear.filter((l, i) => !isComment(l, i));
   return pathPieces(path).find(
     (p) =>
       !linesNamePiece(partLines, p) &&

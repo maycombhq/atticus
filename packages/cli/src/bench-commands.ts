@@ -343,11 +343,12 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
  * found, missed and wrong as bench run, so the numbers compare with the readers' baseline. A
  * repo's facts are read from --facts (one repo only), else from the clone's own
  * .atticus/facts/<repo>.jsonl (the assistant ran /atticus map in the clone), else from
- * <cache>/facts/<repo>.jsonl. With a clone at <cache>/<repo> (atticus bench fetch), the facts are
- * verified against it first and only those kept are scored (third review of ADR 0196: the bench
- * showed no fact the verifier lost), each repo saying how many were kept and rejected and why;
- * with none they are scored as they are, and the repo says so. Writes the scores to
- * <cache>/results/.
+ * <cache>/facts/<repo>.jsonl. With a clone at <cache>/<repo> (atticus bench fetch) at the bench's
+ * pinned commit, the facts are verified against it first and only those kept are scored (third
+ * review of ADR 0196: the bench showed no fact the verifier lost), each repo saying how many were
+ * kept and rejected and why; with none, or a clone at another commit (fourth review: its lines
+ * aren't the ones the facts cite), they are scored as they are, and the repo says why. Writes the
+ * scores to <cache>/results/.
  */
 export async function benchFactsCommand(
   o: BenchOptions & { facts?: string },
@@ -395,8 +396,11 @@ export async function benchFactsCommand(
       // verified against the clone when there is one, so the score counts what the verifier keeps
       const clone = join(cache, r.id);
       let facts = parsed.facts;
-      let verify: BenchFactsVerify = { verified: false };
-      if (existsSync(clone)) {
+      let verify: BenchFactsVerify = { verified: false, why: "no-clone" };
+      const head = existsSync(clone) ? await cloneCommit(clone) : undefined;
+      if (existsSync(clone) && head !== r.commit)
+        verify = { verified: false, why: "off-pin", head: head ?? "none" };
+      else if (existsSync(clone)) {
         const v = await verifyFacts({ facts, source: dirSource(clone) });
         const codes: Record<string, number> = {};
         for (const x of v.rejected) codes[x.code] = (codes[x.code] ?? 0) + 1;
@@ -460,7 +464,9 @@ export async function benchFactsCommand(
                     .join(", ")})`
                 : ""
             }; only the kept are scored`
-          : `  not verified: no clone at ${join(cache, s.repo)} (atticus bench fetch); every fact is scored`,
+          : s.verify.why === "off-pin"
+            ? `  not verified: the clone at ${join(cache, s.repo)} is ${s.verify.head === "none" ? "no git checkout" : `at ${s.verify.head.slice(0, 12)}`}, not the pinned ${(repos.find((r) => r.id === s.repo)?.commit ?? "").slice(0, 12)} (atticus bench fetch); every fact is scored`
+            : `  not verified: no clone at ${join(cache, s.repo)} (atticus bench fetch); every fact is scored`,
       );
       for (const [k, v] of Object.entries(s.kinds))
         io.out(row(`  ${k}`, { found: v.found, missed: v.missed.length, wrong: v.wrong.length }));
@@ -480,7 +486,9 @@ export async function benchFactsCommand(
 
 /** What `bench facts` verified of a repo's facts before scoring them. */
 type BenchFactsVerify =
-  | { verified: false }
+  | { verified: false; why: "no-clone" }
+  /** A clone at another commit than the bench pins (`head`), or no git checkout (`none`). */
+  | { verified: false; why: "off-pin"; head: string }
   | { verified: true; kept: number; rejected: number; codes: Record<string, number> };
 
 const share = (a: number, b: number) => `${a}/${b} ${pct(b === 0 ? 1 : a / b)}`.padStart(13);

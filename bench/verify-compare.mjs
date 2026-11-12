@@ -9,9 +9,10 @@
 // (packages/core and packages/verify of that commit, built into a temporary folder that is deleted
 // after), and prints, per repo, the facts, how many each kept, and the facts one kept and the other
 // didn't. --lost prints each fact the base kept and this build doesn't, with its reason and cite.
-// It reads the cache only, writes nothing in it, and calls no network.
+// It reads the cache only, writes nothing in it, and calls no network. The temporary folder goes
+// on Ctrl-C (SIGINT) and SIGTERM too; an unknown --repo is refused with the ids it knows.
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -45,6 +46,18 @@ if (!existsSync(join(root, "packages", "verify", "dist", "index.js"))) {
   process.exit(2);
 }
 
+// the bench repos with facts: an unknown --repo is refused before anything is built
+const files = (await readdir(join(cache, "facts")))
+  .filter((n) => /^[a-z0-9][a-z0-9-]*\.jsonl$/.test(n) && !/questions|rejected|reviewed/.test(n))
+  .sort();
+const known = files.map((n) => n.replace(/\.jsonl$/, ""));
+if (only && !known.includes(only)) {
+  console.error(
+    `No bench facts for ${only} in ${join(cache, "facts")}. The repos with facts: ${known.join(", ") || "none"}.`,
+  );
+  process.exit(2);
+}
+
 /** Link a package's node_modules entry by entry, `@maycombhq/core` to the base's own core. */
 async function linkModules(pkg, to, core) {
   const from = join(root, "packages", pkg, "node_modules");
@@ -61,11 +74,21 @@ async function linkModules(pkg, to, core) {
 }
 
 const tmp = await mkdtemp(join(tmpdir(), "verify-compare-"));
+// interrupted: the temporary folder goes too (the `finally` below doesn't run on a signal)
+for (const [signal, code] of [
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+])
+  process.once(signal, () => {
+    rmSync(tmp, { recursive: true, force: true });
+    process.exit(code);
+  });
 try {
   const sha = execFileSync("git", ["rev-parse", "--short=8", base], { cwd: root })
     .toString()
     .trim();
-  // the base's core and verify, built with this checkout's TypeScript and modules
+  // the base's core and verify, built with this checkout's TypeScript and modules; tar is run in
+  // the temporary folder on a relative name, as Git for Windows's tar reads `C:` as a host
   const tar = join(tmp, "base.tar");
   execFileSync(
     "git",
@@ -74,7 +97,7 @@ try {
       cwd: root,
     },
   );
-  execFileSync("tar", ["-xf", tar, "-C", tmp]);
+  execFileSync("tar", ["-xf", "base.tar"], { cwd: tmp });
   await rm(tar);
   const core = join(tmp, "packages", "core");
   // the workspace's own modules (TypeScript's `@types/node`), as in the checkout
@@ -99,9 +122,6 @@ try {
   console.log(
     `${"REPO".padEnd(32)} ${"FACTS".padStart(6)} ${`KEPT@${sha}`.padStart(14)} ${"KEPT NOW".padStart(9)}  LOST  GAINED`,
   );
-  const files = (await readdir(join(cache, "facts")))
-    .filter((n) => /^[a-z0-9][a-z0-9-]*\.jsonl$/.test(n) && !/questions|rejected|reviewed/.test(n))
-    .sort();
   for (const f of files) {
     const repo = f.replace(/\.jsonl$/, "");
     if (only && repo !== only) continue;

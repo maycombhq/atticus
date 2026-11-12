@@ -405,6 +405,19 @@ describe("scoreCanary", () => {
           at("x", "get", "/balances", 11, "balances"),
           "passed",
         ],
+        // fourth review: Express's `router.all(...)` is any method too, both ways
+        [
+          "ALL removed, GET read beside it",
+          at("r", "ALL", "/balances", 10),
+          at("x", "GET", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "POST removed, all read on its line",
+          at("r", "POST", "/balances", 10),
+          at("x", "all", "/balances", 10),
+          "passed",
+        ],
         // still a correct fact of the line beside: another single method
         [
           "GET removed, PUT read beside it",

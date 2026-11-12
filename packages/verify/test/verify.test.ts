@@ -1275,6 +1275,309 @@ describe("what the revised reads found about the verifier (A4)", () => {
       ).toBe("claim-in-comment");
     });
   });
+
+  // Fourth review of ADR 0196: comment markers per file type, a block comment's inner lines, and a
+  // conventional action named on the cite's own lines. Shapes from the bench, in Forge names.
+  describe("comments as each language writes them (fourth review of ADR 0196)", () => {
+    type P = [file: string, line: number, value: string];
+    const fact = (
+      id: string,
+      kind: "entry" | "call",
+      path: string,
+      cite: P,
+      parts: P[] = [],
+      method = "GET",
+    ) =>
+      ({
+        ...base,
+        kind,
+        id,
+        ...(kind === "entry" ? { entryType: "rest" } : { callType: "rest" }),
+        method,
+        path,
+        cite: {
+          file: cite[0],
+          line: cite[1],
+          value: cite[2],
+          ...(parts.length
+            ? { with: parts.map(([file, line, value]) => ({ file, line, value })) }
+            : {}),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const lines = (...ls: string[]) => [...ls, ""].join("\n");
+
+    it("reads each file type's own markers", () => {
+      const cases: [string, string, boolean][] = [
+        // hash-comment files: `#` only, so Python's keyword-only `*` and `*args` are code
+        ["    *, session: SessionDep, item_in: ItemCreate", "app/api/routes/items.py", false],
+        ["    *args, **kwargs", "app/util.py", false],
+        ["    # @router.get('/balances')", "app/api/routes/items.py", true],
+        ['#[app.get("/balances")]', "app/main.py", true],
+        ["#!/usr/bin/env python", "bin/run.py", false],
+        ["# a comment", "config/app.yaml", true],
+        ["// not a comment here", "config/app.yaml", false],
+        ["  # x", "Dockerfile", true],
+        ["# x", "Dockerfile.dev", true],
+        ["# x", "Makefile", true],
+        ["# x", "requirements-dev.txt", true],
+        ["; ledger url", "conf/ledger.ini", true],
+        ["! ledger url", "src/main/resources/application.properties", true],
+        // C-family: `//`, `/*`, a doc block's `*`; `#` never
+        ["  #base = '/api/ledger';", "src/portal/ledger.js", false],
+        ["  #count = 0;", "src/portal/ledger.ts", false],
+        ["#region Balances", "src/Ledger/BalanceController.cs", false],
+        ["#include <ledger.h>", "src/ledger.c", false],
+        ["#![allow(dead_code)]", "src/main.rs", false],
+        ['  #[get("/x")]', "src/main.rs", false],
+        ["  // @GetMapping('/x')", "src/A.java", true],
+        ["   * @param id the ledger", "src/A.java", true],
+        ["   */", "src/A.ts", true],
+        ["  *entries() {", "src/ledger.ts", false],
+        ["  *[Symbol.iterator]() {", "src/ledger.js", false],
+        ["/* a */ router.get('/x')", "src/a.js", false],
+        ["/* a */ // b", "src/a.js", true],
+        ["  // x", "Jenkinsfile", true],
+        // PHP: C's and `#`, not PHP 8's `#[`, in every PHP extension
+        ["# a comment", "src/A.php", true],
+        ["#[Route('/x')]", "src/A.php", false],
+        ["#[Route('/x')]", "includes/routes.inc", false],
+        ["#[Route('/x')]", "ledger.module", false],
+        ["#[Route('/x')]", "legacy/a.php5", false],
+        ["#[Route('/x')]", "tests/a.phpt", false],
+        ["#[Route('/x')]", "views/a.phtml", false],
+        // SQL and XML
+        ["-- a comment", "db/V1__init.sql", true],
+        ["--a comment", "db/V1__init.sql", true],
+        ["# not a comment", "db/V1__init.sql", false],
+        ["  <!-- <url>/x</url> -->", "pom.xml", true],
+        ["  <!-- a --> <route path='/x'/>", "web/routes.xml", false],
+        ["  // x", "pom.xml", false],
+        // anything else: every marker, as before
+        ["# Heading", "README.md", true],
+        ["// x", "main.tf", true],
+        ["# x", "main.tf", true],
+        ["  // fetch('/x')", "public/index.html", true],
+      ];
+      for (const [l, file, want] of cases)
+        expect([l, file, isCommentLine(l, file)]).toEqual([l, file, want]);
+    });
+
+    it("keeps a part on Python's keyword-only `*,` line and on a JavaScript `#private` field", async () => {
+      const PY = "app/api/routes/items.py";
+      const py = {
+        [PY]: lines(
+          'router = APIRouter(prefix="/items")', // 1
+          "", // 2
+          '@router.post("/")', // 3
+          "def create_item(", // 4
+          "    *, session: SessionDep, item_in: ItemCreate", // 5
+          ") -> Any:", // 6
+        ),
+      };
+      expect(
+        await one(
+          py,
+          fact(
+            "p1",
+            "entry",
+            "/items",
+            [PY, 3, "/"],
+            [
+              [PY, 1, "/items"],
+              [PY, 5, "item_in: ItemCreate"],
+            ],
+            "POST",
+          ),
+        ),
+      ).toBe("kept");
+      const JS = "src/portal/ledger.js";
+      const js = {
+        [JS]: lines(
+          "export class LedgerClient {", // 1
+          '  #base = "/api/ledger";', // 2
+          "  balances() {", // 3
+          "    return fetch(`${this.#base}/balances`);", // 4
+          "  }", // 5
+          "}", // 6
+        ),
+      };
+      expect(
+        await one(
+          js,
+          fact(
+            "j1",
+            "call",
+            "/api/ledger/balances",
+            [JS, 4, "/balances"],
+            [[JS, 2, "/api/ledger"]],
+          ),
+        ),
+      ).toBe("kept");
+      // a part only a real `#` comment names is still refused
+      const commented = {
+        [PY]: py[PY].replace(
+          'router = APIRouter(prefix="/items")',
+          '# router = APIRouter(prefix="/items")',
+        ),
+      };
+      expect(
+        await one(
+          commented,
+          fact("p2", "entry", "/items", [PY, 3, "/"], [[PY, 1, "/items"]], "POST"),
+        ),
+      ).toBe("claim-in-comment");
+    });
+
+    it("reads the lines inside a block comment as comment, in a C-family file", async () => {
+      const J = "src/main/java/forge/portal/BalanceResource.java";
+      const java = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class BalanceResource {", // 3
+          "  /* removed:", // 4
+          '     @GetMapping("/balances") */', // 5
+          "  public List<Balance> balances() { return null; }", // 6
+          '  @GetMapping("/statements")', // 7
+          "  public List<Statement> statements() { return null; }", // 8
+          "}", // 9
+        ),
+      };
+      expect(
+        await one(java, fact("b1", "entry", "/api/balances", [J, 6, "balances"], [[J, 2, "/api"]])),
+      ).toBe("claim-in-comment");
+      expect(await one(java, fact("b2", "entry", "/balances", [J, 5, "/balances"]))).toBe(
+        "claim-in-comment",
+      );
+      // the live mapping below the block, and code after a block's close, are kept
+      expect(
+        await one(
+          java,
+          fact("b3", "entry", "/api/statements", [J, 8, "statements"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      const closed = {
+        [J]: java[J].replace('     @GetMapping("/balances") */', '  */ @GetMapping("/balances")'),
+      };
+      expect(
+        await one(
+          closed,
+          fact("b4", "entry", "/api/balances", [J, 6, "balances"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      // a `/*` after a line comment's `//`, or inside a path string, opens no block
+      const T = "src/portal/routes.ts";
+      const ts = {
+        [T]: lines(
+          "// matches /* and more", // 1
+          'router.get("/api/*", proxy);', // 2
+          'router.get("/statements", list);', // 3
+          'app.use("/v1", router);', // 4
+        ),
+      };
+      expect(
+        await one(
+          ts,
+          fact("t1", "entry", "/v1/statements", [T, 3, "/statements"], [[T, 4, "/v1"]]),
+        ),
+      ).toBe("kept");
+    });
+
+    it('keeps a DRF @action with no url_path and a method\'s own [Route("[action]")], whatever a comment beside them says', async () => {
+      const files = {
+        "ledger/views.py": lines(
+          "class StatementViewSet(viewsets.ModelViewSet):", // 1
+          "    # GET /statements/recent_postings/", // 2
+          "    @action(detail=False, methods=['get'])", // 3
+          "    def recent_postings(self, request):", // 4
+          "        return Response([])", // 5
+        ),
+        "ledger/urls.py": lines(
+          "router = DefaultRouter()",
+          "router.register(r'statements', StatementViewSet)",
+        ),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "d1",
+            "entry",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("kept");
+      // with url_path the path is that, not the method's name: a comment's path alone names nothing
+      const pathed = {
+        ...files,
+        "ledger/views.py": files["ledger/views.py"].replace(
+          "@action(detail=False, methods=['get'])",
+          "@action(detail=False, methods=['get'], url_path='recent')",
+        ),
+      };
+      expect(
+        await one(
+          pathed,
+          fact(
+            "d2",
+            "entry",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      const C = "src/Northwind.Api/Controllers/LedgerController.cs";
+      const cs = {
+        [C]: lines(
+          '[Route("api/[controller]")]', // 1
+          "public class LedgerController : ControllerBase", // 2
+          "{", // 3
+          "    // GET api/ledger/balances", // 4
+          '    [HttpGet, Route("[action]")]', // 5
+          "    public IActionResult Balances() => Ok();", // 6
+          "}", // 7
+        ),
+      };
+      expect(
+        await one(
+          cs,
+          fact(
+            "a1",
+            "entry",
+            "/api/Ledger/Balances",
+            [C, 5, "[action]"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("kept");
+      // a commented-out `[action]` is no conventional route
+      const off = {
+        [C]: cs[C].replace(
+          '    [HttpGet, Route("[action]")]',
+          '    // [HttpGet, Route("[action]")] GET api/ledger/balances',
+        ),
+      };
+      expect(
+        await one(
+          off,
+          fact(
+            "a2",
+            "entry",
+            "/api/Ledger/Balances",
+            [C, 6, "Balances"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+    });
+  });
 });
 
 describe("a route the file's place gives (held-out run)", () => {
