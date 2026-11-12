@@ -125,14 +125,20 @@ export class FlowGraph {
 
   /** Words that name the component or its system: they say where code is, not what it does. */
   ownWords(component: string): Set<string> {
+    // Kept per component (ADR 0195 point 9): every call and entry point of it asks again.
+    let own = this.ownMemo.get(component);
+    if (own) return new Set(own);
     const s = this.systemOf(component);
     const sys = s ? this.systems.get(s) : undefined;
-    return tokens([
+    own = tokens([
       ...splitWords(component),
       ...(s ? splitWords(s) : []),
       ...(sys ? splitWords(sys.name) : []),
     ]);
+    this.ownMemo.set(component, own);
+    return new Set(own);
   }
+  private readonly ownMemo = new Map<string, Set<string>>();
 
   /** The system's name as one singular word for job names (Reports → report), if it has one. */
   systemWord(component: string): string | undefined {

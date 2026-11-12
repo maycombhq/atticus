@@ -106,6 +106,8 @@ export async function featuresForScan(
     decisions: input.decisions,
     proposals: read.proposals,
     ...(input.maxDepth ? { maxDepth: input.maxDepth } : {}),
+    // A scan keeps the features only (ADR 0195 point 9: the flows of a big estate are large).
+    keepFlows: false,
   });
   return {
     features: r.features,

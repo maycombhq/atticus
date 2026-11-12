@@ -49,6 +49,19 @@ import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import {
+  buildKeyOf,
+  keepReaders,
+  keptReaders,
+  keepBuild,
+  loadKept,
+  loadReadersTrust,
+  readersKeyOf,
+  recordJsonKey,
+  stageKept,
+  textReused,
+  type KeptTexts,
+} from "./build-cache.js";
+import {
   answerMissesOf,
   factsEstateAfterMerge,
   factsEstateRecords,
@@ -254,9 +267,16 @@ export function readersSlotRead(
   text: string,
   repo?: string,
 ): ReadersSlotRead | { problem: string } {
+  // A slot of these bytes read and checked before reads as it was then (the build cache's
+  // projection, ADR 0195 point 9).
+  const textSha = sha(text);
+  const key = readersKeyOf(repo, textSha);
+  const kept = keptReaders(key) as ReadersSlotT | undefined;
+  if (kept) return { slot: kept, sha: textSha };
   const p = parseReadersSlot(text, repo);
   if (!p.ok) return { problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
-  return { slot: p.slot, sha: sha(text) };
+  keepReaders(key, p.slot);
+  return { slot: p.slot, sha: textSha };
 }
 
 /** Every slot file on disk under catalog/sources, by repo (orphaned ones too). */
@@ -334,6 +354,7 @@ export async function loadBuildInputs(
   const stateDir = o.stateDir ?? pack.stateDir;
   const op = o.op ?? (await loadOrgPack(orgPackDir));
   const problems: string[] = [];
+  await loadReadersTrust(stateDir);
   const onDisk = await readSlots(root);
   const slots = o.slots ? o.slots(onDisk) : onDisk;
   const curatedDir = o.curatedDir ?? curatedDirOf(root, op);
@@ -547,6 +568,20 @@ function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
  */
 export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const { op, root } = i;
+  // The build cache (point 9): a build of the same inputs is the last build, kept whole; else
+  // the last build's record texts are kept for the records that didn't change. A build with
+  // federated catalogs isn't kept (their folders are read outside the inputs).
+  const cacheKey = i.federated.length
+    ? undefined
+    : await buildKeyOf({
+        inputs: i as unknown as Record<string, unknown>,
+        slots: slotsKeyOf(i.slots),
+        proposalsDir: join(dirname(i.curatedDir), "proposals"),
+        orgPackDir: i.orgPackDir,
+        wikis: op.sources.wikis,
+      });
+  const kept = await loadKept<Build>(i.stateDir, cacheKey);
+  if (kept.hit) return kept.hit;
   const problems: ScanProblem[] = [];
   const notes: string[] = [];
   for (const p of i.problems) problems.push({ source: "build", message: p });
@@ -825,9 +860,12 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       (r) => `${r.kind}/${r.id}`,
     ),
   );
+  const legacySlotKeys = new Set(
+    (legacySlot ? legacySlot.slot.records : []).map((r) => `${r.kind}/${r.id}`),
+  );
   records = [...byKey.values()].filter(
     (r) =>
-      !(legacySlot && isLegacyGone(r, legacySlot.slot, live, ends)) &&
+      !(legacySlot && isLegacyGone(r, legacySlotKeys, live, ends)) &&
       !(
         foldedNow.has(r.id) &&
         legacyKeys.has(`${r.kind}/${r.id}`) &&
@@ -913,7 +951,15 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
 
   // ---- the files and build.json
   const files = new Map<string, string>();
-  for (const r of out) files.set(recordPath(r), serializedOf(r));
+  /** Each file's record, by the hash of its JSON: what the cache keeps its text by. */
+  const textKeys = new Map<string, string>();
+  for (const r of out) {
+    const path = recordPath(r);
+    files.set(
+      path,
+      serializedOf(r, kept.texts, cacheKey !== undefined ? { textKeys, path } : undefined),
+    );
+  }
   // joins.json as this build leaves it (its retired joins out): what the next build reads.
   const manifest = manifestOf(
     root,
@@ -935,7 +981,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       notes.push(
         `${r.repo}: its records are kept from before the upgrade (a legacy slot); scan or verify this repo to replace it.`,
       );
-  return {
+  const build: Build = {
     root,
     records: out,
     files,
@@ -973,6 +1019,23 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     problems,
     stats,
   };
+  stageKept(build, i.stateDir, cacheKey, textKeys);
+  return build;
+}
+
+/** The slots as the cache's key reads them: each by the hash of its bytes, or its problem. */
+function slotsKeyOf(s: BuildSlots): unknown {
+  const rest: Record<string, unknown> = {};
+  // `pending` (slotsAfter's facts texts, which withSlotWrites reads in) isn't read by the build.
+  for (const k of Object.keys(s).sort(cmpText))
+    if (k !== "readers" && k !== "facts" && k !== "legacy" && k !== "pending")
+      rest[k] = (s as unknown as Record<string, unknown>)[k];
+  return {
+    readers: [...s.readers].map(([repo, x]) => [repo, "slot" in x ? x.sha : x]),
+    facts: [...s.facts].map(([repo, f]) => [repo, f.ok ? [f.sha, f.metaSha] : f]),
+    legacy: s.legacy ? ("slot" in s.legacy ? s.legacy.sha : s.legacy) : null,
+    rest,
+  };
 }
 
 /** The part of a build's shared-map join about one repo (ADR 0160), for its verify report. */
@@ -991,11 +1054,12 @@ async function pairsFrom(
 /** A legacy record whose repos the manifests no longer list (or list archived): it leaves. */
 function isLegacyGone(
   r: CatalogRecord,
-  slot: LegacyJoinsSlotT,
+  /** The legacy slot's records, by `kind/id`. */
+  slotKeys: ReadonlySet<string>,
   live: Set<string>,
   ends: Map<string, string[]>,
 ): boolean {
-  if (!slot.records.some((x) => x.kind === r.kind && x.id === r.id)) return false;
+  if (!slotKeys.has(`${r.kind}/${r.id}`)) return false;
   return repoOfEvidence(r).some((x) => !live.has(x)) || endsGone(r, ends, live).length > 0;
 }
 
@@ -1022,21 +1086,55 @@ function currentHashOf(
  * of a build are the last build's, and the YAML writer was most of a build's time (ADR 0195,
  * CS2: the budgets). The text is what `serializeRecord` gives; only the work is saved.
  */
-function serializedOf(r: CatalogRecord): string {
+function serializedOf(
+  r: CatalogRecord,
+  kept?: KeptTexts,
+  keyed?: { textKeys: Map<string, string>; path: string },
+): string {
   const key = JSON.stringify(r);
+  // The hash the build cache keeps the text by (point 9: the last build's texts, on disk).
+  let hashed: string | undefined;
+  const hashOf = () => (hashed ??= recordJsonKey(key));
+  if (keyed) keyed.textKeys.set(keyed.path, hashOf());
   const hit = SERIALIZED.get(key);
   if (hit !== undefined) {
     SERIALIZED.delete(key);
     SERIALIZED.set(key, hit);
     return hit;
   }
-  const text = serializeRecord(r);
+  let text = kept ? kept.get(hashOf()) : undefined;
+  if (text !== undefined) textReused();
+  else text = serializeRecord(r);
   SERIALIZED.set(key, text);
   if (SERIALIZED.size > SERIALIZED_MAX) SERIALIZED.delete(SERIALIZED.keys().next().value!);
   return text;
 }
 const SERIALIZED = new Map<string, string>();
 const SERIALIZED_MAX = 20_000;
+
+/** Forget the texts kept in this process (a test of the build cache on disk, alone). */
+export function forgetSerializedTexts(): void {
+  SERIALIZED.clear();
+}
+
+/**
+ * The hash of a record file's text, `sha(text)`: build.json holds it already for every file the
+ * build makes (by its path under catalog/generated), so the guards, the check and the report
+ * don't hash each file again (ADR 0195 point 9). A text not the build's own is hashed.
+ */
+function fileShaOf(b: Build, path: string, text: string): string {
+  let m = FILE_SHAS.get(b);
+  if (!m) {
+    m = new Map();
+    const base = `${relOf(b.root, generatedDirOf(b.root))}/`;
+    for (const f of b.manifest.files)
+      if (f.path.startsWith(base)) m.set(f.path.slice(base.length), f.sha256);
+    FILE_SHAS.set(b, m);
+  }
+  const h = b.files.get(path) === text ? m.get(path) : undefined;
+  return h ?? sha(text);
+}
+const FILE_SHAS = new WeakMap<Build, Map<string, string>>();
 
 /** The single hash of every slot the build used (what a join with any repo may rest on). */
 const ALL_SLOTS = "catalog/sources";
@@ -1193,8 +1291,21 @@ export async function writeCuratedEdits(
 export async function readBuildManifest(
   path: string,
 ): Promise<{ manifest?: BuildManifestT; text?: string; problem?: string }> {
-  const text = await readText(path);
+  return buildManifestOfText(await readText(path));
+}
+
+/**
+ * build.json's text read: `mine`, when given, is the text this build writes (serialized from a
+ * manifest, so it reads: its JSON is the manifest, unchecked; ADR 0195 point 9, a 40-repo
+ * estate's build.json is large).
+ */
+function buildManifestOfText(
+  text: string | undefined,
+  mine?: string,
+): { manifest?: BuildManifestT; text?: string; problem?: string } {
   if (text === undefined) return {};
+  if (mine !== undefined && text === mine)
+    return { manifest: JSON.parse(text) as BuildManifestT, text };
   const p = parseBuildManifest(text);
   return p.ok
     ? { manifest: p.slot, text }
@@ -1291,12 +1402,16 @@ export async function guardBuild(
     command: string;
     /** The target's record files as read already (buildAndWrite reads them once). */
     onDisk?: DiskFiles;
+    /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
+    manifests?: { onDisk: string | undefined; mine: string };
   },
 ): Promise<GuardResult> {
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
-  const last = await readBuildManifest(target.manifest);
+  const last = o.manifests
+    ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine)
+    : await readBuildManifest(target.manifest);
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
@@ -1318,7 +1433,7 @@ export async function guardBuild(
     for (const [p, f] of onDisk) {
       const want = b.files.get(p);
       // A file holding what this build writes loses nothing (an edit made curated, say).
-      if (want !== undefined && sha(want) === f.sha) continue;
+      if (want !== undefined && fileShaOf(b, p, want) === f.sha) continue;
       if (known.get(p) === f.sha || alt.get(p) === f.sha) continue;
       edits.push({ path: `${genRel}/${p}`, how: known.has(p) || alt.has(p) ? "changed" : "added" });
     }
@@ -1383,8 +1498,13 @@ export async function guardBuild(
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
     // Each repo's slot files as this build read them, with their hashes.
     const slotNow = new Map<string, { path: string; sha256: string }[]>();
+    // Most files share their sources: each distinct one is looked at once.
+    const sawNow = new Set<string>();
     for (const f of b.manifest.files)
       for (const x of f.sources) {
+        const key = `${x.path}\u0000${x.sha256}`;
+        if (sawNow.has(key)) continue;
+        sawNow.add(key);
         const m = /sources\/(?:readers|facts)\/(.+?)(?:\.meta\.json|\.jsonl|\.json)$/.exec(x.path);
         if (!m) continue;
         const xs = slotNow.get(m[1]!) ?? [];
@@ -1393,9 +1513,14 @@ export async function guardBuild(
       }
     // Each slot file as the last build read it.
     const slotThen = new Set<string>();
+    const sawThen = new Set<string>();
     for (const f of last.manifest.files)
-      for (const x of f.sources)
-        if (/sources\/(?:readers|facts)\//.test(x.path)) slotThen.add(`${x.path}\u0000${x.sha256}`);
+      for (const x of f.sources) {
+        const key = `${x.path}\u0000${x.sha256}`;
+        if (sawThen.has(key)) continue;
+        sawThen.add(key);
+        if (/sources\/(?:readers|facts)\//.test(x.path)) slotThen.add(key);
+      }
     /** The repos whose slot is new or changed since the last build. */
     const slotChanged = (repo: string) =>
       (slotNow.get(repo) ?? []).some((x) => !slotThen.has(`${x.path}\u0000${x.sha256}`));
@@ -1409,18 +1534,25 @@ export async function guardBuild(
         if (c.repo) compRepo.set(c.id, c.repo);
       }
     const newArrowsOf = new Map<string, string[]>();
+    // Every `/<kind>/<id>.yaml` tail of the last build's paths, once (ADR 0195 point 9: a search
+    // of the whole list for each arrow was quadratic). A path ends with `/${rel}` exactly when
+    // one of its tails at a `/` is `rel`.
+    const lastTails = new Set<string>();
+    for (const f of last.manifest.files)
+      for (let k = f.path.indexOf("/"); k >= 0; k = f.path.indexOf("/", k + 1))
+        lastTails.add(f.path.slice(k + 1));
     for (const x of b.records) {
-      if (
-        x.kind !== "Interface" ||
-        last.manifest.files.some((f) => f.path.endsWith(`/${recordPath(x)}`))
-      )
-        continue;
+      if (x.kind !== "Interface" || lastTails.has(recordPath(x))) continue;
       const i = x as unknown as { from?: string; to?: string };
       for (const [a, z] of [
         [i.from, i.to],
         [i.to, i.from],
       ] as const)
-        if (a && z) newArrowsOf.set(a, [...(newArrowsOf.get(a) ?? []), z]);
+        if (a && z) {
+          const l = newArrowsOf.get(a);
+          if (l) l.push(z);
+          else newArrowsOf.set(a, [z]);
+        }
     }
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
@@ -1676,11 +1808,18 @@ export async function takeUndoCopy(
   undoDir: string,
   command: string,
   touched: readonly { path: string; text: string | null }[],
-  extra: { nextManifest?: string; now?: Date } = {},
+  extra: {
+    nextManifest?: string;
+    now?: Date;
+    /** Files as the caller read them already (LF; null: not there), by absolute path. */
+    known?: ReadonlyMap<string, string | null>;
+  } = {},
 ): Promise<number | undefined> {
   const changes: { path: string; before: string | null }[] = [];
   for (const t of touched) {
-    const cur = await readText(t.path);
+    const cur = extra.known?.has(t.path)
+      ? (extra.known.get(t.path) ?? undefined)
+      : await readText(t.path);
     if ((cur ?? null) === t.text) continue;
     changes.push({ path: t.path, before: cur ?? null });
   }
@@ -1732,12 +1871,14 @@ export async function writeBuiltCatalog(
     now?: Date;
     /** The target's record files as read already (buildAndWrite reads them once). */
     onDisk?: DiskFiles;
+    /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
+    manifests?: { onDisk: string | undefined; mine: string };
   },
 ): Promise<WriteResult> {
   if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
-  const manifestText = serializeBuildManifest(manifestAt(b, target));
+  const manifestText = o.manifests?.mine ?? serializeBuildManifest(manifestAt(b, target));
   const slots = [...(o.slots ?? [])];
   if (b.legacyJoins !== undefined && !slots.some((s) => s.path === legacyJoinsPath(root)))
     slots.push({ path: legacyJoinsPath(root), text: b.legacyJoins });
@@ -1755,6 +1896,7 @@ export async function writeBuiltCatalog(
   const undo = await takeUndoCopy(root, o.undoDir, o.command, touched, {
     nextManifest: manifestText,
     ...(o.now ? { now: o.now } : {}),
+    ...(o.manifests ? { known: new Map([[target.manifest, o.manifests.onDisk ?? null]]) } : {}),
   });
   const wrote: string[] = [];
   for (const s of slots) {
@@ -1782,8 +1924,8 @@ export async function writeBuiltCatalog(
   }
   const w = await writeCatalog(target.generated, b.records, { texts: b.files, onDisk });
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
-  if ((await readText(target.manifest)) !== manifestText)
-    await writeFileAtomic(target.manifest, manifestText);
+  const manifestNow = o.manifests ? o.manifests.onDisk : await readText(target.manifest);
+  if (manifestNow !== manifestText) await writeFileAtomic(target.manifest, manifestText);
   return {
     ...w,
     slots: wrote.sort(cmpText),
@@ -2035,22 +2177,28 @@ export async function buildAndWrite(
         slots: await withFactsWrites(root, slotsAfter(root, i.slots, o.slots ?? [])),
       })),
     ));
-  // The target's record files, read once for the guards, the report and the write.
-  const onDisk = await hashFiles((o.target ?? baselineTarget(root)).generated);
+  // The target's record files and build.json, read once for the guards, the report and the
+  // write, and the build.json this build writes, serialized once (ADR 0195 point 9).
+  const target = o.target ?? baselineTarget(root);
+  const onDisk = await hashFiles(target.generated);
+  const manifests = {
+    onDisk: await readText(target.manifest),
+    mine: serializeBuildManifest(manifestAt(build, target)),
+  };
   const guard = await guardBuild(build, {
     undoDir,
     command: o.command,
     onDisk,
+    manifests,
     ...(o.target ? { target: o.target } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
   });
   if (o.check) {
-    const target = o.target ?? baselineTarget(root);
     const same =
       onDisk.size === build.files.size &&
-      [...build.files].every(([p, t]) => onDisk.get(p)?.sha === sha(t)) &&
-      (await readText(target.manifest)) === serializeBuildManifest(manifestAt(build, target));
+      [...build.files].every(([p, t]) => onDisk.get(p)?.sha === fileShaOf(build, p, t)) &&
+      manifests.onDisk === manifests.mine;
     return { build, guard, upToDate: same };
   }
   const report = await buildReportOf(root, build, guard, {
@@ -2059,6 +2207,8 @@ export async function buildAndWrite(
     target: o.target ?? baselineTarget(root),
     ...(o.now ? { now: o.now } : {}),
   });
+  // The build cache keeps what these inputs build, written or refused (point 9).
+  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], pack.stateDir);
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
     return { build, guard };
@@ -2070,6 +2220,7 @@ export async function buildAndWrite(
       command: o.command,
       guard,
       onDisk,
+      manifests,
       ...(o.slots ? { slots: o.slots } : {}),
       ...(o.target ? { target: o.target } : {}),
       ...(o.now ? { now: o.now } : {}),
@@ -2240,7 +2391,7 @@ async function buildReportOf(
   for (const [p, text] of [...b.files].sort(([a], [c]) => cmpText(a, c))) {
     const was = onDisk.get(p);
     if (!was) added.push(file(p));
-    else if (was.sha !== sha(text)) changed.push(file(p));
+    else if (was.sha !== fileShaOf(b, p, text)) changed.push(file(p));
   }
   const refused = guard.refused;
   const removed = refused

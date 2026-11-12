@@ -15,6 +15,7 @@ export * from "./measure-links.js";
 export * from "./audit-links.js";
 export * from "./slots.js";
 export * from "./build.js";
+export { buildCacheHooks, buildCacheStats, buildCacheDirOf } from "./build-cache.js";
 export * from "./build-facts.js";
 export * from "./upgrade-slots.js";
 export * from "./scan-write.js";

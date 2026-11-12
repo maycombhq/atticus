@@ -262,8 +262,11 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
       if (r?.kind === "Column") types[col] = r.type;
     }
     const sorts = new Map<string, string[]>();
-    for (const [f, t] of Object.entries(types))
-      sorts.set(typeSort(t), [...(sorts.get(typeSort(t)) ?? []), f]);
+    for (const [f, t] of Object.entries(types)) {
+      const l = sorts.get(typeSort(t));
+      if (l) l.push(f);
+      else sorts.set(typeSort(t), [f]);
+    }
     const expected = ds.length || person || proposal ? definitionSort(definition) : undefined;
     const off = expected ? Object.entries(types).filter(([, t]) => typeSort(t) !== expected) : [];
     if (sorts.size > 1 || off.length) {

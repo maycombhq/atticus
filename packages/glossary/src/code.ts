@@ -152,33 +152,62 @@ export function codeTerms(
   for (const n of items) if (n.compound) keys.add(n.compound);
 
   const out = new Map<string, CodeTerm>();
+  // The records each term's uses and fields hold already (ADR 0195 point 9: a search of the
+  // list for each use was quadratic in a big estate).
+  const usesOf = new Map<CodeTerm, Set<string>>();
+  const fieldsOf = new Map<CodeTerm, Set<string>>();
   const get = (key: string) => {
     const k = aliasOf(key);
     let t = out.get(k);
     if (!t) {
       t = { key: k, uses: [], fields: [], types: {} };
       out.set(k, t);
+      usesOf.set(t, new Set());
+      fieldsOf.set(t, new Set());
     }
     return t;
   };
+  const addUse = (t: CodeTerm, n: Named) => {
+    const seen = usesOf.get(t)!;
+    if (seen.has(n.record)) return;
+    seen.add(n.record);
+    t.uses.push({ record: n.record, kind: n.kind, name: n.name, evidence: n.evidence, all: n.all });
+  };
+  const addField = (t: CodeTerm, n: Named) => {
+    const seen = fieldsOf.get(t)!;
+    if (seen.has(n.record)) return;
+    seen.add(n.record);
+    t.fields.push(n.record);
+    if (n.type) t.types[n.record] = n.type;
+  };
+  // The items each key can match, by their place in `items`: those whose words hold it (a
+  // name with no compound) and those it is the whole name of. Each key looks at those only,
+  // in the order of `items`, as a pass over all of them would.
+  const byWordAt = new Map<string, number[]>();
+  const byWholeAt = new Map<string, number[]>();
+  const at = (m: Map<string, number[]>, k: string, x: number) => {
+    const l = m.get(k);
+    if (l) {
+      if (l[l.length - 1] !== x) l.push(x);
+    } else m.set(k, [x]);
+  };
+  items.forEach((n, x) => {
+    if (!n.compound) for (const w of n.words) at(byWordAt, w, x);
+    if (n.compound) at(byWholeAt, n.compound, x);
+    else if (n.single !== undefined) at(byWholeAt, n.single, x);
+  });
   for (const key of [...keys].sort()) {
-    for (const n of items) {
-      const usesWord = !key.includes(" ") && !n.compound && n.words.includes(key);
+    const word = key.includes(" ") ? [] : (byWordAt.get(key) ?? []);
+    const whole = byWholeAt.get(key) ?? [];
+    const candidates = whole.length
+      ? [...new Set([...word, ...whole])].sort((a, b) => a - b)
+      : word;
+    for (const x of candidates) {
+      const n = items[x]!;
       const isWhole = n.compound === key || (!n.compound && n.single === key);
-      if (!usesWord && !isWhole) continue;
       const t = get(key);
-      if (!t.uses.some((u) => u.record === n.record))
-        t.uses.push({
-          record: n.record,
-          kind: n.kind,
-          name: n.name,
-          evidence: n.evidence,
-          all: n.all,
-        });
-      if (n.isField && isWhole && !t.fields.includes(n.record)) {
-        t.fields.push(n.record);
-        if (n.type) t.types[n.record] = n.type;
-      }
+      addUse(t, n);
+      if (n.isField && isWhole) addField(t, n);
     }
   }
   // A name that is another name of a term (an alias decision) counts for that term too.
@@ -188,18 +217,8 @@ export function codeTerms(
     const k = aliasOf(whole);
     if (k === whole) continue;
     const t = get(whole);
-    if (!t.fields.includes(n.record)) {
-      t.fields.push(n.record);
-      if (n.type) t.types[n.record] = n.type;
-    }
-    if (!t.uses.some((u) => u.record === n.record))
-      t.uses.push({
-        record: n.record,
-        kind: n.kind,
-        name: n.name,
-        evidence: n.evidence,
-        all: n.all,
-      });
+    addField(t, n);
+    addUse(t, n);
   }
   for (const t of out.values()) {
     t.uses.sort((a, b) => (a.record < b.record ? -1 : a.record > b.record ? 1 : 0));
