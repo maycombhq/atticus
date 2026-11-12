@@ -188,6 +188,51 @@ const paymentsJobs: Base = {
   topic: "forge.payments-jobs.changed",
 };
 
+/**
+ * A repo the examples leave unread (legacy) whose manifest host is the in-cluster Service name
+ * `ledger` (an invented Forge batch service).
+ */
+const books: Base = {
+  ...notify,
+  id: "forge-books",
+  short: "books",
+  component: "books-api",
+  system: "books",
+  host: "ledger",
+  legacyHost: "legacy-books.forge.example",
+  cls: "Books",
+  topic: "forge.books.changed",
+};
+const booksCode: Code = { endpoints: [], calls: [], publishes: [], consumes: [] };
+/** forge-payments calling the ledger by an in-cluster alias no repo lists, left outside. */
+const paymentsToClusterLedger: Code = {
+  ...paymentsCode,
+  calls: [
+    {
+      method: "GET",
+      path: "/accounts",
+      host: "ledger.ns.svc.cluster.local",
+      to: "ledger.ns.svc.cluster.local",
+    },
+  ],
+};
+/** forge-payments calling the ledger twice: POST /entries (line 9), GET /accounts (line 13). */
+const paymentsTwoCalls: Code = {
+  ...paymentsCode,
+  calls: [
+    { method: "POST", path: "/entries", host: ledger.host },
+    { method: "GET", path: "/accounts", host: ledger.host },
+  ],
+};
+/**
+ * The same client edited: one call, at line 9, GET /api/accounts on a host no repo lists (loose);
+ * line 13, where the GET /accounts arrow's call was, holds none.
+ */
+const paymentsMovedLoose: Code = {
+  ...paymentsCode,
+  calls: [{ method: "GET", path: "/api/accounts", host: ledger.legacyHost }],
+};
+
 /** forge-ledger no longer serving GET /accounts. */
 const ledgerWithout: Code = { ...ledgerCode, endpoints: [] };
 /** forge-ledger serving one more endpoint. */
@@ -609,6 +654,49 @@ export const EXAMPLES: Example[] = [
             calls: [{ method: "GET", path: "/accounts", host: ledger.host, to: ledger.id }],
           },
         },
+      ],
+    },
+  ),
+  // The follow-up review: a host with no registrable domain names a Service by its first label,
+  // and a call loose in the files the arrow cites may still be the arrow's call.
+  seq(
+    "links-are-live",
+    "an adopted arrow stays when its caller's call is left outside to an in-cluster alias whose first label a repo the join doesn't read lists",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: paymentsToClusterLedger },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    { repos: [...TWO.repos, { base: books, code: booksCode }] },
+  ),
+  seq(
+    "links-are-live",
+    "an adopted arrow stays when its caller's line holds no call now but a call with its method is loose in the same file",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: paymentsMovedLoose },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    {
+      repos: [
+        {
+          base: ledger,
+          code: {
+            ...ledgerCode,
+            endpoints: [...ledgerCode.endpoints, { method: "POST", path: "/entries" }],
+          },
+        },
+        { base: payments, code: paymentsTwoCalls },
       ],
     },
   ),

@@ -956,6 +956,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const unreadHosts = new Set<string>();
   const unreadDomains = new Set<string>();
   const unreadNames = new Set<string>();
+  /** The first label of each of those hosts (`ledger` of `ledger` or `ledger.forge.example`). */
+  const unreadFirstLabels = new Set<string>();
   for (const r of repos) {
     if (factsOf.has(r.id)) continue;
     for (const n of [r.id, r.component, r.system, ...(r.modules ?? []).map((m) => m.component)])
@@ -965,6 +967,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       unreadHosts.add(b);
       const d = registrableDomain(b);
       if (d) unreadDomains.add(d);
+      const first = b.split(".")[0];
+      if (first) unreadFirstLabels.add(first);
     }
   }
   const systemHosts = new Map(
@@ -980,7 +984,12 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     );
     return hosts.some((h) => {
       const d = registrableDomain(h);
-      return unreadHosts.has(h) || (!!d && unreadDomains.has(d));
+      if (unreadHosts.has(h) || (!!d && unreadDomains.has(d))) return true;
+      // A host with no registrable domain (one label, `.svc`, `.svc.cluster.local`,
+      // `name.namespace`) names a Service by its first label, which an unread repo may be.
+      if (d) return false;
+      const first = h.split(".")[0]!;
+      return !!first && (unreadFirstLabels.has(first) || unreadNames.has(factIdPart(first)));
     });
   };
   // A call is placed unless it is still a loose end after the merge (the estate join or the
@@ -1066,6 +1075,20 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         .sort((a, b) => cmpText(a.id, b.id));
       const each = calls.map((f) => placed(repo, f));
       if (each.some((c) => !c)) return undefined;
+      // Not gone while a call with its method is still loose in the files the arrow cites there
+      // (or, with no file to check, anywhere in that read): it may be the arrow's call, moved or
+      // written with another path.
+      if (!each.length) {
+        const files = new Set(lines.map((e) => e.path!));
+        const loose = facts.some(
+          (f) =>
+            f.kind === "call" &&
+            (f.method ?? "").toUpperCase() === x.method &&
+            (!files.size || mine.some((e) => !e.path) || files.has(f.cite.file)) &&
+            looseCalls.has(`${repo}\u0000${f.id}`),
+        );
+        if (loose) return undefined;
+      }
       deciding ??= each[0] ?? {
         repo,
         how: "gone",
