@@ -1234,6 +1234,9 @@ export const COPY = {
       n === 1 ? "Undo the latest build" : `Undo the ${n} latest builds`,
     undoPlanIntro: (copies: string) => `Takes back: ${copies}.`,
     undoPlanCaption: "The files undo puts back",
+    /** ADR 0195 point 7: undo puts back a rename's build, not the manifest (as the CLI says it). */
+    undoRename: (from: string, to: string) =>
+      `This undoes the rename's build, not the rename: the manifest still names ${to}. Rename back with atticus repo rename ${to} ${from} to read the old slot again.`,
     restore: "restore",
     remove: "remove",
     confirmUndo: (n: number) => `Put back ${n} ${n === 1 ? "file" : "files"}`,

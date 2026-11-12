@@ -199,6 +199,30 @@ export async function catalogBuild(
   return code;
 }
 
+/**
+ * The renames an undo takes back the builds of (ADR 0195 point 7): each copy records the command
+ * that made it, and `atticus repo rename <old> <new>` names both ids. Undo puts back the catalog,
+ * build.json and the slots under the old id, not the manifest and the other inputs (by design),
+ * so the next build lists the repo's records as removals until the repo is renamed back; the
+ * undo says so.
+ */
+export function undoneRenames(
+  copies: readonly { command: string }[],
+): { from: string; to: string; message: string }[] {
+  const out: { from: string; to: string; message: string }[] = [];
+  for (const c of copies) {
+    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(c.command);
+    if (!m) continue;
+    const [, from, to] = m as unknown as [string, string, string];
+    out.push({ from, to, message: renameUndone(from, to) });
+  }
+  return out;
+}
+
+/** What the undo of a rename's build says (the app's undo confirm says it too, from copy.ts). */
+export const renameUndone = (from: string, to: string): string =>
+  `This undoes the rename's build, not the rename: the manifest still names ${to}. Rename back with atticus repo rename ${to} ${from} to read the old slot again.`;
+
 /** atticus catalog undo [<n>] [--yes]: list the copies kept, and take back the latest (or back to before n). */
 export async function catalogUndo(
   root: string,
@@ -219,8 +243,9 @@ export async function catalogUndo(
     else io.err(plan.problem);
     return 1;
   }
+  const renames = undoneRenames(plan.copies);
   if (!o.yes) {
-    if (o.json) io.out(JSON.stringify({ copies: list, plan }, null, 2));
+    if (o.json) io.out(JSON.stringify({ copies: list, plan, renames }, null, 2));
     else {
       io.out(`The last ${list.length} builds kept here, newest first:`);
       list.forEach((c, i) => io.out(`  ${i + 1}: ${c.command} (${c.at}, ${c.files.length} files)`));
@@ -230,6 +255,7 @@ export async function catalogUndo(
       for (const f of plan.files.slice(0, 30))
         io.out(`  ${f.to === "absent" ? "remove" : "restore"} ${f.path}`);
       if (plan.files.length > 30) io.out(`  and ${plan.files.length - 30} more`);
+      for (const x of renames) io.out(x.message);
     }
     return 0;
   }
@@ -297,7 +323,9 @@ export async function catalogUndo(
         bad.push(f.path);
     }
     if (o.json)
-      io.out(JSON.stringify({ restored: r.restored, undo: r.undo, handEdits: bad }, null, 2));
+      io.out(
+        JSON.stringify({ restored: r.restored, undo: r.undo, handEdits: bad, renames }, null, 2),
+      );
     else {
       io.out(
         `Put back ${r.restored.length} ${r.restored.length === 1 ? "file" : "files"} as ${r.restored.length === 1 ? "it was" : "they were"} before ${plan.copies.map((c) => c.command).join(", then ")}.`,
@@ -305,6 +333,7 @@ export async function catalogUndo(
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
       if (plan.copies.some((c) => c.command.startsWith("atticus upgrade"))) io.out(UPGRADE_UNDONE);
+      for (const x of renames) io.out(x.message);
       if (bad.length)
         io.out(
           `${bad.length} restored ${bad.length === 1 ? "file is a hand edit" : "files are hand edits"} again, as before (the next build lists ${bad.length === 1 ? "it" : "them"}: atticus catalog edits --curate keeps ${bad.length === 1 ? "it" : "them"}): ${bad.join(", ")}`,

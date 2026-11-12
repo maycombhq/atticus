@@ -127,6 +127,54 @@ describe("glossary with definitions, conflicts, synonyms, proposals and decision
     expect(b.conflicts.find((c) => c.term === "term.transfer")?.resolved).toBe(true);
   });
 
+  it("applies decisions oldest first by the instant their `at` names, then by id", () => {
+    // 23:00+05:30 is 17:30Z, before 18:00Z, though its text sorts after it: the 18:00Z
+    // definition is the later one, whatever order the decisions come in.
+    const records = [...forgeRecords(), ...extraRecords()];
+    const define = (id: string, at: string, definition: string): CatalogRecord =>
+      ({
+        ...decisions()[1]!,
+        id,
+        target: "term.transfer",
+        value: { term: "Transfer", definition },
+        at,
+      }) as CatalogRecord;
+    const early = define(
+      "glossary.define.transfer.b",
+      "2026-11-12T23:00:00+05:30",
+      "Moving an amount out of an account.",
+    );
+    const late = define(
+      "glossary.define.transfer.a",
+      "2026-11-12T18:00:00Z",
+      "Moving an amount between two accounts.",
+    );
+    for (const ds of [
+      [early, late],
+      [late, early],
+    ]) {
+      const b = buildGlossary({
+        pages: [...forgePages(), ...fixturePages()],
+        records,
+        decisions: [...decisions(), ...ds],
+      });
+      expect(b.terms.find((x) => x.id === "term.transfer")!.definition).toBe(
+        "Moving an amount between two accounts.",
+      );
+    }
+    // the same instant: the greater id is the later
+    const same = define("glossary.define.transfer.c", "2026-11-12T18:00:00Z", "A move of money.");
+    for (const ds of [
+      [same, late],
+      [late, same],
+    ])
+      expect(
+        buildGlossary({ pages: [], records, decisions: ds }).terms.find(
+          (x) => x.id === "term.transfer",
+        )!.definition,
+      ).toBe("A move of money.");
+  });
+
   it("keeps a person's column link over a match by name", async () => {
     const records = [...forgeRecords(), ...extraRecords()];
     const link = {

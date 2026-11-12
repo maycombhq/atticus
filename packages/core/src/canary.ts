@@ -27,13 +27,18 @@ import type { Fact } from "./schema/facts.js";
 export const canaryReportsRelOf = (root: string): string =>
   isAdopted(root) ? ".atticus/reports/canaries" : "reports/canaries";
 
+/** Windows' device names (`con`, `nul`, `com1`…), which name a device, not a file, in any
+ * case and with any extension (`nul.txt` too). */
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+
 /**
  * A repo's name as a canary takes it (review of ADR 0196): letters, digits, `.`, `_` and `-`,
  * starting with a letter or digit, and never `..`, so no name reaches outside the folder it
- * names a file in.
+ * names a file in; and no Windows device name (`con`, `nul.txt`), as the run folder holds the
+ * copy as `<repo>/` and a report is named after the repo.
  */
 export const isCanaryRepoName = (repo: string): boolean =>
-  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..");
+  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..") && !WINDOWS_DEVICE.test(repo);
 
 /**
  * The folder every run folder is made in, right in the system's temporary folder: made 0700 and
