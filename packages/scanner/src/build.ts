@@ -49,6 +49,8 @@ import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import {
   buildKeyOf,
+  hitManifestText,
+  isWrittenManifest,
   keepReaders,
   keptReaders,
   keepBuild,
@@ -1310,7 +1312,7 @@ export async function writeCuratedEdits(
 export async function readBuildManifest(
   path: string,
 ): Promise<{ manifest?: BuildManifestT; text?: string; problem?: string }> {
-  return buildManifestOfText(await readText(path));
+  return buildManifestOfText(await readText(path), undefined, path);
 }
 
 /**
@@ -1321,9 +1323,13 @@ export async function readBuildManifest(
 function buildManifestOfText(
   text: string | undefined,
   mine?: string,
+  /** Its path: a text the build cache says this code wrote there reads unchecked too. */
+  path?: string,
 ): { manifest?: BuildManifestT; text?: string; problem?: string } {
   if (text === undefined) return {};
   if (mine !== undefined && text === mine)
+    return { manifest: JSON.parse(text) as BuildManifestT, text };
+  if (path !== undefined && isWrittenManifest(path, text))
     return { manifest: JSON.parse(text) as BuildManifestT, text };
   const p = parseBuildManifest(text);
   return p.ok
@@ -1429,7 +1435,7 @@ export async function guardBuild(
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
   const last = o.manifests
-    ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine)
+    ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)
     : await readBuildManifest(target.manifest);
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   const reasons: RefusalReason[] = [];
@@ -2297,9 +2303,13 @@ export async function buildAndWrite(
   // write, and the build.json this build writes, serialized once (ADR 0195 point 9).
   const target = o.target ?? baselineTarget(root);
   const onDisk = await hashFiles(target.generated);
+  const manifestOnDisk = await readText(target.manifest);
   const manifests = {
-    onDisk: await readText(target.manifest),
-    mine: serializeBuildManifest(manifestAt(build, target)),
+    onDisk: manifestOnDisk,
+    // The last build, kept whole, with the build.json it wrote there: that text, not serialized again.
+    mine:
+      hitManifestText(build, target.manifest, manifestOnDisk) ??
+      serializeBuildManifest(manifestAt(build, target)),
   };
   const guard = await guardBuild(build, {
     undoDir,
@@ -2324,7 +2334,10 @@ export async function buildAndWrite(
     ...(o.now ? { now: o.now } : {}),
   });
   // The build cache keeps what these inputs build, written or refused (point 9).
-  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], pack.stateDir);
+  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], pack.stateDir, {
+    path: target.manifest,
+    text: manifests.mine,
+  });
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
     return { build, guard };

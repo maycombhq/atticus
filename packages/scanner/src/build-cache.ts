@@ -252,6 +252,37 @@ interface MemoHeader {
   key: string;
   records: number;
   files: number;
+  /** The build.json the kept build wrote (its path and the hash of its text), when it was written. */
+  manifest?: { path: string; sha256: string };
+}
+
+/**
+ * build.json texts this code wrote, by path: the hash of each (from the cache's header). A text
+ * with that hash was serialized from a manifest, so it reads as its JSON without the checks.
+ */
+const written = new Map<string, string>();
+/** Builds the cache gave whole, with the build.json their own write wrote. */
+const hitManifests = new WeakMap<object, { path: string; sha256: string }>();
+
+/** Whether this build.json text at this path is one this code serialized. */
+export function isWrittenManifest(path: string, text: string): boolean {
+  const h = written.get(path);
+  return !buildCacheHooks.off && h !== undefined && h === sha(text);
+}
+
+/**
+ * When `build` is the last build, kept whole, and the build.json at `path` is the one it wrote:
+ * that text (what serializing its manifest again gives).
+ */
+export function hitManifestText(
+  build: object,
+  path: string,
+  onDisk: string | undefined,
+): string | undefined {
+  const m = hitManifests.get(build);
+  return m && onDisk !== undefined && m.path === path && m.sha256 === sha(onDisk)
+    ? onDisk
+    : undefined;
 }
 
 /** Hash a folder's files in path order (what the passes read of it), or a marker when none. */
@@ -335,6 +366,7 @@ export async function loadKept<B>(
     const h = JSON.parse(lines[0]!) as MemoHeader;
     if (h.format !== BUILD_CACHE_FORMAT || h.stamp !== codeStamp()) return {};
     if (lines.length < 2 + h.records + h.files) return {};
+    if (h.manifest) written.set(h.manifest.path, h.manifest.sha256);
     const fileLines = lines.slice(2 + h.records, 2 + h.records + h.files);
     if (key !== undefined && h.key === key) {
       const meta = decodeKept(lines[1]!) as Record<string, unknown>;
@@ -351,6 +383,7 @@ export async function loadKept<B>(
       const build: Record<string, unknown> = {};
       for (const k of order as string[]) build[k] = all[k];
       stats.memoHits++;
+      if (h.manifest) hitManifests.set(build, h.manifest);
       return { hit: build as B };
     }
     stats.memoMisses++;
@@ -449,6 +482,8 @@ export function stageKept(
 export async function keepBuild(
   build: { records: unknown[]; files: Map<string, string> } & Record<string, unknown>,
   stateDir: string,
+  /** The build.json this build writes: its path and text. */
+  manifest?: { path: string; text: string },
 ): Promise<void> {
   if (buildCacheHooks.off) return;
   const dir = buildCacheDirOf(stateDir);
@@ -469,7 +504,9 @@ export async function keepBuild(
       key: s.key,
       records: build.records.length,
       files: build.files.size,
+      ...(manifest ? { manifest: { path: manifest.path, sha256: sha(manifest.text) } } : {}),
     };
+    if (header.manifest) written.set(header.manifest.path, header.manifest.sha256);
     parts.push(JSON.stringify(header), encodeKept(meta));
     for (const r of build.records) parts.push(encodeKept(r));
     for (const [path, text] of build.files)
