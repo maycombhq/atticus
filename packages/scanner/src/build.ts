@@ -809,8 +809,30 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       });
     legacyKept = keep;
   }
+  // A legacy record a current alias decision folds into another (a feature merged by a person):
+  // the passes fold what they derive, and the overlay must not bring the folded one back.
+  const foldedNow = new Set(
+    i.curated.records.flatMap((d) =>
+      d.kind === "CuratedDecision" && d.status === "current" && d.action === "alias"
+        ? (Array.isArray(d.value) ? d.value : [d.value]).filter(
+            (v): v is string => typeof v === "string",
+          )
+        : [],
+    ),
+  );
+  const legacyKeys = new Set(
+    [...legacyRecords, ...(legacySlot ? legacySlot.slot.records : [])].map(
+      (r) => `${r.kind}/${r.id}`,
+    ),
+  );
   records = [...byKey.values()].filter(
-    (r) => !(legacySlot && isLegacyGone(r, legacySlot.slot, live, ends)),
+    (r) =>
+      !(legacySlot && isLegacyGone(r, legacySlot.slot, live, ends)) &&
+      !(
+        foldedNow.has(r.id) &&
+        legacyKeys.has(`${r.kind}/${r.id}`) &&
+        !derivedKeys.has(`${r.kind}/${r.id}`)
+      ),
   );
 
   // ---- 6. the curated decisions, once, last
