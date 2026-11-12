@@ -25,6 +25,7 @@ import {
   SYNC_CHECKOUT_MARK,
   type GitRunner,
 } from "../src/index.js";
+import { linkTextIsBlob } from "../src/manager.js";
 
 /**
  * Beta.27 re-review: a stop during the checkout of an existing base clone left it with
@@ -754,6 +755,112 @@ describe("a submodule in one commit and a file in the other (real git)", () => {
     },
     T,
   );
+
+  // Beta.27 re-review 5: a link (mode 120000) in one commit and a submodule in the other. The
+  // link a stopped checkout leaves there is git's own (its text is one commit's blob): the clone
+  // is put back, never refused as a person's link. A link of a person's there is still refused.
+  const LINKED = "../shared/forge-common";
+  const swaps: [string, Tree, Tree][] = [
+    [
+      "a link that became a submodule",
+      { "pom.xml": "<project/>\n", sub: { link: LINKED } },
+      { sub: { gitlink: "1".repeat(40) } },
+    ],
+    [
+      "a submodule that became a link",
+      { "pom.xml": "<project/>\n", sub: { gitlink: "1".repeat(40) } },
+      { sub: { link: LINKED } },
+    ],
+  ];
+  for (const [what, first, second] of swaps)
+    for (const index of [false, true])
+      it.skipIf(process.platform === "win32")(
+        `${what}, git's own link left there, killed ${index ? "after" : "before"} git wrote its index`,
+        async () => {
+          const { root, r, dest, old, next } = await setUp(first, second);
+          await killedWith(dest, old, next, {}, index);
+          // git's checkout had written the link (or not yet taken it away)
+          await rm(join(dest, "sub"), { recursive: true, force: true });
+          await symlink(LINKED, join(dest, "sub"));
+          const [res] = await createWorkspace(root).sync([r]);
+          expect(res!.reason ?? "").not.toMatch(/is a link/);
+          expect(res!.action).toBe("updated");
+          expect(res!.sha).toBe(next);
+          expect(res!.kept).toBeUndefined();
+          expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+          expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(false);
+        },
+        T,
+      );
+
+  it.skipIf(process.platform === "win32")(
+    "a link of a person's there (neither commit's): refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(swaps[0]![1], swaps[0]![2]);
+      await killedWith(dest, old, next, {}, true);
+      await rm(join(dest, "sub"), { recursive: true, force: true });
+      const outside = await mkdtemp(join(tmpdir(), "atticus-sync-stop-outside-"));
+      made.push(outside);
+      await writeFile(join(outside, "mine.txt"), "mine\n");
+      await symlink(outside, join(dest, "sub"));
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/sub is a link/);
+      expect(res!.reason).toMatch(/Nothing was changed/);
+      expect((await lstat(join(dest, "sub"))).isSymbolicLink()).toBe(true);
+      expect(await readFile(join(outside, "mine.txt"), "utf8")).toBe("mine\n");
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+    },
+    T,
+  );
+
+  // Beta.27 re-review 6: a file (100644) in one commit whose bytes are a link's text: git
+  // never wrote a link there, so a link with that text is a person's.
+  it.skipIf(process.platform === "win32")(
+    "a link whose text is a file's bytes, where that commit has a file: refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(
+        { "pom.xml": "<project/>\n", sub: LINKED },
+        { sub: { gitlink: "1".repeat(40) } },
+      );
+      await killedWith(dest, old, next, {}, true);
+      await rm(join(dest, "sub"), { recursive: true, force: true });
+      await symlink(LINKED, join(dest, "sub"));
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/sub is a link/);
+      expect((await lstat(join(dest, "sub"))).isSymbolicLink()).toBe(true);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+    },
+    T,
+  );
+});
+
+// Beta.27 re-review 6: Git for Windows (core.symlinks=true) writes a link's target with `\`, so
+// readlink's `..\shared\forge-common` is the blob `../shared/forge-common`; and only a path whose
+// mode in that commit is 120000 is a link of git's, never a file whose bytes are the link's text.
+describe("linkTextIsBlob: whether a link's text is git's own", () => {
+  const BLOB = "../shared/forge-common";
+  it("reads `\\` as `/` on Windows only", () => {
+    expect(linkTextIsBlob("..\\shared\\forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("../shared/forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("..\\shared/forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("..\\shared\\northwind-pay", "120000", BLOB, "win32")).toBe(false);
+    // elsewhere a `\` is a character of the name like any other
+    expect(linkTextIsBlob("..\\shared\\forge-common", "120000", BLOB, "linux")).toBe(false);
+    expect(linkTextIsBlob(BLOB, "120000", BLOB, "linux")).toBe(true);
+    expect(linkTextIsBlob(BLOB, "120000", BLOB, "darwin")).toBe(true);
+  });
+  it("takes a link as git's own only where that commit's mode for it is 120000", () => {
+    for (const platform of ["linux", "win32"] as const) {
+      expect(linkTextIsBlob(BLOB, "100644", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "100755", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "160000", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "120000", BLOB, platform)).toBe(true);
+    }
+  });
 });
 
 /**

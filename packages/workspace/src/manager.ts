@@ -200,6 +200,26 @@ const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
  */
 export const PUT_BACK_DIR = "atticus-put-back";
 
+/**
+ * Beta.27 re-review 6: whether a link's text (`readlink`) is git's own for a path whose mode in a
+ * commit is `mode` and whose blob there holds `blob`. Only a link's mode (120000) is a link git
+ * writes: a file whose bytes are the link's text is no link of git's. Git for Windows with
+ * core.symlinks writes a link's target with `\` (`..\shared\forge-common` for the blob
+ * `../shared/forge-common`), so on Windows `\` and `/` read the same; elsewhere a `\` is a
+ * character of the name.
+ */
+export function linkTextIsBlob(
+  text: string,
+  mode: string,
+  blob: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (mode !== "120000") return false;
+  if (platform !== "win32") return text === blob;
+  const slashed = (s: string) => s.replaceAll("\\", "/");
+  return slashed(text) === slashed(blob);
+}
+
 /** The copies kept, said: `your version of a.txt was kept at <copy>`, and how many more. */
 function sayKept(kept: readonly KeptCopy[]): string {
   const said = kept
@@ -506,6 +526,8 @@ export function createWorkspace(
       const added = new Set<string>();
       const inBoth = new Set<string>();
       const blobs = new Map<string, Set<string>>();
+      // each commit's mode and blob at a path, where a link is told by its mode (120000)
+      const entries = new Map<string, [mode: string, blob: string][]>();
       const ignoreCase = (await read(["config", "--bool", "core.ignorecase"])) === "true";
       // Where case is ignored, README.md and readme.md are one file: either's blob is its own.
       const keyOf = (p: string) => (ignoreCase ? p.toLowerCase() : p);
@@ -523,6 +545,11 @@ export function createWorkspace(
         const known = blobs.get(keyOf(p)) ?? new Set<string>();
         for (const b of [was, now]) if (b && !NONE.test(b)) known.add(b);
         blobs.set(keyOf(p), known);
+        const both = entries.get(keyOf(p)) ?? [];
+        [was, now].forEach((b, k) => {
+          if (b && !NONE.test(b)) both.push([modes[k]!, b]);
+        });
+        entries.set(keyOf(p), both);
       }
       const inDiff = (p: string) => added.has(p) || inBoth.has(p);
       const status = async () =>
@@ -564,10 +591,21 @@ export function createWorkspace(
       // folder there with anything in it (git doesn't look inside a submodule's folder) would
       // go with the file put back.
       for (const p of swapped) {
-        // never looked into through a link (a link there or on its way is refused as one)
-        if (await throughLink(dest, p))
-          return keep(`${p} is a link, where one commit has a submodule and the other a file`);
-        if ((await readdir(join(dest, p)).catch(() => [])).length > 0)
+        // never looked into through a link (a link on its way is refused as one)
+        if (await throughLink(dest, dirname(p)))
+          return keep(
+            `a folder on the way to ${p} is a link, where one commit has a submodule and the other a file`,
+          );
+        const st = await lstat(join(dest, p)).catch(() => undefined);
+        // Beta.27 re-review 5: a link in one commit, a submodule in the other: a link whose text
+        // is the blob of the commit whose mode for it is a link's (120000) is git's own, left by
+        // the stopped checkout, and is put back like any file (never followed); any other link
+        // there is a person's, one whose text is a file's bytes too (re-review 6).
+        if (st?.isSymbolicLink()) {
+          const to = await readlink(join(dest, p));
+          if (!(await gitsOwnLink(dest, to, entries.get(keyOf(p)) ?? [])))
+            return keep(`${p} is a link, where one commit has a submodule and the other a file`);
+        } else if (st?.isDirectory() && (await readdir(join(dest, p))).length > 0)
           return keep(
             `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
           );
@@ -592,6 +630,7 @@ export function createWorkspace(
           dest,
           [...now, ...strays],
           (p) => blobs.get(keyOf(p)) ?? new Set(),
+          (p) => entries.get(keyOf(p)) ?? [],
           new Set(indexed),
         )),
       );
@@ -688,6 +727,24 @@ export function createWorkspace(
   }
 
   /**
+   * Beta.27 re-review 6: whether a link whose text is `to` is git's own: the blob of one of
+   * `entries` (a commit's mode and blob at its path) whose mode is a link's (`linkTextIsBlob`:
+   * `\` read as `/` on Windows). Only a link's blob is read.
+   */
+  async function gitsOwnLink(
+    dest: string,
+    to: string,
+    entries: readonly (readonly [mode: string, blob: string])[],
+  ): Promise<boolean> {
+    for (const [mode, b] of entries) {
+      if (mode !== "120000") continue;
+      const text = (await git(["cat-file", "blob", b], dest).catch(() => undefined))?.stdout;
+      if (text !== undefined && linkTextIsBlob(to, mode, text)) return true;
+    }
+    return false;
+  }
+
+  /**
    * Beta.27 re-review (round 2): each of `paths` whose working file is none of its `known`
    * blobs (`git hash-object`, so git's own filters apply), copied to
    * `.git/atticus-put-back/<at>/<path>` before the put-back writes over it. A folder or a path
@@ -697,11 +754,13 @@ export function createWorkspace(
    * the path the index has (`indexed` first), the other left out by device and inode; a name
    * already copied in another case whose bytes are this one's (a system that gives no inode) is
    * kept already. Nothing is read through a linked folder (what is there is outside the clone).
+   * A link is git's own only as a link's blob in a commit (`gitsOwnLink`, by `entries`).
    */
   async function keepTheirs(
     dest: string,
     paths: string[],
     known: (p: string) => Set<string>,
+    entries: (p: string) => readonly (readonly [mode: string, blob: string])[],
     indexed: ReadonlySet<string>,
   ): Promise<KeptCopy[]> {
     const files: string[] = [];
@@ -733,11 +792,7 @@ export function createWorkspace(
     for (const p of links) {
       const to = await readlink(join(dest, p));
       linkText.set(p, to);
-      let same = false;
-      for (const b of known(p))
-        if ((await git(["cat-file", "blob", b], dest).catch(() => undefined))?.stdout === to)
-          same = true;
-      if (!same) theirs.push(p);
+      if (!(await gitsOwnLink(dest, to, entries(p)))) theirs.push(p);
     }
     if (theirs.length === 0) return [];
     const top = join(dest, ".git", PUT_BACK_DIR);

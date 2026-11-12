@@ -512,6 +512,184 @@ describe("the seventh review of ADR 0196", () => {
     );
   });
 
+  // Beta.27 re-review 5: PHP's `'…'` strings run across lines; read to a line's end, one of three
+  // lines or more put its quotes out of step and flipped the rest of the file's comments.
+  it("reads a PHP `'` string across three lines or more, with only `\\\\` and `\\'` escapes", () => {
+    expectLines(
+      "src/Http/views.php",
+      ["-", "<?php"],
+      ["-", "$h = '<div"],
+      ["-", '  class="a'],
+      ["-", "  b\">';"],
+      ["-", '$u = "/*";'],
+      ["-", "$app->get('/x', f());"],
+      ["-", '$v = "*/";'],
+    );
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php"],
+      ["-", "$s = 'a"],
+      ["-", "b"],
+      ["-", "c \" d';"],
+      ["-", '$u = "/*";'],
+      ["-", "$app->get('/ledger', f());"],
+      ["-", '$v = "*/";'],
+    );
+    // a `/*`, `//` or `#` inside one is no comment; `\'` doesn't end it, `\\` before `'` does
+    expectLines(
+      "src/Http/help.php",
+      ["-", "<?php"],
+      ["-", "$help = 'globs: /* and"],
+      ["-", "  // and # it\\'s"],
+      ["-", "  C:\\\\';"],
+      ["-", "$app->get('/pay', f());"],
+      ["C", "// a comment"],
+    );
+    // a `\` before a line's end, or before any other character, is the string's own
+    expectLines(
+      "src/Http/paths.php",
+      ["-", "<?php"],
+      ["-", "$d = 'C:\\"],
+      ["-", "';"],
+      ["-", "$e = 'C:\\n' . '\\x';"],
+      ["C", "/* a block"],
+      ["C", "   comment */"],
+      ["-", "$app->get('/pay', f());"],
+    );
+  });
+
+  // Beta.27 re-review 6: the lexer read inline HTML after `?>` as PHP, so an apostrophe in prose
+  // opened a `'` string across lines and put every later quote out of step.
+  it("reads the HTML after `?>` as text, not PHP: its apostrophes open no string", () => {
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php ?>"],
+      ["-", "<p>Don't panic</p>"],
+      ["-", "<?php"],
+      ["-", "$glob = '/admin/*';"],
+      ["-", "$app->get('/pay', f());"],
+      ["-", "$app->get('/ok', f());"],
+    );
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php ?>"],
+      ["-", "<p>Don't panic</p>"],
+      ["-", "<?php"],
+      ["C", "// $app->get('/old', f());"],
+      ["-", "$app->get('/new', f());"],
+      ["C", "# $app->get('/older', f());"],
+    );
+    // before the first `<?php` a file is HTML: a `//` or `#` there is output, no PHP comment
+    expectLines(
+      "src/Http/page.php",
+      ["-", "# Northwind's pay page"],
+      ["-", "// it's no PHP comment"],
+      ["-", "<?php"],
+      ["C", "// $app->get('/old', f());"],
+      ["-", "$app->get('/pay', f());"],
+    );
+  });
+
+  // Its review: any `<?` opened PHP, `<?xml` and a `"<?"` in a script too, so a quote after it
+  // opened a string across lines and a real comment below read as live code.
+  it("opens PHP at a short `<?` only when a space or the line's end follows it", () => {
+    expectLines(
+      "src/Http/feed.php",
+      ["-", '<script>if (s.startsWith("<?")) skip();</script>'],
+      ["-", "<?php"],
+      ["C", "// $gone = 1;"],
+    );
+    expectLines(
+      "src/Http/feed.php",
+      ["-", "<p>type <?then don't</p>"],
+      ["-", "<?xml-stylesheet title=Forge's ?>"],
+      ["-", "<?php"],
+      ["C", "// $gone = 1;"],
+      ["-", "$app->get('/feed', f());"],
+    );
+    expectLines(
+      "src/Http/short.php",
+      ["-", "<? $x = 1;"],
+      ["C", "// $gone = 2;"],
+      ["-", "?>"],
+      ["-", "<?"],
+      ["C", "# $gone = 3;"],
+    );
+  });
+
+  it("keeps PHP mode at a `?>` inside a string, a block comment or a heredoc", () => {
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php"],
+      ["-", "$s = 'a ?> it\\'s';"],
+      ["-", '$t = "?> don\'t";'],
+      ["C", "/* ?> it's"],
+      ["C", "   still a comment */"],
+      ["-", "$h = <<<EOT"],
+      ["-", "  ?> it's"],
+      ["-", "  EOT;"],
+      ["C", "// $app->get('/old', f());"],
+      ["-", "$app->get('/pay', f());"],
+    );
+  });
+
+  it("ends a `//` or `#` comment and PHP mode at `?>`, and re-enters at `<?php`, `<?=` or `<?`", () => {
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php"],
+      ["C", "// $app->get('/old', f()); ?>"],
+      ["-", "<p>Don't panic</p>"],
+      ["C", "<?php // $app->get('/older', f());"],
+      ["-", "$app->get('/new', f());"],
+      ["-", "# a note ?> <b>it's</b>"],
+      ["-", "<?php $app->get('/ok', f()); // a note"],
+      ["C", "// $app->get('/gone', f()); ?>"],
+      ["C", "<? // $app->get('/short', f()); ?>"],
+      ["-", "<p>Can't</p>"],
+      ["C", "<?php /* $app->get('/gone', f()); */ ?>"],
+    );
+    // the `<?=` short echo
+    expectLines(
+      "src/Http/list.php",
+      ["-", "<ul>"],
+      ["-", "  <li><?= $title ?></li>"],
+      ["-", "  <p>It's <?= 'Northwind' ?> pay</p>"],
+      ["-", "<?php"],
+      ["C", "// $app->get('/old', f());"],
+      ["-", "$app->get('/new', f());"],
+    );
+    // the text a `?>` ends a line comment at is read for skipped candidates
+    const ls = ["<?php // '/forge/old' ?> <a href=\"/forge/help\">it's</a>"];
+    expect(candidatesIn("src/Http/help.php", ls).map((c) => c.value)).toEqual(["/forge/help"]);
+  });
+
+  it("reads a `.phtml` template and a Blade template, whose `{{-- … --}}` is comment", () => {
+    expectLines(
+      "src/View/ledger.phtml",
+      ["-", "<h1>Northwind's ledger</h1>"],
+      ["-", "<?php foreach ($rows as $r): ?>"],
+      ["-", "  <td><?= $r['name'] ?></td>"],
+      ["-", "<?php endforeach; ?>"],
+      ["C", "<?php /* $app->get('/old', f()); */ ?>"],
+      ["-", "<p>Don't stop</p>"],
+      ["C", "<?php // $app->get('/older', f()); ?>"],
+      ["-", "<?php $app->get('/live', f());"],
+    );
+    expectLines(
+      "resources/views/ledger.blade.php",
+      ["-", "<h1>Northwind's ledger</h1>"],
+      ["C", "{{-- <a href=\"{{ route('old') }}\">Don't</a> --}}"],
+      ["C", "{{--"],
+      ["C", "  <?php $app->get('/old', f()); ?> it's"],
+      ["C", "--}}"],
+      ["-", "<p>{{ $total }}</p> {{-- a note --}}"],
+      ["-", "<?php $x = 'it'; ?> can't"],
+      ["-", "<?php $app->get('/live', f()); ?>"],
+    );
+    // `{{--` in a PHP file that isn't Blade is text
+    expectLines("src/View/a.php", ["-", "{{-- a --}}"], ["-", "<?php $x = 1;"]);
+  });
+
   it("keeps the BOM and no-break space escapes readable in the source", () => {
     expect(isCommentLine("﻿// a note", "src/a.ts")).toBe(true);
     expect(isCommentLine(" // a note", "src/a.ts")).toBe(true);
