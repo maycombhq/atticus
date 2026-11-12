@@ -19,8 +19,9 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { hasSecretShape, hasTokenPrefix, keyIsSecret } from "./cite.js";
+import { hasSecretShape, hasTokenPrefix, keyIsSecret, maskSecretShapes } from "./cite.js";
 import { ignoreLocalSync, redactText } from "./log.js";
+import { atticusHandles, onAtticusSignal, stopPending } from "./process-trees.js";
 
 /**
  * ADR 0187: what a command run outside the app prints, for the app's Console. A long command
@@ -644,13 +645,18 @@ const idAt = (d: Date, pid: number) =>
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
 
-/** A printed text as the lines the log keeps: no colour codes, no \r, each redacted and cut. */
+/**
+ * A printed text as the lines the log keeps: no colour codes, no \r, each redacted and cut.
+ * Beta.27 re-review: a token by its shape alone (hasSecretShape: an access key id, a Git host's
+ * token, a JWT, a URL's password) is masked too, wherever it is on the line (an echoed path), for
+ * a terminal's run and an app's job alike.
+ */
 export function runLogLines(text: string, o: { home?: string; user?: string } = {}): string[] {
   return text
     .replace(ANSI, "")
     .split(/\r?\n|\r/)
     .map((l) => {
-      const r = redactText(l, o);
+      const r = maskSecretShapes(redactText(l, o));
       return r.length > RUN_LOG_LINE_MAX ? `${r.slice(0, RUN_LOG_LINE_MAX)}…` : r;
     });
 }
@@ -912,14 +918,16 @@ export function startTerminalRun(
       ["SIGTERM", 143],
     ] as const) {
       const on = () => {
-        // Another handler (map --all's: stop after the step under way) has the signal: it ends
-        // the command, and the end is recorded then. Alone, this ends it as the default would.
-        if (process.listenerCount(sig) > 1) return;
+        // Another handler of Atticus's own (map --all's: stop after the step under way) has the
+        // signal: it ends the command, and the end is recorded then. Alone, this ends it as the
+        // default would. Beta.27 re-review: a library's listener (signal-exit) never counts; the
+        // trees a task run or a sync started end it once they have stopped and the run recorded
+        // it (stopPending: they raise the signal again then, and this hears it alone).
+        if (atticusHandles(sig, on) || stopPending()) return;
         recorder.end(code);
         process.exit(code);
       };
-      process.on(sig, on);
-      unhook.push(() => process.off(sig, on));
+      unhook.push(onAtticusSignal(sig, on, { fallback: true }));
     }
   }
   return recorder;

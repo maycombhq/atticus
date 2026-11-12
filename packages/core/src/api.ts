@@ -532,7 +532,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   story). A job (GET /api/jobs/{jobId}) and a Console entry say `stopping` once Stop was asked
  *   and until the job ends. A Console entry `where: app` that is not this app's job is a job an
  *   earlier run of the app started (kept in the run log); `ended` there means it stopped when
- *   that app closed. Additive only.
+ *   that app closed. GET /api/health gains `rootKey` (the root's real path, case-folded on Windows
+ *   and macOS), which a page compares after a restart. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -3059,6 +3060,12 @@ export const Health = z.object({
   apiVersion: z.string(),
   schemaVersion: z.number().int(),
   root: z.string(),
+  /**
+   * 3.12.0 (beta.27 re-review): the root as one key, to tell the metarepo a page started with
+   * from another after a restart: its real path (links and 8.3 names resolved), case-folded on
+   * Windows and macOS. Compare this, never `root`.
+   */
+  rootKey: z.string().optional(),
   openspec: z.string().optional(),
   user: z.string(),
   /** 2.22.0: started with `atticus ui --full`, so the app offers every page, not only the six. */

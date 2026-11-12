@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { startedLines, startUi, untilStopped } from "../src/ui-commands.js";
+import { startedLines, startUi, uiRequestLogger, untilStopped } from "../src/ui-commands.js";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 
@@ -231,4 +231,44 @@ describe("atticus ui and the run log", () => {
     expect(existsSync(join(root, ".atticus", "logs", "running"))).toBe(false);
     await rm(root, { recursive: true, force: true });
   }, 60_000);
+});
+
+/**
+ * Beta.27 re-review (plumbing): a bare folder keeps no log, so a failed call there went nowhere.
+ * Its error, or a 500, is said on standard error instead (redacted as the log is); the metarepo's
+ * calls still go to its log, never to the terminal.
+ */
+describe("a failed call of atticus ui in a bare folder", () => {
+  const failed = {
+    method: "GET",
+    path: "/api/repos",
+    status: 500,
+    ms: 3,
+    error: new Error("can't read https://ci:hunter2secret@git.forge.example/forge-ledger.git"),
+  };
+
+  it("is said on standard error, redacted, and nothing is made there", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "atticus-ui-bare-err-"));
+    const said: string[] = [];
+    const on = uiRequestLogger(bare, (l) => said.push(l));
+    on(failed);
+    on({ method: "GET", path: "/api/health", status: 503, ms: 1 });
+    on({ method: "GET", path: "/api/health", status: 200, ms: 1 });
+    on({ method: "GET", path: "/api/nope", status: 404, ms: 1 });
+    expect(said).toHaveLength(2);
+    expect(said[0]).toMatch(/GET \/api\/repos failed \(500\): can't read/);
+    expect(said[0]).not.toContain("hunter2secret");
+    expect(said[1]).toBe("atticus ui: GET /api/health answered 503");
+    expect(readdirSync(bare)).toEqual([]);
+    await rm(bare, { recursive: true, force: true });
+  });
+
+  it("at a metarepo goes to its log, not to the terminal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-err-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const said: string[] = [];
+    uiRequestLogger(root, (l) => said.push(l))(failed);
+    expect(said).toEqual([]);
+    await rm(root, { recursive: true, force: true });
+  });
 });

@@ -128,6 +128,34 @@ describe("reads a page asks many of at once", () => {
     expect(String((gone as PromiseRejectedResult).reason)).toMatch(/isn't there/);
   });
 
+  // Beta.27 re-review: a screen that stays (one signal for all its reads) kept a listener per read.
+  it("an asker's read that is answered leaves nothing listening on its signal", async () => {
+    const { repoFacts, artifactFile } = await import("../src/api/batch.js");
+    const { artifactUrl } = await import("../src/screens/Changes.js");
+    const screen = new AbortController();
+    const live = new Set<unknown>();
+    const add = screen.signal.addEventListener.bind(screen.signal);
+    const remove = screen.signal.removeEventListener.bind(screen.signal);
+    vi.spyOn(screen.signal, "addEventListener").mockImplementation((t, f, o) => {
+      live.add(f);
+      add(t, f, o);
+    });
+    vi.spyOn(screen.signal, "removeEventListener").mockImplementation((t, f, o) => {
+      live.delete(f);
+      remove(t, f, o);
+    });
+    for (let round = 0; round < 3; round++) {
+      await Promise.all(repos(5).map((r) => repoFacts(r, screen.signal)));
+      await artifactFile(
+        artifactUrl("add-transfer-limit", "stories", "stories/s1.md"),
+        screen.signal,
+      );
+      await expect(repoFacts("northwind-pay", screen.signal)).rejects.toThrow();
+    }
+    expect(sent.length).toBeGreaterThan(0);
+    expect(live.size).toBe(0);
+  });
+
   it("an asker whose screen went is dropped; the call stops once every asker has gone", async () => {
     const signals: (AbortSignal | undefined)[] = [];
     vi.stubGlobal(

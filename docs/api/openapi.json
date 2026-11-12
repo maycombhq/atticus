@@ -37174,6 +37174,9 @@
           "root": {
             "type": "string"
           },
+          "rootKey": {
+            "type": "string"
+          },
           "openspec": {
             "type": "string"
           },

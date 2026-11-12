@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { readFileSync, realpathSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -135,6 +135,25 @@ describe("the local server (ADR 0015)", () => {
     );
   });
 
+  it("health names the root as one key: its real path, case-folded where case is ignored", async () => {
+    const { rootKeyOf } = await import("../src/routes.js");
+    const r = await call("/api/health");
+    const real = realpathSync.native(root);
+    const folded = process.platform === "win32" || process.platform === "darwin";
+    expect((r.body as { rootKey?: string }).rootKey).toBe(folded ? real.toLowerCase() : real);
+    // Reached through a link, it is the same key.
+    const dir = await mkdtemp(join(tmpdir(), "atticus-root-key-"));
+    try {
+      const link = join(dir, "via-link");
+      await symlink(root, link, process.platform === "win32" ? "junction" : "dir");
+      expect(rootKeyOf(link)).toBe(rootKeyOf(root));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+    expect(rootKeyOf("/Work/Forge-Metarepo-Gone", "win32")).toBe("/work/forge-metarepo-gone");
+    expect(rootKeyOf("/Work/Forge-Metarepo-Gone", "linux")).toBe("/Work/Forge-Metarepo-Gone");
+  });
+
   it("answers every call without the right token with 401 problem details", async () => {
     for (const token of [null, "wrong"]) {
       const r = await call("/api/health", { token });
@@ -174,6 +193,8 @@ describe("the local server (ADR 0015)", () => {
       apiVersion: API_VERSION,
       schemaVersion: SCHEMA_VERSION,
       root,
+      // Beta.27 re-review: the root as one key (its real path), which a page compares.
+      rootKey: expect.any(String),
       openspec: "openspec",
       user: "priya",
       full: false,

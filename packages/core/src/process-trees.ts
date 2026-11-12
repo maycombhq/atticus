@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { constants as osConstants } from "node:os";
 
 /**
  * Beta.27 review: the processes Atticus starts in a process group of their own (a build, a git
@@ -51,11 +52,69 @@ export function onStopping(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
+/**
+ * Beta.27 re-review: Atticus's own handlers of a signal, the ones that end (or stop) Atticus
+ * themselves: atticus ui's, map --all's Ctrl+C. Counting the process's listeners took any
+ * library's for one (signal-exit, which @inquirer/core loads through OpenSpec, listens to every
+ * signal and ends the process only when it alone listens), so neither ended it and Ctrl+C did
+ * nothing. A `once` handler that has heard the signal still counts until that signal's listeners
+ * have all run. A `fallback` one (a terminal run's record) ends Atticus only when nobody else
+ * does, nor these trees (stopPending): it never counts here.
+ */
+type SignalFn = (sig: NodeJS.Signals) => void;
+const own = new Map<NodeJS.Signals, Map<SignalFn, { fallback: boolean }>>();
+
+/**
+ * Hear a signal as Atticus's own handler: one that ends or stops Atticus (process-trees and the
+ * run log then leave the ending to it), or with `fallback`, one that ends it only when nothing
+ * else does. Gives back the way to stop hearing it.
+ */
+export function onAtticusSignal(
+  sig: NodeJS.Signals,
+  fn: SignalFn,
+  o: { once?: boolean; fallback?: boolean } = {},
+): () => void {
+  const set = own.get(sig) ?? new Map<SignalFn, { fallback: boolean }>();
+  own.set(sig, set);
+  let gone = false;
+  const off = (later = false) => {
+    if (gone) return;
+    gone = true;
+    process.off(sig, h);
+    // Heard: it still counts for the other listeners of this signal, which run after it.
+    if (later) setImmediate(() => set.delete(fn));
+    else set.delete(fn);
+  };
+  const h = () => {
+    if (o.once) off(true);
+    fn(sig);
+  };
+  set.set(fn, { fallback: o.fallback === true });
+  process.on(sig, h);
+  return () => off();
+}
+
+/**
+ * Whether Atticus has a handler of its own for `sig` (other than `except`, never a fallback one)
+ * that ends it.
+ */
+export function atticusHandles(sig: NodeJS.Signals, except?: SignalFn): boolean {
+  for (const [fn, h] of own.get(sig) ?? []) if (fn !== except && !h.fallback) return true;
+  return false;
+}
+
+/**
+ * Whether these trees hold a signal that ends Atticus once they have ended and the runs recorded
+ * the stop (it is raised again then): a fallback handler leaves the end to it until then.
+ */
+export const stopPending = (): boolean => pending !== undefined;
+
 const onSignal = (sig: NodeJS.Signals) => {
   stopTrackedTrees();
-  // Put first (prependListener), this runs before any other listener, a `once` one still in
-  // place: what listens now is what hears it. Someone does (atticus ui stops itself): done here.
-  if (process.listenerCount(sig) > 1) return;
+  // Atticus has a handler of its own (atticus ui stops itself, map --all stops after its step):
+  // done here. Another library's listener (signal-exit) doesn't end the process while this one
+  // listens, so it never counts; nor a terminal run's record, which waits for this one.
+  if (atticusHandles(sig)) return;
   // Nobody else (atticus task run, a terminal closed under atticus ui): the signal ends Atticus as
   // it would have, once the trees have ended and the runs recorded the stop, or after the grace.
   if (!pending) {
@@ -69,7 +128,12 @@ function raise() {
   if (!sig) return;
   pending = undefined;
   unhook();
-  process.kill(process.pid, sig);
+  try {
+    process.kill(process.pid, sig);
+  } catch {
+    // Windows can't send itself SIGHUP (ENOSYS): end as the signal would have, 128 + its number.
+    process.exit(128 + (osConstants.signals[sig] ?? 1));
+  }
 }
 function settle() {
   if (holds > 0 || live.size > 0) return;

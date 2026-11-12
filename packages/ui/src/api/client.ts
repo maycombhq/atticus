@@ -91,8 +91,15 @@ export function forgetPageRoot(): void {
   moved = false;
   sameServer = "unknown";
 }
+/**
+ * The metarepo a /api/health answer names, as one key: its `rootKey` (the server's real path of
+ * it, case-folded where the file system ignores case), else its `root` (an older server).
+ */
 const healthRootOf = (body: unknown): string | undefined => {
-  const r = body && typeof body === "object" ? (body as { root?: unknown }).root : undefined;
+  const b = body && typeof body === "object" ? (body as { root?: unknown; rootKey?: unknown }) : {};
+  const k = b.rootKey;
+  if (typeof k === "string" && k) return k;
+  const r = b.root;
   return typeof r === "string" && r ? r : undefined;
 };
 const sessionEvents = new EventTarget();

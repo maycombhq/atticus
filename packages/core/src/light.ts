@@ -17,5 +17,7 @@ export {
   type TerminalRunRecorder,
 } from "./run-log.js";
 export { printToCurrent, withPrinter } from "./printer.js";
+// Beta.27 re-review: Atticus's own signal handlers (Ctrl+C), told from a library's.
+export { atticusHandles, onAtticusSignal } from "./process-trees.js";
 // Beta.27 review: whether a word typed where a name goes is a key (`atticus secret`).
 export { keyIsSecret } from "./cite.js";

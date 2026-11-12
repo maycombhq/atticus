@@ -26,28 +26,37 @@ export function batcher<V>(
       const waiters = part.flatMap((k) => batch.get(k) ?? []);
       const stop = new AbortController();
       const signals = waiters.map((w) => w.signal);
+      let unwatch = () => {};
       if (signals.every((x) => x)) {
         const check = () => {
           if (signals.every((x) => x!.aborted)) stop.abort();
         };
         for (const x of signals) x!.addEventListener("abort", check, { once: true });
+        // Beta.27 re-review: the call answered, nothing of it listens on its askers' signals.
+        unwatch = () => {
+          for (const x of signals) x!.removeEventListener("abort", check);
+        };
       }
-      many(part, stop.signal).then(
-        (got) => {
-          for (const k of part) {
-            const v = got.get(k);
-            for (const w of batch.get(k) ?? []) {
-              if (v === undefined)
-                w.reject(new ApiError({ type: "about:blank", title: "Not answered", status: 500 }));
-              else if (v instanceof ApiError) w.reject(v);
-              else w.resolve(v);
+      many(part, stop.signal)
+        .finally(unwatch)
+        .then(
+          (got) => {
+            for (const k of part) {
+              const v = got.get(k);
+              for (const w of batch.get(k) ?? []) {
+                if (v === undefined)
+                  w.reject(
+                    new ApiError({ type: "about:blank", title: "Not answered", status: 500 }),
+                  );
+                else if (v instanceof ApiError) w.reject(v);
+                else w.resolve(v);
+              }
             }
-          }
-        },
-        (e: unknown) => {
-          for (const w of waiters) w.reject(e);
-        },
-      );
+          },
+          (e: unknown) => {
+            for (const w of waiters) w.reject(e);
+          },
+        );
     }
   };
   return (key, signal) =>
@@ -66,13 +75,22 @@ export function batcher<V>(
         }, 0);
       }
       // An asker that goes is answered at once (its own abort); the others still get theirs.
-      signal?.addEventListener(
-        "abort",
-        () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
-        { once: true },
-      );
+      // Beta.27 re-review: answered, it stops listening (a screen's one signal served every read).
+      const onAbort = () => reject(signal!.reason ?? new DOMException("Aborted", "AbortError"));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const done = () => signal?.removeEventListener("abort", onAbort);
       const ws = waiting.get(key) ?? [];
-      ws.push({ resolve, reject, ...(signal ? { signal } : {}) });
+      ws.push({
+        resolve: (v) => {
+          done();
+          resolve(v);
+        },
+        reject: (e) => {
+          done();
+          reject(e);
+        },
+        ...(signal ? { signal } : {}),
+      });
       waiting.set(key, ws);
     });
 }

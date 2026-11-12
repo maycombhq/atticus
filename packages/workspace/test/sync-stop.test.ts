@@ -92,35 +92,47 @@ describe("stopping a sync", () => {
     expect(seen).toEqual([]);
   });
 
-  it("a stop while an existing base clone is fetched keeps the clone and clears git's index lock", async () => {
+  /**
+   * Beta.27 re-review (plumbing): git's index lock goes only when the git stopped is one that
+   * takes it (a checkout, a status). A fetch never does: a lock there at its stop is another
+   * git's (the person's own, in the clone), and stays.
+   */
+  const stoppedIn = async (cmd: "fetch" | "status") => {
     const root = await mkdtemp(join(tmpdir(), "atticus-sync-stop-"));
     const dest = baseClonePath(root, "forge-ledger");
     await mkdir(join(dest, ".git"), { recursive: true });
     const stop = new AbortController();
-    let fetching!: () => void;
-    const fetched = new Promise<void>((r) => (fetching = r));
+    let reached!: () => void;
+    const there = new Promise<void>((r) => (reached = r));
     const git: GitRunner = async (args, _cwd, o) => {
-      if (args[0] === "status") return { stdout: "", stderr: "" };
-      if (args[0] === "fetch") {
-        // Killed half-way, as git can leave it.
+      if (args[0] === cmd) {
         await writeFile(join(dest, ".git", "index.lock"), "");
-        fetching();
+        reached();
         await new Promise<void>((_, reject) =>
           o?.signal?.addEventListener("abort", () => reject(new GitStoppedError(args)), {
             once: true,
           }),
         );
       }
+      if (args[0] === "status") return { stdout: "", stderr: "" };
       return { stdout: "0123456789abcdef0123456789abcdef01234567\n", stderr: "" };
     };
     const done = createWorkspace(root, git, { signal: stop.signal }).sync([repo("forge-ledger")]);
-    await fetched;
+    await there;
     stop.abort();
     const [r] = await done;
     expect(r!.action).toBe("stopped");
     expect(existsSync(join(dest, ".git"))).toBe(true);
-    expect(existsSync(join(dest, ".git", "index.lock"))).toBe(false);
     expect(existsSync(sharedLockFileOf(dest))).toBe(false);
+    return existsSync(join(dest, ".git", "index.lock"));
+  };
+
+  it("a stop while an existing base clone is fetched keeps the clone, and a lock there (another git's)", async () => {
+    expect(await stoppedIn("fetch")).toBe(true);
+  });
+
+  it("a stop in a git that takes the index lock (status) clears the lock it left", async () => {
+    expect(await stoppedIn("status")).toBe(false);
   });
 });
 

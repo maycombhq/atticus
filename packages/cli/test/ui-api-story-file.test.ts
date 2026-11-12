@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
@@ -120,3 +120,40 @@ it("a story deleted since it was listed is its own problem; the others are answe
     await s.close();
   }
 }, 60_000);
+
+/**
+ * Beta.27 re-review (plumbing): a file listed but gone when it is read (deleted between the two:
+ * here a link to nothing, which the listing sees and a read can't open) is that file's 404, never
+ * an empty story nor a 500 for the call.
+ */
+it.skipIf(process.platform === "win32")(
+  "a file gone between the listing and its read is that file's 404",
+  async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+    const dir = join(root, "openspec/changes", CHANGE);
+    await mkdir(join(dir, "stories"), { recursive: true });
+    await writeFile(join(dir, "stories.md"), "# Stories\n");
+    await writeFile(join(dir, "stories/s1-cap.md"), "# Cap transfers\n");
+    await symlink(join(dir, "stories/nowhere.md"), join(dir, "stories/s2-racing.md"));
+    const s = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiRoutes(r, ctx),
+    });
+    try {
+      const h = { "X-Atticus-Token": s.token };
+      const base = `${s.url}/api/changes/${CHANGE}/artifacts/stories`;
+      const files = ["stories/s1-cap.md", "stories/s2-racing.md"];
+      const q = files.map((f) => `file=${encodeURIComponent(f)}`).join("&");
+      const r = await fetch(`${base}/files?${q}`, { headers: h });
+      expect(r.status).toBe(200);
+      const got = Api.ArtifactFiles.parse(await r.json());
+      expect(got.files.map((f) => f.file)).toEqual(["stories/s1-cap.md"]);
+      expect(got.problems?.["stories/s2-racing.md"]).toMatchObject({ status: 404 });
+    } finally {
+      await s.close();
+    }
+  },
+  60_000,
+);

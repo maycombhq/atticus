@@ -280,6 +280,20 @@ export function hasSecretShape(text: string, o: { basic?: boolean } = {}): boole
 }
 
 /**
+ * Beta.27 re-review: a text with what hasSecretShape finds in it masked (`***`, keeping what names
+ * it): a URL's password, a bearer or Basic token, the well-known token shapes. A run's log line
+ * goes through it, so an echoed error ("Can't read <root>/AKIA…") never keeps a key.
+ */
+export function maskSecretShapes(text: string, mask = "***"): string {
+  let out = text.replace(URL_CREDENTIALS, (all, head: string, pass: string) =>
+    refersOnly(pass) ? all : `${head}${mask}`,
+  );
+  out = out.replace(BEARER, `$1${mask}`).replace(BASIC, `$1${mask}`);
+  for (const re of TOKEN_SHAPES) out = out.replace(re, mask);
+  return out;
+}
+
+/**
  * Review of beta.24: whether a key is itself a secret, so naming its line by it would show one: a
  * well-known token shape (an access key id written as a credentials file's key), a run of 24 hex
  * digits or more (a random id, a digest), a run of 16 letters and digits or more that switches

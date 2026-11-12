@@ -23,6 +23,7 @@ import {
   recordedCommand,
   runningDirOf,
   runLogKept,
+  runLogLines,
   runLogsDirOf,
   runTitle,
   startAppRun,
@@ -37,7 +38,7 @@ import {
   WORK_ITEM_SYSTEMS,
 } from "../src/run-log.js";
 import { ExternalRef } from "../src/schema/kinds.js";
-import { hasTokenPrefix, TOKEN_PREFIXES } from "../src/cite.js";
+import { hasSecretShape, hasTokenPrefix, TOKEN_PREFIXES } from "../src/cite.js";
 
 /**
  * ADR 0187: a command run in a terminal (or by an editor, or a Copilot session) keeps what it
@@ -1050,6 +1051,46 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
  * title follows a command's rules (its kind and the ids it names, or the command it runs), never
  * the app's own words.
  */
+/**
+ * Beta.27 re-review (plumbing): an echoed error kept a token whose shape alone says it is one
+ * ("Can't read <root>/AKIA…": all capitals and digits, which the log's mixed-case rule passes).
+ * Every line a run keeps has what hasSecretShape finds masked, a terminal's and an app's alike.
+ */
+describe("a run's lines never keep a token by its shape", () => {
+  const key = ["AKIA", "Q7XF3KD9ZB2MW4PL"].join("");
+  const gh = ["ghp", "_", "q7Xf3Kd9Zb2Mw4PlR8sT1vY6nC0eJ5hA"].join("");
+  const echoed = [
+    `Can't read /work/forge-metarepo/${key}/config.yaml`,
+    `git fetch failed: https://ci:${gh}@git.forge.example/forge-ledger.git`,
+    `Authorization: ${gh} was refused`,
+  ];
+
+  it("masks them in runLogLines, keeping the rest of the line", () => {
+    const lines = runLogLines(echoed.join("\n"), HOME);
+    for (const l of lines) {
+      expect(hasSecretShape(l)).toBe(false);
+      expect(l).not.toContain(key);
+      expect(l).not.toContain(gh);
+    }
+    expect(lines[0]).toBe("Can't read /work/forge-metarepo/***/config.yaml");
+    expect(lines[2]).toBe("Authorization: *** was refused");
+  });
+
+  it("a terminal's run and an app's job alike", async () => {
+    const root = await fresh();
+    const term = startTerminalRun(root, { positionals: ["map", "forge-ledger"], flags: [] })!;
+    const app = startAppRun(root, { job: { id: "job-9", kind: "sync" }, ids: ["forge-ledger"] })!;
+    for (const rec of [term, app]) {
+      for (const l of echoed) rec.line(l);
+      rec.end(1);
+      const text = readFileSync(join(runLogsDirOf(root), `${rec.runId}.log`), "utf8");
+      expect(text).not.toContain(key);
+      expect(text).not.toContain(gh);
+      expect(text).toContain("/work/forge-metarepo/***/config.yaml");
+    }
+  });
+});
+
 describe("a job the app started, in the run log", () => {
   it("records its title (kind and ids), job, lines and end; retitling keeps it", async () => {
     const root = await fresh();

@@ -559,7 +559,7 @@ async function artifactPath(
   root: string,
   id: string,
   artifact: string,
-  o: { orNew?: boolean; file?: string | null } = {},
+  o: { orNew?: boolean; file?: string | null; listed?: readonly string[] } = {},
 ): Promise<string> {
   const a = ChangeArtifact.safeParse(artifact);
   if (!a.success)
@@ -567,7 +567,8 @@ async function artifactPath(
       `${artifact} is not an artifact. Use one of ${ChangeArtifact.options.join(", ")}.`,
     );
   const dir = join(changesDirOf(root), id);
-  const files = await artifactFiles(dir, a.data);
+  // Beta.27 re-review: a call reading many files lists the folder once (`listed`).
+  const files = o.listed ?? (await artifactFiles(dir, a.data));
   // 2.72.0 (seventh UX walk): one file of a many-file artifact, such as a story, by its path in
   // the change folder; only a file the artifact has, never a path elsewhere.
   if (o.file) {
@@ -1010,33 +1011,44 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             );
           if (asked.length > ARTIFACT_FILES_MAX)
             throw badRequest(`At most ${ARTIFACT_FILES_MAX} files a call (${asked.length} asked).`);
-          if (!ChangeArtifact.safeParse(params.artifact).success)
-            await artifactPath(root, params.changeId!, params.artifact!);
+          const art = ChangeArtifact.safeParse(params.artifact);
+          if (!art.success) await artifactPath(root, params.changeId!, params.artifact!);
+          const dir = join(changesDirOf(root), params.changeId!);
+          // Beta.27 re-review: the folder listed once for the call, not once per file.
+          const listed = art.success ? await artifactFiles(dir, art.data) : [];
           const files = [];
           // Beta.27 re-review: a file that can't be read (deleted since the page listed it) is
           // its own problem, as /api/facts gives a repo's; the others are still answered.
           const problems: Record<string, { status: number; title: string; detail?: string }> =
             Object.create(null);
+          const problem = (file: string, e: HttpError) => {
+            problems[file] = {
+              status: e.status,
+              title: e.title,
+              ...(e.detail ? { detail: e.detail } : {}),
+            };
+          };
           for (const file of asked) {
             let rel: string;
+            let content: string;
             try {
               rel = await artifactPath(root, params.changeId!, params.artifact!, {
                 orNew: true,
                 file,
+                listed,
+              });
+              // Gone between the listing and the read: that file's 404, never a 500 for all.
+              // Another failure reads as the one-file read gives it (empty).
+              content = await readFile(join(dir, rel), "utf8").catch((e: unknown) => {
+                if ((e as NodeJS.ErrnoException).code === "ENOENT")
+                  throw notFound(`${file} isn't there any more: it was deleted or moved.`);
+                return "";
               });
             } catch (e) {
               if (!(e instanceof HttpError)) throw e;
-              problems[file] = {
-                status: e.status,
-                title: e.title,
-                ...(e.detail ? { detail: e.detail } : {}),
-              };
+              problem(file, e);
               continue;
             }
-            const content = await readFile(
-              join(changesDirOf(root), params.changeId!, rel),
-              "utf8",
-            ).catch(() => "");
             files.push({
               file,
               artifact: params.artifact,

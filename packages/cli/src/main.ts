@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 // (test/startup.test.ts holds this). The rest loads below, when its command runs.
 import {
   createLog,
+  onAtticusSignal,
   printToCurrent,
   recordedCommand,
   retitleTerminalRuns,
@@ -1864,7 +1865,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       ac.abort();
       io.err("Stopping after this step (Ctrl+C again stops at once)...");
     };
-    process.on("SIGINT", onInt);
+    // Beta.27 re-review: Atticus's own (process-trees and the run log leave the end to it).
+    const offInt = onAtticusSignal("SIGINT", onInt);
     try {
       return await mapAllCommand(root, o, io, {
         clipboard: copyToClipboard,
@@ -1882,7 +1884,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       }
       throw e;
     } finally {
-      process.off("SIGINT", onInt);
+      offInt();
       rl?.close();
     }
   };
@@ -3874,8 +3876,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "questions" && command === "propose") {
     const { questionsProposeCommand } = await import("./copilot-acp-steps.js");
     const ac = new AbortController();
-    const onInt = () => ac.abort();
-    process.on("SIGINT", onInt);
+    const offInt = onAtticusSignal("SIGINT", () => ac.abort());
     try {
       return await questionsProposeCommand(
         root,
@@ -3888,7 +3889,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         () => questionsFiles(root, ["questions", "proposed", "--root", root], io),
       );
     } finally {
-      process.off("SIGINT", onInt);
+      offInt();
     }
   }
   // ADR 0191: a person moves a question to the role that answers it.

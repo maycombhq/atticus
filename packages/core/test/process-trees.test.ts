@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { constants as osConstants, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const posix = process.platform !== "win32";
 const mod = JSON.stringify(pathToFileURL(join(HERE, "../dist/process-trees.js")).href);
+const runLog = JSON.stringify(pathToFileURL(join(HERE, "../dist/run-log.js")).href);
 
 const made: string[] = [];
 afterEach(async () => {
@@ -39,18 +40,26 @@ const until = async (ok: () => boolean | Promise<boolean>, ms = 15_000) => {
   }
 };
 
-/** A node that starts a tracked `sleep` in its own group, writes its pid, then does `then`. */
-async function parent(then: string) {
+/**
+ * A node that starts a tracked `sleep` in its own group, writes its pid, then does `then`;
+ * `before` runs first (a library loaded, process.kill patched).
+ */
+async function parent(then: string, before = "") {
   const dir = await mkdtemp(join(tmpdir(), "atticus-trees-"));
   made.push(dir);
   const script = join(dir, "parent.mjs");
   const pidFile = join(dir, "pid");
+  const tree =
+    process.platform === "win32"
+      ? `spawn(process.execPath, ["-e", "setTimeout(() => {}, 600000)"], { stdio: "ignore" })`
+      : `spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" })`;
   await writeFile(
     script,
     `import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
-const { trackTree } = await import(${mod});
-const child = spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" });
+${before}
+const { trackTree, onAtticusSignal } = await import(${mod});
+const child = ${tree};
 const untrack = trackTree(child);
 child.on("exit", untrack);
 writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
@@ -97,7 +106,7 @@ describe("trees Atticus started, when Atticus stops", () => {
     "with a handler of its own (atticus ui), the signal is that handler's: the tree stops, Atticus decides",
     async () => {
       const { pid, ended } = await parent(
-        `process.once("SIGTERM", () => setTimeout(() => process.exit(3), 300)); process.kill(process.pid, "SIGTERM");`,
+        `onAtticusSignal("SIGTERM", () => setTimeout(() => process.exit(3), 300), { once: true }); process.kill(process.pid, "SIGTERM");`,
       );
       const how = await ended;
       expect(how.code).toBe(3);
@@ -106,6 +115,123 @@ describe("trees Atticus started, when Atticus stops", () => {
     },
     60_000,
   );
+});
+
+/**
+ * Beta.27 re-review: signal-exit (which @inquirer/core loads, through OpenSpec) listens to every
+ * signal and ends the process only when it alone listens; process-trees counted its listener as a
+ * handler that ends Atticus, so neither did and Ctrl+C left Atticus running. Atticus's own
+ * handlers are told by a registry (onAtticusSignal) now. With signal-exit itself when the
+ * dependency tree has it, and a listener that behaves as it does either way.
+ */
+function signalExitModule(): string | undefined {
+  const store = join(HERE, "../../../node_modules/.pnpm");
+  try {
+    for (const d of readdirSync(store)
+      .filter((n) => n.startsWith("signal-exit@4"))
+      .sort()) {
+      const f = join(store, d, "node_modules/signal-exit/dist/mjs/index.js");
+      if (existsSync(f)) return pathToFileURL(f).href;
+    }
+  } catch {
+    // no store here
+  }
+  return undefined;
+}
+const SIGNAL_EXIT = signalExitModule();
+/** Ends the process by the signal only when it alone listens, as signal-exit does. */
+const FOREIGN = `for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) { const f = () => { if (process.listeners(s).length === 1) { process.off(s, f); process.kill(process.pid, s); } }; process.on(s, f); }`;
+const libraries: [string, string][] = [
+  ["a listener that behaves as signal-exit does", FOREIGN],
+  ...(SIGNAL_EXIT
+    ? [
+        [
+          "signal-exit itself",
+          `const { onExit } = await import(${JSON.stringify(SIGNAL_EXIT)}); onExit(() => {});`,
+        ] as [string, string],
+      ]
+    : []),
+];
+
+describe("a library listening for signals too (signal-exit)", () => {
+  for (const [what, lib] of libraries) {
+    it.runIf(posix)(
+      `${what}: Ctrl+C still stops the tree and ends Atticus by the signal`,
+      async () => {
+        const { pid, ended } = await parent(`process.kill(process.pid, "SIGINT");`, lib);
+        const how = await ended;
+        expect(how.signal).toBe("SIGINT");
+        await until(() => !alive(pid));
+        expect(alive(pid)).toBe(false);
+      },
+      60_000,
+    );
+
+    it.runIf(posix)(
+      `${what}: a terminal run's record (the run log's handler) ends it with 130`,
+      async () => {
+        const root = await mkdtemp(join(tmpdir(), "atticus-trees-root-"));
+        made.push(root);
+        await mkdir(join(root, "org-pack"));
+        const { pid, ended } = await parent(
+          `startTerminalRun(${JSON.stringify(root)}, { positionals: ["map", "forge-ledger"], flags: [], hookProcess: true }); process.kill(process.pid, "SIGINT");`,
+          `${lib}\nconst { startTerminalRun } = await import(${runLog});`,
+        );
+        const how = await ended;
+        expect(how.code).toBe(130);
+        await until(() => !alive(pid));
+        expect(alive(pid)).toBe(false);
+      },
+      60_000,
+    );
+  }
+
+  it.runIf(posix)(
+    "a terminal run's record waits for a task run holding the stop, then ends it with 130",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "atticus-trees-root-"));
+      made.push(root);
+      await mkdir(join(root, "org-pack"));
+      const released = join(root, "released");
+      const { ended } = await parent(
+        `startTerminalRun(${JSON.stringify(root)}, { positionals: ["task", "run"], flags: [], hookProcess: true }); const release = holdStop(); process.kill(process.pid, "SIGINT"); setTimeout(() => { writeFileSync(${JSON.stringify(released)}, "1"); release(); }, 800);`,
+        `${FOREIGN}\nconst { startTerminalRun } = await import(${runLog}); const { holdStop } = await import(${mod});`,
+      );
+      const how = await ended;
+      expect(how.code).toBe(130);
+      // It ended only once the run had let go of the stop.
+      expect(existsSync(released)).toBe(true);
+    },
+    60_000,
+  );
+
+  it.runIf(posix && SIGNAL_EXIT !== undefined)(
+    "signal-exit's own exit handler still runs when Atticus ends by the signal",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-trees-se-"));
+      made.push(dir);
+      const heard = join(dir, "heard");
+      const { ended } = await parent(
+        `process.kill(process.pid, "SIGTERM");`,
+        `const { onExit } = await import(${JSON.stringify(SIGNAL_EXIT)}); onExit((c, s) => { writeFileSync(${JSON.stringify(heard)}, String(s)); });`,
+      );
+      const how = await ended;
+      expect(how.signal).toBe("SIGTERM");
+      expect(await readFile(heard, "utf8")).toBe("SIGTERM");
+    },
+    60_000,
+  );
+});
+
+describe("a signal Windows can't send itself", () => {
+  it("SIGHUP raised again throws (ENOSYS): Atticus ends with 128 + its number", async () => {
+    const { ended } = await parent(
+      `process.emit("SIGHUP", "SIGHUP");`,
+      `const kill = process.kill.bind(process); process.kill = (p, s) => { if (p === process.pid && s === "SIGHUP") { const e = new Error("kill ENOSYS"); e.code = "ENOSYS"; throw e; } return kill(p, s); };`,
+    );
+    const how = await ended;
+    expect(how.code).toBe(128 + osConstants.signals.SIGHUP);
+  }, 60_000);
 });
 
 describe("processDescendants", () => {

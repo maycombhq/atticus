@@ -46,7 +46,7 @@ function server(o: { token: string; page?: () => string | Promise<string>; root?
  * Beta.27 re-review: an `atticus ui` that restarts, maybe in another folder: its token, and the
  * metarepo its /api/health names, change when `restart` is called.
  */
-function restartable(first: { token: string; root: string }) {
+function restartable(first: { token: string; root: string; rootKey?: string }) {
   const at = { ...first };
   const calls: Call[] = [];
   const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -73,12 +73,21 @@ function restartable(first: { token: string; root: string }) {
         );
       return new Response(JSON.stringify({ confirmation: "c-1" }), { status: 201 });
     }
-    return new Response(JSON.stringify({ ok: true, url, root: at.root }), { status: 200 });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        url,
+        root: at.root,
+        ...(at.rootKey !== undefined ? { rootKey: at.rootKey } : {}),
+      }),
+      { status: 200 },
+    );
   });
   return {
     fetch,
     calls,
-    restart: (token: string, root = at.root) => Object.assign(at, { token, root }),
+    restart: (token: string, root = at.root, rootKey = at.rootKey) =>
+      Object.assign(at, { token, root, rootKey }),
   };
 }
 
@@ -173,6 +182,41 @@ describe("a page left open across a restart of atticus ui", () => {
       expect(c.sessionStale()).toBe(true);
       expect(c.sessionMoved()).toBe(true);
       expect(heard).toEqual(["stale"]);
+    });
+
+    it("the same metarepo written another way (case, a link) is the same: its rootKey says so", async () => {
+      const s = restartable({
+        token: "t1",
+        root: "C:\\Work\\Forge-Metarepo",
+        rootKey: "c:\\work\\forge-metarepo",
+      });
+      vi.stubGlobal("fetch", s.fetch);
+      const c = await import("../src/api/client.js");
+      c.setSessionToken("t1");
+      await c.api("/api/health");
+      s.restart("t2", "c:\\work\\forge-metarepo");
+      await c.api("/api/notes", { method: "POST", body: { x: 1 } });
+      expect(s.calls.filter((x) => x.url === "/api/notes").map((x) => x.token)).toEqual([
+        "t1",
+        "t2",
+      ]);
+      expect(c.sessionMoved()).toBe(false);
+    });
+
+    it("another metarepo's rootKey is another server, whatever its root says", async () => {
+      const s = restartable({
+        token: "t1",
+        root: "/work/forge-metarepo",
+        rootKey: "/work/forge-metarepo",
+      });
+      vi.stubGlobal("fetch", s.fetch);
+      const c = await import("../src/api/client.js");
+      c.setSessionToken("t1");
+      await c.api("/api/health");
+      s.restart("t9", "/work/forge-metarepo", "/srv/northwind-metarepo");
+      await expect(c.api("/api/notes", { method: "POST", body: { x: 1 } })).rejects.toThrow();
+      expect(s.calls.filter((x) => x.url === "/api/notes")).toHaveLength(1);
+      expect(c.sessionMoved()).toBe(true);
     });
 
     it("a write whose server can't be told the same (no metarepo known yet) isn't sent again", async () => {
