@@ -147,7 +147,10 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     if (w.path.startsWith(join(sources, "readers")))
       readers.set(
         posix(relative(join(sources, "readers"), w.path)).replace(/\.json$/, ""),
-        readersSlotRead(w.text, posix(relative(join(sources, "readers"), w.path)).replace(/\.json$/, "")),
+        readersSlotRead(
+          w.text,
+          posix(relative(join(sources, "readers"), w.path)).replace(/\.json$/, ""),
+        ),
       );
   const legacy = writes.find((w) => w.path === legacyJoinsPath(root));
   const { parseLegacyJoins } = await import("./slots.js");

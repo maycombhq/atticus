@@ -793,23 +793,23 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
    */
   function notifyRead(root: string, o: { clone?: boolean } = {}) {
     const text = `${JSON.stringify({
-        kind: "entry",
-        id: "entry.get.status",
-        repo: "forge-notify",
-        commit: "0456def",
-        entryType: "rest",
-        method: "GET",
-        path: "/status",
-        cite: {
-          file: "src/Status.java",
-          line: 3,
-          value: "/status",
-          quote: '@GetMapping("/status")',
-        },
-        verified: "line",
-        by: "assistant",
-        conf: "declared",
-      })}\n`;
+      kind: "entry",
+      id: "entry.get.status",
+      repo: "forge-notify",
+      commit: "0456def",
+      entryType: "rest",
+      method: "GET",
+      path: "/status",
+      cite: {
+        file: "src/Status.java",
+        line: 3,
+        value: "/status",
+        quote: '@GetMapping("/status")',
+      },
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+    })}\n`;
     writeFileSync(join(root, "facts", "forge-notify.jsonl"), text);
     // ADR 0195 (CS2): forge-notify is read when its verify --write took its facts snapshot; the
     // build joins only facts snapshots, never the assistant's working file.

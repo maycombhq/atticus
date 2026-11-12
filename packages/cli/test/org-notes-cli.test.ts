@@ -7,7 +7,8 @@ import { parse } from "yaml";
 import { answerQuestion, listQuestions, RepoType, TERM_STEP } from "@maycombhq/core";
 import { mapCommand } from "../src/map-commands.js";
 import { repoTypeNote, repoTypeRules, termNoteOffer } from "../src/repo-type-commands.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { snapshotFactsFiles, verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Org notes per repo type (ADR 0163), on the invented estate of fixtures/term-notes: the notes a
@@ -33,6 +34,7 @@ function metarepo(edit?: (repo: string, text: string) => string) {
       const p = join(root, "facts", f);
       writeFileSync(p, edit(f.replace(/\.jsonl$/, ""), readFileSync(p, "utf8")));
     }
+  snapshotFactsFiles(root);
   return root;
 }
 const verify = (root: string, repo: string, write = true, c = capture()) =>
@@ -125,8 +127,12 @@ describe("verify --write: terms across the estate", () => {
         .map((g) => `${g.subject} ${g.resource} ${(g.flags as string[]).join(",")}`)
         .sort(),
     ).toEqual([
+      // ADR 0195 (CS2): the build makes every read proxy's grants (each repo of the fixture has
+      // its facts snapshot), not only those of the repo just written.
       "APP000123 gw-forge-accounts-proxy-get-forge-accounts caller:cmdb,term:cmdb",
+      "APP000123 gw-forge-cards-proxy-get-forge-cards caller:cmdb,term:cmdb",
       "APP000456 gw-forge-accounts-proxy-get-forge-accounts caller:cmdb,term:cmdb",
+      "APP000789 gw-forge-limits-proxy-get-forge-limits caller:cmdb,term:cmdb",
     ]);
     expect(c.out).toContain(
       "Access: forge-statements calls forge-accounts-proxy (src/main/java/forge/statements/StatementsJob.java:5), and its own APP000999 is not among the consumers forge-accounts-proxy lists. Add it to the list, or say why it calls (a finding for forge-statements's owner, team-statements).",

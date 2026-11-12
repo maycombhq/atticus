@@ -259,7 +259,8 @@ describe("the write side of the local API runs the CLI's own commands", () => {
       "forge-reports-job",
     ]);
     expect(refused.repos.every((x) => x.why === "not-cloned")).toBe(true);
-    expect(read.errors[0]).toMatch(/^Nothing written: catalog\/generated is as it was/);
+    // ADR 0195 (CS2): a scan that read no repo in full writes nothing, no slot either.
+    expect(read.errors[0]).toMatch(/^Nothing written: the scan read no repo in full/);
     expect(read.errors).toContain(
       "  forge-ledger: not cloned here; clone it with atticus workspace sync",
     );
@@ -270,7 +271,7 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     const lines = srv.jobs.linesOf(jobId)?.lines ?? [];
     expect(lines.some((l) => /^\s*[{}[\]"]/.test(l))).toBe(false);
     expect(lines.join("\n")).toMatch(/Scanned 0 repos: \d+ records?/);
-    expect(lines.join("\n")).toMatch(/Nothing written: catalog\/generated is as it was/);
+    expect(lines.join("\n")).toMatch(/Nothing written: the scan read no repo in full/);
     expect(lines.join("\n")).toMatch(/forge-ledger: not cloned here/);
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });

@@ -370,6 +370,8 @@ export async function scanCommand(
           ...(o.repos ? { repos: o.repos } : {}),
           ...(o.full ? { full: true } : {}),
           ...(o.json ? { json: true } : {}),
+          ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+          ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
         },
         io,
       );

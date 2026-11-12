@@ -1,3 +1,4 @@
+import { confirmed } from "./seed-slots.js";
 import { execFileSync } from "node:child_process";
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -66,6 +67,15 @@ const interfaces = async (root: string) =>
 
 // App-only audit: the app's scan is a cross-check; it asks about the calls of repos the assistant
 // has read, and of the others only when the person asks.
+// ADR 0195 (CS2): a scan after an answer joins what were loose ends, removals the build lists
+// for a person to confirm with their count; the rescan here confirms them, as they would.
+const rescan = (root: string, out: Parameters<typeof scanCommand>[2]) =>
+  confirmed(
+    (x, n) =>
+      scanCommand(root, { noDrift: true, ...(n !== undefined ? { allowRemovals: n } : {}) }, x),
+    out,
+  );
+
 describe("a scan that asks only for the repos the assistant has read", () => {
   it("asks nothing for calls from a repo outside askFrom, and asks for one inside it", async () => {
     const root = await metarepo();
@@ -109,7 +119,7 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(a.out.at(-1)).toBe("Next: atticus scan");
 
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    expect(await rescan(root, s2.io)).toBe(0);
     expect(s2.out.some((l) => l.includes("localhost:9966"))).toBe(false);
     expect(await interfaces(root)).toEqual(
       expect.arrayContaining([
@@ -136,7 +146,7 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
       ),
     );
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    expect(await rescan(root, s2.io)).toBe(0);
     const after = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after.map((x) => [x.id, x.state])).toEqual([[q!.id, "retired"]]);
     expect(after[0]!.retired?.why).toMatch(/forge-customers lists localhost:9966 under hosts/);
@@ -158,7 +168,7 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(old.options.map((o) => o.label)).toEqual(["forge-customers", HOSTS_NONE]);
     await writeQuestion(root, old);
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    expect(await rescan(root, s2.io)).toBe(0);
     const [after] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after!.id).toBe(q!.id);
     expect(after!.evidence).toEqual(q!.evidence);
@@ -180,7 +190,7 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     });
     const before = await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8");
     const s3 = io();
-    expect(await scanCommand(root, { noDrift: true }, s3.io)).toBe(0);
+    expect(await rescan(root, s3.io)).toBe(0);
     expect(await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8")).toBe(before);
     expect(s3.out.some((l) => l.startsWith("Re-asked"))).toBe(false);
   }, 300_000);

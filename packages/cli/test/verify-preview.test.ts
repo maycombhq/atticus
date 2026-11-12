@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiFactsRoutes } from "../src/ui-api-facts.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 import { prCommand } from "../src/verify-preview.js";
 
 /**
@@ -54,11 +55,15 @@ async function snapshot(dir: string, base = dir, out = new Map<string, string>()
 
 /**
  * The files a write changed, Atticus's own local state left out (the catalog's read cache under
- * `.atticus/`, never committed): the preview's add step names the rest.
+ * `.atticus/` and, since ADR 0195, the build's undo copies under `.index/`, never committed):
+ * the preview's add step names the rest.
  */
 const changedFiles = (before: Map<string, string>, after: Map<string, string>) =>
   [...new Set([...before.keys(), ...after.keys()])].filter(
-    (k) => before.get(k) !== after.get(k) && !k.split("/").includes(".atticus"),
+    (k) =>
+      before.get(k) !== after.get(k) &&
+      !k.split("/").includes(".atticus") &&
+      !k.split("/").includes(".index"),
   );
 
 beforeAll(async () => {
@@ -228,9 +233,12 @@ describe(
       expect(v.preview!.facts.dropped).toEqual([
         expect.objectContaining({ id: "call.post.notifications", why: "wrong" }),
       ]);
-      // The record stays, held by the callee's side, but forge-payments no longer makes the link.
-      expect(v.preview!.links!.unmade).toEqual([
-        expect.objectContaining({ from: "payments-api", method: "POST", path: "/notifications" }),
+      // ADR 0195 (CS2): forge-notifications has no slot here (no scan, no verify --write), so the
+      // build never joined the call: it was a loose end, and marking it wrong changes that loose
+      // end and unmakes no link (beta.26 kept a link the callee's side held from an earlier write).
+      expect(v.preview!.links!.unmade).toEqual([]);
+      expect(v.preview!.catalog!.files).toEqual([
+        "catalog/generated/unresolved/unresolved.call-post-notifications.yaml",
       ]);
     });
 

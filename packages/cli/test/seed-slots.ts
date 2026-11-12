@@ -1,13 +1,18 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { dirname } from "node:path";
-import { cmpText, type CatalogRecord } from "@maycombhq/core";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { catalogDirOf, cmpText, factsDirOf, parseFacts, type CatalogRecord } from "@maycombhq/core";
 import {
   buildAndWrite,
+  factsSnapshotWrites,
+  planUpgradeToSlots,
   readersSlotPath,
   serializeReadersSlot,
   SLOT_VERSION,
   type BuildAndWrite,
 } from "@maycombhq/scanner";
+import { verifyCommand } from "../src/verify-commands.js";
 
 /**
  * A metarepo's catalog seeded the way ADR 0195 builds it (CS2; CS5 moves the rest of the tests
@@ -67,4 +72,71 @@ export async function confirmed(
     return run(io, Number(n));
   for (const [out, l] of lines) (out ? io.out : io.err)(l);
   return code;
+}
+
+/**
+ * `verifyCommand` as a person runs it under ADR 0195 (CS2): with `--write`, a build that lists
+ * removals above the limit (the facts' read replacing the readers', an answer joining a loose
+ * end) is confirmed with exactly the count it listed. Tests written before the guards import
+ * this in its place, so they keep testing what they were about.
+ */
+export const verifyConfirmed: typeof verifyCommand = (root, repo, o, out) =>
+  o.write
+    ? confirmed(
+        (x, allowRemovals) =>
+          verifyCommand(
+            root,
+            repo,
+            { ...o, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
+            x,
+          ),
+        out,
+      )
+    : verifyCommand(root, repo, o, out);
+
+/**
+ * The other repos' facts files of a fixture as their facts snapshots, as a successful
+ * `atticus verify <repo> --write` of each would have taken them (ADR 0195, CS2): the build's
+ * estate join reads snapshots only, never the assistant's working files. Synchronous, so a
+ * fixture's metarepo() can call it; a file not all verified is left out, as verify would refuse it.
+ */
+export function snapshotFactsFiles(root: string, except: readonly string[] = []): void {
+  const dir = factsDirOf(root);
+  for (const n of (existsSync(dir) ? readdirSync(dir) : []).sort()) {
+    const m = /^([^.]+(?:\.[^.]+)*?)\.jsonl$/.exec(n);
+    if (!m || /\.(rejected|corrections|reviewed)\.jsonl$/.test(n)) continue;
+    const repo = m[1]!;
+    if (except.includes(repo)) continue;
+    const p = parseFacts(readFileSync(join(dir, n), "utf8"));
+    if (!p.ok || !p.facts.length || p.facts.some((f) => f.verified === "none")) continue;
+    const commits = [...new Set(p.facts.map((f) => f.commit))];
+    for (const w of factsSnapshotWrites(root, repo, p.facts, {
+      commit: commits.length === 1 ? commits[0]! : "unknown",
+      contracts: null,
+    })) {
+      mkdirSync(dirname(w.path), { recursive: true });
+      writeFileSync(w.path, w.text!);
+    }
+  }
+}
+
+/**
+ * A test's hand-seeded catalog/generated adopted (ADR 0195 point 6): every record into legacy
+ * slots, as `atticus upgrade --yes` adopts a catalog from before the slots, then one build. A
+ * hand-seeded catalog lacks what the build's passes add (features, glossary terms, intake's
+ * documents), which the upgrade itself would refuse; a test's seed takes them. Tests that
+ * seeded the catalog itself and then run a writer call this after seeding (CS5 moves them onto
+ * readers slots).
+ */
+export async function adoptSeeded(root: string): Promise<void> {
+  const plan = await planUpgradeToSlots(root);
+  if (!plan.pending) return;
+  for (const w of plan.writes) {
+    if (w.path.endsWith("build.json") || w.path.includes("generated-before-upgrade")) continue;
+    await mkdir(dirname(w.path), { recursive: true });
+    await writeFile(w.path, w.text);
+  }
+  await rm(join(catalogDirOf(root), "generated"), { recursive: true, force: true });
+  const r = await buildAndWrite(root, { command: "seed" });
+  if (r.guard.refused) throw new Error(`seed refused: ${r.guard.refused.message}`);
 }

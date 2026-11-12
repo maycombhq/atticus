@@ -680,7 +680,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     // any machine, cached or not, writes the same bytes.
     const stamp = state.committedAt ?? o.scannedAt;
     const readerRecords = applyClients(
-      applyPrefixes(stamp ? scan.records.map((x) => restamp(x, stamp)) : scan.records, settings.prefixes),
+      applyPrefixes(
+        stamp ? scan.records.map((x) => restamp(x, stamp)) : scan.records,
+        settings.prefixes,
+      ),
       settings.clients,
     );
     // ADR 0195 point 1: a full read is an observation; anything less leaves the slot as it was.

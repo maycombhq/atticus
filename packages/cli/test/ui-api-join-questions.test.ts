@@ -12,7 +12,8 @@ import {
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { projectFactsIntoCatalog } from "../src/map-render-commands.js";
 import { uiQuestionRoutes } from "../src/ui-api-questions.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Beta.24 review: the join's question about a gateway's token target URL is on the app's

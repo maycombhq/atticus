@@ -16,7 +16,8 @@ import {
 } from "@maycombhq/core";
 import { projectFactsIntoCatalog } from "../src/map-render-commands.js";
 import { questionsFiles } from "../src/question-commands.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Beta.24 review: the estate join's questions (a host nothing resolves, several entries that
