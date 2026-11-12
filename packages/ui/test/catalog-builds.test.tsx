@@ -74,7 +74,7 @@ const view = (pending: Api.CatalogBuildViewT["pending"], last?: Api.CatalogBuild
 const UNDO: Api.CatalogUndoViewT = {
   copies: [
     {
-      n: 3,
+      n: 1,
       command: "atticus catalog build --allow-removals 3",
       at: "2026-11-11T18:02:00.000Z",
       commit: null,
@@ -87,11 +87,11 @@ const UNDO: Api.CatalogUndoViewT = {
       commit: null,
       files: 2,
     },
-    { n: 1, command: "atticus scan", at: "2026-11-11T17:00:00.000Z", commit: null, files: 96 },
+    { n: 3, command: "atticus scan", at: "2026-11-11T17:00:00.000Z", commit: null, files: 96 },
   ],
   plan: {
-    n: 3,
-    takesBack: [{ n: 3, command: "atticus catalog build --allow-removals 3" }],
+    n: 1,
+    takesBack: [{ n: 1, command: "atticus catalog build --allow-removals 3" }],
     files: [{ path: "catalog/sources/build.json", to: "file" }],
   },
 };
@@ -136,7 +136,7 @@ describe("Catalog builds, in every state", () => {
     expect(out).toContain(esc(B.pruneNone));
   });
 
-  it("lists the undo copies, newest first, each with Undo to before", () => {
+  it("lists the builds kept, newest first, each with its Undo", () => {
     const out = page();
     expect(out.indexOf("atticus catalog build --allow-removals 3")).toBeLessThan(
       out.indexOf("atticus catalog edits --curate"),

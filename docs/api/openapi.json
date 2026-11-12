@@ -5390,7 +5390,7 @@
     "/api/build/edits/curate": {
       "post": {
         "operationId": "curateHandEdits",
-        "summary": "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate as a local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), then the build runs with them. 409 when the edits are no longer the count listed",
+        "summary": "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
         "tags": [
           "scans"
         ],
@@ -5462,7 +5462,7 @@
     "/api/build/undo": {
       "get": {
         "operationId": "getCatalogUndo",
-        "summary": "3.12.0 (ADR 0195 point 7): the undo copies kept on this machine (the last five builds), newest first, and the files undoing back to before copy n would put back (n: the latest when left out). Writes nothing",
+        "summary": "3.12.0 (ADR 0195 point 7): the builds kept to undo on this machine (the last five), newest first and numbered 1 (the latest) to 5, and the files taking back the n latest would put back (1 when left out). Writes nothing",
         "tags": [
           "scans"
         ],
@@ -5473,7 +5473,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Undo back to before this copy",
+            "description": "How many of the latest builds to take back",
             "required": false
           }
         ],
@@ -5512,7 +5512,7 @@
       },
       "post": {
         "operationId": "runCatalogUndo",
-        "summary": "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before copy n; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
+        "summary": "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before the n latest builds; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
         "tags": [
           "scans"
         ],
@@ -45567,6 +45567,20 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -45624,6 +45638,20 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -45660,6 +45688,20 @@
                           "type": "array",
                           "items": {
                             "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
                           }
                         }
                       },
@@ -45775,6 +45817,20 @@
                       "type": "array",
                       "items": {
                         "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
                       }
                     }
                   },

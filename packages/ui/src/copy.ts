@@ -897,8 +897,8 @@ export const COPY = {
       "For each repo with verified facts, what the built-in readers found is compared with what the facts say. The facts are the map; the readers are a cross-check. Nothing here changes the catalog: check the cited line, then dismiss what the readers got wrong, or ask your assistant to read the repo again.",
     openFromTrust: "Readers found / facts say",
     openFromTrustOf: (repo: string) => `Readers found / facts say for ${repo}`,
-    crossCheckLine: (found: number, disagree: number) =>
-      `Readers' cross-check: ${found} found by the readers only, ${disagree} disagree.`,
+    /** The repo picker's option: the counts in short. */
+    pickerCounts: (found: number, disagree: number) => `${found} found, ${disagree} disagree`,
     repoPicker: "Repo",
     empty:
       "No repo has verified facts yet, so there is nothing to check the readers against. Read a repo with your assistant and Apply it on Map › Trust; then scan to compare.",
@@ -1035,11 +1035,14 @@ export const COPY = {
     undoIntro:
       "The last five builds on this machine keep an undo copy. Undo puts back catalog/generated, build.json and the slots as they were before a build, and can itself be undone. Git keeps everything older.",
     undoNone: "Nothing to undo: no build has been written here yet.",
+    undoLatest:
+      "1 is the latest build. Undoing an older one takes back every build after it too, newest first.",
     undoCaption: "The undo copies, newest first",
-    undoCol: { n: "Copy", command: "Command", at: "When", files: "Files", act: "Undo" },
-    undoTo: "Undo to before this…",
-    undoToOf: (n: number) => `Undo to before copy ${n}`,
-    undoPlanTitle: (n: number) => `Undo to before copy ${n}`,
+    undoCol: { n: "Build", command: "Command", at: "When", files: "Files", act: "Undo" },
+    undoTo: "Undo…",
+    undoToOf: (n: number) => (n === 1 ? "Undo the latest build" : `Undo the ${n} latest builds`),
+    undoPlanTitle: (n: number) =>
+      n === 1 ? "Undo the latest build" : `Undo the ${n} latest builds`,
     undoPlanIntro: (copies: string) => `Takes back: ${copies}.`,
     undoPlanCaption: "The files undo puts back",
     restore: "restore",

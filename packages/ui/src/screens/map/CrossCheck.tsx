@@ -425,7 +425,7 @@ export function CrossCheckPage(p: {
                     {repos.map((r) => (
                       <option key={r.repo} value={r.repo}>
                         {r.state === "compared"
-                          ? `${r.repo} · ${X.crossCheckLine(r.counts.readersOnly, r.counts.disagree)}`
+                          ? `${r.repo} · ${X.pickerCounts(r.counts.readersOnly, r.counts.disagree)}`
                           : `${r.repo} · ${X.state[r.state]?.split(":")[0] ?? r.state}`}
                       </option>
                     ))}

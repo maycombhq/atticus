@@ -1680,6 +1680,10 @@ export const BuildRemoval = z.object({
   id: z.string(),
   repos: z.array(z.string()),
   explainedBy: z.array(z.string()),
+  /** What kind of change explains it: a slot, the manifests, archived, curated, an input, the build. */
+  reasons: z
+    .array(z.enum(["slot", "manifest", "archived", "curated", "input", "build"]))
+    .optional(),
 });
 export type BuildRemovalT = z.infer<typeof BuildRemoval>;
 export const BuildHandEdit = z.object({
@@ -1762,8 +1766,9 @@ export const CatalogBuildRequest = z.strictObject({
 export const CatalogEditsRequest = z.strictObject({
   count: z.number().int().min(1).max(1_000_000),
 });
-/** 3.12.0: an undo copy kept on this machine (point 7). */
+/** 3.12.0: a build kept on this machine to undo (point 7), numbered as `atticus catalog undo` does. */
 export const UndoCopyView = z.object({
+  /** 1 is the latest build, up to 5. */
   n: z.number().int(),
   command: z.string(),
   at: z.string(),
@@ -1771,8 +1776,8 @@ export const UndoCopyView = z.object({
   files: z.number().int(),
 });
 /**
- * 3.12.0: GET /api/build/undo: the copies, newest first, and what undoing back to before `n`
- * puts back (the copies it takes back, and each file restored or removed).
+ * 3.12.0: GET /api/build/undo: the builds kept, newest first, and what taking back the `n`
+ * latest puts back (the builds it takes back, and each file restored or removed).
  */
 export const CatalogUndoView = z.object({
   copies: z.array(UndoCopyView),
@@ -1787,7 +1792,7 @@ export const CatalogUndoView = z.object({
   problem: z.string().optional(),
 });
 export type CatalogUndoViewT = z.infer<typeof CatalogUndoView>;
-/** 3.12.0: take back the builds back to before copy `n`; `files` is how many files the page listed. */
+/** 3.12.0: take back the `n` latest builds; `files` is how many files the page listed. */
 export const CatalogUndoRequest = z.strictObject({
   n: z.number().int().min(1),
   files: z.number().int().min(0),
@@ -6756,7 +6761,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "curateHandEdits",
       summary:
-        "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate as a local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), then the build runs with them. 409 when the edits are no longer the count listed",
+        "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
       tag: "scans",
       body: CatalogEditsRequest,
       ok: {
@@ -6771,16 +6776,16 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getCatalogUndo",
       summary:
-        "3.12.0 (ADR 0195 point 7): the undo copies kept on this machine (the last five builds), newest first, and the files undoing back to before copy n would put back (n: the latest when left out). Writes nothing",
+        "3.12.0 (ADR 0195 point 7): the builds kept to undo on this machine (the last five), newest first and numbered 1 (the latest) to 5, and the files taking back the n latest would put back (1 when left out). Writes nothing",
       tag: "scans",
-      params: [q("n", { type: "integer" }, "Undo back to before this copy")],
+      params: [q("n", { type: "integer" }, "How many of the latest builds to take back")],
       ok: { status: 200, schema: "CatalogUndoView", description: "OK" },
       errors: [400],
     },
     post: {
       id: "runCatalogUndo",
       summary:
-        "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before copy n; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
+        "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before the n latest builds; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
       tag: "scans",
       body: CatalogUndoRequest,
       ok: {

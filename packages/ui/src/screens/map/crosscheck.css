@@ -184,6 +184,15 @@
   max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
-.cb-count {
-  max-width: 10em;
+.cb .field.cb-count {
+  width: 10em;
+  max-width: 100%;
+}
+/* The list scrolls inside the dialog, so the count and the buttons stay in view. */
+.cb-dialog-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 0;
 }

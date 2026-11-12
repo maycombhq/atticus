@@ -118,7 +118,7 @@ export function ConfirmDialog(p: {
           {p.title}
         </h2>
         <p id={introId}>{p.intro}</p>
-        <div tabIndex={0} className="stack" style={{ gap: 6 }} aria-label={p.title}>
+        <div tabIndex={0} className="stack cb-dialog-list" style={{ gap: 6 }} aria-label={p.title}>
           {p.children}
         </div>
         {p.count !== undefined && (
@@ -128,6 +128,7 @@ export function ConfirmDialog(p: {
               id={countId}
               ref={input}
               className="field cb-count"
+              style={{ width: "10em", maxWidth: "100%" }}
               inputMode="numeric"
               autoComplete="off"
               value={typed}
@@ -188,9 +189,7 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
             <td data-label={B.removalCol.repos}>
               {r.repos.length ? r.repos.join(", ") : B.noRepo}
             </td>
-            <td data-label={B.removalCol.why} className="mono">
-              {r.explainedBy.join("; ")}
-            </td>
+            <td data-label={B.removalCol.why}>{r.explainedBy.join("; ")}</td>
           </tr>
         ))}
       </tbody>
@@ -346,7 +345,7 @@ export function RefusalView(p: {
   );
 }
 
-/** Undo: the copies, newest first, each one Undo to before away (its files listed first). */
+/** Undo: the builds kept, newest first (1 the latest), each one Undo away (its files listed first). */
 export function UndoPanel(p: {
   of: Loaded<Api.CatalogUndoViewT> & { reload?: () => void };
   plan: (n: number) => Promise<Api.CatalogUndoViewT>;
@@ -357,7 +356,7 @@ export function UndoPanel(p: {
   return (
     <Panel title={B.undoTitle} span="1 / -1">
       <p className="work-why" style={{ marginTop: 0 }}>
-        {B.undoIntro}
+        {B.undoIntro} {B.undoLatest}
       </p>
       <View of={p.of} empty={(v) => v.copies.length === 0} emptyText={B.undoNone}>
         {(v) => (

@@ -37,7 +37,14 @@ const posix = (p: string) => p.split(sep).join("/");
 const BUILD = "atticus catalog build";
 
 function removalView(r: Removal): Api.BuildRemovalT {
-  return { path: r.path, kind: r.kind, id: r.id, repos: r.repos, explainedBy: r.explainedBy };
+  return {
+    path: r.path,
+    kind: r.kind,
+    id: r.id,
+    repos: r.repos,
+    explainedBy: r.explainedBy,
+    ...(r.reasons?.length ? { reasons: r.reasons } : {}),
+  };
 }
 
 /** The refusal as the page shows it, with the command that goes on in a terminal. */
@@ -159,11 +166,15 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
   };
 }
 
-/** GET /api/catalog/undo: the copies, newest first, and what undoing back to before `n` restores. */
+/**
+ * GET /api/build/undo: the builds kept here, newest first and numbered as `atticus catalog undo`
+ * numbers them (1 the latest), and what taking back the `n` latest (1 when left out) restores.
+ */
 export async function catalogUndoView(root: string, n?: number): Promise<Api.CatalogUndoViewT> {
   const undoDir = await undoDirOf(root);
-  const copies = (await listUndo(undoDir)).map((c) => ({
-    n: c.n,
+  const list = await listUndo(undoDir);
+  const copies = list.map((c, i) => ({
+    n: i + 1,
     command: c.command,
     at: c.at,
     commit: c.commit,
@@ -174,8 +185,11 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
   return {
     copies,
     plan: {
-      n: n ?? copies[0]!.n,
-      takesBack: plan.copies.map((c) => ({ n: c.n, command: c.command })),
+      n: n ?? 1,
+      takesBack: plan.copies.map((c) => ({
+        n: list.findIndex((x) => x.n === c.n) + 1,
+        command: c.command,
+      })),
       files: plan.files.map((f) => ({ path: f.path, to: f.to })),
     },
   };

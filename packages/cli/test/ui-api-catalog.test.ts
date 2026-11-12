@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseReadersSlot, readersSlotPath, serializeReadersSlot } from "@maycombhq/scanner";
+import {
+  keepCatalogsInMemory,
+  parseReadersSlot,
+  readersSlotPath,
+  serializeReadersSlot,
+} from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { catalogBuild } from "../src/catalog-build-commands.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
@@ -36,7 +41,7 @@ const call = async (path: string, method = "GET", body?: unknown) => {
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const text = await r.text();
-  return { status: r.status, body: (text ? JSON.parse(text) : {}) as Record<string, any> };
+  return { status: r.status, body: (text ? JSON.parse(text) : {}) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any -- a route's JSON, read loosely
 };
 type Ended = { id: string; state: string; result?: { code: number; lines: string[] } };
 /** A local job followed to its end, as the app's followJob does. */
@@ -77,6 +82,8 @@ beforeAll(async () => {
   await mkdir(join(root, "facts"), { recursive: true });
   // The first build, as a person runs it after the slots land.
   expect(await catalogBuild(root, {}, quiet)).toBe(0);
+  // As the app's server does (ui-commands.ts): catalogs read are kept until a change is heard.
+  keepCatalogsInMemory(true);
   srv = await startServer({
     root,
     port: 0,
@@ -86,6 +93,7 @@ beforeAll(async () => {
   });
 }, 240_000);
 afterAll(async () => {
+  keepCatalogsInMemory(false);
   await srv?.close();
   await rm(root, { recursive: true, force: true });
 });
@@ -184,7 +192,11 @@ describe("the build's confirm steps", () => {
     expect(await catalog()).toEqual(before);
     const j = await job("/api/build/edits/curate", { count: 1 });
     expect(j.result!.lines.join(" ")).toMatch(/Wrote catalog\/curated\//);
-    expect((await call("/api/build")).body.pending.upToDate).toBe(true);
+    const after = (await call("/api/build")).body;
+    expect(
+      after.pending.upToDate,
+      JSON.stringify({ lines: j.result!.lines, pending: after.pending }),
+    ).toBe(true);
   });
 
   it("waits for a large removal's exact count, writes nothing on another, then writes it", async () => {
@@ -232,7 +244,10 @@ describe("the build's confirm steps", () => {
     expect((await call("/api/build/prune")).body).toEqual({ files: [] });
     const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
     const m = await readFile(manifest, "utf8");
-    await writeFile(manifest, m.replace(/(  - id: forge-reports-job\n)/, "$1    archived: true\n"));
+    await writeFile(
+      manifest,
+      m.replace(/( {2}- id: forge-reports-job\n)/, "$1    archived: true\n"),
+    );
     const v = await call("/api/build/prune");
     expect(v.body.files).toEqual([
       {

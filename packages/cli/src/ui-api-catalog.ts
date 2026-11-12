@@ -1,5 +1,5 @@
 import { Api, headFromFiles, isAdopted } from "@maycombhq/core";
-import { readCrossCheck } from "@maycombhq/scanner";
+import { forgetCatalogs, readCrossCheck } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -21,13 +21,14 @@ import { captured, type LocalJob } from "./ui-api-steps.js";
  * - GET /api/build: each repo's source, what `atticus catalog build` would do now (its
  *   refusal, with the removals and hand edits it lists and their counts) and what the last build
  *   here changed.
- * - GET /api/build/undo[?n=]: the undo copies and what undoing back to before n puts back.
+ * - GET /api/build/undo[?n=]: the builds kept to undo (1 the latest) and what taking back the n
+ *   latest puts back.
  * - GET /api/build/prune: the slot files no build reads.
  *
  * Writes: each the CLI's own command, as a local job (one at a time with Apply, Propose and Bring
  * in), so its lines are in the Console (ADR 0187) and the app and `atticus …` never disagree.
  * Each confirms exactly what the page listed: the build with the counts the refusal named (the
- * command refuses any other), undo with the copy and the number of files listed, prune and the
+ * command refuses any other), undo with the builds and the number of files listed, prune and the
  * hand edits' curate with the count listed (409 and nothing run when it is no longer that).
  * Everything here writes the metarepo's own files or this machine's, for review in the catalog
  * PR (ADR 0186: no confirmation of a shared system).
@@ -51,6 +52,17 @@ async function headOf(root: string, repo: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The server keeps the catalogs it read in memory until its watcher hears a change (ADR 0119),
+ * which can come after a step's own write: a build in the same job as the curated decisions it
+ * follows, or a look right after a hand edit, would read the folder as it was. Each build and
+ * each look here reads the files.
+ */
+function fresh<T>(f: () => Promise<T>): Promise<T> {
+  forgetCatalogs();
+  return f();
 }
 
 /** The routes; `asJob` is ui-api.ts's local job (one at a time with Apply, Propose and Bring in). */
@@ -103,7 +115,10 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     })
     .add("GET", "/api/build", async () => {
       const { catalogBuildView } = await import("./build-report.js");
-      return { status: 200, body: Api.CatalogBuildView.parse(await catalogBuildView(root)) };
+      return {
+        status: 200,
+        body: Api.CatalogBuildView.parse(await fresh(() => catalogBuildView(root))),
+      };
     })
     .add("POST", "/api/build", async ({ body }) => {
       const b = parse(Api.CatalogBuildRequest, body);
@@ -114,13 +129,15 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       ];
       return asJob(["atticus catalog build", ...flags].join(" "), () =>
         captured((io) =>
-          catalogBuild(
-            root,
-            {
-              ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
-              ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
-            },
-            io,
+          fresh(() =>
+            catalogBuild(
+              root,
+              {
+                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+              },
+              io,
+            ),
           ),
         ),
       );
@@ -128,15 +145,20 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     .add("POST", "/api/build/edits/curate", async ({ body }) => {
       const b = parse(Api.CatalogEditsRequest, body);
       const { catalogBuildView } = await import("./build-report.js");
-      const now = (await catalogBuildView(root)).pending.refused;
+      const now = (await fresh(() => catalogBuildView(root))).pending.refused;
       const edits = now?.reasons.includes("hand-edits") ? (now.edits ?? []) : [];
       if (edits.length !== b.count)
         throw conflict(
           `The page listed ${b.count} hand ${b.count === 1 ? "edit" : "edits"}; there ${edits.length === 1 ? "is" : "are"} ${edits.length} now. Nothing was made curated: look at the list again.`,
         );
-      const { catalogEdits } = await import("./catalog-build-commands.js");
-      return asJob("atticus catalog edits --curate", () =>
-        captured((io) => catalogEdits(root, { curate: true, by: ctx.user }, io)),
+      const { catalogBuild, catalogEdits } = await import("./catalog-build-commands.js");
+      // Keep the edits: each made a curated decision, then the build with them (which writes
+      // what the edited files hold, so nothing is overwritten), in one job.
+      return asJob("atticus catalog edits --curate, then atticus catalog build", () =>
+        captured(async (io) => {
+          const code = await fresh(() => catalogEdits(root, { curate: true, by: ctx.user }, io));
+          return code === 0 ? fresh(() => catalogBuild(root, {}, io)) : code;
+        }),
       );
     })
     .add("GET", "/api/build/undo", async ({ query }) => {
@@ -151,31 +173,34 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       const b = parse(Api.CatalogUndoRequest, body);
       const { catalogUndoView } = await import("./build-report.js");
       const v = await catalogUndoView(root, b.n);
-      if (!v.plan) throw conflict(v.problem ?? `There is no undo copy ${b.n}.`);
+      if (!v.plan) throw conflict(v.problem ?? `There are fewer than ${b.n} builds to undo here.`);
       if (v.plan.files.length !== b.files)
         throw conflict(
-          `The page listed ${b.files} ${b.files === 1 ? "file" : "files"} to put back; undoing to before copy ${b.n} puts back ${v.plan.files.length} now. Nothing was undone: look at the list again.`,
+          `The page listed ${b.files} ${b.files === 1 ? "file" : "files"} to put back; taking back the ${b.n === 1 ? "latest build" : `${b.n} latest builds`} puts back ${v.plan.files.length} now. Nothing was undone: look at the list again.`,
         );
       const { catalogUndo } = await import("./catalog-build-commands.js");
       return asJob(`atticus catalog undo ${b.n} --yes`, () =>
-        captured((io) => catalogUndo(root, { n: b.n, yes: true }, io)),
+        captured((io) => fresh(() => catalogUndo(root, { n: b.n, yes: true }, io))),
       );
     })
     .add("GET", "/api/build/prune", async () => {
       const { catalogPruneView } = await import("./build-report.js");
-      return { status: 200, body: Api.CatalogPruneView.parse(await catalogPruneView(root)) };
+      return {
+        status: 200,
+        body: Api.CatalogPruneView.parse(await fresh(() => catalogPruneView(root))),
+      };
     })
     .add("POST", "/api/build/prune", async ({ body }) => {
       const b = parse(Api.CatalogPruneRequest, body);
       const { catalogPruneView } = await import("./build-report.js");
-      const v = await catalogPruneView(root);
+      const v = await fresh(() => catalogPruneView(root));
       if (v.files.length !== b.count)
         throw conflict(
           `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to remove; there ${v.files.length === 1 ? "is" : "are"} ${v.files.length} now. Nothing was removed: look at the list again.`,
         );
       const { catalogPrune } = await import("./catalog-build-commands.js");
       return asJob("atticus catalog prune --yes", () =>
-        captured((io) => catalogPrune(root, { yes: true }, io)),
+        captured((io) => fresh(() => catalogPrune(root, { yes: true }, io))),
       );
     });
 }
