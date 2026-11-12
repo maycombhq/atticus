@@ -27,9 +27,9 @@ import type { Fact } from "./schema/facts.js";
 export const canaryReportsRelOf = (root: string): string =>
   isAdopted(root) ? ".atticus/reports/canaries" : "reports/canaries";
 
-/** Windows' device names (`con`, `nul`, `com1`…), which name a device, not a file, in any
+/** Windows' device names (`con`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`…), which name a device, not a file, in any
  * case and with any extension (`nul.txt` too). */
-const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i;
 
 /**
  * A repo's name as a canary takes it (review of ADR 0196): letters, digits, `.`, `_` and `-`,
@@ -555,3 +555,6 @@ export function latestCanaries(reports: readonly CanaryReportT[]): CanaryReportT
   }
   return [...by.values()].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
 }
+
+/** Whether a name is one of Windows' device names, which no canary takes on any system. */
+export const isWindowsDeviceName = (name: string): boolean => WINDOWS_DEVICE.test(name);

@@ -209,14 +209,30 @@ export async function catalogBuild(
 export function undoneRenames(
   copies: readonly { command: string }[],
 ): { from: string; to: string; message: string }[] {
-  const out: { from: string; to: string; message: string }[] = [];
-  for (const c of copies) {
-    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(c.command);
+  return netRenames(copies.map((c) => c.command)).map(({ from, to }) => ({
+    from,
+    to,
+    message: renameUndone(from, to),
+  }));
+}
+
+/**
+ * The renames of the copies an undo takes back (newest first, as listUndo gives them) as one net
+ * rename per repo, oldest to newest: forge-ledger → forge-a then forge-a → forge-b is one rename
+ * forge-ledger → forge-b, and a rename taken back by a later one (a → b, then b → a) is none, so
+ * the advice names the id the manifest has now and the one to go back to (review of beta.27).
+ */
+export function netRenames(commandsNewestFirst: readonly string[]): { from: string; to: string }[] {
+  const chain: { from: string; to: string }[] = [];
+  for (const command of [...commandsNewestFirst].reverse()) {
+    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(command);
     if (!m) continue;
     const [, from, to] = m as unknown as [string, string, string];
-    out.push({ from, to, message: renameUndone(from, to) });
+    const was = chain.find((r) => r.to === from);
+    if (was) was.to = to;
+    else chain.push({ from, to });
   }
-  return out;
+  return chain.filter((r) => r.from !== r.to);
 }
 
 /** What the undo of a rename's build says (the app's undo confirm says it too, from copy.ts). */

@@ -501,6 +501,24 @@ export function UndoPanel(p: {
 }
 
 /**
+ * The renames of the builds an undo takes back (newest first) as one net rename per repo, oldest
+ * to newest: a → b then b → c is a → c, and a → b then b → a is none (as the CLI's netRenames).
+ */
+export function netRenames(commandsNewestFirst: readonly string[]): { from: string; to: string }[] {
+  const chain: { from: string; to: string }[] = [];
+  for (const command of [...commandsNewestFirst].reverse()) {
+    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(command);
+    if (!m) continue;
+    const from = m[1]!;
+    const to = m[2]!;
+    const was = chain.find((r) => r.to === from);
+    if (was) was.to = to;
+    else chain.push({ from, to });
+  }
+  return chain.filter((r) => r.from !== r.to);
+}
+
+/**
  * The undo's confirm: the builds it takes back and every file it puts back. A rename's build
  * (its copy's command, `atticus repo rename <old> <new>`) is undone, not the rename: the
  * manifest still names the new id (ADR 0195 point 7), so the confirm says how to rename back.
@@ -510,10 +528,7 @@ export function UndoConfirm(p: {
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }) {
-  const renames = p.plan.takesBack.flatMap((t) => {
-    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(t.command);
-    return m ? [{ n: t.n, from: m[1]!, to: m[2]! }] : [];
-  });
+  const renames = netRenames(p.plan.takesBack.map((t) => t.command));
   return (
     <ConfirmDialog
       title={B.undoPlanTitle(p.plan.n)}
@@ -523,7 +538,7 @@ export function UndoConfirm(p: {
       onClose={p.onClose}
     >
       {renames.map((r) => (
-        <p key={r.n} className="work-why" role="note">
+        <p key={`${r.from}>${r.to}`} className="work-why" role="note">
           {B.undoRename(r.from, r.to)}
         </p>
       ))}

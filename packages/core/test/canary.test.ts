@@ -497,23 +497,14 @@ describe("canary names", () => {
     // A run folder holds the copy as `<repo>/`, and a report is named after the repo: on Windows
     // `con`, `nul`, `com1` and the rest name a device, not a file, even as `nul.txt`.
     const devices = ["con", "prn", "aux", "nul"];
-    for (let i = 1; i <= 9; i++) devices.push(`com${i}`, `lpt${i}`);
+    for (let i = 0; i <= 9; i++) devices.push(`com${i}`, `lpt${i}`);
     for (const d of devices)
       for (const bad of [d, d.toUpperCase(), `${d[0]!.toUpperCase()}${d.slice(1)}`, `${d}.txt`])
         expect(isCanaryRepoName(bad), bad).toBe(false);
     for (const bad of ["NUL.forge", "Con.tar.gz", "lpt9.x", "aux."])
       expect(isCanaryRepoName(bad), bad).toBe(false);
     // only the whole first part is a device: names that start or end with one are plain names
-    for (const ok of [
-      "console",
-      "forge-con",
-      "con-ledger",
-      "com0",
-      "com10",
-      "lpt",
-      "nuls.x",
-      "prn2",
-    ])
+    for (const ok of ["console", "forge-con", "con-ledger", "com10", "lpt", "nuls.x", "prn2"])
       expect(isCanaryRepoName(ok), ok).toBe(true);
     // and a run folder of such a repo is no run folder
     expect(isCanaryRunName("nul-0a1b2c3d-a1B2c3", "nul", "0a1b2c3d")).toBe(false);
