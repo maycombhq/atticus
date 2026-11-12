@@ -1222,6 +1222,10 @@ async function interruptedManifest(
   return p.ok ? p.slot : undefined;
 }
 
+/** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
+export const UPGRADE_UNDONE =
+  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
+
 /**
  * The guards of point 4, on the build in memory, before any file is written. `changed` are the
  * slot files this command writes (a scan's reads, a verify's snapshot): a removal they explain is
@@ -1288,6 +1292,9 @@ export async function guardBuild(
   for (const e of curatedEdits) edits.splice(edits.indexOf(e), 1);
   if (before && o.discardEdits !== onDisk.size) {
     reasons.push("not-upgraded");
+    // An undo that took back the upgrade leaves a catalog from before the slots again.
+    const latest = (await listUndo(o.undoDir))[0];
+    if (latest?.command.startsWith("atticus catalog undo")) lines.push(UPGRADE_UNDONE);
     lines.push(
       `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}): run atticus upgrade to adopt its ${onDisk.size} record files into legacy slots (it shows what it would do first; atticus upgrade --yes applies it), or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}.`,
     );

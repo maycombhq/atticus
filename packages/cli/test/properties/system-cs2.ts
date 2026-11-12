@@ -67,7 +67,7 @@ const GUARDS: Record<string, Guard> = {
   "unexplained-removals": "unexplained-removals",
   "large-removals": "large-removals",
   "hand-edits": "hand-edits",
-  "not-upgraded": "hand-edits",
+  "not-upgraded": "not-upgraded",
   "build-failed": "build-failed",
 };
 
@@ -91,8 +91,8 @@ function outcome(
     "nothing-read",
     "unexplained-removals",
     "empty",
-    "hand-edits",
     "not-upgraded",
+    "hand-edits",
     "large-removals",
   ];
   const reason = refused?.reasons ? order.find((x) => refused.reasons!.includes(x)) : undefined;

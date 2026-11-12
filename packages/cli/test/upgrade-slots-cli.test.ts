@@ -240,6 +240,30 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
   );
 });
 
+describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
+  it(
+    "after it every writer refuses, and both say plainly to upgrade again",
+    async () => {
+      const root = await beta26();
+      const before = generated(root);
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      const undo = await run(["catalog", "undo", "--root", root, "--yes"]);
+      expect(undo.code, undo.err).toBe(0);
+      const said =
+        "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
+      expect(undo.out).toContain(said);
+      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
+      expect(generated(root)).toEqual(before);
+      const scan = await run(["scan", "--root", root, "--no-drift"]);
+      expect(scan.code).toBe(1);
+      expect(scan.err).toContain(said);
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      expect((await run(["catalog", "build", "--root", root, "--check"])).code).toBe(0);
+    },
+    T,
+  );
+});
+
 describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
   it(
     "catalog build --check says whether catalog/generated is what the slots build, and writes nothing",

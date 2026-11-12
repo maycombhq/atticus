@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { cmpText, type CatalogRecord } from "@maycombhq/core";
 import {
@@ -83,8 +83,9 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     records: 0,
   };
   const sources = sourcesDirOf(root);
-  const already = (await readdir(sources).catch(() => [] as string[])).some(
-    (n) => n === "build.json" || n === "readers" || n === "facts" || n === "legacy",
+  // Any slot file or build.json (an undo that took back the upgrade leaves empty folders only).
+  const already = (await filesUnder(sources)).some((f) =>
+    /(^|\/)(build\.json|readers\/|facts\/|legacy\/)/.test(posix(relative(sources, f))),
   );
   const generated = generatedDirOf(root);
   const old = await readCatalog(generated, { cacheRoot: root, fresh: true });

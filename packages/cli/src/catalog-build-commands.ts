@@ -27,6 +27,7 @@ import {
   readBuildManifest,
   takeUndoCopy,
   undoDirOf,
+  UPGRADE_UNDONE,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -218,6 +219,7 @@ export async function catalogUndo(
       );
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
+      if (plan.copies.some((c) => c.command.startsWith("atticus upgrade"))) io.out(UPGRADE_UNDONE);
       if (bad.length)
         io.out(
           `${bad.length} restored ${bad.length === 1 ? "file is a hand edit" : "files are hand edits"} again, as before (the next build lists ${bad.length === 1 ? "it" : "them"}: atticus catalog edits --curate keeps ${bad.length === 1 ? "it" : "them"}): ${bad.join(", ")}`,
