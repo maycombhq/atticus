@@ -178,8 +178,11 @@ const PROD_LIKE = /(^|[^a-z])(pd|prod|prd|production)([^a-z]|$)/i;
  */
 export function preferredEnvironment(envs: readonly string[]): string | undefined {
   const named = [...new Set(envs.filter(Boolean))].sort(cmp);
-  return named.find((e) => PROD_LIKE.test(e)) ?? named[0];
+  return named.find((e) => PROD_LIKE.test(e) && !NOT_PROD.test(e)) ?? named[0];
 }
+
+/** Re-review of beta.27: `non-prod`, `pre-prod`, `nonprod`, `np-prd` name an environment that isn't prod. */
+const NOT_PROD = /(^|[^a-z])(non|pre|np)[-_ ]?(pd|prod|prd|production)([^a-z]|$)/i;
 
 /** A path with another in front, unless it already starts with it. */
 function under(prefix: string | undefined, path: string): string {

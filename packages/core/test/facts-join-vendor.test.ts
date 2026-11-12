@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   joinVendorOperations,
+  preferredEnvironment,
   parseFacts,
   type Fact,
   type JoinRepo,
@@ -304,5 +305,14 @@ describe("joinVendorOperations", () => {
   it("reads only gateways' forwarding calls: a service's own calls are the estate join's", () => {
     const got = joinVendorOperations({ repos: estate(), vendors: [northwind()] });
     expect(got.matches.every((m) => m.call.repo === GW)).toBe(true);
+  });
+});
+
+describe("preferredEnvironment: a name that says it isn't prod (re-review of beta.27)", () => {
+  it("never takes non-prod, pre-prod, nonprod or np-prd for prod", () => {
+    expect(preferredEnvironment(["dv", "non-prod", "prod"])).toBe("prod");
+    expect(preferredEnvironment(["pre-prod", "prd"])).toBe("prd");
+    expect(preferredEnvironment(["nonprod", "np-prd", "us-prd"])).toBe("us-prd");
+    expect(preferredEnvironment(["dv", "pre-prod"])).toBe("dv");
   });
 });

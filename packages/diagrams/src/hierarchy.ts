@@ -601,22 +601,14 @@ export function buildEstate(records: CatalogRecord[], o: BuildEstateOptions = {}
   const partNode = (ref: string) =>
     components.has(ref) ? `component:${ref}` : systems.has(ref) ? `system:${ref}` : unknown(ref);
 
-  // Beta.27 (a user's Map): a vendor's system, or another team's (its owner owns no system with an
-  // estate repo), has no code of the estate's to read, so a component in it is never missing a
-  // repo or seen at one end only. An internal or product system with no repo and no owner (or an
-  // estate team's) is still the estate's: its repo-less part keeps "No repo known".
+  // Beta.27 (a user's Map): a vendor's system has no code of the estate's to read, so a component
+  // in it is never missing a repo or seen at one end only. Any other system with no repo keeps
+  // "No repo known" (re-review: an owner string can't tell another team's from the user's own).
   const withRepo = new Set(repoSystem.values());
   const hasRepo = (id: string) =>
     withRepo.has(id) || (systemRecords.get(id)?.repos.length ?? 0) > 0;
-  const estateTeams = new Set(
-    [...systemRecords.values()].filter((s) => s.owner && hasRepo(s.id)).map((s) => s.owner!),
-  );
-  const outsideSystem = (id: string) => {
-    if (hasRepo(id)) return false;
-    const s = systemRecords.get(id);
-    if (s?.boundary === "vendor") return true;
-    return !!s?.owner && estateTeams.size > 0 && !estateTeams.has(s.owner);
-  };
+  const outsideSystem = (id: string) =>
+    !hasRepo(id) && systemRecords.get(id)?.boundary === "vendor";
   for (const c of components.values()) {
     const gaps: string[] = [];
     let parent: string;

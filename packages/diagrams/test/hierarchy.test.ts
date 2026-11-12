@@ -184,10 +184,9 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
     expect(cache.gaps).toEqual(expect.arrayContaining(["inferred", "no-repo"]));
   });
 
-  it("never says a part of a vendor or another team's system has no repo or was seen at one end (beta.27)", () => {
-    // A vendor, and an internal system another team (no estate repo's) owns: no code of theirs to
-    // read. An internal system with no owner (Forge's audit) or one an estate team owns, with no
-    // repo, is still the estate's gap (the test above).
+  it("never says a part of a vendor's system has no repo or was seen at one end (beta.27)", () => {
+    // A vendor: no code of theirs to read. Any other repo-less system, whoever its owner string
+    // names (re-review: it can't tell another team's from the user's own), keeps its gaps.
     const part = (id: string, system: string) => ({
       kind: "Component",
       id,
@@ -214,7 +213,7 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
         part("archive-svc", "ledger-archive"),
       ]),
     );
-    for (const sys of ["system:northwind-pay", "system:risk"]) {
+    for (const sys of ["system:northwind-pay"]) {
       const v = nodeView(est, sys, { lens: "architecture" });
       const parts = v.children.filter((c) => c.kind === "component");
       expect(parts.length, sys).toBeGreaterThan(0);
@@ -223,7 +222,11 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
         expect(c.gaps, c.id).not.toContain("inferred");
       }
     }
-    // The ledger team's system has repos elsewhere: a repo-less part of it is a gap.
+    // Another team's internal system and the ledger team's: a repo-less part is a gap.
+    const risk = nodeView(est, "system:risk", { lens: "architecture" }).children;
+    expect(risk.find((c) => c.id === "component:risk-scorer")!.gaps).toEqual(
+      expect.arrayContaining(["inferred", "no-repo"]),
+    );
     const archive = nodeView(est, "system:ledger-archive", { lens: "architecture" }).children;
     expect(archive.find((c) => c.id === "component:archive-svc")!.gaps).toEqual(
       expect.arrayContaining(["inferred", "no-repo"]),

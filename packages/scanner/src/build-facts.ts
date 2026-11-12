@@ -244,8 +244,14 @@ function toOutsideHosts(
         urlHostPort(c.value ?? "")?.host === target,
     );
     const env = preferredEnvironment(sets.flatMap((c) => (c.env ? [c.env] : [])));
+    // Re-review: the same order as the join's (path, then id), so the Map and the Outside page agree.
+    const byPathThenId = (a: (typeof sets)[number], b: (typeof sets)[number]) => {
+      const pa = urlPathIn(a.value) ?? "";
+      const pb = urlPathIn(b.value) ?? "";
+      return pa < pb ? -1 : pa > pb ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    };
     const set =
-      sets.find((c) => env !== undefined && c.env === env) ??
+      [...sets].filter((c) => env !== undefined && c.env === env).sort(byPathThenId)[0] ??
       [...sets].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
     const basePath = set?.kind === "config" ? urlPathIn(set.value) : undefined;
     const full =
