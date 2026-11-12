@@ -284,7 +284,11 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
         ...(edits ? { edits } : {}),
         at: w.steps,
       };
-    } else if (ok && acted.confirmOf) w.pending = undefined;
+    } else if (ok && (acted.confirmOf || built)) {
+      // Confirmed, or superseded: any build that wrote makes the refusal's listing stale, and the
+      // refused command wrote nothing (point 4), so nothing of it is left to confirm.
+      w.pending = undefined;
+    }
     w.lastWriter = ok ? acted.rerun : undefined;
   }
 
