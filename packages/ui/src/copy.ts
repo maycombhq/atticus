@@ -8,7 +8,6 @@
 const listWords = (xs: readonly string[]) =>
   xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)!}`;
 
-
 /** A share as a percentage, to one decimal place where it has one (ADR 0196's rates). */
 const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
 const pctOf = (r: { k: number; n: number }) => (r.n ? pct(r.k / r.n) : "-");
