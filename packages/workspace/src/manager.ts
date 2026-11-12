@@ -230,6 +230,23 @@ function inGroups(paths: readonly string[], max = 8000): string[][] {
   return out;
 }
 
+/**
+ * Beta.27 re-review (round 3): whether the clone's folder `dir` (`/`-separated, `.` its top) or
+ * a folder on the way to it is a link, each looked at from the clone's top: what is through one
+ * is outside the clone, never removed, read or copied. Nothing there: nothing beyond it either.
+ */
+async function throughLink(dest: string, dir: string): Promise<boolean> {
+  if (dir === "." || dir === "") return false;
+  let at = dest;
+  for (const part of dir.split("/")) {
+    at = join(at, part);
+    const st = await lstat(at).catch(() => undefined);
+    if (!st) return false;
+    if (st.isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 /** `git status --porcelain=v1 -z` as [XY, path] pairs (renames off, so one path each). */
 function statusEntries(z: string): [string, string][] {
   return z
@@ -493,11 +510,16 @@ export function createWorkspace(
       // Where case is ignored, README.md and readme.md are one file: either's blob is its own.
       const keyOf = (p: string) => (ignoreCase ? p.toLowerCase() : p);
       const NONE = /^0+$/;
+      // Beta.27 re-review (round 3): a submodule (gitlink) in one commit, a file in the other.
+      const swapped: string[] = [];
       for (let i = 0; i + 1 < differ.length; i += 2) {
         // `:<mode> <mode> <blob> <blob> <status>`, then the path.
-        const [, , was, now, st] = differ[i]!.split(" ");
+        const [from, to, was, now, st] = differ[i]!.split(" ");
         const p = differ[i + 1]!;
         (st === "A" ? added : inBoth).add(p);
+        const modes = [from!.slice(1), to!];
+        if (modes.includes("160000") && !modes.includes("000000") && modes[0] !== modes[1])
+          swapped.push(p);
         const known = blobs.get(keyOf(p)) ?? new Set<string>();
         for (const b of [was, now]) if (b && !NONE.test(b)) known.add(b);
         blobs.set(keyOf(p), known);
@@ -538,6 +560,14 @@ export function createWorkspace(
         return no(
           `what that checkout didn't write is staged: ${sayPaths([...staged].map((p) => ["A ", p]))}. Nothing was changed. To keep it, move it out of ${dest} (base clones are read-only) and unstage it there (git -C ${dest} restore --staged -- <path>), then sync again; or delete ${mark} to keep the clone as it is`,
         );
+      // Beta.27 re-review (round 3): where one commit has a submodule and the other a file, a
+      // folder there with anything in it (git doesn't look inside a submodule's folder) would
+      // go with the file put back.
+      for (const p of swapped)
+        if ((await readdir(join(dest, p)).catch(() => [])).length > 0)
+          return keep(
+            `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
+          );
       if (!(await dropKilledLock(dest, atStop)))
         return no(
           `git's lock ${join(dest, ".git", "index.lock")} is there: if no git is running in ${dest}, delete it; the next sync puts the clone back (its mark ${mark} stays until then)`,
@@ -554,7 +584,12 @@ export function createWorkspace(
       // A working file that is neither commit's (an edit of a person's, or one written half-way)
       // is copied before anything is put back, and the copy named: never lost, never deleted.
       kept.push(
-        ...(await keepTheirs(dest, [...now, ...strays], (p) => blobs.get(keyOf(p)) ?? new Set())),
+        ...(await keepTheirs(
+          dest,
+          [...now, ...strays],
+          (p) => blobs.get(keyOf(p)) ?? new Set(),
+          new Set(indexed),
+        )),
       );
       const back = now.filter((p) => inBoth.has(p));
       const out = now.filter((p) => added.has(p));
@@ -567,19 +602,31 @@ export function createWorkspace(
         await git(["update-index", "--force-remove", "--", ...ps], dest);
       // Each path as written (no glob, no magic of its own), after `--`.
       const lit = (ps: string[]) => ps.map((p) => `:(literal)${p}`);
+      // Beta.27 re-review (round 3): never through a linked folder (what is there is outside).
       const files: string[] = [];
       for (const p of out) {
         const st = await lstat(join(dest, p)).catch(() => undefined);
-        if (st && !st.isDirectory()) files.push(p);
+        if (st && !st.isDirectory() && !(await throughLink(dest, dirname(p)))) files.push(p);
       }
       for (const ps of inGroups(files)) await git(["clean", "-fq", "--", ...lit(ps)], dest);
       // git clean takes them for the index's own: each goes by itself (kept above, if not the
       // fetched commit's), never through a link.
       for (const p of strays) await rm(join(dest, p), { force: true });
-      // The folders the fetched commit added, left empty.
-      for (const p of [...out, ...strays])
+      // The folders on the way to what the fetched commit added, left empty: only those the
+      // commit the clone was on hasn't got (the climb stops at the first it has: a folder, or a
+      // submodule's), each only while no folder on the way to it is a link. An empty folder a
+      // person made on that way goes too (nothing is in it); one anywhere else stays.
+      const headFolders = new Set<string>();
+      for (const e of (await git(["ls-tree", "-r", "-t", "-z", head], dest)).stdout.split("\0")) {
+        const [, type] = e.slice(0, Math.max(0, e.indexOf("\t"))).split(" ");
+        if (type === "tree" || type === "commit")
+          headFolders.add(keyOf(e.slice(e.indexOf("\t") + 1)));
+      }
+      for (const p of added)
         for (let d = dirname(p); d !== "." && d !== "" && d !== "/"; d = dirname(d))
           if (
+            headFolders.has(keyOf(d)) ||
+            (await throughLink(dest, d)) ||
             !(await rmdir(join(dest, d)).then(
               () => true,
               () => false,
@@ -631,11 +678,7 @@ export function createWorkspace(
         const o = await lstat(join(dest, q)).catch(() => undefined);
         if (o && o.dev === st.dev && o.ino === st.ino) same = true;
       }
-      if (same) continue;
-      let linked = false;
-      for (let d = dirname(p); d !== "." && d !== "" && d !== "/"; d = dirname(d))
-        if ((await lstat(join(dest, d)).catch(() => undefined))?.isSymbolicLink()) linked = true;
-      if (!linked) out.push(p);
+      if (!same && !(await throughLink(dest, dirname(p)))) out.push(p);
     }
     return out;
   }
@@ -644,19 +687,32 @@ export function createWorkspace(
    * Beta.27 re-review (round 2): each of `paths` whose working file is none of its `known`
    * blobs (`git hash-object`, so git's own filters apply), copied to
    * `.git/atticus-put-back/<at>/<path>` before the put-back writes over it. A folder or a path
-   * that isn't there has nothing to copy. The copies are never deleted by Atticus.
+   * that isn't there has nothing to copy. The copies are never deleted by Atticus. Beta.27
+   * re-review (round 3): one path a file. Where case is ignored, status lists a case-only rename
+   * as two paths (D README.md, AM readme.md) that are one file: it is copied once, named after
+   * the path the index has (`indexed` first), the other left out by device and inode; a name
+   * already copied in another case whose bytes are this one's (a system that gives no inode) is
+   * kept already. Nothing is read through a linked folder (what is there is outside the clone).
    */
   async function keepTheirs(
     dest: string,
     paths: string[],
     known: (p: string) => Set<string>,
+    indexed: ReadonlySet<string>,
   ): Promise<KeptCopy[]> {
     const files: string[] = [];
     const links: string[] = [];
-    for (const p of paths) {
-      const st = await lstat(join(dest, p)).catch(() => undefined);
-      if (st?.isFile()) files.push(p);
-      else if (st?.isSymbolicLink()) links.push(p);
+    const seen = new Set<string>();
+    const first = [...new Set(paths)].sort((a, b) => +indexed.has(b) - +indexed.has(a));
+    for (const p of first) {
+      if (await throughLink(dest, dirname(p))) continue;
+      const st = await lstat(join(dest, p), { bigint: true }).catch(() => undefined);
+      if (!st) continue;
+      const id = `${st.dev}:${st.ino}`;
+      if (st.ino !== 0n && seen.has(id)) continue;
+      seen.add(id);
+      if (st.isFile()) files.push(p);
+      else if (st.isSymbolicLink()) links.push(p);
     }
     const theirs: string[] = [];
     for (const ps of inGroups(files)) {
@@ -694,8 +750,23 @@ export function createWorkspace(
       const copy = join(at, ...p.split("/"));
       await mkdir(dirname(copy), { recursive: true });
       const to = linkText.get(p);
-      if (to === undefined) await copyFile(join(dest, p), copy, fsConstants.COPYFILE_EXCL);
-      else await symlink(to, copy).catch(() => writeFile(copy, to, { flag: "wx" }));
+      try {
+        if (to === undefined) await copyFile(join(dest, p), copy, fsConstants.COPYFILE_EXCL);
+        else await symlink(to, copy).catch(() => writeFile(copy, to, { flag: "wx" }));
+      } catch (e) {
+        // Where case is ignored, the same name in another case, copied already: the same file
+        // if its bytes are this one's (never read through a link).
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        const c = await lstat(copy);
+        const there = c.isSymbolicLink()
+          ? (await readlink(copy)) === to
+          : c.isFile() &&
+            (await readFile(copy)).equals(
+              to === undefined ? await readFile(join(dest, p)) : Buffer.from(to),
+            );
+        if (!there) throw e;
+        continue;
+      }
       out.push({ path: p, copy });
     }
     return out;

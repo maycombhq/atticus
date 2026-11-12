@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import {
+  link,
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
@@ -54,8 +56,30 @@ afterEach(async () => {
   for (const d of made.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
-/** Files of a commit: a text is written (whatever was at that path first goes), null deletes. */
-type Tree = Record<string, string | null>;
+/**
+ * Files of a commit: a text is written (whatever was at that path first goes), null deletes, a
+ * link is made, a gitlink (a submodule's commit) is put in the index.
+ */
+type Tree = Record<string, string | null | { link: string } | { gitlink: string }>;
+/** Files written in the clone: a text is written, null deletes. */
+type Files = Record<string, string | null>;
+
+/** Whether this file system ignores case (README.md and readme.md one file), tried in a temp dir. */
+function fsIgnoresCase(): boolean {
+  const d = mkdtempSync(join(tmpdir(), "atticus-case-"));
+  try {
+    writeFileSync(join(d, "case"), "a");
+    try {
+      writeFileSync(join(d, "CASE"), "b", { flag: "wx" });
+      return false;
+    } catch {
+      return true;
+    }
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+const IGNORES_CASE = fsIgnoresCase();
 
 async function setUp(
   first: Tree = { "pom.xml": "<project/>\n", "src/Ledger.java": "class Ledger {}\n" },
@@ -73,13 +97,17 @@ async function setUp(
   await mkdir(work, { recursive: true });
   realGit(work, "init", "-q", "-b", "main");
   const commit = async (files: Tree) => {
+    const gitlinks: string[] = [];
     for (const [p, t] of Object.entries(files)) {
       await rm(join(work, p), { recursive: true, force: true });
       if (t === null) continue;
       await mkdir(dirname(join(work, p)), { recursive: true });
-      await writeFile(join(work, p), t);
+      if (typeof t === "string") await writeFile(join(work, p), t);
+      else if ("link" in t) await symlink(t.link, join(work, p));
+      else gitlinks.push(`160000,${t.gitlink},${p}`);
     }
     realGit(work, "add", "-A");
+    for (const g of gitlinks) realGit(work, "update-index", "--add", "--cacheinfo", g);
     realGit(work, "commit", "-q", "-m", "update");
   };
   await commit(first);
@@ -555,7 +583,7 @@ describe("a person's version of a path the fetched commit writes (real git)", ()
 });
 
 /** What a checkout killed part-way leaves: these files written (index too, if asked), the mark. */
-async function killedWith(dest: string, old: string, next: string, files: Tree, index = false) {
+async function killedWith(dest: string, old: string, next: string, files: Files, index = false) {
   realGit(dest, "fetch", "-q", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main");
   for (const [p, t] of Object.entries(files)) {
     await rm(join(dest, p), { recursive: true, force: true });
@@ -577,7 +605,7 @@ async function killedWith(dest: string, old: string, next: string, files: Tree, 
  * index entry, and only then is what it changed put back.
  */
 describe("a folder and a file swapped by the fetched commit (real git)", () => {
-  const cases: [string, Tree, Tree, Tree][] = [
+  const cases: [string, Tree, Tree, Files][] = [
     [
       "a folder that became a file",
       { "pom.xml": "<project/>\n", "conf/app.yml": "port: 1\n" },
@@ -607,8 +635,11 @@ describe("a folder and a file swapped by the fetched commit (real git)", () => {
         T,
       );
 
-  // Linux's file system has case, so core.ignorecase=true is git told otherwise: what can be
-  // shown here is that the put-back still ends clean on the commit fetched.
+  // Beta.27 re-review (plumbing, round 3): on a file system without case (Windows, macOS) status
+  // lists the one file twice (D README.md, AM readme.md), and its second copy failed (EEXIST),
+  // so the mark stayed for ever, a copy folder left a sync. One copy a file, named after the
+  // path the index has. Where the file system has case (Linux) core.ignorecase is git told
+  // otherwise, and the half-written readme.md, hidden from status, is kept too.
   for (const index of [false, true])
     it(
       `a case-only rename with core.ignorecase, killed ${index ? "after" : "before"} git wrote its index`,
@@ -621,9 +652,11 @@ describe("a folder and a file swapped by the fetched commit (real git)", () => {
         await killedWith(dest, old, next, { "README.md": null, "readme.md": "# Led" }, index);
         const [res] = await createWorkspace(root).sync([r]);
         expect(res!.action).toBe("updated");
-        // The half-written readme.md, hidden from status by core.ignorecase, is kept too.
-        expect(res!.kept?.map((k) => k.path)).toEqual(["readme.md"]);
-        expect(await keptCopies(dest)).toEqual({ "readme.md": "# Led" });
+        // Without case and before the index was written, the index names it README.md.
+        const named = IGNORES_CASE && !index ? "README.md" : "readme.md";
+        expect(res!.kept?.map((k) => k.path)).toEqual([named]);
+        expect(await keptCopies(dest)).toEqual({ [named]: "# Led" });
+        expect(await readdir(join(dest, ".git", "atticus-put-back"))).toHaveLength(1);
         expect(res!.sha).toBe(next);
         expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
         expect(realGit(dest, "ls-files")).toBe("readme.md");
@@ -631,6 +664,128 @@ describe("a folder and a file swapped by the fetched commit (real git)", () => {
       },
       T,
     );
+
+  // Two names for one file, as on a file system without case, made where it has case (a hard
+  // link): copied once, under the name the index has.
+  it.skipIf(IGNORES_CASE)(
+    "a case-only rename whose two names are one file: one copy, named as the index has it",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(
+        { "README.md": "# Ledger\n" },
+        { "README.md": null, "readme.md": "# Ledger\n\nNew.\n" },
+      );
+      realGit(dest, "config", "core.ignorecase", "true");
+      await killedWith(dest, old, next, { "README.md": null, "readme.md": "# Led" }, true);
+      await link(join(dest, "readme.md"), join(dest, "README.md"));
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("updated");
+      expect(res!.kept?.map((k) => k.path)).toEqual(["readme.md"]);
+      expect(await keptCopies(dest)).toEqual({ "readme.md": "# Led" });
+      expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(false);
+    },
+    T,
+  );
+});
+
+/**
+ * Beta.27 re-review (plumbing, round 3): the put-back acted through a linked folder: the
+ * emptied-folder cleanup removed an empty folder outside the clone, and a file reached through
+ * the link was hashed, copied and called the person's. Nothing is done through a link.
+ */
+describe("a folder of the clone that is a link (real git)", () => {
+  it.skipIf(process.platform === "win32")(
+    "replaced by a folder: nothing outside the clone is removed, copied or called yours",
+    async () => {
+      const outside = await mkdtemp(join(tmpdir(), "atticus-sync-stop-outside-"));
+      made.push(outside);
+      await mkdir(join(outside, "b"));
+      await mkdir(join(outside, "c"));
+      await writeFile(join(outside, "c", "y"), "outside\n");
+      const { root, r, dest, old, next } = await setUp(
+        { "pom.xml": "<project/>\n", a: { link: outside } },
+        { a: null, "a/b/x": "x\n", "a/c/y": "y\n" },
+      );
+      await killedWith(dest, old, next, {}, true);
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(existsSync(join(outside, "b"))).toBe(true);
+      expect(await readFile(join(outside, "c", "y"), "utf8")).toBe("outside\n");
+      expect(res!.kept).toBeUndefined();
+      expect(res!.reason ?? "").not.toMatch(/your version/);
+      expect(await keptCopies(dest)).toEqual({});
+      expect(res!.action).toBe("updated");
+      expect(res!.sha).toBe(next);
+      expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+    },
+    T,
+  );
+});
+
+/**
+ * Beta.27 re-review (plumbing, round 3): a path that is a submodule in one commit and a file in
+ * the other, a folder with files in it on disk (git doesn't look inside a submodule's folder):
+ * putting the file back would delete the folder's files. Refused, nothing changed.
+ */
+describe("a submodule in one commit and a file in the other (real git)", () => {
+  it(
+    "a folder with files in it there: refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(
+        { "pom.xml": "<project/>\n", sub: "a file\n" },
+        { sub: { gitlink: "1".repeat(40) } },
+      );
+      await killedWith(dest, old, next, { sub: null, "sub/mine.txt": "mine\n" }, true);
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/Nothing was changed/);
+      expect(res!.reason).toContain("sub");
+      expect(res!.reason).toContain(SYNC_CHECKOUT_MARK);
+      expect(await readFile(join(dest, "sub", "mine.txt"), "utf8")).toBe("mine\n");
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+    },
+    T,
+  );
+});
+
+/**
+ * Beta.27 re-review (plumbing, round 3): the emptied-folder cleanup takes only folders on the
+ * way to a path the fetched commit added that the commit the clone was on hasn't got; it stops
+ * at the first folder that commit has. An empty folder of a person's elsewhere stays.
+ */
+describe("the folders a stopped checkout left empty (real git)", () => {
+  it(
+    "only those the fetched commit made: never one the clone's commit has, nor one of a person's elsewhere",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(
+        { "pom.xml": "<project/>\n", "keep/x.txt": "x\n" },
+        { "keep/x.txt": null, "keep/sub/z.txt": "z\n", "new/deep/f.txt": "f\n" },
+      );
+      await killedWith(dest, old, next, {
+        "keep/x.txt": null,
+        "keep/sub/z.txt": "z",
+        "new/deep/f.txt": "f",
+      });
+      await mkdir(join(dest, "mine"));
+      await mkdir(join(dest, "new", "mine"));
+      // Whether keep/ (the clone's commit has it) is there when the put-back checks it out.
+      const real = createGit();
+      let keepThere: boolean | undefined;
+      const git: GitRunner = async (args, cwd, o) => {
+        if (args[0] === "checkout" && args.includes(old) && keepThere === undefined)
+          keepThere =
+            (await lstat(join(dest, "keep")).catch(() => undefined))?.isDirectory() ?? false;
+        return real(args, cwd, o);
+      };
+      const [res] = await createWorkspace(root, git).sync([r]);
+      expect(res!.action).toBe("updated");
+      expect(keepThere).toBe(true);
+      expect(existsSync(join(dest, "mine"))).toBe(true);
+      expect(existsSync(join(dest, "new", "mine"))).toBe(true);
+      expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+    },
+    T,
+  );
 });
 
 /**
