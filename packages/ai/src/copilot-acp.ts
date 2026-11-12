@@ -833,7 +833,10 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     };
     const usages: Record<string, unknown>[] = [];
     let followUps = 0;
-    for (let nudge = 0; ; nudge++) {
+    // Review of fix/b27-copilot: counted only when a nudge is sent, so a follow-up turn
+    // (followUp) leaves a refusal its MAX_NUDGES.
+    let nudge = 0;
+    for (;;) {
       const before = refused.length;
       const asked = client.prompt(sessionId, prompt);
       try {
@@ -882,8 +885,9 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
         !["end_turn", "cancelled"].includes(answer.stopReason)
       )
         break;
+      nudge++;
       say(
-        `  Atticus: told Copilot why that was refused and to carry on (${nudge + 1} of ${MAX_NUDGES}).`,
+        `  Atticus: told Copilot why that was refused and to carry on (${nudge} of ${MAX_NUDGES}).`,
       );
       prompt = carryOnPrompt(fresh);
     }

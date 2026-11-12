@@ -359,6 +359,62 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     expect(r.usage).toEqual({ inputTokens: 2400, outputTokens: 600 });
   });
 
+  it("keeps its nudges after a refusal for refusals: a follow-up turn doesn't use one up", async () => {
+    const refusedTurn = [
+      {
+        permission: {
+          kind: "execute",
+          title: "Find the repo",
+          rawInput: { command: 'Get-ChildItem -Path . -Filter "forge-ledger"' },
+        },
+      },
+      { say: "Info: Operation cancelled by user" },
+    ];
+    const m = metarepo({
+      sessions: [
+        {
+          steps: [{ say: "First turn." }],
+          then: [
+            [{ say: "Second turn." }],
+            refusedTurn,
+            refusedTurn,
+            refusedTurn,
+            refusedTurn,
+            [{ say: "never reached" }],
+          ],
+        },
+      ],
+    });
+    let asked = 0;
+    const progress: string[] = [];
+    await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "Read forge-ledger into facts.",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      onProgress: (l) => progress.push(l),
+      followUp: async () => (++asked <= 2 ? `Follow-up ${asked}.` : undefined),
+    });
+    const prompts = m
+      .log()
+      .filter((e) => e.event === "prompt")
+      .map((e) => String(e.text));
+    // The prompt, two follow-ups, then the three nudges a refusal gets: six turns.
+    expect(prompts.slice(0, 3)).toEqual([
+      "Read forge-ledger into facts.",
+      "Follow-up 1.",
+      "Follow-up 2.",
+    ]);
+    expect(prompts).toHaveLength(6);
+    expect(progress.filter((l) => l.includes("told Copilot why that was refused"))).toEqual([
+      "  Atticus: told Copilot why that was refused and to carry on (1 of 3).",
+      "  Atticus: told Copilot why that was refused and to carry on (2 of 3).",
+      "  Atticus: told Copilot why that was refused and to carry on (3 of 3).",
+    ]);
+  });
+
   it("doesn't nudge a session that went on after a refusal and finished", async () => {
     const m = metarepo({
       sessions: [

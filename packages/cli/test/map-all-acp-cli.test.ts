@@ -250,9 +250,9 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     // Verified as verify --write runs, and on to part 2.
     expect(text).toMatch(/forge-ledger: \d+ facts kept, 0 rejected; coverage \d+%/);
     expect(text).toContain(`===== forge-ledger, part 2 of ${ledger.total} (repo 1 of 1) =====`);
-    // beta.27: a session that added nothing is said so, and the next one is told.
+    // beta.27: a session that added nothing is said so, and how it ended, and the next one is told.
     expect(text).toContain(
-      `forge-ledger part 2 of ${ledger.total} isn't accounted for yet (the session added nothing): one more try in a NEW session with only what is left (${preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")}).`,
+      `forge-ledger part 2 of ${ledger.total} isn't accounted for yet (the session stopped (max_tokens) before it added anything): one more try in a NEW session with only what is left (${preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")}).`,
     );
     expect(text).toContain(`Stopped at the cap (--max-parts 3): 3 sessions run.`);
     const progress = await readPlanProgress(root, "forge-ledger");
