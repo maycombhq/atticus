@@ -1,0 +1,28 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: build: atticus catalog build: not a command of this system",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": []
+}

@@ -6,7 +6,7 @@ import fc from "fast-check";
 import { stringify } from "yaml";
 
 /**
- * Small invented estates for the property tests of ADR 0195 (ticket CS4): 2 to 5 Forge repos,
+ * Small invented estates for the property tests of ADR 0195 (ticket CS4): 2 to 4 Forge repos,
  * each a Spring service with endpoints, calls into the others' endpoints by host, and topics it
  * publishes or listens to. Everything is invented (CLAUDE.md rule 3) and written to temporary
  * folders as files and local git commits (rule 5: no network).
@@ -42,6 +42,21 @@ export interface Code {
   calls: Call[];
   publishes: string[];
   consumes: string[];
+  /**
+   * How many more endpoints it serves that nothing calls and no command changes (its admin
+   * routes): a repo with records enough that one removal is under the 10% limit of ADR 0195
+   * point 4, so small explained removals are written, not only confirmed. 0 when absent.
+   */
+  filler?: number;
+}
+
+/** Every endpoint a repo's code serves: its own, then its filler routes. */
+export function served(b: Base, code: Code): Ep[] {
+  const filler = Array.from({ length: code.filler ?? 0 }, (_, i): Ep => ({
+    method: "GET",
+    path: `/${b.short}-admin/r${i}`,
+  }));
+  return [...code.endpoints, ...filler];
 }
 
 export interface Estate {
@@ -93,8 +108,11 @@ export const sketchArb: fc.Arbitrary<Sketch> = fc.record({
     fc.record({
       to: fc.nat({ max: 3 }),
       ep: fc.nat({ max: 2 }),
-      // A call to a host no repo lists is rarer: a person answers which repo it is.
-      legacy: fc.boolean().chain((b) => (b ? fc.boolean() : fc.constant(false))),
+      // A call to a host no repo lists, which a person answers (one in three).
+      legacy: fc.oneof(
+        { arbitrary: fc.constant(false), weight: 2 },
+        { arbitrary: fc.constant(true), weight: 1 },
+      ),
     }),
     { maxLength: 2 },
   ),
@@ -103,7 +121,7 @@ export const sketchArb: fc.Arbitrary<Sketch> = fc.record({
 });
 
 /** The code a sketch stands for, for the repo in `slot` of an estate of these pool entries. */
-export function resolve(bases: readonly Base[], slot: number, k: Sketch): Code {
+export function resolve(bases: readonly Base[], slot: number, k: Sketch, filler = 0): Code {
   const me = bases[slot]!;
   const others = bases.filter((_, i) => i !== slot);
   const uniq = <T>(xs: T[]) => [...new Map(xs.map((x) => [JSON.stringify(x), x])).values()];
@@ -122,21 +140,30 @@ export function resolve(bases: readonly Base[], slot: number, k: Sketch): Code {
       : [],
     publishes: k.publishes ? [me.topic] : [],
     consumes: others.length ? uniq(k.consumes.map((i) => others[i % others.length]!.topic)) : [],
+    ...(filler ? { filler } : {}),
   };
 }
 
+/** The filler routes of a bulky estate's repos: one removal is then under the 10% limit. */
+export const BULK = 10;
+
 /**
- * An estate of 2 to 5 repos of the pool with their first code. Made without `chain`, so a
- * failure shrinks the estate (to two repos, to less code) and the commands on their own.
+ * An estate of 2 to 4 repos of the pool with their first code, small (a repo has a handful of
+ * records, so a removal is nearly always above the 10% limit) or bulky (each repo serves BULK
+ * more routes, so one or two removals are under it). Made without `chain`, so a failure shrinks
+ * the estate (to small, to two repos, to less code) and the commands on their own.
  */
 export const estateArb: fc.Arbitrary<Estate> = fc
   .tuple(
-    fc.uniqueArray(fc.nat({ max: POOL.length - 1 }), { minLength: 2, maxLength: 5 }),
+    fc.uniqueArray(fc.nat({ max: POOL.length - 1 }), { minLength: 2, maxLength: 4 }),
     fc.array(sketchArb, { minLength: 5, maxLength: 5 }),
+    fc.oneof({ withCrossShrink: true }, fc.constant(0), fc.constant(BULK)),
   )
-  .map(([picks, sketches]) => {
+  .map(([picks, sketches, filler]) => {
     const bases = picks.map((i) => POOL[i]!);
-    return { repos: bases.map((b, i) => ({ base: b, code: resolve(bases, i, sketches[i]!) })) };
+    return {
+      repos: bases.map((b, i) => ({ base: b, code: resolve(bases, i, sketches[i]!, filler) })),
+    };
   });
 
 /** A file of a repo, as lines, with where each thing it holds was written. */
@@ -165,7 +192,8 @@ export function renderCode(b: Base, code: Code): Rendered {
   };
   files.set("README.md", `# ${b.id}\n\nThe invented ${b.cls} service of the Forge estate.\n`);
   files.set("pom.xml", `<project><artifactId>${b.id}</artifactId></project>\n`);
-  if (code.endpoints.length) {
+  const eps = served(b, code);
+  if (eps.length) {
     const lines = [
       `package forge.${b.short};`,
       "",
@@ -175,7 +203,7 @@ export function renderCode(b: Base, code: Code): Rendered {
       `public class ${b.cls}Controller {`,
     ];
     const marks: [string, number][] = [];
-    code.endpoints.forEach((e, i) => {
+    eps.forEach((e, i) => {
       marks.push([key.entry(e), lines.length]);
       lines.push(`  @${e.method === "GET" ? "Get" : "Post"}Mapping("${e.path}")`);
       lines.push(`  public String handle${i}() { return "ok"; }`, "");
@@ -274,7 +302,7 @@ export function renderFacts(
   const common = { repo, commit, component: b.component };
   const tail = { verified: "none", by: "assistant", conf: "declared" };
   const facts: Record<string, unknown>[] = [];
-  for (const e of code.endpoints)
+  for (const e of served(b, code))
     facts.push({
       kind: "entry",
       id: `e-${slug(`${e.method} ${e.path}`)}`,
@@ -384,18 +412,40 @@ const firstCommits = new Map<string, Promise<{ dir: string; commit: string }>>()
 let firstDir: Promise<string> | undefined;
 const firstCommitsDir = () => (firstDir ??= mkdtemp(join(tmpdir(), "cs4-first-")));
 
+/** Remove the first commits made for this run (the test file's afterAll). */
+export async function disposeFirstCommits(): Promise<void> {
+  const dir = firstDir && (await firstDir);
+  firstDir = undefined;
+  firstCommits.clear();
+  committed.clear();
+  if (dir) await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
+/** The files each clone's last commit here holds, by folder: a commit of the same files needs no `git add`. */
+const committed = new Map<string, string>();
+
 async function commitFresh(dir: string, b: Base, code: Code, n = 0): Promise<string> {
+  const files = renderCode(b, code).files;
+  const names = [...files.keys()].sort().join("\n");
+  // The same set of files as the last commit: write them over and `commit -a`, one git process
+  // instead of two (a property run makes hundreds of commits, and a process costs more than git).
+  const same = n > 0 && committed.get(dir) === names;
   await mkdir(dir, { recursive: true });
-  for (const e of await readdir(dir).catch(() => [] as string[]))
-    if (e !== ".git") await rm(join(dir, e), { recursive: true, force: true });
-  for (const [rel, text] of renderCode(b, code).files) {
+  if (!same)
+    for (const e of await readdir(dir).catch(() => [] as string[]))
+      if (e !== ".git") await rm(join(dir, e), { recursive: true, force: true });
+  for (const [rel, text] of files) {
     const full = join(dir, ...rel.split("/"));
-    await mkdir(dirname(full), { recursive: true });
+    if (!same) await mkdir(dirname(full), { recursive: true });
     await writeFile(full, text);
   }
   if (n === 0) git(dir, "init", "-q");
-  git(dir, "add", "-A");
-  git(dir, "commit", "-q", "--allow-empty", "-m", `change ${n}`);
+  if (same) git(dir, "commit", "-q", "-a", "--allow-empty", "-m", `change ${n}`);
+  else {
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "--allow-empty", "-m", `change ${n}`);
+  }
+  committed.set(dir, names);
   // Read from the ref file rather than one more git process: a property run makes hundreds.
   const ref = await readFile(join(dir, ".git", "refs", "heads", "main"), "utf8").catch(() => "");
   return ref.trim() || git(dir, "rev-parse", "HEAD");

@@ -1,25 +1,27 @@
 {
   "invariant": "hand-edits-never-silently-lost",
-  "note": "hand-edits-never-silently-lost: component/ledger-api.yaml was edited by hand, not made curated nor discarded, yet scan wrote component/ledger-api.yaml",
+  "note": "hand-edits-never-silently-lost: endpoint/ledger-api.get-r0.yaml was edited by hand, not made curated nor discarded, yet scan wrote catalog/generated/endpoint/ledger-api.get-r0.yaml",
   "seed": 11,
   "estate": {
     "repos": [
-      {
-        "base": "forge-payments",
-        "code": {
-          "endpoints": [],
-          "calls": [],
-          "publishes": [],
-          "consumes": []
-        }
-      },
       {
         "base": "forge-ledger",
         "code": {
           "endpoints": [],
           "calls": [],
           "publishes": [],
-          "consumes": []
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
         }
       }
     ]

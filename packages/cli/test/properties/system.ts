@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { main } from "../../src/main.js";
 import { git, renderFacts } from "./estate.js";
-import type { Model } from "./model.js";
 import type { CatalogSystem, Outcome } from "./seam.js";
 
 /**
