@@ -1,3 +1,4 @@
+import { adoptSeeded } from "./seed-slots.js";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -217,6 +218,8 @@ describe("atticus repo rename <old> <new> (F5)", () => {
     const file = join(root, "catalog", "generated", recordPath(p.record));
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, serializeRecord(p.record));
+    // ADR 0195 (CS2): the seeded catalog adopted, as atticus upgrade --yes adopts one.
+    await adoptSeeded(root);
     return root;
   }
 

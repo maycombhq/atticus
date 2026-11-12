@@ -35,7 +35,13 @@ const fromRepos = (records: CatalogRecord[], repos: Set<string>) =>
 export async function scanBranch(
   root: string,
   branch: string,
-  o: { repos?: string[]; full?: boolean; json?: boolean },
+  o: {
+    repos?: string[];
+    full?: boolean;
+    json?: boolean;
+    allowRemovals?: number;
+    discardEdits?: number;
+  },
   io: Output,
 ): Promise<number> {
   const all = (await loadRepos(root)).filter((r) => !r.archived && !isInPlace(r.url));
@@ -125,6 +131,8 @@ export async function scanBranch(
     slots: writes,
     target,
     ...(first && firstFiles ? { discardEdits: firstFiles } : {}),
+    ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+    ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
   });
   if (built.guard.refused) {
     for (const l of built.guard.refused.message.split("\n")) io.err(l);

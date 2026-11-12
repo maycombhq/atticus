@@ -616,8 +616,28 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   }
   const curatedDir = i.curatedDir;
   const proposalsDir = join(dirname(curatedDir), "proposals");
+  // The passes that read the whole catalog (features, the glossary) read the legacy records too
+  // (point 6): what they derive from them is the old catalog's, which the overlay keeps as it is;
+  // what a current input adds to it (a term a proposal defines) comes through.
+  const legacyAll = [
+    ...legacyRecords,
+    ...(i.slots.legacy && "slot" in i.slots.legacy ? i.slots.legacy.slot.records : []),
+  ];
+  const derivedKeys = new Set(records.map((r) => `${r.kind}/${r.id}`));
+  /** Keys only the legacy records give (passed through features and the glossary as they are). */
+  const legacyCtx = new Set(
+    legacyAll
+      .filter(
+        (r) =>
+          !derivedKeys.has(`${r.kind}/${r.id}`) &&
+          r.kind !== "Capability" &&
+          r.kind !== "GlossaryTerm",
+      )
+      .map((r) => `${r.kind}/${r.id}`),
+  );
+  const context = [...records, ...legacyAll.filter((r) => !derivedKeys.has(`${r.kind}/${r.id}`))];
   const found = await featuresForScan({
-    records,
+    records: context.filter((r) => r.kind !== "Capability"),
     decisions: i.curated.records,
     proposalsDir,
   });
@@ -641,7 +661,10 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const glossary = await glossaryForScan({
     root,
     orgPack: op,
-    records: [...records, ...found.features],
+    records: [
+      ...context.filter((r) => r.kind !== "Capability" && r.kind !== "GlossaryTerm"),
+      ...found.features,
+    ],
     decisions: i.curated.records,
     proposalsDir,
     orgPackDir: i.orgPackDir,
@@ -698,7 +721,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         keep.push(r);
         continue;
       }
-      if (derived && changedSince && !legacyRecords.includes(derived)) {
+      // Derived: a current input made it, not the legacy records the whole-catalog passes read.
+      if (derived && changedSince && !legacyCtx.has(key)) {
         retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
         continue;
       }
@@ -1037,6 +1061,20 @@ export interface CatalogTarget {
   generated: string;
   /** build.json for it. */
   manifest: string;
+}
+
+/** A build's manifest with its file paths under the target's folder (a branch's, say). */
+export function manifestAt(b: Build, target: CatalogTarget): BuildManifestT {
+  const base = relOf(b.root, generatedDirOf(b.root));
+  const at = relOf(b.root, target.generated);
+  if (base === at) return b.manifest;
+  return {
+    ...b.manifest,
+    files: b.manifest.files.map((f) => ({
+      ...f,
+      path: f.path.startsWith(`${base}/`) ? `${at}/${f.path.slice(base.length + 1)}` : f.path,
+    })),
+  };
 }
 
 export function baselineTarget(root: string): CatalogTarget {
@@ -1412,7 +1450,7 @@ export async function writeBuiltCatalog(
   if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
-  const manifestText = serializeBuildManifest(b.manifest);
+  const manifestText = serializeBuildManifest(manifestAt(b, target));
   const slots = [...(o.slots ?? [])];
   if (b.legacyJoins !== undefined && !slots.some((s) => s.path === legacyJoinsPath(root)))
     slots.push({ path: legacyJoinsPath(root), text: b.legacyJoins });
@@ -1723,7 +1761,7 @@ export async function buildAndWrite(
     const same =
       onDisk.size === build.files.size &&
       [...build.files].every(([p, t]) => onDisk.get(p)?.sha === sha(t)) &&
-      (await readText(target.manifest)) === serializeBuildManifest(build.manifest);
+      (await readText(target.manifest)) === serializeBuildManifest(manifestAt(build, target));
     return { build, guard, upToDate: same };
   }
   if (guard.refused) return { build, guard };

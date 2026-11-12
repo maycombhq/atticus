@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { snapshotFactsFiles, verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * J1 (ADR 0143): `atticus verify <deploy repo>` checks each Route's host and base path on its
@@ -27,6 +28,7 @@ function metarepo(edit?: { manifest?: (s: string) => string; facts?: (s: string)
   const root = mkdtempSync(join(tmpdir(), "atticus-exposure-"));
   cpSync(join(FIX, "org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(FIX, "facts"), join(root, "facts"), { recursive: true });
+  snapshotFactsFiles(root, [REPO]);
   cpSync(join(FIX, "repos", REPO), join(root, "workspace", REPO), { recursive: true });
   if (edit?.manifest) {
     const p = join(root, MANIFEST);

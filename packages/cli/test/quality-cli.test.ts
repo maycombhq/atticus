@@ -1,3 +1,4 @@
+import { adoptSeeded } from "./seed-slots.js";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,6 +55,8 @@ async function root(): Promise<string> {
     await mkdir(dirname(f), { recursive: true });
     await writeFile(f, serializeRecord(p.record));
   }
+  // ADR 0195 (CS2): the seeded catalog adopted, as atticus upgrade --yes adopts one.
+  await adoptSeeded(r);
   const dir = join(r, "openspec/changes", CHANGE);
   await cp(join(FORGE_CHANGE, "openspec/changes", CHANGE), dir, { recursive: true });
   await rm(join(dir, "stories"), { recursive: true });
@@ -231,8 +234,9 @@ describe("atticus glossary", () => {
     const r = await root();
     const s = io();
     expect(await glossaryScan(r, {}, s.io, { now })).toBe(0);
+    // ADR 0195 (CS2): the seed's build made the terms already; the scan's files are what differ.
     expect(s.out[0]).toBe(
-      "The glossary has 7 terms; 10 files written and 0 files removed in catalog/generated.",
+      "The glossary has 7 terms; 3 files written and 0 files removed in catalog/generated.",
     );
     const l = io();
     expect(await glossaryList(r, {}, l.io)).toBe(0);
@@ -248,6 +252,7 @@ describe("atticus glossary", () => {
         { by: "pat" },
         d.io,
       ),
+      d.err.join("\n"),
     ).toBe(0);
     expect(d.out[0]).toBe(
       "Wrote catalog/curated/curateddecision/glossary.define.transfer.yaml: term.transfer is defined and asserted. Commit it so every scan keeps it.",
