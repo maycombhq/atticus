@@ -9,6 +9,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -41,6 +42,7 @@ import {
   canaryScore,
   canaryView,
   rateWords,
+  runHolding,
   silentSummary,
 } from "../src/canary-commands.js";
 import { main } from "../src/main.js";
@@ -554,6 +556,21 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     );
   });
 
+  // Third review of ADR 0196: `atticus verify --help` gave the canary away; the alias is named
+  // only in canary check's own help.
+  it("verify's help words --here neutrally; canary check's names the alias", async () => {
+    const v = capture();
+    expect(await main(["verify", "--help"], v.io)).toBe(0);
+    const verify = v.out.join("\n");
+    expect(verify).toContain(
+      "atticus verify --here                Check facts.jsonl in this read folder against its copy",
+    );
+    expect(verify).not.toMatch(/canar|plant/i);
+    const c = capture();
+    expect(await main(["canary", "check", "--help"], c.io)).toBe(0);
+    expect(c.out.join("\n")).toMatch(/there it is also atticus verify --here/);
+  });
+
   // Second review of ADR 0196: the read's own check, by the name the prompt gives it, says
   // nothing of a canary, names the run's files by their names alone, and keeps the map's recall
   // loop: the coverage, the files unknown, and the lines no fact cites, as atticus verify says.
@@ -609,7 +626,8 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     const cwd = process.cwd();
     const tmp = process.env.TMPDIR;
     process.chdir(run);
-    process.env.TMPDIR = h.scratch;
+    // third review of ADR 0196: found by its own folders, whatever the temporary folder is now
+    process.env.TMPDIR = join(h.top, "elsewhere");
     try {
       const code = await main(["verify", "--here"], {
         out: (l: string) => out.push(l),
@@ -961,6 +979,88 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     }
     // the link itself is left: it isn't a run folder Atticus made
     expect((await lstat(join(readsOf(h), name))).isSymbolicLink()).toBe(true);
+  });
+
+  // Third review of ADR 0196: the run folder was found again through tmpdir(), so a different
+  // TMPDIR broke `verify --here` and made check and score delete the key and orphan the copy.
+  it("finds a run through its key under another temporary folder, and never orphans its copy", async () => {
+    const h = await metarepo();
+    await canaryPlant(h.root, "forge-portal-bff", opts(h, { seed: "s1" }), capture().io);
+    const key = await keyOf(h, "forge-portal-bff");
+    expect(key.reads).toBe(await realpath(readsOf(h)));
+    const { run, facts } = runOf(h, key);
+    await cp(join(FIX, "canaries/reads/forge-portal-bff.s1.jsonl"), facts);
+    const elsewhere = opts(h, { scratch: join(h.top, "elsewhere") });
+    // check, from the metarepo, by the key's reads folder
+    const c = capture();
+    expect(await canaryCheck(h.root, "forge-portal-bff", elsewhere, c.io)).toBe(1);
+    expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(true);
+    // `--here`, by the folder it is run in: a parent named atticus-reads, this user's, closed
+    const deep = join(run, "forge-portal-bff", "src");
+    expect(await runHolding(deep)).toEqual({ dir: run, repo: "forge-portal-bff" });
+    expect(await runHolding(h.top)).toBeUndefined();
+    if (process.platform !== "win32") {
+      // a reads folder opened to others can't be trusted: nothing read or deleted, the key kept
+      await chmod(readsOf(h), 0o777);
+      expect(await runHolding(deep)).toBeUndefined();
+      for (const cmd of [canaryCheck, canaryScore]) {
+        const r = capture();
+        expect(await cmd(h.root, "forge-portal-bff", elsewhere, r.io)).toBe(2);
+        expect(r.err.join("\n")).toMatch(/isn't a folder only you can write to now/);
+      }
+      const cl = capture();
+      expect(await canaryClean(h.root, "forge-portal-bff", elsewhere, cl.io)).toBe(0);
+      expect(cl.out.join("\n")).toMatch(/Kept the key of forge-portal-bff's canary/);
+      const pl = capture();
+      expect(await canaryPlant(h.root, "forge-portal-bff", elsewhere, pl.io)).toBe(2);
+      expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(true);
+      expect(await exists(run)).toBe(true);
+      await chmod(readsOf(h), 0o700);
+    }
+    // score, from another temporary folder: scored, and its own copy deleted
+    const sc = capture();
+    expect(await canaryScore(h.root, "forge-portal-bff", elsewhere, sc.io), sc.err.join("\n")).toBe(
+      0,
+    );
+    expect(await exists(run)).toBe(false);
+    expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
+  });
+
+  it("clean --all sweeps this metarepo's run folders no key names, wherever its keys said", async () => {
+    const h = await metarepo();
+    const root2 = join(h.top, "metarepo2");
+    await cp(h.root, root2, { recursive: true });
+    const h2: Here = { ...h, root: root2 };
+    await canaryPlant(h.root, "forge-portal-bff", opts(h), capture().io);
+    const orphan = runOf(h, await keyOf(h, "forge-portal-bff")).run;
+    // its key lost before its copy: the run folder no key names
+    await rm(keyFile(h, "forge-portal-bff"));
+    await canaryPlant(h.root, "forge-appraise", opts(h), capture().io);
+    const live = runOf(h, await keyOf(h, "forge-appraise")).run;
+    // another metarepo's run in the same reads folder, and a folder of this one's name not a run's shape
+    await canaryPlant(h2.root, "forge-portal-bff", opts(h2), capture().io);
+    const other = runOf(h2, await keyOf(h2, "forge-portal-bff")).run;
+    const odd = join(readsOf(h), `forge-portal-bff-${idOf(h)}-Odd123`);
+    await mkdir(odd);
+    // from a temporary folder that holds no reads folder: the key says where
+    const c = capture();
+    const all = opts(h, { scratch: join(h.top, "elsewhere"), all: true });
+    expect(await canaryClean(h.root, undefined, all, c.io)).toBe(0);
+    expect(c.out).toEqual([
+      "Deleted 1 planted canary: 1 run folder and 1 key.",
+      "Deleted 1 run folder this metarepo planted that no key named any more.",
+    ]);
+    expect(await exists(live)).toBe(false);
+    expect(await exists(orphan)).toBe(false);
+    expect(await exists(other)).toBe(true);
+    expect(await exists(odd)).toBe(true);
+    // a repo's own clean sweeps nothing else
+    await canaryPlant(h.root, "forge-portal-bff", opts(h), capture().io);
+    const kept = runOf(h, await keyOf(h, "forge-portal-bff")).run;
+    await rm(keyFile(h, "forge-portal-bff"));
+    await canaryPlant(h.root, "forge-appraise", opts(h), capture().io);
+    await canaryClean(h.root, "forge-appraise", opts(h), capture().io);
+    expect(await exists(kept)).toBe(true);
   });
 
   it("links the read drops in the run folder aren't followed: not by check, score or clean", async () => {

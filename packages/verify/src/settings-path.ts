@@ -164,7 +164,7 @@ export function helperBuildsKey(
   const line = linesOf(cite.file)?.[cite.line - 1];
   if (line === undefined) return false;
   // what follows a `//` is comment; a line that is all comment is left to the comment check
-  const code = isCommentLine(line)
+  const code = isCommentLine(line, cite.file)
     ? line
     : line.replace(/\/\*.*?\*\//g, "").replace(/(^|\s)\/\/.*$/, "");
   // Beta.25 review: the segment is a whole string literal the code passes (`url("createWallet")`)

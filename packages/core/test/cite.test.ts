@@ -321,3 +321,78 @@ describe("a word put together from cite.with parts (ADR 0124 addendum A-derived)
     expect(partsBuildWord("schedule:triage_emails", [], task)).toBe(false);
   });
 });
+
+describe("an HTTP route's piece only a commented-out mapping writes (third review of ADR 0196)", () => {
+  const isComment = (l: string) => /^\s*(\/\/|#)/.test(l);
+  it("finds the piece a comment writes as a path and the code only as an identifier", async () => {
+    const { pathPieceOnlyInComment } = await import("../src/index.js");
+    const near = ['  // @GetMapping("/balances")', "  public List<Balance> balances() {}"];
+    expect(
+      pathPieceOnlyInComment(near, isComment, ['@RequestMapping("/api")'], "/api/balances"),
+    ).toBe("balances");
+    // a part's line names it: no comment is needed for it
+    expect(
+      pathPieceOnlyInComment(
+        near,
+        isComment,
+        ['@RequestMapping("/api/balances")'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // the code writes it as a path too: a quote, a slash, an interpolation's brace
+    for (const code of [
+      '  @GetMapping("/balances")',
+      '  var u = $"{baseUrl}balances";',
+      "  get(`${b}balances`)",
+    ])
+      expect(
+        pathPieceOnlyInComment(
+          ["  // GET /api/balances", code],
+          isComment,
+          ['"/api"'],
+          "/api/balances",
+        ),
+      ).toBeUndefined();
+    // no comment in the window: identifiers name pieces as the path check always let them
+    expect(
+      pathPieceOnlyInComment(
+        ["  public List<Balance> balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // a comment of prose that names the word, not as a path
+    expect(
+      pathPieceOnlyInComment(
+        ["  // the balances, newest first", "  balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // the comment's own marker is no path's slash
+    expect(
+      pathPieceOnlyInComment(
+        ["//balances()", "balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+  });
+  it("knows a conventional route by its action token or the default route, not by [controller]", async () => {
+    const { declaresConventionalRoute } = await import("../src/index.js");
+    for (const t of [
+      "{controller}/{action}/{id}",
+      "{controller=Home}/{action=Index}/{id?}",
+      'routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");',
+      'app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");',
+      "app.MapDefaultControllerRoute();",
+      "api/[controller]/[action]",
+    ])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, true]);
+    for (const t of ["api/[controller]", '[Route("api/ledger")]', "MapControllers()", "actions"])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, false]);
+  });
+});

@@ -149,6 +149,69 @@ describe("atticus bench facts", () => {
     expect(json.skipped).toEqual(["forge-ui: no reference yet"]);
   });
 
+  // Third review of ADR 0196: with a clone, the facts are verified first, so the bench shows what
+  // the verifier loses; without one they are scored as they are, and it says so.
+  it("verifies the facts against the clone before scoring, and says when there is none", async () => {
+    const b = await bench();
+    await mkdir(join(b.cache, "facts"), { recursive: true });
+    await writeFile(join(b.cache, "facts", "forge-ledger.jsonl"), b.facts);
+    const none = io();
+    const args = ["bench", "facts", "forge-ledger", "--bench", b.dir, "--cache", b.cache];
+    expect(await main(args, none.io), none.err.join("\n")).toBe(0);
+    expect(none.out).toContainEqual(
+      expect.stringMatching(
+        /^ {2}not verified: no clone at .*forge-ledger \(atticus bench fetch\); every fact is scored$/,
+      ),
+    );
+    const clone = join(b.cache, "forge-ledger");
+    const file = async (path: string, lines: string[]) => {
+      await mkdir(join(clone, path, ".."), { recursive: true });
+      await writeFile(join(clone, path), lines.join("\n") + "\n");
+    };
+    await file("src/EntryController.java", [
+      ...Array.from({ length: 19 }, (_, i) => (i === 0 ? "@RestController" : "")),
+      '  @PostMapping("/entries")',
+    ]);
+    await file("db/V2__create_entry.sql", [
+      "CREATE TABLE entry (",
+      "  id BIGINT,",
+      "  amount NUMERIC",
+      ");",
+    ]);
+    await file("src/EntryRequest.java", [
+      "",
+      "",
+      "",
+      "public class EntryRequest {",
+      "  BigDecimal amount;",
+      "}",
+    ]);
+    // the timeout fact cites a line that doesn't set it: rejected, so not scored as wrong
+    await file("src/main/resources/application.yml", [
+      "server:",
+      "  port: 8080",
+      "northwind:",
+      "  base-url: https://northwind.example.com",
+      "  retries: 3",
+    ]);
+    const r = io();
+    expect(await main([...args, "--json"], r.io), r.err.join("\n")).toBe(0);
+    const s = JSON.parse(r.out.join("\n")).repos[0];
+    expect(s.verify).toEqual({
+      verified: true,
+      kept: 4,
+      rejected: 1,
+      codes: { "claim-not-on-line": 1 },
+    });
+    expect(s.kinds.config).toMatchObject({ found: 1, wrong: [] });
+    expect(s.facts).toMatchObject({ total: 4 });
+    const t = io();
+    expect(await main(args, t.io)).toBe(0);
+    expect(t.out).toContain(
+      "  verified against the clone: 4 kept, 1 rejected (1 claim-not-on-line); only the kept are scored",
+    );
+  });
+
   it("refuses facts of another commit, unreadable facts, and --facts for several repos", async () => {
     const b = await bench();
     const other = join(b.top, "other.jsonl");

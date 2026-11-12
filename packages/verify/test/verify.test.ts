@@ -792,12 +792,487 @@ describe("what the revised reads found about the verifier (A4)", () => {
       expect(
         await one(rs, entry("r2", "src/main.rs", "/api/users", 4, "users", [[7, "/api"]])),
       ).toBe("kept");
-      expect(isCommentLine("#[Route('/x')]")).toBe(false);
-      expect(isCommentLine('  #[get("/x")]')).toBe(false);
-      expect(isCommentLine("/* a */ router.get('/x')")).toBe(false);
-      expect(isCommentLine("/* a */ // b")).toBe(true);
-      expect(isCommentLine("# a comment")).toBe(true);
-      expect(isCommentLine("#!/bin/sh")).toBe(false);
+      expect(isCommentLine("#[Route('/x')]", "src/A.php")).toBe(false);
+      expect(isCommentLine('  #[get("/x")]', "src/main.rs")).toBe(false);
+      expect(isCommentLine("/* a */ router.get('/x')", "src/a.js")).toBe(false);
+      expect(isCommentLine("/* a */ // b", "src/a.js")).toBe(true);
+      expect(isCommentLine("# a comment", "app/main.py")).toBe(true);
+      expect(isCommentLine("#!/bin/sh", "bin/run.sh")).toBe(false);
+      // third review: `#[` is an attribute only in PHP and Rust; elsewhere it opens a comment
+      expect(isCommentLine('#[app.get("/balances")]', "app/main.py")).toBe(true);
+      expect(isCommentLine("#[1] see the ledger notes", "config/routes.rb")).toBe(true);
+      expect(isCommentLine("#[draft] url: /balances", "config/app.yaml")).toBe(true);
+    });
+  });
+
+  // Third review of ADR 0196: the as-a-path rule lost correct facts on real repos (gRPC, WCF,
+  // conventional MVC routes, interpolation, .asmx, NSwag clients, DRF actions, constant paths).
+  // It now applies only to an HTTP route whose missing piece a commented-out mapping in the cite
+  // window writes as a path. Each shape below is the bench's, in invented Forge/Northwind names.
+  describe("route facts with parts across frameworks (third review of ADR 0196)", () => {
+    type P = [file: string, line: number, value: string];
+    const fact = (
+      id: string,
+      kind: "entry" | "call",
+      type: string,
+      path: string,
+      cite: P,
+      parts: P[],
+      method: string | undefined = "GET",
+    ) =>
+      ({
+        ...base,
+        kind,
+        id,
+        ...(kind === "entry" ? { entryType: type } : { callType: type }),
+        ...(method ? { method } : {}),
+        path,
+        cite: {
+          file: cite[0],
+          line: cite[1],
+          value: cite[2],
+          with: parts.map(([file, line, value]) => ({ file, line, value })),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const lines = (...ls: string[]) => [...ls, ""].join("\n");
+
+    const PROTO = "proto/ledger/v1/ledger.proto";
+    const proto = lines(
+      'syntax = "proto3";', // 1
+      "package ledger;", // 2
+      "", // 3
+      "service LedgerService {", // 4
+      "  // Called as /ledger.LedgerService/PostEntry by the portal.", // 5
+      "  rpc PostEntry(PostEntryRequest) returns (PostEntryReply) {}", // 6
+      "}", // 7
+    );
+
+    it("keeps a gRPC entry on its proto's rpc, with the package and the service as parts", async () => {
+      const f = fact(
+        "g1",
+        "entry",
+        "grpc",
+        "ledger.LedgerService/PostEntry",
+        [PROTO, 6, "PostEntry"],
+        [
+          [PROTO, 2, "ledger"],
+          [PROTO, 4, "LedgerService"],
+        ],
+        undefined,
+      );
+      expect(await one({ [PROTO]: proto }, f)).toBe("kept");
+    });
+
+    it("keeps gRPC calls on a Go stub and a C# override", async () => {
+      const go = {
+        [PROTO]: proto,
+        "internal/portal/ledger_client.go": lines(
+          "func (c Client) Post(ctx context.Context) error {", // 1
+          "\t_, err := c.ledger.PostEntry(ctx, &ledger.PostEntryRequest{})", // 2
+          "\treturn err", // 3
+          "}", // 4
+        ),
+      };
+      const parts: P[] = [
+        [PROTO, 2, "ledger"],
+        [PROTO, 4, "LedgerService"],
+      ];
+      expect(
+        await one(
+          go,
+          fact(
+            "g2",
+            "call",
+            "grpc",
+            "ledger.LedgerService/PostEntry",
+            ["internal/portal/ledger_client.go", 2, "PostEntry"],
+            parts,
+            undefined,
+          ),
+        ),
+      ).toBe("kept");
+      const cs = {
+        [PROTO]: proto,
+        "src/Ledger.Api/Grpc/LedgerService.cs": lines(
+          "public class LedgerService : Ledger.LedgerServiceBase", // 1
+          "{", // 2
+          "    // POST /ledger.LedgerService/PostEntry", // 3
+          "    public override async Task<PostEntryReply> PostEntry(PostEntryRequest request, ServerCallContext context)", // 4
+          "    {", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+      };
+      expect(
+        await one(
+          cs,
+          fact(
+            "g3",
+            "entry",
+            "grpc",
+            "ledger.LedgerService/PostEntry",
+            ["src/Ledger.Api/Grpc/LedgerService.cs", 4, "PostEntry"],
+            parts,
+            undefined,
+          ),
+        ),
+      ).toBe("kept");
+    });
+
+    it("keeps a WCF call through its service contract and endpoint", async () => {
+      const files = {
+        "src/Northwind.Desk/Controllers/LedgerController.cs": lines(
+          "public class LedgerController", // 1
+          "{", // 2
+          "    private readonly ILedgerService _service;", // 3
+          "", // 4
+          "", // 5
+          "    public void Load()", // 6
+          "    {", // 7
+          "        // SOAP: GetBalance", // 8
+          "        var balance = _service.GetBalance(DateTime.Now);", // 9
+          "    }", // 10
+          "}", // 11
+        ),
+        "src/Northwind.Desk/App.config": lines(
+          "<configuration>", // 1
+          '  <endpoint address="http://localhost:5100/LedgerService.svc" binding="basicHttpBinding" contract="ILedgerService" />', // 2
+          "</configuration>", // 3
+        ),
+      };
+      const f = fact(
+        "w1",
+        "call",
+        "soap",
+        "ILedgerService/GetBalance",
+        ["src/Northwind.Desk/Controllers/LedgerController.cs", 9, "GetBalance"],
+        [
+          ["src/Northwind.Desk/Controllers/LedgerController.cs", 3, "ILedgerService"],
+          ["src/Northwind.Desk/App.config", 2, "http://localhost:5100/LedgerService.svc"],
+        ],
+        undefined,
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    describe("ASP.NET MVC conventional routes, the scaffold's comments beside them", () => {
+      const C = "src/Northwind.Web/Controllers/StatementController.cs";
+      const controller = lines(
+        "using Microsoft.AspNetCore.Mvc;", // 1
+        "", // 2
+        "public class StatementController : Controller", // 3
+        "{", // 4
+        "", // 5
+        "    // GET: Statement/Create", // 6
+        "    public ActionResult Create()", // 7
+        "    {", // 8
+        "        return View();", // 9
+        "    }", // 10
+        "", // 11
+        "    // POST: Statement/Edit/5", // 12
+        "    [HttpPost]", // 13
+        "    public ActionResult Edit(StatementItem item)", // 14
+        "    {", // 15
+        "        return View(item);", // 16
+        "    }", // 17
+        "}", // 18
+      );
+      const forms: [string, string, string][] = [
+        [
+          "a template with defaults",
+          "src/Northwind.Web/Startup.cs",
+          '            endpoints.MapControllerRoute("default", "{controller=Statement}/{action=Index}/{id?}");',
+        ],
+        [
+          "MapControllerRoute with a pattern",
+          "src/Northwind.Web/Program.cs",
+          'app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");',
+        ],
+        [
+          "MapDefaultControllerRoute",
+          "src/Northwind.Web/Program.cs",
+          "app.MapDefaultControllerRoute();",
+        ],
+        [
+          "MVC 5's MapRoute",
+          "src/Northwind.Web/App_Start/RouteConfig.cs",
+          '            routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");',
+        ],
+      ];
+      for (const [name, file, text] of forms)
+        it(`keeps an action under its scaffold comment: ${name}`, async () => {
+          const files = { [C]: controller, [file]: lines("", text, "") };
+          const value = /\{controller[^"]*/.exec(text)?.[0] ?? /\w*Map\w+Route/.exec(text)![0];
+          const parts: P[] = [
+            [C, 3, "StatementController"],
+            [file, 2, value],
+          ];
+          expect(
+            await one(
+              files,
+              fact("m1", "entry", "rest", "/Statement/Create", [C, 7, "Create"], parts),
+            ),
+          ).toBe("kept");
+          expect(
+            await one(
+              files,
+              fact("m2", "entry", "rest", "/Statement/Edit", [C, 14, "Edit"], parts, "POST"),
+            ),
+          ).toBe("kept");
+        });
+    });
+
+    it("keeps a path a string interpolation puts after its base (C#, JS, Python, Kotlin)", async () => {
+      const shapes: [string, string][] = [
+        [
+          "src/Northwind.Web/Services/StatementService.cs",
+          '        var uri = $"{_baseUrl}statements";',
+        ],
+        ["src/portal/statements.js", "  const res = await fetch(`${baseUrl}statements`);"],
+        ["portal/statements.py", '    r = httpx.get(f"{BASE_URL}statements")'],
+        [
+          "src/main/kotlin/forge/Statements.kt",
+          '        val res = client.get("${baseUrl}statements")',
+        ],
+      ];
+      for (const [file, line] of shapes) {
+        // a doc comment above names the whole path: the code's interpolated string still writes it
+        const files = {
+          [file]: lines(`${file.endsWith(".py") ? "#" : "//"} GET /api/ledger/statements`, line),
+          "config/ledger.json": lines("{", '  "base": "api/ledger/"', "}"),
+        };
+        const f = fact(
+          `i-${file}`,
+          "call",
+          "rest",
+          "/api/ledger/statements",
+          [file, 2, "statements"],
+          [["config/ledger.json", 2, "api/ledger/"]],
+        );
+        expect([file, await one(files, f)]).toEqual([file, "kept"]);
+      }
+    });
+
+    it("keeps a WebForms .asmx web method", async () => {
+      const files = {
+        "src/Northwind.Forms/Ledger/Upload.asmx": lines(
+          '<%@ WebService Language="C#" CodeBehind="Upload.asmx.cs" Class="Northwind.Forms.Ledger.Upload" %>',
+        ),
+        "src/Northwind.Forms/Ledger/Upload.asmx.cs": lines(
+          "public class Upload : WebService", // 1
+          "{", // 2
+          "    [WebMethod]", // 3
+          "    public void UploadStatement()", // 4
+          "    {", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+      };
+      const f = fact(
+        "a1",
+        "entry",
+        "rest",
+        "/Ledger/Upload.asmx/UploadStatement",
+        ["src/Northwind.Forms/Ledger/Upload.asmx", 1, "Upload.asmx"],
+        [["src/Northwind.Forms/Ledger/Upload.asmx.cs", 4, "UploadStatement"]],
+        "POST",
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a call through a generated (NSwag) client, the group and its prefix as parts", async () => {
+      const files = {
+        "src/Web/ClientApp/src/ledger/statement.service.ts": lines(
+          "export class StatementService {", // 1
+          "  list() {", // 2
+          "    return this.statementsClient.list(true);", // 3
+          "  }", // 4
+          "}", // 5
+        ),
+        "src/Web/Endpoints/Statements.cs": lines(
+          "public class Statements : EndpointGroupBase", // 1
+          "{", // 2
+          "    public override void Map(WebApplication app)", // 3
+          "    {", // 4
+          "        app.MapGroup(this).MapGet(List);", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+        "src/Web/Infrastructure/WebApplicationExtensions.cs": lines(
+          '        return app.MapGroup($"/api/{groupName}").WithGroupName(groupName);',
+        ),
+      };
+      const f = fact(
+        "n1",
+        "call",
+        "rest",
+        "/api/Statements/list",
+        ["src/Web/ClientApp/src/ledger/statement.service.ts", 3, "list"],
+        [
+          ["src/Web/Endpoints/Statements.cs", 1, "Statements"],
+          ["src/Web/Endpoints/Statements.cs", 5, "MapGet(List)"],
+          ["src/Web/Infrastructure/WebApplicationExtensions.cs", 1, "/api/{groupName}"],
+        ],
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a DRF @action named by its method, the router's prefix a part", async () => {
+      const files = {
+        "ledger/views.py": lines(
+          "class StatementViewSet(viewsets.ModelViewSet):", // 1
+          "    @action(detail=False, methods=['get'])", // 2
+          "    def recent_postings(self, request):", // 3
+          "        return Response([])", // 4
+        ),
+        "ledger/urls.py": lines(
+          "router = DefaultRouter()",
+          "router.register(r'statements', StatementViewSet)",
+        ),
+      };
+      const f = fact(
+        "d1",
+        "entry",
+        "rest",
+        "/statements/recent_postings",
+        ["ledger/views.py", 2, "@action"],
+        [["ledger/urls.py", 2, "statements"]],
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a Spring mapping by a constant, with only the class's prefix a part", async () => {
+      const J = "src/main/java/forge/ledger/StatementResource.java";
+      const files = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class StatementResource {", // 3
+          "  @GetMapping(Paths.STATEMENTS)", // 4
+          "  public List<Statement> statements() { return null; }", // 5
+          "}", // 6
+        ),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "c1",
+            "entry",
+            "rest",
+            "/api/statements",
+            [J, 4, "Paths.STATEMENTS"],
+            [[J, 2, "/api"]],
+          ),
+        ),
+      ).toBe("kept");
+    });
+
+    it("still refuses a method under a commented-out mapping, in Spring, ASP.NET and FastAPI", async () => {
+      const J = "src/main/java/forge/portal/BalanceResource.java";
+      const java = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class BalanceResource {", // 3
+          '  // @GetMapping("/balances")', // 4
+          "  public List<Balance> balances() { return null; }", // 5
+          '  @GetMapping("/statements")', // 6
+          "  public List<Statement> statements() { return null; }", // 7
+          "}", // 8
+        ),
+      };
+      expect(
+        await one(
+          java,
+          fact("x1", "entry", "rest", "/api/balances", [J, 5, "balances"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("claim-in-comment");
+      // the live mapping beside it is kept
+      expect(
+        await one(
+          java,
+          fact("x2", "entry", "rest", "/api/statements", [J, 7, "statements"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      const C = "src/Northwind.Api/Controllers/LedgerController.cs";
+      const cs = {
+        [C]: lines(
+          '[Route("api/[controller]")]', // 1
+          "public class LedgerController : ControllerBase", // 2
+          "{", // 3
+          "", // 4
+          '    // [HttpGet("balances")]', // 5
+          "    public IActionResult Balances() => Ok();", // 6
+          "}", // 7
+        ),
+      };
+      // `[controller]` alone is no conventional route: the action is named by its attribute
+      expect(
+        await one(
+          cs,
+          fact(
+            "x3",
+            "entry",
+            "rest",
+            "/api/Ledger/balances",
+            [C, 6, "Balances"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      const files = {
+        "app/api/balances.py": lines(
+          "router = APIRouter()", // 1
+          "", // 2
+          "", // 3
+          '# @router.get("/balances")', // 4
+          "def balances():", // 5
+          "    return []", // 6
+        ),
+        "app/main.py": lines('app.include_router(router, prefix="/api/v1")'),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "x4",
+            "entry",
+            "rest",
+            "/api/v1/balances",
+            ["app/api/balances.py", 5, "balances"],
+            [["app/main.py", 1, "/api/v1"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      // and a call: a commented-out client line above a live helper of the same name
+      const T = "src/portal/ledger.ts";
+      const ts = {
+        [T]: lines(
+          "export const ledger = {", // 1
+          "  // balances: () => http.get(`${base}/balances`),", // 2
+          "  balances: () => cache.read(),", // 3
+          "};", // 4
+        ),
+        "src/portal/config.ts": lines('export const base = "/api";'),
+      };
+      expect(
+        await one(
+          ts,
+          fact(
+            "x5",
+            "call",
+            "rest",
+            "/api/balances",
+            [T, 3, "balances"],
+            [["src/portal/config.ts", 1, "/api"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
     });
   });
 });

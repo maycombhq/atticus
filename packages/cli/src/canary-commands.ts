@@ -13,7 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { stringify } from "yaml";
 import {
   MAP_OUTLINE,
@@ -158,6 +158,8 @@ export const CANARY_WORDS = {
   dirty: (repo: string) =>
     `Note: ${repo}'s checkout has changes not committed; the copy holds them as they are.`,
   replaced: (repo: string) => `An earlier canary of ${repo} wasn't scored: its copy is deleted.`,
+  readsUntrusted: (repo: string, dir: string) =>
+    `The run folder of ${repo}'s canary is in ${dir}, which isn't a folder only you can write to now (another user's, a link, gone, or open to others): nothing in it is read or deleted, and the key is kept. Close the folder again (chmod 700) and retry, or delete the run folder by hand and run atticus canary clean ${repo}.`,
   planted: (repo: string, seed: string) =>
     `Canary of ${repo} prepared (seed ${seed}; the same seed, checkout and facts plant the same again). What was planted and taken out is kept on this machine, apart from the copy, so the read can't see it.`,
   covers: (covers: string) => `It plants into ${covers}.`,
@@ -223,6 +225,10 @@ export const CANARY_WORDS = {
     `Wrote ${file}: commit it in a pull request with the sample audit (git add ${file}). The copy, the prompt, the facts and the key are deleted.`,
   cleaned: (copies: number, keys: number) =>
     `Deleted ${keys} planted ${keys === 1 ? "canary" : "canaries"}: ${copies} run ${copies === 1 ? "folder" : "folders"} and ${keys} ${keys === 1 ? "key" : "keys"}${copies < keys ? ` (${keys - copies} run ${keys - copies === 1 ? "folder was" : "folders were"} already gone)` : ""}.`,
+  sweptOrphans: (n: number) =>
+    `Deleted ${n} run ${n === 1 ? "folder" : "folders"} this metarepo planted that no key named any more.`,
+  keptUntrusted: (repo: string, dir: string) =>
+    `Kept the key of ${repo}'s canary: its run folder is in ${dir}, which isn't a folder only you can write to now, so nothing in it was deleted.`,
   cleanedBad: (repo: string, n: number) =>
     `The key of ${repo}'s canary didn't read: deleted it, and ${n} run ${n === 1 ? "folder" : "folders"} of ${repo}'s this metarepo planted (another metarepo's are never touched).`,
   nothingToClean: "No canary is planted on this machine.",
@@ -251,26 +257,18 @@ export const rateWords = (r: CanaryRateT): string =>
 const scratchOf = (o: Pick<CanaryOptions, "scratch">) => resolve(o.scratch ?? tmpdir());
 
 /**
- * The folder run folders are made in, `<temporary folder>/atticus-reads`, by its real path, and
- * only when it is a real folder (no link) of this user's that no other user can write to; made
- * 0700 when `make` and it isn't there. Undefined when it can't be trusted: nothing in it is
- * then read, written or deleted (second review of ADR 0196: a shared /tmp is anyone's).
+ * A reads folder, trusted: named `atticus-reads`, a real folder (no link) by its real path, this
+ * user's, and closed to others; made 0700 when `make` and it isn't there. Undefined when it can't be
+ * trusted: nothing in it is then read, written or deleted (second review of ADR 0196: a shared /tmp
+ * is anyone's). On Windows the owner and mode aren't checked: each user's %TEMP% is their own.
  */
-async function readsDir(
-  o: Pick<CanaryOptions, "scratch">,
-  make = false,
-): Promise<string | undefined> {
-  let top: string;
-  try {
-    if (make) await mkdir(scratchOf(o), { recursive: true });
-    top = await realpath(scratchOf(o));
-  } catch {
-    return undefined;
-  }
-  const dir = join(top, CANARY_READS_DIR);
+async function trustReads(dir: string, make = false): Promise<string | undefined> {
+  if (!isAbsolute(dir) || basename(dir) !== CANARY_READS_DIR) return undefined;
   if (make) await mkdir(dir, { mode: 0o700 }).catch(() => undefined);
   const st = await lstat(dir).catch(() => undefined);
   if (!st || !st.isDirectory() || st.isSymbolicLink()) return undefined;
+  // by its real path: no folder above it is a link either (third review: the key names it)
+  if ((await realpath(dir).catch(() => undefined)) !== dir) return undefined;
   if (process.platform !== "win32") {
     if (typeof process.getuid === "function" && st.uid !== process.getuid()) return undefined;
     if (st.mode & 0o077) {
@@ -283,6 +281,36 @@ async function readsDir(
   }
   return dir;
 }
+
+/**
+ * The folder run folders are made in, `<temporary folder>/atticus-reads`, by its real path, when
+ * it can be trusted (`trustReads`).
+ */
+async function readsDir(
+  o: Pick<CanaryOptions, "scratch">,
+  make = false,
+): Promise<string | undefined> {
+  let top: string;
+  try {
+    if (make) await mkdir(scratchOf(o), { recursive: true });
+    top = await realpath(scratchOf(o));
+  } catch {
+    return undefined;
+  }
+  return trustReads(join(top, CANARY_READS_DIR), make);
+}
+
+/**
+ * The reads folder a key's run folder is in (third review of ADR 0196): the real path the plant
+ * kept in the key, so a temporary folder set otherwise later (another TMPDIR) still finds it; a key
+ * planted before kept none, and its run is in this temporary folder's. Trusted, or undefined.
+ */
+const readsOfKey = (key: CanaryKeyT, o: Pick<CanaryOptions, "scratch">) =>
+  key.reads !== undefined ? trustReads(key.reads) : readsDir(o);
+
+/** Where a key's reads folder is, for a message. */
+const readsWhere = (key: CanaryKeyT, o: Pick<CanaryOptions, "scratch">) =>
+  key.reads ?? join(scratchOf(o), CANARY_READS_DIR);
 
 /** This metarepo's id in its run folders' names: its state folder's first 8 characters. */
 export const metarepoIdOf = (root: string, env?: NodeJS.ProcessEnv) =>
@@ -381,24 +409,50 @@ async function discardRuns(reads: string, repo: string, id: string): Promise<num
 
 /**
  * The run folder and the key, gone: the key's own run, or with no key that reads, this
- * metarepo's runs of the repo. How many run folders went.
+ * metarepo's runs of the repo. How many run folders went, and whether the key was kept: a key
+ * whose reads folder can't be trusted is never deleted (third review of ADR 0196), so its copy is
+ * never orphaned; a key that doesn't read names nowhere, and goes.
  */
 async function discard(
   root: string,
   repo: string,
   key: CanaryKeyT | undefined,
   o: Pick<CanaryOptions, "env" | "scratch">,
-): Promise<number> {
-  const reads = await readsDir(o);
+): Promise<{ runs: number; kept?: true }> {
   const id = metarepoIdOf(root, o.env);
-  const n = !reads
-    ? 0
-    : key
-      ? (await discardRun(reads, repo, id, key.run))
-        ? 1
-        : 0
-      : await discardRuns(reads, repo, id);
+  if (key) {
+    const reads = await readsOfKey(key, o);
+    if (!reads) return { runs: 0, kept: true };
+    const runs = (await discardRun(reads, repo, id, key.run)) ? 1 : 0;
+    await rm(keyPath(root, repo, o.env), { force: true });
+    return { runs };
+  }
+  const reads = await readsDir(o);
+  const runs = reads ? await discardRuns(reads, repo, id) : 0;
   await rm(keyPath(root, repo, o.env), { force: true });
+  return { runs };
+}
+
+/**
+ * This metarepo's run folders of a run's shape that no key names, in each reads folder given
+ * (`clean --all`, third review of ADR 0196: a key deleted before its copy left one behind). How
+ * many went.
+ */
+async function sweepOrphans(readsFolders: Iterable<string>, id: string): Promise<number> {
+  let n = 0;
+  for (const reads of readsFolders)
+    for (const name of await readdir(reads).catch(() => [] as string[])) {
+      const of = canaryRunOf(name);
+      if (!of || of.id !== id) continue;
+      const dir = await runDir(reads, of.repo, id, name);
+      if (
+        !dir ||
+        !(await isRealDir(join(dir, of.repo))) ||
+        !(await isRealFile(join(dir, "prompt.md")))
+      )
+        continue;
+      if (await discardRun(reads, of.repo, id, name)) n++;
+    }
   return n;
 }
 
@@ -564,7 +618,11 @@ export async function canaryPlant(
 
   const earlier = await readKey(root, repo, o.env);
   if (earlier !== "none") {
-    await discard(root, repo, earlier === "bad" ? undefined : earlier, o);
+    const gone = await discard(root, repo, earlier === "bad" ? undefined : earlier, o);
+    if (gone.kept && earlier !== "bad") {
+      io.err(CANARY_WORDS.readsUntrusted(repo, readsWhere(earlier, o)));
+      return 2;
+    }
     io.out(CANARY_WORDS.replaced(repo));
   }
 
@@ -617,6 +675,7 @@ export async function canaryPlant(
       seed,
       ...(commit ? { commit } : {}),
       run: basename(run),
+      reads,
       stacks: plan.stacks,
       planted: plan.planted,
       removed: plan.removed,
@@ -814,8 +873,12 @@ export async function canaryCheck(
     io.err(key === "none" ? CANARY_WORDS.noKey(repo) : CANARY_WORDS.badKey(repo));
     return 2;
   }
-  const reads = await readsDir(o);
-  const dir = reads && (await runDir(reads, repo, metarepoIdOf(root, o.env), key.run));
+  const reads = await readsOfKey(key, o);
+  if (!reads) {
+    io.err(CANARY_WORDS.readsUntrusted(repo, readsWhere(key, o)));
+    return 2;
+  }
+  const dir = await runDir(reads, repo, metarepoIdOf(root, o.env), key.run);
   if (!dir) {
     await discard(root, repo, key, o);
     io.err(CANARY_WORDS.noRun(repo));
@@ -825,17 +888,14 @@ export async function canaryCheck(
 }
 
 /**
- * The run folder a folder is in (the folder itself or one above it): a real folder right in the
- * reads folder, by the real paths of both, named as a run of some repo's and metarepo's. What
+ * The run folder a folder is in (the folder itself or one above it): a real folder right in a
+ * reads folder that can be trusted (`trustReads`: named `atticus-reads`, this user's, closed to
+ * others), by the real paths of both, named as a run of some repo's and metarepo's. What
  * `atticus verify --here` (or `atticus canary check`) run in the run folder, as the prompt says,
- * checks; no metarepo is named or needed.
+ * checks; no metarepo is named or needed, nor the temporary folder the plant was run with (third
+ * review of ADR 0196: another TMPDIR found no run).
  */
-export async function runHolding(
-  cwd: string,
-  o: Pick<CanaryOptions, "scratch"> = {},
-): Promise<{ dir: string; repo: string } | undefined> {
-  const reads = await readsDir(o);
-  if (!reads) return undefined;
+export async function runHolding(cwd: string): Promise<{ dir: string; repo: string } | undefined> {
   let at: string;
   try {
     at = await realpath(cwd);
@@ -843,7 +903,9 @@ export async function runHolding(
     return undefined;
   }
   for (let d = at; dirname(d) !== d; d = dirname(d)) {
-    if (dirname(d) !== reads) continue;
+    if (basename(dirname(d)) !== CANARY_READS_DIR) continue;
+    const reads = await trustReads(dirname(d));
+    if (!reads) return undefined;
     const of = canaryRunOf(basename(d));
     const dir = of ? await runDir(reads, of.repo, of.id, basename(d)) : undefined;
     return dir && of ? { dir, repo: of.repo } : undefined;
@@ -858,7 +920,7 @@ export async function canaryCheckHere(
   o: CanaryOptions,
   io: Output,
 ): Promise<number> {
-  const here = await runHolding(cwd, o);
+  const here = await runHolding(cwd);
   if (!here) {
     io.err(CANARY_WORDS.notHere);
     return 2;
@@ -907,8 +969,12 @@ export async function canaryScore(
     io.err(CANARY_WORDS.badKey(repo));
     return 2;
   }
-  const reads = await readsDir(o);
-  const dir = reads && (await runDir(reads, repo, metarepoIdOf(root, o.env), key.run));
+  const reads = await readsOfKey(key, o);
+  if (!reads) {
+    io.err(CANARY_WORDS.readsUntrusted(repo, readsWhere(key, o)));
+    return 2;
+  }
+  const dir = await runDir(reads, repo, metarepoIdOf(root, o.env), key.run);
   if (!dir || !(await isRealDir(join(dir, repo)))) {
     await discard(root, repo, key, o);
     io.err(CANARY_WORDS.noRun(repo));
@@ -1213,20 +1279,34 @@ export async function canaryClean(
   let copies = 0;
   let keys = 0;
   const said: string[] = [];
+  // the reads folders this metarepo's runs may be in: this temporary folder's and each key's
+  const readsFolders = new Set<string>();
+  const tmpReads = await readsDir(o);
+  if (tmpReads) readsFolders.add(tmpReads);
   for (const r of [...new Set(repos)].sort()) {
     const k = await readKey(root, r, o.env);
     if (k === "none") continue;
     if (k === "bad") {
       // A key that doesn't read says nowhere safe: this metarepo's run folders of the repo go.
-      said.push(CANARY_WORDS.cleanedBad(r, await discard(root, r, undefined, o)));
+      said.push(CANARY_WORDS.cleanedBad(r, (await discard(root, r, undefined, o)).runs));
       continue;
     }
+    const reads = await readsOfKey(k, o);
+    if (reads) readsFolders.add(reads);
     // what was deleted, counted as it went (second review: a key whose copy was gone was counted)
-    copies += await discard(root, r, k, o);
+    const gone = await discard(root, r, k, o);
+    if (gone.kept) {
+      said.push(CANARY_WORDS.keptUntrusted(r, readsWhere(k, o)));
+      continue;
+    }
+    copies += gone.runs;
     keys++;
   }
+  // --all: and this metarepo's run folders no key names any more, wherever the keys said
+  const orphans = o.all === true ? await sweepOrphans(readsFolders, metarepoIdOf(root, o.env)) : 0;
   for (const l of said) io.out(l);
-  if (keys || !said.length)
+  if (keys || (!said.length && !orphans))
     io.out(keys ? CANARY_WORDS.cleaned(copies, keys) : CANARY_WORDS.nothingToClean);
+  if (orphans) io.out(CANARY_WORDS.sweptOrphans(orphans));
   return 0;
 }

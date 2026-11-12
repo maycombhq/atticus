@@ -346,6 +346,79 @@ describe("scoreCanary", () => {
       expect(removedMatch(removedOf(gone), { ...short, method: "POST" } as Fact)).toBe(undefined);
     });
 
+    // Third review of ADR 0196: a route of no single method (ASP.NET's ANY, a `*`) is any method.
+    it("reads ANY and * as any method, both ways, at the line and beside it", () => {
+      const at = (
+        id: string,
+        method: string | undefined,
+        path: string,
+        line: number,
+        value = path,
+      ) =>
+        route(id, path, "src/C.java", line, { method, cite: { file: "src/C.java", line, value } });
+      const cases: [string, Fact, Fact, string][] = [
+        [
+          "ANY removed, GET read on the method line",
+          at("r", "ANY", "/balances", 10),
+          at("x", "GET", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "ANY removed, GET read on its line",
+          at("r", "ANY", "/balances", 10),
+          at("x", "GET", "/balances", 10),
+          "passed",
+        ],
+        [
+          "* removed, GET read beside it",
+          at("r", "*", "/balances", 10),
+          at("x", "GET", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "no method removed, GET read beside it",
+          at("r", undefined, "/balances", 10),
+          at("x", "GET", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "GET removed, ANY read beside it",
+          at("r", "GET", "/balances", 10),
+          at("x", "ANY", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "GET removed, any read beside it",
+          at("r", "GET", "/balances", 10),
+          at("x", "any", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "GET removed under a base, GET read without it",
+          at("r", "GET", "/api/balances", 10, "/balances"),
+          at("x", "GET", "/balances", 11, "balances"),
+          "passed",
+        ],
+        [
+          "GET removed, get read beside it",
+          at("r", "GET", "/balances", 10),
+          at("x", "get", "/balances", 11, "balances"),
+          "passed",
+        ],
+        // still a correct fact of the line beside: another single method
+        [
+          "GET removed, PUT read beside it",
+          at("r", "GET", "/balances", 10),
+          at("x", "PUT", "/balances", 11, "balances"),
+          "absent",
+        ],
+      ];
+      for (const [name, gone, read, want] of cases) {
+        const r = scoreCanary(keyOf([removedOf(gone)]), { kept: [read], rejected: [] }, AT);
+        expect([name, r.removed[0]!.result]).toEqual([name, want === "passed" ? "kept" : want]);
+      }
+    });
+
     it("scores in passes, so adjacent removals are matched to their own facts", () => {
       const g1 = route("e-a", "/orders", "src/r.js", 10);
       const g2 = route("e-b", "/orders/export", "src/r.js", 11);

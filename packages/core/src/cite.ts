@@ -384,22 +384,46 @@ export function partsNamePath(lines: readonly string[], path: string): boolean {
 }
 
 /**
- * A path put together from parts, the cited lines' share checked as a path (second review of ADR
- * 0196): each piece the parts' lines don't name must be written on the cited lines as a piece of a
- * path or route string, after a quote, a `/`, a `:` or a tag's `>` (`"/balances"`, `'users'`,
- * `:users`, `<Path>v1</Path>`) and ending there, not as a bare identifier. A method `balances()` under a commented-out `@GetMapping("/balances")`, with
- * the class's `/api` as a part, names no `/api/balances`.
+ * Whether a part's value or line declares a conventional route, one whose action is its method's
+ * name (third review of ADR 0196): a template with an action token (`{controller}/{action}/{id}`,
+ * `{controller=Home}/{action=Index}/{id?}`, attribute routing's `[action]`), or a call that sets the
+ * default template (`MapDefaultControllerRoute()`). `[controller]` alone is not one: an attribute
+ * route names its action in its own attribute, not by the method.
  */
-export function partsNamePathAsPath(
-  cited: readonly string[],
+export function declaresConventionalRoute(texts: readonly string[]): boolean {
+  return texts.some((t) => /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t));
+}
+
+/** A comment line's text with its marker taken off (`// `, `/* `, `* `, `# `, `<!-- `, `-- `). */
+const commentText = (l: string) => l.replace(/^\s*(\/\/+|\/\*+|\*+|#+|<!--|--)/, "");
+
+/** Whether a line writes a path piece as a piece of a path or route string, not a bare identifier. */
+const writesPieceAsPath = (l: string, p: string) =>
+  // after a quote, a `/`, a `:`, a tag's `>` or an interpolation's `}` (`"/balances"`, `'users'`,
+  // `:users`, `<Path>v1</Path>`, `$"{base}users"`, `${base}users`), and ending there
+  new RegExp(`["'\`/:>}]${escape(p)}(?![A-Za-z0-9_-])`, "i").test(l);
+
+/**
+ * The piece of an HTTP route put together from parts that only a commented-out mapping writes
+ * (third review of ADR 0196), or undefined. A piece the parts' lines don't name, which a comment
+ * line in the cite window writes as a path (`// @GetMapping("/balances")`) while no code line there
+ * does, is named by that comment, not by the code: a method `balances()` under it, with the class's
+ * `/api` a part, names no `/api/balances`. Anywhere else an identifier names a piece as the path
+ * check always let it (a gRPC stub, a WCF call, a conventional route's action, a constant).
+ */
+export function pathPieceOnlyInComment(
+  rawNear: readonly string[],
+  isComment: (l: string) => boolean,
   partLines: readonly string[],
   path: string,
-): boolean {
-  const pieces = pathPieces(path);
-  if (!pieces.length) return partsNamePath([...cited, ...partLines], path);
-  return pieces.every(
+): string | undefined {
+  const comments = rawNear.filter(isComment).map(commentText);
+  if (!comments.length) return undefined;
+  const code = rawNear.filter((l) => !isComment(l));
+  return pathPieces(path).find(
     (p) =>
-      linesNamePiece(partLines, p) ||
-      cited.some((l) => new RegExp(`["'\`/:>]${escape(p)}(?![A-Za-z0-9_-])`, "i").test(l)),
+      !linesNamePiece(partLines, p) &&
+      comments.some((l) => writesPieceAsPath(l, p)) &&
+      !code.some((l) => writesPieceAsPath(l, p)),
   );
 }

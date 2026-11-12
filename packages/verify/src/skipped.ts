@@ -67,15 +67,22 @@ export function notReadForSkipped(path: string, rules: ReadRules = DEFAULT_READ_
 }
 
 /**
- * A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive, a shebang, nor a PHP 8 or
- * Rust attribute, `#[Route('/api')]`: second review of ADR 0196), `<!--` or SQL's `-- `. A block
- * comment closed on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`)
- * is code.
+ * A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive or a shebang, nor in a PHP
+ * or Rust file an attribute, `#[Route('/api')]`: second and third reviews of ADR 0196; in Python,
+ * Ruby, YAML or a shell script `#[` opens a comment), `<!--` or SQL's `-- `. A block comment closed
+ * on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`) is code. `file`
+ * is the path of the file the line is in.
  */
-export const isCommentLine = (l: string) =>
-  /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!)(?!\[))/.test(
-    l,
-  ) && !/^\s*\/\*.*?\*\/\s*[^\s/]/.test(l);
+export const isCommentLine = (l: string, file: string) =>
+  (ATTRIBUTE_FILE.test(file) ? COMMENT_NOT_ATTRIBUTE : COMMENT).test(l) && !BLOCK_THEN_CODE.test(l);
+
+/** Files whose `#[` opens an attribute, not a comment: PHP 8 and Rust. */
+const ATTRIBUTE_FILE = /\.(php|phtml|rs)$/i;
+const COMMENT_START =
+  "^\\s*(\\/\\/|\\/\\*|\\*|<!--|-- |#(?!\\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\\b)(?!!)";
+const COMMENT = new RegExp(`${COMMENT_START})`);
+const COMMENT_NOT_ATTRIBUTE = new RegExp(`${COMMENT_START}(?!\\[))`);
+const BLOCK_THEN_CODE = /^\s*\/\*.*?\*\/\s*[^\s/]/;
 
 /** A line that imports: its strings name modules, not routes. */
 const IMPORT_LINE =
@@ -244,7 +251,7 @@ export function candidatesIn(path: string, lines: readonly string[]): Candidate[
       );
     }
     if (!code.trim()) return;
-    if (!wasBlock && isCommentLine(raw)) return;
+    if (!wasBlock && isCommentLine(raw, path)) return;
     if (IMPORT_LINE.test(code) || IMPORT_CALL.test(code) || NAMESPACE_LINE.test(code)) return;
     // a trailing comment: `//` or `#` after a space (a URL's `://` has a colon before it)
     code = code.replace(/(^|[\s;,)}])\/\/.*$/, "$1").replace(/\s#\s.*$/, "");

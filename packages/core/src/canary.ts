@@ -138,6 +138,13 @@ export const CanaryKey = z
     commit: z.string().optional(),
     /** The run folder's base name: the copy (`<repo>/`), `prompt.md` and `facts.jsonl` are in it. */
     run: z.string().min(1),
+    /**
+     * The real path of the `atticus-reads` folder the run folder is in (third review of ADR 0196),
+     * so a temporary folder set otherwise later still finds it; checked again (named so, a real
+     * folder by its real path, this user's, closed to others) before it is used. A key planted
+     * before has none: its run is in the temporary folder's.
+     */
+    reads: z.string().min(1).optional(),
     stacks: z.array(z.string()),
     planted: z.array(CanaryPlanted),
     removed: z.array(CanaryRemoved),
@@ -270,12 +277,18 @@ export function canaryNeedleOf(f: Fact): string {
 const withMethod = (method: unknown, path: string) =>
   typeof method === "string" && foldCanary(method) ? `${foldCanary(method)} ${path}` : path;
 
-/** Two needles alike: the same path or key, and the same method when both have one. */
+/**
+ * A method that is any method: none, ASP.NET's and the bench's `ANY`, or `*` (which folds to
+ * nothing, so its needle has no method). Third review of ADR 0196.
+ */
+const anyMethod = (m: string | undefined) => m === undefined || m === "any";
+
+/** Two needles alike: the same path or key, and the same method unless either is any method. */
 function sameNeedle(a: string, b: string): boolean {
   if (a === b) return true;
   const [am, ap] = a.includes(" ") ? a.split(" ") : [undefined, a];
   const [bm, bp] = b.includes(" ") ? b.split(" ") : [undefined, b];
-  return ap === bp && (am === undefined || bm === undefined);
+  return ap === bp && (anyMethod(am) || anyMethod(bm) || am === bm);
 }
 
 /** Whether a fact is about a planted item: its kind, with the item's own words in its claim. */
