@@ -70,7 +70,7 @@ function codeStamp(): string {
       h.update(`${p}\u0000unresolved\u0000`);
     }
   const walk = (d: string) => {
-    let names: string[] = [];
+    let names: string[];
     try {
       names = readdirSync(d).sort(cmpText);
     } catch {

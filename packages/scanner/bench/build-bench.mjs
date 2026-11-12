@@ -14,13 +14,15 @@
  * --fanout F (subscribers in other repos per topic), --calls C (cross-repo calls per repo; default
  * M/10), --phases cold,unchanged,one (default all three), --dir D (where the estate goes; a temp
  * folder by default), --keep (leave it there), --cpu-prof (a .cpuprofile per phase, in D),
- * --timeout S (seconds a phase may take; default 600).
+ * --timeout S (seconds a phase may take; default 600), --scanner F (another build's
+ * packages/scanner/dist/index.js, to compare with: an earlier commit's checkout, say).
  *
  * The estate is invented (the Forge style of fixtures/forge: nouns from a fixed list), and the
  * same options always give the same slots. Each phase prints one JSON line; the table at the
  * end compares them.
  */
 import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -428,8 +430,8 @@ async function changeOneSlot(root) {
 
 // ------------------------------------------------------------------ one phase (a child process)
 
-async function phase(name, root) {
-  const s = await import(SCANNER);
+async function phase(name, root, scanner) {
+  const s = await import(scanner ?? SCANNER);
   if (name === "one") await changeOneSlot(root);
   const t0 = performance.now();
   const c0 = process.cpuUsage();
@@ -455,7 +457,7 @@ async function phase(name, root) {
 
 async function main() {
   const o = args(process.argv.slice(2));
-  if (o.phase) return phase(o.phase, o.root);
+  if (o.phase) return phase(o.phase, o.root, o.scanner);
   const opts = {
     repos: Number(o.repos ?? 40),
     records: Number(o.records ?? 2500),
@@ -491,6 +493,7 @@ async function main() {
         p,
         "--root",
         root,
+        ...(o.scanner ? ["--scanner", String(o.scanner)] : []),
       ];
       const t0 = performance.now();
       const c = spawnSync(process.execPath, node, {

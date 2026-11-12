@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import fc from "fast-check";
 import { stringify } from "yaml";
 
@@ -373,20 +374,59 @@ const GIT_ENV = {
   GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
   GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
   GIT_TERMINAL_PROMPT: "0",
-  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_COUNT: "4",
   GIT_CONFIG_KEY_0: "init.defaultBranch",
   GIT_CONFIG_VALUE_0: "main",
   GIT_CONFIG_KEY_1: "core.autocrlf",
   GIT_CONFIG_VALUE_1: "false",
+  // A property run makes hundreds of commits in throwaway clones (ADR 0195, CS4's budget): no
+  // commit starts git's housekeeping, a process of its own each time, on a clone gone in seconds.
+  GIT_CONFIG_KEY_2: "maintenance.auto",
+  GIT_CONFIG_VALUE_2: "false",
+  GIT_CONFIG_KEY_3: "gc.auto",
+  GIT_CONFIG_VALUE_3: "0",
 };
 
+/** git found once on PATH (each call would otherwise look it up again in every PATH folder). */
+const GIT = (() => {
+  if (process.platform === "win32") return "git";
+  for (const d of (process.env.PATH ?? "").split(delimiter))
+    try {
+      const p = join(d, "git");
+      accessSync(p, constants.X_OK);
+      return p;
+    } catch {
+      // not in this folder
+    }
+  return "git";
+})();
+
 export function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, {
+  return execFileSync(GIT, args, {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: GIT_ENV,
   }).trim();
+}
+
+/**
+ * Several git commands in order, stopping at the first that fails: one shell running them where
+ * there is one, so the test's process (large, by the end of a run) starts one process, not one
+ * per command (ADR 0195, CS4's budget: a run makes hundreds of commits).
+ */
+function gitSteps(cwd: string, steps: readonly (readonly string[])[]): void {
+  if (process.platform === "win32" || steps.length === 1) {
+    for (const s of steps) git(cwd, ...s);
+    return;
+  }
+  const q = (a: string) => `'${a.replace(/'/g, `'\\''`)}'`;
+  const script = steps.map((s) => `"$ATTICUS_GIT" ${s.map(q).join(" ")}`).join(" && ");
+  execFileSync("/bin/sh", ["-c", script], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...GIT_ENV, ATTICUS_GIT: GIT },
+  });
 }
 
 /** Put the repo's files for `code` in its clone and commit them; the new commit. */
@@ -439,12 +479,16 @@ async function commitFresh(dir: string, b: Base, code: Code, n = 0): Promise<str
     if (!same) await mkdir(dirname(full), { recursive: true });
     await writeFile(full, text);
   }
-  if (n === 0) git(dir, "init", "-q");
-  if (same) git(dir, "commit", "-q", "-a", "--allow-empty", "-m", `change ${n}`);
-  else {
-    git(dir, "add", "-A");
-    git(dir, "commit", "-q", "--allow-empty", "-m", `change ${n}`);
-  }
+  const message = `change ${n}`;
+  gitSteps(dir, [
+    ...(n === 0 ? [["init", "-q"]] : []),
+    ...(same
+      ? [["commit", "-q", "-a", "--allow-empty", "-m", message]]
+      : [
+          ["add", "-A"],
+          ["commit", "-q", "--allow-empty", "-m", message],
+        ]),
+  ]);
   committed.set(dir, names);
   // Read from the ref file rather than one more git process: a property run makes hundreds.
   const ref = await readFile(join(dir, ".git", "refs", "heads", "main"), "utf8").catch(() => "");
