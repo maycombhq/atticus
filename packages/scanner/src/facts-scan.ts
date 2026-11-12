@@ -11,10 +11,11 @@ import {
   stackHelpersOff,
   type PersonPair,
   type Fact,
+  type FileChange,
   type OrgPack,
 } from "@maycombhq/core";
 import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verify";
-import { changesSince, type GitRunner } from "@maycombhq/workspace";
+import { changedFiles, changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
 import type { FactsSlotRead } from "./build.js";
 import {
   readFactsSlot,
@@ -48,23 +49,30 @@ export type FactBasis = { from: "facts"; unread: string[] } | { from: "readers" 
  * can't let facts citing a file changed since speak for it. So the snapshot's facts are carried
  * to `at.commit` in memory as `atticus verify` carries them (a changed file invalidates only the
  * facts that cite it, the others' lines checked again in the checkout), and `unread` lists the
- * source files changed since that no fact covers now. No slot (the readers stand in) when the
- * two commits can't be compared here or no fact is left. Undefined when there is nothing to
- * carry: no snapshot, one that isn't current, or one of this very commit.
+ * source files changed since that no fact covers now. A snapshot whose commit isn't an ancestor
+ * of `at.commit` (verify ran on another branch) is compared from the two commits' merge base:
+ * a fact citing a file changed on either side since is left out (the review of beta.27). No slot
+ * (the readers stand in) when the two commits can't be compared here or no fact is left.
+ * Undefined when there is nothing to carry: no snapshot, one that isn't current, or one of this
+ * very commit. `exclude` is the repo's scan settings' excluded paths (globs): a file the scan
+ * doesn't read is never listed unread.
  */
 export async function factsSlotAt(
   root: string,
   op: OrgPack,
   repo: string,
-  at: { dir: string; commit: string; git?: GitRunner },
+  at: { dir: string; commit: string; git?: GitRunner; exclude?: readonly string[] },
 ): Promise<{ slot?: FactsSlotRead; unread: string[] } | undefined> {
   const snap = await readFactsSlot(root, repo);
   if (!snap?.ok || sameCommit(snap.meta.commit, at.commit)) return undefined;
-  const diff =
+  let diff =
     snap.meta.commit === "unknown"
       ? undefined
       : await changesSince(at.dir, [snap.meta.commit], at.commit, at.git).catch(() => undefined);
+  if (diff?.missing.length)
+    diff = await sinceMergeBase(at.dir, snap.meta.commit, at.commit, at.git);
   if (!diff || diff.missing.length) return { unread: [] };
+  const exclude = at.exclude ?? [];
   const off = stackHelpersOff();
   const conventions = conventionsOf(op);
   const report = await verifyFacts({
@@ -75,6 +83,7 @@ export async function factsSlotAt(
     commit: at.commit,
     carry: diff.changes,
     conventions,
+    ...(exclude.length ? { exclude } : {}),
     // ADR 0180: a type taken out of the organisation's set after a read is flagged here too.
     componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
   });
@@ -85,6 +94,7 @@ export async function factsSlotAt(
     carry: diff.changes,
     source: dirSource(at.dir),
     conventions,
+    ...(exclude.length ? { exclude } : {}),
   }).files.map((f) => f.path);
   const text = serializeFactsSnapshot(report.accepted);
   const meta = { ...snap.meta, commit: at.commit, factsHash: sha256Of(text) };
@@ -98,6 +108,52 @@ export async function factsSlotAt(
     },
     unread,
   };
+}
+
+/**
+ * The files to treat as changed from `from` to `to` when `from` isn't an ancestor of `to` (the
+ * review of beta.27): every file changed on either side since their merge base, said as it stands
+ * at `to` (a file only the `from` side added is gone at `to`, one it deleted is back), so a fact
+ * citing any of them is read again, never carried. Undefined when git can't find a merge base
+ * here (a commit the clone doesn't have): the readers stand in, as before.
+ */
+async function sinceMergeBase(
+  dir: string,
+  from: string,
+  to: string,
+  git?: GitRunner,
+): Promise<{ changes: Record<string, FileChange[]>; missing: string[] } | undefined> {
+  try {
+    const run = git ?? createGit({ timeoutMs: 60_000 });
+    const base = (await run(["merge-base", from, to], dir)).stdout.trim();
+    if (!/^[0-9a-f]{7,64}$/.test(base)) return undefined;
+    const [theirs, ours] = await Promise.all([
+      changedFiles(dir, base, from, git),
+      changedFiles(dir, base, to, git),
+    ]);
+    return { changes: { [from]: bothSides(theirs, ours) }, missing: [] };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The changes of both sides since a merge base, by path, each as it stands on `ours`' side. */
+function bothSides(theirs: readonly FileChange[], ours: readonly FileChange[]): FileChange[] {
+  const out = new Map<string, FileChange>(ours.map((c) => [c.path, c]));
+  const link = (c: FileChange) => (c.gitlink ? { gitlink: true as const } : {});
+  const add = (c: FileChange) => {
+    if (!out.has(c.path)) out.set(c.path, c);
+  };
+  for (const c of theirs) {
+    if (c.status === "added" || c.status === "copied")
+      add({ status: "deleted", path: c.path, ...link(c) });
+    else if (c.status === "deleted") add({ status: "added", path: c.path, ...link(c) });
+    else if (c.status === "renamed") {
+      add({ status: "deleted", path: c.path, ...link(c) });
+      if (c.from) add({ status: "added", path: c.from, ...link(c) });
+    } else add({ status: "modified", path: c.path, ...link(c) });
+  }
+  return [...out.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /**
