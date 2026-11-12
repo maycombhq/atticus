@@ -295,6 +295,11 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
             },
             { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: `owner-ask:${q.id}` },
           );
+          // Review of the fix: sent is on file, so the card says Sent (and when) from now on.
+          if (n.kind !== "manual") {
+            const { recordOwnerAsk } = await import("./owner-questions.js");
+            await recordOwnerAsk(root, q.id, { at: stamp(now()), to }).catch(() => undefined);
+          }
           return {
             status: 200,
             body: Api.SentOwnerAsk.parse({

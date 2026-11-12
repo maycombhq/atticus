@@ -17,7 +17,13 @@ import { stageMark } from "../src/screens/work/Cockpit.js";
 import { ReplacePersonFiles, StageThreadView } from "../src/screens/work/StageThread.js";
 import { RaiseHandoff } from "../src/screens/know/Phase.js";
 import { TrustRow } from "../src/screens/map/Trust.js";
-import { askedKind, openingKind, OwnerQuestionCard } from "../src/screens/OwnerQuestions.js";
+import {
+  askedKind,
+  localDay,
+  openingKind,
+  OwnerQuestionCard,
+  ownerWords,
+} from "../src/screens/OwnerQuestions.js";
 import { tabsOutOfView } from "../src/app/shell/TabStrip.js";
 import { UpgradeOfferView } from "../src/app/upgrade.js";
 import { onboardingStep } from "../src/screens/work/next.js";
@@ -384,6 +390,52 @@ describe("20: an owner question", () => {
     expect(out).toContain(`>${O.sent}<`);
     expect(out).toContain(esc(COPY.roleWork.send.again("Ledger team")));
     expect(out).not.toContain("Ask team-ledger");
+  });
+
+  it("says Not sent yet, with Send first, for a question nobody sent (review of the fix)", () => {
+    const O = COPY.questions.ownerQuestions;
+    const q = {
+      id: "q.owner-named.reports",
+      system: "reports",
+      owner: "team-reports",
+      question: "Who owns reports-db?",
+      neededFact: "Its owning team",
+      channel: "teams",
+      state: "sent" as const,
+      records: ["reports-db"],
+      file: "catalog/curated/ownerquestion/q.owner-named.reports.yaml",
+    };
+    const out = renderToStaticMarkup(<OwnerQuestionCard q={q} onAnswered={() => undefined} />);
+    expect(out).toContain(`>${O.notSent}<`);
+    expect(out).not.toContain(`>${O.sent}<`);
+    // A team teams.yaml doesn't name reads as words, never its id alone.
+    expect(out).toContain(esc(O.notSentTo("Reports team", "Microsoft Teams")));
+    expect(out).toMatch(
+      new RegExp(`class="btn primary"[^>]*>${esc(COPY.roleWork.send.button("Reports team"))}<`),
+    );
+    expect(out).not.toContain(esc(COPY.roleWork.send.again("Reports team")));
+    // Nobody owns it: said so, and who it goes to.
+    const none = renderToStaticMarkup(
+      <OwnerQuestionCard
+        q={{ ...q, owner: "unassigned", routeTo: "architect" }}
+        onAnswered={() => undefined}
+      />,
+    );
+    expect(none).toContain(esc(O.ask(O.nobody, "reports", "Microsoft Teams")));
+    expect(none).not.toContain("unassigned");
+  });
+
+  it("says the day it was sent in local time, not UTC's", () => {
+    // 01:30 UTC on the 10th is the 9th west of UTC; the page says the person's own day.
+    const at = "2026-11-10T01:30:00Z";
+    const d = new Date(at);
+    const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    expect(localDay(at)).toBe(local);
+    expect(localDay("not a time")).toBeUndefined();
+    expect(ownerWords("team-ledger")).toBe("Ledger team");
+    expect(ownerWords("team-north-wind")).toBe("North wind team");
+    expect(ownerWords("@pat")).toBe("@pat");
+    expect(ownerWords("unassigned")).toBe(COPY.questions.ownerQuestions.nobody);
   });
 });
 

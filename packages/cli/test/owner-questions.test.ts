@@ -13,6 +13,7 @@ import {
   ownerQuestionCommand,
   ownerQuestions,
   OwnerQuestionError,
+  recordOwnerAsk,
 } from "../src/owner-questions.js";
 import { scopeDirs } from "../src/propose.js";
 import { uiQuestionRoutes } from "../src/ui-api-questions.js";
@@ -70,6 +71,17 @@ describe("owner questions", () => {
       file: FILE,
     });
     expect(q.neededFact).toMatch(/ObservabilityAsset/);
+  });
+
+  it("says a question was sent only once a send is on file (beta.27 review of the fix)", async () => {
+    const root = await forgeRoot();
+    const before = (await ownerQuestions(root)).questions.find((q) => q.id === REPORTS)!;
+    expect(before.sentAt).toBeUndefined();
+    await recordOwnerAsk(root, REPORTS, { at: "2026-11-09T22:30:00Z", to: before.owner });
+    const after = (await ownerQuestions(root)).questions.find((q) => q.id === REPORTS)!;
+    expect(after.sentAt).toBe("2026-11-09T22:30:00Z");
+    // The others still aren't.
+    expect((await ownerQuestions(root)).questions.filter((q) => q.sentAt)).toHaveLength(1);
   });
 
   it("records the answer as a curated record, which the questions read back", async () => {

@@ -18,6 +18,7 @@ import {
   parseRecord,
   recordPath,
   serializeRecord,
+  stateDirOf,
   writeFileAtomic,
 } from "@maycombhq/core";
 import { knowledgeGaps, type KnowledgeGap } from "@maycombhq/knowledge";
@@ -165,15 +166,50 @@ export async function ownerQuestions(
   const teams = (
     await readTeams(root).catch(() => ({ teams: [] as { id: string; name: string }[] }))
   ).teams;
+  // Review of the fix: a question the gaps raise is said sent only once it was (a send on file).
+  const sends = await readOwnerAsks(root);
   const questions = [...asked, ...(found ?? []).map((g) => itemOf(root, g))].map((q) => {
     const name = teams.find((t) => t.id === q.owner)?.name;
-    return name && name !== q.owner ? { ...q, ownerName: name } : q;
+    const sentAt = q.sentAt ?? sends[q.id]?.at;
+    return {
+      ...q,
+      ...(name && name !== q.owner ? { ownerName: name } : {}),
+      ...(sentAt ? { sentAt } : {}),
+    };
   });
   return {
     empty: false,
     open: questions.filter((q) => q.state !== "answered").length,
     questions,
   };
+}
+
+/**
+ * Review of the fix (beta.27): the owner questions this machine sent through the notify adapter,
+ * by id, with when. A question the knowledge gaps raise has no record of its own until it is
+ * answered, so without this every one read as sent; kept in .index, which Git ignores.
+ */
+const asksFile = (root: string) => join(stateDirOf(root), ".index", "owner-asks.json");
+
+async function readOwnerAsks(root: string): Promise<Record<string, { at: string; to?: string }>> {
+  try {
+    const j = JSON.parse(await readFile(asksFile(root), "utf8")) as unknown;
+    return j && typeof j === "object" ? (j as Record<string, { at: string; to?: string }>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Notes that an owner question was sent to its owner (the send route, once the adapter took it). */
+export async function recordOwnerAsk(
+  root: string,
+  id: string,
+  sent: { at: string; to: string },
+): Promise<void> {
+  const all = await readOwnerAsks(root);
+  all[id] = sent;
+  await mkdir(dirname(asksFile(root)), { recursive: true });
+  await writeFileAtomic(asksFile(root), JSON.stringify(all, null, 2) + "\n");
 }
 
 /** Records a person's answer to one owner question, as `atticus questions owner` does. */

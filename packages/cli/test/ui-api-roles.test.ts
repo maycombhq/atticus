@@ -324,6 +324,15 @@ describe("an owner question, sent", () => {
     );
     expect(sent.state).toBe("sent");
     expect(notifier.sent.at(-1)?.body).toContain(q.question);
+    // Beta.27 review of the fix: a gap's question nobody sent has no sentAt; once sent, it has.
+    const gap = list.questions.find((x) => !x.finding && x.state !== "answered")!;
+    expect(gap.sentAt).toBeUndefined();
+    const c2 = await confirmFor(srv, "owner-ask", gap.id);
+    expect(
+      (await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c2 })).body,
+    ).toMatchObject({ state: "sent" });
+    const again = Api.OwnerQuestionList.parse((await call("/api/owner-questions")).body);
+    expect(again.questions.find((x) => x.id === gap.id)?.sentAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
 

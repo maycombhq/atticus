@@ -3337,7 +3337,11 @@ export const OwnerQuestionView = z.object({
   answer: z.string().optional(),
   /** 3.11.0 (beta.27 review): the owner's display name (teams.yaml), for a team named there. */
   ownerName: z.string().optional(),
-  /** 3.11.0 (beta.27 review): when it was asked, when that is on file. */
+  /**
+   * 3.11.0 (beta.27 review): when it was asked or sent (a send from this machine is on file),
+   * when that is. A gap's question with no `sentAt` wasn't sent, whatever `state` says (the
+   * record's own state starts at `sent`).
+   */
   sentAt: z.string().optional(),
   routeTo: z.string().optional(),
   fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),

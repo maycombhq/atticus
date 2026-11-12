@@ -264,6 +264,14 @@ export const COPY = {
       overdueTo: (owner: string, channel: string, on?: string) =>
         `Sent to ${owner} by ${channel}${on ? ` on ${on}` : ""}, and no answer yet: it is overdue.`,
       sent: "SENT",
+      /** Review of the fix: a question the gaps raise that nobody has sent yet. */
+      notSent: "NOT SENT YET",
+      notSentTo: (owner: string, channel: string) =>
+        `Not sent to ${owner} yet. Send it by ${channel} below, or copy the question and ask them; then record their answer here.`,
+      /** Review of the fix: the owner of a system nobody owns. */
+      nobody: "Nobody owns it",
+      /** A team id no roles.yaml names, in words: team-ledger is "Ledger team". */
+      teamWords: (name: string) => `${name} team`,
       overdue: "OVERDUE",
       routeTo: (role: string) => `Nobody owns it: it goes to the ${role}.`,
       needs: (fact: string) => `Needs: ${fact}`,

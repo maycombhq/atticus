@@ -96,11 +96,14 @@ export function SendOwnerQuestion({
   id,
   owner,
   again = false,
+  onSent,
 }: {
   id: string;
   owner: string;
-  /** Beta.27 review: already sent: sending again is the secondary choice. */
+  /** Beta.27 review: already sent: sending again is the secondary choice; not, it is the main one. */
   again?: boolean;
+  /** Review of the fix: sent, when (the card then says Sent). */
+  onSent?: (at: string) => void;
 }) {
   const S = COPY.roleWork.send;
   const [busy, setBusy] = useState(false);
@@ -117,9 +120,10 @@ export function SendOwnerQuestion({
           body: c,
         },
       );
+      if (r.state === "sent") onSent?.(new Date().toISOString());
       setNote(
         r.state === "sent"
-          ? { ok: true, text: S.sent(r.to) }
+          ? { ok: true, text: S.sent(owner) }
           : r.state === "step"
             ? { ok: true, text: S.step }
             : { ok: false, text: S.notSent(r.why ?? "") },
@@ -132,7 +136,12 @@ export function SendOwnerQuestion({
   };
   return (
     <div className="qs-group-btns">
-      <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
+      <button
+        type="button"
+        className={again ? "btn" : "btn primary"}
+        disabled={busy}
+        onClick={() => void send()}
+      >
         {busy ? S.sending : again ? S.again(owner) : S.button(owner)}
       </button>
       {note && (
@@ -148,14 +157,39 @@ export function SendOwnerQuestion({
   );
 }
 
-/** A date as the page says it (2026-11-09), from a timestamp. */
-const dayOf = (at?: string) => (at && /^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : undefined);
+/**
+ * A date as the page says it (2026-11-09), from a timestamp, on the person's own clock: review of
+ * the fix, cutting the UTC string said the 10th for a question sent on the evening of the 9th.
+ */
+export function localDay(at?: string): string | undefined {
+  if (!at) return undefined;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
+
+/**
+ * Review of the fix: an owner in words when roles.yaml gives no name: a team id (team-ledger) as
+ * "Ledger team", nobody as "Nobody owns it", anything else (a handle) as it is.
+ */
+export function ownerWords(owner: string, name?: string): string {
+  if (name) return name;
+  if (owner === "unassigned") return O.nobody;
+  const team = /^team-([a-z0-9-]+)$/.exec(owner)?.[1];
+  if (!team) return owner;
+  const words = team.split("-").join(" ");
+  return O.teamWords(words[0]!.toUpperCase() + words.slice(1));
+}
 
 export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: () => void }) {
   const q = p.q;
   // Beta.27 review: the team's name and the channel in words, and the state the API says.
-  const who = q.ownerName ?? q.owner;
+  const who = ownerWords(q.owner, q.ownerName);
   const by = O.channels[q.channel] ?? q.channel;
+  // Review of the fix: sent only when it was: a send on file (sentAt) or one from this card.
+  const [sentNow, setSentNow] = useState<string>();
+  const sentAt = sentNow ?? q.sentAt;
   const id = useId();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
@@ -192,9 +226,15 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
           {q.question}
         </h3>
         <span
-          className={`chip ${shown.state === "answered" ? "done" : shown.state === "overdue" ? "blocking" : "warn"}`}
+          className={`chip ${shown.state === "answered" ? "done" : shown.state === "overdue" ? "blocking" : sentAt ? "warn" : ""}`}
         >
-          {shown.state === "answered" ? O.answered : shown.state === "overdue" ? O.overdue : O.sent}
+          {shown.state === "answered"
+            ? O.answered
+            : shown.state === "overdue"
+              ? O.overdue
+              : sentAt
+                ? O.sent
+                : O.notSent}
         </span>
       </div>
       <p className="qs-meta">
@@ -205,8 +245,10 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
       {shown.state !== "answered" && (
         <span className="qs-card-line">
           {shown.state === "overdue"
-            ? O.overdueTo(who, by, dayOf(q.sentAt))
-            : O.sentTo(who, by, dayOf(q.sentAt))}
+            ? O.overdueTo(who, by, localDay(sentAt))
+            : sentAt
+              ? O.sentTo(who, by, localDay(sentAt))
+              : O.notSentTo(who, by)}
         </span>
       )}
       {q.routeTo && <span className="qs-card-line">{O.routeTo(q.routeTo)}</span>}
@@ -227,7 +269,14 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
         </p>
       )}
       {/* ADR 0191: sent to its owner through the notifications Atticus is set up with. */}
-      {shown.state !== "answered" && <SendOwnerQuestion id={q.id} owner={who} again />}
+      {shown.state !== "answered" && (
+        <SendOwnerQuestion
+          id={q.id}
+          owner={who}
+          again={!!sentAt || shown.state === "overdue"}
+          onSent={setSentNow}
+        />
+      )}
       <form className="qs-form" onSubmit={(e) => void submit(e)}>
         <label htmlFor={`${id}-a`} className="qs-field-label">
           {shown.answer ? O.answerAgain : O.answerLabel}
