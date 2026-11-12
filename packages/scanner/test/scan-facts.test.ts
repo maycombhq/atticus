@@ -1,5 +1,3 @@
-import { execFileSync } from "node:child_process";
-import { cpSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
