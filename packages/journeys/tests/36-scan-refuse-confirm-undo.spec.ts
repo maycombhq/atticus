@@ -40,7 +40,9 @@ test("a large removal is refused in the app, confirmed with its count, then undo
   await panel.getByRole("button", { name: "Show the panel" }).click();
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
   // Refused: nothing written, said on the page, and the Console lists what it would remove.
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+  // With CS3, the page says a refused build as its confirm step does (ADR 0195 point 4: it says
+  // why and lists what it would have done), not as beta.26's stop.
+  await expect(page.getByText("The build waits for you: nothing has been written.")).toBeVisible({
     timeout: 90_000,
   });
   const log = panel.getByRole("log");
@@ -106,7 +108,7 @@ test("the refused scan's confirm step and the undo step in the app", async ({ pa
 
   await open(page, app(), "scans");
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+  await expect(page.getByText("The build waits for you: nothing has been written.")).toBeVisible({
     timeout: 90_000,
   });
   const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
