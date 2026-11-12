@@ -1438,7 +1438,10 @@ export async function guardBuild(
       if (estate && r?.kind === "Interface") {
         const x = r as unknown as { from?: string; to?: string };
         for (const end of [x.from, x.to])
-          for (const repo of (end ? oldEnds.get(end) : undefined) ?? [])
+          for (const repo of new Set([
+            ...((end ? oldEnds.get(end) : undefined) ?? []),
+            ...(end && compRepo.has(end) ? [compRepo.get(end)!] : []),
+          ]))
             if (!repos.includes(repo) && slotChanged(repo)) {
               why.add(`${repo}'s slot changed (the arrow's other end)`);
               kinds.add("slot");
