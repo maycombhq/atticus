@@ -14,6 +14,7 @@ import { stageThreadView } from "../src/ui-api-thread.js";
 import { uiRoutes } from "../src/ui-api.js";
 import { uiRunRoutes } from "../src/ui-api-run.js";
 import { uiCockpitRoutes } from "../src/ui-api-cockpit.js";
+import { scopeDirs } from "../src/propose.js";
 
 /**
  * Beta.27 review. (1, blocker) Forge's add-transfer-limit is in plan, off the stage path, with
@@ -228,4 +229,13 @@ describe("a change whose change.yaml doesn't read (beta.27 review)", () => {
     },
     T,
   );
+});
+
+describe("the upgrade panel's Propose (beta.27 review)", () => {
+  it("proposes what an upgrade changes: the org pack, the facts and catalog, and its stamp", () => {
+    const dirs = scopeDirs(root, "upgrade");
+    expect(dirs).toContain(".atticus/metarepo.yaml");
+    expect(dirs).toContain("org-pack");
+    expect(dirs).toEqual(expect.arrayContaining(scopeDirs(root, "work")));
+  });
 });
