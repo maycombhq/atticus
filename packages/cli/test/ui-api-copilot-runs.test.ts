@@ -1,11 +1,22 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import type { MapAllOptions } from "../src/map-all.js";
-import { uiCopilotRunRoutes, type MapAllStarter } from "../src/ui-api-copilot-runs.js";
+import {
+  uiCopilotRunRoutes,
+  type AssistantFilesCheck,
+  type MapAllStarter,
+} from "../src/ui-api-copilot-runs.js";
+
+/** beta.27: the assistant files as a check sees them: all current, unless a test says. */
+const current0: AssistantFilesCheck = async () => ({
+  results: [{ path: ".github/prompts/atticus-map.prompt.md", action: "unchanged", written: false }],
+});
+/** beta.27: a Copilot-only metarepo names no limit: the dialog's is sent with each start. */
+const LIMIT = { maxTokens: 128_000 };
 
 /**
  * ADR 0173: an unattended Copilot run started from the app. The run itself is a stand-in that
@@ -75,7 +86,8 @@ beforeAll(async () => {
     root: await metarepo(RUNTIME_ACP),
     port: 0,
     user: "pat",
-    extend: (r, ctx) => uiCopilotRunRoutes(r, ctx, { start: starter, flushMs: 1 }),
+    extend: (r, ctx) =>
+      uiCopilotRunRoutes(r, ctx, { start: starter, flushMs: 1, assistantFiles: current0 }),
   });
   srv.events.listen((e) => events.push(e as Record<string, unknown>));
   off = await startServer({
@@ -127,11 +139,17 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       kind: "repos",
       repos: ["forge-ledger"],
       force: true,
+      ...LIMIT,
     });
     expect(r.status).toBe(202);
     const started = Api.CopilotRunView.parse(r.body);
     expect(started).toMatchObject({ state: "running", by: "pat", model: "claude-sonnet-5" });
-    expect(asked[0]).toMatchObject({ mode: "copilot-acp", repos: ["forge-ledger"], force: true });
+    expect(asked[0]).toMatchObject({
+      mode: "copilot-acp",
+      repos: ["forge-ledger"],
+      force: true,
+      maxTokens: 128_000,
+    });
     await until(async () => (await current()).run?.tabs.length === 2);
     const mid = (await current()).run!;
     expect(mid.progress).toMatchObject({
@@ -144,7 +162,9 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     expect(mid.tabs[1]).toMatchObject({ title: "forge-ledger, one session", state: "running" });
     expect(mid.tabs[1]!.lines).toContain("  · Read AccountController.java");
     expect(mid.tabs[0]!.lines).toContain("The estate at 100,000 tokens a prompt.");
-    expect((await call(srv, "POST", "/api/copilot-runs", { kind: "stale" })).status).toBe(409);
+    expect((await call(srv, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT })).status).toBe(
+      409,
+    );
 
     release!();
     await until(async () => (await current()).run?.state === "done");
@@ -173,7 +193,7 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
   });
 
   it("stops a run under way: the session is cancelled and the run says the next carries on", async () => {
-    const r = await call(srv, "POST", "/api/copilot-runs", { kind: "stale" });
+    const r = await call(srv, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
     expect(r.status).toBe(202);
     const id = String(r.body.runId);
     expect(asked.at(-1)).toMatchObject({ mode: "copilot-acp", stale: true });
@@ -194,6 +214,7 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       extend: (r, ctx) =>
         uiCopilotRunRoutes(r, ctx, {
           flushMs: 1,
+          assistantFiles: current0,
           start: async (_o, io, deps) => {
             deps.onEvent?.({
               type: "plan",
@@ -207,9 +228,9 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     const seen: Record<string, unknown>[] = [];
     failing.events.listen((e) => seen.push(e as Record<string, unknown>));
     try {
-      expect((await call(failing, "POST", "/api/copilot-runs", { kind: "stale" })).status).toBe(
-        202,
-      );
+      expect(
+        (await call(failing, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT })).status,
+      ).toBe(202);
       await until(async () => (await current(failing)).run?.state === "failed");
       expect(seen.some((e) => e.type === "file.changed" && e.path === "facts")).toBe(true);
     } finally {
@@ -219,8 +240,8 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
 
   it("starts only one of two asks that come at once (a double click, or two windows)", async () => {
     const [x, y] = await Promise.all([
-      call(srv, "POST", "/api/copilot-runs", { kind: "gaps" }),
-      call(srv, "POST", "/api/copilot-runs", { kind: "gaps" }),
+      call(srv, "POST", "/api/copilot-runs", { kind: "gaps", ...LIMIT }),
+      call(srv, "POST", "/api/copilot-runs", { kind: "gaps", ...LIMIT }),
     ]);
     expect([x.status, y.status].sort()).toEqual([202, 409]);
     const started = x.status === 202 ? x : y;
@@ -229,5 +250,94 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       (await call(srv, "POST", `/api/copilot-runs/${String(started.body.runId)}/stop`)).status,
     ).toBe(200);
     await until(async () => (await current()).run?.state === "stopped");
+  });
+
+  it("beta.27: asks for the model's limit where none is known, passes it as --max-tokens and fills it in next time", async () => {
+    const root = await metarepo(RUNTIME_ACP);
+    const one = await startServer({
+      root,
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, { start: starter, flushMs: 1, assistantFiles: current0 }),
+    });
+    try {
+      // No adapters.model and no probe: the dialog asks, with nothing to fill it with yet.
+      expect((await current(one)).limit).toEqual({ known: false });
+      const no = await call(one, "POST", "/api/copilot-runs", { kind: "all" });
+      expect(no.status).toBe(400);
+      expect(no.body.code).toBe("limit-unknown");
+      expect(String(no.body.detail)).toContain("Your model's limit, in tokens");
+      expect(
+        (await call(one, "POST", "/api/copilot-runs", { kind: "all", maxTokens: 12 })).status,
+      ).toBe(400);
+      asked = [];
+      const r = await call(one, "POST", "/api/copilot-runs", { kind: "all", maxTokens: 128_000 });
+      expect(r.status).toBe(202);
+      expect(asked[0]).toMatchObject({ mode: "copilot-acp", maxTokens: 128_000 });
+      // Kept on this machine (never the org pack), and offered the next time.
+      const kept = JSON.parse(
+        await readFile(join(root, ".atticus", "map-all", "limit.json"), "utf8"),
+      );
+      expect(kept).toMatchObject({ maxTokens: 128_000 });
+      expect((await current(one)).limit).toEqual({ known: false, tokens: 128_000, from: "last" });
+      await call(one, "POST", `/api/copilot-runs/${String(r.body.runId)}/stop`);
+      await until(async () => (await current(one)).run?.state === "stopped");
+    } finally {
+      await one.close();
+    }
+    // A limit runtime.yaml names is known: nothing to ask, and the run reads at it.
+    const named = await startServer({
+      root: await metarepo(
+        `${RUNTIME_ACP}adapters: { model: { type: openai-compatible, settings: { maxInput: 64000 } } }\n`,
+      ),
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, { start: starter, flushMs: 1, assistantFiles: current0 }),
+    });
+    try {
+      const c = await current(named);
+      expect(c.allowed).toBe(true);
+      expect(c.limit).toEqual({ known: true, tokens: 64000, from: "runtime.yaml" });
+    } finally {
+      await named.close();
+    }
+  });
+
+  it("beta.27: says the assistant files are out of date (the run writes them), and refuses one edited by hand", async () => {
+    let results: Awaited<ReturnType<AssistantFilesCheck>>["results"] = [
+      { path: ".github/prompts/atticus-map.prompt.md", action: "updated", written: false },
+      { path: ".claude/commands/atticus-map.md", action: "updated", written: false },
+    ];
+    const files = await startServer({
+      root: await metarepo(RUNTIME_ACP),
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, {
+          start: starter,
+          flushMs: 1,
+          assistantFiles: async () => ({ results }),
+        }),
+    });
+    try {
+      expect((await current(files)).assistantFiles).toEqual({
+        upToDate: false,
+        stale: [".github/prompts/atticus-map.prompt.md", ".claude/commands/atticus-map.md"],
+        edited: [],
+      });
+      results = [
+        { path: ".github/prompts/atticus-map.prompt.md", action: "kept-edited", written: false },
+      ];
+      const r = await call(files, "POST", "/api/copilot-runs", { kind: "all", ...LIMIT });
+      expect(r.status).toBe(409);
+      expect(r.body.code).toBe("assistant-files-edited");
+      expect(String(r.body.detail)).toContain(".github/prompts/atticus-map.prompt.md");
+      expect(String(r.body.detail)).toContain("no session was started");
+      // And the page's next look says so.
+      expect((await current(files)).assistantFiles?.edited).toEqual([
+        ".github/prompts/atticus-map.prompt.md",
+      ]);
+    } finally {
+      await files.close();
+    }
   });
 });

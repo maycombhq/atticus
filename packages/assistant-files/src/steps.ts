@@ -88,8 +88,19 @@ export const mapWriteStep = (): string =>
 export const mapRecallStep = (o: { lists: string; reviewed: string; all: string }): string =>
   `Then look at the files ${o.lists} lists as \`unknown\` (a file is read when a fact, a flow's step or error, or their \`cite.with\` cites it): read those that could hold a fact, add their facts and verify again. A file you read and found nothing to record in goes in ${o.reviewed}, one \`{"path": "<file or glob>", "why": "..."}\` per line; verify counts it reviewed, not read, and shows the person each line with its why. It also lists \`entriesNoFlowFollows\` (listeners and rest or gRPC entries no flow starts): write a flow for each that does real work. And \`skipped\`, \`reviewedHolds\` and \`specOpsUncovered\` (lines with a path, URL or topic no fact cites, reviewed globs holding some, spec operations no entry covers; all of them: ${o.all}): for each, write the fact if it is real, or a reviewed line saying why not.`;
 /** The verify loop, by the command that checks the read and the file its rejections are in. */
-export const mapVerifyStep = (command: string, rejected: string): string =>
-  `Run \`${command}\`. While it exits 1, read ${rejected}: for each fact in it, read the cited lines again, then rewrite the fact in the facts file or drop it. Run \`${command}\` again, until it exits 0.`;
+export const mapVerifyStep = (
+  command: string,
+  rejected: string,
+  /**
+   * beta.27: `atticus verify` moves a rejected fact out of the facts file into the rejected file;
+   * a session that didn't know took the move for its edit undone and wrote it again, unchanged.
+   * False where the check leaves the facts file as it is (the canary's `--here`).
+   */
+  o: { moves?: boolean } = {},
+): string =>
+  o.moves === false
+    ? `Run \`${command}\`. While it exits 1, read ${rejected}: for each fact in it, read the cited lines again, then rewrite the fact in the facts file or drop it. Run \`${command}\` again, until it exits 0.`
+    : `Run \`${command}\`. While it exits 1, read ${rejected}: verify moves each fact it rejects out of the facts file into it, with why (your edit isn't undone, and the facts it kept stay as they are). For each fact in it, read the cited lines again, then write the fact again, fixed, in the facts file, or drop it. Run \`${command}\` again, until it exits 0.`;
 
 /**
  * `/atticus-map` (ADR 0124 §4, the agentic tier): the reading protocol for an assistant that

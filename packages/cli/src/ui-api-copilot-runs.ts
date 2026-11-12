@@ -1,10 +1,21 @@
 import { Api, currentSignal, loadOrgPack, orgPackDirOf, copilotAcpOf } from "@maycombhq/core";
-import { badRequest, conflict, notFound, type Router, type ServerContext } from "@maycombhq/server";
+import {
+  badRequest,
+  conflict,
+  HttpError,
+  notFound,
+  type Router,
+  type ServerContext,
+} from "@maycombhq/server";
+import type { WriteResult } from "@maycombhq/assistant-files";
 import type { Output } from "./commands.js";
 import { copilotAcpAllowed } from "./copilot-acp-steps.js";
 import { randomBytes } from "node:crypto";
 import { CopilotRun, TAB_LINES, type NewLines } from "./copilot-run.js";
 import type { MapAllDeps, MapAllEvent, MapAllOptions } from "./map-all.js";
+
+/** beta.27: what `atticus assistant-files --check` would do here; tests pass their own. */
+export type AssistantFilesCheck = (root: string) => Promise<{ results: WriteResult[] }>;
 
 /**
  * ADR 0173: an unattended Copilot run started from the app, after the person's yes. The run is
@@ -36,11 +47,45 @@ const TAIL = 200;
 const NOT_ALLOWED =
   "runtime.yaml doesn't allow copilot-acp here (schemaVersion 3, copilot-acp in modes.allowed and copilot in assistants.allowed), so the app can't start Copilot itself. Read through Copilot Chat instead: atticus map --all in a terminal gives each part to paste.";
 
-async function allowedHere(root: string): Promise<{ allowed: boolean; model?: string }> {
+interface Here {
+  allowed: boolean;
+  model?: string;
+  limit?: NonNullable<Api.CopilotRunCurrentT["limit"]>;
+  assistantFiles?: NonNullable<Api.CopilotRunCurrentT["assistantFiles"]>;
+}
+
+const defaultCheck: AssistantFilesCheck = async (root) =>
+  (await import("@maycombhq/assistant-files")).generateAssistantFiles(root, { check: true });
+
+/**
+ * Whether the app may start Copilot here, and (beta.27) what its dialog needs: the model's limit
+ * (known, or the value to fill the field with) and whether the assistant files are current.
+ */
+async function allowedHere(root: string, check: AssistantFilesCheck): Promise<Here> {
   try {
     const op = await loadOrgPack(orgPackDirOf(root));
     const c = copilotAcpOf(op.runtime);
-    return { allowed: copilotAcpAllowed(op), ...(c.model ? { model: c.model } : {}) };
+    const allowed = copilotAcpAllowed(op);
+    if (!allowed) return { allowed, ...(c.model ? { model: c.model } : {}) };
+    const { assistantFilesState, limitFor, limitToOffer } = await import("./map-all.js");
+    const known = await limitFor(root, op, undefined).catch(() => undefined);
+    const offer = known ? undefined : await limitToOffer(root);
+    const limit: Here["limit"] = known
+      ? {
+          known: true,
+          tokens: known.limit,
+          from: known.from === "probe" ? "probe" : "runtime.yaml",
+        }
+      : { known: false, ...(offer ? { tokens: offer.tokens, from: offer.from } : {}) };
+    const files = await check(root)
+      .then((r) => assistantFilesState(r.results))
+      .catch(() => undefined);
+    return {
+      allowed,
+      ...(c.model ? { model: c.model } : {}),
+      limit,
+      ...(files ? { assistantFiles: files } : {}),
+    };
   } catch {
     return { allowed: false };
   }
@@ -48,6 +93,8 @@ async function allowedHere(root: string): Promise<{ allowed: boolean; model?: st
 
 const optionsOf = (b: Api.StartCopilotRunRequestT): MapAllOptions => ({
   mode: "copilot-acp",
+  // beta.27: the limit the person gave in the dialog, as --max-tokens.
+  ...(b.maxTokens !== undefined ? { maxTokens: b.maxTokens } : {}),
   ...(b.kind === "stale" ? { stale: true } : {}),
   ...(b.kind === "gaps" ? { gaps: true } : {}),
   ...(b.repos?.length ? { repos: b.repos } : {}),
@@ -58,13 +105,19 @@ const optionsOf = (b: Api.StartCopilotRunRequestT): MapAllOptions => ({
 export function uiCopilotRunRoutes(
   r: Router,
   ctx: ServerContext,
-  deps: { start?: MapAllStarter; now?: () => Date; flushMs?: number } = {},
+  deps: {
+    start?: MapAllStarter;
+    now?: () => Date;
+    flushMs?: number;
+    assistantFiles?: AssistantFilesCheck;
+  } = {},
 ): Router {
   const start = deps.start ?? defaultStarter(ctx.root);
+  const check = deps.assistantFiles ?? defaultCheck;
   const now = deps.now ?? (() => new Date());
   const flushMs = deps.flushMs ?? 100;
   let run: CopilotRun | undefined;
-  let allowed: { at: number; v: Awaited<ReturnType<typeof allowedHere>> } | undefined;
+  let allowed: { at: number; v: Here } | undefined;
   let seq = 0;
   // A start under way (between its checks and the run being set): a second waits its turn.
   let starting = false;
@@ -95,7 +148,7 @@ export function uiCopilotRunRoutes(
       .add("GET", "/api/copilot-runs/current", async ({ query }) => {
         // Read once a few seconds, not on every poll: runtime.yaml changes rarely.
         if (!allowed || Date.now() - allowed.at > 10_000)
-          allowed = { at: Date.now(), v: await allowedHere(ctx.root) };
+          allowed = { at: Date.now(), v: await allowedHere(ctx.root, check) };
         const a = allowed.v;
         // A page that polls gets each tab's last lines only (it has the rest, or asks for them).
         const tail = Math.min(Math.max(Number(query.get("tail") ?? TAIL) || TAIL, 0), TAB_LINES);
@@ -115,6 +168,8 @@ export function uiCopilotRunRoutes(
             allowed: a.allowed,
             ...(a.allowed ? {} : { why: NOT_ALLOWED }),
             ...(a.model ? { model: a.model } : {}),
+            ...(a.limit ? { limit: a.limit } : {}),
+            ...(a.assistantFiles ? { assistantFiles: a.assistantFiles } : {}),
           } satisfies Api.CopilotRunCurrentT,
         };
       })
@@ -138,13 +193,40 @@ export function uiCopilotRunRoutes(
             `An AI step is running on this server (${busy.id}): wait for it to finish.`,
           );
         starting = true;
-        let a: Awaited<ReturnType<typeof allowedHere>>;
+        let a: Here;
         try {
-          a = await allowedHere(ctx.root);
+          a = await allowedHere(ctx.root, check);
         } finally {
           starting = false;
         }
+        // What the dialog was shown is read again: the next poll says it as it is now.
+        allowed = { at: Date.now(), v: a };
         if (!a.allowed) throw conflict(NOT_ALLOWED);
+        // beta.27: a Copilot-only metarepo names no model limit; the dialog asks for it.
+        if (a.limit && !a.limit.known && b.data.maxTokens === undefined) {
+          throw new HttpError(
+            400,
+            "The model's limit is needed",
+            "Atticus doesn't know your model's limit, and a part planned too big overflows the reader: give it in the dialog (Your model's limit, in tokens), the context window of the model Copilot uses. It is kept on this machine for the next run.",
+            { code: "limit-unknown" },
+          );
+        }
+        // beta.27: sessions would each stop at the assistant files' check: refused up front.
+        if (a.assistantFiles?.edited.length) {
+          const { assistantFilesEditedWords } = await import("./map-all.js");
+          throw new HttpError(
+            409,
+            "Assistant files edited by hand",
+            assistantFilesEditedWords(a.assistantFiles.edited),
+            { code: "assistant-files-edited", files: a.assistantFiles.edited },
+          );
+        }
+        // beta.27: the limit given is kept on this machine, to fill the dialog next time.
+        if (b.data.maxTokens !== undefined) {
+          const { saveLastLimit } = await import("./map-all.js");
+          await saveLastLimit(ctx.root, b.data.maxTokens, now().getTime());
+          allowed = undefined;
+        }
         // Checked again: a step may have started while the runtime was being read.
         if (ctx.jobs.runningOf("step")?.state === "running")
           throw conflict("An AI step started on this server meanwhile: wait for it to finish.");

@@ -56,13 +56,58 @@ the session reads, the atticus commands it runs, anything refused, and what it s
 `--max-parts` counts sessions; `--budget-tokens` counts the tokens the server reports (or the
 part's estimate when it reports none).
 
+### The model's limit
+
+Parts are planned at the model's limit, so a part fits one session. It is `--max-tokens n`, else
+`maxInput` under `adapters.model` in runtime.yaml, else what `atticus probe` measured. A metarepo
+that reads only through Copilot has no `adapters.model`: give `--max-tokens` (the context window of
+the model Copilot uses, for example `--max-tokens 128000`). From the app, the run's dialog asks for
+it ("Your model's limit, in tokens") and fills it with the one given for the last run on this
+machine. That value is kept in `.atticus/map-all/limit.json`, on this machine only; runtime.yaml
+isn't changed.
+
+A part's session runs `atticus map <repo> --estimate` (or `--part n`) itself, without the limit.
+With a read plan on file at that commit (`facts/<repo>.read-plan.yaml`, written by the run), it
+plans at the plan's own session size, so the session sees the run's parts. `--max-tokens` plans the
+repo again at another limit.
+
+### Before the first session: the assistant files
+
+Copilot reads the metarepo's assistant files (`.github/copilot-instructions.md`,
+`.github/prompts/`), whose first step checks that they are current. So before it starts a session
+the run checks them as `atticus assistant-files --check` does:
+
+- **missing or out of date**: the run writes them from the org pack, as `atticus assistant-files`
+  does, and names them in the Console. They are generated files in the metarepo, a local write
+  like the facts: propose them for review with the facts.
+- **edited by hand** (or a file in the way that isn't Atticus's): only a person replaces those, so
+  the run is refused before any session starts. Look at the file, then put back the generated text
+  (`atticus assistant-files --force` writes it over the edits), and start the run again. The app's
+  dialog says so and won't start.
+
+### When verify rejects what a session wrote
+
+`atticus verify` moves each fact it rejects out of `facts/<repo>.jsonl` into
+`facts/<repo>.rejected.jsonl`, with why. Nothing is undone: the facts it kept stay. Every read's
+session is told this first. When a session ends its turn with facts rejected, Atticus gives it one
+more turn in the same session listing each reason. The part's second session (a new one) starts
+from the reasons too; they stay in the rejected file for it.
+
+If the second session adds nothing either (no fact and no reviewed line kept), the run stops that
+repo there instead of going on to its next part. The Console says what was rejected and why; the
+app shows the repo on the run's strip and under Problems (**Copilot stopped reading**). The run
+goes on with the next repo. Fix the rejected lines (or read the part in a new chat), and the next
+run carries on from there.
+
 ## From the app
 
 With copilot-acp allowed, Map › Trust has buttons that start the same run from the app (ADR 0173):
 **Read the stale repos with Copilot**, **Fill the gaps with Copilot**, **Read the repos not read yet
 with Copilot**, and on each repo **Read it again with Copilot** (whole, as `--force`). Each asks first:
 a dialog names what the run reads, the model from runtime.yaml and what a session may do, and nothing
-starts until you say yes. The app's server runs `atticus map --all`'s own code (no shell), one run at a
+starts until you say yes. Where Atticus doesn't know the model's limit, the dialog asks for it (see
+[The model's limit](#the-models-limit)); it also says when the assistant files will be written
+first, and won't start while one is edited by hand. The app's server runs `atticus map --all`'s own code (no shell), one run at a
 time.
 
 While it runs, a strip under the top bar says which repo of how many, the session under way, the

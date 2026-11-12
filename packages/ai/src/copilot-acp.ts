@@ -459,7 +459,17 @@ export interface AcpSessionOptions {
   env?: Record<string, string>;
   spawn?: AcpSpawner;
   clientVersion?: string;
+  /**
+   * beta.27: asked when the agent ends a turn of its own accord (not over a refusal, not
+   * cancelled): text to send as its next prompt turn in the same session, or nothing to let the
+   * session end. A read's run tells the session here what verify rejected and why. Asked at most
+   * MAX_FOLLOW_UPS times.
+   */
+  followUp?: () => Promise<string | undefined>;
 }
+
+/** beta.27: how many follow-up turns (`followUp`) one session is given at most. */
+export const MAX_FOLLOW_UPS = 2;
 
 export interface AcpSessionResult {
   stopReason: string;
@@ -822,6 +832,7 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       stopReason: "end_turn",
     };
     const usages: Record<string, unknown>[] = [];
+    let followUps = 0;
     for (let nudge = 0; ; nudge++) {
       const before = refused.length;
       const asked = client.prompt(sessionId, prompt);
@@ -854,6 +865,16 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
         (!after.trim() || /cancel|refused|not allowed|can'?t|cannot|couldn'?t|unable/i.test(after));
       // Ended by the agent (a refused permission can come back as its own "cancelled"), never by
       // Atticus (cancelWhy: Ctrl+C, the time or the tool calls ran out).
+      if (!cancelWhy && !overIt && answer.stopReason === "end_turn" && followUps < MAX_FOLLOW_UPS) {
+        // beta.27: the turn ended of the agent's accord: the step may have more to tell it (what
+        // verify rejected and why), in the same session. The step says so in its own words.
+        const more = await o.followUp?.().catch(() => undefined);
+        if (more) {
+          followUps++;
+          prompt = more;
+          continue;
+        }
+      }
       if (
         cancelWhy ||
         !overIt ||

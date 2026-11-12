@@ -569,11 +569,17 @@ export async function verifyCommand(
     reviewedBad.map((b) => `bad-reviewed: ${b.message}`),
     `refused reviewed lines (all in ${rejectedFile})`,
   );
-  if (failed)
+  if (failed) {
+    // beta.27: a Copilot session took the move for its edit undone, and wrote the same facts again.
+    // A fact of another commit stays in the facts file (round 40), so it isn't said moved.
+    if (!refusedWrite && report.rejected.some((r) => r.code !== "wrong-commit"))
+      io.out(
+        `The rejected facts were moved out of ${rel}/${repo}.jsonl into ${rel}/${repo}.rejected.jsonl, each with why: nothing was undone, and the facts kept stay as they are.`,
+      );
     io.out(
       `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact, question or reviewed line) and run atticus verify ${repo} again.`,
     );
-  else if (cov.unknown.length)
+  } else if (cov.unknown.length)
     io.out(
       `Next: read the ${cov.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml). A file you read and found nothing to record in goes in ${rel}/${repo}.reviewed.jsonl ({"path": "<file or glob>", "why": "..."} per line); generated code is excluded in org-pack/scan/${repo}.yaml.`,
     );

@@ -942,6 +942,29 @@ function limitOf(
   return typeof maxInput === "number" ? { limit: maxInput, from: "runtime.yaml" } : {};
 }
 
+/**
+ * beta.27: the tokens of source one session reads. --max-tokens decides; without it, a read plan
+ * on file at this commit keeps the size it was planned at (a Copilot session that runs
+ * `atticus map <repo> --estimate` or `--part n` itself, with no limit, read a 6-part plan as 2
+ * parts and wrote that over the run's plan); else the limit probe or runtime.yaml state.
+ */
+export async function sessionTokensHere(
+  root: string,
+  repo: string,
+  commit: string,
+  o: Pick<MapOptions, "maxTokens">,
+  op: OrgPack,
+  tier?: TierReport,
+): Promise<{ session: number; fromPlan: boolean }> {
+  const flag = o.maxTokens ?? currentPromptLimit();
+  if (flag === undefined) {
+    const plan = await loadReadPlan(root, repo);
+    if (plan && sameCommit(plan.commit, commit) && plan.session > 0)
+      return { session: plan.session, fromPlan: true };
+  }
+  return { session: sessionTokensFor(limitOf(o, op, tier).limit), fromPlan: false };
+}
+
 /** The tier said for this metarepo: measured on this machine, else from runtime.yaml. */
 async function tierHere(root: string, op: OrgPack): Promise<TierReport> {
   return assistantTier(op.runtime, { probes: (await readProbes(root)).results });
@@ -1034,7 +1057,7 @@ export async function mapCommand(
       {
         commit,
         source,
-        session: sessionTokensFor(limitOf(o, op, tier).limit),
+        session: (await sessionTokensHere(root, repo, commit, o, op, tier)).session,
         checkout: relative(root, dir).split(sep).join("/") || ".",
         ...(o.json ? { json: true } : {}),
         ...(part ? { part } : {}),
@@ -1057,7 +1080,7 @@ export async function mapCommand(
         source,
         exclude,
         conventions,
-        session: sessionTokensFor(limitOf(o, op, tier).limit),
+        session: (await sessionTokensHere(root, repo, commit, o, op, tier)).session,
         notes: notesPrompt,
         checkout: relative(root, dir).split(sep).join("/") || ".",
         ...(o.json ? { json: true } : {}),
@@ -1662,7 +1685,9 @@ async function estimate(
       });
   const left = proposed.proposals.map((p) => p.path.slice(0, -2));
   // F1: a session's source is a share of the model's limit, smaller or bigger; 150K when unknown.
-  const session = sessionTokensFor(given);
+  // beta.27: without --max-tokens, a plan on file at this commit keeps its own size.
+  const sized = await sessionTokensHere(root, repo, c.commit, c.o, c.op, tier);
+  const session = sized.session;
   // A-big2: the parts are of the product code left with every proposal out.
   const product = files
     .filter((f) => !left.some((d) => f.path.startsWith(d)))
@@ -1790,7 +1815,7 @@ async function estimate(
   });
   if (c.o.part !== undefined && !parts[c.o.part - 1]) {
     io.err(
-      `${repo} is read in ${parts.length ? `parts 1 to ${parts.length}` : "one session (no parts)"} at this limit: there is no part ${c.o.part}.`,
+      `${repo} is read in ${parts.length ? `parts 1 to ${parts.length}` : "one session (no parts)"} at this limit (${session} tokens a session${sized.fromPlan ? ", the read plan's" : ""}): there is no part ${c.o.part}.${sized.fromPlan ? "" : ` A read planned at another limit names its parts at that one: atticus map ${repo} --estimate --max-tokens <n>, with the limit it was planned at.`}`,
     );
     return 2;
   }
@@ -1824,6 +1849,8 @@ async function estimate(
           },
           parts: {
             session,
+            // beta.27: the size came from the read plan on file (no --max-tokens given).
+            ...(sized.fromPlan ? { sessionFrom: "read-plan" } : {}),
             parts,
             // A-ledger: the read plan on file and what the facts say each part has covered.
             ...(progress
@@ -1951,7 +1978,7 @@ async function estimate(
         `The parts below are planned over what is left with the ${plural(proposed.proposals.length, "proposed folder")} left out (${plural(product.length, "source file")}, about ${proposed.after} tokens); no part reads a proposed folder.`,
       );
     io.out(
-      `About ${parts.reduce((n, p) => n + p.tokens, 0)} tokens${proposed.proposals.length ? " with those left out" : ""} is more than one session reads (${session} tokens): read it in ${parts.length} parts, one per session or sub-agent, as /atticus-map says:`,
+      `About ${parts.reduce((n, p) => n + p.tokens, 0)} tokens${proposed.proposals.length ? " with those left out" : ""} is more than one session reads (${session} tokens${sized.fromPlan ? `, as the read plan on file was planned; --max-tokens n plans it again` : ""}): read it in ${parts.length} parts, one per session or sub-agent, as /atticus-map says:`,
     );
     // A-ledger: the plan is recorded, so each part says whether it is read; the next one is named.
     const stateOf = (i: number) => progress?.parts[i]?.state;

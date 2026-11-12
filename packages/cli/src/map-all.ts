@@ -2,7 +2,13 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { ASSISTANT_FORMATS, assistantTier, readProbes } from "@maycombhq/assistant-files";
+import {
+  ASSISTANT_FORMATS,
+  assistantTier,
+  generateAssistantFiles,
+  readProbes,
+  type WriteResult,
+} from "@maycombhq/assistant-files";
 import {
   AcpSetupError,
   AcpSignInError,
@@ -31,6 +37,7 @@ import {
   copilotAcpAllowed,
   copilotAcpByDefault,
   readWrites,
+  VERIFY_MOVES,
   type AcpStepRunner,
 } from "./copilot-acp-steps.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
@@ -139,6 +146,11 @@ export interface MapAllDeps {
   /** ADR 0173: what the run does, as it does it, for the app's progress and Console. */
   onEvent?: (e: MapAllEvent) => void;
   makeAcp?: () => Promise<AcpStepRunner>;
+  /**
+   * beta.27: what `atticus assistant-files` would write (`check`) or writes, before a copilot-acp
+   * run starts its first session. Tests pass their own.
+   */
+  assistantFiles?: (root: string, o: { check: boolean }) => Promise<{ results: WriteResult[] }>;
 }
 
 /** ADR 0173: the run's progress, structured (the lines say the same to a person). */
@@ -160,6 +172,19 @@ export type MapAllEvent =
       rejected: number;
       coverage: number;
       open: number;
+    }
+  /**
+   * beta.27: the run stopped reading a repo: two Copilot sessions added nothing to a part. Why,
+   * and what verify rejected (the first ones, and how many in all).
+   */
+  | {
+      type: "repo.stopped";
+      repo: string;
+      part?: number;
+      total?: number;
+      message: string;
+      rejected: { code: string; message: string }[];
+      rejectedCount: number;
     };
 
 export type ItemKind = "read" | "reread" | "carry" | "gaps" | "rules";
@@ -205,6 +230,8 @@ export interface MapAllPlan {
 
 /** How a part ended, kept in the state file and said in the summary. */
 type PartEnd = "done" | "skipped" | "incomplete" | "failed";
+/** beta.27: how the summary says it ended: a part the run stopped its repo on, too. */
+type SaidEnd = PartEnd | "stopped";
 
 interface RepoState {
   commit: string;
@@ -229,6 +256,79 @@ export interface MapAllState {
 
 export const MAP_ALL_STATE_REL = ".atticus/map-all/state.json";
 const statePath = (root: string) => join(root, ".atticus", "map-all", "state.json");
+
+/**
+ * beta.27: the limit given for the last run on this machine (--max-tokens, or the app's dialog),
+ * so the dialog is filled with it next time. Never committed (`.atticus/map-all/` is local).
+ */
+export const LAST_LIMIT_REL = ".atticus/map-all/limit.json";
+const lastLimitPath = (root: string) => join(root, ".atticus", "map-all", "limit.json");
+
+export async function readLastLimit(root: string): Promise<number | undefined> {
+  try {
+    const j = JSON.parse(await readFile(lastLimitPath(root), "utf8")) as { maxTokens?: unknown };
+    return typeof j.maxTokens === "number" && Number.isInteger(j.maxTokens) && j.maxTokens >= 1000
+      ? j.maxTokens
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveLastLimit(root: string, maxTokens: number, now: number): Promise<void> {
+  try {
+    await ensureLocalIgnore(root);
+    await writeFileAtomic(
+      lastLimitPath(root),
+      `${JSON.stringify({ schemaVersion: 1, maxTokens, at: new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z") }, null, 2)}\n`,
+    );
+  } catch {
+    // A convenience only: the run reads at the limit it was given either way.
+  }
+}
+
+/**
+ * beta.27: the limit the app's dialog is filled with when Atticus doesn't know it: the last one
+ * given here, else one atticus probe measured (for whichever assistant).
+ */
+export async function limitToOffer(
+  root: string,
+): Promise<{ tokens: number; from: "last" | "probe" } | undefined> {
+  const last = await readLastLimit(root);
+  if (last !== undefined) return { tokens: last, from: "last" };
+  const probes = (await readProbes(root).catch(() => ({ results: [] }))).results;
+  const p =
+    probes.find((r) => r.assistant === "copilot" && r.maxTokens) ?? probes.find((r) => r.maxTokens);
+  return p?.maxTokens ? { tokens: p.maxTokens, from: "probe" } : undefined;
+}
+
+/** The words of the refusal when the limit isn't known; the app's server says them too. */
+export const LIMIT_UNKNOWN =
+  "Atticus doesn't know your model's limit, and a part planned too big overflows the reader: pass --max-tokens <n> (the context window of the model Copilot uses, in tokens), or set maxInput under adapters.model in runtime.yaml. From the app, the run's dialog asks for it (Your model's limit, in tokens) and remembers it on this machine.";
+
+/**
+ * beta.27: the assistant files a copilot-acp run's sessions read, as `atticus assistant-files
+ * --check` sees them: missing or out of date (`stale`: the run writes them, as the command does;
+ * they are generated, a local write like the facts), and edited by hand or not Atticus's
+ * (`edited`: only a person replaces those, so the run is refused). A session that found them out
+ * of date ended at once with nothing done.
+ */
+export function assistantFilesState(results: readonly WriteResult[]): {
+  upToDate: boolean;
+  stale: string[];
+  edited: string[];
+} {
+  const stale = results
+    .filter((r) => r.action === "created" || r.action === "updated")
+    .map((r) => r.path);
+  const edited = results
+    .filter((r) => r.action === "kept-edited" || r.action === "kept-not-generated")
+    .map((r) => r.path);
+  return { upToDate: !stale.length && !edited.length, stale, edited };
+}
+
+export const assistantFilesEditedWords = (edited: readonly string[]): string =>
+  `${plural(edited.length, "assistant file")} ${edited.length === 1 ? "was" : "were"} edited by hand or ${edited.length === 1 ? "isn't" : "aren't"} Atticus's (${edited.slice(0, 5).join(", ")}${edited.length > 5 ? `, and ${edited.length - 5} more` : ""}), so atticus assistant-files keeps ${edited.length === 1 ? "it" : "them"} and every Copilot session would stop at its check: no session was started. Look at ${edited.length === 1 ? "it" : "them"}, then run atticus assistant-files --force (it replaces the edits), or put ${edited.length === 1 ? "it" : "them"} back as generated, and start the run again.`;
 
 const REMIND_MS = 10 * 60_000;
 const IDLE_MINUTES = 30;
@@ -862,6 +962,97 @@ export function unaccountedWords(left: readonly Unaccounted[], shown = 5): strin
     .join("; ");
 }
 
+// ---------------------------------------------------------------- what verify rejected (beta.27)
+
+/** One line of `<repo>.rejected.jsonl`: its code, why, and the fact's id when it is a fact. */
+export interface Rejection {
+  code: string;
+  message: string;
+  id?: string;
+}
+
+/**
+ * The rejected file's lines and what each says, when it was written since `since` (this
+ * session's verify, or the run's): older lines are another session's.
+ */
+async function rejectionsOf(
+  root: string,
+  repo: string,
+  since: number,
+): Promise<{ lines: string[]; items: Rejection[]; key: string }> {
+  const file = join(factsDirOf(root), `${repo}.rejected.jsonl`);
+  const at = await mtime(file);
+  if (at === undefined || at < since - 1000) return { lines: [], items: [], key: "" };
+  const lines = (await readFile(file, "utf8").catch(() => ""))
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const items = lines.map((l): Rejection => {
+    try {
+      const j = JSON.parse(l) as { code?: unknown; message?: unknown; fact?: { id?: unknown } };
+      return {
+        code: typeof j.code === "string" ? j.code : "rejected",
+        message: typeof j.message === "string" ? j.message : l.slice(0, 200),
+        ...(typeof j.fact?.id === "string" ? { id: j.fact.id } : {}),
+      };
+    } catch {
+      return { code: "rejected", message: l.slice(0, 200) };
+    }
+  });
+  return { lines, items, key: lines.join("\n") };
+}
+
+const rejectionKey = (r: Rejection) => `${r.id ?? ""}|${r.code}|${r.message}`;
+
+/** Two lists of reasons as one, each reason once. */
+function mergeRejections(a: readonly Rejection[], b: readonly Rejection[]): Rejection[] {
+  const seen = new Set<string>();
+  return [...a, ...b].filter((r) => !seen.has(rejectionKey(r)) && !!seen.add(rejectionKey(r)));
+}
+
+/**
+ * The rejected lines put back on file when the run's own verify left the file to its count (it
+ * keeps the lines of the last verify only): the next session reads them from there.
+ */
+async function keepRejected(root: string, repo: string, lines: readonly string[]): Promise<void> {
+  if (!lines.length) return;
+  const file = join(factsDirOf(root), `${repo}.rejected.jsonl`);
+  const have = (await readFile(file, "utf8").catch(() => ""))
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const all = [...new Set([...have, ...lines])];
+  if (all.length === have.length) return;
+  await writeFileAtomic(file, `${all.join("\n")}\n`);
+}
+
+/** The most reasons a prompt lists; the rest are in the rejected file. */
+const REASONS_SHOWN = 15;
+
+/**
+ * What a session is told of the facts verify rejected: that they were moved, not undone, each
+ * reason, and what to do. `now`: in the same session, after its own verify; `before`: the first
+ * words of the next session.
+ */
+export function rejectionWords(
+  root: string,
+  repo: string,
+  items: readonly Rejection[],
+  when: "now" | "before",
+): string {
+  const rel = factsRelOf(root);
+  const shown = items.slice(0, REASONS_SHOWN);
+  return [
+    `${when === "now" ? "`atticus verify` rejected" : "In the Copilot session before this one, `atticus verify` rejected"} ${plural(items.length, "line")} of what was written for ${repo} and moved ${items.length === 1 ? "it" : "them"} out of ${rel}/${repo}.jsonl into ${rel}/${repo}.rejected.jsonl, each with why. Nothing was undone: the facts verify kept are still in the facts file, and writing the same lines again only gets them rejected again. Here is why:`,
+    ...shown.map((r) => `- ${r.id ? `${r.id}: ` : ""}${r.code}: ${r.message}`),
+    ...(items.length > shown.length
+      ? [`- ... and ${items.length - shown.length} more, all in ${rel}/${repo}.rejected.jsonl`]
+      : []),
+    "",
+    `For each one, read the lines it cites again and write the fact again, fixed, in ${rel}/${repo}.jsonl, or leave it out if the code doesn't say it. Then run \`atticus verify ${repo}\` by itself and carry on with the step${when === "now" ? "" : " below"}.`,
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------- the run
 
 interface Totals {
@@ -870,7 +1061,7 @@ interface Totals {
   rejected: Map<string, number>;
   added: number;
   removed: number;
-  ends: { repo: string; part?: number; total?: number; end: PartEnd; command: string }[];
+  ends: { repo: string; part?: number; total?: number; end: SaidEnd; command: string }[];
   spent: { prompts: number; tokens: number };
 }
 
@@ -930,9 +1121,7 @@ export async function mapAllCommand(
   const op = await loadOrgPack(orgPackDirOf(root));
   const lim = await limitFor(root, op, o.maxTokens);
   if (!lim) {
-    io.err(
-      "Atticus doesn't know your model's limit, and a part planned too big overflows the reader: pass --max-tokens <n> (the context window of the model Copilot Chat uses, in tokens), or set maxInput under adapters.model in runtime.yaml.",
-    );
+    io.err(LIMIT_UNKNOWN);
     return 2;
   }
   const limit = lim.limit;
@@ -980,6 +1169,37 @@ export async function mapAllCommand(
     if (o.json) io.out(JSON.stringify(plan, null, 2));
     else for (const l of planLines(plan)) io.out(l);
     return 0;
+  }
+  // beta.27: the limit given is kept on this machine, to fill the app's dialog next time.
+  if (lim.from === "flag") await saveLastLimit(root, limit, clock.now());
+  // beta.27: never start sessions that each end at once: the assistant files they read are
+  // checked first, and written when only out of date (generated files, as atticus
+  // assistant-files writes them); one a person edited refuses the run.
+  if (mode === "copilot-acp" && plan.items.some((i) => i.parts.length)) {
+    const files =
+      deps.assistantFiles ??
+      ((r: string, f: { check: boolean }) => generateAssistantFiles(r, { check: f.check }));
+    let now: ReturnType<typeof assistantFilesState> | undefined;
+    try {
+      now = assistantFilesState((await files(root, { check: true })).results);
+    } catch (e) {
+      io.out(`The assistant files couldn't be checked (${firstLine(e)}); starting anyway.`);
+    }
+    if (now?.edited.length) {
+      io.err(assistantFilesEditedWords(now.edited));
+      return 2;
+    }
+    if (now && !now.upToDate) {
+      const wrote = (await files(root, { check: false })).results.filter((r) => r.written);
+      io.out(
+        `The assistant files the sessions read were out of date: Atticus wrote ${plural(wrote.length, "file")} from the org pack first, as atticus assistant-files does (${wrote
+          .slice(0, 5)
+          .map((r) => r.path)
+          .join(
+            ", ",
+          )}${wrote.length > 5 ? `, and ${wrote.length - 5} more` : ""}). Commit them in a pull request.`,
+      );
+    }
   }
   for (const l of planLines(plan)) io.out(l);
   const emit = (e: MapAllEvent) => {
@@ -1125,6 +1345,8 @@ export async function mapAllCommand(
         const end = await acpPart(item, part, where);
         if (end === "quit") quit = true;
         if (end === "cap") capHit = true;
+        // beta.27: two sessions added nothing: the repo's other parts wait for the next run.
+        if (end === "stopped") break;
       }
       continue;
     }
@@ -1557,7 +1779,7 @@ export async function mapAllCommand(
     item: PlanItem,
     part: PlanPart,
     where: string,
-  ): Promise<PartEnd | "quit" | "cap"> {
+  ): Promise<PartEnd | "quit" | "cap" | "stopped"> {
     const ps = partState(item, part.part);
     const label = item.total > 1 ? `part ${part.part} of ${item.total}` : "one session";
     const progress = item.total > 1 ? await readPlanProgress(root, item.repo) : undefined;
@@ -1584,6 +1806,11 @@ export async function mapAllCommand(
       return "quit";
     }
     let more = 0;
+    // beta.27: what the session before this one left, said first in the next one.
+    let note: string | undefined;
+    // beta.27: what verify rejected of the last session's facts, and whether it added anything.
+    let lastRejected: Rejection[] = [];
+    let lastAdded = true;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (stopped()) break;
       if (overCap()) return "cap";
@@ -1604,10 +1831,23 @@ export async function mapAllCommand(
         line,
         attempt,
       });
-      const base = item.force ? await writtenOf(root, item.repo) : "";
+      const base = await writtenOf(root, item.repo);
       const first = await snapOf(root, item.repo);
+      const startedAt = Date.now();
       totals.spent.prompts++;
       let cut = false;
+      // beta.27: when the session ends its turn with facts verify rejected (it ran verify), it is
+      // told why in its next turn, in the same session; the same reasons are told once.
+      let told = "";
+      const followUp = async () => {
+        const r = await rejectionsOf(root, item.repo, startedAt);
+        if (!r.items.length || r.key === told) return undefined;
+        told = r.key;
+        io.out(
+          `  Atticus: verify rejected ${plural(r.items.length, "line")} of what Copilot wrote; told it why, and that they were moved, not undone, to fix in this session.`,
+        );
+        return rejectionWords(root, item.repo, r.items, "now");
+      };
       try {
         const r = await runner({
           line,
@@ -1615,6 +1855,8 @@ export async function mapAllCommand(
           writeRoots: readWrites(root),
           ...(deps.signal ? { signal: deps.signal } : {}),
           onProgress: io.out,
+          note: note ? `${VERIFY_MOVES}\n\n${note}` : VERIFY_MOVES,
+          followUp,
         });
         totals.spent.tokens += r.usage ? r.usage.inputTokens + r.usage.outputTokens : part.tokens;
         io.out(`The session ended (${r.stopped ?? r.stopReason}).`);
@@ -1649,11 +1891,15 @@ export async function mapAllCommand(
         emit({ type: "session.end", repo: item.repo, ended: "failed", failed: firstLine(e) });
       }
       if (stopped()) break;
+      // beta.27: what the session's own verify moved to the rejected file, read before the run's
+      // verify (which leaves that file to its own rejections) replaces it.
+      const moved = await rejectionsOf(root, item.repo, startedAt);
       // Verified as `atticus verify <repo> --write` runs, and asked the same coverage (ADR 0170).
-      const wrote = item.force ? (await writtenOf(root, item.repo)) !== base : undefined;
       const v = existsSync(join(factsDirOf(root), `${item.repo}.jsonl`))
         ? await verifyStep(item)
         : undefined;
+      const written = await writtenOf(root, item.repo);
+      const wrote = item.force ? written !== base : undefined;
       const after = await snapOf(root, item.repo);
       if (
         v &&
@@ -1680,11 +1926,19 @@ export async function mapAllCommand(
         ) {
           more++;
           line = next;
+          note = undefined;
           attempt = -1;
           continue;
         }
         return finishPart(item, part, ps);
       }
+      // beta.27: the reasons, the session's own verify's and the run's, each once.
+      const now = v?.rejected ? await rejectionsOf(root, item.repo, startedAt) : undefined;
+      lastRejected = mergeRejections(moved.items, now?.items ?? []);
+      // Nothing added: no fact or reviewed line on file that wasn't there before the session.
+      lastAdded = written !== base;
+      // The rejected lines stay on file for the next session (and the Trust page) to fix from.
+      await keepRejected(root, item.repo, [...moved.lines, ...(now?.lines ?? [])]);
       if (attempt > 0) break;
       ps.retries++;
       await save();
@@ -1700,13 +1954,46 @@ export async function mapAllCommand(
         return finishPart(item, part, ps);
       // beta.17: with nothing left to plan from, the part itself again, never part 1.
       line = rest ?? `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`;
+      // beta.27: the second try starts from what the first left: what was rejected and why.
+      note = lastRejected.length
+        ? rejectionWords(root, item.repo, lastRejected, "before")
+        : !lastAdded
+          ? `The Copilot session before this one ended having added no fact and no reviewed line to this part. Do the step below through to the end: write the facts it finds, then run \`atticus verify ${item.repo}\`.`
+          : undefined;
+      // beta.27: restLine's verify may have left the rejected file to its own count: put back.
+      await keepRejected(root, item.repo, [...moved.lines, ...(now?.lines ?? [])]);
       io.out(
-        `${item.repo} ${label} isn't accounted for yet${v?.rejected ? ` (${plural(v.rejected, "fact")} rejected)` : ""}: one more try in a NEW session with only what is left (${line}).`,
+        `${item.repo} ${label} isn't accounted for yet${lastRejected.length ? ` (${plural(lastRejected.length, "line")} rejected; the next session is told why)` : v?.rejected ? ` (${plural(v.rejected, "fact")} rejected)` : !lastAdded ? " (the session added nothing)" : ""}: one more try in a NEW session with only what is left (${line}).`,
       );
     }
     ps.state = "incomplete";
     await save();
     if (stopped()) return "quit";
+    if (!lastAdded) {
+      // beta.27: two sessions added nothing: the rest of the repo would fare no better, so the
+      // run stops it here, saying what was rejected and why, and goes on with the next repo.
+      const shown = lastRejected.slice(0, 10);
+      const message = `${item.repo} ${label}: two Copilot sessions added nothing to it${lastRejected.length ? `; verify rejected ${plural(lastRejected.length, "line")} of what they wrote` : ""}. The run stops reading ${item.repo} here and goes on with the next repo. Fix ${lastRejected.length ? `the rejected lines in ${factsRelOf(root)}/${item.repo}.rejected.jsonl` : "what keeps it from writing facts"} (or read the part in a new chat: /atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}), then ${resumeAs} carries on.`;
+      io.out(message);
+      for (const r of shown) io.out(`  ${r.id ? `${r.id}: ` : ""}${r.code}: ${r.message}`);
+      if (lastRejected.length > shown.length)
+        io.out(
+          `  ... and ${lastRejected.length - shown.length} more (all in ${factsRelOf(root)}/${item.repo}.rejected.jsonl)`,
+        );
+      emit({
+        type: "repo.stopped",
+        repo: item.repo,
+        ...(item.total > 1 ? { part: part.part, total: item.total } : {}),
+        message,
+        rejected: shown.map((r) => ({
+          code: r.code,
+          message: r.id ? `${r.id}: ${r.message}` : r.message,
+        })),
+        rejectedCount: lastRejected.length,
+      });
+      totals.ends.push(endOf(item, part, "stopped"));
+      return "stopped";
+    }
     io.out(
       `${item.repo} ${label}: still not accounted for after a second session; moving on. atticus map --all carries on from here.`,
     );
@@ -1790,7 +2077,7 @@ export async function mapAllCommand(
     return "failed";
   }
 
-  function endOf(item: PlanItem, part: PlanPart, end: PartEnd) {
+  function endOf(item: PlanItem, part: PlanPart, end: SaidEnd) {
     return {
       repo: item.repo,
       ...(item.total > 1 ? { part: part.part, total: item.total } : {}),

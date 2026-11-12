@@ -30,6 +30,7 @@ import {
   useActivity,
   type ActivityCtx,
 } from "../activity.js";
+import { useCopilotRuns } from "../copilot-runs.js";
 import "./bottom-panel.css";
 
 /**
@@ -208,6 +209,8 @@ export interface Problems {
   rejected: { repo: string; count: number; command?: string }[];
   /** Beta.27 review: changes whose change.yaml doesn't read (they are on no other list). */
   broken: ChangeProblem[];
+  /** Beta.27: the repos the last Copilot run stopped on, after two sessions added nothing. */
+  stopped: { runId: string; repo: string; title: string; rejectedCount: number }[];
 }
 
 /**
@@ -220,6 +223,7 @@ export function problemsOf(o: {
   findings?: readonly PanelFinding[];
   trust?: Pick<Api.TrustViewT, "repos">;
   broken?: readonly ChangeProblem[];
+  copilot?: Pick<Api.CopilotRunViewT, "runId" | "problems"> | null;
 }): Problems {
   const failed = o.entries.filter((e) => e.state === "failed");
   const blocking = o.findings
@@ -238,11 +242,17 @@ export function problemsOf(o: {
       count: r.verify.report?.rejected ?? r.lists?.rejected.length ?? 0,
       ...(r.next ? { command: r.next.command } : {}),
     }));
-  return { failed, blocking, rejected, broken: [...(o.broken ?? [])] };
+  const stopped = (o.copilot?.problems ?? []).map((x) => ({
+    runId: o.copilot!.runId,
+    repo: x.repo,
+    title: COPY.copilotRuns.strip.stoppedRepo(x.repo, x.part, x.total),
+    rejectedCount: x.rejectedCount,
+  }));
+  return { failed, blocking, rejected, broken: [...(o.broken ?? [])], stopped };
 }
 
 const problemCount = (p: Problems) =>
-  p.failed.length + p.blocking.length + p.rejected.length + p.broken.length;
+  p.failed.length + p.blocking.length + p.rejected.length + p.broken.length + p.stopped.length;
 
 const focusId = (id: string) => {
   try {
@@ -344,7 +354,7 @@ export function ProblemsList(p: {
   onRetry(): void;
 }) {
   const R = P.problems;
-  const { failed, blocking, rejected, broken } = p.problems;
+  const { failed, blocking, rejected, broken, stopped } = p.problems;
   const loading = p.findings.state === "loading" || p.trust.state === "loading";
   const errors = [
     ...(p.findings.state === "error" ? [R.findingsFailed(errorOf(p.findings))] : []),
@@ -418,6 +428,31 @@ export function ProblemsList(p: {
                   className="btn bp-row-act"
                   aria-label={R.showLabel(titleOf(e))}
                   onClick={() => p.onShow(e.id)}
+                >
+                  {R.show}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {stopped.length > 0 && (
+        <section className="bp-group" aria-labelledby="bp-problems-copilot">
+          <h3 id="bp-problems-copilot" className="bp-group-head">
+            {R.copilotStopped}
+          </h3>
+          <ul className="bp-list">
+            {stopped.map((x) => (
+              <li key={`${x.runId}:${x.title}`} className="bp-row bad">
+                <span className="bp-row-main">
+                  <span className="bp-row-title">{x.title}</span>
+                  <span className="bp-row-meta">{R.copilotStoppedMeta(x.rejectedCount)}</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn bp-row-act"
+                  aria-label={R.showLabel(x.title)}
+                  onClick={() => p.onShow(x.runId)}
                 >
                   {R.show}
                 </button>
@@ -549,6 +584,7 @@ export function runningSummary(entries: readonly Entry[]): string | undefined {
 export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX.Element {
   const { open, onToggle } = props;
   const a = useActivity();
+  const copilot = useCopilotRuns();
   const [tab, setTab] = useState<PanelTab>("console");
   const [seen, setSeen] = useState<Partial<Record<PanelTab, true>>>({});
   // The height the viewer chose, and the room there is now: the panel shows the one clamped to
@@ -714,6 +750,7 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
 
   const problems = problemsOf({
     entries: a?.entries ?? [],
+    ...(copilot?.run ? { copilot: copilot.run } : {}),
     ...(findings.state === "ready" ? { findings: findings.data } : {}),
     ...(trust.state === "ready" ? { trust: trust.data } : {}),
     ...(broken.state === "ready" ? { broken: broken.data } : {}),
