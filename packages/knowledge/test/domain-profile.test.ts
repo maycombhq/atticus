@@ -81,7 +81,10 @@ describe("domainProfile", () => {
     });
     const asked = "Which alert or dashboard watches reports-job?";
     const open = (records: CatalogRecord[]) =>
-      section(domainProfile(records, "reports", { orgPack }), "Open Questions");
+      section(
+        domainProfile(records, "reports", { orgPack, now: "2026-11-10T09:00:00Z" }),
+        "Open Questions",
+      );
     expect(open([...forgeRecords(), sent])).toContain(asked);
     const alert = record({
       kind: "ObservabilityAsset",
@@ -109,5 +112,9 @@ describe("domainProfile", () => {
       evidence: [{ source: "manual", by: "pat" }],
     });
     expect(open([...forgeRecords(), own, alert])).toContain("How long are the daily entries kept?");
+    // Review of the fix: the org pack comes with its clock (typecheck).
+    // @ts-expect-error now is required with orgPack
+    const untimed: Parameters<typeof domainProfile>[2] = { orgPack };
+    expect(untimed).toBeDefined();
   });
 });

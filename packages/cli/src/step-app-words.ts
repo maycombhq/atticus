@@ -10,6 +10,13 @@ import type { CommandInfo } from "./command-catalog.js";
  * cockpit's in-app words (`inAppWords`): a bracketed command goes, and the flags a terminal passes
  * are named as the app's own choices. "Atticus" (capitalised), words that only look like a command
  * ("what atticus knows") and backticked text that isn't a command stay as they are.
+ *
+ * Review of the fix: a bracketed alternative that is a command (", or atticus …", "or atticus …",
+ * "atticus …, or …") goes as one unit and the rest of the bracket stays ("(Release › Raise the
+ * release PRs)"); an empty bracket goes. A command a verb takes ("run atticus critic … again",
+ * "Use atticus …") is said as "run it again from the app"; one that a "then", "and" or "or" joins
+ * on its own goes with that word; one that is the subject after "and" or "then" is said as
+ * Atticus; a bare word after a command's flags is the sentence's, never an argument.
  */
 
 export type CommandShape = Pick<CommandInfo, "words" | "args" | "flags">;
@@ -22,7 +29,19 @@ const STOP = new Set(
 );
 
 /** The lead-in a command's removal takes with it ("…, then record it with atticus …"). */
-const LEAD_IN = /(?:,\s*)?(?:\b(?:by running|by|with|using|running|run|type)\s+)?$/;
+const LEAD_IN = /(?:,\s*)?(?:\b(?:by running|by|with|using|running|type)\s+)?$/;
+
+/** A conjunction that joins the command alone ("…), then atticus verify x --write, so …"). */
+const JOIN = /(?:,\s*)?\b(?:then|and|or)[ \t]+$/;
+
+/** A verb that takes the command ("run atticus critic … again", "Use atticus …"). */
+const VERB = /\b([Rr]un|[Uu]se)[ \t]+$/;
+
+/** A command that is its clause's subject: a word that isn't a stop word comes next. */
+function subjectNext(rest: string): boolean {
+  const w = /^[ \t]+([a-z][\w'-]*)/.exec(rest)?.[1];
+  return !!w && !STOP.has(w);
+}
 
 const PLACEHOLDER = /^<[^>\s]+>/;
 const QUOTED = /^(?:'[^']*'|"[^"]*")/;
@@ -38,6 +57,8 @@ interface Match {
 function argumentsEnd(text: string, at: number, c: CommandShape | undefined): number {
   let i = at;
   let positional = 0;
+  // Review of the fix: after a flag, a bare word is the sentence's ("--stale tops up …").
+  let flagged = false;
   const slots = !c ? 0 : c.args.some((a) => a.many) ? Infinity : c.args.length;
   const flags = new Map((c?.flags ?? []).map((f) => [f.name, f.value !== undefined]));
   for (;;) {
@@ -48,6 +69,7 @@ function argumentsEnd(text: string, at: number, c: CommandShape | undefined): nu
     let len: number;
     const flag = FLAG.exec(rest);
     if (flag) {
+      flagged = true;
       len = flag[0].length;
       const name = flag[0].split("=")[0]!;
       const v = flag[0].includes("=") ? undefined : /^[ \t]+/.exec(rest.slice(len));
@@ -70,7 +92,7 @@ function argumentsEnd(text: string, at: number, c: CommandShape | undefined): nu
       positional++;
     } else {
       const t = TOKEN.exec(rest)?.[0];
-      if (!t || positional >= slots) break;
+      if (!t || positional >= slots || flagged) break;
       // A sentence's end: the token's own trailing full stop isn't the argument's.
       const word = t.replace(/\.+$/, "");
       if (!word || STOP.has(word.toLowerCase()) || /^[A-Z]/.test(word)) break;
@@ -118,26 +140,57 @@ function takeOut(text: string, find: RegExp, end: (at: number, m: string) => num
   for (const m of text.matchAll(find)) {
     const at = m.index;
     if (at < last) continue;
-    const stop = end(at, m[0]);
+    let stop = end(at, m[0]);
     if (stop === undefined) continue;
     const rest = text.slice(stop);
+    const before = text.slice(last, at);
     const lead = leadsClause(text, at);
-    if (lead && /^[ \t]+[a-z]/.test(rest)) {
+    const verb = VERB.exec(before);
+    if (verb) {
+      // Review of the fix: "run atticus critic … again" says "run it again from the app".
+      const adverb = /^[ \t]+(?:again|first)\b/.exec(rest)?.[0] ?? "";
+      out += `${before.slice(0, verb.index)}${verb[1]} it${adverb} from the app`;
+      stop += adverb.length;
+    } else if (lead && /^[ \t]+[a-z]/.test(rest)) {
       // The command is the sentence's subject ("atticus verify x checks …"): the step says it.
-      out += text.slice(last, at) + (lead === "sentence" ? "This step" : "this step");
+      out += before + (lead === "sentence" ? "This step" : "this step");
+    } else if (/\b(?:and|then)[ \t]+$/.test(before) && subjectNext(rest)) {
+      // Review of the fix: "…, and atticus verify x checks them": Atticus does.
+      out += before + "Atticus";
+    } else if (JOIN.test(before) && /^\s*(?:[,.;:)]|$)/.test(rest)) {
+      // Review of the fix: "…), then atticus verify x --write, so …": its "then" goes with it.
+      out += before.replace(JOIN, "");
     } else {
-      const head = text.slice(last, at).replace(LEAD_IN, "");
-      out += head;
+      out += before.replace(LEAD_IN, "");
     }
     last = stop;
   }
   return out + text.slice(last);
 }
 
+const COMMAND = /^(?:atticus [a-z]|\/atticus-)/;
+
+/**
+ * Review of the fix: a bracket with a command in it: the command and the "or" that offers it go
+ * as one unit, and what else the bracket says stays; a bracket left empty goes.
+ */
+function bracketsInAppWords(text: string): string {
+  return text.replace(/(\s*)\(([^()]*)\)/g, (all, ws: string, inner: string) => {
+    if (COMMAND.test(inner)) {
+      // "(atticus todo, or Home › Manual steps in the app)": the alternative after it stays.
+      const after = /^[^,;]*,[ \t]*or[ \t]+(.+)$/.exec(inner)?.[1];
+      return after && !COMMAND.test(after) ? `${ws}(${after})` : "";
+    }
+    // "(X, or atticus …)" and "(or atticus …)": the "or" and its command go.
+    const kept = inner.replace(/(?:,[ \t]*|^|[ \t]+)or[ \t]+(?:atticus [a-z]|\/atticus-).*$/, "");
+    if (kept === inner) return all;
+    return kept.trim() ? `${ws}(${kept.trim()})` : "";
+  });
+}
+
 export function stepInAppWords(text: string, catalog: readonly CommandShape[]): string {
-  let s = text
-    // In brackets: a command to type, or an ADR to read, goes (the cockpit's own in-app words).
-    .replace(/\s*\((?:atticus |\/atticus-)[^)]*\)/g, "")
+  // In brackets: a command to type, or an ADR to read, goes (the cockpit's own in-app words).
+  let s = bracketsInAppWords(text)
     .replace(/\s*\(ADRs? \d{4}[^)]*\)/g, "")
     .replace(/\s*\(not-relevant --reason, or waive\)/g, " (Not relevant, or Waive)")
     .replace(/: pass --repo, or set metarepo under/g, ": set metarepo under");
@@ -153,7 +206,8 @@ export function stepInAppWords(text: string, catalog: readonly CommandShape[]): 
   );
   s = takeOut(s, /(?<![\w/.`'"-])atticus(?=[ \t]+[a-z])/g, (at) => commandAt(s, at, catalog)?.end);
   return s
-    .replace(/[ \t]+([.;,:])/g, "$1")
+    .replace(/\s*\(\s*\)/g, "")
+    .replace(/[ \t]+([.;,:)])/g, "$1")
     .replace(/[:;,]+(?=\.|$)/g, "")
     .replace(/,(?=,)/g, "")
     .replace(/[ \t]+/g, " ")

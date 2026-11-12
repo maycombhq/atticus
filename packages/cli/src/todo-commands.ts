@@ -211,6 +211,11 @@ export async function todoDone(
               : ""
           }.`,
     );
+    // Beta.27 review of the fix: an owner question's step, sent by hand and marked done, is a
+    // send on record (the question's own record), as a live send is.
+    const { recordStepSend } = await import("./owner-questions.js");
+    const sent = await recordStepSend(root, done, deps.now?.());
+    if (sent) io.out(`The owner question is on record as sent (${sent}).`);
     // Round 49: as the app does, a hand-off PR's step marked done syncs the change, so the
     // gate moves on (merged=yes on its reviews step approves it) without atticus change sync.
     if (deps.sync !== false) {

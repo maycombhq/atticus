@@ -6705,6 +6705,9 @@ export const COPY = {
       // Beta.27 review, round 2: sent is on file in the question's own record, for everyone.
       already: (owner: string) =>
         `It was already sent to ${owner} (its record in the metarepo says so), so it wasn't sent twice. Send it again only if they need it once more.`,
+      // Review of the fix: the other 409, a send of it under way now.
+      beingSent: (owner: string) =>
+        `It is being sent to ${owner} now, from another tab or window, so it wasn't sent twice.`,
       confirmAgain: (owner: string, on?: string) =>
         `It was sent${on ? ` on ${on}` : ""}. Send it to ${owner} again?`,
       yesAgain: "Yes, send it again",

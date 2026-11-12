@@ -471,6 +471,55 @@ describe("an owner question whose live send became a manual step (beta.27 final 
     }
   });
 
+  it("a step says asked after a reload and to another person, is one step for both, and once done is a send on record", async () => {
+    const { r2, s } = await serverWith(() => new MockNotifier(), "{ type: manual }");
+    const bao = await startServer({
+      root: r2,
+      port: 0,
+      user: "bao",
+      watch: false,
+      extend: (r, ctx) => extendUiRoutes(r, ctx, { now: NOW }),
+    });
+    try {
+      const gap = await openGap(s);
+      const a = Api.SentOwnerAsk.parse(
+        (await post(s, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(a.state).toBe("step");
+      const step = a.id!.replace(/^manual:/, "");
+      // On file: a reload, and another person's server, read the open step as asked.
+      expect((await openGap(s)).asked).toMatchObject({ step });
+      expect((await openGap(bao)).asked).toMatchObject({ step });
+      // The other person's Send is the same step (keyed on the question, not on "reply to …").
+      const b = Api.SentOwnerAsk.parse(
+        (await post(bao, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(b).toMatchObject({ state: "step", id: a.id });
+      expect((await fileStepStore(r2).list({ action: "send-notification" })).length).toBe(1);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+      // A person marks it done (Home › Manual steps): the question's own record says sent.
+      const done = await post(s, `/api/todo/${step}/done`, {});
+      expect(done.status).toBe(200);
+      const after = await openGap(bao);
+      expect(after.sentAt).toBeDefined();
+      expect(after.asked).toBeUndefined();
+      const rec = parse(
+        await readFile(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`), "utf8"),
+      ) as { evidence: { source: string; by?: string }[] };
+      expect(rec.evidence[0]).toMatchObject({ source: "manual", by: "pat" });
+      // Send again makes a new step: the one before is done.
+      const again = Api.SentOwnerAsk.parse(
+        (await post(bao, `/api/owner-questions/${gap.id}/send`, { again: true })).body,
+      );
+      expect(again.state).toBe("step");
+      expect(again.id).not.toBe(a.id);
+    } finally {
+      await bao.close();
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
   it("two sends at once: the second is refused while the first is held", async () => {
     let release!: () => void;
     const held = new Promise<void>((res) => (release = res));
@@ -620,5 +669,42 @@ describe("a hand-off tells the next role", () => {
     );
     expect(told).toHaveLength(1);
     expect(m.sent).toEqual([expect.objectContaining({ channel: "@Ari", mentions: ["Ari"] })]);
+
+    // Review of the fix: a live notifier that falls back on the send made a step: nobody was
+    // told, and it says so with why.
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-ui-roles-told-"));
+    try {
+      await cp(root, r2, { recursive: true });
+      await writeFile(
+        join(r2, "org-pack/runtime.yaml"),
+        "schemaVersion: 1\nassistants: { allowed: [copilot, claude-code], default: copilot }\nadapters:\n  workTracker: { type: manual }\n  notify: { type: slack }\n",
+      );
+      const down = await notifyHandoffReviewers(
+        r2,
+        c,
+        h,
+        { by: "pat", at: NOW, ref: h.branch },
+        undefined,
+        {
+          factories: {
+            notify: {
+              slack: () => ({
+                send: async () => {
+                  throw new AdapterError("slack", "unavailable", "the Northwind chat is down");
+                },
+              }),
+            },
+          },
+        },
+      );
+      expect(down).toEqual([
+        expect.stringMatching(
+          /^Telling @ari \(architect\) is a step for you \(Home › Manual steps\): the notify adapter couldn't send it \(unavailable: .*Northwind chat is down/,
+        ),
+      ]);
+      expect(down[0]).not.toMatch(/^Told/);
+    } finally {
+      await rm(r2, { recursive: true, force: true });
+    }
   });
 });

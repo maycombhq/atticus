@@ -13,7 +13,7 @@ vi.mock("react", async () => {
   const { shim } = await import("./support/hooks.js");
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
-let answer: "step" | "409" = "step";
+let answer: "step" | "409" | "busy" = "step";
 vi.mock("../src/api/confirm.js", () => ({
   confirmed: async () => ({ confirmation: "c-1" }),
 }));
@@ -22,6 +22,13 @@ vi.mock("../src/api/client.js", async () => {
   return {
     ...real,
     api: async () => {
+      if (answer === "busy")
+        throw new real.ApiError({
+          type: "about:blank",
+          title: "Being sent",
+          status: 409,
+          detail: "q.x is being sent now, from another tab or window.",
+        });
       if (answer === "409")
         throw new real.ApiError({
           type: "about:blank",
@@ -105,4 +112,49 @@ it("after a 409 the card reloads what is on file", async () => {
   s.render();
   expect(text(s.tree)).toContain(S.already("Reports team"));
   expect(reloaded).toBe(1);
+});
+
+// Review of the fix: the two 409s are told apart by their problem's title.
+it("a send under way elsewhere says being sent, not already sent, and offers no Send again", async () => {
+  answer = "busy";
+  let reloaded = 0;
+  const s = mount(
+    SendOwnerQuestion as never,
+    { id: q.id, owner: "Reports team", onAlready: () => reloaded++ } as never,
+  );
+  (button(s.tree, S.button("Reports team")).props.onClick as () => void)();
+  await tick();
+  s.render();
+  expect(text(s.tree)).toContain(S.beingSent("Reports team"));
+  expect(text(s.tree)).not.toContain(S.already("Reports team"));
+  expect(button(s.tree, S.button("Reports team"))).toBeDefined();
+  expect(reloaded).toBe(1);
+});
+
+// Review of the fix: asked is on file (the open manual step), so a reload says it too.
+it("a question the server says is asked shows Asked after a reload", () => {
+  const m = mount(
+    OwnerQuestionCard as never,
+    {
+      q: { ...q, asked: { step: "message-team-reports", at: "2026-11-09T09:00:00Z" } },
+      onAnswered: () => undefined,
+    } as never,
+  );
+  expect(text(m.tree)).toContain(O.askedStep("Reports team"));
+  expect(text(m.tree)).toContain(O.asked);
+  expect(text(m.tree)).not.toContain(O.notSentTo("Reports team", "Microsoft Teams"));
+  // Once the step is done the question is sent on record: Sent wins.
+  const sent = mount(
+    OwnerQuestionCard as never,
+    {
+      q: {
+        ...q,
+        sentAt: "2026-11-09T10:00:00Z",
+        asked: { step: "message-team-reports", at: "2026-11-09T09:00:00Z" },
+      },
+      onAnswered: () => undefined,
+    } as never,
+  );
+  expect(text(sent.tree)).toContain(O.sent);
+  expect(text(sent.tree)).not.toContain(O.askedStep("Reports team"));
 });

@@ -1037,10 +1037,6 @@ export function ArchitectureCanvas(p: {
 }
 
 /**
- * Review of the fix (beta.27): whether focus came from the keyboard, as the browser says it
- * (`:focus-visible`: a click focuses a box without it). A browser that can't say: not.
- */
-/**
  * Beta.27 review, final round: a pointer down on the canvas is up again when it comes up anywhere
  * (`pointerup` or `pointercancel` on the window: released over the toolbar or outside the canvas,
  * the canvas's own handlers never hear it), or when a key is pressed (a person on the keyboard is
@@ -1050,6 +1046,8 @@ export function releasePointerOn(
   target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
   down: { current: boolean },
 ): () => void {
+  // A modifier key pressed during a drag (Shift to select more, say) clears the flag too, and
+  // harmlessly: the drag itself is `dragging`, and the flag only stops a focus from panning.
   const up = () => {
     down.current = false;
   };
@@ -1061,6 +1059,10 @@ export function releasePointerOn(
   };
 }
 
+/**
+ * Review of the fix (beta.27): whether focus came from the keyboard, as the browser says it
+ * (`:focus-visible`: a click focuses a box without it). A browser that can't say: not.
+ */
 export function keyboardFocus(el: Element): boolean {
   try {
     return typeof el.matches === "function" && el.matches(":focus-visible");

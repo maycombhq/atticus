@@ -145,8 +145,11 @@ export function SendOwnerQuestion({
       );
     } catch (err) {
       if (err instanceof ApiError && err.problem.status === 409) {
-        setAlready(true);
-        setNote({ ok: false, text: S.already(owner) });
+        // Review of the fix: "Being sent" (a send under way elsewhere) is no send on file yet,
+        // so it offers no Send again; "Already sent" does.
+        const busyNow = err.problem.title === "Being sent";
+        if (!busyNow) setAlready(true);
+        setNote({ ok: false, text: busyNow ? S.beingSent(owner) : S.already(owner) });
         // Beta.27 review, final round: the card reads the send on file, so it doesn't say "Not
         // sent yet" beside "already sent".
         onAlready?.();
@@ -234,9 +237,11 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
   // Review of the fix: sent only when it was: a send on file (sentAt) or one from this card.
   const [sentNow, setSentNow] = useState<string>();
   const sentAt = sentNow ?? q.sentAt;
-  // Beta.27 review, final round: Send made a step for the person: asked, not sent.
+  // Beta.27 review, final round: Send made a step for the person: asked, not sent. Review of the
+  // fix: the server says so too from the open step on file (`asked`), after a reload and on
+  // another machine.
   const [stepNow, setStepNow] = useState(false);
-  const asked = stepNow && !sentAt;
+  const asked = (stepNow || !!q.asked) && !sentAt;
   const id = useId();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);

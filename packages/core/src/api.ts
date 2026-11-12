@@ -539,7 +539,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   sentence in the app's words (no command to type); a send that became a manual step (manual
  *   notifications, or a live notifier that couldn't start or reach the system) answers `state:
  *   step` with why and writes no record; a send already under way answers 409; the upgrade
- *   job's result names `upgraded`. Additive only.
+ *   job's result names `upgraded`. Review of the fix: an owner question carries `asked` while
+ *   its Send's manual step is open (one step per question), and that step marked done is a send
+ *   on record. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -3350,6 +3352,12 @@ export const OwnerQuestionView = z.object({
    * record's own state starts at `sent`).
    */
   sentAt: z.string().optional(),
+  /**
+   * 3.11.0 (beta.27 review of the fix): its Send made a manual step that is still open (the step
+   * whose approval ref is `owner-ask:<id>`, in the metarepo for every machine): asked, waiting for
+   * a person to send it; the step and when it was made. Marked done, it is a send on record.
+   */
+  asked: z.object({ step: z.string(), at: z.string() }).optional(),
   routeTo: z.string().optional(),
   fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),
   records: z.array(z.string()),
@@ -6771,7 +6779,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "sendOwnerQuestion",
       summary:
-        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text. 3.11.0 (beta.27 review): a send (or a step) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first), and one whose record says sent is sent again through a live notifier only with `again` (409 otherwise)",
+        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.11.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
       tag: "questions",
       params: [p("id")],
       body: SendOwnerAskRequest,

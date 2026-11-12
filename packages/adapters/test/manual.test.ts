@@ -415,6 +415,16 @@ describe("manual notifications and wiki", () => {
         { ...A(), scope: "standing" },
       ),
     ).toEqual({ id: "manual:message-forge-ledger" });
+    // Review of the fix (beta.27): a message with its own key is one step whatever its body
+    // says (another person's "reply to …"), and a new key is a new step.
+    const ask = (body: string, key: string) =>
+      n.send({ channel: "@team-ledger", title: "A question", body, key }, A());
+    const first = await ask("Which limit? Reply to @ana.", "owner-ask:q-1");
+    expect(await ask("Which limit? Reply to @bao.", "owner-ask:q-1")).toEqual(first);
+    expect(
+      await ask("Which limit? Reply to @bao.", "owner-ask:q-1@2026-10-21T09:00:00Z"),
+    ).not.toEqual(first);
+    expect((await store.list({ action: "send-notification" })).length).toBe(3);
 
     const root = await mkdtemp(join(tmpdir(), "atticus-wiki-"));
     await mkdir(join(root, "inputs/wiki/how-to"), { recursive: true });

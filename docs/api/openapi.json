@@ -6547,7 +6547,7 @@
     "/api/owner-questions/{id}/send": {
       "post": {
         "operationId": "sendOwnerQuestion",
-        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text. 3.11.0 (beta.27 review): a send (or a step) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first), and one whose record says sent is sent again through a live notifier only with `again` (409 otherwise)",
+        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.11.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
         "tags": [
           "questions"
         ],
@@ -28332,6 +28332,22 @@
           },
           "sentAt": {
             "type": "string"
+          },
+          "asked": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "at"
+            ],
+            "additionalProperties": false
           },
           "routeTo": {
             "type": "string"

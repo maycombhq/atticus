@@ -35,6 +35,7 @@ import {
 import { expectedYaml, forgeRoot, ID, NW, read } from "./helpers.js";
 
 const at = (s: string) => new Date(s);
+const NOW_CARD = "2026-11-10T09:00:00Z";
 
 async function startGolden(root: string) {
   await newInitiative(root, {
@@ -298,7 +299,9 @@ describe("the Northwind Pay v3 migration (golden, vendor-api-change)", () => {
       evidence: [{ source: "manual", by: "pat", scannedAt: "2026-11-09T09:00:00Z" }],
     });
     const asked = `(${id})`;
-    expect(systemCard(await readView(root), ["reports"], { orgPack })).toContain(asked);
+    expect(systemCard(await readView(root), ["reports"], { orgPack, now: NOW_CARD })).toContain(
+      asked,
+    );
     await write("generated", {
       schemaVersion: 2,
       kind: "ObservabilityAsset",
@@ -312,11 +315,15 @@ describe("the Northwind Pay v3 migration (golden, vendor-api-change)", () => {
     });
     const view = await readView(root);
     expect(view.get("OwnerQuestion", id)?.questionState).toBe("sent");
-    expect(systemCard(view, ["reports"], { orgPack })).not.toContain(asked);
+    expect(systemCard(view, ["reports"], { orgPack, now: NOW_CARD })).not.toContain(asked);
     // A question a person wrote stays: the vendor's card still asks it.
-    expect(systemCard(view, ["northwind-pay"], { orgPack })).toContain(
+    expect(systemCard(view, ["northwind-pay"], { orgPack, now: NOW_CARD })).toContain(
       "(oq.northwind-pay.rate-limit)",
     );
+    // Review of the fix: the org pack comes with its clock (typecheck).
+    // @ts-expect-error now is required with orgPack
+    const untimed: Parameters<typeof systemCard>[2] = { orgPack };
+    expect(untimed).toBeDefined();
   });
 
   it("computes the critical path, slipped and at-risk commitments from dates and change states", async () => {

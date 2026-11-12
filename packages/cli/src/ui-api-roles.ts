@@ -292,7 +292,8 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
               why: "No notifications are set up here (runtime.yaml adapters.notify): copy the question and ask the owner, then record what they said.",
             }),
           };
-        const { recordedSendAt, recordOwnerSend } = await import("./owner-questions.js");
+        const { ownerAskRef, recordedSendAt, recordOwnerSend } =
+          await import("./owner-questions.js");
         // Beta.27 review, final round: one send of a question at a time, held across the send,
         // so two tabs with a confirmation each can't both post it (no await between the check
         // and the add).
@@ -306,8 +307,8 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
         try {
           // Beta.27 review, round 2: a question whose own record says sent (from this machine or
           // another person's, merged) goes again through a live notifier only on Send again.
+          const was = q.finding ? undefined : await recordedSendAt(root, q.id);
           if (n.kind === "live" && !q.finding && b.data.again !== true) {
-            const was = await recordedSendAt(root, q.id);
             if (was)
               throw new HttpError(
                 409,
@@ -331,8 +332,12 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
                 title: `A question for ${team?.name ?? to}`,
                 body: `${q.question}\n\nWhat it is for: ${q.neededFact}\n\nAnswer it in Atticus (Questions › Owner questions), or reply to ${ctx.user}.`,
                 mentions,
+                // Beta.27 review of the fix: a manual step is the question's, once a send on
+                // record (whoever sends it, whatever "reply to" says); Send again after a send
+                // is a new one.
+                key: `${ownerAskRef(q.id)}${was ? `@${was}` : ""}`,
               },
-              { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: `owner-ask:${q.id}` },
+              { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: ownerAskRef(q.id) },
             );
           } catch (e) {
             if (e instanceof HttpError) throw e;

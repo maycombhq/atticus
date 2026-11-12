@@ -42,11 +42,12 @@ export async function domainProfileCommand(
   try {
     // Beta.27 review, final round: a closed gap's question isn't listed as open.
     const orgPack = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
-    text = domainProfile(records, system, {
-      ...(template ? { template } : {}),
-      ...(scannedAt ? { scannedAt } : {}),
-      ...(orgPack ? { orgPack, now: new Date().toISOString() } : {}),
-    });
+    const base = { ...(template ? { template } : {}), ...(scannedAt ? { scannedAt } : {}) };
+    text = domainProfile(
+      records,
+      system,
+      orgPack ? { ...base, orgPack, now: new Date().toISOString() } : base,
+    );
   } catch (e) {
     io.err((e as Error).message);
     return 1;

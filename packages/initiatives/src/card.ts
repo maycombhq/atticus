@@ -51,17 +51,24 @@ function table(header: string[], rows: string[][]): string[] {
   ];
 }
 
-export interface CardContext {
+export type CardContext = {
   /** Lines under the title: who is asked, by whom, by when. */
   header?: string[];
-  /**
-   * Beta.27 review, final round: the org pack, so a gap's question is an open question only
-   * while the knowledge gaps still raise it; without it every unanswered one is listed.
-   */
-  orgPack?: OrgPack;
-  /** The clock for the gaps' freshness (ISO date-time). */
-  now?: string;
-}
+} & (
+  | { orgPack?: undefined; now?: string }
+  | {
+      /**
+       * Beta.27 review, final round: the org pack, so a gap's question is an open question only
+       * while the knowledge gaps still raise it; without it every unanswered one is listed.
+       */
+      orgPack: OrgPack;
+      /**
+       * The clock for the gaps' freshness (ISO date-time). Review of the fix: required with
+       * the org pack, so the gaps are read as of the card's day, never the machine's.
+       */
+      now: string;
+    }
+);
 
 /** The system card for some systems, as Markdown, from the catalog only. */
 export function systemCard(view: CatalogView, systems: string[], o: CardContext = {}): string {
@@ -186,11 +193,7 @@ export function systemCard(view: CatalogView, systems: string[], o: CardContext 
     "",
   );
   const stillAsked = o.orgPack
-    ? ownerQuestionStillAsked({
-        records: view.records,
-        orgPack: o.orgPack,
-        ...(o.now ? { now: o.now } : {}),
-      })
+    ? ownerQuestionStillAsked({ records: view.records, orgPack: o.orgPack, now: o.now })
     : () => true;
   const questions = view
     .all("OwnerQuestion")
@@ -261,14 +264,16 @@ export async function requestFromTeam(
   const slug = partyId.replace(/^party\./, "");
   const cardRel = `initiatives/${initiativeId}/requests/${slug}.md`;
   const orgPack = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
-  const card = systemCard(view, systems, {
-    ...(orgPack ? { orgPack, now: nowIso(now) } : {}),
-    header: [
-      `For: ${initiative.title} (initiative ${initiative.id})`,
-      `Asked of: ${party.name} (${party.id}), by ${by} on ${today}`,
-      `Reply by: ${due}`,
-    ],
-  });
+  const header = [
+    `For: ${initiative.title} (initiative ${initiative.id})`,
+    `Asked of: ${party.name} (${party.id}), by ${by} on ${today}`,
+    `Reply by: ${due}`,
+  ];
+  const card = systemCard(
+    view,
+    systems,
+    orgPack ? { header, orgPack, now: nowIso(now) } : { header },
+  );
   const cardFile = join(initiativeDir(root, initiativeId), "requests", `${slug}.md`);
   await mkdir(dirname(cardFile), { recursive: true });
   await writeFile(cardFile, card, "utf8");

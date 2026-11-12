@@ -195,6 +195,7 @@ export async function notifyHandoffReviewers(
   h: ChangeHandoff,
   approval: Approval,
   given?: Notifier,
+  o: { factories?: AdapterFactories } = {},
 ): Promise<string[]> {
   const { customRoles } = await import("./change-roles.js");
   const next = nextOwnersOf(h.phase, c.owners, await customRoles(root));
@@ -202,12 +203,13 @@ export async function notifyHandoffReviewers(
   const reviewing = new Set(h.reviewers.map(handleKey));
   const people = (next?.people ?? []).filter((p) => reviewing.has(handleKey(p))).map(handle);
   if (!next || !people.length) return [];
-  const n = await notifierFor(root, c.id, given);
+  const n = await notifierFor(root, c.id, given, o);
   if (!n.notify) return [];
   const role = next.role.replace(/-/g, " ");
   const said: string[] = [];
   for (const p of people) {
     try {
+      const before = n.fallbacks.length;
       const r = await n.notify.send(
         {
           channel: `@${p}`,
@@ -218,10 +220,17 @@ export async function notifyHandoffReviewers(
         },
         approval,
       );
+      // Review of the fix: a live notifier that couldn't start, or fell back on this send, made
+      // a step for the person: nobody was told.
+      const fell =
+        n.fallback ??
+        (n.fallbacks.length > before ? fallbackWords(n.fallbacks.at(-1)!) : undefined);
       said.push(
-        n.kind === "manual"
-          ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): notifications are manual here.`
-          : `Told @${p} (${role}) that it waits on their review (${r.id}).`,
+        fell
+          ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): ${fell}.`
+          : n.kind === "manual"
+            ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): notifications are manual here.`
+            : `Told @${p} (${role}) that it waits on their review (${r.id}).`,
       );
     } catch (e) {
       said.push(`Couldn't tell @${p} (${role}): ${(e as Error).message}`);

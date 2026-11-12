@@ -10,6 +10,7 @@ import {
   Finding,
   listQuestions,
   loadOrgPack,
+  type ManualStep,
   QuestionError,
   questionsRelOf,
   readTeams,
@@ -58,6 +59,11 @@ export interface OwnerQuestionItem {
   ownerName?: string;
   /** Beta.27 review: when it was asked, when that is on file (a question a person's Ask raised). */
   sentAt?: string;
+  /**
+   * Beta.27 review of the fix: its Send made a manual step still open (approval ref
+   * `owner-ask:<id>`): asked, waiting for a person to send it.
+   */
+  asked?: { step: string; at: string };
   /** The role that takes it when nobody owns the system. */
   routeTo?: string;
   /** The org-pack files and fields that hold the fact, when a person writes it there. */
@@ -195,6 +201,51 @@ async function askedGapItems(root: string): Promise<OwnerQuestionItem[]> {
   return out.sort((a, b) => Number(a.state === "answered") - Number(b.state === "answered"));
 }
 
+/** The approval ref a send of an owner question carries (and its manual step keeps). */
+export const ownerAskRef = (id: string) => `owner-ask:${id}`;
+
+/**
+ * Beta.27 review of the fix: the owner questions whose Send made a manual step still open (Home ›
+ * Manual steps), by question id, the newest step each. The steps are files in the metarepo, so a
+ * reload and another person's machine say Asked as this one does. Nothing when they don't read.
+ */
+async function openAskSteps(root: string): Promise<Map<string, { step: string; at: string }>> {
+  const out = new Map<string, { step: string; at: string }>();
+  const { fileStepStore } = await import("@maycombhq/adapters");
+  const open = await fileStepStore(root)
+    .list({ action: "send-notification", state: "open" })
+    .catch(() => []);
+  for (const s of open) {
+    const ref = s.approval?.ref;
+    if (ref?.startsWith(ownerAskRef(""))) {
+      out.set(ref.slice(ownerAskRef("").length), { step: s.id, at: s.createdAt });
+    }
+  }
+  return out;
+}
+
+/**
+ * Beta.27 review of the fix: a manual step that sent an owner question, marked done by a person,
+ * is a send on record (`recordOwnerSend`, as a live send writes), so every machine says Sent and
+ * overdue can come. Other steps, and a skipped one, write nothing. Returns the record's path.
+ */
+export async function recordStepSend(
+  root: string,
+  s: ManualStep,
+  now?: Date,
+): Promise<string | undefined> {
+  const ref = s.approval?.ref;
+  if (s.state !== "done" || s.action !== "send-notification" || !s.recorded) return undefined;
+  if (!ref?.startsWith(ownerAskRef(""))) return undefined;
+  const channel = s.inputs?.["channel"];
+  return recordOwnerSend(root, ref.slice(ownerAskRef("").length), {
+    by: s.recorded.by,
+    at: s.recorded.at,
+    to: typeof channel === "string" ? channel : "",
+    ...(now ? { now } : {}),
+  });
+}
+
 /** Every owner question the knowledge gaps raise now, answered or not, in the gaps' order. */
 export async function ownerQuestions(
   root: string,
@@ -216,13 +267,16 @@ export async function ownerQuestions(
     if (at) onRecord.set(r.id, at);
   }
   const sends = await readOwnerAsks(root);
+  const steps = await openAskSteps(root);
   const questions = [...asked, ...(found ?? []).map((g) => itemOf(root, g))].map((q) => {
     const name = teams.find((t) => t.id === q.owner)?.name;
     const sentAt = q.sentAt ?? onRecord.get(q.id) ?? sends[q.id]?.at;
+    const step = steps.get(q.id);
     return {
       ...q,
       ...(name && name !== q.owner ? { ownerName: name } : {}),
       ...(sentAt ? { sentAt } : {}),
+      ...(step ? { asked: step } : {}),
     };
   });
   return {
