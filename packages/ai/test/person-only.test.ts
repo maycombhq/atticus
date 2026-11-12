@@ -6,6 +6,11 @@ import { atticusArgvOf, personOnlyWhy } from "../src/index.js";
  * started, both by the session's command check and by the CLI itself (one list).
  */
 const PERSON = [
+  // ADR 0195 (CS3): a person dismisses what the readers found, after checking its line.
+  "catalog crosscheck forge-ledger --dismiss key-1",
+  "catalog crosscheck forge-ledger --undismiss=key-1",
+  'catalog crosscheck forge-ledger --promote "Endpoint|GET /accounts/{}/balance"',
+  "catalog crosscheck forge-ledger --promote=key-1",
   "questions answer q1 --option 1",
   "questions sheet --apply facts/sheet.yaml",
   "questions sheet --apply=facts/sheet.yaml --by dev",
@@ -66,6 +71,8 @@ const PERSON = [
   "questions undo b-20261108-101500-a1b2c3",
 ];
 const SESSION = [
+  "catalog crosscheck forge-ledger",
+  "catalog crosscheck --json",
   // ADR 0181: reading what the AI decided is anyone's.
   "questions decisions --json",
   "verify forge-ledger",

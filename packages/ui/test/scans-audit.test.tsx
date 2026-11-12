@@ -13,9 +13,9 @@ describe("Set up › Scans (app-only audit)", () => {
   it("names the scan as the built-in readers' cross-check, and says it writes only a whole read", () => {
     expect(T.scanNow).toBe("Check with the built-in readers");
     expect(T.scanCrossCheck).toMatch(/^A cross-check, not how the map is made/);
-    // Beta.26: what it does now, exactly.
+    // Beta.27 (ADR 0195): what it does now, exactly.
     expect(T.scanCrossCheck).toMatch(
-      /writes the catalog only when every repo is cloned here and read in full; otherwise it writes nothing and says which repos and why/,
+      /keeps each repo read in full as its readers slot, keeps every other repo's last good read and says why, then builds the catalog/,
     );
   });
 

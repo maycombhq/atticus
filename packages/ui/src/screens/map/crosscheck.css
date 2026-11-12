@@ -1,0 +1,213 @@
+/*
+ * ADR 0195 (CS3): Readers found / facts say, and Catalog builds. Everything wraps, so the page
+ * fits a VS Code panel (780 px, 420 px) without scrolling sideways; long keys, paths and values
+ * break anywhere.
+ */
+.xc .mono,
+.cb .mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.xc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: flex-end;
+}
+.xc-show {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.xc-show legend {
+  width: 100%;
+  padding: 0 0 4px;
+}
+.xc-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.xc-seg.on {
+  border-color: var(--text);
+  font-weight: 600;
+}
+.xc-seg input {
+  margin: 0;
+}
+.xc-seg:focus-within {
+  outline: 2px solid var(--focus, currentColor);
+  outline-offset: 2px;
+}
+.xc-narrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.xc-narrow .field {
+  max-width: 100%;
+}
+.xc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.xc-item {
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  background: var(--panel);
+}
+.xc-item.xc-disagree {
+  border-left: 3px solid var(--magenta-line);
+}
+.xc-item.xc-readers-only {
+  border-left: 3px solid var(--amber-line, var(--line-2));
+}
+.xc-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.xc-key,
+.xc-value {
+  margin: 0;
+  font-size: 13px;
+}
+/* ADR 0195 (CS3): the cited line a promote shows, wrapped so a narrow panel never scrolls sideways. */
+.xc-line {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line, currentColor);
+  border-radius: 4px;
+}
+.xc-fields {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.xc-fields th,
+.xc-fields td {
+  text-align: left;
+  vertical-align: top;
+  padding: 3px 6px 3px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.xc-fields thead th {
+  border-top: 0;
+  font-weight: 600;
+}
+.xc-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 6px 16px;
+}
+.xc-cites {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+.xc-note {
+  margin: 0;
+}
+
+/* Catalog builds: tables become blocks of rows on a narrow panel. */
+.cb-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.cb-table th,
+.cb-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 8px 4px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.cb-table thead th {
+  border-top: 0;
+}
+@media (max-width: 560px) {
+  .cb-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .cb-table,
+  .cb-table tbody,
+  .cb-table tr,
+  .cb-table th,
+  .cb-table td {
+    display: block;
+    width: 100%;
+  }
+  .cb-table tr {
+    border-top: 1px solid var(--line);
+    padding: 6px 0;
+  }
+  .cb-table th,
+  .cb-table td {
+    border-top: 0;
+    padding: 1px 0;
+  }
+  .cb-table td[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--muted, inherit);
+  }
+}
+.cb-list {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.cb-dialog {
+  max-width: 640px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.cb .field.cb-count {
+  width: 10em;
+  max-width: 100%;
+}
+/* The list scrolls inside the dialog, so the count and the buttons stay in view. */
+.cb-dialog-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 0;
+}
+/* The dialog's own list scrolls (and takes the focus): a long list inside it doesn't scroll again. */
+.cb-dialog-list .cb-list {
+  max-height: none;
+  overflow-y: visible;
+}

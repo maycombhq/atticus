@@ -85,6 +85,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "outside", label: S.outside, section: "Map", aside: true },
   // F7 (ADR 0164): the contract check on every link, linked from Trust and Why is this linked?.
   { id: "mismatches", label: S.mismatches, section: "Map", aside: true },
+  // ADR 0195 (CS3): the readers' cross-check, linked from Trust and Scans.
+  { id: "crosscheck", label: S.crosscheck, section: "Map", aside: true },
   { id: "map", label: S.map, section: "Map", full: true },
   { id: "features", label: S.features, section: "Map", full: true },
   { id: "mappings", label: S.mappings, section: "Map", full: true },
@@ -150,6 +152,8 @@ export const SCREENS: ScreenDef[] = [
   // The first steps, from Home's next step.
   { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
   { id: "scans", label: S.scans, section: "SetUp" },
+  // ADR 0195 (CS3): the catalog's builds: confirm a refused build, undo, prune; linked from Scans.
+  { id: "catalog-builds", label: S.catalogBuilds, section: "SetUp", aside: true },
   { id: "intake", label: S.intake, section: "SetUp", full: true },
   { id: "settings", label: S.settings, section: "SetUp", full: true },
 

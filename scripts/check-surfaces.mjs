@@ -17,11 +17,11 @@ import { helpText, REPO } from "./help-text.mjs";
  */
 const CENSUS = {
   /** Distinct `atticus <group> [<sub>]` commands in the help text, which is the catalogue's source (ADR 0096). */
-  commands: 274, // ADR 0195 (CS2): catalog build, catalog edits, catalog undo, catalog prune; ADR 0191: questions route; ADR 0181: questions decisions, questions correct and questions undo, task run-ready; ADR 0184: change release-prs; ADR 0183: workspace bring-in; UX review (2026-11-08): questions owner; ADR 0180: types list, add, notes; ADR 0179: change sketch; ADR 0178: connect match; ADR 0177: skills list, import, write; ADR 0176: rules list, add, activate and off, draft, try, import, notes; ADR 0171: questions propose (/atticus-propose as a command, run in a Copilot session under copilot-acp); ADR 0163: repo-type note and repo-type rules; ADR 0164 (F7): join contracts and estate contracts; F10: doctor --counts (counted with doctor, as its own line in the help); ADR 0161: map --all (counted with map, as its own line in the help); ADR 0160 (O3): join shared and estate shared; ADR 0153: questions sheet; ADR 0151 (J4): intake traffic; ADR 0148 (P3): verify audit; ADR 0146: spec seed and spec accept; ADR 0144: change impact, questions proposed; ADR 0130: intake impact; ADR 0132: sources estimate, standards propose and standards accept; F5: repo rename; R5: join measure and estate measure; P5 (ADR 0141): estate fresh
+  commands: 275, // ADR 0195 (CS3): catalog crosscheck; ADR 0195 (CS2): catalog build, catalog edits, catalog undo, catalog prune; ADR 0191: questions route; ADR 0181: questions decisions, questions correct and questions undo, task run-ready; ADR 0184: change release-prs; ADR 0183: workspace bring-in; UX review (2026-11-08): questions owner; ADR 0180: types list, add, notes; ADR 0179: change sketch; ADR 0178: connect match; ADR 0177: skills list, import, write; ADR 0176: rules list, add, activate and off, draft, try, import, notes; ADR 0171: questions propose (/atticus-propose as a command, run in a Copilot session under copilot-acp); ADR 0163: repo-type note and repo-type rules; ADR 0164 (F7): join contracts and estate contracts; F10: doctor --counts (counted with doctor, as its own line in the help); ADR 0161: map --all (counted with map, as its own line in the help); ADR 0160 (O3): join shared and estate shared; ADR 0153: questions sheet; ADR 0151 (J4): intake traffic; ADR 0148 (P3): verify audit; ADR 0146: spec seed and spec accept; ADR 0144: change impact, questions proposed; ADR 0130: intake impact; ADR 0132: sources estimate, standards propose and standards accept; F5: repo rename; R5: join measure and estate measure; P5 (ADR 0141): estate fresh
   /** The twelve a person meets first (ADR 0124 addendum D-cli). */
   topCommands: 12,
   /** Pages in the app (`packages/ui/src/app/screens.ts`). */
-  screens: 56, // ADR 0181: Decided by AI, beside Trust; ADR 0164 (F7): Mismatches; ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
+  screens: 58, // ADR 0195 (CS3): Readers found / facts say, beside Trust, and Catalog builds, beside Scans; ADR 0181: Decided by AI, beside Trust; ADR 0164 (F7): Mismatches; ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
   /** Views in VS Code's Atticus container, and the commands its palette offers. */
   vscodeViews: 7,
   // 2026-11-01 (beta.10 caught up in VS Code): counted as the commands the palette offers (every
@@ -51,6 +51,7 @@ const SCREENS = [
   "systems",
   "outside",
   "mismatches",
+  "crosscheck",
   "map",
   "features",
   "mappings",
@@ -90,6 +91,7 @@ const SCREENS = [
   "orgpack",
   "onboarding",
   "scans",
+  "catalog-builds",
   "intake",
   "settings",
   "history",

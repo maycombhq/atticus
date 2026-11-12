@@ -153,7 +153,8 @@ const RECORDED: Record<string, Rule> = {
   standards: all,
   openspec: only("setup"),
   templates: only("draft"),
-  catalog: only("migrate"),
+  // ADR 0195: the build's commands write the catalog and its slots; the cross-check its dismissals.
+  catalog: only("migrate", "build", "edits", "undo", "prune", "crosscheck"),
   diagram: all,
   "assistant-files": all,
   site: only("build"),

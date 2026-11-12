@@ -10,6 +10,8 @@ import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./c
 import { AiChip } from "../../app/decisions.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { OrgPackEditors } from "../setup/OrgPackForms.js";
+import { RefusalView } from "../setup/CatalogBuild.js";
+import { followJob } from "../../app/job.js";
 
 const T = COPY.know;
 
@@ -1319,6 +1321,91 @@ export function jobNote<N extends { ok: boolean }>(
   return ended && note?.ok ? undefined : note;
 }
 
+/** ADR 0195 (CS3): one repo's outcome of a scan, from its job's `sources`. */
+export interface ScanSourceView {
+  repo: string;
+  source: "facts" | "readers" | "legacy" | "none";
+  sourceCommit?: string;
+  slot: "written" | "unchanged" | "kept-last-good" | "none";
+  commit?: string;
+  reason?: string;
+  detail?: string;
+  factsStale?: unknown;
+}
+
+/** Each repo's outcome of a finished scan (read in full, or kept its last good read and why). */
+export function scanSources(job: Pick<Job, "state" | "result"> | undefined): ScanSourceView[] {
+  if (!job || job.state === "running" || job.state === "queued") return [];
+  const s = job.result?.sources;
+  return Array.isArray(s) ? (s as ScanSourceView[]) : [];
+}
+
+/** A scan's refusal that a person can confirm: its build's large removals or hand edits. */
+export function scanBuildRefusal(job: Pick<Job, "state" | "result"> | undefined) {
+  if (!job || job.state === "running" || job.state === "queued") return undefined;
+  const r = job.result?.refused as Api.BuildRefusalViewT | undefined;
+  if (!r || !Array.isArray(r.reasons) || r.reasons.every((x) => x === "nothing-read"))
+    return undefined;
+  const command = r.reasons.includes("large-removals")
+    ? `atticus scan --allow-removals ${r.allowRemovals ?? 0}`
+    : r.reasons.includes("hand-edits")
+      ? "atticus catalog edits --curate"
+      : "atticus scan";
+  return { ...r, command: r.command ?? command };
+}
+
+const SS = COPY.scanSources;
+const shortCommit = (c?: string) => (c && /^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : (c ?? ""));
+
+/** Set up › Scans (ADR 0195): what the scan read of each repo. */
+export function ScanSourcesTable({ sources }: { sources: readonly ScanSourceView[] }) {
+  if (!sources.length) return null;
+  return (
+    <section className="stack cb" style={{ gap: 6 }} aria-labelledby="scan-sources">
+      <h3 id="scan-sources" className="hud" style={{ margin: 0 }}>
+        {SS.title}
+      </h3>
+      <table className="cb-table">
+        <caption className="sr">{SS.caption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{SS.col.repo}</th>
+            <th scope="col">{SS.col.outcome}</th>
+            <th scope="col">{SS.col.source}</th>
+            <th scope="col">{SS.col.note}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((x) => (
+            <tr key={x.repo}>
+              <th scope="row" className="mono" style={{ fontWeight: "normal" }}>
+                {x.repo}
+              </th>
+              <td data-label={SS.col.outcome}>
+                <span
+                  className={`chip ${x.slot === "written" || x.slot === "unchanged" ? "done" : x.slot === "none" ? "dim" : "warn"}`}
+                >
+                  {SS.slot[x.slot] ?? x.slot}
+                </span>
+                {x.commit ? ` ${SS.at(shortCommit(x.commit))}` : ""}
+              </td>
+              <td data-label={SS.col.source}>
+                {COPY.catalogBuild.source[x.source] ?? x.source}
+                {x.sourceCommit ? ` ${SS.at(shortCommit(x.sourceCommit))}` : ""}
+              </td>
+              <td data-label={SS.col.note}>
+                {x.reason ? (SS.why[x.reason] ?? x.reason) : ""}
+                {x.detail ? ` (${x.detail})` : ""}
+                {x.factsStale ? `${x.reason ? "; " : ""}${SS.factsStale}` : ""}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 export function Scans() {
   const repos = useApi<Repo[]>("/api/repos");
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
@@ -1353,6 +1440,7 @@ export function Scans() {
   const start = (path: string, label: string, body: Record<string, unknown> = {}) =>
     act.run(async () => {
       setStopping(false);
+      if (path === "/api/scan") setLastBody(body);
       const r = await api<{ jobId: string }>(path, { method: "POST", body });
       setJob(await api<Job>(`/api/jobs/${r.jobId}`));
     }, T.started(label));
@@ -1360,7 +1448,11 @@ export function Scans() {
   // ends, its state says what happened and the note that it started goes.
   const note = jobNote(job, act.note);
   const added = scanAdded(job);
-  const refusedScan = scanRefused(job);
+  // ADR 0195 (CS3): a build's refusal is confirmed here, not read as a list of unread repos.
+  const buildRefused = scanBuildRefusal(job);
+  const refusedScan = buildRefused ? undefined : scanRefused(job);
+  const sources = scanSources(job);
+  const [lastBody, setLastBody] = useState<Record<string, unknown>>({});
   const cancel = (id: string) => {
     setStopping(true);
     // A job that ended meanwhile says so with 409; its end arrives as job.done either way.
@@ -1413,6 +1505,11 @@ export function Scans() {
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {T.readAgainWhere} <a href="#/trust">{T.readAgain}</a>
           </p>
+          {/* ADR 0195 (CS3): the readers' cross-check, and the build's confirm, undo and prune. */}
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            {SS.links} <a href="#/crosscheck">{COPY.crossCheck.title}</a> ·{" "}
+            <a href="#/catalog-builds">{COPY.catalogBuild.openFromScans}</a>
+          </p>
           {job && (
             <div className="stack" role="status" aria-live="polite">
               <span className="hud" style={{ fontSize: 10 }}>
@@ -1425,6 +1522,26 @@ export function Scans() {
                 label={T.jobProgress}
               />
               {added && <span>{added}</span>}
+              <ScanSourcesTable sources={sources} />
+              {buildRefused && (
+                <RefusalView
+                  refused={buildRefused}
+                  confirmLabel={SS.confirmScan}
+                  onAllowRemovals={(n) =>
+                    start("/api/scan", T.scan2, { ...lastBody, allowRemovals: n }).then(
+                      () => undefined,
+                    )
+                  }
+                  onCurate={(n) =>
+                    followJob("/api/build/edits/curate", { count: n }).then(() => undefined)
+                  }
+                  onDiscard={(n) =>
+                    start("/api/scan", T.scan2, { ...lastBody, discardEdits: n }).then(
+                      () => undefined,
+                    )
+                  }
+                />
+              )}
               {refusedScan && (
                 <div className="stack" style={{ gap: 4 }}>
                   <strong>{refusedScan.title}</strong>

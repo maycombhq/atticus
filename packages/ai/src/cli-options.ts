@@ -132,6 +132,9 @@ export const OPTIONS = {
   "accept-changes": { type: "string" },
   yes: { type: "boolean" },
   curate: { type: "boolean" },
+  // ADR 0195 (CS3): atticus catalog crosscheck <repo> --dismiss|--undismiss <key>.
+  dismiss: { type: "string" },
+  undismiss: { type: "string" },
   warnings: { type: "boolean" },
   "no-rescan": { type: "boolean" },
   refresh: { type: "string" },

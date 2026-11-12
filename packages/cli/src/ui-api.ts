@@ -1,4 +1,5 @@
 import { answerAsJob, tracked, trackedLocal } from "./ui-api-activity.js";
+import { uiCatalogRoutes } from "./ui-api-catalog.js";
 import { uiStepRoutes } from "./ui-api-steps.js";
 import { printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
@@ -655,6 +656,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   // ADR 0188: the local steps the pages named as commands, each a button.
   uiStepRoutes(r, ctx, asJob);
+  // ADR 0195 (CS3): the readers' cross-check, and the build's confirm steps, undo and prune.
+  uiCatalogRoutes(r, ctx, asJob);
   /**
    * Done: a hand-off's answer checked, and the step it finishes resumed (fourth UX walk). ADR
    * 0189: the same for the app's own check once the answer file is complete (`by: "app"`, from
@@ -1785,6 +1788,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                     // ADR 0123: another branch, scanned beside the baseline.
                     ...(b.ref ? { ref: b.ref } : {}),
                     ...(askFrom ? { askFrom } : {}),
+                    // ADR 0195 (CS3): the confirm step's counts, as the refusal listed them.
+                    ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                    ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
                   },
                   io,
                 ),
@@ -1804,9 +1810,18 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             // Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. The
             // job says which repos and why, and what to do, in words; the catalog is unchanged.
             const refusal = parsed.refused as ScanRefusal | undefined;
+            // ADR 0195 (CS3): each repo's outcome (read in full, or kept its last good read and
+            // why), for Set up › Scans.
+            const sources = Array.isArray(parsed.sources) ? parsed.sources : [];
             if (refusal)
               return {
-                result: { stats: parsed.stats, problems, written: false, refused: refusal },
+                result: {
+                  stats: parsed.stats,
+                  problems,
+                  written: false,
+                  refused: refusal,
+                  sources,
+                },
                 errors: refusal.message.split("\n"),
               };
             ctx.events.publish({
@@ -1824,7 +1839,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               `The built-in readers added ${added} record${added === 1 ? "" : "s"}, changed ${changed} and removed ${removed}; ${questions} host question${questions === 1 ? " is" : "s are"} open.`,
             );
             return {
-              result: { stats: parsed.stats, problems, added, changed, removed, questions },
+              result: {
+                stats: parsed.stats,
+                problems,
+                added,
+                changed,
+                removed,
+                questions,
+                sources,
+              },
               errors: res.code === 2 ? res.err : [],
             };
           },
