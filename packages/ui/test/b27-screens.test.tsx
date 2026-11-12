@@ -14,6 +14,7 @@ import {
   boxFocused,
   FIT_MIN_ZOOM,
   keyboardFocus,
+  releasePointerOn,
 } from "../src/screens/architecture/Canvas.js";
 import { WORDS } from "../src/screens/architecture/words.js";
 import { stageMark } from "../src/screens/work/Cockpit.js";
@@ -148,25 +149,55 @@ describe("4: one next step", () => {
       "Raise each need, then record it with atticus needs done add-transfer-limit <item>.",
       "Or run `atticus plan stories add-transfer-limit` again.",
     ].join(" ");
-    const held = renderToStaticMarkup(<>{nextCell({ ...row, nextStep: said, stepFirst: true })}</>);
-    expect(held).not.toMatch(/atticus [a-z]/);
-    expect(held).not.toMatch(/\(ADR \d{4}\)/);
-    expect(held).toContain("so it modifies the seeded requirement.");
+    // Final round: the server's app-words form (nextStepApp, built from the help catalog's
+    // commands) is what the page says.
+    const app =
+      'Not ready to raise "Plan ready" yet: first, add-transfer-limit adds a new flow, and its starting spec adds it too. Then run the change\'s stories stage again so it modifies the seeded requirement. Raise each need, then record it.';
+    const held = renderToStaticMarkup(
+      <>{nextCell({ ...row, nextStep: said, stepFirst: true, nextStepApp: app })}</>,
+    );
     expect(held).toContain("then record it.");
+    expect(held).not.toMatch(/atticus [a-z]/);
+    // With no app-words form, the page takes out only what is plainly a command (in brackets)
+    // and the ADRs: it never cuts prose it can't tell from a command.
+    const fallback = renderToStaticMarkup(
+      <>{nextCell({ ...row, nextStep: said, stepFirst: true })}</>,
+    );
+    expect(fallback).not.toMatch(/\(ADR \d{4}\)/);
+    expect(fallback).not.toContain("(atticus plan stories");
+    expect(fallback).toContain("so it modifies the seeded requirement.");
     expect(sentenceInAppWords("Atticus checks it (ADR 0101).")).toBe("Atticus checks it.");
-    expect(sentenceInAppWords("Write the brief: run atticus change feature x.")).toBe(
-      "Write the brief.",
+    for (const prose of [
+      "Fill the gap with atticus questions owner q.x --text 'y', then rerun.",
+      "approval comes from atticus approve design or the Gate, then build",
+      "Ask the owner what atticus knows about it.",
+      "Atticus checks `org-pack/runtime.yaml` and `atticus knows`.",
+    ])
+      expect(sentenceInAppWords(prose)).toBe(prose);
+    expect(
+      sentenceInAppWords(
+        "Task 1.2 of add-transfer-limit is the first one not done. /atticus-task gives your assistant its context (atticus task context add-transfer-limit 1.2): the story, the criteria.",
+      ),
+    ).toBe(
+      "Task 1.2 of add-transfer-limit is the first one not done. /atticus-task gives your assistant its context: the story, the criteria.",
     );
     // When nothing comes first, the sentence is as the server said it.
     expect(nextStepWords('Ready to raise "Plan ready".')).toBe('Ready to raise "Plan ready".');
+    expect(nextStepWords(said, true, app)).toBe(app);
     // Changes, the brief's Gate (and its held Raise hand-off), Across and Release say it so.
     for (const [file, re] of [
-      ["../src/screens/Changes.tsx", /nextStepWords\(s\.nextStep, s\.stepFirst\)/],
-      ["../src/screens/know/Phase.tsx", /nextStepWords\(s\.nextStep, s\.stepFirst\)/],
-      ["../src/screens/know/Phase.tsx", /first: nextStepWords\(s\.nextStep, true\)/],
+      ["../src/screens/Changes.tsx", /nextStepWords\(s\.nextStep, s\.stepFirst, s\.nextStepApp\)/],
+      [
+        "../src/screens/know/Phase.tsx",
+        /nextStepWords\(s\.nextStep, s\.stepFirst, s\.nextStepApp\)/,
+      ],
+      [
+        "../src/screens/know/Phase.tsx",
+        /first: nextStepWords\(s\.nextStep, true, s\.nextStepApp\)/,
+      ],
       [
         "../src/screens/run/Release.tsx",
-        /nextStepWords\(r\.status\.nextStep, r\.status\.stepFirst\)/,
+        /nextStepWords\(r\.status\.nextStep, r\.status\.stepFirst, r\.status\.nextStepApp\)/,
       ],
     ] as const)
       expect(readFileSync(new URL(file, import.meta.url), "utf8")).toMatch(re);
@@ -334,6 +365,55 @@ describe("8: a box reached by the keyboard shows its focus", () => {
     expect(boxFocused(button, stageEl, () => centred.push("x"), keys)).toBe(false);
   });
 
+  it("hears the pointer come up anywhere, so Tab into a box out of view pans after a click (final round)", () => {
+    // A pointer down on the canvas, up over the toolbar (the window hears it, not the canvas).
+    const win = new EventTarget();
+    const down = { current: false };
+    const stop = releasePointerOn(win, down);
+    const el = (o: Record<string, unknown>) => o as unknown as Element;
+    const stageEl = el({
+      contains: () => true,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 600, bottom: 400 }),
+      parentElement: null,
+    });
+    const box = el({
+      closest: (s: string) => (s === ".react-flow__node" ? box : null),
+      parentElement: stageEl,
+      getBoundingClientRect: () => ({ left: 10, top: 500, right: 120, bottom: 540 }),
+      getAttribute: (a: string) => (a === "data-id" ? "ledger-api" : null),
+      matches: (s: string) => s === ":focus-visible",
+    });
+    const centred: string[] = [];
+    const tab = () =>
+      boxFocused(box, stageEl, (id) => centred.push(id), {
+        keyboard: !down.current && keyboardFocus(box),
+      });
+    down.current = true; // pointerdown on the canvas
+    expect(tab()).toBe(false);
+    win.dispatchEvent(new Event("pointerup"));
+    expect(down.current).toBe(false);
+    expect(tab()).toBe(true);
+    expect(centred).toEqual(["ledger-api"]);
+    // Cancelled, or a key pressed (a captured keydown), it is up too.
+    down.current = true;
+    win.dispatchEvent(new Event("pointercancel"));
+    expect(down.current).toBe(false);
+    down.current = true;
+    win.dispatchEvent(new Event("keydown"));
+    expect(down.current).toBe(false);
+    // Stopped listening: nothing changes it any more.
+    stop();
+    down.current = true;
+    win.dispatchEvent(new Event("pointerup"));
+    expect(down.current).toBe(true);
+    const src = readFileSync(
+      new URL("../src/screens/architecture/Canvas.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(src).toMatch(/releasePointerOn\(window, pointerDown\)/);
+    expect(src).not.toMatch(/onPointerUpCapture/);
+  });
+
   it("tells the keyboard's focus by :focus-visible, and the canvas pans only for it (review of the fix)", () => {
     const el = (m: (s: string) => boolean) => ({ matches: m }) as unknown as Element;
     expect(keyboardFocus(el((s) => s === ":focus-visible"))).toBe(true);
@@ -492,24 +572,46 @@ describe("17: the upgrade panel", () => {
     );
     expect(done).toContain(esc(COPY.upgrade.done));
     expect(done).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
-    // Review of the fix: the upgrade keeps only its stamp to propose: no Propose, said why.
-    const stampOnly = renderToStaticMarkup(
+    // Final round: the GET from before the run (upgraded: [] there) never says "only the stamp
+    // changed": the run's own result does.
+    const before = renderToStaticMarkup(
       <UpgradeOfferView
         view={{ ...view, pending: [], upgraded: [] }}
         run={{ state: "done", lines: [] }}
         onRun={() => undefined}
       />,
     );
-    expect(stampOnly).toContain(esc(COPY.upgrade.doneStampOnly));
-    expect(stampOnly).not.toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
-    const withFiles = renderToStaticMarkup(
+    expect(before).not.toContain(esc(COPY.upgrade.doneStampOnly));
+    expect(before).toContain(esc(COPY.upgrade.done));
+    // Only the stamp changed (the job's result): said so, and the stamp is still proposed
+    // (scope upgrade carries it, ADR 0051).
+    const stampOnly = renderToStaticMarkup(
       <UpgradeOfferView
         view={{ ...view, pending: [], upgraded: ["org-pack/runtime.yaml"] }}
-        run={{ state: "done", lines: [] }}
+        run={{ state: "done", lines: [], upgraded: [] }}
         onRun={() => undefined}
       />,
     );
+    expect(stampOnly).toContain(esc(COPY.upgrade.doneStampOnly));
+    expect(COPY.upgrade.doneStampOnly).toMatch(/propose the stamp so everyone's Atticus sees/);
+    expect(stampOnly).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
+    const withFiles = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={{ ...view, pending: [] }}
+        run={{ state: "done", lines: [], upgraded: ["org-pack/runtime.yaml"] }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(withFiles).toContain(esc(COPY.upgrade.done));
     expect(withFiles).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
+  });
+
+  it("reads what the run changed from the job's result (final round)", async () => {
+    const { followJob } = await import("../src/app/job.js");
+    expect(followJob.toString()).toMatch(/result: j\.result/);
+    const src = readFileSync(new URL("../src/app/upgrade.tsx", import.meta.url), "utf8");
+    expect(src).toMatch(/const upgraded = r\.result\?\.upgraded;/);
+    expect(src).not.toMatch(/view\.upgraded/);
   });
 });
 

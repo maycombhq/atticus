@@ -705,6 +705,10 @@ export function ArchitectureCanvas(p: {
   /** A box is being dragged, or a pointer is down on the canvas (review of the fix). */
   const dragging = useRef(false);
   const pointerDown = useRef(false);
+  useEffect(
+    () => (typeof window === "undefined" ? undefined : releasePointerOn(window, pointerDown)),
+    [],
+  );
   /** The view panned to a box, at the zoom it has (a box Tab reached out of view). */
   const centerOn = (id: string) => {
     const i = rf.current;
@@ -919,14 +923,10 @@ export function ArchitectureCanvas(p: {
         // Beta.27 review: a box Tab reaches out of view is panned to, never scrolled to. Review
         // of the fix: only the keyboard's focus pans; a click or a drag focuses a box too, and
         // the view never moves under the pointer.
+        // Beta.27 review, final round: the pointer comes up anywhere (released over the toolbar,
+        // outside the canvas or the window): `releasePointerOn(window)` hears it, and a key.
         onPointerDownCapture={() => {
           pointerDown.current = true;
-        }}
-        onPointerUpCapture={() => {
-          pointerDown.current = false;
-        }}
-        onPointerCancelCapture={() => {
-          pointerDown.current = false;
         }}
         onFocusCapture={(e) => {
           const el = stage.current;
@@ -1040,6 +1040,27 @@ export function ArchitectureCanvas(p: {
  * Review of the fix (beta.27): whether focus came from the keyboard, as the browser says it
  * (`:focus-visible`: a click focuses a box without it). A browser that can't say: not.
  */
+/**
+ * Beta.27 review, final round: a pointer down on the canvas is up again when it comes up anywhere
+ * (`pointerup` or `pointercancel` on the window: released over the toolbar or outside the canvas,
+ * the canvas's own handlers never hear it), or when a key is pressed (a person on the keyboard is
+ * not dragging), so Tab into a box out of view pans to it. Returns the way to stop listening.
+ */
+export function releasePointerOn(
+  target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
+  down: { current: boolean },
+): () => void {
+  const up = () => {
+    down.current = false;
+  };
+  const events = ["pointerup", "pointercancel", "keydown"] as const;
+  const capture = { capture: true };
+  for (const e of events) target.addEventListener(e, up, capture);
+  return () => {
+    for (const e of events) target.removeEventListener(e, up, capture);
+  };
+}
+
 export function keyboardFocus(el: Element): boolean {
   try {
     return typeof el.matches === "function" && el.matches(":focus-visible");

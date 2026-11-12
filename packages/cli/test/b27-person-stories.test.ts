@@ -177,6 +177,13 @@ describe("one next step on every page (beta.27 review)", () => {
         const first = `Not ready to raise "Plan ready" yet: first, ${why[0]!.toLowerCase()}${why.slice(1)}`;
         expect(status.nextStep).toBe(first);
         expect(status.stepFirst).toBe(true);
+        // Beta.27 review, final round: the same sentence in the app's words, from the server.
+        const { commandShapes, stepInAppWords } = await import("../src/step-app-words.js");
+        const appWhy = stepInAppWords(why, await commandShapes());
+        expect((status as { nextStepApp?: string }).nextStepApp).toBe(
+          `Not ready to raise "Plan ready" yet: first, ${appWhy[0]!.toLowerCase()}${appWhy.slice(1)}`,
+        );
+        expect((status as { nextStepApp?: string }).nextStepApp).not.toMatch(/\(atticus |ADR \d/);
         // Review of the fix: change status says the same, and its --json says stepFirst.
         const { changeStatus } = await import("../src/change-commands.js");
         const out: string[] = [];

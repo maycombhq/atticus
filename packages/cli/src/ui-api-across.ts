@@ -173,6 +173,7 @@ export async function acrossRows(root: string, view: AcrossView): Promise<Across
           ...(rep.phase ? { phase: rep.phase } : {}),
           ...(rep.next ? { next: rep.next } : {}),
           nextStep: said.nextStep,
+          ...(said.nextStepApp ? { nextStepApp: said.nextStepApp } : {}),
           ...(said.stepFirst ? { stepFirst: true } : {}),
           risk: rep.risk.level,
           blockers: rep.blockers.length,

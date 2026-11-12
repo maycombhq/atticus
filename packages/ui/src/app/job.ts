@@ -45,14 +45,14 @@ export async function followJob(
   wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
   /** App-only audit: hears the job's id at once, so the page can link its Console entry. */
   onJob?: (jobId: string) => void,
-): Promise<{ code: number; lines: string[] }> {
+): Promise<{ code: number; lines: string[]; result?: Record<string, unknown> }> {
   const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
   onJob?.(jobId);
   for (;;) {
     const j = await api<{
       state: string;
       errors: string[];
-      result?: { code?: number; lines?: string[]; next?: unknown };
+      result?: { code?: number; lines?: string[]; next?: unknown; [k: string]: unknown };
     }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
     if (j.state !== "running" && j.state !== "queued") {
       const code = j.result?.code ?? (j.state === "done" ? 0 : 1);
@@ -62,7 +62,8 @@ export async function followJob(
       // A failure's own words: its errors (a sync's stderr), else what it printed.
       const lines = failed ? (errors.length ? errors : said) : said.length ? said : errors;
       if (failed) throw new JobFailed(lines.join(" ") || j.state, lines, nextStepOf(j.result));
-      return { code, lines };
+      // Beta.27 review, final round: the rest of the result (the upgrade's `upgraded`).
+      return { code, lines, ...(j.result ? { result: j.result } : {}) };
     }
     await wait(700);
   }

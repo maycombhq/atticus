@@ -79,6 +79,8 @@ interface ReleaseDetail {
     nextStep: string;
     /** Beta.27 review: nothing blocks the gate, yet another step comes first. */
     stepFirst?: boolean;
+    /** Beta.27 review, final round: `nextStep` in the app's words, from the server. */
+    nextStepApp?: string;
     risk: { level: string; score: number };
     blockers: Reason[];
     reasons: Reason[];
@@ -226,7 +228,7 @@ export function Detail({ id }: { id: string }) {
                   <span className="hud" style={{ marginRight: 8 }}>
                     {T.next}
                   </span>
-                  {nextStepWords(r.status.nextStep, r.status.stepFirst)}
+                  {nextStepWords(r.status.nextStep, r.status.stepFirst, r.status.nextStepApp)}
                   {r.status.stepFirst && (
                     <>
                       {" "}

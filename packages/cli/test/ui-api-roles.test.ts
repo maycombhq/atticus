@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
-import { MockNotifier } from "@maycombhq/adapters";
+import { AdapterError, fileStepStore, MockNotifier, type Notifier } from "@maycombhq/adapters";
 import {
   Api,
   parseRecord,
@@ -367,6 +367,141 @@ describe("an owner question, sent", () => {
     expect(
       (await call(`/api/owner-questions/${gap.id}/send`, "POST", { again: true })).status,
     ).toBe(403);
+  });
+});
+
+describe("an owner question whose live send became a manual step (beta.27 final round)", () => {
+  // A live notifier (slack, made by a test factory) that can't reach the system, or can't start:
+  // the manual fallback makes a step for the person, and nothing says sent.
+  async function serverWith(make: () => Notifier, notify = "{ type: slack }") {
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-ui-roles-fallback-"));
+    await cp(root, r2, { recursive: true });
+    await rm(join(r2, "catalog/curated"), { recursive: true, force: true });
+    await rm(join(r2, ".index"), { recursive: true, force: true });
+    await writeFile(
+      join(r2, "org-pack/runtime.yaml"),
+      `schemaVersion: 1\nassistants: { allowed: [copilot, claude-code], default: copilot }\nadapters:\n  workTracker: { type: manual }\n  notify: ${notify}\n`,
+    );
+    const s = await startServer({
+      root: r2,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (r, ctx) =>
+        extendUiRoutes(r, ctx, { now: NOW, adapterFactories: { notify: { slack: make } } }),
+    });
+    return { r2, s };
+  }
+  async function post(s: RunningServer, path: string, body: unknown) {
+    const r = await fetch(s.url + path, {
+      method: "POST",
+      headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+  }
+  async function openGap(s: RunningServer) {
+    const r = await fetch(s.url + "/api/owner-questions", {
+      headers: { "X-Atticus-Token": s.token },
+    });
+    const list = Api.OwnerQuestionList.parse(await r.json());
+    return list.questions.find((x) => !x.finding && x.state !== "answered")!;
+  }
+
+  it("a send the adapter can't reach is a step with the reason, and no record says sent", async () => {
+    const { r2, s } = await serverWith(() => ({
+      send: async () => {
+        throw new AdapterError("slack", "unavailable", "the Northwind chat service is down");
+      },
+    }));
+    try {
+      const gap = await openGap(s);
+      const confirmation = await confirmFor(s, "owner-ask", gap.id);
+      const r = await post(s, `/api/owner-questions/${gap.id}/send`, { confirmation });
+      expect(r.status).toBe(200);
+      const a = Api.SentOwnerAsk.parse(r.body);
+      expect(a.state).toBe("step");
+      expect(a.why).toMatch(/unavailable/);
+      expect(a.why).toMatch(/Northwind chat service is down/);
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect(existsSync(join(r2, ".index/owner-asks.json"))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+      // The step is there for the person, with why it is manual.
+      const steps = await fileStepStore(r2).list();
+      expect(steps.some((x) => /unavailable/.test(x.reason ?? ""))).toBe(true);
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a notifier that can't start is a step with the reason, and no record says sent", async () => {
+    const { r2, s } = await serverWith(() => {
+      throw new AdapterError("slack", "unauthorized", "no token for the Northwind chat service");
+    });
+    try {
+      const gap = await openGap(s);
+      // A step for the person takes no confirmation (nothing goes out), as manual does.
+      const r = await post(s, `/api/owner-questions/${gap.id}/send`, {});
+      expect(r.status).toBe(200);
+      const a = Api.SentOwnerAsk.parse(r.body);
+      expect(a.state).toBe("step");
+      expect(a.why).toMatch(/couldn't start \(unauthorized/);
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a manual notifier makes a step, never a send on record", async () => {
+    const { r2, s } = await serverWith(() => new MockNotifier(), "{ type: manual }");
+    try {
+      const gap = await openGap(s);
+      const a = Api.SentOwnerAsk.parse(
+        (await post(s, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(a.state).toBe("step");
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("two sends at once: the second is refused while the first is held", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((res) => (release = res));
+    let entered!: () => void;
+    const reached = new Promise<void>((res) => (entered = res));
+    const posted: string[] = [];
+    const { r2, s } = await serverWith(() => ({
+      send: async (n) => {
+        entered();
+        await held;
+        posted.push(n.channel);
+        return { id: `n-${posted.length}` };
+      },
+    }));
+    try {
+      const gap = await openGap(s);
+      const c1 = await confirmFor(s, "owner-ask", gap.id);
+      const c2 = await confirmFor(s, "owner-ask", gap.id);
+      const first = post(s, `/api/owner-questions/${gap.id}/send`, { confirmation: c1 });
+      // The first is at the notifier (held there) when the second comes in.
+      await reached;
+      const second = await post(s, `/api/owner-questions/${gap.id}/send`, { confirmation: c2 });
+      expect(second.status).toBe(409);
+      release();
+      expect((await first).body).toMatchObject({ state: "sent" });
+      expect(posted.length).toBe(1);
+    } finally {
+      release();
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
   });
 });
 

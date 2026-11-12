@@ -176,6 +176,7 @@ export function extendUiRoutes(
     {
       ...(deps.notify ? { notify: deps.notify } : {}),
       ...(deps.workTracker ? { workTracker: deps.workTracker } : {}),
+      ...(deps.adapterFactories ? { adapterFactories: deps.adapterFactories } : {}),
       ...(deps.now ? { now: () => new Date(deps.now!) } : {}),
     },
   );

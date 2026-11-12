@@ -1,8 +1,17 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { deserializeRecord, ManualStep } from "@maycombhq/core";
+import {
+  deserializeRecord,
+  loadOrgPack,
+  ManualStep,
+  orgPackDirOf,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+} from "@maycombhq/core";
+import { knowledgeGaps } from "@maycombhq/knowledge";
 import {
   addWorkingDays,
   BUILT_IN_JOURNEYS,
@@ -264,6 +273,50 @@ describe("the Northwind Pay v3 migration (golden, vendor-api-change)", () => {
     const view = await readView(root);
     expect(systemCard(view, ["ledger"])).toBe(await read(join(NW, "expected/card-team-ledger.md")));
     expect(() => systemCard(view, ["nowhere"])).toThrow(/None of nowhere is a system/);
+  });
+
+  it("lists a sent gap's question as open only while the gap is (beta.27 final round)", async () => {
+    // Sent: the question's own record says so, as the send route writes it. Then the gap is
+    // filled (an alert watches reports-job): the record stays, the card's open question goes.
+    const root = await forgeRoot();
+    const orgPack = await loadOrgPack(orgPackDirOf(root));
+    const id = "q.unattended-workload-monitored.reports-job";
+    const g = knowledgeGaps({ records: (await readView(root)).records, orgPack }).find(
+      (x) => x.question.id === id,
+    )!;
+    expect(g).toBeDefined();
+    const write = async (dir: string, r: Record<string, unknown>) => {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const f = join(root, "catalog", dir, recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    };
+    await write("curated", {
+      ...g.question,
+      confidence: "asserted",
+      evidence: [{ source: "manual", by: "pat", scannedAt: "2026-11-09T09:00:00Z" }],
+    });
+    const asked = `(${id})`;
+    expect(systemCard(await readView(root), ["reports"], { orgPack })).toContain(asked);
+    await write("generated", {
+      schemaVersion: 2,
+      kind: "ObservabilityAsset",
+      id: "reports-job.failed-alert",
+      status: "current",
+      confidence: "verified",
+      component: "reports-job",
+      assetKind: "alert",
+      name: "reports-job failed",
+      evidence: [{ source: "config", repo: "forge-reports-job", path: "alerts.yaml", line: 1 }],
+    });
+    const view = await readView(root);
+    expect(view.get("OwnerQuestion", id)?.questionState).toBe("sent");
+    expect(systemCard(view, ["reports"], { orgPack })).not.toContain(asked);
+    // A question a person wrote stays: the vendor's card still asks it.
+    expect(systemCard(view, ["northwind-pay"], { orgPack })).toContain(
+      "(oq.northwind-pay.rate-limit)",
+    );
   });
 
   it("computes the critical path, slipped and at-risk commitments from dates and change states", async () => {

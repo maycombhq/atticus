@@ -440,3 +440,19 @@ export function knowledgeGaps(input: KnowledgeGapsInput): KnowledgeGap[] {
   }
   return out;
 }
+
+/**
+ * Beta.27 review, final round: whether an owner question on record is still asked. A gap's own
+ * question (`q.<check>.<record>`, the id `knowledgeGaps` gives it) stays on record once it is sent
+ * or answered, after the fact is in the catalog and the gap is closed; a reader that lists open
+ * questions keeps it only while `knowledgeGaps` still raises it. A question a person wrote (any
+ * other id, or a check this reader doesn't run) is kept. Reads only.
+ */
+export function ownerQuestionStillAsked(
+  input: KnowledgeGapsInput,
+): (r: { kind: string; id: string }) => boolean {
+  const raised = new Set(knowledgeGaps(input).map((g) => g.question.id));
+  const checks = [...KNOWLEDGE_CHECKS, ...(input.checks ?? [])].map((c) => `q.${c.id}.`);
+  return (r) =>
+    r.kind !== "OwnerQuestion" || raised.has(r.id) || !checks.some((p) => r.id.startsWith(p));
+}

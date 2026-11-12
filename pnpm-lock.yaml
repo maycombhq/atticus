@@ -659,6 +659,9 @@ importers:
       '@maycombhq/intake':
         specifier: workspace:*
         version: link:../intake
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner
@@ -749,6 +752,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner

@@ -181,16 +181,38 @@ export async function changeNextStep(
   report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
   state?: NextState,
   where: "glance" | "page" = "glance",
-): Promise<{ nextStep: string; ready: boolean; stepFirst: boolean; next?: NextStep }> {
+): Promise<{
+  nextStep: string;
+  /**
+   * Beta.27 review, final round: on a page, the same sentence in the app's words (no command to
+   * type), when the step's reason made it say one.
+   */
+  nextStepApp?: string;
+  ready: boolean;
+  stepFirst: boolean;
+  next?: NextStep;
+}> {
   const s = state ?? (await readNextState(root).catch(() => undefined));
   const own = s?.changes.find((c) => c.id === id);
   const next = own ? changeSteps(own)[0] : undefined;
   const ready = glanceReady(report, next);
+  const nextStep = glanceNextStep(report, next, where);
+  const stepFirst = report.ready && !ready;
+  let nextStepApp: string | undefined;
+  if (where === "page" && stepFirst && next?.why) {
+    const { commandShapes, stepInAppWords } = await import("./step-app-words.js");
+    nextStepApp = glanceNextStep(
+      report,
+      { ...next, why: stepInAppWords(next.why, await commandShapes()) },
+      where,
+    );
+  }
   return {
-    nextStep: glanceNextStep(report, next, where),
+    nextStep,
+    ...(nextStepApp ? { nextStepApp } : {}),
     ready,
     // Nothing in the gate's checks blocks, yet another step comes first.
-    stepFirst: report.ready && !ready,
+    stepFirst,
     ...(next ? { next } : {}),
   };
 }

@@ -264,6 +264,13 @@ export const COPY = {
       overdueTo: (owner: string, channel: string, on?: string) =>
         `Sent to ${owner} by ${channel}${on ? ` on ${on}` : ""}, and no answer yet: it is overdue.`,
       sent: "SENT",
+      /**
+       * Beta.27 review, final round: Send made a step for the person (manual notifications, or a
+       * live one that couldn't reach the system): asked, but not sent until they send it.
+       */
+      asked: "ASKED",
+      askedStep: (owner: string) =>
+        `Asked: a step for ${owner}. It waits for you to send it (Home › Manual steps); record their answer here when it comes.`,
       /** Review of the fix: a question the gaps raise that nobody has sent yet. */
       notSent: "NOT SENT YET",
       notSentTo: (owner: string, channel: string) =>
@@ -4196,9 +4203,12 @@ export const COPY = {
     run: "Run the upgrade",
     running: "Upgrading…",
     done: "Upgraded. Propose the changed files for review.",
-    /** Beta.27 review: the run changed nothing to propose but the stamp. */
+    /**
+     * Beta.27 review: the run changed nothing but the stamp. Final round: the stamp is proposed
+     * too (ADR 0051), so every machine's Atticus knows the metarepo was upgraded.
+     */
     doneStampOnly:
-      "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): nothing else waits to be proposed.",
+      "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): propose the stamp so everyone's Atticus sees this upgrade.",
     failed: "The upgrade stopped.",
     terminal: "Or in a terminal:",
   },

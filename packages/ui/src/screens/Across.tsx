@@ -58,7 +58,11 @@ const chip = (text: string, kind = "") => (
 export function nextCell(r: AcrossRow) {
   return (
     <>
-      {nextStepWords(s(r.nextStep), r.stepFirst === true)}
+      {nextStepWords(
+        s(r.nextStep),
+        r.stepFirst === true,
+        typeof r.nextStepApp === "string" ? r.nextStepApp : undefined,
+      )}
       {r.stepFirst === true && (
         <>
           {" "}

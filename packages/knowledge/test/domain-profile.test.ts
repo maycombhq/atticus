@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { domainProfile, DEFAULT_DOMAIN_PROFILE } from "../src/index.js";
-import { forgeRecords } from "./helpers.js";
+import type { CatalogRecord } from "@maycombhq/core";
+import { domainProfile, DEFAULT_DOMAIN_PROFILE, knowledgeGaps } from "../src/index.js";
+import { forgePack, forgeRecords, record } from "./helpers.js";
 
 const section = (md: string, heading: string) => {
   const i = md.indexOf(`## ${heading}\n`);
@@ -64,5 +65,49 @@ describe("domainProfile", () => {
       domainProfile(forgeRecords().reverse(), "ledger", { scannedAt: "2026-10-20T09:00:00Z" }),
     ).toBe(md);
     expect(() => domainProfile(forgeRecords(), "nope", {})).toThrow(/No system "nope"/);
+  });
+
+  it("lists a sent gap's question only while the gap is open (beta.27 final round)", async () => {
+    // Sent: the question's own record says so (as the send route writes it). Then the gap is
+    // filled (an alert watches reports-job): the record stays, the open question doesn't.
+    const orgPack = await forgePack();
+    const id = "q.unattended-workload-monitored.reports-job";
+    const g = knowledgeGaps({ records: forgeRecords(), orgPack }).find((x) => x.question.id === id);
+    expect(g).toBeDefined();
+    const sent = record({
+      ...g!.question,
+      confidence: "asserted",
+      evidence: [{ source: "manual", by: "pat", scannedAt: "2026-11-09T09:00:00Z" }],
+    });
+    const asked = "Which alert or dashboard watches reports-job?";
+    const open = (records: CatalogRecord[]) =>
+      section(domainProfile(records, "reports", { orgPack }), "Open Questions");
+    expect(open([...forgeRecords(), sent])).toContain(asked);
+    const alert = record({
+      kind: "ObservabilityAsset",
+      id: "reports-job.failed-alert",
+      confidence: "verified",
+      component: "reports-job",
+      assetKind: "alert",
+      name: "reports-job failed",
+      evidence: [{ source: "config", repo: "forge-reports-job", path: "alerts.yaml", line: 1 }],
+    });
+    expect(open([...forgeRecords(), sent, alert])).not.toContain(asked);
+    // An answered one is kept (where it was answered), and so is one a person wrote.
+    const answered = record({ ...sent, questionState: "answered", answer: "reports-alerts" });
+    expect(open([...forgeRecords(), answered, alert])).toContain(asked);
+    const own = record({
+      kind: "OwnerQuestion",
+      id: "oq.reports.retention",
+      confidence: "asserted",
+      system: "reports",
+      owner: "team-reports",
+      question: "How long are the daily entries kept?",
+      neededFact: "retention of the daily entries",
+      channel: "email",
+      questionState: "sent",
+      evidence: [{ source: "manual", by: "pat" }],
+    });
+    expect(open([...forgeRecords(), own, alert])).toContain("How long are the daily entries kept?");
   });
 });

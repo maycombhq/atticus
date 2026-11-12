@@ -534,7 +534,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   activity entry may say `outcome: refused`. An owner question carries `ownerName` and
  *   `sentAt` (from its own record's newest manual evidence, so every machine says Sent once the
  *   record is merged); POST /api/owner-questions/{id}/send writes that record and takes `again`
- *   (409 for a second live send without it); propose takes scope `upgrade`. Additive only.
+ *   (409 for a second live send without it); propose takes scope `upgrade`. Final round: the
+ *   status, a release's status and a releases row carry `nextStepApp` with `stepFirst`, the same
+ *   sentence in the app's words (no command to type); a send that became a manual step (manual
+ *   notifications, or a live notifier that couldn't start or reach the system) answers `state:
+ *   step` with why and writes no record; a send already under way answers 409; the upgrade
+ *   job's result names `upgraded`. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -4738,7 +4743,8 @@ export const UpgradeView = z.object({
   pending: z.array(z.object({ id: z.string(), summary: z.string(), files: z.array(z.string()) })),
   /**
    * 3.11.0 (beta.27 review): the paths the upgrades run here changed and nobody proposed or
-   * committed yet, besides the stamp: the upgrade panel offers its Propose only when one is.
+   * committed yet, besides the stamp. Final round: the panel reads them from the upgrade job's
+   * result, and offers Propose for the stamp alone too.
    */
   upgraded: z.array(z.string()).optional(),
 });

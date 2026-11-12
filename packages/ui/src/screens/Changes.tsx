@@ -72,6 +72,8 @@ export interface Status {
    * which the page says in the app's words (`nextStepWords`).
    */
   stepFirst?: boolean;
+  /** Beta.27 review, final round: `nextStep` in the app's words, from the server. */
+  nextStepApp?: string;
   risk: { level: string; score: number };
   /** The open hand-off PR: merging it approves the gate (ADR 0073). */
   handoff?: { pr: { number: number; url: string }; state: string; phase: string };
@@ -654,7 +656,7 @@ function Detail({ id }: { id: string }) {
                         {s.handoff && isManualLink(s.handoff.pr.url) ? (
                           <ManualHandoff phase={s.handoff.phase} />
                         ) : (
-                          nextStepWords(s.nextStep, s.stepFirst)
+                          nextStepWords(s.nextStep, s.stepFirst, s.nextStepApp)
                         )}
                         {/* Beta.27 review: the step that comes first, with its button, is there. */}
                         {s.stepFirst && (

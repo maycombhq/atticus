@@ -98,6 +98,7 @@ export function SendOwnerQuestion({
   again = false,
   sentOn,
   onSent,
+  onAlready,
 }: {
   id: string;
   owner: string;
@@ -105,8 +106,13 @@ export function SendOwnerQuestion({
   again?: boolean;
   /** The day it was sent, when known, for Send again's question. */
   sentOn?: string;
-  /** Review of the fix: sent, when (the card then says Sent). */
-  onSent?: (at: string) => void;
+  /**
+   * Review of the fix: sent, when (the card then says Sent). Beta.27 review, final round: or a
+   * step for the person (`how: "step"`), which is no send: the card says Asked.
+   */
+  onSent?: (at: string, how: "sent" | "step") => void;
+  /** Beta.27 review, final round: the server said it was sent already: the card reloads. */
+  onAlready?: () => void;
 }) {
   const S = COPY.roleWork.send;
   const [busy, setBusy] = useState(false);
@@ -129,18 +135,21 @@ export function SendOwnerQuestion({
           body: { ...c, ...(resend ? { again: true } : {}) },
         },
       );
-      if (r.state === "sent" || r.state === "step") onSent?.(new Date().toISOString());
+      if (r.state === "sent" || r.state === "step") onSent?.(new Date().toISOString(), r.state);
       setNote(
         r.state === "sent"
           ? { ok: true, text: S.sent(owner) }
           : r.state === "step"
-            ? { ok: true, text: S.step }
+            ? { ok: true, text: r.why ?? S.step }
             : { ok: false, text: S.notSent(r.why ?? "") },
       );
     } catch (err) {
       if (err instanceof ApiError && err.problem.status === 409) {
         setAlready(true);
         setNote({ ok: false, text: S.already(owner) });
+        // Beta.27 review, final round: the card reads the send on file, so it doesn't say "Not
+        // sent yet" beside "already sent".
+        onAlready?.();
       } else setNote({ ok: false, text: message(err) });
     } finally {
       setBusy(false);
@@ -225,6 +234,9 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
   // Review of the fix: sent only when it was: a send on file (sentAt) or one from this card.
   const [sentNow, setSentNow] = useState<string>();
   const sentAt = sentNow ?? q.sentAt;
+  // Beta.27 review, final round: Send made a step for the person: asked, not sent.
+  const [stepNow, setStepNow] = useState(false);
+  const asked = stepNow && !sentAt;
   const id = useId();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
@@ -261,7 +273,7 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
           {q.question}
         </h3>
         <span
-          className={`chip ${shown.state === "answered" ? "done" : shown.state === "overdue" ? "blocking" : sentAt ? "warn" : ""}`}
+          className={`chip ${shown.state === "answered" ? "done" : shown.state === "overdue" ? "blocking" : sentAt || asked ? "warn" : ""}`}
         >
           {shown.state === "answered"
             ? O.answered
@@ -269,7 +281,9 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
               ? O.overdue
               : sentAt
                 ? O.sent
-                : O.notSent}
+                : asked
+                  ? O.asked
+                  : O.notSent}
         </span>
       </div>
       <p className="qs-meta">
@@ -283,7 +297,9 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
             ? O.overdueTo(to, by, localDay(sentAt))
             : sentAt
               ? O.sentTo(to, by, localDay(sentAt))
-              : O.notSentTo(to, by)}
+              : asked
+                ? O.askedStep(to)
+                : O.notSentTo(to, by)}
         </span>
       )}
       {q.routeTo && <span className="qs-card-line">{O.routeTo(q.routeTo)}</span>}
@@ -310,7 +326,8 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
           owner={to}
           again={!!sentAt || shown.state === "overdue"}
           {...(localDay(sentAt) ? { sentOn: localDay(sentAt)! } : {})}
-          onSent={setSentNow}
+          onSent={(at, how) => (how === "sent" ? setSentNow(at) : setStepNow(true))}
+          onAlready={p.onAnswered}
         />
       )}
       <form className="qs-form" onSubmit={(e) => void submit(e)}>

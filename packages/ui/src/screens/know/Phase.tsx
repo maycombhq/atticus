@@ -119,7 +119,7 @@ export function GateHeader(p: {
               {s.handoff && isManualLink(s.handoff.pr.url) ? (
                 <ManualHandoff phase={s.handoff.phase} />
               ) : (
-                nextStepWords(s.nextStep, s.stepFirst)
+                nextStepWords(s.nextStep, s.stepFirst, s.nextStepApp)
               )}
               {/* Beta.27 review: the step that comes first, with its button, is on At a glance. */}
               {s.stepFirst && (
@@ -178,7 +178,7 @@ export function GateHeader(p: {
               <RaiseHandoff
                 change={p.id}
                 blockers={s.blockers.length}
-                {...(s.stepFirst ? { first: nextStepWords(s.nextStep, true) } : {})}
+                {...(s.stepFirst ? { first: nextStepWords(s.nextStep, true, s.nextStepApp) } : {})}
                 onDone={done}
                 act={act}
               />

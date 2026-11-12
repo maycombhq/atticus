@@ -176,6 +176,8 @@ export interface UiDeps {
   notify?: import("@maycombhq/adapters").Notifier;
   /** Tests (ADR 0191): a work tracker for the plan's work items. */
   workTracker?: import("@maycombhq/adapters").WorkTracker;
+  /** Tests (beta.27): the factories runtime.yaml's live adapters are made with. */
+  adapterFactories?: import("@maycombhq/adapters").AdapterFactories;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -193,6 +195,8 @@ interface Ran {
   code: number;
   out: string[];
   err: string[];
+  /** Beta.27 review, final round: more for the job's result (the upgrade's `upgraded`). */
+  extra?: Record<string, unknown>;
 }
 
 async function run(
@@ -667,7 +671,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const lines = appLines(raw);
         const next = res.code === 0 ? undefined : syncNextOf(raw);
         return {
-          result: { code: res.code, lines, ...(next ? { next } : {}) },
+          result: { ...res.extra, code: res.code, lines, ...(next ? { next } : {}) },
           errors: res.code === 0 ? [] : lines,
         };
       },
@@ -862,9 +866,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // but the stamp is older than this build, or missing.
         if (!c.pending.length && c.stamp && !newerThan(c.atticus, c.stamp.atticus))
           throw conflict(`Nothing to upgrade: up to date for Atticus ${c.atticus}.`);
-        return asJob("Upgrading the metarepo", () =>
-          run((io) => upgradeCommand(root, { by: user }, io)),
-        );
+        // Beta.27 review, final round: the job says what the run changed besides the stamp, so
+        // the panel never reads it from the GET before the run.
+        return asJob("Upgrading the metarepo", async () => {
+          const ran = await run((io) => upgradeCommand(root, { by: user }, io));
+          const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
+          const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
+          return { ...ran, extra: { upgraded } };
+        });
       })
       .add("GET", "/api/propose", async ({ query }) => {
         const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
@@ -1012,6 +1021,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ...(rep.next ? { next: rep.next } : {}),
             ...(rep.progress ? { progress: rep.progress } : {}),
             nextStep: said.nextStep,
+            ...(said.nextStepApp ? { nextStepApp: said.nextStepApp } : {}),
             ...(said.stepFirst ? { stepFirst: true } : {}),
             risk: rep.risk,
             tests: rep.tests,

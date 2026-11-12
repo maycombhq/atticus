@@ -14,19 +14,15 @@ export function inAppWords(text: string): string {
 
 /**
  * Beta.27 review of the fix: a step's reason as a page's sentence says it ("Not ready to raise
- * … yet: first, <why>"), in the app's words: as `inAppWords`, and with no command left to type
- * (`atticus …`, in backticks or not, with the word that leads to it) and no "(ADR nnnn)".
+ * … yet: first, <why>"), when the server sent no app-words form of it: as `inAppWords`, and with
+ * no "(ADR nnnn)". Final round: the page can't tell a command from prose ("what atticus knows"),
+ * so it cuts nothing else; the server's `nextStepApp` takes the commands out (it has the help
+ * catalog's commands).
  */
 export function sentenceInAppWords(text: string): string {
   return inAppWords(text)
     .replace(/\s*\(ADRs? \d{4}[^)]*\)/g, "")
-    .replace(/\s*`(?:atticus |\/atticus-)[^`]*`/g, "")
-    .replace(
-      /,?\s*(?:(?:with|by running|by|using|running|run|type|:)\s+)?(?:(?<![\w/.-])atticus(?=\s+[a-z])|(?<![\w.-])\/atticus-[a-z-]+)(?:\s+[^\s.;,]+)*/g,
-      "",
-    )
-    .replace(/\s+([.;,:])/g, "$1")
-    .replace(/[:;,]+(?=\.|$)/g, "")
+    .replace(/[ \t]+([.;,:])/g, "$1")
     .replace(/[ \t]+/g, " ")
     .trim();
 }
@@ -34,8 +30,10 @@ export function sentenceInAppWords(text: string): string {
 /**
  * Beta.27 review of the fix: a change's next-step sentence on a page other than At a glance
  * (Changes, the Gate, Across, Release): when another step comes first it carries that step's
- * reason, written for the command line, so it is said in the app's words.
+ * reason, written for the command line, so it is said in the app's words. Final round: the
+ * server's app-words form (`nextStepApp`, API 3.11.0) when it sent one.
  */
-export function nextStepWords(nextStep: string, stepFirst?: boolean): string {
+export function nextStepWords(nextStep: string, stepFirst?: boolean, app?: string): string {
+  if (app) return app;
   return stepFirst ? sentenceInAppWords(nextStep) : nextStep;
 }
