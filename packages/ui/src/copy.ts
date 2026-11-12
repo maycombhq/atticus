@@ -6170,6 +6170,9 @@ export const COPY = {
         `This arrow has ${n} calls to correct, more than the ${max} one correction can take. Correct the calls of one box at a time, opening the arrow from a box inside it.`,
       routing: (n: number) =>
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: answer where ${n === 1 ? "it goes" : "they go"} or correct the proxy's forwarding from This link is wrong under ${n === 1 ? "its call" : "each"}, which changes that route for every caller.`,
+      // Review of beta.27: links with no line of a caller's that no proxy's routing made.
+      uncited: (n: number) =>
+        `${n} of these link${n === 1 ? " cites" : "s cite"} no line of the caller's, so there is no call to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: read the caller's repo again.`,
       already:
         "Every one of these corrections is on file already, so nothing new was written. Apply them from Corrections to apply, at the top of the map.",
       skipped: (n: number) =>
@@ -6187,17 +6190,23 @@ export const COPY = {
     },
     routingLink:
       "No line of a caller's cites this call: the link comes from a gateway proxy's routing, so there is no call here to correct. Where the proxy forwards it is set on the proxy, for every caller of the route, not this link alone: answer where it goes, or correct the proxy's forwarding at its line.",
+    // Review of beta.27: no line of a caller's, and no proxy's routing (a built-in reader's link).
+    uncitedLink:
+      "No line of the caller's is cited for this call, so there is no call here to correct yet. Read the caller's repo again: once its facts cite the call's line, This link is wrong corrects it.",
     // Beta.27: a link a gateway proxy's routing made: what does correct it, as buttons.
     routing: {
       all: (n: number) =>
         `${n === 1 ? "The call on this arrow comes" : `All ${n} calls on this arrow come`} from a gateway proxy's routing: no line of a caller's cites ${n === 1 ? "it" : "them"}, so there is no call here to correct. Where the proxy forwards ${n === 1 ? "it" : "them"} is set on the proxy, for every caller of the route: answer where it goes, or correct the proxy's forwarding at its line.`,
       answer: "Answer where it goes",
-      answerOf: (question: string) => `Answer where it goes: ${question}`,
+      // Review of beta.27: with several, each says what tells it apart (its path prefix or host).
+      answerFor: (what: string) => `Answer where it goes: ${what}`,
+      answerOf: (question: string, what?: string) =>
+        what ? `Answer where it goes: ${what} (${question})` : `Answer where it goes: ${question}`,
       forwarding: "Correct the proxy's forwarding",
       forwardingOf: (repo: string, at: string) => `Correct the proxy's forwarding: ${repo} ${at}`,
       loading: "Reading the proxy's facts…",
-      failed: (why: string) => `Couldn't read the proxy's facts: ${why}`,
-      none: "Atticus finds no open question about where this route goes and no fact on the proxy's forwarding line, so there is nothing to open here. List the open questions, or read the proxy's repo again, in a terminal.",
+      failed: (repo: string, why: string) => `Couldn't read ${repo}'s facts: ${why}`,
+      none: "Atticus finds no forwarding call on the proxy's lines for this route, and so no open question about where it goes: there is nothing to open here. List the open questions, or read the proxy's repo again, in a terminal.",
       terminal: "Or in a terminal",
       copy: (command: string) => `Copy the command: ${command}`,
     },

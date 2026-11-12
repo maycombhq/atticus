@@ -21,6 +21,7 @@ import {
   dependencyBatch,
   dependencyCorrections,
   isRoutingLink,
+  isUncitedLink,
   joinWhat,
   linkDependenciesOf,
   linkCorrection,
@@ -28,6 +29,7 @@ import {
   proxyRepos,
   routingActions,
   tickedOf,
+  uncitedRepos,
   type Join,
   type LinkFix,
   type Moved,
@@ -940,16 +942,44 @@ function TerminalCommand({ text }: { text: string }) {
   );
 }
 
-/** Or in a terminal: the open questions, and each proxy's repo read again with its corrections. */
-function RoutingTerminal({ repos, open }: { repos: readonly string[]; open?: boolean }) {
+/** Or in a terminal: the commands, each with its copy button. */
+function TerminalBlock({ commands, open }: { commands: readonly string[]; open?: boolean }) {
   return (
     <details className="work-terminal li-terminal" open={open}>
       <summary>{W.routing.terminal}</summary>
-      <TerminalCommand text="atticus questions" />
-      {repos.map((r) => (
-        <TerminalCommand key={r} text={`atticus verify ${r} --write`} />
+      {commands.map((c) => (
+        <TerminalCommand key={c} text={c} />
       ))}
     </details>
+  );
+}
+
+/** Or in a terminal: the open questions, and each proxy's repo read again with its corrections. */
+const routingCommands = (repos: readonly string[]) => [
+  "atticus questions",
+  ...repos.map((r) => `atticus verify ${r} --write`),
+];
+
+/**
+ * Review of beta.27: a link with no line of a caller's that no proxy's routing made (a built-in
+ * reader's): what it is (`say`), and the caller's repo read again (every repo when none is named).
+ */
+function UncitedNote(p: { joins: readonly Join[]; say: string }) {
+  const repos = uncitedRepos(p.joins);
+  return (
+    <div className="li-route-left stack">
+      <p className="ev-say li-note" style={{ margin: 0 }}>
+        {p.say}
+      </p>
+      <TerminalBlock
+        commands={
+          repos.length
+            ? repos.map((r) => `atticus verify ${r} --write`)
+            : ["atticus verify --all --write"]
+        }
+        open
+      />
+    </div>
   );
 }
 
@@ -958,7 +988,10 @@ function RoutingTerminal({ repos, open }: { repos: readonly string[]; open?: boo
  * caller's: Answer where it goes, for each open question about where the proxy's route goes (on
  * Questions), and Correct the proxy's forwarding, which opens the forwarding line's facts with
  * Correct this in place. With neither, it says so and gives the commands. The proxy's facts are
- * read first (`of`, as the page's evidence has them). From its state, so tests can render each.
+ * read first (`of`, as the page's evidence has them), and asked for here, so they are read only
+ * when these actions show (review of beta.27). Each proxy on its own: one that fails, or is still
+ * read, leaves the others' actions; one nobody reads (`of` gives undefined, as with no evidence
+ * provider) is one with nothing. From its state, so tests can render each.
  */
 export function RoutingActions(p: {
   joins: readonly Join[];
@@ -967,71 +1000,86 @@ export function RoutingActions(p: {
   openAt?: string;
 }) {
   const R = W.routing;
+  const ev = useEvidence();
   const [openAt, setOpenAt] = useState<string | undefined>(p.openAt);
   const openers = useRef(new Map<string, HTMLButtonElement | null>());
   const repos = proxyRepos(p.joins);
-  const states = repos.map((r) => p.of(r));
-  const failed = states.find((s): s is { state: "error"; error: string } => s?.state === "error");
-  if (failed)
-    return (
-      <div className="li-route stack">
-        <p role="alert" className="state error" style={{ margin: 0 }}>
-          {R.failed(failed.error)}
-        </p>
-        <RoutingTerminal repos={repos} open />
-      </div>
-    );
-  if (states.some((s) => !s || s.state === "loading"))
-    return (
-      <p role="status" aria-busy="true" className="ev-say">
-        {R.loading}
-      </p>
-    );
+  const wanted = repos.join("\u0000");
+  useEffect(() => {
+    for (const r of wanted.split("\u0000")) if (r) ev?.need(r);
+  }, [wanted, ev]);
+  const states = repos.map((r) => ({ repo: r, s: p.of(r) }));
+  const failed = states.flatMap(({ repo, s }) => (s?.state === "error" ? [{ repo, s }] : []));
+  const reading = states.some(({ s }) => s?.state === "loading");
   const viewOf = (r: string) => {
     const s = p.of(r);
     return s?.state === "ready" ? s.data : undefined;
   };
   const { questions, forwarding } = routingActions(p.joins, viewOf);
-  if (!questions.length && !forwarding.length)
+  const some = questions.length + forwarding.length > 0;
+  if (!some && reading && !failed.length)
     return (
-      <div className="li-route stack">
-        <p className="ev-say" style={{ margin: 0 }}>
-          {R.none}
-        </p>
-        <RoutingTerminal repos={repos} open />
-      </div>
+      <p role="status" aria-busy="true" className="ev-say">
+        {R.loading}
+      </p>
     );
   const key = (l: { repo: string; at: string }) => `${l.repo}\u0000${l.at}`;
   const shown = forwarding.find((l) => key(l) === openAt || l.at === openAt);
+  // Several forwarding lines: each button says which in its words (WCAG 2.4.6, 2.5.3).
+  const many = forwarding.length > 1;
   return (
     <div className="li-route stack">
-      <div className="li-route-actions">
-        {questions.map((q) => (
-          <a
-            key={q.id}
-            className="btn primary"
-            href={`#/questions/${q.id}`}
-            aria-label={R.answerOf(q.question)}
-          >
-            {R.answer}
-          </a>
-        ))}
-        {forwarding.map((l) => (
-          <button
-            key={key(l)}
-            ref={(b) => {
-              openers.current.set(key(l), b);
-            }}
-            type="button"
-            className="btn"
-            aria-expanded={!!shown && key(shown) === key(l)}
-            aria-label={R.forwardingOf(l.repo, l.at)}
-            onClick={() => setOpenAt((o) => (o === key(l) || o === l.at ? undefined : key(l)))}
-          >
-            {R.forwarding}
-          </button>
-        ))}
-      </div>
+      {failed.map(({ repo, s }) => (
+        <p key={repo} role="alert" className="state error" style={{ margin: 0 }}>
+          {R.failed(repo, s.error)}
+        </p>
+      ))}
+      {some && (
+        <div className="li-route-actions">
+          {questions.map((q) => (
+            <a
+              key={q.id}
+              className="btn primary"
+              href={`#/questions/${q.id}`}
+              aria-label={
+                q.what && q.what !== q.question
+                  ? R.answerOf(q.question, q.what)
+                  : R.answerOf(q.question)
+              }
+            >
+              {q.what ? R.answerFor(q.what) : R.answer}
+            </a>
+          ))}
+          {forwarding.map((l) => (
+            <button
+              key={key(l)}
+              ref={(b) => {
+                openers.current.set(key(l), b);
+              }}
+              type="button"
+              className="btn"
+              aria-expanded={!!shown && key(shown) === key(l)}
+              {...(many ? {} : { "aria-label": R.forwardingOf(l.repo, l.at) })}
+              onClick={() => setOpenAt((o) => (o === key(l) || o === l.at ? undefined : key(l)))}
+            >
+              {many ? R.forwardingOf(l.repo, l.at) : R.forwarding}
+            </button>
+          ))}
+        </div>
+      )}
+      {reading && (
+        <p role="status" aria-busy="true" className="ev-say" style={{ margin: 0 }}>
+          {R.loading}
+        </p>
+      )}
+      {!some && !reading && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {R.none}
+        </p>
+      )}
+      {(failed.length > 0 || (!some && !reading)) && (
+        <TerminalBlock commands={routingCommands(repos)} open />
+      )}
       {shown && (
         <CitationDetails
           repo={shown.repo}
@@ -1052,7 +1100,9 @@ export function RoutingActions(p: {
  * Review of beta.24: a link a person declared offers to withdraw the declaration; one with no
  * line of a caller's (a gateway proxy's routing) says that correcting its forwarding changes the
  * route for every caller, and (beta.27) offers what does: Answer where it goes and the proxy's
- * forwarding line (RoutingActions); neither writes a call's correction here.
+ * forwarding line (RoutingActions); neither writes a call's correction here. Review of beta.27:
+ * one with no line of a caller's that is no proxy's routing says so, with the caller's repo read
+ * again, and offers no proxy's actions.
  */
 export function LinkWrong(p: {
   join: Join;
@@ -1066,16 +1116,11 @@ export function LinkWrong(p: {
   const declared = p.join.how === "declared";
   const line = declared ? undefined : callerLine(p.join);
   const repo = line?.repo;
-  const routing = !declared && !p.join.dependency && isRoutingLink(p.join);
-  const proxies = routing ? proxyRepos([p.join]).join("\u0000") : "";
+  const routing = isRoutingLink(p.join);
   useEffect(() => {
     if (repo) ev?.need(repo);
   }, [repo, ev]);
   const [open, setOpen] = useState(!!p.startOpen);
-  // Beta.27: the proxy's facts, once its routing link's actions are asked for.
-  useEffect(() => {
-    if (open) for (const r of proxies.split("\u0000")) if (r) ev?.need(r);
-  }, [open, proxies, ev]);
   const [saving, setSaving] = useState<LinkSaving>({ state: "idle" });
   const opener = useRef<HTMLButtonElement | null>(null);
   useFocusBack({ open, done: saving.state === "done" }, opener);
@@ -1135,11 +1180,17 @@ export function LinkWrong(p: {
             onSaveAll={onSaveAll}
             onClose={() => setOpen(false)}
           />
-        ) : !line ? (
+        ) : !line && routing ? (
           <div className="li-route-left stack">
             <p className="ev-say li-note">{W.routingLink}</p>
-            {routing && <RoutingActions joins={[p.join]} of={(r) => ev?.of(r)} />}
+            {/* With a provider, a repo not asked for yet is read: RoutingActions asks for it. */}
+            <RoutingActions
+              joins={[p.join]}
+              of={(r) => (ev ? (ev.of(r) ?? { state: "loading" }) : undefined)}
+            />
           </div>
+        ) : !line ? (
+          <UncitedNote joins={[p.join]} say={W.uncitedLink} />
         ) : (
           <LinkWrongForm
             join={p.join}
@@ -1233,13 +1284,15 @@ export function ArrowWrongForm(p: {
   // declaration, or a line with no call fact): no form and no "Correct all 0 calls", which could
   // only fail; what each is, and for a proxy's routing what does correct it.
   const none = !!found && found.calls.length + found.ask.length === 0;
+  // Review of beta.27: a proxy `viewOf` doesn't hold is one with nothing, never read for ever.
   const proxyOf =
     p.proxyOf ??
-    ((r: string): Loaded<FactsView> => {
+    ((r: string): Loaded<FactsView> | undefined => {
       const v = p.viewOf(r);
-      return v ? { state: "ready", data: v } : { state: "loading" };
+      return v ? { state: "ready", data: v } : undefined;
     });
   const routingJoins = (joins ?? []).filter(isRoutingLink);
+  const uncitedJoins = (joins ?? []).filter(isUncitedLink);
   const leftAlone = found && (
     <div className="li-route-left stack">
       {found.routing.length > 0 && (
@@ -1258,6 +1311,9 @@ export function ArrowWrongForm(p: {
         <p className="ev-say" style={{ margin: 0 }}>
           {A.missing(found.missing.length)} {A.noCalls}
         </p>
+      )}
+      {uncitedJoins.length > 0 && (
+        <UncitedNote joins={uncitedJoins} say={A.uncited(uncitedJoins.length)} />
       )}
       {routingJoins.length > 0 && <RoutingActions joins={routingJoins} of={proxyOf} />}
     </div>
@@ -1286,12 +1342,13 @@ export function ArrowWrongForm(p: {
   const opener = useRef<HTMLButtonElement | null>(null);
   const result = useRef<HTMLDivElement | null>(null);
   useFocusBack({ open, done: saving.state === "done" }, opener, result);
-  // Every call the view lists, and it lists them all, is a proxy's routing or a declaration: known
-  // without any repo's facts, so the arrow never offers a correction it can't write.
+  // Every call the view lists, and it lists them all, is a proxy's routing, a declaration or one
+  // that cites no caller's line: known without any repo's facts, so the arrow never offers a
+  // correction it can't write.
   const fixedByOthers =
     listed.length >= p.link.count &&
     listed.length > 0 &&
-    listed.every((j) => j.how === "declared" || isRoutingLink(j));
+    listed.every((j) => j.how === "declared" || isRoutingLink(j) || isUncitedLink(j));
   if (fixedByOthers && leftAlone) return <div className="li-fix li-arrow">{leftAlone}</div>;
   return (
     <div className="li-fix li-arrow">
@@ -1419,6 +1476,11 @@ export function ArrowWrongForm(p: {
                 {A.routing(found.routing.length)}
               </p>
             )}
+            {found && found.uncited.length > 0 && (
+              <p className="ev-say" style={{ margin: 0 }}>
+                {A.uncited(found.uncited.length)}
+              </p>
+            )}
             <div className="li-form-actions">
               {/* Beta.27: never "Correct all 0 calls": with none ticked, what to do instead. */}
               {saving.state !== "done" && n > 0 && (
@@ -1503,11 +1565,8 @@ export function ArrowWrong(p: {
   useEffect(() => {
     for (const r of key.split("\u0000")) if (r) ev?.need(r);
   }, [key, ev]);
-  // Beta.27: a proxy's routing links' facts, for Answer where it goes and its forwarding line.
-  const proxies = proxyRepos(joins ?? []).join("\u0000");
-  useEffect(() => {
-    for (const r of proxies.split("\u0000")) if (r) ev?.need(r);
-  }, [proxies, ev]);
+  // Review of beta.27: a proxy's facts are read by RoutingActions, only when it shows (an arrow
+  // with no call to correct), never for a mixed arrow's form.
   const [saving, setSaving] = useState<ArrowSaving>({ state: "idle" });
   if (!listed.length) return null;
   const viewOf = (r: string) => {
@@ -1540,7 +1599,7 @@ export function ArrowWrong(p: {
       {...(capped && p.callsPath && full.state === "error" ? { callsFailed: full.error } : {})}
       {...(p.labelOf ? { labelOf: p.labelOf } : {})}
       viewOf={viewOf}
-      proxyOf={(r) => ev?.of(r)}
+      proxyOf={(r) => (ev ? (ev.of(r) ?? { state: "loading" }) : undefined)}
       known={p.known}
       saving={saving}
       onSave={onSave}
