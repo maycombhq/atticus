@@ -442,6 +442,14 @@ export function TrustRow({ r }: { r: Repo }) {
       <p className="work-say mono" style={{ margin: "6px 0 0" }}>
         {T.files(r.facts.path, r.verify.path)}
       </p>
+      {r.state !== "not-read" && (
+        // ADR 0195 (CS3): what the built-in readers found beside what the facts say.
+        <p className="work-say" style={{ margin: "6px 0 0" }}>
+          <a href={`#/crosscheck?repo=${encodeURIComponent(r.repo)}`}>
+            {COPY.crossCheck.openFromTrustOf(r.repo)}
+          </a>
+        </p>
+      )}
     </article>
   );
 }
@@ -616,6 +624,10 @@ export function TrustPage({
             <>
               <Problems list={v.problems} />
               <p className="work-say">{T.reportIn(v.factsDir)}</p>
+              {/* ADR 0195 (CS3): the readers' cross-check, for every repo with facts. */}
+              <p className="work-say">
+                <a href="#/crosscheck">{COPY.crossCheck.openFromTrust}</a>
+              </p>
               {v.contracts && (
                 // ADR 0164: the contract check's counts, and the way to every finding.
                 <p className="work-say">

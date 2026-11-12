@@ -5,6 +5,8 @@ import { Trust } from "./map/Trust.js";
 import { Outside } from "./map/Outside.js";
 import { Mismatches } from "./map/Mismatches.js";
 import { Decisions } from "./map/Decisions.js";
+import { CrossCheck } from "./map/CrossCheck.js";
+import { CatalogBuilds } from "./setup/CatalogBuild.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
@@ -58,6 +60,7 @@ export const LOOKS: Readonly<Record<string, "kn" | "st">> = {
   ai: "st",
   orgpack: "st",
   scans: "st",
+  "catalog-builds": "st",
   intake: "st",
 };
 
@@ -90,6 +93,9 @@ const BARE: Record<string, Screen> = {
   mismatches: Mismatches,
   // ADR 0181: what the AI decided, Correct, and each batch's Undo.
   decisions: Decisions,
+  // ADR 0195 (CS3): the readers' cross-check, and the catalog's builds (confirm, undo, prune).
+  crosscheck: CrossCheck,
+  "catalog-builds": () => <CatalogBuilds />,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).

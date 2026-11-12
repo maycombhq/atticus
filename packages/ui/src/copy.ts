@@ -881,7 +881,212 @@ export const COPY = {
       changeKnowledge: "Knowledge",
       /** ADR 0181: what the AI decided, its batches and Undo. */
       decisions: "Decided by AI",
+      /** ADR 0195 (CS3): the readers' cross-check, and the catalog's builds. */
+      crosscheck: "Readers found / facts say",
+      catalogBuilds: "Catalog builds",
     },
+  },
+  /**
+   * ADR 0195 (ticket CS3): the readers' cross-check (Map › Trust › Readers found / facts say) and
+   * the catalog build's confirm steps (Set up › Scans › Catalog builds): a refused build's
+   * removals and hand edits, undo of the last five builds, and prune.
+   */
+  crossCheck: {
+    title: "Readers found / facts say",
+    intro:
+      "For each repo with verified facts, what the built-in readers found is compared with what the facts say. The facts are the map; the readers are a cross-check. Nothing here changes the catalog: check the cited line, then dismiss what the readers got wrong, or ask your assistant to read the repo again.",
+    openFromTrust: "Readers found / facts say",
+    openFromTrustOf: (repo: string) => `Readers found / facts say for ${repo}`,
+    crossCheckLine: (found: number, disagree: number) =>
+      `Readers' cross-check: ${found} found by the readers only, ${disagree} disagree.`,
+    repoPicker: "Repo",
+    empty:
+      "No repo has verified facts yet, so there is nothing to check the readers against. Read a repo with your assistant and Apply it on Map › Trust; then scan to compare.",
+    loadingRepo: "Loading the cross-check",
+    state: {
+      compared: "Compared",
+      "no-facts":
+        "No facts yet: its map comes from the built-in readers, so there is nothing to compare.",
+      "no-readers":
+        "No readers slot yet: check this repo with the built-in readers (Set up › Scans) to compare.",
+      legacy:
+        "Kept from before the upgrade, not yet read by the built-in readers: scan or verify this repo to replace it.",
+      unusable: "A slot doesn't read, so it isn't compared.",
+    } as Record<string, string>,
+    commits: (readers: string, facts: string) =>
+      `Readers read commit ${readers}; the facts are of commit ${facts}.`,
+    behind: (head: string) =>
+      `The base clone is at ${head} now: a slot behind it is shown as read at its own commit.`,
+    counts: (found: number, disagree: number, factsOnly: number, agree: number) =>
+      `${found} found by the readers only · ${disagree} disagree · ${factsOnly} in the facts only · ${agree} agree`,
+    filterLabel: "Show",
+    filter: {
+      "readers-only": (n: number) => `Readers found (${n})`,
+      disagree: (n: number) => `Disagree (${n})`,
+      "facts-only": (n: number) => `Facts only (${n})`,
+      dismissed: (n: number) => `Dismissed (${n})`,
+      all: (n: number) => `All (${n})`,
+    } as Record<string, (n: number) => string>,
+    kindLabel: "Kind",
+    allKinds: "Every kind",
+    searchLabel: "Find",
+    searchHint: "A key, an id or a file",
+    shown: (n: number, of: number) => `${n} of ${of} shown`,
+    noneShown: "Nothing matches these filters.",
+    allAgree: "The readers and the facts agree on everything they both have.",
+    listLabel: (repo: string) => `Cross-check items of ${repo}`,
+    itemState: {
+      "readers-only": "Readers found",
+      disagree: "Disagree",
+      "facts-only": "Facts only",
+    } as Record<string, string>,
+    readersSay: "Readers",
+    factsSay: "Facts",
+    nothing: "nothing",
+    field: "Field",
+    fieldsCaption: (key: string) => `What the readers and the facts say of ${key}`,
+    factsOnlyNote: "For information: the built-in readers are known to miss things.",
+    dismissed: "Dismissed",
+    dismiss: "Dismiss",
+    dismissOf: (key: string) => `Dismiss ${key}`,
+    dismissHint:
+      "Check the cited line first. A dismissal is kept in facts/<repo>.crosscheck.yaml at the readers' value, and the item is listed again if that value changes.",
+    undismiss: "List again",
+    undismissOf: (key: string) => `List ${key} again`,
+    working: "Writing…",
+    dismissedNote: (key: string) => `Dismissed ${key}.`,
+    undismissedNote: (key: string) => `${key} is listed again.`,
+    failed: (why: string) => `Nothing written: ${why}`,
+    proposeHint: "The dismissals file is yours to propose for review, like any edit.",
+    problems: "Files that couldn't be read",
+  },
+  catalogBuild: {
+    title: "Catalog builds",
+    intro:
+      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and the curated decisions. Nothing is removed or overwritten without being shown first, and every build can be undone.",
+    openFromScans: "Catalog builds: confirm, undo, prune",
+    sourcesTitle: "Where each repo's records come from",
+    sourcesCaption: "Each repo's source in the build",
+    col: { repo: "Repo", source: "Source", commit: "Commit", note: "Note" },
+    source: {
+      facts: "Verified facts",
+      readers: "Built-in readers",
+      legacy: "Kept from before the upgrade",
+      none: "No slot yet",
+    } as Record<string, string>,
+    noSources: "The manifests list no repo yet.",
+    pendingTitle: "The next build",
+    upToDate: "catalog/generated is what the slots and inputs build. Nothing waits.",
+    wouldWrite: (n: number) =>
+      `A build would write the slots' changes, removing ${n} ${n === 1 ? "record" : "records"} (within the limits).`,
+    wouldWriteNothing: "A build would write the slots' changes; nothing would be removed.",
+    build: "Build now",
+    building: "Building…",
+    refusedTitle: "The build waits for you: nothing has been written.",
+    reason: {
+      "large-removals": (n: number) =>
+        `It would remove ${n} ${n === 1 ? "record" : "records"}, more than 10% of a repo's or 200 in one build.`,
+      "hand-edits": (n: number) =>
+        `${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build.`,
+      "unexplained-removals": (n: number) =>
+        `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
+      "not-upgraded": (n: number) =>
+        `This catalog was written before beta.27 (${n} record files): upgrade the metarepo first, which shows what it would do.`,
+      empty: () =>
+        "The build has no record from any repo's code, so the catalog is left as it was.",
+      "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
+    } as Record<string, (n: number) => string>,
+    inTerminal: "In a terminal",
+    reviewRemovals: (n: number) => `Review the ${n} removals`,
+    removalsTitle: (n: number) => `Confirm ${n} ${n === 1 ? "removal" : "removals"}`,
+    removalsIntro:
+      "These records are in the catalog now and the build would remove them. Each says what explains it. Nothing is removed until you confirm, and undo takes it back.",
+    removalsCaption: "The records the build would remove",
+    removalCol: { record: "Record", repos: "Repos", why: "Explained by" },
+    noRepo: "no repo",
+    typeCount: (n: number) => `Type ${n} to confirm exactly these`,
+    countHint: "A confirmation names the count it was shown, so it never covers more.",
+    countWrong: (n: number) => `Type ${n}, the number listed.`,
+    confirmRemove: (n: number) => `Remove ${n} ${n === 1 ? "record" : "records"}`,
+    cancel: "Cancel",
+    editsTitle: "Hand edits",
+    editsIntro:
+      "These files were changed by hand since the last build. A build never overwrites them: make each a curated decision, which every later build keeps, or discard them (a copy is kept for undo).",
+    editsCaption: "Files changed by hand",
+    how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
+    curate: (n: number) => `Make ${n === 1 ? "it" : `these ${n}`} curated`,
+    curating: "Making them curated…",
+    curateHint:
+      "Writes a curated decision for each into catalog/curated/, to propose for review, then builds.",
+    discard: (n: number) => `Discard ${n === 1 ? "it" : `these ${n}`}…`,
+    discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
+    discardIntro:
+      "The build replaces these files with what the slots build. Their bytes are kept in the undo copy first.",
+    confirmDiscard: (n: number) => `Discard ${n} ${n === 1 ? "edit" : "edits"}`,
+    upgradeTodo: "Upgrade the metarepo on Set up › Settings, or in a terminal:",
+    lastTitle: "The last build here",
+    lastNone: "No build has been written on this machine yet.",
+    lastLine: (command: string, at: string) => `${command}, ${at}`,
+    lastCounts: (added: number, changed: number, removed: number) =>
+      `${added} added · ${changed} changed · ${removed} removed`,
+    lastSlots: (n: number) => `${n} slot ${n === 1 ? "file" : "files"} written`,
+    lastRemoved: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} it removed`,
+    undoTitle: "Undo",
+    undoIntro:
+      "The last five builds on this machine keep an undo copy. Undo puts back catalog/generated, build.json and the slots as they were before a build, and can itself be undone. Git keeps everything older.",
+    undoNone: "Nothing to undo: no build has been written here yet.",
+    undoCaption: "The undo copies, newest first",
+    undoCol: { n: "Copy", command: "Command", at: "When", files: "Files", act: "Undo" },
+    undoTo: "Undo to before this…",
+    undoToOf: (n: number) => `Undo to before copy ${n}`,
+    undoPlanTitle: (n: number) => `Undo to before copy ${n}`,
+    undoPlanIntro: (copies: string) => `Takes back: ${copies}.`,
+    undoPlanCaption: "The files undo puts back",
+    restore: "restore",
+    remove: "remove",
+    confirmUndo: (n: number) => `Put back ${n} ${n === 1 ? "file" : "files"}`,
+    pruneTitle: "Prune",
+    pruneIntro:
+      "Slot files no build reads: repos no longer in the manifests or archived, and the upgrade's copy of the catalog. They are kept until you remove them.",
+    pruneNone: "Nothing to prune: every slot file is one a build reads.",
+    pruneCaption: "The files prune would remove",
+    pruneReview: (n: number) => `Remove these ${n} ${n === 1 ? "file" : "files"}…`,
+    pruneConfirmTitle: (n: number) => `Remove ${n} ${n === 1 ? "file" : "files"}`,
+    pruneConfirmIntro: "Undo and git keep them.",
+    confirmPrune: (n: number) => `Remove ${n} ${n === 1 ? "file" : "files"}`,
+    done: "Done. What it printed is in the Console.",
+    failed: (why: string) => `It stopped: ${why}`,
+    problems: "Problems the build reported",
+    orphaned: (repo: string, why: string) =>
+      `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its slots are kept, not built from.`,
+  },
+  /** Set up › Scans (ADR 0195): each repo's outcome of the last scan run here. */
+  scanSources: {
+    title: "What the scan read",
+    caption: "Each repo's outcome of the scan",
+    col: { repo: "Repo", outcome: "Readers slot", source: "Catalog from", note: "Why" },
+    slot: {
+      written: "Read in full",
+      unchanged: "Read in full, unchanged",
+      "kept-last-good": "Kept its last good read",
+      none: "No read yet",
+    } as Record<string, string>,
+    at: (commit: string) => `at ${commit}`,
+    why: {
+      "not-cloned": "it isn't cloned here",
+      unreadable: "its clone can't be read",
+      "not-asked": "left out of this scan",
+      "run-failed": "a reader run failed",
+      "plugin-refused": "a plugin that applies to it isn't used",
+      "readers-off": "the readers are switched off",
+      dirty: "its clone has changes not committed",
+      refused: "the scan wrote nothing",
+      "dry-run": "a dry run writes nothing",
+    } as Record<string, string>,
+    factsStale: "its facts cite files changed since: read it again on Map › Trust",
+    refusedBuild: "The scan read these repos, and its build waits for you:",
+    confirmScan: (n: number) => `Scan again, removing ${n} ${n === 1 ? "record" : "records"}`,
+    links: "Readers found / facts say, and the catalog's builds:",
   },
   /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
   trust: {
@@ -3001,7 +3206,7 @@ export const COPY = {
     /** App-only audit: the old built-in readers are a cross-check, never how the map is made. */
     scanNow: "Check with the built-in readers",
     scanCrossCheck:
-      "A cross-check, not how the map is made: the built-in readers read every repo's files and add what they find beside your assistant's facts. A scan replaces the whole catalog, so it writes the catalog only when every repo is cloned here and read in full; otherwise it writes nothing and says which repos and why. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+      "A cross-check, not how the map is made: the built-in readers read every repo's files. A scan keeps each repo read in full as its readers slot, keeps every other repo's last good read and says why, then builds the catalog; for a repo with verified facts, the facts stay its map and the readers' differences are listed under Readers found / facts say. It asks which repo answers on an unknown host only for the repos your assistant has read.",
     /** Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. */
     scanRefusedTitle: "Nothing written: the catalog is as it was.",
     scanRefusedState: "Nothing written",
