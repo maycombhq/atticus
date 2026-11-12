@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["vitest.shared.mjs", "scripts/vitest-temp.mjs"],
+  "globalPassThroughEnv": ["ATTICUS_DIAG", "ATTICUS_DIAG_FILE", "ATTICUS_DIAG_MIN"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

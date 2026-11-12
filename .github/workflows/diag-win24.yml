@@ -1,7 +1,7 @@
 name: diag-win24 (temporary)
 
-# TEMPORARY, on diag/win24 only: the CLI tests that stall on Windows + Node 24, with timing
-# instrumentation (scripts/diag-setup.mjs, ATTICUS_DIAG=1).
+# TEMPORARY, on diag/win24 only: the CLI test shards as ci.yml runs them, on Windows with Node 22
+# and 24, with timing instrumentation (scripts/diag-setup.mjs, ATTICUS_DIAG=1).
 on:
   push:
     branches: [diag/win24]
@@ -16,10 +16,13 @@ env:
 
 jobs:
   diag:
+    name: diag (${{ matrix.node }}, cli ${{ matrix.shard }}/2, rep ${{ matrix.rep }})
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
+        shard: [1, 2]
+        rep: [1, 2]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,19 +32,21 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache/restore@v4
-        with:
-          path: .turbo/build
-          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
-          restore-keys: turbo-build-${{ runner.os }}-node${{ matrix.node }}-
       - run: pnpm build
+      - name: processes before the tests
+        run: Get-Process | Sort-Object CPU -Descending | Select-Object -First 25 Id,CPU,WS,ProcessName,StartTime | Format-Table -AutoSize | Out-String -Width 250
+        shell: pwsh
       - id: tests
         env:
           ATTICUS_DIAG: "1"
           ATTICUS_DIAG_FILE: ${{ runner.temp }}/diag.log
-        working-directory: packages/cli
-        run: pnpm exec vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=60000 $(cat ../../.github/diag-files.txt)
+          TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/test
+        run: pnpm turbo run test --only --filter=@maycombhq/cli -- $(node .github/scripts/ci-shard.mjs cli "${{ matrix.shard }}" 2)
         shell: bash
+      - if: always()
+        name: processes after the tests
+        run: Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'node|git|cmd|powershell|bash' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | Format-Table -AutoSize | Out-String -Width 400
+        shell: pwsh
       - if: always()
         run: cat "$RUNNER_TEMP/diag.log" || true
         shell: bash

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { Session } from "node:inspector";
+import os from "node:os";
 import { afterEach, beforeEach } from "vitest";
 
 const G = globalThis;
@@ -20,7 +21,46 @@ const D = (G.__atticusDiag ??= {
   agg: new Map(),
   profiled: false,
   reported: 0,
+  listed: 0,
 });
+
+/** Machine CPU busy share since the last mark (all cores), and this worker's CPU ms. */
+function cpuMark() {
+  let idle = 0;
+  let total = 0;
+  for (const c of os.cpus()) {
+    const t = c.times;
+    idle += t.idle;
+    total += t.user + t.nice + t.sys + t.idle + t.irq;
+  }
+  const u = process.cpuUsage();
+  return { idle, total, self: (u.user + u.system) / 1000, wall: performance.now() };
+}
+function cpuSince(m) {
+  if (!m) return "";
+  const n = cpuMark();
+  const busy = n.total - m.total ? 1 - (n.idle - m.idle) / (n.total - m.total) : 0;
+  return `machineCpu=${(busy * 100).toFixed(0)}% workerCpu=${(n.self - m.self).toFixed(0)}ms/${(n.wall - m.wall).toFixed(0)}ms freeMem=${(os.freemem() / 2 ** 20).toFixed(0)}MB`;
+}
+
+const PS = [
+  "Get-CimInstance Win32_Process | ForEach-Object {",
+  " $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue;",
+  ' $c = "$($_.CommandLine)";',
+  " [pscustomobject]@{ Id=$_.ProcessId; Parent=$_.ParentProcessId; Cpu=[math]::Round($p.CPU,1);",
+  " WsMB=[math]::Round($_.WorkingSetSize/1MB); Name=$_.Name; Cmd=$c.Substring(0, [math]::Min(170, $c.Length)) } }",
+  " | Sort-Object Cpu -Descending | Select-Object -First 30 | Format-Table -AutoSize | Out-String -Width 320",
+].join("");
+function listProcesses(why) {
+  if (process.platform !== "win32") return;
+  const t0 = now();
+  childProcess.execFile(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", PS],
+    { windowsHide: true, timeout: 60000, maxBuffer: 8 * 2 ** 20 },
+    (err, out) => log(`  PROCESSES ${why} (${(now() - t0).toFixed(0)}ms${err ? " " + err.message : ""})\n${out}`),
+  );
+}
 
 function log(line) {
   try {
@@ -221,7 +261,12 @@ if (process.env.ATTICUS_DIAG === "1" && !G.__atticusDiagPatched) {
   lag.unref();
 
   function report(age) {
-    log(`HANG test="${D.test}" running ${(age / 1000).toFixed(0)}s`);
+    log(`HANG test="${D.test}" running ${(age / 1000).toFixed(0)}s ${cpuSince(D.hangMark ?? D.cpu)}`);
+    D.hangMark = cpuMark();
+    if (now() - D.listed > 60000) {
+      D.listed = now();
+      listProcesses(`for test="${D.test}"`);
+    }
     for (const c of D.children)
       log(`  pending child ${(now() - c.t0).toFixed(0)}ms spawned=${c.spawned?.toFixed(0)} exited=${c.exited?.toFixed(0)} pid=${c.child.pid} cmd=[${c.label}] cwd=${short(c.cwd, 100)} at ${c.stack}`);
     for (const f of D.fsPending)
@@ -280,6 +325,8 @@ if (process.env.ATTICUS_DIAG === "1") {
     D.agg = new Map();
     D.profiled = false;
     D.reported = 0;
+    D.cpu = cpuMark();
+    D.hangMark = undefined;
   });
   afterEach(() => {
     const ms = now() - D.testStart;
@@ -289,7 +336,7 @@ if (process.env.ATTICUS_DIAG === "1") {
         .sort((a, b) => b[1].ms - a[1].ms)
         .slice(0, 25)
         .map(([k, v]) => `${k} n=${v.n} sum=${v.ms.toFixed(0)} max=${v.max.toFixed(0)}`);
-      log(`TEST ${ms.toFixed(0)}ms "${D.test}" :: ${rows.join(" ;; ")}`);
+      log(`TEST ${ms.toFixed(0)}ms "${D.test}" ${cpuSince(D.cpu)} :: ${rows.join(" ;; ")}`);
       for (const c of D.children)
         log(`  still running child ${(now() - c.t0).toFixed(0)}ms exited=${c.exited?.toFixed(0)} cmd=[${c.label}]`);
     }
