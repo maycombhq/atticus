@@ -281,7 +281,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
           [--check]                    Write nothing; exit 1 when catalog/generated isn't what the slots build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
           [--curate]                   Make each a curated decision, an edit to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
-          [--drop-fields <n>]          With --curate: also make curated the files that change fields no decision can set (evidence, confidence), with the count listed; the next build puts those fields back
+          [--drop-fields <n>]          With --curate: also make curated the files that change fields no decision can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back
   atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)

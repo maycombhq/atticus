@@ -110,6 +110,26 @@ describe("applyCurated", () => {
     expect(find(records, auditCall.id).auth).toBeUndefined();
   });
 
+  it("applies decisions in the order of the instants their `at` names, an offset too", () => {
+    // 23:00+05:30 is 17:30Z: it comes before 18:00Z although its text sorts after it.
+    const early = decision({
+      target: auditCall.id,
+      action: "assert",
+      value: { auth: "mtls" },
+      at: "2026-11-12T23:00:00+05:30",
+    });
+    const late = decision({
+      target: auditCall.id,
+      action: "assert",
+      value: { auth: "oauth2" },
+      at: "2026-11-12T18:00:00Z",
+    });
+    const out = applyCurated(records, [late, early]);
+    expect(out.problems).toEqual([]);
+    expect(out.applied).toEqual([early.id, late.id]);
+    expect(find(out.records, auditCall.id).auth).toBe("oauth2");
+  });
+
   it("drops a suppressed record and lists it; a scoped suppress changes nothing", () => {
     const drop = decision({ target: auditCall.id, action: "suppress", value: null });
     const scoped = decision({

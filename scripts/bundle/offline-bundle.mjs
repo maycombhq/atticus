@@ -17,6 +17,7 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { layOutPlugin, pluginName, writeChecksums, writeZip } from "./embeddings-plugin.mjs";
 import {
   cyclonedx,
@@ -103,6 +104,27 @@ if (withEmbeddings) {
     process.exit(1);
   }
   console.log(`Left out the embedding plugin: ${left.join(", ")}.`);
+}
+// The build cache's code stamp (ADR 0195 point 9): no build id is written into this bundle's
+// code (it isn't the npm bundle), so the scanner stamps it by the files of every @maycombhq
+// package it reaches under node_modules. Checked here: a rebuilt bundle of the same version
+// must never return a build an older one kept.
+const stamp = JSON.parse(
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { codeStampInfo } from ${JSON.stringify(pathToFileURL(join(scoped, "scanner", "dist", "build-cache.js")).href)};\nconsole.log(JSON.stringify(codeStampInfo()));`,
+    ],
+    { encoding: "utf8" },
+  ),
+);
+if (stamp.from !== "installed") {
+  console.error(
+    `The bundle's build cache isn't stamped by its files (${stamp.why ?? stamp.from}): its builds could be an older bundle's.`,
+  );
+  process.exit(1);
 }
 for (const f of ["forge", "forge-change"])
   cpSync(join(REPO, "fixtures", f), join(dir, "fixtures", f), { recursive: true });

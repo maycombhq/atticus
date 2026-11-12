@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { deserializeRecord, serializeRecord, type CatalogRecord } from "@maycombhq/core";
 import { listHooks } from "../src/catalog-build-commands.js";
 import { main } from "../src/main.js";
 
@@ -308,35 +309,126 @@ describe("the app's confirm is of the list the page showed, checked under the lo
   );
 });
 
-describe("a second catalog edits --curate of a record keeps the first's fields (the review, N6)", () => {
+describe("a second catalog edits --curate of a record is its own decision (the review, N6 and its second review)", () => {
+  const SETTING = "setting/portal-bff.ledger-read-timeout.yaml";
+  const DECISIONS = ["catalog", "curated", "curateddecision"];
+  const FIRST = "cd-edit-assert-portal-bff-ledger-read-timeout.yaml";
+  const SECOND = "cd-edit-assert-portal-bff-ledger-read-timeout-2.yaml";
+
   it(
-    "two curates of one Setting, each of another field: one decision with both, and the build keeps both",
+    "alice curates one field (her decision proposed: pr set), bob another: her file untouched, his its own, the build keeps both",
     async () => {
       const root = await upgraded();
-      const setting = "setting/portal-bff.ledger-read-timeout.yaml";
-      const path = join(root, "catalog", "generated", ...setting.split("/"));
+      const path = join(root, "catalog", "generated", ...SETTING.split("/"));
       await writeFile(path, (await readFile(path, "utf8")).replace("5000ms", "7000ms"));
-      const first = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      const first = await atticus(root, "catalog", "edits", "--curate", "--by", "alice");
       expect(first.code, first.all()).toBe(0);
+      // Alice proposes her decision: its file says the pull request.
+      const aliceFile = join(root, ...DECISIONS, FIRST);
+      const p = deserializeRecord(await readFile(aliceFile, "utf8"));
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const pr = "https://git.forge.example/forge/metarepo/pull/12";
+      await writeFile(aliceFile, serializeRecord({ ...p.record, pr } as CatalogRecord));
+      const aliceText = await readFile(aliceFile, "utf8");
       expect((await atticus(root, "catalog", "build")).code).toBe(0);
       await writeFile(
         path,
         (await readFile(path, "utf8")).replace("target: ledger-api", "target: ledger-api-v2"),
       );
-      const second = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      const second = await atticus(root, "catalog", "edits", "--curate", "--by", "bob");
       expect(second.code, second.all()).toBe(0);
-      const decisions = files(join(root, "catalog", "curated", "curateddecision"));
-      const mine = Object.entries(decisions).filter(([, t]) =>
-        t.includes("target: portal-bff.ledger-read-timeout"),
-      );
-      expect(mine).toHaveLength(1);
-      expect(mine[0]![1]).toMatch(/valueOrRef: 7000ms/);
-      expect(mine[0]![1]).toMatch(/target: ledger-api-v2/);
+      expect(second.out.join("\n")).toContain(SECOND);
+      // Alice's decision is hers, byte for byte: by alice, her pr, her one field.
+      expect(await readFile(aliceFile, "utf8")).toBe(aliceText);
+      expect(aliceText).toMatch(/^by: alice$/m);
+      expect(aliceText).toContain(`pr: ${pr}`);
+      const bob = await readFile(join(root, ...DECISIONS, SECOND), "utf8");
+      expect(bob).toMatch(/^by: bob$/m);
+      expect(bob).toMatch(/target: ledger-api-v2/);
+      expect(bob).not.toMatch(/valueOrRef/);
+      expect(bob).not.toMatch(/^pr:/m);
+      // Bob's applies after Alice's (later wins), and both fields survive.
+      const at = (t: string) => /^at: (.+)$/m.exec(t)![1]!;
+      expect(at(bob) > at(aliceText)).toBe(true);
       const b = await atticus(root, "catalog", "build");
       expect(b.code, b.all()).toBe(0);
       const built = await readFile(path, "utf8");
       expect(built).toMatch(/valueOrRef: 7000ms/);
       expect(built).toMatch(/target: ledger-api-v2/);
+    },
+    T,
+  );
+
+  it(
+    "a later curate of the same field wins over an earlier decision whose `at` has an offset (its text sorts after now)",
+    async () => {
+      const root = await upgraded();
+      const path = join(root, "catalog", "generated", ...SETTING.split("/"));
+      await writeFile(path, (await readFile(path, "utf8")).replace("5000ms", "7000ms"));
+      expect((await atticus(root, "catalog", "edits", "--curate", "--by", "alice")).code).toBe(0);
+      // Alice's decision, dated an hour ago in +14:00: its text is tomorrow's, after now's.
+      const aliceFile = join(root, ...DECISIONS, FIRST);
+      const p = deserializeRecord(await readFile(aliceFile, "utf8"));
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const hourAgo = new Date(Date.now() - 3_600_000 + 14 * 3_600_000);
+      const at = `${hourAgo.toISOString().slice(0, 19)}+14:00`;
+      expect(at > new Date().toISOString()).toBe(true);
+      await writeFile(aliceFile, serializeRecord({ ...p.record, at } as CatalogRecord));
+      expect((await atticus(root, "catalog", "build")).code).toBe(0);
+      await writeFile(path, (await readFile(path, "utf8")).replace("7000ms", "9000ms"));
+      const second = await atticus(root, "catalog", "edits", "--curate", "--by", "bob");
+      expect(second.code, second.all()).toBe(0);
+      const b = await atticus(root, "catalog", "build");
+      expect(b.code, b.all()).toBe(0);
+      expect(await readFile(path, "utf8")).toMatch(/valueOrRef: 9000ms/);
+    },
+    T,
+  );
+
+  it(
+    "a field deleted in a hand edit is said and refused (a decision can't remove a field), never silently put back",
+    async () => {
+      const root = await upgraded();
+      const path = join(root, "catalog", "generated", ...SETTING.split("/"));
+      const original = await readFile(path, "utf8");
+      const decisionsBefore = files(join(root, ...DECISIONS));
+      // Only a deletion: nothing a decision can say, so it can't be made curated at all.
+      await writeFile(path, original.replace("target: ledger-api\n", ""));
+      const only = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      expect(only.code).toBe(1);
+      expect(only.all()).toMatch(/it only removes target, which a curated decision can't remove/);
+      expect(only.all()).not.toMatch(/says the same as the build's/);
+      expect(files(join(root, ...DECISIONS))).toEqual(decisionsBefore);
+      // A deletion with a change: listed, and made curated only with --drop-fields <count>.
+      await writeFile(
+        path,
+        original.replace("target: ledger-api\n", "").replace("5000ms", "7000ms"),
+      );
+      const list = await atticus(root, "catalog", "edits");
+      expect(list.all()).toMatch(/removes target, which a curated decision can't remove/);
+      expect(list.all()).toMatch(/atticus catalog edits --curate --drop-fields 1/);
+      const plain = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      expect(plain.code).toBe(1);
+      expect(plain.all()).toMatch(/it also removes target/);
+      expect(files(join(root, ...DECISIONS))).toEqual(decisionsBefore);
+      expect((await atticus(root, "catalog", "build")).code).toBe(1);
+      const ok = await atticus(
+        root,
+        "catalog",
+        "edits",
+        "--curate",
+        "--drop-fields",
+        "1",
+        "--by",
+        "pat",
+      );
+      expect(ok.code, ok.all()).toBe(0);
+      expect(ok.all()).toMatch(/made curated without target/);
+      const b = await atticus(root, "catalog", "build");
+      expect(b.code, b.all()).toBe(0);
+      const built = await readFile(path, "utf8");
+      expect(built).toMatch(/valueOrRef: 7000ms/);
+      expect(built).toMatch(/target: ledger-api$/m);
     },
     T,
   );

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import {
   acquireLock,
@@ -415,8 +415,26 @@ interface EditPlan {
   decision?: Record<string, unknown>;
   /** Why it can't be made curated. */
   why?: string;
-  /** Fields it changes that no decision can set (they would be put back by the next build). */
+  /**
+   * Fields it changes that no decision can set, or removes (an assert sets fields, it can't
+   * take one away): the next build would put them back, so they are said, never dropped quietly.
+   */
   fields?: string[];
+  /** Of `fields`, those the edit removed. */
+  removed?: string[];
+}
+
+/** What an edit does that no decision can say: "changes evidence, which a curated decision can't set". */
+function cantSay(p: Pick<EditPlan, "fields" | "removed">): string {
+  const removed = p.removed ?? [];
+  const changed = (p.fields ?? []).filter((f) => !removed.includes(f));
+  const what = [
+    ...(changed.length ? [`changes ${changed.join(", ")}`] : []),
+    ...(removed.length ? [`removes ${removed.join(", ")}`] : []),
+  ].join(" and ");
+  const verb =
+    changed.length && removed.length ? "set or remove" : removed.length ? "remove" : "set";
+  return `${what}, which a curated decision can't ${verb}`;
 }
 
 /**
@@ -428,6 +446,11 @@ async function planEdits(
   undoDir: string,
 ): Promise<EditPlan[] & { buildPlan?: string }> {
   const inputs = await loadBuildInputs(root);
+  // Built from the inputs as loaded, where GET /api/build (catalogBuildView: buildAndWrite with
+  // `check`) builds them through slotsAfter and withFactsWrites. With no slot writes those give
+  // the same readers, facts and legacy slots and an empty `pending`, which neither the build
+  // nor its cache key reads (slotsKeyOf leaves it out): the same build, so buildPlanOf gives the
+  // page's plan hash and the confirm under the lock compares like with like.
   const b = await buildCatalog(inputs);
   const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
   const edits = g.refused?.reasons.includes("hand-edits") ? (g.refused.edits ?? []) : [];
@@ -487,16 +510,20 @@ async function planEdits(
     const was = derived as unknown as Record<string, unknown>;
     const value: Record<string, unknown> = {};
     const bad: string[] = [];
+    const removed: string[] = [];
     for (const k of [...new Set([...Object.keys(now), ...Object.keys(was)])].sort(cmpText)) {
       if (JSON.stringify(now[k]) === JSON.stringify(was[k])) continue;
-      if (PROTECTED.has(k)) bad.push(k);
-      else if (k in now) value[k] = now[k];
+      // A field the person deleted: an assert sets fields and can't take one away (C1's
+      // CuratedDecision), so it is said with those no decision can set, never asserted over
+      // silently (ADR 0195 point 4: hand edits are never silently lost), and made curated
+      // without it only on --drop-fields: the next build puts it back.
+      if (!(k in now)) removed.push(k);
+      if (PROTECTED.has(k) || !(k in now)) bad.push(k);
+      else value[k] = now[k];
     }
+    const said = { fields: bad, ...(removed.length ? { removed } : {}) };
     if (bad.length && !Object.keys(value).length) {
-      plan({
-        why: `it changes only ${bad.join(", ")}, which a curated decision can't set`,
-        fields: bad,
-      });
+      plan({ why: `it only ${cantSay(said)}`, ...said });
       continue;
     }
     if (!Object.keys(value).length) {
@@ -507,7 +534,7 @@ async function planEdits(
     }
     plan({
       decision: { action: "assert", target: derived.id, value },
-      ...(bad.length ? { fields: bad } : {}),
+      ...(bad.length ? said : {}),
     });
   }
   return out;
@@ -565,9 +592,7 @@ export async function catalogEdits(
         `${edits.length} ${edits.length === 1 ? "file was" : "files were"} changed by hand since the last build:`,
       );
       for (const e of listed)
-        io.out(
-          `  ${e.how}: ${e.path}${e.fields?.length ? ` (changes ${e.fields.join(", ")}, which a curated decision can't set)` : ""}`,
-        );
+        io.out(`  ${e.how}: ${e.path}${e.fields?.length ? ` (${cantSay(e)})` : ""}`);
       io.out(
         `Make them curated decisions: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
       );
@@ -593,6 +618,8 @@ export async function catalogEdits(
     const written: string[] = [];
     const curated: string[] = [];
     const left: { path: string; why: string; fields?: string[] }[] = [];
+    /** Edits a decision already there says (the same suppress): nothing written for them. */
+    const kept: { path: string; decision: string }[] = [];
     const confirmed = o.dropFields === dropping.length;
     for (const p of plans) {
       if (!p.decision) {
@@ -602,28 +629,37 @@ export async function catalogEdits(
       if (p.fields?.length && !confirmed) {
         left.push({
           path: p.path,
-          why: `it also changes ${p.fields.join(", ")}, which a curated decision can't set (the next build would put ${p.fields.length === 1 ? "it" : "them"} back): make it curated without ${p.fields.length === 1 ? "it" : "them"} with atticus catalog edits --curate --drop-fields ${dropping.length}`,
+          why: `it also ${cantSay(p)} (the next build would put ${p.fields.length === 1 ? "it" : "them"} back): make it curated without ${p.fields.length === 1 ? "it" : "them"} with atticus catalog edits --curate --drop-fields ${dropping.length}`,
           fields: p.fields,
         });
         continue;
       }
-      // A record made curated before (an earlier curate of it): one decision, with the fields
-      // it asserted and these, so a second curate never takes back the first's.
+      // A record made curated before (an earlier curate of it): that decision stays its author's,
+      // untouched, and this edit is a decision of its own that applies after it.
       const placed = await decisionFor(
         curatedDir,
         slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
         p.decision,
+        at,
       );
+      if ("keep" in placed) {
+        kept.push({
+          path: p.path,
+          decision: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}`,
+        });
+        curated.push(p.path);
+        continue;
+      }
       const record = parseRecord({
         kind: "CuratedDecision",
         id: placed.id,
         schemaVersion: 2,
         status: "current",
         confidence: "asserted",
-        ...placed.decision,
+        ...p.decision,
         reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
         by,
-        at,
+        at: placed.at,
       });
       if (!record.ok) {
         left.push({ path: p.path, why: record.issues.map((i) => i.message).join("; ") });
@@ -649,6 +685,7 @@ export async function catalogEdits(
           {
             edits,
             decisions: written,
+            ...(kept.length ? { kept } : {}),
             left,
             ...(dropping.length ? { dropFields: dropping.length } : {}),
             ...(confirmed && dropping.length ? { dropped: dropping.map((p) => pick(p)) } : {}),
@@ -660,6 +697,8 @@ export async function catalogEdits(
     else {
       for (const w of written)
         io.out(`Wrote ${w}: propose it in a pull request so every build keeps the edit.`);
+      for (const k of kept)
+        io.out(`${k.path}: ${k.decision} already says this edit (left as it is).`);
       if (confirmed)
         for (const d of dropping)
           io.out(
@@ -679,51 +718,55 @@ export async function catalogEdits(
   });
 }
 
-const pick = (p: EditPlan) => ({ path: p.path, fields: p.fields ?? [] });
+const pick = (p: EditPlan) => ({
+  path: p.path,
+  fields: p.fields ?? [],
+  ...(p.removed?.length ? { removed: p.removed } : {}),
+});
 
 /**
- * Where `edits --curate` puts a decision, and what it says: under its id, with the fields an
- * assert of the same record already there asserts kept (this one's over them); an id of its
- * own (`-2`, `-3`, ...) when that file holds another decision, so none is written over.
+ * Where `edits --curate` puts a decision, and when it says it was made. Every decision already
+ * in `catalog/curated` is its author's and is never written over: a second curate of a record
+ * (another person's, or the same person's later) is a decision of its own, under the first free
+ * id of `id`, `id-2`, `id-3`, ... with only the fields this edit changed (the build it was read
+ * against already had the earlier decisions applied, so their fields are not in it). Decisions
+ * apply in time order, then id (applyCurated), so this one is dated after every decision on its
+ * target already there (a second after the latest, when the clock says otherwise: another
+ * machine's ahead, or the same second): it applies after them, and wins on the fields it sets,
+ * while theirs keep the rest. The same suppress already there is that decision: `keep`, nothing
+ * written.
  */
 async function decisionFor(
   curatedDir: string,
   id: string,
   decision: Record<string, unknown>,
-): Promise<{ id: string; decision: Record<string, unknown> }> {
-  const fileOf = (x: string) => join(curatedDir, "curateddecision", `${x}.yaml`);
-  const held = async (x: string) => {
-    const p = deserializeRecord(await readFile(fileOf(x), "utf8").catch(() => ""));
-    return p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
-  };
-  if (!existsSync(fileOf(id))) return { id, decision };
-  const was = await held(id);
-  const sameAssert =
-    was?.kind === "CuratedDecision" &&
-    was.action === "assert" &&
-    decision.action === "assert" &&
-    was.target === decision.target &&
-    was.value !== null &&
-    typeof was.value === "object" &&
-    !Array.isArray(was.value);
-  if (sameAssert)
-    return {
-      id,
-      decision: {
-        ...decision,
-        value: {
-          ...(was.value as Record<string, unknown>),
-          ...(decision.value as Record<string, unknown>),
-        },
-      },
-    };
-  // The same suppress again says what the file says.
-  if (
-    was?.action === decision.action &&
-    decision.action === "suppress" &&
-    was?.target === decision.target
-  )
-    return { id, decision };
-  for (let n = 2; ; n++)
-    if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, decision };
+  now: string,
+): Promise<{ id: string; at: string } | { keep: string }> {
+  const dir = join(curatedDir, "curateddecision");
+  const held: { file: string; d: Record<string, unknown> }[] = [];
+  for (const n of (await readdir(dir).catch(() => [] as string[])).sort(cmpText)) {
+    if (!/\.ya?ml$/.test(n)) continue;
+    const p = deserializeRecord(await readFile(join(dir, n), "utf8").catch(() => ""));
+    const d = p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+    if (d?.kind === "CuratedDecision" && d.target === decision.target) held.push({ file: n, d });
+  }
+  const same = held.find(
+    ({ d }) =>
+      decision.action === "suppress" &&
+      d.action === "suppress" &&
+      d.status === "current" &&
+      (d.value ?? null) === null,
+  );
+  if (same) return { keep: same.file };
+  let at = now;
+  // By the instant each `at` names, as applyCurated orders them (an offset is allowed).
+  const latest = held
+    .map(({ d }) => (typeof d.at === "string" ? Date.parse(d.at) : NaN))
+    .filter((x) => !Number.isNaN(x))
+    .reduce((m, x) => Math.max(m, x), -Infinity);
+  if (latest !== -Infinity && Date.parse(at) <= latest)
+    at = new Date(Math.floor(latest / 1000) * 1000 + 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const fileOf = (x: string) => join(dir, `${x}.yaml`);
+  if (!existsSync(fileOf(id))) return { id, at };
+  for (let n = 2; ; n++) if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, at };
 }
