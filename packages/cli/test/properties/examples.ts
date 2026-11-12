@@ -553,4 +553,28 @@ export const EXAMPLES: Example[] = [
     ],
     [has("the arrow", callsLedger), has("payments' POST /refunds", postRefunds)],
   ),
+  seq(
+    "equivalence",
+    "a scan refused for a removal, confirmed into the hand-edits guard, settles once the edit is made curated (seed 1344785347)",
+    [
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "scan" },
+      { t: "hand-edit", pick: 0, how: "delete" },
+      { t: "confirm-removals" },
+      { t: "curate-edits" },
+      { t: "prune", yes: false },
+    ],
+    [
+      has("arrow for forge.payments.changed", topic),
+      lacks("the ledger's loose end for forge.payments.changed", (recs) =>
+        recs.find((r) => r.kind === "Unresolved"),
+      ),
+    ],
+    {
+      repos: [
+        { base: ledger, code: { ...ledgerCode, endpoints: [] } },
+        { base: payments, code: { ...paymentsCode, endpoints: [], calls: [] } },
+      ],
+    },
+  ),
 ];

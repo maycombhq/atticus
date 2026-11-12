@@ -893,9 +893,12 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
   const { m, w } = ctx;
   // A refusal listing removals is confirmed with its count (and whatever else it ran with); hand
   // edits are discarded with theirs. Each confirmation may meet the next guard, so a few rounds.
+  // A confirmation that met the hand-edits guard keeps its count; once another command took the
+  // edits (made them curated), the refused command still waits for that confirmation, run again
+  // (seed 1344785347: a scan refused, confirmed into the hand-edits guard, the edit curated).
   for (let i = 0; i < 6; i++) {
     const p = w.pending;
-    if (p?.removals && p.confirm.allowRemovals !== p.removals.count)
+    if (p?.removals && (p.confirm.allowRemovals !== p.removals.count || !m.handEdits.length))
       await run({ t: "confirm-removals" });
     else if (m.handEdits.length) await run({ t: "discard-edits" });
     else break;
