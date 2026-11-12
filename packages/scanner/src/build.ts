@@ -1359,6 +1359,16 @@ export async function guardBuild(
       for (const r of cat.records) oldRecords.set(recordPath(r), r);
     }
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
+    // Each repo's slot files as this build read them, with their hashes.
+    const slotNow = new Map<string, { path: string; sha256: string }[]>();
+    for (const f of b.manifest.files)
+      for (const x of f.sources) {
+        const m = /sources\/(?:readers|facts)\/(.+?)(?:\.meta\.json|\.jsonl|\.json)$/.exec(x.path);
+        if (!m) continue;
+        const xs = slotNow.get(m[1]!) ?? [];
+        if (!xs.some((y) => y.path === x.path)) xs.push(x);
+        slotNow.set(m[1]!, xs);
+      }
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
     const liveNow = new Set(b.sources.map((s) => s.repo));
@@ -1383,9 +1393,17 @@ export async function guardBuild(
             kinds.add(/(^|\/)sources\//.test(s.path) ? "slot" : "input");
           }
         }
+      // A repo its evidence names that has a slot now the record didn't rest on (read for the
+      // first time since, a repo not cloned then, say): that repo's slot explains it.
+      const had = new Set(f.sources.map((x) => `${x.path}\u0000${x.sha256}`));
+      for (const repo of repos)
+        for (const x of slotNow.get(repo) ?? [])
+          if (!had.has(`${x.path}\u0000${x.sha256}`)) {
+            why.add(sourceWords(x.path, b));
+            kinds.add("slot");
+          }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      // (Said even when an input changed too: the slot is the more telling.)
-      if (estate && !kinds.has("slot")) {
+      if (estate && !why.size) {
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }
