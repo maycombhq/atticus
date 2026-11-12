@@ -179,9 +179,14 @@ const fileOf = (root: string, id: string) => join(questionsDirOf(root), `${id}.y
  * holds that text: a change made meanwhile (a person's answer in the app, another command) is
  * never overwritten, and FileChangedError says so instead (round 46).
  */
+/** A question's file, and the text `writeQuestion` writes there (a rename computes it first, ADR 0195). */
+export const questionFileOf = (root: string, id: string) => fileOf(root, id);
+export const questionFileText = (q: Question) =>
+  `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
+
 async function write(root: string, q: Question, before?: { text: string }): Promise<void> {
   await mkdir(questionsDirOf(root), { recursive: true });
-  const text = `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
+  const text = questionFileText(q);
   if (before) await writeFileIfUnchanged(fileOf(root, q.id), before.text, text);
   else await writeFileAtomic(fileOf(root, q.id), text);
 }

@@ -1,5 +1,6 @@
 import {
   cmpNatural,
+  askedByStep,
   cmpText,
   HOSTS_NONE,
   HOSTS_OUTSIDE_INTERNAL,
@@ -313,4 +314,17 @@ export async function joinAnswerQuestions(root: string): Promise<Question[]> {
       () => [] as Question[],
     );
   return [...(await of(TARGETS_STEP_ID)), ...(await of(HOSTS_STEP))];
+}
+
+/**
+ * `joinAnswerQuestions` of a list already read (ADR 0195: a rename builds from its renamed
+ * questions before it writes them): the targets questions, then the hosts questions, each in
+ * `listQuestions`' order.
+ */
+export function joinAnswerQuestionsOf(all: readonly Question[]): Question[] {
+  const sorted = [...all].sort((a, b) => cmpText(a.askedBy.at, b.askedBy.at) || cmpText(a.id, b.id));
+  return [
+    ...sorted.filter((q) => askedByStep(q, TARGETS_STEP_ID)),
+    ...sorted.filter((q) => askedByStep(q, HOSTS_STEP)),
+  ];
 }

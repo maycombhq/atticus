@@ -82,8 +82,16 @@ export type Desc =
    */
   | { t: "undo"; n?: number; yes?: boolean; back?: boolean }
   | { t: "prune"; yes: boolean }
-  /** A crash part way through a scan's or a `verify --write`'s write, then a build that catches up. */
-  | { t: "crash"; at: "after-slots" | "mid-records"; via: "scan" | "verify"; slot: number }
+  /**
+   * A crash part way through a scan's or a `verify --write`'s write, then a build that catches up;
+   * or through a rename's write, which puts every file back (nothing changed, no build).
+   */
+  | {
+      t: "crash";
+      at: "after-slots" | "mid-records";
+      via: "scan" | "verify" | "rename";
+      slot: number;
+    }
   | { t: "upgrade"; yes: boolean }
   | { t: "again" };
 
@@ -136,7 +144,8 @@ export interface Acted {
     back: boolean;
     backOutcome?: Outcome;
   };
-  crash?: { first: Outcome; mid: Snap };
+  /** `whole`: the crash was a rename's, which must leave the metarepo as it was. */
+  crash?: { first: Outcome; mid: Snap; whole?: true };
   /** curate-edits: the drafting step, before its build. */
   pre?: Outcome;
   /** upgrade --yes: the metarepo right after it, before the build the harness runs then. */
@@ -443,6 +452,43 @@ async function verify(
       const was = m.facts.get(r.slot);
       if (!was || was.commit !== facts.commit || was.id !== facts.id) m.changes.slots.add(r.slot);
       m.facts.set(r.slot, facts);
+    },
+  };
+}
+
+/** `atticus repo rename <id> <id>-core`; with `crash`, its write stops part way. */
+async function rename(
+  d: Desc & { t: "rename" },
+  m: Model,
+  w: World,
+  confirm: Confirm,
+  crash?: "after-slots" | "mid-records",
+): Promise<Acted | undefined> {
+  const r = live(m, d.slot);
+  if (!r || r.id.endsWith("-core")) return undefined;
+  const from = r.id;
+  const to = `${r.id}-core`;
+  // New slot files that don't parse need slot files to write: a repo never observed has none.
+  const fail =
+    !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
+  const outcome = await sut().rename(w.root, from, to, {
+    ...confirm,
+    ...(d.fail ? { failBuild: true } : {}),
+    ...(crash ? { crash } : {}),
+  });
+  return {
+    outcome,
+    confirm,
+    expect: fail ? { kind: "refuse", guard: "build-failed" } : { kind: "succeed" },
+    rerun: d,
+    onSuccess: async () => {
+      if (fail) return;
+      // The person clones it again under its new id (atticus workspace sync, here a move).
+      if (existsSync(w.clone(from))) await move(w.clone(from), w.clone(to));
+      r.id = to;
+      for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
+        if (obs?.id === from) obs.id = to;
+      m.changes.slots.add(r.slot);
     },
   };
 }
@@ -780,34 +826,8 @@ export async function act(
       };
     }
 
-    case "rename": {
-      const r = live(m, d.slot);
-      if (!r || r.id.endsWith("-core")) return undefined;
-      const from = r.id;
-      const to = `${r.id}-core`;
-      // New slot files that don't parse need slot files to write: a repo never observed has none.
-      const fail =
-        !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
-      const outcome = await sut().rename(w.root, from, to, {
-        ...confirm,
-        ...(d.fail ? { failBuild: true } : {}),
-      });
-      return {
-        outcome,
-        confirm,
-        expect: fail ? { kind: "refuse", guard: "build-failed" } : { kind: "succeed" },
-        rerun: d,
-        onSuccess: async () => {
-          if (fail) return;
-          // The person clones it again under its new id (atticus workspace sync, here a move).
-          if (existsSync(w.clone(from))) await move(w.clone(from), w.clone(to));
-          r.id = to;
-          for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
-            if (obs?.id === from) obs.id = to;
-          m.changes.slots.add(r.slot);
-        },
-      };
-    }
+    case "rename":
+      return rename(d, m, w, confirm);
 
     case "build":
       return build(w, confirm);
@@ -893,6 +913,17 @@ export async function act(
     }
 
     case "crash": {
+      if (d.via === "rename") {
+        // ADR 0195 point 2: the rename computes everything first and writes it in one step; a
+        // write that stops part way puts every file back, so nothing changed and nothing is
+        // left for a build to catch up (the model is as it was: no update applies).
+        const first = await rename({ t: "rename", slot: d.slot }, m, w, confirm, d.at);
+        if (!first?.outcome) return undefined;
+        const o = first.outcome;
+        if (!o.crashed) return { ...first, crash: { first: o, mid: before } };
+        const { onSuccess: _never, ...rest } = first;
+        return { ...rest, expect: { kind: "neutral" }, crash: { first: o, mid: before, whole: true } };
+      }
       const inner: Desc =
         d.via === "scan" ? { t: "scan" } : { t: "verify-write", slot: d.slot, ok: true };
       const first =
@@ -1070,7 +1101,7 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
       fc.record({
         t: fc.constant("crash" as const),
         at: fc.constantFrom("after-slots" as const, "mid-records" as const),
-        via: fc.constantFrom("scan" as const, "verify" as const),
+        via: fc.constantFrom("scan" as const, "verify" as const, "rename" as const),
         slot,
       }),
     ),

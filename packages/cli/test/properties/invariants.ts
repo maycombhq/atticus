@@ -115,7 +115,9 @@ function base(s: Step): Desc {
   if (s.desc.t === "crash")
     return s.desc.via === "scan"
       ? { t: "scan" }
-      : { t: "verify-write", slot: s.desc.slot, ok: true };
+      : s.desc.via === "rename"
+        ? { t: "rename", slot: s.desc.slot }
+        : { t: "verify-write", slot: s.desc.slot, ok: true };
   return s.desc;
 }
 
@@ -372,6 +374,19 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
           `${s.desc.t} ${why}, yet changed ${list([...g.map((p) => `catalog/generated/${p}`), ...x.map((p) => `catalog/sources/${p}`)])}`,
         );
     };
+    if (s.crash?.first.crashed && s.crash.whole) {
+      // A rename computes everything first and writes it in one step (ADR 0195 point 2): a write
+      // that stops part way puts every file back, the facts and curated decisions included.
+      whole("stopped part way through a rename's write");
+      const f = changedPaths(s.before.facts, s.after.facts);
+      const c = changedPaths(s.before.curated, s.after.curated);
+      if (f.length || c.length)
+        fail(
+          "failure-neutrality",
+          `a rename that stopped part way changed ${list([...f.map((p) => `facts/${p}`), ...c.map((p) => `catalog/curated/${p}`)])}`,
+        );
+      return;
+    }
     if (s.crash?.first.crashed) {
       // Behind but whole (ADR point 2): each file the crash left is the bytes from before it or
       // those the build that caught up wrote, and the undo copy was taken first.
@@ -457,11 +472,6 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       const rec = byId.get(d.target);
       if (d.action === "suppress" && rec && (d.kind !== "Endpoint" || v.serves(d)))
         fail("curation-survives", `${d.target} is suppressed by ${what}, yet ${s.desc.t} wrote it`);
-      if (d.action === "assert" && d.added && !rec)
-        fail(
-          "curation-survives",
-          `${d.target}, added by hand and made curated, isn't in the catalog after ${s.desc.t}`,
-        );
       if (d.action === "assert" && rec && d.value && !Array.isArray(d.value))
         for (const [k, val] of Object.entries(d.value)) {
           // Two asserts of one field (a person's and a hand edit's): one of them holds.

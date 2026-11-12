@@ -165,6 +165,7 @@ export const cs2Writers: CatalogSystem = {
   },
   async rename(root, from, to, o) {
     if (o.failBuild) renameHooks.breakNewSlots = true;
+    crashing(o);
     const r = await run(["repo", "rename", from, to, "--root", root, "--json", ...flags(o)]);
     const report = reportOf(r.out) as Report & { renamed?: boolean };
     return outcome(r, report, r.code === 0 && report.renamed === true);
