@@ -611,4 +611,22 @@ export const EXAMPLES: Example[] = [
       ],
     },
   ),
+  seq(
+    "equivalence",
+    "a rename undone leaves the ledger's slot under its old id and the manifest under the new: the settling build lists its records as removals, and settles once confirmed with that count (seed 1351551411)",
+    // ADR 0195 point 7 and the joint review: `catalog undo` puts back the rename's slots, record
+    // files and build.json, not the inputs it renamed (the manifest entry among them), so the old
+    // slot is orphaned and forge-ledger-core has no slot until it is scanned.
+    [{ t: "scan" }, { t: "rename", slot: 0 }, { t: "undo", n: 0, yes: true, back: false }],
+    [
+      lacks("the ledger's GET /accounts, whose slot no listed repo has", getAccounts),
+      has("payments' POST /refunds", postRefunds),
+    ],
+  ),
+  seq(
+    "nothing-removed-unexplained",
+    "after a rename undone, the confirmed build's removals of the ledger's records may be said as the manifest's: their evidence names an id no manifest lists, its slot kept (seed 1351551411)",
+    [{ t: "scan" }, { t: "rename", slot: 0 }, { t: "undo", n: 0, yes: true, back: false }],
+    [lacks("the ledger's GET /accounts, whose slot no listed repo has", getAccounts)],
+  ),
 ];
