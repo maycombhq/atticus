@@ -132,6 +132,8 @@ export const OPTIONS = {
   "accept-changes": { type: "string" },
   yes: { type: "boolean" },
   curate: { type: "boolean" },
+  // ADR 0195 (review): edits --curate of files that also change fields no decision can set.
+  "drop-fields": { type: "string" },
   // ADR 0195 (CS3): atticus catalog crosscheck <repo> --dismiss|--undismiss <key>.
   dismiss: { type: "string" },
   undismiss: { type: "string" },

@@ -797,19 +797,33 @@ export async function act(
 
     case "curate-edits": {
       if (!m.handEdits.length) return undefined;
+      // ADR 0195 addendum (CS2, the guards as built): "an added record can't be a curated
+      // decision (one changes or suppresses a record the build makes) and is said". The changed
+      // and deleted files are made curated; each added one stays a hand edit, so the command
+      // refuses (nothing built, catalog/generated and the slots as they were) until it is
+      // discarded.
+      const adds = m.handEdits.filter((e) => e.how === "add");
       const pre = await sut().curateEdits(w.root);
-      if (!pre.wrote) return { outcome: pre, pre, expect: { kind: "succeed" } };
-      for (const e of m.handEdits) {
+      const curate = (e: HandEdit) => {
         const common = { target: e.id, kind: e.kind, ...(e.key ? { key: e.key } : {}) };
         const dec: Decision =
           e.how === "delete"
             ? { action: "suppress", ...common, since: m.writes, from: "edits" }
-            : e.how === "change"
-              ? { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" }
-              : { action: "assert", ...common, added: true, since: m.writes, from: "edits" };
+            : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
         m.curated.push(dec);
         m.changes.curated.add(e.id);
+      };
+      if (adds.length) {
+        if (pre.refused)
+          for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+            curate(e);
+            m.curatedPending.push(e);
+          }
+        m.handEdits = pre.refused ? adds : m.handEdits;
+        return { outcome: pre, expect: { kind: "refuse" } };
       }
+      if (!pre.wrote) return { outcome: pre, pre, expect: { kind: "succeed" } };
+      for (const e of m.handEdits) curate(e);
       // Until a build writes them in, the files stay the person's (a refused build writes nothing).
       m.curatedPending.push(...m.handEdits);
       m.handEdits = [];

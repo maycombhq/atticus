@@ -335,8 +335,10 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
     T,
   );
 
+  // ADR 0195 addendum (CS2): "an added record can't be a curated decision (one changes or
+  // suppresses a record the build makes) and is said".
   it(
-    "a record added by hand: catalog edits --curate makes it an assert of the whole record, which every later build keeps",
+    "a record added by hand: catalog edits --curate says it can't be a curated decision and writes nothing for it; it stays a hand edit until discarded",
     async () => {
       const root = await scanned();
       const dir = join(root, "catalog", "generated", "endpoint");
@@ -349,15 +351,78 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         join(dir, `${id}.yaml`),
         stringify({ ...doc, id, pathOrTopic: "/by-hand", normalizedPath: "/by-hand" }),
       );
+      const curatedBefore = files(join(root, "catalog", "curated"));
       const curate = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
-      expect(curate.code, curate.err).toBe(0);
-      expect(curate.out).toMatch(/Wrote catalog\/curated\/curateddecision\/cd-edit-assert-/);
+      expect(curate.code).toBe(1);
+      expect(curate.err).toMatch(/an added record can't be a curated decision/);
+      expect(curate.err).toMatch(/a fact in facts\/<repo>\.jsonl/);
+      expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
+      const build = await run(["catalog", "build", "--root", root]);
+      expect(build.code).toBe(1);
+      expect(build.err).toContain(`added: catalog/generated/endpoint/${id}.yaml`);
+      expect((await run(["catalog", "build", "--root", root, "--discard-edits", "1"])).code).toBe(
+        0,
+      );
+      expect(existsSync(join(dir, `${id}.yaml`))).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "a hand edit that also changes evidence: listed with the fields, made curated only with --drop-fields <count>",
+    async () => {
+      const root = await scanned();
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const [file] = readdirSync(dir).sort();
+      const path = join(dir, file!);
+      const { parse: parseYaml, stringify } = await import("yaml");
+      const doc = parseYaml(readFileSync(path, "utf8")) as Record<string, unknown>;
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(
+        path,
+        stringify({ ...doc, auth: "mtls", evidence: [{ source: "manual", by: "pat" }] }),
+      );
+      const list = await run(["catalog", "edits", "--root", root]);
+      expect(list.out).toMatch(/changes evidence, which a curated decision can't set/);
+      expect(list.out).toMatch(/atticus catalog edits --curate --drop-fields 1/);
+      const curatedBefore = files(join(root, "catalog", "curated"));
+      const plain = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
+      expect(plain.code).toBe(1);
+      expect(plain.err).toMatch(/it also changes evidence/);
+      expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
+      // Not made curated: the build still lists it rather than overwrite it.
+      expect((await run(["catalog", "build", "--root", root])).code).toBe(1);
+      const wrong = await run([
+        "catalog",
+        "edits",
+        "--curate",
+        "--drop-fields",
+        "2",
+        "--root",
+        root,
+        "--by",
+        "pat",
+      ]);
+      expect(wrong.code).toBe(1);
+      expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
+      const ok = await run([
+        "catalog",
+        "edits",
+        "--curate",
+        "--drop-fields",
+        "1",
+        "--root",
+        root,
+        "--by",
+        "pat",
+      ]);
+      expect(ok.code, ok.err).toBe(0);
+      expect(ok.out).toMatch(/made curated without evidence/);
       expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
-      const added = readFileSync(join(dir, `${id}.yaml`), "utf8");
-      expect(added).toMatch(/^pathOrTopic: \/by-hand$/m);
-      expect(added).toMatch(/^confidence: asserted$/m);
-      expect((await run(["scan", "--root", root, "--no-drift"])).code).toBe(0);
-      expect(readFileSync(join(dir, `${id}.yaml`), "utf8")).toBe(added);
+      const now = readFileSync(path, "utf8");
+      expect(now).toMatch(/^auth: mtls$/m);
+      // The evidence is the build's again (with the decision's own manual entry).
+      expect(now).toMatch(/source: code/);
     },
     T,
   );

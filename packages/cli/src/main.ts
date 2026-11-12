@@ -696,7 +696,8 @@ Usage:
   atticus catalog build                Build catalog/generated from the source slots and inputs (ADR 0195): after a curated file is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
           [--check]                    Write nothing; exit 1 when catalog/generated isn't what the slots build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
-          [--curate]                   Make each a curated decision (an assert of what it changed, a suppress for a deleted one), then build with them
+          [--curate]                   Make each a curated decision, an edit to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
+          [--drop-fields <n>]          With --curate: also make curated the files that change fields no decision can set (evidence, confidence), with the count listed; the next build puts those fields back
   atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)
@@ -2161,6 +2162,17 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       io,
     );
   }
+  if (
+    group === "upgrade" &&
+    values["accept-changes"] !== undefined &&
+    !(typeof values["accept-changes"] === "string" && /^\d+$/.test(values["accept-changes"]))
+  ) {
+    // ADR 0195 (review): a count that isn't one confirms nothing, and is said, not ignored.
+    io.err(
+      "--accept-changes takes the count of the first build's changes atticus upgrade listed, a whole number. Nothing was written.",
+    );
+    return 2;
+  }
   if (group === "upgrade")
     return upgradeCommand(
       root,
@@ -3026,8 +3038,23 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const json = values.json === true;
     if (command === "build")
       return m.catalogBuild(root, { check: values.check === true, json, ...counts }, io);
-    if (command === "edits")
-      return m.catalogEdits(root, { curate: values.curate === true, json, by: who() }, io);
+    if (command === "edits") {
+      const drop = values["drop-fields"];
+      if (drop !== undefined && !(typeof drop === "string" && /^\d+$/.test(drop))) {
+        io.err("--drop-fields takes the count of files catalog edits listed, a whole number.");
+        return 2;
+      }
+      return m.catalogEdits(
+        root,
+        {
+          curate: values.curate === true,
+          json,
+          by: who(),
+          ...(typeof drop === "string" ? { dropFields: Number(drop) } : {}),
+        },
+        io,
+      );
+    }
     if (command === "prune") return m.catalogPrune(root, { yes: values.yes === true, json }, io);
     const n = arg === undefined ? undefined : Number(arg);
     if (n !== undefined && !(Number.isInteger(n) && n > 0)) {
