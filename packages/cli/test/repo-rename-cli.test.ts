@@ -275,6 +275,10 @@ describe("atticus repo rename <old> <new> (F5)", () => {
     expect(text).toContain("facts/forge-customers.jsonl → facts/forge-accounts.jsonl");
     expect(text).toContain("org-pack/profiles/forge/repos.manifest.yaml");
     expect(text).toMatch(/Atticus commits and pushes nothing/);
+    // ADR 0195 (CS2): build.json names the slots and inputs as they are after the rename, so
+    // the catalog is what they build.
+    const check = io();
+    expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });
 
   it("refuses a repo no manifest lists, an id already listed, and an id that isn't a slug", async () => {

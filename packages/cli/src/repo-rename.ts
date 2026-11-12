@@ -384,7 +384,20 @@ export async function repoRename(
     // ---- the new slots, then the build, then the old slots go (ADR 0195 point 2)
     let written;
     try {
-      written = await buildAndWrite(root, { command, build, slots: slotWrites, ...confirm });
+      // Built again from the files as the rename left them (the manifest, the facts, the
+      // questions, the curated decisions), so build.json records the inputs as they now are;
+      // its records are the checked build's.
+      const after = await loadBuildInputs(root);
+      const final = await buildCatalog({
+        ...after,
+        slots: await withSlotWrites(root, after.slots, slotWrites),
+      });
+      written = await buildAndWrite(root, {
+        command,
+        build: final,
+        slots: slotWrites,
+        ...confirm,
+      });
     } catch (e) {
       // Only the new files this wrote are taken away; the old ones stay.
       for (const w of slotWrites) if (w.text !== null) await rm(w.path, { force: true });

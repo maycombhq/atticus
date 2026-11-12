@@ -709,6 +709,8 @@ export async function upgradeCommand(
     openspecStore?: boolean;
     /** ADR 0195 point 6: apply the step that adopts the catalog into source slots. */
     yes?: boolean;
+    /** With --yes: accept the first build's changes, naming their count (`--accept-changes`). */
+    acceptChanges?: number;
   },
   io: Output,
   version = VERSION,
@@ -727,9 +729,14 @@ export async function upgradeCommand(
         `  ${x.path}: ${x.records} record${x.records === 1 ? "" : "s"}${x.repo ? ` (${x.repo}, legacy)` : " (joined and evidence-less records, legacy)"}`,
     ),
     `  catalog/sources/legacy/generated-before-upgrade/: a copy of catalog/generated as it is`,
-    slots.differs.length
-      ? `  The first build would change ${slots.differs.length} record file${slots.differs.length === 1 ? "" : "s"}, so this step refuses and writes nothing: ${slots.differs.slice(0, 10).join(", ")}${slots.differs.length > 10 ? ` and ${slots.differs.length - 10} more` : ""}`
-      : "  The first build changes nothing: catalog/generated stays byte for byte.",
+    ...(slots.differs.length
+      ? [
+          `  The first build would change ${slots.differs.length} record file${slots.differs.length === 1 ? "" : "s"} (the files as they are stay in the copy):`,
+          ...slots.changes.slice(0, 20).map((x) => `    ${x.how}: catalog/generated/${x.path}`),
+          ...(slots.changes.length > 20 ? [`    and ${slots.changes.length - 20} more`] : []),
+          `  Accept exactly these with: atticus upgrade --yes --accept-changes ${slots.differs.length}`,
+        ]
+      : ["  The first build changes nothing: catalog/generated stays byte for byte."]),
     ...slots.verifiable.map(
       (r) =>
         `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them in its facts slot.`,
@@ -841,7 +848,8 @@ export async function upgradeCommand(
   }
   let slotsDone: number | undefined | "refused" | "shown" = undefined;
   if (slots.pending) {
-    if (!o.yes || slots.differs.length) slotsDone = o.yes ? "refused" : "shown";
+    const accepted = !slots.differs.length || o.acceptChanges === slots.differs.length;
+    if (!o.yes || !accepted) slotsDone = o.yes ? "refused" : "shown";
     else {
       const { acquireLock, LockHeldError } = await import("@maycombhq/core");
       let lock;
@@ -855,7 +863,12 @@ export async function upgradeCommand(
         throw e;
       }
       try {
-        slotsDone = (await applyUpgradeToSlots(root, slots)) ?? 0;
+        slotsDone =
+          (await applyUpgradeToSlots(
+            root,
+            slots,
+            slots.differs.length ? { acceptChanges: slots.differs.length } : {},
+          )) ?? 0;
         changed.push(...slots.writes.map((w) => relative(root, w.path).split(sep).join("/")));
       } finally {
         await lock.release();
@@ -896,7 +909,11 @@ export async function upgradeCommand(
       if (slotsDone === "shown")
         io.out("Nothing of it written yet: atticus upgrade --yes applies this step.");
       else if (slotsDone === "refused")
-        io.err("Nothing of it written: the first build must give the catalog as it is.");
+        io.err(
+          o.acceptChanges !== undefined
+            ? `Nothing of it written: --accept-changes ${o.acceptChanges} doesn't name the ${slots.differs.length} listed.`
+            : `Nothing of it written: the first build changes the catalog, so it waits for atticus upgrade --yes --accept-changes ${slots.differs.length}.`,
+        );
       else
         io.out(
           "Done: the catalog is adopted into catalog/sources/ (atticus catalog undo takes it back).",

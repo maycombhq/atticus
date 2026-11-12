@@ -11,6 +11,7 @@ import {
   loadBuildInputs,
   readersSlotRead,
   takeUndoCopy,
+  writeBuiltCatalog,
   type Build,
 } from "./build.js";
 import { readCatalog } from "./files.js";
@@ -48,8 +49,13 @@ export interface UpgradeSlotsPlan {
   slots: { path: string; records: number; repo?: string }[];
   /** Repos whose facts file a passing verify records as it is now: `atticus verify <repo> --write` puts them in. */
   verifiable: string[];
-  /** Record files the first build would give differently (must be none). */
+  /**
+   * Record files the first build would give differently: none for a scan's catalog. When there
+   * are some, --yes applies the step only with `--accept-changes <their count>`.
+   */
   differs: string[];
+  /** The same, each with how the first build changes it (relative to catalog/generated). */
+  changes: { path: string; how: "added" | "changed" | "removed" }[];
   /** The files the step writes, with their text. */
   writes: { path: string; text: string }[];
   build?: Build;
@@ -72,6 +78,7 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     slots: [],
     verifiable: [],
     differs: [],
+    changes: [],
     writes: [],
     records: 0,
   };
@@ -185,6 +192,14 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     slots,
     verifiable: verifiable.sort(cmpText),
     differs,
+    changes: differs.map((p) => ({
+      path: p,
+      how: !onDisk.has(p)
+        ? ("added" as const)
+        : !build.files.has(p)
+          ? ("removed" as const)
+          : ("changed" as const),
+    })),
     writes,
     build,
     records: old.records.length,
@@ -211,9 +226,16 @@ export interface UpgradeSlotsView {
   }[];
   /** The copy of catalog/generated kept as it is. */
   copy: { dir: string; files: number };
-  /** Record files the first build would give differently: --yes refuses unless none. */
+  /** Record files the first build would give differently (relative to catalog/generated). */
   firstBuildChanges: string[];
-  /** Whether --yes would apply it (pending, and the first build changes nothing). */
+  /** The same, each with how: added, changed or removed. */
+  changes: { path: string; how: "added" | "changed" | "removed" }[];
+  /**
+   * The count `--accept-changes` must name for --yes to apply the step: the first build's
+   * changes (0 when it changes nothing, and the flag isn't needed). Any other count refuses.
+   */
+  acceptChanges: number;
+  /** Whether plain --yes would apply it (pending, and the first build changes nothing). */
   applies: boolean;
   /** The command that applies it. */
   run: string;
@@ -253,21 +275,43 @@ export async function upgradeSlotsView(
     writes,
     copy: { dir: copyDir, files: writes.filter((w) => w.what === "copy").length },
     firstBuildChanges: p.differs,
+    changes: p.changes,
+    acceptChanges: p.differs.length,
     applies: p.pending && p.differs.length === 0,
-    run: "atticus upgrade --yes",
+    run: p.differs.length
+      ? `atticus upgrade --yes --accept-changes ${p.differs.length}`
+      : "atticus upgrade --yes",
     verifiable: p.verifiable,
   };
 }
 
-/** Apply a plan whose dry-run build gives the catalog as it is: its undo copy first, then each file. */
+/**
+ * Apply a plan: its undo copy first, then each file. A plan whose first build changes the catalog
+ * applies only with `acceptChanges` naming their count: the slots and the copy of the catalog as
+ * it was are written, then the first build's catalog and build.json, through the build's write.
+ */
 export async function applyUpgradeToSlots(
   root: string,
   plan: UpgradeSlotsPlan,
+  o: { acceptChanges?: number } = {},
 ): Promise<number | undefined> {
-  if (!plan.pending || plan.differs.length)
-    throw new Error("applyUpgradeToSlots: nothing to apply");
+  if (!plan.pending) throw new Error("applyUpgradeToSlots: nothing to apply");
+  if (plan.differs.length && o.acceptChanges !== plan.differs.length)
+    throw new Error(
+      "applyUpgradeToSlots: the first build's changes weren't accepted with their count",
+    );
   const pack = await orgPackDirFor(root);
   const undoDir = buildUndoDirOf(root, pack.adopted ? join(root, ".atticus") : root);
+  if (plan.differs.length) {
+    const manifest = baselineTarget(root).manifest;
+    const w = await writeBuiltCatalog(plan.build!, {
+      undoDir,
+      command: `atticus upgrade --yes --accept-changes ${plan.differs.length}`,
+      guard: { removals: [], edits: [] },
+      slots: plan.writes.filter((x) => x.path !== manifest),
+    });
+    return w.undo;
+  }
   const undo = await takeUndoCopy(root, undoDir, "atticus upgrade --yes", plan.writes, {
     nextManifest: plan.writes.find((w) => w.path === baselineTarget(root).manifest)?.text ?? "",
   });

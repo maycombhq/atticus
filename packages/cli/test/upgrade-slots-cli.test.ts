@@ -140,6 +140,7 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
         applies: true,
         run: "atticus upgrade --yes",
         firstBuildChanges: [],
+        acceptChanges: 0,
         copy: {
           dir: "catalog/sources/legacy/generated-before-upgrade",
           files: Object.keys(before).length,
@@ -306,6 +307,29 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       expect({ g: generated(root), s: sources(root) }).toEqual(before);
       expect((await run(["catalog", "undo", "--root", root, "--yes"])).code).toBe(0);
       expect({ g: generated(root), s: sources(root) }).toEqual(after);
+    },
+    T,
+  );
+
+  it(
+    "an undo of a confirmed discard puts the hand edit back, as it was before the discard, and succeeds",
+    async () => {
+      const root = await scanned();
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const [file] = readdirSync(dir).sort();
+      const path = join(dir, file!);
+      await appendFile(path, "# edited by hand\n");
+      const edited = readFileSync(path, "utf8");
+      const discard = await run(["catalog", "build", "--root", root, "--discard-edits", "1"]);
+      expect(discard.code, discard.err).toBe(0);
+      expect(readFileSync(path, "utf8")).not.toBe(edited);
+      const undo = await run(["catalog", "undo", "--root", root, "--yes"]);
+      expect(undo.code, undo.err).toBe(0);
+      expect(readFileSync(path, "utf8")).toBe(edited);
+      // The edit is a hand edit again: the next build lists it rather than overwrite it.
+      const again = await run(["catalog", "build", "--root", root]);
+      expect(again.code).toBe(1);
+      expect(again.out + again.err).toContain(`changed: catalog/generated/endpoint/${file}`);
     },
     T,
   );

@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
 import { starterReviewText } from "@maycombhq/naysayer";
 import { doctorChecks } from "../src/doctor.js";
+import { main } from "../src/main.js";
 import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
@@ -276,8 +277,31 @@ describe("atticus upgrade", () => {
       ),
     ).toBe(1);
     expect(y.err.join("\n")).toMatch(/The first build would change 4 record files/);
+    expect(y.err.join("\n")).toMatch(/atticus upgrade --yes --accept-changes 4/);
     expect(existsSync(join(root, "catalog/sources"))).toBe(false);
     expect(await readdir(join(root, ".atticus/backups"))).toEqual(["20261019-100000"]);
+    // The changes shown, then accepted with their count (any other count refuses again): the
+    // slots, the copy of the catalog as it was, and the first build's catalog are written.
+    const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
+    const wrong = io();
+    expect(
+      await upgradeCommand(root, { by: "pat", yes: true, acceptChanges: 3 }, wrong.io, "1.0.0"),
+    ).toBe(1);
+    expect(wrong.err.join("\n")).toMatch(/--accept-changes 3 doesn't name the 4 listed/);
+    expect(existsSync(join(root, "catalog/sources"))).toBe(false);
+    const ok = io();
+    expect(
+      await upgradeCommand(root, { by: "pat", yes: true, acceptChanges: 4 }, ok.io, "1.0.0"),
+    ).toBe(0);
+    expect(existsSync(join(root, "catalog/sources/build.json"))).toBe(true);
+    expect(
+      await readFile(
+        join(root, "catalog/sources/legacy/generated-before-upgrade/system/ledger.yaml"),
+        "utf8",
+      ),
+    ).toBe(before);
+    const check = io();
+    expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });
 
   it("moves a version 1 change-types.yaml to version 2, every type still standard (ADR 0113)", async () => {

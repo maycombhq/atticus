@@ -199,7 +199,9 @@ export async function catalogUndo(
       plan,
       `atticus catalog undo${o.n !== undefined ? ` ${o.n}` : ""}`,
     );
-    // Every restored record file is checked against the restored build.json.
+    // The restored record files against the restored build.json: one that differs was a hand
+    // edit before the build undone (a discard, say), and is one again, as it was; the next build
+    // lists it rather than overwrite it.
     const m = await readBuildManifest(baselineTarget(root).manifest);
     const bad: string[] = [];
     for (const f of m.manifest?.files ?? []) {
@@ -209,16 +211,19 @@ export async function catalogUndo(
         bad.push(f.path);
     }
     if (o.json)
-      io.out(JSON.stringify({ restored: r.restored, undo: r.undo, mismatched: bad }, null, 2));
+      io.out(JSON.stringify({ restored: r.restored, undo: r.undo, handEdits: bad }, null, 2));
     else {
       io.out(
         `Put back ${r.restored.length} ${r.restored.length === 1 ? "file" : "files"} as ${r.restored.length === 1 ? "it was" : "they were"} before ${plan.copies.map((c) => c.command).join(", then ")}.`,
       );
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
-      for (const p of bad) io.err(`${p} doesn't match the restored build.json.`);
+      if (bad.length)
+        io.out(
+          `${bad.length} restored ${bad.length === 1 ? "file is a hand edit" : "files are hand edits"} again, as before (the next build lists ${bad.length === 1 ? "it" : "them"}: atticus catalog edits --curate keeps ${bad.length === 1 ? "it" : "them"}): ${bad.join(", ")}`,
+        );
     }
-    return bad.length ? 1 : 0;
+    return 0;
   });
 }
 

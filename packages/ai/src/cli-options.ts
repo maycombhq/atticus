@@ -129,6 +129,7 @@ export const OPTIONS = {
   // the upgrade's slots step, catalog undo and catalog prune.
   "allow-removals": { type: "string" },
   "discard-edits": { type: "string" },
+  "accept-changes": { type: "string" },
   yes: { type: "boolean" },
   curate: { type: "boolean" },
   warnings: { type: "boolean" },
