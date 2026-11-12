@@ -71,12 +71,30 @@ export const useActivity = () => useContext(ActivityContext);
 
 /**
  * Beta.27 review: an entry's state in words: a job the app ran before it restarted, running when
- * it closed, says so; one Stop was asked of says it is stopping until it ends.
+ * it closed, says so; one Stop was asked of says it is stopping until it ends; one that refused
+ * (its `outcome`, a scan's safety stop) says "refused: nothing written". Every field but `state`
+ * may be left out (the screens' rows give `state` and `outcome` only).
  */
-export function stateWords(e: Pick<Entry, "state" | "where" | "stopping" | "jobId">): string {
+export function stateWords(
+  e: Pick<Entry, "state"> &
+    Partial<Pick<Entry, "where" | "stopping" | "jobId">> & { outcome?: string | undefined },
+): string {
+  if (e.outcome === "refused") return T.refused;
   if (e.state === "ended" && e.where === "app") return T.appClosedState;
   if (e.state === "running" && e.stopping) return T.stoppingState;
   return T.states[e.state] ?? e.state;
+}
+
+/**
+ * What a running entry that this page can't stop says instead of Stop: a command, Ctrl+C in its
+ * terminal; beta.27 re-review: a job another `atticus ui` runs (another window: the run log lists
+ * it here, with no Stop), that it is stopped there. Undefined otherwise.
+ */
+export function stopHint(e: Pick<Entry, "state" | "kind" | "where" | "stop">): string | undefined {
+  if (e.state !== "running" || e.stop) return undefined;
+  if (e.kind === "command") return T.stopTerminal;
+  if (e.where === "app" && e.kind !== "copilot") return T.otherWindow;
+  return undefined;
 }
 
 /** Whether Stop was asked of an entry: this page asked just now, or the server says so. */
@@ -531,8 +549,8 @@ export function ActivityStrip() {
               >
                 {isStopping(a, first) ? T.stopping : T.stop}
               </button>
-            ) : first.kind === "command" ? (
-              <span className="work-say">{T.stopTerminal}</span>
+            ) : stopHint(first) ? (
+              <span className="work-say">{stopHint(first)}</span>
             ) : null}
           </div>
           {a.stopError && (
@@ -728,9 +746,7 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
             {isStopping(a, shown) ? T.stopping : T.stop}
           </button>
         )}
-        {shown.state === "running" && shown.kind === "command" && (
-          <span className="work-say">{T.stopTerminal}</span>
-        )}
+        {stopHint(shown) && <span className="work-say">{stopHint(shown)}</span>}
       </div>
       {shown.state === "ended" && (
         <p className="work-say">{shown.where === "app" ? T.appClosed : T.endedWithoutSaying}</p>

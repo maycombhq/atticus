@@ -74,6 +74,27 @@ export function tokenOfPage(html: string): { token?: string; pageKey?: string } 
  */
 let stale = false;
 export const sessionStale = (): boolean => stale;
+/**
+ * Beta.27 re-review: the metarepo the page has shown (the `root` of its first /api/health
+ * answer), and whether the server that answers now serves another one (`moved`: `atticus ui`
+ * started again in another folder at the same address). A page that moved takes no new token:
+ * it says so once, with Reload, and sends nothing more.
+ */
+let pageRoot: string | undefined;
+let moved = false;
+export const sessionMoved = (): boolean => moved;
+/** Whether the server read again after a restart is the one the page started with. */
+let sameServer: "same" | "other" | "unknown" = "unknown";
+/** Tests: forget the metarepo the page has shown. */
+export function forgetPageRoot(): void {
+  pageRoot = undefined;
+  moved = false;
+  sameServer = "unknown";
+}
+const healthRootOf = (body: unknown): string | undefined => {
+  const r = body && typeof body === "object" ? (body as { root?: unknown }).root : undefined;
+  return typeof r === "string" && r ? r : undefined;
+};
 const sessionEvents = new EventTarget();
 export function onSession(f: (state: "renewed" | "stale") => void): () => void {
   const on = (e: Event) => f((e as CustomEvent<"renewed" | "stale">).detail);
@@ -106,6 +127,14 @@ export function renewToken(): Promise<boolean> {
       if (!r.ok) return false;
       const got = tokenOfPage(await r.text());
       if (!got.token || got.token === before) return false;
+      // Beta.27 re-review: the server that answers now, asked with the new token which metarepo
+      // it serves: another one (the app started again elsewhere) gets nothing of this page's.
+      sameServer = await serverIdentity(got.token);
+      if (sameServer === "other") {
+        moved = true;
+        tellSession("stale");
+        return false;
+      }
       renewed = { token: got.token, ...(got.pageKey ? { pageKey: got.pageKey } : {}) };
       setMeta("atticus-token", got.token);
       if (got.pageKey) setMeta("atticus-page-key", got.pageKey);
@@ -120,6 +149,24 @@ export function renewToken(): Promise<boolean> {
   return renewing;
 }
 
+/** Whether the server answering with `t` serves the metarepo the page has shown. */
+async function serverIdentity(t: string): Promise<"same" | "other" | "unknown"> {
+  if (pageRoot === undefined) return "unknown";
+  try {
+    const r = await fetch("/api/health", {
+      method: "GET",
+      cache: "no-store",
+      headers: { "X-Atticus-Token": t },
+    });
+    if (!r.ok) return "unknown";
+    const root = healthRootOf(parseBody(await r.text(), r.status));
+    if (root === undefined) return "unknown";
+    return root === pageRoot ? "same" : "other";
+  } catch {
+    return "unknown";
+  }
+}
+
 function setMeta(name: string, content: string): void {
   if (typeof document === "undefined") return;
   const m = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
@@ -129,12 +176,23 @@ function setMeta(name: string, content: string): void {
 /**
  * A call sent with `sentWith` was refused for its token: true when it can be sent again, as the
  * token was read again meanwhile or is now; false (and the app says it restarted) otherwise.
+ * Beta.27 re-review: a read (`write` false) goes again on a new token; a write only when the
+ * server read again is confirmed to serve the metarepo the page started with ("not-sent"
+ * otherwise: nothing is sent, the person does it again); a server serving another metarepo gets
+ * nothing at all (the page says so, with Reload).
  */
-export async function retryAfterRefusal(sentWith: string): Promise<boolean> {
-  if (token() !== sentWith) return true;
-  if (await renewToken()) return true;
-  if (!stale) tellSession("stale");
-  return false;
+export async function retryAfterRefusal(
+  sentWith: string,
+  write = false,
+): Promise<boolean | "not-sent"> {
+  if (moved) return false;
+  const renewedNow = token() !== sentWith || (await renewToken());
+  if (!renewedNow) {
+    if (!stale) tellSession("stale");
+    return false;
+  }
+  if (!write) return true;
+  return sameServer === "same" ? true : "not-sent";
 }
 
 const refusedForToken = (status: number, body: unknown) =>
@@ -369,13 +427,20 @@ export async function api<T>(
   } = {},
 ): Promise<T> {
   const write = !!o.method && o.method !== "GET";
-  if (!write && o.body === undefined)
-    return shared<T>(
+  if (!write && o.body === undefined) {
+    // Beta.27 re-review: quiet or not is each caller's own: the shared read is counted for none,
+    // and each caller who isn't quiet counts toward the loading bar while it waits (a quiet
+    // poll's read joined by a person's ask showed no bar; the other way round, a poll's did).
+    const read = shared<T>(
       path,
-      (signal) => counted<T>(path, { signal, ...(o.quiet ? { quiet: true } : {}) }),
+      (signal) => counted<T>(path, { signal, quiet: true }),
       o.signal,
       o.after ? { after: true } : {},
     );
+    if (o.quiet) return read;
+    busy(1);
+    return read.finally(() => busy(-1));
+  }
   noteChange();
   try {
     const r = await counted<T>(path, o);
@@ -505,11 +570,24 @@ async function call<T>(
   }
   serverAnswered(true);
   const body = parseBody(text, r.status);
+  // Beta.27 re-review: the metarepo the page shows, as the server first said it.
+  if (r.ok && pageRoot === undefined && path === "/api/health" && !moved)
+    pageRoot = healthRootOf(body);
   // Beta.27 review: the server restarted with a new token. Nothing was done (the token is checked
-  // before anything else), so the call goes again, once, with the token read again.
+  // before anything else), so the call goes again, once, with the token read again: a read at
+  // once, a write only to the same metarepo's server (beta.27 re-review).
   if (refusedForToken(r.status, body) && !again && !o.signal?.aborted) {
-    if (await retryAfterRefusal(sentWith)) return call<T>(path, o, true);
-  } else if (r.ok && stale && token() === sentWith) tellSession("renewed");
+    const write = !!o.method && o.method !== "GET" && o.method !== "HEAD";
+    const go = await retryAfterRefusal(sentWith, write);
+    if (go === true) return call<T>(path, o, true);
+    if (go === "not-sent")
+      throw new ApiError({
+        type: "about:blank",
+        title: COPY.app.notResentTitle,
+        status: 409,
+        detail: COPY.app.notResent,
+      });
+  } else if (r.ok && stale && !moved && token() === sentWith) tellSession("renewed");
   if (!r.ok) throw new ApiError(problemOf(body, r.status, r.statusText));
   return body as T;
 }

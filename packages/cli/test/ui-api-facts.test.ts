@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api, parseCorrections, parseFacts, QuestionDraft, raiseQuestions } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { uiFactsRoutes } from "../src/ui-api-facts.js";
+import { FACTS_BATCH_MAX, uiFactsRoutes } from "../src/ui-api-facts.js";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -83,8 +83,21 @@ describe("several repos' facts in one call", () => {
 
   it("refuses a call that names no repo, or too many", async () => {
     expect((await call("GET", "/api/facts")).status).toBe(400);
-    const many = Array.from({ length: 501 }, (_, i) => `repo=forge-${i}`).join("&");
+    // Beta.27 re-review: at most 100 (FACTS_BATCH_MAX), well inside a request head's 16 KB.
+    expect(FACTS_BATCH_MAX).toBe(100);
+    const many = Array.from({ length: 101 }, (_, i) => `repo=forge-${i}`).join("&");
     expect((await call("GET", `/api/facts?${many}`)).status).toBe(400);
+    const most = Array.from({ length: 100 }, (_, i) => `repo=forge-${i}`).join("&");
+    expect((await call("GET", `/api/facts?${most}`)).status).toBe(200);
+  });
+
+  it("a repo named __proto__ is a problem like any other name refused (null-prototype answer)", async () => {
+    const r = await call("GET", "/api/facts?repo=__proto__&repo=forge-ledger");
+    expect(r.status).toBe(200);
+    const body = r.body as { problems: Record<string, unknown>; facts: Record<string, unknown> };
+    expect(Object.hasOwn(body.problems, "__proto__")).toBe(true);
+    expect(body.problems["__proto__"]).toMatchObject({ status: 400 });
+    expect(Object.hasOwn(body.facts, "forge-ledger")).toBe(true);
   });
 });
 

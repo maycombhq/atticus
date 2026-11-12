@@ -10,6 +10,7 @@ export {
   inPlacePath,
   isInPlace,
   remoteDefaultBranch,
+  SYNC_CHECKOUT_MARK,
   type SyncResult,
   type WorkspaceManager,
   type WorkspaceOptions,

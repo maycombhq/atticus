@@ -45,6 +45,12 @@ export const COPY = {
      */
     restarted:
       "The Atticus app restarted, so this page's session ended. Reload the page to go on where you were.",
+    // Beta.27 re-review: the app started again in another folder at the same address.
+    otherMetarepo:
+      "The Atticus app at this address now shows another metarepo, so this page sent it nothing. Reload the page to see that one.",
+    notResentTitle: "Not sent",
+    notResent:
+      "The Atticus app restarted while you did this, so it wasn't sent: nothing was changed. Do it again.",
     reload: "Reload the page",
     online: "The server is answering again.",
     /** Review of beta.23: a write run as a job ended without its answer (stopped, or it broke). */
@@ -5130,6 +5136,8 @@ export const COPY = {
       cancelled: "cancelled",
       ended: "ended without saying",
     } as Record<string, string>,
+    // Beta.27 review: a run that refused (a scan's safety stop) neither did its work nor failed.
+    refused: "refused: nothing written",
     /** Beta.27 review: a job of an earlier run of the app, running when that app closed. */
     appClosedState: "stopped when the app closed",
     appClosed:
@@ -5143,6 +5151,8 @@ export const COPY = {
     stopping: "Stopping…",
     stopFailed: (why: string) => `Stop didn't go through: ${why}`,
     stopTerminal: "Stop it in its terminal (Ctrl+C).",
+    /** Beta.27 re-review: a job another `atticus ui` (another window) runs: its Stop is there. */
+    otherWindow: "Started in another Atticus window: stop it there.",
     endedWithoutSaying:
       "Its process is gone and it never said how it ended: the terminal was closed, or it crashed. Its lines up to then are below.",
     handoffWaits:

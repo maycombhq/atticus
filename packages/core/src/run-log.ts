@@ -92,8 +92,11 @@ export interface TerminalRunRecord {
   procStart?: string;
   /** When a running command last wrote its record (every RUN_HEARTBEAT_MS). */
   beatAt?: string;
-  /** A job the app started (startedBy `app`): its id in that app's run and its kind. */
-  job?: { id: string; kind: string };
+  /**
+   * A job the app started (startedBy `app`): its id in that app's run and its kind. Beta.27
+   * re-review: `ids`, the ids its title shows (each a title's word, else `…`: appRunTitle).
+   */
+  job?: { id: string; kind: string; ids?: string[] };
   /** A job the app started that was still running when the app closed. */
   appClosed?: true;
 }
@@ -389,6 +392,58 @@ export function runTitle(
   return { command, title: ["atticus", ...command, ...names].join(" ") };
 }
 
+/**
+ * Beta.27 re-review: the words an app's job is named by in the run log, by its kind (the
+ * server's job kinds). Never the job's own title, which may carry what a person typed.
+ */
+export const APP_JOB_WORDS: Readonly<Record<string, string>> = {
+  scan: "Scan",
+  sync: "Sync",
+  reconcile: "Reconcile",
+  index: "Index",
+  intake: "Intake",
+  step: "AI step",
+  local: "Local step",
+  work: "Request",
+};
+
+/**
+ * Beta.27 re-review: an app job's title in the run log, by the rules a command's title follows:
+ * its kind's words (APP_JOB_WORDS), then the ids it names (a repo, a change, a run), each kept
+ * when it is a title's word (titleWord: an id's strict shape, no secret's) and `…` otherwise.
+ * The app's titles (`Reconcile <diagram>`, `A question for <team>`, the words a request sent)
+ * went to the record as they were, past every rule a terminal's run is held to.
+ */
+export function appRunTitle(
+  kind: string,
+  ids: readonly string[] = [],
+  redact: Redaction = {},
+): { title: string; ids: string[] } {
+  const kept: string[] = [];
+  for (const id of ids.slice(0, MAX_WORDS)) {
+    const w = titleWord(id, redact) ?? "…";
+    if (w !== "…" || kept.at(-1) !== "…") kept.push(w);
+  }
+  if (ids.length > MAX_WORDS && kept.at(-1) !== "…") kept.push("…");
+  const words = Object.hasOwn(APP_JOB_WORDS, kind) ? APP_JOB_WORDS[kind]! : "Job";
+  return { title: [words, ...kept].join(" "), ids: kept };
+}
+
+/**
+ * Beta.27 re-review: whether a run log is kept at `root`: a metarepo (its org pack at the root
+ * or, adopted in place, in `.atticus/`) where ATTICUS_RUN_LOG isn't `off`. The command line and
+ * the app's jobs ask the same: `atticus ui` in a bare folder makes nothing there.
+ */
+export function runLogKept(root: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.ATTICUS_RUN_LOG === "off") return false;
+  return isMetarepoRoot(root);
+}
+
+/** A metarepo, or a repo adopted in place: where Atticus keeps its logs (never a bare folder). */
+export function isMetarepoRoot(root: string): boolean {
+  return existsSync(join(root, "org-pack")) || existsSync(join(root, ".atticus", "org-pack"));
+}
+
 /** Beside the records: the first run of beta.27 re-titled the runs kept before it. */
 export const RETITLED_MARK = ".retitled-beta27";
 /** A record bigger than this is no record beta.26 wrote: left as it is, never read. */
@@ -492,6 +547,28 @@ export function retitleTerminalRuns(
         }
       }
       const words = Array.isArray(raw.command) ? raw.command.map((w) => `${w}`) : [];
+      // Beta.27 re-review: an app's job with no command words is titled by its kind and the
+      // ids it names (appRunTitle), never by the title it was kept with.
+      if (raw.startedBy === "app" && !words.length) {
+        const job =
+          raw.job && typeof raw.job === "object" ? (raw.job as Record<string, unknown>) : {};
+        const kind = typeof job.kind === "string" ? job.kind : "";
+        const ids = Array.isArray(job.ids) ? job.ids.map((w) => `${w}`) : [];
+        const got = appRunTitle(kind, ids);
+        const next: Record<string, unknown> = {
+          ...raw,
+          title: got.title,
+          command: [],
+          ...(raw.job && typeof raw.job === "object"
+            ? { job: { ...job, ...(got.ids.length ? { ids: got.ids } : {}) } }
+            : {}),
+        };
+        if (!got.ids.length && next.job) delete (next.job as Record<string, unknown>).ids;
+        if (JSON.stringify(next) === JSON.stringify(raw)) continue;
+        writeJson(file, next);
+        changed++;
+        continue;
+      }
       // A run of `secret` (beta.26 kept them): its record and its log go, whatever its title.
       // The log first, then the record, so a failed removal leaves the record to try again with.
       if (words[0] === "secret" || (words[0] === "legacy" && words[1] === "secret")) {
@@ -609,10 +686,12 @@ export interface StartRunOptions {
   /** Whether a process is there (pidAlive), for the runs pruned as this one starts. */
   alive?: (pid: number) => boolean;
   /**
-   * Beta.27 review: a job the app started (startAppRun): its title in the app's own words
-   * (redacted as a line is), its job, and `app` as where it started; no command words.
+   * Beta.27 review: a job the app started (startAppRun): its job, and `app` as where it started.
+   * Beta.27 re-review: titled by the rules a command's title follows (never the app's own words):
+   * by the command it runs (`command`: the positionals, flags and values given), else by its kind
+   * and the ids it names (appRunTitle).
    */
-  app?: { title: string; job: { id: string; kind: string } };
+  app?: { job: { id: string; kind: string }; ids?: readonly string[]; command?: true };
 }
 
 const writeJson = (file: string, v: unknown) => {
@@ -691,8 +770,12 @@ export function startTerminalRun(
     : pid === process.pid
       ? procStartOf(pid)
       : undefined;
-  const { command, title } = o.app
-    ? { command: [] as string[], title: runLogLines(o.app.title, o.redact).join(" ") }
+  // Beta.27 re-review: an app's job by the title rules too: the command it runs (its words as
+  // the command line gives them), else its kind and the ids it names (appRunTitle).
+  const app =
+    o.app && !o.app.command ? appRunTitle(o.app.job.kind, o.app.ids, o.redact) : undefined;
+  const { command, title } = app
+    ? { command: [] as string[], title: app.title }
     : runTitle(o.positionals, o.flags, o.values, o.redact);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
@@ -709,7 +792,15 @@ export function startTerminalRun(
     dropped: 0,
     ...(procStart ? { procStart } : {}),
     ...(heartbeatMs ? { beatAt: started.toISOString() } : {}),
-    ...(o.app ? { job: { id: o.app.job.id, kind: o.app.job.kind } } : {}),
+    ...(o.app
+      ? {
+          job: {
+            id: o.app.job.id,
+            kind: o.app.job.kind,
+            ...(app?.ids.length ? { ids: app.ids } : {}),
+          },
+        }
+      : {}),
   };
   const jsonFile = join(runningDirOf(root), `${runId}.json`);
   const logFile = join(runLogsDirOf(root), `${runId}.log`);
@@ -836,23 +927,32 @@ export function startTerminalRun(
 
 /**
  * Beta.27 review: a job the app started, kept in the run log as a command run is (ADR 0187), so
- * the Console, Runs and Problems still have it after the app restarts. Its title is the app's
- * own words; it beats while it runs, so one left running by an app that crashed reads as ended.
+ * the Console, Runs and Problems still have it after the app restarts; it beats while it runs,
+ * so one left running by an app that crashed reads as ended. Beta.27 re-review: its title follows
+ * a command's rules: the command it runs (`command`, the words the command line's title rules
+ * kept: titleInputsOf), else its kind and the ids it names (`ids`, each checked: appRunTitle).
+ * The caller checks runLogKept first.
  */
 export function startAppRun(
   root: string,
   o: {
-    title: string;
     job: { id: string; kind: string };
+    ids?: readonly string[];
+    command?: {
+      positionals: string[];
+      flags: string[];
+      values?: Readonly<Record<string, string | undefined>>;
+    };
     now?: () => Date;
     redact?: { home?: string; user?: string };
     heartbeatMs?: number;
   },
 ): TerminalRunRecorder | undefined {
   return startTerminalRun(root, {
-    positionals: [],
-    flags: [],
-    app: { title: o.title, job: o.job },
+    positionals: o.command?.positionals ?? [],
+    flags: o.command?.flags ?? [],
+    ...(o.command?.values ? { values: o.command.values } : {}),
+    app: { job: o.job, ...(o.ids ? { ids: o.ids } : {}), ...(o.command ? { command: true } : {}) },
     heartbeatMs: o.heartbeatMs ?? RUN_HEARTBEAT_MS,
     ...(o.now ? { now: o.now } : {}),
     ...(o.redact ? { redact: o.redact } : {}),

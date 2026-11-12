@@ -5110,7 +5110,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "A repo, once per repo (or several, comma-separated); at most 500",
+            "description": "A repo, once per repo (or several, comma-separated); at most 100",
             "required": false
           }
         ],
@@ -7779,7 +7779,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "One file, relative to the change folder (stories/<id>.md), once per file; at most 200",
+            "description": "One file, relative to the change folder (stories/<id>.md), once per file; at most 200. A file that can't be read is in `problems`, the others answered",
             "required": false
           }
         ],
@@ -30242,6 +30242,33 @@
                 "content",
                 "sha256",
                 "file"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "title": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "title"
               ],
               "additionalProperties": false
             }

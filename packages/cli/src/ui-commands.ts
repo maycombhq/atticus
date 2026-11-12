@@ -4,6 +4,7 @@ import {
   catalogDirOf,
   catalogMayHaveChangedAt,
   createLog,
+  isMetarepoRoot,
   DEFAULT_PORT,
   keptFilesMayHaveChanged,
   trustKeptFiles,
@@ -226,6 +227,8 @@ export async function startUi(
           answersMayHaveChanged();
           keptFilesMayHaveChanged();
         }
+        // Beta.27 re-review: a bare folder gets no log (nor anything else), as the command line.
+        if (!isMetarepoRoot(root)) return;
         const fields = { method: r.method, path: r.path, status: r.status, ms: r.ms };
         if (r.error) log.error("request", r.error, fields);
         else if (r.status >= 500) log.warn("request", fields);

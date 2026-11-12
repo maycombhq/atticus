@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ConnectionNote, syncCommand, tourMetarepo } from "../src/app/App.js";
+import { appCommands, ConnectionNote, syncCommand, tourMetarepo } from "../src/app/App.js";
 import { COPY } from "../src/copy.js";
 
 /**
@@ -61,6 +61,18 @@ describe("Ctrl+K's Sync the repos (beta.27 review)", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("Ctrl+K's own commands", () => {
+  // Beta.27 re-review: a bare folder (no metarepo yet) has no repos to sync.
+  it("offers Sync the repos at a metarepo only", () => {
+    const labels = (metarepo: boolean) =>
+      appCommands("ide", () => undefined, metarepo).map((c) => c.label);
+    expect(labels(true)).toContain(COPY.palette.sync.label);
+    expect(labels(false)).not.toContain(COPY.palette.sync.label);
+    // The rest is there either way.
+    expect(labels(false)).toContain(COPY.ide.layout.toClassic);
   });
 });
 

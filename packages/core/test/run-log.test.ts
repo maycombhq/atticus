@@ -22,6 +22,7 @@ import {
   readTerminalRuns,
   recordedCommand,
   runningDirOf,
+  runLogKept,
   runLogsDirOf,
   runTitle,
   startAppRun,
@@ -1045,39 +1046,93 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
 /**
  * Beta.27 review: the app's jobs were in memory only, so a restart of the app lost them from the
  * Console, Runs and Problems. Each is kept in the run log as a command run is, `app` as where it
- * started, with its job and the app's own title; one still running when the app closed says so.
+ * started, with its job; one still running when the app closed says so. Beta.27 re-review: its
+ * title follows a command's rules (its kind and the ids it names, or the command it runs), never
+ * the app's own words.
  */
 describe("a job the app started, in the run log", () => {
-  it("records its title, job, lines and end, and is never retitled", async () => {
+  it("records its title (kind and ids), job, lines and end; retitling keeps it", async () => {
     const root = await fresh();
     const rec = startAppRun(root, {
-      title: "Sync forge-ledger, forge-portal",
       job: { id: "job-3", kind: "sync" },
+      ids: ["forge-ledger", "forge-portal"],
       now: at("2026-11-11T10:00:00.000Z"),
       redact: HOME,
     })!;
-    rec.line("forge-ledger: cloned into /home/tom/work/forge");
+    rec.line("forge-ledger: cloned into /home/kit/work/forge");
     rec.end(0);
     const [r] = readTerminalRuns(root, { alive: () => true });
     expect(r).toMatchObject({
-      title: "Sync forge-ledger, forge-portal",
+      title: "Sync forge-ledger forge-portal",
       startedBy: "app",
       job: { id: "job-3", kind: "sync" },
       state: "done",
       command: [],
     });
-    expect(readTerminalRunLines(root, rec.runId)!.lines[0]).not.toContain("/home/tom");
+    // The ids it names are kept with it, for its title to be made again by the same rules.
+    const kept = JSON.parse(
+      readFileSync(join(runningDirOf(root), `${rec.runId}.json`), "utf8"),
+    ) as { job: unknown };
+    expect(kept.job).toEqual({ id: "job-3", kind: "sync", ids: ["forge-ledger", "forge-portal"] });
+    expect(readTerminalRunLines(root, rec.runId)!.lines[0]).not.toContain("/home/kit");
     expect(retitleTerminalRuns(root, () => ({ command: ["x"], title: "atticus x" }))).toBe(0);
     expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe(
-      "Sync forge-ledger, forge-portal",
+      "Sync forge-ledger forge-portal",
     );
+  });
+
+  it("free text and secrets in a job's inputs never reach its record", async () => {
+    const root = await fresh();
+    const secret = "ghp_" + "Zx9Kq2Lm".repeat(5);
+    const rec = startAppRun(root, {
+      job: { id: "job-4", kind: "reconcile" },
+      ids: ["Summer2026!", secret, "forge ledger diagram", "forge-ledger-context", "pass:hunter2"],
+    })!;
+    rec.end(0);
+    const text = readFileSync(join(runningDirOf(root), `${rec.runId}.json`), "utf8");
+    for (const bad of ["Summer2026", secret, "forge ledger", "hunter2"])
+      expect(text).not.toContain(bad);
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe(
+      "Reconcile … forge-ledger-context …",
+    );
+    // A job that runs a command: titled as that command is in a terminal.
+    const step = startAppRun(root, {
+      job: { id: "job-5", kind: "step" },
+      command: {
+        positionals: ["map", "forge-ledger"],
+        flags: ["lens", "note"],
+        values: { lens: "security", note: "my pin 1234" },
+      },
+    })!;
+    step.end(0);
+    const s = readTerminalRuns(root, { alive: () => true }).find((x) => x.runId === step.runId)!;
+    expect(s.title).toBe("atticus map forge-ledger --lens security --note");
+    expect(s.command).toEqual(["map", "forge-ledger"]);
+    expect(JSON.stringify(s)).not.toContain("1234");
+  });
+
+  it("an app record kept under the old rules is titled again by its kind and ids", async () => {
+    const root = await fresh();
+    const rec = startAppRun(root, { job: { id: "job-6", kind: "work" } })!;
+    rec.end(0);
+    const file = join(runningDirOf(root), `${rec.runId}.json`);
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    // What the app wrote before: the job's own title, free text and all.
+    writeFileSync(
+      file,
+      JSON.stringify({ ...raw, title: "A question for the Payments Guild (pin 4321)" }),
+    );
+    expect(retitleTerminalRuns(root, () => ({ command: ["x"], title: "atticus x" }))).toBe(1);
+    const again = readFileSync(file, "utf8");
+    expect(again).not.toContain("4321");
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe("Request");
   });
 
   it("one running when the app closed says so; one whose app crashed reads as stale", async () => {
     const root = await fresh();
-    const closed = startAppRun(root, { title: "Scan", job: { id: "job-1", kind: "scan" } })!;
+    const closed = startAppRun(root, { job: { id: "job-1", kind: "scan" } })!;
     closed.end(143, "app-closed");
-    const crashed = startAppRun(root, { title: "Sync", job: { id: "job-2", kind: "sync" } })!;
+    const crashed = startAppRun(root, { job: { id: "job-2", kind: "sync" } })!;
     const runs = readTerminalRuns(root, { alive: () => false });
     const byId = new Map(runs.map((r) => [r.runId, r]));
     expect(byId.get(closed.runId)).toMatchObject({ state: "cancelled", appClosed: true });
@@ -1089,9 +1144,20 @@ describe("a job the app started, in the run log", () => {
     const now = at("2026-11-11T10:00:00.000Z");
     const ids = new Set<string>();
     for (let i = 0; i < 20; i++)
-      ids.add(
-        startAppRun(root, { title: `Job ${i}`, job: { id: `job-${i}`, kind: "work" }, now })!.runId,
-      );
+      ids.add(startAppRun(root, { job: { id: `job-${i}`, kind: "work" }, now })!.runId);
     expect(ids.size).toBe(20);
+  });
+});
+
+describe("runLogKept", () => {
+  it("only at a metarepo, and never with ATTICUS_RUN_LOG=off", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "atticus-run-log-bare-"));
+    expect(runLogKept(bare, {})).toBe(false);
+    mkdirSync(join(bare, "org-pack"));
+    expect(runLogKept(bare, {})).toBe(true);
+    expect(runLogKept(bare, { ATTICUS_RUN_LOG: "off" })).toBe(false);
+    const adopted = await mkdtemp(join(tmpdir(), "atticus-run-log-adopted-"));
+    mkdirSync(join(adopted, ".atticus", "org-pack"), { recursive: true });
+    expect(runLogKept(adopted, {})).toBe(true);
   });
 });

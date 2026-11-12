@@ -61,7 +61,26 @@ export interface JobRecorder {
   end(state: JobState, how?: "app-closed"): void;
 }
 export interface JobManagerOptions {
-  record?: (job: Job, meta: Record<string, string> | undefined) => JobRecorder | undefined;
+  record?: (
+    job: Job,
+    meta: Record<string, string> | undefined,
+    log: JobLogTitle,
+  ) => JobRecorder | undefined;
+}
+
+/**
+ * Beta.27 re-review: what a job's run-log title is made of, by the rules a command's title
+ * follows (core's appRunTitle and runTitle): the ids it names (a repo, a change, a run: each kept
+ * when it has an id's strict shape, else `…`), or the command it runs, its words as the command
+ * line's title rules give them (titleInputsOf). Never `title`, the app's own words.
+ */
+export interface JobLogTitle {
+  ids?: string[];
+  command?: {
+    positionals: string[];
+    flags: string[];
+    values?: Record<string, string>;
+  };
 }
 
 /** What a job prints when Stop is asked, and when it has stopped. */
@@ -82,7 +101,10 @@ export const JOB_LINES = 5000;
 export const JOBS_KEPT = 100;
 
 export interface JobStartOptions {
+  /** Shown in this app (its Console, its jobs); never kept in the run log (`log` is). */
   title?: string;
+  /** Beta.27 re-review: what its run-log title is made of; its kind alone without. */
+  log?: JobLogTitle;
   /** What the job belongs to (ADR 0187): `copilotRunId`, `handoffRun`. */
   meta?: Record<string, string>;
 }
@@ -233,7 +255,12 @@ export class JobManager {
     this.printed.set(id, { from: 0, lines: [] });
     if (o.meta) this.metas.set(id, { ...o.meta });
     try {
-      const r = this.o.record?.(job, o.meta);
+      // Without a `log`, the ids it belongs to (its meta: a run's id) are what it names.
+      const r = this.o.record?.(
+        job,
+        o.meta,
+        o.log ?? (o.meta ? { ids: Object.values(o.meta) } : {}),
+      );
       if (r) this.recorders.set(id, r);
       if (r?.runId) this.runIds.set(r.runId, id);
     } catch {

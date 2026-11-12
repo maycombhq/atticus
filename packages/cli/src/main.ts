@@ -6,6 +6,7 @@ import {
   printToCurrent,
   recordedCommand,
   retitleTerminalRuns,
+  runLogKept,
   runTitle,
   SCHEMA_VERSION,
   startTerminalRun,
@@ -904,7 +905,7 @@ export async function main(
   // Beta.27 review: the runs beta.26 kept are titled again once, by the new rules (retitled).
   // Beta.27 re-review: by the command line's own process only (never a job the app's server runs
   // in itself), and not when the run log is off.
-  if (o.record && process.env.ATTICUS_RUN_LOG !== "off" && isMetarepoRoot(root)) {
+  if (o.record && runLogKept(root)) {
     try {
       retitleTerminalRuns(root, retitled);
     } catch {
@@ -1069,16 +1070,33 @@ export function declaredFlags(argv: readonly string[], flags: readonly string[])
  * and values of its flags before `--`.
  */
 function recorderFor(argv: string[], flags: string[], root: string) {
-  if (process.env.ATTICUS_RUN_LOG === "off") return undefined;
+  if (!runLogKept(root)) return undefined;
   let title: ReturnType<typeof titleInputsOf>;
   try {
     title = titleInputsOf(argv, flags);
   } catch {
     return undefined;
   }
-  if (!recordedCommand(title.positionals, flags) || !isMetarepoRoot(root)) return undefined;
+  if (!recordedCommand(title.positionals, flags)) return undefined;
   // Beta.27: the values go to the title, which keeps an id or a name and drops a secret.
   return startTerminalRun(root, { ...title, hookProcess: true });
+}
+
+/**
+ * Beta.27 re-review: the title inputs of `atticus <given>` exactly as a terminal run of it gets
+ * them (its aliases, flag names and titleInputsOf), for a job the app runs a command in (an AI
+ * step's job): its run-log title by the same rules, never the words a request sent as they were.
+ */
+export function commandTitleInputsOf(given: string[]): ReturnType<typeof titleInputsOf> {
+  const argv = aliasArgv(given, positionalsAt(given));
+  const flags = [
+    ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
+  ];
+  try {
+    return titleInputsOf(argv, flags);
+  } catch {
+    return { positionals: [], flags: [], values: {} };
+  }
 }
 
 /**

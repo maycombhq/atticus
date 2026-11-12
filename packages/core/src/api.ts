@@ -1018,6 +1018,16 @@ export const ArtifactContent = z.object({
 export const ArtifactFiles = z.object({
   /** By the file asked for (`file`), in the order asked. */
   files: z.array(ArtifactContent.extend({ file: z.string() })),
+  /**
+   * Beta.27 re-review: by file, the problem its one-file read would have answered (a story
+   * deleted since the page listed it): the call answers the others, never fails whole.
+   */
+  problems: z
+    .record(
+      z.string(),
+      z.object({ status: z.number().int(), title: z.string(), detail: z.string().optional() }),
+    )
+    .optional(),
 });
 
 export const Task = z.object({
@@ -2247,6 +2257,7 @@ export type OutsideViewT = z.infer<typeof OutsideView>;
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type RepoFactsBatchT = z.infer<typeof RepoFactsBatch>;
+export type ArtifactFilesT = z.infer<typeof ArtifactFiles>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
 export type FactCorrectionRequestT = z.infer<typeof FactCorrectionRequest>;
 export type LinkCorrectionsRequestT = z.infer<typeof LinkCorrectionsRequest>;
@@ -6505,7 +6516,7 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "3.12.0: several repos' facts in one call, each as GET /api/facts/{repo} gives it, and the problem of each repo that can't be read (the Map's one read for all its repos)",
       tag: "workspace",
-      params: [q("repo", str, "A repo, once per repo (or several, comma-separated); at most 500")],
+      params: [q("repo", str, "A repo, once per repo (or several, comma-separated); at most 100")],
       ok: { status: 200, schema: "RepoFactsBatch", description: "OK" },
       errors: [400],
     },
@@ -6911,7 +6922,7 @@ const OPS: Record<string, Record<string, Op>> = {
         q(
           "file",
           str,
-          "One file, relative to the change folder (stories/<id>.md), once per file; at most 200",
+          "One file, relative to the change folder (stories/<id>.md), once per file; at most 200. A file that can't be read is in `problems`, the others answered",
         ),
       ],
       ok: { status: 200, schema: "ArtifactFiles", description: "OK" },

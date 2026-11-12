@@ -1,4 +1,5 @@
-import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFile } from "node:child_process";
+import { killProcessTree, trackTree } from "@maycombhq/core";
 
 export class GitError extends Error {
   constructor(
@@ -35,85 +36,6 @@ export type GitRunner = (
   cwd: string,
   o?: { signal?: AbortSignal },
 ) => Promise<GitResult>;
-
-/** How long a stopped git gets to end before it is killed outright. */
-const KILL_AFTER_MS = 5000;
-
-/** Every process below `pid` (POSIX `ps`), deepest last; none when ps can't be run. */
-function descendantsOf(pid: number): number[] {
-  let text: string;
-  try {
-    text = execFileSync("ps", ["-A", "-o", "pid=,ppid="], {
-      encoding: "utf8",
-      timeout: 2000,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    return [];
-  }
-  const kids = new Map<number, number[]>();
-  for (const line of text.split("\n")) {
-    const [p, pp] = line.trim().split(/\s+/).map(Number);
-    if (!p || pp === undefined || Number.isNaN(pp)) continue;
-    kids.set(pp, [...(kids.get(pp) ?? []), p]);
-  }
-  const out: number[] = [];
-  const walk = (p: number) => {
-    for (const k of kids.get(p) ?? []) {
-      if (out.includes(k)) continue;
-      out.push(k);
-      walk(k);
-    }
-  };
-  walk(pid);
-  return out;
-}
-
-/**
- * Kill a process and everything it started: git clone runs git-remote-https and index-pack. On
- * Windows, taskkill /T takes the tree; elsewhere the git ran in its own process group, which is
- * signalled whole, and killed outright if it hasn't ended a moment later.
- */
-function killTree(child: ChildProcess): void {
-  const pid = child.pid;
-  if (pid === undefined) return;
-  if (process.platform === "win32") {
-    try {
-      spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      }).on("error", () => child.kill());
-    } catch {
-      child.kill();
-    }
-    return;
-  }
-  // Its descendants, found before any is killed (a killed parent's children are no longer its):
-  // where a new process group can't be made (a sandbox), the group alone would miss them.
-  const tree = [...descendantsOf(pid), pid];
-  const signal = (s: NodeJS.Signals) => {
-    try {
-      process.kill(-pid, s);
-    } catch {
-      // no group of its own: each process below is signalled
-    }
-    for (const p of tree)
-      try {
-        process.kill(p, s);
-      } catch {
-        // gone already
-      }
-  };
-  signal("SIGTERM");
-  const hard = setTimeout(() => signal("SIGKILL"), KILL_AFTER_MS);
-  hard.unref?.();
-  child.once("exit", () => {
-    // The group may outlive its leader a moment (a child still writing): it goes too.
-    signal("SIGKILL");
-    clearTimeout(hard);
-  });
-}
 
 /**
  * Default runner: no shell, no prompts (credentials come from the user's credential
@@ -153,6 +75,7 @@ export function createGit(opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv } 
         },
         (err, stdout, stderr) => {
           signal?.removeEventListener("abort", onAbort);
+          untrack?.();
           if (stopped) {
             reject(new GitStoppedError(args));
             return;
@@ -168,8 +91,17 @@ export function createGit(opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv } 
       );
       const onAbort = () => {
         stopped = true;
-        killTree(child);
+        killProcessTree(child);
       };
+      // Beta.27 review: in its own group, the git no longer hears the terminal (Ctrl+C, the
+      // terminal closed under atticus ui): kept with core's trees, it is stopped with Atticus
+      // (a stop, as Stop is) and killed when Atticus exits, never left running past the lock.
+      const untrack = signal
+        ? trackTree(child, (s) => {
+            stopped = true;
+            killProcessTree(child, s);
+          })
+        : undefined;
       signal?.addEventListener("abort", onAbort, { once: true });
     });
 }

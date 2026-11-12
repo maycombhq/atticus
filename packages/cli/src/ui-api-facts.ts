@@ -212,8 +212,11 @@ async function repoFactsViewNow(root: string, repo: string): Promise<View> {
   };
 }
 
-/** The most repos one GET /api/facts gives (3.12.0). */
-export const FACTS_BATCH_MAX = 500;
+/**
+ * The most repos one GET /api/facts gives (3.12.0). Beta.27 re-review: 100 (was 500): 500 long
+ * names passed the 16 KB a request's head may have, and the call failed whole (431).
+ */
+export const FACTS_BATCH_MAX = 100;
 
 const repoOf = (v: string) => {
   if (!REPO.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a repo name.`);
@@ -365,8 +368,12 @@ export function uiFactsRoutes(
         if (!names.length) throw badRequest("Name the repos: /api/facts?repo=<id>&repo=<id>.");
         if (names.length > FACTS_BATCH_MAX)
           throw badRequest(`At most ${FACTS_BATCH_MAX} repos a call (${names.length} asked).`);
-        const facts: Record<string, Awaited<ReturnType<typeof repoFactsView>>> = {};
-        const problems: Record<string, { status: number; title: string; detail?: string }> = {};
+        // Null-prototype (beta.27 re-review): a repo named `__proto__` is a key like any other.
+        const facts: Record<string, Awaited<ReturnType<typeof repoFactsView>>> = Object.create(
+          null,
+        );
+        const problems: Record<string, { status: number; title: string; detail?: string }> =
+          Object.create(null);
         for (const name of names) {
           try {
             facts[name] = await repoFactsView(ctx.root, repoOf(name));

@@ -205,7 +205,10 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
         // Review of beta.23: a live tracker is called per item, longer than an editor panel
         // waits for one answer; with `job: true` the sync is a job the Console shows, and the
         // job's result is this answer.
-        if (b.data.job) return answerAsJob(ctx, `Putting work items in the tracker: ${id}`, answer);
+        if (b.data.job)
+          return answerAsJob(ctx, `Putting work items in the tracker: ${id}`, answer, {
+            ids: [id],
+          });
         return { status: 200, body: await answer() };
       })
 

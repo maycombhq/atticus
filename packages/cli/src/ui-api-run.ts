@@ -537,22 +537,26 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         // A team's tool acts on their systems: the person's confirmation from the app (ADR 0186).
         requireConfirmation(ctx.confirmations, "step-run", params.stepId!, b.confirmation);
         // ADR 0187: as a job, so the Console shows what the team's tool printed.
-        const res = await tracked(ctx, `Run step ${params.stepId!}`, () =>
-          run((io) =>
-            todoRun(
-              root,
-              stepRef(params.stepId!, b.change),
-              {
-                with: b.with,
-                approve: user,
-                inputs: b.inputsSha256,
-                ...(b.fillOnly ? { fillOnly: true } : {}),
-              },
-              io,
-              // the step's sync is said apart, as `synced`, below
-              { ...deps.todo, sync: false },
+        const res = await tracked(
+          ctx,
+          `Run step ${params.stepId!}`,
+          () =>
+            run((io) =>
+              todoRun(
+                root,
+                stepRef(params.stepId!, b.change),
+                {
+                  with: b.with,
+                  approve: user,
+                  inputs: b.inputsSha256,
+                  ...(b.fillOnly ? { fillOnly: true } : {}),
+                },
+                io,
+                // the step's sync is said apart, as `synced`, below
+                { ...deps.todo, sync: false },
+              ),
             ),
-          ),
+          { ids: [params.stepId!] },
         );
         if (res.code !== 0) {
           if (res.err.some((l) => /^There is no step/.test(l))) throw notFound(res.err.join("\n"));

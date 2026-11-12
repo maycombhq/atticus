@@ -145,4 +145,32 @@ describe("the app's GETs, shared", () => {
     await tick();
     expect(s.sent).toEqual(["POST /api/questions/q-1/answer", "POST /api/questions/q-1/answer"]);
   });
+
+  // Beta.27 re-review: quiet or not was the first caller's for everyone sharing the read.
+  it("the loading bar counts each caller who isn't quiet, whoever's read it shares", async () => {
+    const s = server();
+    vi.stubGlobal("fetch", s.fetch);
+    const { api, requestsInFlight, setSessionToken } = await import("../src/api/client.js");
+    setSessionToken("t");
+    // A poll's quiet read: no bar.
+    const poll = api("/api/jobs/job-1", { quiet: true });
+    await tick();
+    expect(requestsInFlight()).toBe(0);
+    // A person asks the same while it runs: the bar shows, for them, on the one read.
+    const person = api("/api/jobs/job-1");
+    await tick();
+    expect(s.sent).toEqual(["GET /api/jobs/job-1"]);
+    expect(requestsInFlight()).toBe(1);
+    s.gates[0]!.release({ state: "done" });
+    await Promise.all([poll, person]);
+    expect(requestsInFlight()).toBe(0);
+    // The other way round: a person's read joined by a poll counts once.
+    const mine = api("/api/jobs/job-2");
+    const theirs = api("/api/jobs/job-2", { quiet: true });
+    await tick();
+    expect(requestsInFlight()).toBe(1);
+    s.gates[1]!.release({ state: "done" });
+    await Promise.all([mine, theirs]);
+    expect(requestsInFlight()).toBe(0);
+  });
 });

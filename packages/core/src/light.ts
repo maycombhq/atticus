@@ -10,6 +10,7 @@ export { createLog, logFileOf, NO_LOG, type Log, type LogEntry, type LogLevel } 
 export {
   recordedCommand,
   retitleTerminalRuns,
+  runLogKept,
   runTitle,
   startTerminalRun,
   TITLE_VALUE_FLAGS,

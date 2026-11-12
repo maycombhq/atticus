@@ -1,5 +1,5 @@
 import type { Api } from "@maycombhq/core";
-import { api, renewedPageKey } from "./client.js";
+import { api, ApiError, renewedPageKey } from "./client.js";
 
 /**
  * Review round 48 (ADR 0186): a write to a shared system (a hand-off PR, the release PRs, a
@@ -26,9 +26,21 @@ export async function confirmed(
   write: Api.ConfirmedWriteT,
   target: string,
 ): Promise<{ confirmation?: string }> {
-  const r = await api<{ confirmation?: string } | undefined>("/api/confirmations", {
-    method: "POST",
-    body: { write, target, pageKey: pageKey() },
-  });
+  const ask = (key: string) =>
+    api<{ confirmation?: string } | undefined>("/api/confirmations", {
+      method: "POST",
+      body: { write, target, pageKey: key },
+    });
+  const sent = pageKey();
+  let r: { confirmation?: string } | undefined;
+  try {
+    r = await ask(sent);
+  } catch (e) {
+    // Beta.27 re-review: right after a restart the call went again with the old page key, and
+    // was refused (403, no page's): asked once more with the key read again with the new token.
+    const refused = e instanceof ApiError && e.problem.status === 403;
+    if (!refused || pageKey() === sent) throw e;
+    r = await ask(pageKey());
+  }
   return r?.confirmation ? { confirmation: r.confirmation } : {};
 }

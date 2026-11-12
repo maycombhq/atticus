@@ -83,6 +83,7 @@ export * from "./setup-edit.js";
 export * from "./schema/spec.js";
 export * from "./specs.js";
 export * from "./cancel.js";
+export * from "./process-trees.js";
 export * from "./assistant-actor.js";
 export * from "./link-candidates.js";
 export * from "./ai-decisions.js";

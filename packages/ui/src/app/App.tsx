@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { flash, FlashLine } from "./flash.js";
 import { LoadingBar } from "./loading-bar.js";
-import { api, onSession, SERVER_EVENT, sessionStale, useApi, type Loaded } from "../api/client.js";
+import {
+  api,
+  onSession,
+  SERVER_EVENT,
+  sessionMoved,
+  sessionStale,
+  useApi,
+  type Loaded,
+} from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
@@ -132,16 +140,19 @@ export function ConnectionNote({
   down,
   stale,
   inPanel,
+  moved = false,
 }: {
   down: boolean;
   stale: boolean;
   inPanel: boolean;
+  /** Beta.27 re-review: the server at this address now serves another metarepo. */
+  moved?: boolean;
 }) {
   if (down) return <ServerDown inPanel={inPanel} />;
   if (!stale) return null;
   return (
     <div className="state error" role="alert" style={{ marginBottom: 12 }}>
-      <p style={{ margin: 0 }}>{COPY.app.restarted}</p>
+      <p style={{ margin: 0 }}>{moved ? COPY.app.otherMetarepo : COPY.app.restarted}</p>
       <button
         type="button"
         className="btn"
@@ -230,6 +241,23 @@ export function syncCommand(layout: Layout): PaletteCommand {
   };
 }
 
+/**
+ * Ctrl+K's own commands: the other layout, the IDE layout's panel tabs, and Sync the repos.
+ * Beta.27 re-review: Sync the repos only at a metarepo (`metarepo`, as health says): a bare
+ * folder has no repos to sync, and its Ctrl+K offered a sync that could only fail.
+ */
+export function appCommands(
+  layout: Layout,
+  setLayout: (l: Layout) => void,
+  metarepo: boolean,
+): PaletteCommand[] {
+  return [
+    ...layoutCommands(layout, setLayout),
+    ...(layout === "ide" ? panelCommands() : []),
+    ...(metarepo ? [syncCommand(layout)] : []),
+  ];
+}
+
 /** ADR 0194: Ctrl+K's way to the other layout, in either one. */
 export function layoutCommands(layout: Layout, set: (l: Layout) => void): PaletteCommand[] {
   const L = COPY.ide.layout;
@@ -269,16 +297,20 @@ export function App() {
   const full = health.state === "ready" && health.data.full === true;
   const server = useServer();
   const stale = useSessionStale();
-  const connection = <ConnectionNote down={server.down} stale={stale} inPanel={!!hostBridge()} />;
+  const connection = (
+    <ConnectionNote
+      down={server.down}
+      stale={stale}
+      moved={stale && sessionMoved()}
+      inPanel={!!hostBridge()}
+    />
+  );
   // ADR 0190: a folder that isn't a metarepo yet shows Create the metarepo here, nothing else.
   const bare = health.state === "ready" && health.data.metarepo === false;
+  const atMetarepo = health.state === "ready" && health.data.metarepo !== false;
   const commands = useMemo(
-    () => [
-      ...layoutCommands(layout, setLayout),
-      ...(layout === "ide" ? panelCommands() : []),
-      syncCommand(layout),
-    ],
-    [layout, setLayout],
+    () => appCommands(layout, setLayout, atMetarepo),
+    [layout, setLayout, atMetarepo],
   );
   const reloadHealth = health.reload;
   useEffect(() => {

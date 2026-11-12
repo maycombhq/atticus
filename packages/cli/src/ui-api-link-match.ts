@@ -134,7 +134,7 @@ export function uiLinkMatchRoutes(
               ? { errors: [done.error ?? "The session ended without an answer."] }
               : { result: { state: done.state } };
           },
-          { title: `Match ${from} with ${view.toName}` },
+          { title: `Match ${from} with ${view.toName}`, log: { ids: [from] } },
         );
         running.set(key, { jobId: job.id }); // a new run drops the last run's error
         const files = await readMatch(ctx.root, view);

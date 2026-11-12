@@ -1,7 +1,9 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ManifestRepo, sharedLockFileOf } from "@maycombhq/core";
 import {
@@ -162,6 +164,60 @@ describe("the git runner, stopped", () => {
       expect(alive(shell!)).toBe(false);
       expect(alive(child!)).toBe(false);
     },
+  );
+
+  // Beta.27 re-review: in its own group, a stoppable git never heard the terminal close under
+  // atticus ui, and ran on outside the base clone's lock. It is kept with core's trees now.
+  it.skipIf(process.platform === "win32")(
+    "a closed terminal (SIGHUP) takes git and what it started with Atticus",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-fake-git-"));
+      const pids = join(dir, "pids");
+      await writeFile(
+        join(dir, "git"),
+        `#!/bin/sh\nsleep 600 &\necho $$ $! > "${pids}"\nwait\n`,
+        "utf8",
+      );
+      await chmod(join(dir, "git"), 0o755);
+      const built = JSON.stringify(
+        pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../dist/git.js")).href,
+      );
+      const script = join(dir, "app.mjs");
+      await writeFile(
+        script,
+        `const { createGit } = await import(${built});
+const git = createGit({ env: { ...process.env, PATH: ${JSON.stringify(`${dir}:`)} + process.env.PATH } });
+git(["fetch", "origin"], ${JSON.stringify(dir)}, { signal: new AbortController().signal }).catch(() => {});
+setTimeout(() => {}, 60_000);
+`,
+        "utf8",
+      );
+      const app = spawn(process.execPath, [script], { stdio: "ignore" });
+      const ended = new Promise<NodeJS.Signals | null>((r) => app.on("exit", (_c, s) => r(s)));
+      let seen = "";
+      for (let i = 0; i < 400 && !seen.trim(); i++) {
+        await new Promise((r) => setTimeout(r, 25));
+        seen = await readFile(pids, "utf8").catch(() => "");
+      }
+      const [shell, child] = seen.trim().split(" ").map(Number);
+      expect(shell).toBeGreaterThan(0);
+      app.kill("SIGHUP");
+      expect(await ended).toBe("SIGHUP");
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      for (let i = 0; i < 300 && (alive(shell!) || alive(child!)); i++)
+        await new Promise((r) => setTimeout(r, 20));
+      expect(alive(shell!)).toBe(false);
+      expect(alive(child!)).toBe(false);
+      await rm(dir, { recursive: true, force: true });
+    },
+    60_000,
   );
 
   it("a signal stopped already runs nothing", async () => {

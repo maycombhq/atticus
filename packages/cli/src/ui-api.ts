@@ -1010,12 +1010,29 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             );
           if (asked.length > ARTIFACT_FILES_MAX)
             throw badRequest(`At most ${ARTIFACT_FILES_MAX} files a call (${asked.length} asked).`);
+          if (!ChangeArtifact.safeParse(params.artifact).success)
+            await artifactPath(root, params.changeId!, params.artifact!);
           const files = [];
+          // Beta.27 re-review: a file that can't be read (deleted since the page listed it) is
+          // its own problem, as /api/facts gives a repo's; the others are still answered.
+          const problems: Record<string, { status: number; title: string; detail?: string }> =
+            Object.create(null);
           for (const file of asked) {
-            const rel = await artifactPath(root, params.changeId!, params.artifact!, {
-              orNew: true,
-              file,
-            });
+            let rel: string;
+            try {
+              rel = await artifactPath(root, params.changeId!, params.artifact!, {
+                orNew: true,
+                file,
+              });
+            } catch (e) {
+              if (!(e instanceof HttpError)) throw e;
+              problems[file] = {
+                status: e.status,
+                title: e.title,
+                ...(e.detail ? { detail: e.detail } : {}),
+              };
+              continue;
+            }
             const content = await readFile(
               join(changesDirOf(root), params.changeId!, rel),
               "utf8",
@@ -1028,7 +1045,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               sha256: sha(content),
             });
           }
-          return { status: 200, body: { files } };
+          return { status: 200, body: { files, problems } };
         },
       )
       .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, query }) => {
@@ -1257,7 +1274,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               }),
             };
           },
-          { title: `Run the ready tasks of ${change}` },
+          { title: `Run the ready tasks of ${change}`, log: { ids: [change] } },
         );
         return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
@@ -1655,15 +1672,20 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ),
           );
         // ADR 0187: as a job, so the Console shows it while the page waits.
-        const res = await tracked(ctx, `Critic on ${params.changeId!}`, async () => {
-          let got = await once(b.gate);
-          // A change in a state with no gate of its own (define) is checked at the gate it goes to.
-          if (!b.gate && got.code === 2 && got.err.some((l) => /has no gate/.test(l))) {
-            const next = (await changeReport(root, params.changeId!)).next;
-            if (next) got = await once(next);
-          }
-          return got;
-        });
+        const res = await tracked(
+          ctx,
+          `Critic on ${params.changeId!}`,
+          async () => {
+            let got = await once(b.gate);
+            // A change in a state with no gate of its own (define) is checked at the gate it goes to.
+            if (!b.gate && got.code === 2 && got.err.some((l) => /has no gate/.test(l))) {
+              const next = (await changeReport(root, params.changeId!)).next;
+              if (next) got = await once(next);
+            }
+            return got;
+          },
+          { ids: [params.changeId!] },
+        );
         if (res.code === 2) throw refused(res);
         ctx.events.publish({
           type: "file.changed",
@@ -1866,7 +1888,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               errors: res.code === 2 ? res.err : [],
             };
           },
-          { title: scanTitle },
+          { title: scanTitle, log: { ids: b.repos ?? [] } },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -1895,7 +1917,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               errors: res.code === 0 ? [] : res.err.length ? res.err : lines,
             };
           },
-          { title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones" },
+          {
+            title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones",
+            log: { ids: b.repos ?? [] },
+          },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -1918,7 +1943,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             }
             return { result, errors: res.code === 2 ? res.err : [] };
           },
-          { title: `Reconcile ${b.diagram}` },
+          // The diagram's name is the person's: in the run log, as an id only if it is one.
+          { title: `Reconcile ${b.diagram}`, log: { ids: [b.diagram] } },
         );
         return { status: 202, body: { jobId: job.id } };
       })

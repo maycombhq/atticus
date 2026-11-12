@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   changeBranch,
@@ -155,12 +155,32 @@ export interface WorkspaceOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Beta.27 review: in a base clone's `.git`, while a sync checks out what it fetched: the commit
+ * and branch the clone was on, clean, before (JSON). A checkout stopped (Stop, Atticus closed) or
+ * killed leaves files half-written, which read as local changes, and every later sync skipped the
+ * clone for ever; with the mark there, the sync puts the clone back on that commit first
+ * (restoreBaseClone), its changes being Atticus's own. Removed once the checkout is done.
+ */
+export const SYNC_CHECKOUT_MARK = "atticus-sync-checkout.json";
+
 export function createWorkspace(
   root: string,
   git: GitRunner = createGit(),
   opts: WorkspaceOptions = {},
 ): WorkspaceManager {
   const signal = opts.signal;
+  // The base clone a git runs in now, and git's index lock there when the stop came: that lock
+  // (the same file) is the killed git's to take away; one made after it is another git's.
+  let busy: string | undefined;
+  let lockAtStop: string | undefined;
+  signal?.addEventListener(
+    "abort",
+    () => {
+      if (busy) lockAtStop = lockOf(busy);
+    },
+    { once: true },
+  );
   const g = (args: string[], cwd = root) => (signal ? git(args, cwd, { signal }) : git(args, cwd));
   const withBaseClone = <T>(dest: string, id: string, work: () => Promise<T>) =>
     withBaseCloneLock(dest, id, work, opts.lockWaitMs);
@@ -236,6 +256,61 @@ export function createWorkspace(
     return { id: repo.id, action: "cloned", sha: await head(dest), from };
   }
 
+  const markOf = (dest: string) => join(dest, ".git", SYNC_CHECKOUT_MARK);
+  /** Which file git's index lock is (device, inode, time), or undefined when there is none. */
+  function lockOf(dest: string): string | undefined {
+    try {
+      const st = statSync(join(dest, ".git", "index.lock"), { throwIfNoEntry: false });
+      return st ? `${st.dev}:${st.ino}:${st.mtimeMs}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  /** Git's index lock taken away when it is the one there at the stop (`atStop`). */
+  async function dropKilledLock(dest: string, atStop: string | undefined): Promise<boolean> {
+    const now = lockOf(dest);
+    if (!now) return true;
+    if (now !== atStop) return false;
+    await rm(join(dest, ".git", "index.lock"), { force: true });
+    return true;
+  }
+
+  /**
+   * Beta.27 review: a base clone whose checkout was stopped or killed, put back on the commit it
+   * was on (from its mark) with nothing of the checkout left: forced, as only a base clone
+   * Atticus made is (its own repo, at its place, clean before the sync: the mark says so) and
+   * base clones are read-only. Git's index lock goes only when it is the one that was there at
+   * the stop (`atStop`: the killed git's, never another git's made since). Run without the stop's signal. Undefined
+   * when the clone is back (the mark taken away), else why not (the mark stays, for the next
+   * sync to try again).
+   */
+  async function restoreBaseClone(dest: string, atStop?: string): Promise<string | undefined> {
+    let was: { head?: unknown; branch?: unknown };
+    try {
+      was = JSON.parse(await readFile(markOf(dest), "utf8")) as typeof was;
+    } catch {
+      return "its checkout mark can't be read";
+    }
+    const sha = typeof was.head === "string" && /^[0-9a-f]{40,64}$/.test(was.head) ? was.head : "";
+    const branch = typeof was.branch === "string" ? was.branch : "";
+    if (!sha || !branch) return "its checkout mark can't be read";
+    try {
+      // Its own repo at its own place: never the metarepo above it, nor a clone moved here.
+      if (!(await lstat(join(dest, ".git"))).isDirectory()) return "it is no base clone";
+      const top = (await git(["rev-parse", "--show-toplevel"], dest)).stdout.trim();
+      if ((await realpath(top)) !== (await realpath(dest))) return "it is no base clone";
+      if (!(await dropKilledLock(dest, atStop)))
+        return `git's lock ${join(dest, ".git", "index.lock")} is there: if no git is running in ${dest}, delete it`;
+      await git(["checkout", "--quiet", "--force", "-B", branch, sha], dest);
+      // What the checkout had written that the commit doesn't have (ignored files are kept).
+      await git(["clean", "-fdq"], dest);
+      await rm(markOf(dest), { force: true });
+      return undefined;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
   /**
    * Beta.27 review: a repo whose git was stopped. A clone this sync made is taken away (Windows
    * may hold its files a moment after the kill: tried a few times), so the next sync clones it
@@ -255,12 +330,23 @@ export function createWorkspace(
           : `stopped: the clone it had started couldn't be taken away; delete ${dest} before you sync again`,
       };
     }
-    await rm(join(dest, ".git", "index.lock"), { force: true }).catch(() => undefined);
+    // Stopped in its checkout: the clone is put back on the commit it was on.
+    if (existsSync(markOf(dest))) {
+      const why = await restoreBaseClone(dest, lockAtStop);
+      return {
+        id: repo.id,
+        action: "stopped",
+        reason: why
+          ? `stopped: the base clone couldn't be put back as it was (${why}); the next sync puts it back`
+          : "stopped: the base clone is back as it was before this sync; sync again",
+      };
+    }
+    // Stopped in its fetch: the files are as they were; a lock the killed git left goes.
+    await dropKilledLock(dest, lockAtStop).catch(() => false);
     return {
       id: repo.id,
       action: "stopped",
-      reason:
-        "stopped: the base clone is as it was before this sync, or part-way updated; sync again",
+      reason: "stopped: the base clone is as it was before this sync; sync again",
     };
   }
 
@@ -281,6 +367,7 @@ export function createWorkspace(
     // checkout fails) is taken away, so the next sync clones it again rather than calling it a
     // base clone with local changes forever.
     const made = !existsSync(dest);
+    busy = made ? undefined : dest;
     try {
       if (made) {
         await mkdir(dirname(dest), { recursive: true });
@@ -308,6 +395,16 @@ export function createWorkspace(
           ...(await remoteDefault(dest)),
         };
       }
+      // An earlier sync's checkout, stopped or killed: put back before anything else.
+      if (existsSync(markOf(dest))) {
+        const why = await restoreBaseClone(dest);
+        if (why)
+          return {
+            id: repo.id,
+            action: "failed",
+            reason: `an earlier sync was stopped in the base clone's checkout, and it couldn't be put back: ${why}`,
+          };
+      }
       if (await dirty(dest)) {
         return {
           id: repo.id,
@@ -316,12 +413,20 @@ export function createWorkspace(
           reason: "the base clone has local changes; base clones are read-only",
         };
       }
+      const before = await head(dest);
       await g(
         ["fetch", "--no-tags", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
         dest,
       );
+      // Clean until now: what the checkout leaves if it is stopped is Atticus's own to undo.
+      await writeFile(
+        markOf(dest),
+        `${JSON.stringify({ head: before, branch, at: new Date().toISOString() })}\n`,
+        "utf8",
+      );
       await g(["checkout", "--quiet", "-B", branch, `refs/remotes/origin/${branch}`], dest);
       if (repo.sparse.length > 0) await g(["sparse-checkout", "set", "--", ...repo.sparse], dest);
+      await rm(markOf(dest), { force: true });
       return {
         id: repo.id,
         action: "updated",

@@ -7,11 +7,12 @@ import {
   catalogMayHaveChangedAt,
   DEFAULT_PORT,
   FileChangedError,
+  runLogKept,
   startAppRun,
 } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
-import { JobManager, type JobKind, type JobRecorder } from "./jobs.js";
+import { JobManager, type JobKind, type JobLogTitle, type JobRecorder } from "./jobs.js";
 
 /** Every kind of job, so RunningServer.quiet asks after each (a new kind must be added here). */
 const JOB_KINDS: Record<JobKind, true> = {
@@ -252,29 +253,25 @@ function send(res: ServerResponse, status: number, body: unknown, type = "applic
   res.end(text);
 }
 
-/** The words a job's kind is named by when it has no title of its own (its Console entry's). */
-const KIND_TITLES: Record<JobKind, string> = {
-  scan: "Scan",
-  sync: "Sync",
-  reconcile: "Reconcile",
-  index: "Index",
-  intake: "Intake",
-  step: "AI step",
-  local: "Local step",
-  work: "Request",
-};
-
 /**
  * Beta.27 review: a job kept in the run log (ADR 0187) as it runs, so the Console, Runs and
  * Problems still have it after the app restarts. Undefined when the log can't be written.
+ * Beta.27 re-review: only where a command run would keep one (core's runLogKept: a metarepo,
+ * ATTICUS_RUN_LOG not `off`), asked as each job starts (a folder made a metarepo meanwhile keeps
+ * the jobs after it); titled by a command's rules (`log`: the ids it names, or the command it
+ * runs), never by the job's own title.
  */
 export function appRunRecorder(
   root: string,
-  job: { id: string; kind: JobKind; title?: string },
+  job: { id: string; kind: JobKind },
+  log: JobLogTitle = {},
+  env: NodeJS.ProcessEnv = process.env,
 ): JobRecorder | undefined {
+  if (!runLogKept(root, env)) return undefined;
   const r = startAppRun(root, {
-    title: job.title ?? KIND_TITLES[job.kind] ?? job.kind,
     job: { id: job.id, kind: job.kind },
+    ...(log.ids ? { ids: log.ids } : {}),
+    ...(log.command ? { command: log.command } : {}),
   });
   if (!r) return undefined;
   return {
@@ -302,7 +299,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const events = new EventHub(o.root);
   let writing = 0;
   const jobs = new JobManager((e) => events.publish(e), undefined, {
-    ...(o.runLog ? { record: (job) => appRunRecorder(o.root, job) } : {}),
+    ...(o.runLog ? { record: (job, _meta, log) => appRunRecorder(o.root, job, log) } : {}),
   });
   const confirmations = new Confirmations();
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);

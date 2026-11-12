@@ -65,11 +65,16 @@ export function tracked<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { kind?: JobKind; meta?: Record<string, string> } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function") return work();
-  const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
+  const opts: JobStartOptions = {
+    title,
+    ...(o.meta ? { meta: o.meta } : {}),
+    // Beta.27 re-review: the run log is titled by the ids it names, never by `title`.
+    ...(o.ids ? { log: { ids: o.ids } } : {}),
+  };
   return ctx.jobs.track(o.kind ?? "work", (c) => work(c), opts);
 }
 
@@ -84,9 +89,13 @@ export function answerAsJob(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: () => Promise<Record<string, unknown>>,
-  o: { kind?: JobKind; meta?: Record<string, string> } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): { status: 202; body: { jobId: string } } {
-  const opts: JobStartOptions = { title, ...(o.meta ? { meta: o.meta } : {}) };
+  const opts: JobStartOptions = {
+    title,
+    ...(o.meta ? { meta: o.meta } : {}),
+    ...(o.ids ? { log: { ids: o.ids } } : {}),
+  };
   const job = ctx.jobs.start(
     o.kind ?? "work",
     async () => {
@@ -119,7 +128,7 @@ export async function trackedLocal<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { meta?: Record<string, string>; wait?: (ms: number) => Promise<void> } = {},
+  o: { meta?: Record<string, string>; ids?: string[]; wait?: (ms: number) => Promise<void> } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown; runningOf?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function" || typeof jobs.runningOf !== "function")
@@ -140,7 +149,7 @@ export async function trackedLocal<T>(
       c?.progress(0, 1, title);
       return work(c);
     },
-    { kind: "local", ...(o.meta ? { meta: o.meta } : {}) },
+    { kind: "local", ...(o.meta ? { meta: o.meta } : {}), ...(o.ids ? { ids: o.ids } : {}) },
   );
 }
 

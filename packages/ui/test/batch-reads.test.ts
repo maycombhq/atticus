@@ -60,6 +60,114 @@ describe("reads a page asks many of at once", () => {
     expect(sent).toHaveLength(2);
   });
 
+  // Beta.27 re-review: 500 repos in one address passed the server's 16 KB head (431, all failed).
+  it("500 long repo names go in calls of at most 100 repos and 8 KB of address each", async () => {
+    const { repoFacts, FACTS_BATCH, URL_BUDGET } = await import("../src/api/batch.js");
+    expect(FACTS_BATCH).toBe(100);
+    const long = Array.from({ length: 500 }, (_, i) => `forge-${"settlement".repeat(9)}-${i}`);
+    const got = await Promise.all(long.map((r) => repoFacts(r)));
+    expect(got.map((v) => v.repo)).toEqual(long);
+    expect(sent.length).toBeGreaterThan(5);
+    for (const u of sent) {
+      const q = new URL(u, "http://127.0.0.1");
+      expect(q.searchParams.getAll("repo").length).toBeLessThanOrEqual(100);
+      expect(q.search.length).toBeLessThanOrEqual(URL_BUDGET + 1);
+    }
+    // Every repo asked once, in order.
+    expect(sent.flatMap((u) => new URL(u, "http://127.0.0.1").searchParams.getAll("repo"))).toEqual(
+      long,
+    );
+  });
+
+  it("splits keys by count and by the address they take", async () => {
+    const { partsOf } = await import("../src/api/batch.js");
+    const len = (k: string) => k.length;
+    expect(partsOf(["aa", "bb", "cc"], 2, len, 100)).toEqual([["aa", "bb"], ["cc"]]);
+    expect(partsOf(["aaaa", "bbbb", "cc"], 10, len, 6)).toEqual([["aaaa"], ["bbbb", "cc"]]);
+    // One key past the budget still goes, alone.
+    expect(partsOf(["a".repeat(20), "b"], 10, len, 6)).toEqual([["a".repeat(20)], ["b"]]);
+  });
+
+  it("a story deleted meanwhile is its own problem; the other stories still read", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        sent.push(url);
+        const u = new URL(url, "http://127.0.0.1");
+        const asked = u.searchParams.getAll("file");
+        const files = asked
+          .filter((f) => !f.includes("gone"))
+          .map((file) => ({
+            file,
+            artifact: "stories",
+            path: file,
+            content: `# ${file}\n`,
+            sha256: "x",
+          }));
+        const problems = Object.fromEntries(
+          asked
+            .filter((f) => f.includes("gone"))
+            .map((f) => [f, { status: 404, title: "Not found", detail: `${f} isn't there.` }]),
+        );
+        return new Response(JSON.stringify({ files, problems }), { status: 200 });
+      }),
+    );
+    const { artifactFile } = await import("../src/api/batch.js");
+    const { artifactUrl } = await import("../src/screens/Changes.js");
+    const read = (f: string) =>
+      artifactFile<{ content: string }>(artifactUrl("add-transfer-limit", "stories", f));
+    const [a, gone, b] = await Promise.allSettled([
+      read("stories/s1-cap.md"),
+      read("stories/s2-gone.md"),
+      read("stories/s3-limit.md"),
+    ]);
+    expect(sent).toHaveLength(1);
+    expect(a).toMatchObject({ status: "fulfilled", value: { content: "# stories/s1-cap.md\n" } });
+    expect(b).toMatchObject({ status: "fulfilled", value: { content: "# stories/s3-limit.md\n" } });
+    expect(gone.status).toBe("rejected");
+    expect(String((gone as PromiseRejectedResult).reason)).toMatch(/isn't there/);
+  });
+
+  it("an asker whose screen went is dropped; the call stops once every asker has gone", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        sent.push(url);
+        signals.push(init?.signal ?? undefined);
+        // Answers only once it is stopped.
+        return new Promise<Response>((_, reject) =>
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          ),
+        );
+      }),
+    );
+    const { artifactFile } = await import("../src/api/batch.js");
+    const { artifactUrl } = await import("../src/screens/Changes.js");
+    const one = new AbortController();
+    const two = new AbortController();
+    const p1 = artifactFile(
+      artifactUrl("add-transfer-limit", "stories", "stories/s1.md"),
+      one.signal,
+    );
+    const p2 = artifactFile(
+      artifactUrl("add-transfer-limit", "stories", "stories/s2.md"),
+      two.signal,
+    );
+    one.abort();
+    await expect(p1).rejects.toMatchObject({ name: "AbortError" });
+    // Gone before the call was sent: only the other file is asked for.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("s2.md");
+    expect(sent[0]).not.toContain("s1.md");
+    two.abort();
+    await expect(p2).rejects.toMatchObject({ name: "AbortError" });
+    // Every asker gone: the call itself was stopped.
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
   it("the Stories tab: every story's file in one call, as each file's own read gives it", async () => {
     const { artifactFile } = await import("../src/api/batch.js");
     const { artifactUrl } = await import("../src/screens/Changes.js");
