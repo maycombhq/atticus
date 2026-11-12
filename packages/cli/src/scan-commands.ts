@@ -25,6 +25,7 @@ import {
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
+import { buildPlanOf, pageChanged, refusalPlanOf } from "./build-report.js";
 
 /** The lines a person reads for a catalog diff: + added, - removed, ~ changed (fields). */
 export function diffLines(d: CatalogDiff): string[] {
@@ -54,6 +55,11 @@ export interface ScanRefusal {
   allowRemovals?: number;
   edits?: BuildRefusal["edits"];
   discardEdits?: number;
+  /**
+   * The hash of the lists (each removal's path, reasons and words, each hand edit's path and
+   * how), which the app's confirm of them sends back (POST /api/scan's `plan`).
+   */
+  plan?: string;
 }
 
 /** What a person reads for one repo not read in full. */
@@ -304,6 +310,11 @@ export interface ScanCommandOptions {
   allowRemovals?: number;
   /** `--discard-edits <count>`: discards the hand edits a refused build listed. */
   discardEdits?: number;
+  /**
+   * The app's confirm (no flag takes it): the `plan` of the refusal the counts confirm, worked
+   * out again under the lock; a build that lists anything else writes nothing.
+   */
+  plan?: string;
   json?: boolean;
   /** Skip the drift check for open changes in build or qa that runs after the catalog is written. */
   noDrift?: boolean;
@@ -373,6 +384,7 @@ export async function scanCommand(
           ...(o.json ? { json: true } : {}),
           ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
           ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+          ...(o.plan !== undefined ? { plan: o.plan } : {}),
         },
         io,
       );
@@ -420,15 +432,23 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
         ...(o.dryRun ? { check: true } : {}),
         ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
         ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+        // The app's confirm: the list worked out again under the lock (the review of beta.27).
+        ...(o.plan !== undefined && !o.dryRun
+          ? { expect: (listed: BuildAndWrite["guard"]) => buildPlanOf(listed) === o.plan }
+          : {}),
       });
   const guardRefused = built && !o.dryRun ? built.guard.refused : undefined;
+  const changed = built?.changed
+    ? pageChanged("what the build would remove or discard")
+    : undefined;
   const refused: ScanRefusal | undefined =
     unreadAll ??
+    (changed && !guardRefused ? { reasons: [], repos: [], message: changed } : undefined) ??
     (guardRefused
       ? {
           reasons: guardRefused.reasons,
           repos: [],
-          message: guardRefused.message,
+          message: changed ? `${changed}\n${guardRefused.message}` : guardRefused.message,
           ...(guardRefused.removals ? { removals: guardRefused.removals } : {}),
           ...(guardRefused.unexplained ? { unexplained: guardRefused.unexplained } : {}),
           ...(guardRefused.allowRemovals !== undefined
@@ -438,6 +458,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           ...(guardRefused.discardEdits !== undefined
             ? { discardEdits: guardRefused.discardEdits }
             : {}),
+          plan: refusalPlanOf(guardRefused),
         }
       : undefined);
   const w = built?.write;

@@ -11,7 +11,12 @@ import {
   UpgradePanel,
   whyWords,
 } from "../src/screens/setup/CatalogBuild.js";
-import { scanBuildRefusal, scanSources, ScanSourcesTable } from "../src/screens/know/Know.js";
+import {
+  scanBuildRefusal,
+  scanConfirmBody,
+  scanSources,
+  ScanSourcesTable,
+} from "../src/screens/know/Know.js";
 
 /**
  * ADR 0195 points 4 and 7 (ticket CS3): Set up › Scans › Catalog builds. Every state says itself
@@ -642,5 +647,23 @@ describe("Set up › Scans says what a scan read of each repo", () => {
         result: { refused: { reasons: ["nothing-read"], repos: [] } },
       }),
     ).toBeUndefined();
+  });
+
+  it("confirms a scan's refusal with its count and the plan of the list it showed, nothing carried", () => {
+    // The review of beta.27: the scan works the list out again under its lock, and writes
+    // nothing when it isn't the one this plan names. An earlier confirm's count and plan are
+    // never carried into the next.
+    const asked = { repos: ["forge-ledger"], allowRemovals: 9, plan: "f".repeat(64) };
+    const refused = { plan: "a".repeat(64) };
+    expect(scanConfirmBody(asked, refused, { allowRemovals: 3 })).toEqual({
+      repos: ["forge-ledger"],
+      allowRemovals: 3,
+      plan: "a".repeat(64),
+    });
+    expect(scanConfirmBody(asked, refused, { discardEdits: 1 })).toEqual({
+      repos: ["forge-ledger"],
+      discardEdits: 1,
+      plan: "a".repeat(64),
+    });
   });
 });

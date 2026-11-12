@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,6 +115,93 @@ describe("a scan with carryFacts carries the facts snapshot to the commit read",
       const carried = await scan(true);
       expect(carried.basis?.[REPO]).toEqual({ from: "facts", unread: [] });
       expect(citing(carried.records, FLOW).length).toBeGreaterThan(0);
+    },
+    T,
+  );
+});
+
+/**
+ * The snapshot taken on a commit the task branch doesn't have in its history (verify --write run
+ * on another branch, rebased or merged since): the two are compared from their merge base, and
+ * a fact citing a file changed on either side since is left out (ADR 0195 point 2, the review of
+ * beta.27). Before, the repo fell back to the readers ("couldn't confirm").
+ */
+describe("a scan with carryFacts from a snapshot that isn't an ancestor of the commit read", () => {
+  async function diverged() {
+    const root = mkdtempSync(join(tmpdir(), "atticus-scan-carry-"));
+    temps.push(root);
+    cpSync(join(GQ, "org-pack"), join(root, "org-pack"), { recursive: true });
+    const dir = join(root, "workspace", REPO);
+    cpSync(join(GQ, "repos", REPO), dir, { recursive: true });
+    sh(dir, "init", "-q");
+    sh(dir, "add", "-A");
+    sh(dir, "commit", "-q", "-m", "base");
+    // The snapshot's side: the target changed, then verify --write took the snapshot there.
+    sh(dir, "checkout", "-q", "-b", "verified");
+    appendFileSync(join(dir, "apiproxy/targets/core.xml"), "<!-- changed where verify ran -->\n");
+    sh(dir, "commit", "-q", "-am", "verified side");
+    const snapAt = sh(dir, "rev-parse", "HEAD");
+    const text = readFileSync(join(GQ, "facts", `${REPO}.jsonl`), "utf8").replaceAll(
+      '"commit":"d4d0001"',
+      `"commit":"${snapAt}"`,
+    );
+    const parsed = parseFacts(text);
+    if (!parsed.ok) throw new Error("the fixture's facts don't read");
+    await writeFactsSlot(root, {
+      repo: REPO,
+      commit: snapAt,
+      facts: parsed.facts,
+      contracts: null,
+    });
+    // The task branch, from the base: the flow changed, and a generated file the scan settings
+    // leave out.
+    sh(dir, "checkout", "-q", "main");
+    sh(dir, "checkout", "-q", "-b", "task");
+    appendFileSync(join(dir, FLOW), "<!-- changed on the branch -->\n");
+    mkdirSync(join(dir, "generated"), { recursive: true });
+    writeFileSync(join(dir, "generated/Client.xml"), "<!-- generated: do not edit -->\n");
+    sh(dir, "add", "-A");
+    sh(dir, "commit", "-q", "-m", "task");
+    const head = sh(dir, "rev-parse", "HEAD");
+    mkdirSync(join(root, "org-pack", "scan"), { recursive: true });
+    writeFileSync(
+      join(root, "org-pack", "scan", `${REPO}.yaml`),
+      [
+        "schemaVersion: 1",
+        `repo: ${REPO}`,
+        "exclude:",
+        '  - path: "generated/**"',
+        "    why: generated stubs, not the proxy's own code",
+        '    at: "generated/Client.xml:1"',
+        "",
+      ].join("\n"),
+    );
+    return scanEstate({
+      root,
+      repos: [REPO],
+      repoDir: () => dir,
+      repoState: async () => ({ commit: head, dirty: false }),
+      cache: null,
+      inputsDir: null,
+      scannedAt: "2026-11-12T09:00:00Z",
+      carryFacts: true,
+    });
+  }
+
+  it(
+    "keeps the repo on its facts, leaves out those citing a file changed on either side, and lists no excluded file unread",
+    async () => {
+      const carried = await diverged();
+      const basis = carried.basis?.[REPO];
+      expect(basis?.from).toBe("facts");
+      const unread = basis?.from === "facts" ? basis.unread : [];
+      expect(unread).toContain(FLOW);
+      expect(unread).toContain("apiproxy/targets/core.xml");
+      // The scan settings' exclude: a generated file the branch added isn't one to read.
+      expect(unread).not.toContain("generated/Client.xml");
+      expect(citing(carried.records, FLOW)).toEqual([]);
+      expect(citing(carried.records, "apiproxy/targets/core.xml")).toEqual([]);
+      expect(citing(carried.records, "edge/env/prod/targetservers.json").length).toBeGreaterThan(0);
     },
     T,
   );

@@ -36,7 +36,7 @@ import {
   type HandEdit,
 } from "@maycombhq/scanner";
 import { gitUser } from "@maycombhq/workspace";
-import { buildPlanOf, prunePlanHash, undoPlanHash } from "./build-report.js";
+import { buildPlanOf, pageChanged, prunePlanHash, undoPlanHash } from "./build-report.js";
 import type { Output } from "./commands.js";
 
 /**
@@ -132,11 +132,9 @@ export function refusalHint(r: BuildRefusal, command: string): string {
 /**
  * The app's confirm of a list (ADR 0195, the review: a confirm is of the list shown): the plan
  * the page showed is worked out again under the lock, and nothing is written when it isn't that.
- * No flag of the command line takes it: the routes pass it.
+ * No flag of the command line takes it: the routes pass it. Its words are `pageChanged`
+ * (build-report.ts), which verify --write and the scan say too.
  */
-const pageChanged = (what: string) =>
-  `Nothing written: ${what} isn't what the page listed any more (another command wrote meanwhile). Look at the list again.`;
-
 function refuseChanged(io: Output, json: boolean | undefined, message: string): number {
   io.err(message);
   if (json) io.out(JSON.stringify({ refused: { reasons: ["changed"], message } }, null, 2));

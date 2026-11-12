@@ -880,7 +880,17 @@ export async function upgradeCommand(
     upgradedBy: by,
     migrations: [...new Set([...(c.stamp?.migrations ?? []), ...MIGRATIONS.map((m) => m.id)])],
   });
-  await writeFileAtomic(join(root, STAMP_FILE), stringify(stamp));
+  // ADR 0195 point 6 (the review of beta.27): when no other step runs, the stamp already records
+  // this Atticus and the slots step is only shown (no --yes, or a count that isn't the one
+  // listed), the run writes no byte: no fresh upgradedAt, no record of what to propose. What
+  // waits is worked out from the files each time, never from the stamp. A stamp that is missing
+  // or older is still written (round 49: recording this Atticus is the run's own change).
+  const slotsApply =
+    o.yes === true && (!slots.differs.length || o.acceptChanges === slots.differs.length);
+  const stampCurrent = !!c.stamp && !newerThan(version, c.stamp.atticus);
+  const onlyShown =
+    !c.pending.length && store?.action !== "create" && stampCurrent && slots.pending && !slotsApply;
+  if (!onlyShown) await writeFileAtomic(join(root, STAMP_FILE), stringify(stamp));
   if (store?.action === "create") {
     await writeStoreMarker(root, {
       id: store.id!,
@@ -933,14 +943,15 @@ export async function upgradeCommand(
     }
   }
   // Beta.27 review: kept once every step ran, the slots' adoption included.
-  await keep();
+  if (!onlyShown) await keep();
   if (o.json)
     io.out(
       JSON.stringify(
         {
           upgraded: c.pending.map((p) => p.id),
           files: changed,
-          stamp,
+          // The stamp written; none when the run wrote nothing (only the slots step shown).
+          ...(onlyShown ? {} : { stamp }),
           ...(store ? { openspecStore: store } : {}),
           ...(slots.pending
             ? {
@@ -958,11 +969,13 @@ export async function upgradeCommand(
       for (const p of c.pending)
         io.out(`Done: ${p.summary} (${p.files.length} file${p.files.length === 1 ? "" : "s"})`);
       io.out(`The files as they were are in ${backup}.`);
-    } else if (store?.action !== "create") io.out(`Nothing to change for Atticus ${version}.`);
+    } else if (store?.action !== "create" && !onlyShown)
+      io.out(`Nothing to change for Atticus ${version}.`);
     if (store) io.out(storeLine(store));
-    io.out(
-      `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
-    );
+    if (!onlyShown)
+      io.out(
+        `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
+      );
     if (slots.pending) {
       for (const l of slotsLines()) (slotsDone === "refused" ? io.err : io.out)(l);
       if (slotsDone === "shown")

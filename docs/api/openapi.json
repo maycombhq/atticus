@@ -6833,6 +6833,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 1000000
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   }
                 },
                 "additionalProperties": false
@@ -7295,6 +7299,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 1000000
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   }
                 },
                 "additionalProperties": false
@@ -46584,6 +46592,9 @@
                   },
                   "command": {
                     "type": "string"
+                  },
+                  "plan": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -46863,6 +46874,9 @@
                     }
                   },
                   "command": {
+                    "type": "string"
+                  },
+                  "plan": {
                     "type": "string"
                   }
                 },

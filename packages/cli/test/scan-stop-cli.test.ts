@@ -283,6 +283,68 @@ describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)"
   );
 
   it(
+    "the app's confirm of a scan's removals carries the refusal's plan, and another list writes nothing",
+    async () => {
+      const root = await scannedForge();
+      const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+      const text = await readFile(manifest, "utf8");
+      await writeFile(
+        manifest,
+        text.replace("  - id: forge-ledger\n", "  - id: forge-ledger\n    archived: true\n"),
+      );
+      const c = capture();
+      expect(await main(["scan", "--root", root, "--no-drift", "--json"], c.io)).toBe(1);
+      const report = JSON.parse(c.out.join("\n")) as {
+        refused: { reasons: string[]; allowRemovals: number; plan: string };
+      };
+      expect(report.refused.reasons).toEqual(["large-removals"]);
+      // The review of beta.27: the refusal carries the plan of what it lists (the app sends it back).
+      expect(report.refused.plan).toMatch(/^[0-9a-f]{64}$/);
+      const { lastBuildOf } = await import("../src/build-report.js");
+      expect((await lastBuildOf(root))?.refused?.plan).toBe(report.refused.plan);
+      // Between the refusal and the confirm, the repo leaves the manifest instead: the same
+      // records go for another reason, which the page never showed.
+      await writeFile(manifest, text.replace(/ {2}- id: forge-ledger\n(?: {4}.*\n)+/, ""));
+      const before = { g: files(generated(root)), s: files(sources(root)) };
+      const { scanCommand } = await import("../src/scan-commands.js");
+      const late = capture();
+      expect(
+        await scanCommand(
+          root,
+          {
+            noDrift: true,
+            json: true,
+            allowRemovals: report.refused.allowRemovals,
+            plan: report.refused.plan,
+          },
+          late.io,
+        ),
+      ).toBe(1);
+      const said = JSON.parse(late.out.join("\n")) as {
+        written: boolean;
+        refused: { message: string; plan?: string; reasons: string[] };
+      };
+      expect(said.written).toBe(false);
+      expect(said.refused.message).toMatch(
+        /^Nothing written: .* isn't what the page listed any more/,
+      );
+      expect({ g: files(generated(root)), s: files(sources(root)) }).toEqual(before);
+      // What it lists now, with its own plan, confirms with that plan.
+      expect(said.refused.plan).toMatch(/^[0-9a-f]{64}$/);
+      expect(said.refused.plan).not.toBe(report.refused.plan);
+      const n = (said.refused as { allowRemovals?: number }).allowRemovals!;
+      // (The scan exits 1 for the org pack's own problem once the ledger isn't listed: a skill
+      // names its repo type. It writes.)
+      const ok = capture();
+      await scanCommand(root, { noDrift: true, allowRemovals: n, plan: said.refused.plan! }, ok.io);
+      expect(ok.err.join("\n")).not.toMatch(/isn't what the page listed/);
+      expect(ok.out.join("\n")).toMatch(new RegExp(`Removed ${n} records`));
+      expect(Object.keys(own(root, "forge-ledger"))).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     "everything cloned and read writes exactly what the scan merges, and a rescan writes nothing new",
     async () => {
       const root = await scannedForge();

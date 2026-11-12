@@ -10,8 +10,7 @@ import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./c
 import { AiChip } from "../../app/decisions.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { OrgPackEditors } from "../setup/OrgPackForms.js";
-import { RefusalView } from "../setup/CatalogBuild.js";
-import { followJob } from "../../app/job.js";
+import { curateListedEdits, RefusalView } from "../setup/CatalogBuild.js";
 
 const T = COPY.know;
 
@@ -1414,10 +1413,24 @@ export function ScanSourcesTable({ sources }: { sources: readonly ScanSourceView
  * allowRemovals given once is never carried into a later discard, or the reverse).
  */
 export function scanAsked(body: Record<string, unknown>): Record<string, unknown> {
-  const { allowRemovals: _a, discardEdits: _d, ...rest } = body;
+  const { allowRemovals: _a, discardEdits: _d, plan: _p, ...rest } = body;
   void _a;
   void _d;
+  void _p;
   return rest;
+}
+
+/**
+ * A scan's confirm (ADR 0195 point 4): what the scan was asked for, the count, and the plan of
+ * the list the refusal showed (the review of beta.27), which the scan works out again under its
+ * lock: another list writes nothing.
+ */
+export function scanConfirmBody(
+  body: Record<string, unknown>,
+  refused: Pick<Api.BuildRefusalViewT, "plan">,
+  counts: { allowRemovals: number } | { discardEdits: number },
+): Record<string, unknown> {
+  return { ...scanAsked(body), ...counts, ...(refused.plan ? { plan: refused.plan } : {}) };
 }
 
 export function Scans() {
@@ -1545,27 +1558,23 @@ export function Scans() {
                   refused={buildRefused}
                   confirmLabel={SS.confirmScan}
                   onAllowRemovals={(n) =>
-                    start("/api/scan", T.scan2, { ...scanAsked(lastBody), allowRemovals: n }).then(
-                      () => undefined,
-                    )
+                    start(
+                      "/api/scan",
+                      T.scan2,
+                      scanConfirmBody(lastBody, buildRefused, { allowRemovals: n }),
+                    ).then(() => undefined)
                   }
                   onCurate={async (n) => {
                     // The hand edits as the build lists them now, confirmed by their plan.
-                    const now = await api<Api.CatalogBuildViewT>("/api/build");
-                    const listed = (r: Api.BuildRefusalViewT | undefined) =>
-                      (r?.edits ?? []).map((e) => `${e.how} ${e.path}`).join("\n");
-                    if (listed(now.pending.refused) !== listed(buildRefused))
-                      throw new Error(COPY.catalogBuild.editsChanged);
-                    await followJob("/api/build/edits/curate", {
-                      count: n,
-                      plan: now.pending.plan,
-                    });
+                    await curateListedEdits(buildRefused, n);
                     setCuratedAfter(job.id);
                   }}
                   onDiscard={(n) =>
-                    start("/api/scan", T.scan2, { ...scanAsked(lastBody), discardEdits: n }).then(
-                      () => undefined,
-                    )
+                    start(
+                      "/api/scan",
+                      T.scan2,
+                      scanConfirmBody(lastBody, buildRefused, { discardEdits: n }),
+                    ).then(() => undefined)
                   }
                 />
               )}

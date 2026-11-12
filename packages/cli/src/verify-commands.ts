@@ -81,6 +81,12 @@ export interface VerifyCommandOptions {
   /** With --write: `--allow-removals <count>`, `--discard-edits <count>` (ADR 0195 point 4). */
   allowRemovals?: number;
   discardEdits?: number;
+  /**
+   * The app's confirm (Apply; no flag takes it, so a person's confirmations stay counts): the
+   * plan of the refusal the counts confirm, worked out again under the scan's lock; when the
+   * build lists anything else, nothing is written (the review of beta.27).
+   */
+  plan?: string;
   json?: boolean;
   /** R1: print every skipped line, reviewed glob holding some and uncovered spec operation. */
   skipped?: boolean;
@@ -441,6 +447,7 @@ export async function verifyCommand(
           ...(commit ? { commit } : {}),
           ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
           ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+          ...(o.plan !== undefined ? { plan: o.plan } : {}),
           onRefused: (r) => (refusedBuild = r.guard.refused),
         },
         { ...io, out: () => undefined },
@@ -706,6 +713,7 @@ export async function verifyCommand(
       ...(commit ? { commit } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+      ...(o.plan !== undefined ? { plan: o.plan } : {}),
     },
     io,
   );

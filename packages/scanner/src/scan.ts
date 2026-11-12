@@ -585,10 +585,13 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ...(o.git ? { git: o.git } : {}),
     });
     if (o.carryFacts) {
+      // The scan settings' excluded paths (ADR 0075): a file the scan leaves out isn't unread.
+      const exclude = op.scanSettings.find((s) => s.repo === r.id)?.exclude.map((e) => e.path);
       const at = await factsSlotAt(o.root, op, r.id, {
         dir,
         commit: state.commit,
         ...(o.git ? { git: o.git } : {}),
+        ...(exclude?.length ? { exclude } : {}),
       });
       if (at) factsAt.set(r.id, at);
     }

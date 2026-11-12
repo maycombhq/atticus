@@ -9,12 +9,14 @@ import {
   readersSlotRead,
   scanEstate,
   serializeReadersSlot,
+  type BuildAndWrite,
   type SlotWrite,
 } from "@maycombhq/scanner";
 import { readdir } from "node:fs/promises";
 import { branchSlug, createWorkspace, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { branchCatalogFolder } from "./repo-branches.js";
+import { buildPlanOf, pageChanged } from "./build-report.js";
 import { diffLines } from "./scan-commands.js";
 
 /**
@@ -41,6 +43,8 @@ export async function scanBranch(
     json?: boolean;
     allowRemovals?: number;
     discardEdits?: number;
+    /** The app's confirm: the refusal's plan, worked out again under the lock (scanCommand's). */
+    plan?: string;
   },
   io: Output,
 ): Promise<number> {
@@ -133,9 +137,13 @@ export async function scanBranch(
     ...(first && firstFiles ? { discardEdits: firstFiles } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+    ...(o.plan !== undefined
+      ? { expect: (listed: BuildAndWrite["guard"]) => buildPlanOf(listed) === o.plan }
+      : {}),
   });
-  if (built.guard.refused) {
-    for (const l of built.guard.refused.message.split("\n")) io.err(l);
+  if (built.changed) io.err(pageChanged("what the build would remove or discard"));
+  if (built.guard.refused || built.changed) {
+    for (const l of built.guard.refused?.message.split("\n") ?? []) io.err(l);
     return 1;
   }
   const write = built.write!;
