@@ -387,6 +387,96 @@ export const EXAMPLES: Example[] = [
       lacks("ledger's GET /accounts, which its new read doesn't serve", getAccounts),
     ],
   ),
+  // Beta.27.2 (the review): a legacy join out of a caller read from facts leaves without being
+  // derived only when that read places the call elsewhere, or shows it gone from a file it read.
+  seq(
+    "links-are-live",
+    "after the upgrade the publisher is read from facts while the listener stays legacy: the topic's legacy join stays, the join having no listener to pair it with",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the topic's arrow, kept from before the upgrade", topic),
+      has("the arrow from payments to GET /accounts", callsLedger),
+    ],
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the caller drops its client and is read from facts: a file no fact cites may be one the read hasn't reached, so the legacy join stays",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "change-code", slot: 1, code: { ...paymentsCode, calls: [] } },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger),
+      has("the topic's arrow, kept from before the upgrade", topic),
+    ],
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the caller's call goes to another repo and the caller is read from facts: the legacy join leaves, and the new arrow is drawn",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      {
+        t: "change-code",
+        slot: 1,
+        code: { ...paymentsCode, calls: [{ method: "GET", path: "/notices", host: notify.host }] },
+      },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      lacks(
+        "the arrow from payments to GET /accounts, which its read places elsewhere",
+        callsLedger,
+      ),
+      has(
+        "the arrow from payments to GET /notices",
+        arrow("payments-api", "notify-api", "GET", "/notices"),
+      ),
+      has("the topic's arrow, kept from before the upgrade", topic),
+    ],
+    {
+      repos: [
+        ...TWO.repos,
+        {
+          base: notify,
+          code: {
+            endpoints: [{ method: "GET", path: "/notices" }],
+            calls: [],
+            publishes: [],
+            consumes: [],
+          },
+        },
+      ],
+    },
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the caller's call goes to a host no repo lists and the caller is read from facts: the join can't place it, so the legacy join stays",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      {
+        t: "change-code",
+        slot: 1,
+        code: {
+          ...paymentsCode,
+          calls: [{ method: "GET", path: "/accounts", host: ledger.legacyHost }],
+        },
+      },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+  ),
   seq(
     "completeness",
     "after the upgrade a person deletes a legacy join's arrow by hand and makes it curated: the suppress takes it out, and the build is not expected to keep it",

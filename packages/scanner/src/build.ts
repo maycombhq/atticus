@@ -21,6 +21,7 @@ import {
   loadOrgPack,
   mergeCatalog,
   listQuestions,
+  normalizePath,
   questionsRelOf,
   readSharedMaps,
   readTrafficFile,
@@ -883,25 +884,62 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     ...legacyAll,
     ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
   ]);
-  // Beta.27 (a user's Map): an adopted arrow whose caller is read from facts, its facts slot
-  // written since the upgrade, is the facts' to draw. The estate join over the facts slots joins
-  // every call of that repo; an arrow out of it the join doesn't make is no longer so (a path
-  // guess the call's facts no longer give, a forwarding call a person said isn't a call), and
-  // leaves, whichever slot adopted it. Until the caller's slot changes, the first build after
-  // the upgrade still changes nothing.
-  const factsRepos = new Set(factRepos.map((x) => x.repo));
+  // Beta.27 (a user's Map), narrowed by its review (ADR 0195 addendum "a legacy join its
+  // caller's facts place elsewhere"): an adopted call arrow whose caller is read from facts, its
+  // facts slot written since the upgrade, leaves without being derived when that read places the
+  // call somewhere else. The read must cite every file the arrow cites in the caller (a file no
+  // fact cites may be one a partial read hasn't reached), and every call of it at the arrow's
+  // caller lines, or with its method and path, must be one the estate join placed (joined to
+  // another entry, or left to an outside system); none left is the call gone from a file read (a
+  // forwarding call a person said isn't a call). A call the join couldn't place (a host no repo
+  // lists, a question open) keeps the arrow: point 6, never dropped because the build can't
+  // derive it yet. An event's arrow joins two sources and never leaves this way (a legacy
+  // listener gives the join nothing to pair the publish with). Until the caller's slot changes,
+  // the first build after the upgrade still changes nothing.
+  const factsOf = new Map(factRepos.map((x) => [x.repo, x.facts] as const));
   const sinceUpgrade = (repo: string) =>
     !legacySlot || (used.get(repo) ?? []).some((x) => legacySlot.slot.inputs[x.path] !== x.sha256);
+  // A call is placed unless it is still a loose end after the merge (the estate join or the
+  // merge's hosts joined it, or its fact names its target) or left to an outside system (J2).
+  const looseNow = new Set(records.filter((r) => r.kind === "Unresolved").map((r) => r.id));
+  const unplacedCalls = new Set(
+    [...(projection?.per ?? new Map())].flatMap(([repo, x]) =>
+      [...x.looseFact].flatMap(([u, fact]) => (looseNow.has(u) ? [`${repo}\u0000${fact}`] : [])),
+    ),
+  );
+  for (const o of projection?.whole.outside ?? [])
+    unplacedCalls.delete(`${o.call.repo}\u0000${o.call.fact}`);
+  type CallerEv = { repo?: string; side?: string; source?: string; path?: string; line?: number };
   const callerReadNow = (r: CatalogRecord): boolean => {
     if (r.kind !== "Interface") return false;
-    const from = (r as unknown as { from?: string }).from;
-    const callers = [
-      ...(from ? (ends.get(from) ?? []) : []),
-      ...(r.evidence as { repo?: string; side?: string }[]).flatMap((e) =>
-        e.side === "caller" && e.repo ? [e.repo] : [],
-      ),
-    ];
-    return callers.some((repo) => factsRepos.has(repo) && sinceUpgrade(repo));
+    const x = r as unknown as { from?: string; method?: string; normalizedPath?: string };
+    if (!x.method || r.via === "event-bus" || r.via === "mq") return false;
+    const ev = r.evidence as CallerEv[];
+    const callers = new Set([
+      ...(x.from ? (ends.get(x.from) ?? []) : []),
+      ...ev.flatMap((e) => (e.side === "caller" && e.repo ? [e.repo] : [])),
+    ]);
+    for (const repo of callers) {
+      const facts = factsOf.get(repo);
+      if (!facts || !sinceUpgrade(repo)) continue;
+      const lines = ev.filter(
+        (e) => e.repo === repo && e.side === "caller" && e.source === "code" && !!e.path,
+      );
+      const cited = new Set(
+        facts.flatMap((f) => [f.cite.file, ...(f.cite.with ?? []).map((w) => w.file)]),
+      );
+      if (!lines.every((e) => cited.has(e.path!))) continue;
+      const at = new Set(lines.map((e) => `${e.path}:${e.line}`));
+      const calls = facts.filter(
+        (f) =>
+          f.kind === "call" &&
+          (at.has(`${f.cite.file}:${f.cite.line}`) ||
+            ((f.method ?? "").toUpperCase() === x.method &&
+              normalizePath(f.path) === x.normalizedPath)),
+      );
+      if (!calls.some((f) => unplacedCalls.has(`${repo}\u0000${f.id}`))) return true;
+    }
+    return false;
   };
   // A live repo's legacy records, as they are; an arrow of one to a repo removed or archived
   // leaves with that repo (point 6), as a legacy join does.

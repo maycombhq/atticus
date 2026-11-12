@@ -161,7 +161,50 @@ export function withFactsEstateJoins(
     }),
     join: p.whole,
   });
-  return [...joined, ...termGrantRecords(p.terms, p.repos)];
+  return [...toOutsideHosts(joined, op, p), ...termGrantRecords(p.terms, p.repos)];
+}
+
+/** A host as an outside system's alias may be written: labels and dots, a port maybe. */
+const HOST_ALIAS = /^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/i;
+
+/**
+ * The review of beta.27: a call whose own host is still a token (a gateway's forwarding call to
+ * `@targetVendorUrl@`, or one whose lines alone write it) that the join leaves to an outside
+ * system by a host the profile lists as that system's alias (O1, J2) is written as a call to that
+ * host, so the merge draws it to the system as it draws a call that names the host itself. It
+ * was left a loose end with the token for its host, and the Map drew no arrow. A target that
+ * isn't a listed alias (a host only the call's settings give, a name a person answered) is left
+ * as it was: the merge would take an unlisted host's first label for a component.
+ */
+function toOutsideHosts(
+  records: readonly CatalogRecord[],
+  op: OrgPack,
+  p: FactsEstateProjection,
+): CatalogRecord[] {
+  const aliases = new Set(
+    outsideSystems(op)
+      .filter((n) => HOST_ALIAS.test(n))
+      .map((n) => n.toLowerCase()),
+  );
+  const raw = new Map<string, string>();
+  for (const o of p.whole.outside ?? []) {
+    if (!aliases.has(o.target.toLowerCase())) continue;
+    const x = p.per.get(o.call.repo);
+    const f = x?.facts.find((y) => y.id === o.call.fact);
+    if (!x || f?.kind !== "call" || !["rest", "soap"].includes(f.callType)) continue;
+    // Only a call whose own host is a token or missing: one that names a host keeps its URL.
+    if (f.host && !/@[^@\s]+@|\{\{[^}]+\}\}|\$\{/.test(f.host)) continue;
+    const u = [...x.looseFact].find(([, fact]) => fact === f.id)?.[0];
+    if (!u) continue;
+    const path = f.path.startsWith("/") ? f.path : `/${f.path}`;
+    raw.set(u, `${f.method?.toUpperCase() ?? "ANY"} https://${o.target}${path}`);
+  }
+  if (!raw.size) return [...records];
+  return records.map((r) =>
+    r.kind === "Unresolved" && raw.has(r.id)
+      ? ({ ...r, unresolvedKind: "http-call", raw: raw.get(r.id)! } as CatalogRecord)
+      : r,
+  );
 }
 
 /** Records after the merge, without the loose end of a listener a topic join paired with a publish. */

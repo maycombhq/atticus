@@ -167,12 +167,28 @@ const GUESSED = [
   ["refunds-api", "GET", "/refunds/{}"],
   ["refunds-api", "POST", "/refunds"],
 ];
+/**
+ * The review of beta.27: a forwarding call the join leaves to a vendor by a host the profile
+ * lists as its alias is drawn to that system on the Map, as a call written with the host is.
+ */
+const VENDOR_ARROW: Record<string, string[]> = {
+  "call.get.payments-id": ["northwind-pay", "GET", "/payments/{}"],
+  "call.get.refunds-id": ["northwind-pay", "GET", "/refunds/{}"],
+  "call.post.payments": ["northwind-pay", "POST", "/payments"],
+  "call.post.refunds": ["northwind-pay", "POST", "/refunds"],
+};
+const toVendor = (...ids: string[]) => ids.map((id) => VENDOR_ARROW[id]!).sort();
+const ALL_TO_VENDOR = toVendor(...Object.keys(VENDOR_ARROW));
 
 describe("a proxy whose target URL a config.json token sets by its name (beta.27)", () => {
   it("sends the proxy's calls out of the estate to the vendor's hosts, never to a service by its path", async () => {
     const root = metarepo();
     for (const r of Object.keys(COMMIT)) await verify(root, r);
-    expect(await fromProxy(root)).toEqual([]);
+    expect(await fromProxy(root)).toEqual(ALL_TO_VENDOR);
+    // The arrows to the vendor as the catalog holds them (golden): each a guess's confidence
+    // (inferred), citing its caller's line and no callee's (the vendor's code isn't read).
+    const vendor = await proxyArrows(root);
+    expect(vendor).toEqual(golden("catalog-to-vendor.yaml", vendor));
     expect(await outsideOf(root)).toEqual(TO_VENDOR);
     expect((await listQuestions(root, { repo: PROXY })).questions).toEqual([]);
   }, 120_000);
@@ -224,7 +240,7 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
     // The read again records the token's settings, and gives another route no forwarding call.
     writeFileSync(join(root, "facts", `${PROXY}.jsonl`), rereadWithout("call.post.payments"));
     await verify(root, PROXY);
-    expect(await fromProxy(root)).toEqual([]);
+    expect(await fromProxy(root)).toEqual(toVendor("call.get.payments-id", "call.post.refunds"));
     expect(await outsideOf(root)).toEqual(
       TO_VENDOR.filter(([f]) => f === "call.get.payments-id" || f === "call.post.refunds"),
     );
@@ -264,7 +280,7 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
     );
     writeFileSync(join(root, "facts", `${PROXY}.jsonl`), rereadWithout("call.post.payments"));
     const said = (await verify(root, PROXY)).split("\n");
-    expect(await fromProxy(root)).toEqual([]);
+    expect(await fromProxy(root)).toEqual(toVendor("call.get.payments-id", "call.post.refunds"));
     // Each arrow said as it leaves, with why, and counted in the write's links.
     expect(
       said.filter((l) =>
@@ -274,6 +290,41 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
       ),
     ).toHaveLength(4);
     expect(said.filter((l) => /^ {2}removed Interface\/if-/.test(l))).toHaveLength(4);
-    expect(said.some((l) => /Links: .*Interfaces -4\b/.test(l))).toBe(true);
+    // The two calls left are drawn to the vendor (the review): two arrows in, four out.
+    expect(said.some((l) => /Links: .*Interfaces \+2 -4\b/.test(l))).toBe(true);
+  }, 240_000);
+
+  it("keeps the adopted arrows while the proxy's read hasn't reached the file their calls are in (the review)", async () => {
+    // A beta.26 metarepo with the path-guessed arrows, adopted by the upgrade.
+    const root = metarepo(pathGuessed());
+    for (const r of Object.keys(COMMIT)) await verify(root, r);
+    rmSync(join(root, "catalog", "sources"), { recursive: true, force: true });
+    rmSync(join(root, ".atticus"), { recursive: true, force: true });
+    const up = { out: [] as string[], err: [] as string[] };
+    const code = await main(["upgrade", "--yes", "--root", root], {
+      out: (l) => up.out.push(l),
+      err: (l) => up.err.push(l),
+    });
+    expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
+    expect(await fromProxy(root)).toEqual(GUESSED);
+
+    // A read in parts: its first part read config.json, not the proxy's flows. Nothing it read
+    // says where the routes' calls go, so the arrows adopted from before the upgrade stay
+    // (ADR 0195 point 6: never dropped because the build can't derive them yet).
+    writeFileSync(
+      join(root, "facts", `${PROXY}.jsonl`),
+      lines(factsOf(PROXY))
+        .filter((l) => l.includes('"kind":"config"'))
+        .join("\n") + "\n",
+    );
+    const said = (await verify(root, PROXY)).split("\n");
+    expect(said.filter((l) => /^A legacy join left/.test(l))).toEqual([]);
+    expect(await fromProxy(root)).toEqual(GUESSED);
+
+    // The read whole: its calls go to the vendor, so the guessed arrows go.
+    writeFileSync(join(root, "facts", `${PROXY}.jsonl`), factsOf(PROXY));
+    await verify(root, PROXY);
+    expect(await fromProxy(root)).toEqual(ALL_TO_VENDOR);
+    expect(await outsideOf(root)).toEqual(TO_VENDOR);
   }, 240_000);
 });

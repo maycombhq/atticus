@@ -16,6 +16,6 @@ The profile (`org-pack/profiles/forge/profile.yaml`) lists Northwind Pay as a ve
 - `expected/join.yaml`, `expected/records.yaml`: the proxy's forwarding calls leave the estate for the vendor's hosts, never to the services by their path; the checkout's calls join the proxy's flows by the gateway's host.
 - `expected/join-no-forward.yaml`: one route's forwarding call left out (a person said it isn't a call), another's never read: those routes join nothing; the checkout's call to one ends at the route.
 
-`expected/catalog-path-guess.yaml` is the catalog an earlier read's path guess gave (`packages/cli/test/policy-tokens-cli.test.ts`): each arrow inferred, flagged `joined-by-path`, with its caller's line; the test then shows the arrows go once the proxy is read again, whether the build drew them or a beta.26 catalog was adopted with them.
+`expected/catalog-to-vendor.yaml` is the proxy's arrows in the catalog the build writes (`packages/cli/test/policy-tokens-cli.test.ts`): each forwarding call drawn to the Northwind Pay system, whose alias is the host the join resolved the token to. `expected/catalog-path-guess.yaml` is the catalog an earlier read's path guess gave (`packages/cli/test/policy-tokens-cli.test.ts`): each arrow inferred, flagged `joined-by-path`, with its caller's line; the test then shows the arrows go once the proxy is read again, whether the build drew them or a beta.26 catalog was adopted with them.
 
 Files here are byte-exact: facts cite their line numbers.

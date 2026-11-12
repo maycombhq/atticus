@@ -1,0 +1,44 @@
+- id: if-2a440971e8130d6c
+  from: northwind-pay-proxy
+  to: northwind-pay
+  method: GET
+  normalizedPath: /payments/{}
+  confidence: inferred
+  flags: []
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:4
+- id: if-2e5c171a8d49c2ae
+  from: northwind-pay-proxy
+  to: northwind-pay
+  method: POST
+  normalizedPath: /refunds
+  confidence: inferred
+  flags: []
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:10
+- id: if-8363cc8a9d2c9847
+  from: northwind-pay-proxy
+  to: northwind-pay
+  method: GET
+  normalizedPath: /refunds/{}
+  confidence: inferred
+  flags: []
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:13
+- id: if-be7f5c2927ed9b45
+  from: northwind-pay-proxy
+  to: northwind-pay
+  method: POST
+  normalizedPath: /payments
+  confidence: inferred
+  flags: []
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:7
