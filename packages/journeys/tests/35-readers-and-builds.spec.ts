@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,9 +22,12 @@ import {
  * metarepo is the Forge estate built from its golden slots (every repo's readers slot, the
  * ledger's facts snapshot) with `atticus catalog build`, as a team has it after beta.27's
  * upgrade. A person reads what the readers found beside the facts, dismisses one (its command in
- * the Console), and both pages fit VS Code's panel without scrolling sideways; then a scan-like
- * read that lost most of a repo's records waits for its count, is confirmed, and is undone; a
- * hand edit is made curated. Everything is the invented Forge estate (CLAUDE.md rule 3).
+ * the Console), promotes another to their own fact (shown first, then verify), and both pages
+ * fit VS Code's panel without scrolling sideways; then a scan-like read that lost most of a
+ * repo's records is refused in a terminal (its report is the page's last build), waits for its
+ * count, is confirmed, and is undone; a hand edit is made curated; and a catalog from before
+ * beta.27 is upgraded from the app, every file it writes listed and confirmed with their count.
+ * Everything is the invented Forge estate (CLAUDE.md rule 3).
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +127,44 @@ test("reads what the readers found beside the facts, and dismisses one", async (
   await accessible(page, "the cross-check with the Console open");
 });
 
+test("promotes what the readers found to the person's own fact, shown first", async ({ page }) => {
+  await open(page, a(), "crosscheck?repo=forge-ledger");
+  const key = "Endpoint|GET /accounts/{}/balance";
+  await page.getByRole("button", { name: `Promote ${key} to your own fact` }).click();
+  const dialog = page.getByRole("dialog", { name: "Promote to your own fact" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByText("Cites src/main/java/forge/ledger/LedgerEndpoints.java:8 at commit aaaaaaa"),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("It claims /accounts/{id}/balance is written on that line."),
+  ).toBeVisible();
+  await expect(dialog.getByText("facts/forge-ledger.jsonl isn't here")).toBeVisible();
+  await accessible(page, "promote's confirm");
+  await shot(page, "promote-1440-dark");
+  const before = catalogFiles(a().root);
+  await dialog.getByRole("button", { name: "Write it, then verify" }).click();
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
+  // This metarepo has no base clone of the ledger, so verify can't check the line yet: the fact
+  // is written, and the item says it isn't verified yet (and why the step stopped).
+  const item = page.locator("li.xc-item", { hasText: "GET /accounts/{}/balance" });
+  await expect(item.getByText("Your fact: not verified yet")).toBeVisible();
+  await expect(item.getByRole("alert")).toContainText("Your fact is written; verify stopped");
+  const facts = readFileSync(join(a().root, "facts/forge-ledger.jsonl"), "utf8");
+  expect(facts).toContain('"by":"person"');
+  expect(facts).toContain('"line":8');
+  // Nothing in the catalog changed: verify --write (Apply) does that.
+  expect(catalogFiles(a().root)).toEqual(before);
+  await accessible(page, "a promoted item");
+  await shot(page, "promoted-1440-dark");
+  await page.getByRole("button", { name: "Show in the Console" }).click();
+  await expect(
+    page.getByRole("log", {
+      name: `Promote on forge-ledger: ${key}, then atticus verify forge-ledger`,
+    }),
+  ).toContainText("promoted");
+});
+
 test("fits VS Code's panel at 780 and 420 px without scrolling sideways", async ({ page }) => {
   for (const width of [780, 420]) {
     for (const route of ["crosscheck?repo=forge-ledger", "catalog-builds"]) {
@@ -142,12 +183,23 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   const was = readFileSync(slot, "utf8");
   writeFileSync(slot, JSON.stringify({ ...s, records: s.records.slice(0, 1) }, null, 2) + "\n");
   const before = catalogFiles(a().root);
+  // Someone builds in a terminal first: it refuses, and its report is the page's last build.
+  expect(atticus(a().root, "catalog", "build")).toMatch(/--allow-removals \d+/);
   await open(page, a(), "scans");
   await page.getByRole("link", { name: "Catalog builds: confirm, undo, prune" }).click();
   await expect(page).toHaveURL(/#\/catalog-builds$/);
   await expect(page.getByText("The build waits for you: nothing has been written.")).toBeVisible();
   const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
   const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+  const last = page.locator(".panel", {
+    has: page.getByRole("heading", { name: "The last build here" }),
+  });
+  await expect(last.getByText("Refused: nothing written")).toBeVisible();
+  await expect(last.getByText(`The ${n} records it would have removed, and why`)).toBeVisible();
+  await expect(last.getByText(`atticus catalog build --allow-removals ${n}`).first()).toBeVisible();
+  await accessible(page, "a terminal's refused build");
+  await last.scrollIntoViewIfNeeded();
+  await shot(page, "last-build-refused-1440-dark");
   await review.click();
   const dialog = page.getByRole("dialog", { name: `Confirm ${n} removals` });
   await expect(dialog).toBeVisible();
@@ -170,6 +222,9 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   ).toBeVisible();
   const after = catalogFiles(a().root);
   expect(Object.keys(after).length).toBeLessThan(Object.keys(before).length);
+  // The app's build is now the last one: written, its removals each with why.
+  await expect(last.getByText("Written", { exact: true })).toBeVisible();
+  await expect(last.getByText(`The ${n} records it removed, and why`)).toBeVisible();
 
   // Undo the build: the files it puts back are listed first.
   await page.getByRole("button", { name: "Undo the latest build" }).first().click();
@@ -204,4 +259,71 @@ test("a hand edit is never overwritten: it is made curated", async ({ page }) =>
     page.getByText("catalog/generated is what the slots and inputs build."),
   ).toBeVisible();
   expect(readFileSync(path, "utf8")).toContain("-by-hand");
+});
+
+test("a catalog from before beta.27 is upgraded from the app, every file listed first", async ({
+  page,
+}) => {
+  // The Forge metarepo as beta.26 left it: catalog/generated and nothing else of the build's.
+  const root = await slotsMetarepo();
+  await rm(join(root, "catalog/sources"), { recursive: true });
+  await rm(join(root, ".index"), { recursive: true, force: true });
+  const old = await startApp(root);
+  try {
+    const before = catalogFiles(root);
+    await open(page, old, "catalog-builds");
+    const panel = page.locator(".panel", {
+      has: page.getByRole("heading", { name: "Upgrade to source slots" }),
+    });
+    await expect(panel.getByText("The first build after it gives every record")).toBeVisible();
+    await expect(
+      panel.getByText(/is copied to catalog\/sources\/legacy\/generated-before-upgrade/),
+    ).toBeVisible();
+    await expect(panel.getByRole("table", { name: "The slots the upgrade writes" })).toBeVisible();
+    // The upgrade's other steps (the org pack's files) wait first: they may change what this
+    // step writes, so it is confirmed only after them.
+    const others = panel.getByRole("button", { name: "Run the upgrade" });
+    await expect(
+      others.or(panel.getByRole("button", { name: /^Review the / })).first(),
+    ).toBeVisible();
+    if (await others.isVisible()) {
+      await accessible(page, "the upgrade, other steps waiting");
+      await others.scrollIntoViewIfNeeded();
+      await shot(page, "upgrade-others-1440-dark");
+      await others.click();
+      await expect(panel.getByText("Other upgrade steps wait first")).toBeHidden({
+        timeout: 60_000,
+      });
+    }
+    expect(existsSync(join(root, "catalog/sources"))).toBe(false);
+    const review = panel.getByRole("button", { name: /^Review the \d+ files it writes…$/ });
+    await expect(review).toBeVisible({ timeout: 30_000 });
+    await accessible(page, "the upgrade's dry run");
+    await panel.scrollIntoViewIfNeeded();
+    await shot(page, "upgrade-1440-dark");
+    const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+    await review.click();
+    const dialog = page.getByRole("dialog", { name: `Upgrade: write ${n} files` });
+    await expect(
+      dialog.getByRole("list", { name: "Every file the upgrade writes" }).getByRole("listitem"),
+    ).toHaveCount(n);
+    await accessible(page, "the upgrade's confirm");
+    await shot(page, "confirm-upgrade-1440-dark");
+    const write = dialog.getByRole("button", { name: `Write ${n} files` });
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n - 1));
+    await expect(write).toBeDisabled();
+    expect(existsSync(join(root, "catalog/sources"))).toBe(false);
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+    await write.click();
+    await expect(dialog).toBeHidden({ timeout: 60_000 });
+    await expect(
+      page.getByText("catalog/generated is what the slots and inputs build."),
+    ).toBeVisible();
+    await expect(panel).toBeHidden();
+    // Every record adopted, the catalog byte for byte as it was.
+    expect(existsSync(join(root, "catalog/sources/build.json"))).toBe(true);
+    expect(catalogFiles(root)).toEqual(before);
+  } finally {
+    await stopApp(old);
+  }
 });

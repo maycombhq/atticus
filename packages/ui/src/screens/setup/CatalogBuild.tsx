@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { ShowInConsole } from "../../app/activity.js";
+import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -12,9 +13,12 @@ import "../map/crosscheck.css";
  * Set up › Scans › Catalog builds (ADR 0195 points 4 and 7, ticket CS3): where each repo's records
  * come from, what the next build would do, and the confirm steps: a refused build's removals
  * (listed, confirmed with their count), its hand edits (made curated, or discarded with their
- * count), undo of the last five builds (the files listed first) and prune (the files listed
- * first). Every step is the CLI's own command, run as a local job whose lines are in the Console;
- * nothing changes until it is confirmed, and it confirms exactly the list shown.
+ * count), the upgrade to source slots for a catalog from before beta.27 (every file it writes,
+ * the copy it keeps and the first build's changes listed, confirmed with the count of files),
+ * undo of the last five builds (the files listed first) and prune (the files listed first); and
+ * the last build's own report, whichever command built, a terminal's refusals included. Every
+ * step is the CLI's own command, run as a local job whose lines are in the Console; nothing
+ * changes until it is confirmed, and it confirms exactly the list shown.
  */
 
 const B = COPY.catalogBuild;
@@ -42,6 +46,8 @@ export function ConfirmDialog(p: {
   intro: string;
   children: ReactNode;
   confirm: string;
+  /** The confirm button's words while it runs (default: Building…). */
+  working?: string;
   /** The count to type, for removals and discards. */
   count?: number;
   onConfirm: () => Promise<void>;
@@ -160,12 +166,24 @@ export function ConfirmDialog(p: {
             aria-busy={busy}
             onClick={() => void go()}
           >
-            {busy ? B.building : p.confirm}
+            {busy ? (p.working ?? B.building) : p.confirm}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * What explains a removal, in words: each input other than a slot by what it is (an answer named
+ * as such, the owner's decision of 2026-11-11), then the build's other reasons.
+ */
+export function whyWords(r: Removal): string[] {
+  const inputs = r.inputs ?? [];
+  return [
+    ...inputs.map((i) => (B.input[i.what] ?? B.input.other!)(i.path)),
+    ...r.explainedBy.filter((w) => !inputs.length || !/^an input changed \(/.test(w)),
+  ];
 }
 
 /** The removals a build lists, each with its repos and what explains it. */
@@ -189,7 +207,7 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
             <td data-label={B.removalCol.repos}>
               {r.repos.length ? r.repos.join(", ") : B.noRepo}
             </td>
-            <td data-label={B.removalCol.why}>{r.explainedBy.join("; ")}</td>
+            <td data-label={B.removalCol.why}>{whyWords(r).join("; ")}</td>
           </tr>
         ))}
       </tbody>
@@ -486,9 +504,239 @@ export function PrunePanel(p: {
   );
 }
 
+/**
+ * The latest build's own report (CS2's build-report.json, whichever command built, in the app or
+ * a terminal): what it did or refused, its counts, each removal with why, and the commands that
+ * go on after a refusal.
+ */
+export function LastBuild({ last: l }: { last: Api.BuildReportViewT }) {
+  const refused = l.outcome === "refused";
+  const r = l.refused;
+  // A long list scrolls: it takes the focus, so it scrolls from the keyboard too.
+  const files = (xs: readonly { path: string; kind: string; id: string }[], label: string) => (
+    <ul className="cb-list mono" tabIndex={0} aria-label={label}>
+      {xs.map((f) => (
+        <li key={f.path}>
+          {f.kind}/{f.id}
+        </li>
+      ))}
+    </ul>
+  );
+  const count = (x: string) =>
+    !r
+      ? 0
+      : x === "large-removals"
+        ? (r.allowRemovals ?? 0)
+        : x === "unexplained-removals"
+          ? (r.unexplained?.length ?? 0)
+          : (r.discardEdits ?? r.edits?.length ?? 0);
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p style={{ margin: 0 }}>
+        <span
+          className={`chip ${refused || l.outcome === "stopped" ? "warn" : l.outcome === "written" ? "done" : "dim"}`}
+        >
+          {B.outcome[l.outcome] ?? l.outcome}
+        </span>{" "}
+        <span className="mono">{B.lastLine(l.command, when(l.at))}</span>
+      </p>
+      <p className="hud" style={{ margin: 0 }}>
+        {refused
+          ? B.lastWouldCounts(l.counts.added, l.counts.changed, l.counts.removed)
+          : B.lastCounts(l.counts.added, l.counts.changed, l.counts.removed)}
+        {l.slots.length ? ` · ${B.lastSlots(l.slots.length)}` : ""}
+      </p>
+      {l.stopped !== undefined && (
+        <p className="state error" role="note" style={{ margin: 0 }}>
+          {B.lastStopped(l.stopped)}
+        </p>
+      )}
+      {r && (
+        <ul style={{ margin: 0, paddingLeft: 18 }} aria-label={B.refusedTitle}>
+          {r.reasons.map((x) => (
+            <li key={x}>{B.reason[x]?.(count(x)) ?? x}</li>
+          ))}
+        </ul>
+      )}
+      {r?.unread && r.unread.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.lastUnread}
+          </p>
+          <ul className="cb-list">
+            {r.unread.map((u) => (
+              <li key={u.repo}>
+                <span className="mono">{u.repo}</span>: {u.why}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {r?.edits && r.edits.length > 0 && (
+        <ul className="cb-list mono" aria-label={B.editsCaption}>
+          {r.edits.map((e) => (
+            <li key={e.path}>
+              {B.how[e.how] ?? e.how}: {e.path}
+            </li>
+          ))}
+        </ul>
+      )}
+      {l.removed.length > 0 && (
+        <details open={refused}>
+          <summary>
+            {refused ? B.lastWouldRemove(l.removed.length) : B.lastRemoved(l.removed.length)}
+          </summary>
+          <RemovalsTable removals={l.removed} />
+        </details>
+      )}
+      {!refused && l.added.length > 0 && (
+        <details>
+          <summary>{B.lastAdded(l.added.length)}</summary>
+          {files(l.added, B.lastAdded(l.added.length))}
+        </details>
+      )}
+      {!refused && l.changed.length > 0 && (
+        <details>
+          <summary>{B.lastChanged(l.changed.length)}</summary>
+          {files(l.changed, B.lastChanged(l.changed.length))}
+        </details>
+      )}
+      {l.discarded && l.discarded.length > 0 && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {B.lastDiscarded(l.discarded.length)}
+        </p>
+      )}
+      {l.run.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.lastRun}
+          </p>
+          {l.run.map((c) => (
+            <Command key={c} text={c} label={COPY.runNext.copy} noRun />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The upgrade to source slots (ADR 0195 point 6) as a confirm step: each slot it writes and the
+ * records it adopts, the copy kept in generated-before-upgrade/, what the first build would change
+ * (nothing, else it refuses), then every file it writes, confirmed with their count.
+ */
+export function UpgradePanel(p: {
+  of: Loaded<Api.CatalogUpgradeViewT> & { reload?: () => void };
+  onUpgrade: (count: number, plan: string) => Promise<void>;
+}) {
+  const [asking, setAsking] = useState(false);
+  return (
+    <Panel title={B.upgradeTitle} span="1 / -1">
+      <p className="work-why" style={{ marginTop: 0 }}>
+        {B.upgradeIntro}
+      </p>
+      <View of={p.of} empty={(v) => !v.pending} emptyText={B.upgradeNone}>
+        {(v) => (
+          <div className="stack" style={{ gap: 8 }}>
+            <p style={{ margin: 0 }}>{B.upgradeRecords(v.records, v.write.length)}</p>
+            <table className="cb-table">
+              <caption className="sr">{B.upgradeSlotsCaption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{B.upgradeSlotCol.path}</th>
+                  <th scope="col">{B.upgradeSlotCol.repo}</th>
+                  <th scope="col" style={{ width: "6em" }}>
+                    {B.upgradeSlotCol.records}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.write.map((w) => (
+                  <tr key={w.path}>
+                    <th scope="row" className="mono" style={{ fontWeight: "normal" }}>
+                      {w.path}
+                    </th>
+                    <td data-label={B.upgradeSlotCol.repo}>{w.repo ?? B.upgradeJoins}</td>
+                    <td data-label={B.upgradeSlotCol.records}>{w.records}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p style={{ margin: 0 }}>{B.upgradeCopy(v.copy.dir, v.copy.files)}</p>
+            {v.firstBuildChanges.length === 0 ? (
+              <p className="state" style={{ margin: 0 }}>
+                {B.upgradeFirstBuild}
+              </p>
+            ) : (
+              <div className="state error" role="note">
+                <p style={{ margin: 0 }}>{B.upgradeDiffers(v.firstBuildChanges.length)}</p>
+                <ul className="cb-list mono">
+                  {v.firstBuildChanges.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {v.verifiable.length > 0 && (
+              <p className="work-say" style={{ margin: 0 }}>
+                {B.upgradeVerifiable(v.verifiable.join(", "))}
+              </p>
+            )}
+            {v.others.length > 0 && (
+              <div className="state" role="note">
+                <p style={{ margin: 0 }}>{B.upgradeOthers}</p>
+                {/* Home's own offer: `atticus upgrade` without --yes, which runs them and only
+                    shows this step; its job's file.changed reloads this list. */}
+                <UpgradeOffer />
+              </div>
+            )}
+            {v.applies && v.others.length === 0 && (
+              <div>
+                <button type="button" className="btn primary" onClick={() => setAsking(true)}>
+                  {B.upgradeReview(v.writes.length)}
+                </button>
+              </div>
+            )}
+            <details className="work-terminal">
+              <summary>{B.inTerminal}</summary>
+              <Command text={v.run} label={COPY.runNext.copy} noRun />
+            </details>
+            {asking && (
+              <ConfirmDialog
+                title={B.upgradeConfirmTitle(v.writes.length)}
+                intro={B.upgradeConfirmIntro}
+                confirm={B.confirmUpgrade(v.writes.length)}
+                count={v.writes.length}
+                onConfirm={async () => {
+                  await p.onUpgrade(v.writes.length, v.plan);
+                  setAsking(false);
+                }}
+                onClose={() => setAsking(false)}
+              >
+                <ul className="cb-list mono" aria-label={B.upgradeFilesCaption}>
+                  {v.writes.map((w) => (
+                    <li key={w.path}>
+                      {w.path}{" "}
+                      <span className="work-say">
+                        ({B.upgradeWhat[w.what] ?? w.what}, {B.upgradeBytes(w.bytes)})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </ConfirmDialog>
+            )}
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 /** The page from its loaded views and its steps, so tests can render every state. */
 export function CatalogBuildsPage(p: {
   build: Loaded<Api.CatalogBuildViewT> & { reload?: () => void };
+  /** The upgrade's dry run, loaded when the build says the catalog isn't upgraded. */
+  upgrade?: (Loaded<Api.CatalogUpgradeViewT> & { reload?: () => void }) | undefined;
   undo: Loaded<Api.CatalogUndoViewT> & { reload?: () => void };
   prune: Loaded<Api.CatalogPruneViewT> & { reload?: () => void };
   /** Runs a step's route as a local job, to its end. */
@@ -620,28 +868,18 @@ export function CatalogBuildsPage(p: {
           )}
         </View>
       </Panel>
+      {p.upgrade && (
+        <UpgradePanel
+          of={p.upgrade}
+          onUpgrade={(count, plan) => p.run("/api/build/upgrade", { count, plan })}
+        />
+      )}
       <Panel title={B.lastTitle} span="1 / -1">
+        <p className="work-why" style={{ marginTop: 0 }}>
+          {B.lastIntro}
+        </p>
         <View of={p.build} empty={(v) => !v.last} emptyText={B.lastNone}>
-          {(v) => {
-            const l = v.last!;
-            return (
-              <div className="stack" style={{ gap: 6 }}>
-                <p className="mono" style={{ margin: 0 }}>
-                  {B.lastLine(l.command, when(l.at))}
-                </p>
-                <p className="hud" style={{ margin: 0 }}>
-                  {B.lastCounts(l.added.length, l.changed.length, l.removed.length)}
-                  {l.slots.length ? ` · ${B.lastSlots(l.slots.length)}` : ""}
-                </p>
-                {l.removed.length > 0 && (
-                  <details>
-                    <summary>{B.lastRemoved(l.removed.length)}</summary>
-                    <RemovalsTable removals={l.removed} />
-                  </details>
-                )}
-              </div>
-            );
-          }}
+          {(v) => <LastBuild last={v.last!} />}
         </View>
       </Panel>
       <UndoPanel
@@ -659,13 +897,16 @@ export function CatalogBuilds() {
   const build = useApi<Api.CatalogBuildViewT>("/api/build");
   const undo = useApi<Api.CatalogUndoViewT>("/api/build/undo");
   const prune = useApi<Api.CatalogPruneViewT>("/api/build/prune");
-  useReloadOnFiles(build, undo, prune);
+  const waits = build.state === "ready" && build.data.upgrade === true;
+  const upgrade = useApi<Api.CatalogUpgradeViewT>(waits ? "/api/build/upgrade" : undefined);
+  useReloadOnFiles(build, undo, prune, upgrade);
   const [job, setJob] = useState<string | undefined>();
   const [note, setNote] = useState<string | undefined>();
   const reload = () => {
     build.reload();
     undo.reload();
     prune.reload();
+    if (waits) upgrade.reload();
   };
   const run = async (path: string, body: Record<string, unknown>) => {
     setNote(undefined);
@@ -679,6 +920,7 @@ export function CatalogBuilds() {
   return (
     <CatalogBuildsPage
       build={build}
+      upgrade={waits ? upgrade : undefined}
       undo={undo}
       prune={prune}
       run={run}

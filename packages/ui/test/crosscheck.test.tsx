@@ -10,6 +10,7 @@ import {
   CrossCheckPage,
   firstShow,
   itemsShown,
+  PromotePreview,
   reposInOrder,
   RepoCrossCheckView,
   showCounts,
@@ -226,5 +227,97 @@ describe("Readers found / facts say, in every state", () => {
       />,
     );
     expect(out).toContain(esc(X.behind("bbbbbbb")));
+  });
+});
+
+describe("promote to assert (ADR 0195 point 3)", () => {
+  const steps = { preview: never, promote: never };
+  const BALANCE = "Endpoint|GET /accounts/{}/balance";
+  const view = (items: Api.CrossCheckItemT[] = LEDGER.items, withSteps = true) =>
+    html(
+      <RepoCrossCheckView
+        of={ready({ ...LEDGER, items })}
+        show="all"
+        onShow={() => undefined}
+        run={never}
+        {...(withSteps ? { steps } : {})}
+      />,
+    );
+  const promoted = (state: "written" | "verified" | "rejected", message?: string) =>
+    LEDGER.items.map((i) =>
+      i.key === BALANCE
+        ? {
+            ...i,
+            promoted: {
+              fact: "person-endpoint-0123456789ab",
+              state,
+              file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+              line: 8,
+              ...(message ? { message } : {}),
+            },
+          }
+        : i,
+    );
+
+  it("offers it on what only the readers found, not on a disagreement, a dismissed or a facts-only item", () => {
+    const out = view();
+    const found = LEDGER.items.filter((i) => i.state === "readers-only" && !i.dismissed);
+    for (const i of found) expect(out).toContain(`aria-label="${esc(X.promoteOf(i.key))}"`);
+    for (const i of LEDGER.items.filter((x) => x.state !== "readers-only" || x.dismissed))
+      expect(out).not.toContain(`aria-label="${esc(X.promoteOf(i.key))}"`);
+    // Nothing opens or writes until pressed: no dialog in the page as it loads.
+    expect(out).not.toContain('role="dialog"');
+    // Without the steps (a test or an old server) it isn't offered.
+    expect(view(LEDGER.items, false)).not.toContain(esc(X.promote));
+  });
+
+  it("says where a promoted fact stands: not verified yet, verified on its line, or rejected", () => {
+    const written = view(promoted("written"));
+    expect(written).toContain(esc(X.promoted.written!));
+    expect(written).toContain(
+      "person-endpoint-0123456789ab · src/main/java/forge/ledger/LedgerEndpoints.java:8",
+    );
+    expect(written).not.toContain(`aria-label="${esc(X.promoteOf(BALANCE))}"`);
+    const verified = view(promoted("verified"));
+    expect(verified).toContain(esc(X.promoted.verified!));
+    expect(verified).toContain(esc(X.promotedVerifiedHint("forge-ledger")));
+    const rejected = view(promoted("rejected", "value-not-on-line: it isn't on line 8"));
+    expect(rejected).toContain(esc(X.promoted.rejected!));
+    expect(rejected).toContain("value-not-on-line: it isn&#x27;t on line 8");
+    expect(rejected).toContain(esc(X.promotedRejectedHint));
+    // A rejected fact can be promoted again once the line is checked.
+    expect(rejected).toContain(`aria-label="${esc(X.promoteOf(BALANCE))}"`);
+  });
+
+  it("shows the fact it writes before it writes it: the kind, the cited line and its text", () => {
+    const plan: Api.CrossCheckPromoteViewT = {
+      repo: "forge-ledger",
+      key: BALANCE,
+      can: true,
+      factsFile: "facts/forge-ledger.jsonl",
+      fact: "person-endpoint-0123456789ab",
+      factKind: "entry",
+      line: "{}",
+      sha256: "1".repeat(64),
+      cite: {
+        file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+        line: 8,
+        value: "/accounts/{id}/balance",
+        text: '  @ForgeEndpoint(method = "GET", path = "/accounts/{id}/balance")',
+        commit: "a".repeat(40),
+      },
+      fromSnapshot: true,
+    };
+    const out = html(<PromotePreview plan={plan} />);
+    expect(out).toContain(esc(X.promoteFact("entry", "person-endpoint-0123456789ab")));
+    expect(out).toContain(
+      esc(X.promoteCite("src/main/java/forge/ledger/LedgerEndpoints.java:8", "aaaaaaa")),
+    );
+    expect(out).toContain(`<pre class="xc-line mono">${esc(plan.cite!.text!)}</pre>`);
+    expect(out).toContain(esc(X.promoteValue("/accounts/{id}/balance")));
+    expect(out).toContain(esc(X.promoteInto("facts/forge-ledger.jsonl")));
+    expect(out).toContain(esc(X.promoteFromSnapshot("facts/forge-ledger.jsonl")));
+    const noText = { ...plan, cite: { ...plan.cite!, text: undefined } } as never;
+    expect(html(<PromotePreview plan={noText} />)).toContain(esc(X.promoteNoText));
   });
 });

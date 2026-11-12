@@ -9,6 +9,8 @@ const PERSON = [
   // ADR 0195 (CS3): a person dismisses what the readers found, after checking its line.
   "catalog crosscheck forge-ledger --dismiss key-1",
   "catalog crosscheck forge-ledger --undismiss=key-1",
+  'catalog crosscheck forge-ledger --promote "Endpoint|GET /accounts/{}/balance"',
+  "catalog crosscheck forge-ledger --promote=key-1",
   "questions answer q1 --option 1",
   "questions sheet --apply facts/sheet.yaml",
   "questions sheet --apply=facts/sheet.yaml --by dev",

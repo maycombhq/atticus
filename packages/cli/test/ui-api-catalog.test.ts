@@ -7,8 +7,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   keepCatalogsInMemory,
   parseReadersSlot,
+  readBuildReport,
   readersSlotPath,
   serializeReadersSlot,
+  undoDirOf,
+  writeBuildReport,
 } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { catalogBuild } from "../src/catalog-build-commands.js";
@@ -31,31 +34,40 @@ let root: string;
 let srv: RunningServer;
 const quiet = { out: () => undefined, err: () => undefined };
 
-const call = async (path: string, method = "GET", body?: unknown) => {
-  const r = await fetch(srv.url + path, {
-    method,
-    headers: {
-      "X-Atticus-Token": srv.token,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  const text = await r.text();
-  return { status: r.status, body: (text ? JSON.parse(text) : {}) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any -- a route's JSON, read loosely
-};
+/** A route called as the app calls it, on the server `on` gives (the shared one by default). */
+const callOn =
+  (on: () => RunningServer) =>
+  async (path: string, method = "GET", body?: unknown) => {
+    const s = on();
+    const r = await fetch(s.url + path, {
+      method,
+      headers: {
+        "X-Atticus-Token": s.token,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    const text = await r.text();
+    return { status: r.status, body: (text ? JSON.parse(text) : {}) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any -- a route's JSON, read loosely
+  };
 type Ended = { id: string; state: string; result?: { code: number; lines: string[] } };
 /** A local job followed to its end, as the app's followJob does. */
-const job = async (path: string, body: unknown = {}): Promise<Ended> => {
-  const started = await call(path, "POST", body);
-  expect(started.status, JSON.stringify(started.body)).toBe(202);
-  const id = String(started.body.jobId);
-  for (let n = 0; n < 600; n++) {
-    const j = await call(`/api/jobs/${id}`);
-    if (j.body.state !== "running" && j.body.state !== "queued") return { ...j.body, id } as Ended;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error(`${path} didn't end`);
-};
+const jobOn =
+  (c: ReturnType<typeof callOn>) =>
+  async (path: string, body: unknown = {}): Promise<Ended> => {
+    const started = await c(path, "POST", body);
+    expect(started.status, JSON.stringify(started.body)).toBe(202);
+    const id = String(started.body.jobId);
+    for (let n = 0; n < 600; n++) {
+      const j = await c(`/api/jobs/${id}`);
+      if (j.body.state !== "running" && j.body.state !== "queued")
+        return { ...j.body, id } as Ended;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`${path} didn't end`);
+  };
+const call = callOn(() => srv);
+const job = jobOn(call);
 
 async function tree(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
@@ -162,6 +174,73 @@ describe("the readers' cross-check routes", () => {
     expect(await readFile(join(root, "facts/forge-ledger.crosscheck.yaml"), "utf8")).toBe(was);
     expect((await call("/api/crosscheck/forge-ledger/dismiss", "POST", {})).status).toBe(400);
   });
+
+  it("previews promote to assert, refuses a fact it didn't show, then writes it and runs verify as one job", async () => {
+    const key = "Endpoint|GET /accounts/{}/balance";
+    const q = `/api/crosscheck/forge-ledger/promote?key=${encodeURIComponent(key)}`;
+    const v = await call(q);
+    expect(v.status).toBe(200);
+    // The person's fact in the facts file's shape, the reader's line at the reader's commit. No
+    // clone here, so the line's text isn't shown; no facts file, so it starts from the snapshot.
+    expect(v.body).toMatchObject({
+      repo: "forge-ledger",
+      key,
+      can: true,
+      factKind: "entry",
+      factsFile: "facts/forge-ledger.jsonl",
+      fromSnapshot: true,
+      cite: {
+        file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+        line: 8,
+        value: "/accounts/{id}/balance",
+        commit: "a".repeat(40),
+      },
+    });
+    expect(v.body.cite.text).toBeUndefined();
+    expect(JSON.parse(v.body.line as string)).toMatchObject({ by: "person", verified: "none" });
+    expect(v.body.next).toBeUndefined();
+    const no = await call(
+      `/api/crosscheck/forge-ledger/promote?key=${encodeURIComponent("IndexConstraint|ledger-db.account.pk")}`,
+    );
+    expect(no.body).toMatchObject({ can: false });
+    expect(no.body.why).toMatch(/isn't one fact/);
+    expect((await call("/api/crosscheck/forge-ledger/promote")).status).toBe(400);
+    expect((await call(`/api/crosscheck/no-such-repo/promote?key=x`)).status).toBe(404);
+    const generated = await catalog();
+    const facts = join(root, "facts/forge-ledger.jsonl");
+    // Confirms exactly the fact shown: another hash writes nothing.
+    const wrong = await call("/api/crosscheck/forge-ledger/promote", "POST", {
+      key,
+      sha256: "0".repeat(64),
+    });
+    expect(wrong.status).toBe(409);
+    expect(existsSync(facts)).toBe(false);
+    const j = await job("/api/crosscheck/forge-ledger/promote", { key, sha256: v.body.sha256 });
+    // The fact is written; verify then needs the repo's checkout, which this metarepo hasn't.
+    expect(j.state).toBe("failed");
+    const said = j.result!.lines.join(" ");
+    expect(said).toMatch(/promoted Endpoint\|GET \/accounts\/\{\}\/balance to your own fact/);
+    expect(await readFile(facts, "utf8")).toContain(v.body.line as string);
+    // Nothing in the catalog or the slots changed: verify --write does that, on Apply.
+    expect(await catalog()).toEqual(generated);
+    const after = await call("/api/crosscheck/forge-ledger");
+    const item = (after.body.items as { key: string; promoted?: unknown }[]).find(
+      (i) => i.key === key,
+    );
+    expect(item?.promoted).toMatchObject({
+      fact: v.body.fact,
+      state: "written",
+      file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+      line: 8,
+    });
+    const activity = await call("/api/activity");
+    expect(
+      (activity.body.entries as { title?: string }[]).some((e) =>
+        e.title?.startsWith(`Promote on forge-ledger: ${key}, then atticus verify forge-ledger`),
+      ),
+    ).toBe(true);
+    await rm(facts);
+  });
 });
 
 describe("the build's confirm steps", () => {
@@ -170,8 +249,19 @@ describe("the build's confirm steps", () => {
     expect(r.status).toBe(200);
     expect(r.body.pending).toMatchObject({ upToDate: true, removals: [] });
     expect(r.body.pending.refused).toBeUndefined();
-    expect(r.body.last).toMatchObject({ n: 1, command: "atticus catalog build" });
+    // The first build's own report (CS2's build-report.json): written, every record added.
+    expect(r.body.last).toMatchObject({
+      command: "atticus catalog build",
+      outcome: "written",
+      generated: "catalog/generated",
+      run: [],
+    });
     expect(r.body.last.added.length).toBeGreaterThan(10);
+    expect(r.body.last.counts.added).toBe(r.body.last.added.length);
+    expect(r.body.last.added[0]).toMatchObject({
+      path: expect.stringMatching(/^catalog\/generated\//),
+    });
+    expect(r.body.upgrade).toBeUndefined();
     const ledger = r.body.sources.find((s: { repo: string }) => s.repo === "forge-ledger");
     expect(ledger).toMatchObject({ source: "facts", commit: "0123abc" });
   });
@@ -190,6 +280,7 @@ describe("the build's confirm steps", () => {
     const before = await catalog();
     expect((await call("/api/build/edits/curate", "POST", { count: 2 })).status).toBe(409);
     expect(await catalog()).toEqual(before);
+    const renamed = /^name: (.+-renamed)$/m.exec(await readFile(path, "utf8"))![1]!;
     const j = await job("/api/build/edits/curate", { count: 1 });
     expect(j.result!.lines.join(" ")).toMatch(/Wrote catalog\/curated\//);
     const after = (await call("/api/build")).body;
@@ -197,6 +288,10 @@ describe("the build's confirm steps", () => {
       after.pending.upToDate,
       JSON.stringify({ lines: j.result!.lines, pending: after.pending }),
     ).toBe(true);
+    // ADR 0195 (d): the build in the same job as the curate (the server keeps catalogs read in
+    // memory) reads the decision it follows, so the hand edit's effect is kept, not overwritten.
+    expect(await readFile(path, "utf8")).toMatch(new RegExp(`^name: ${renamed}$`, "m"));
+    expect(after.last).toMatchObject({ command: "atticus catalog build", outcome: "written" });
   });
 
   it("waits for a large removal's exact count, writes nothing on another, then writes it", async () => {
@@ -210,6 +305,26 @@ describe("the build's confirm steps", () => {
     const n = refused.allowRemovals as number;
     expect(refused.removals).toHaveLength(n);
     for (const x of refused.removals) expect(x.explainedBy.length).toBeGreaterThan(0);
+    // The same build run in a terminal refuses, and its report is the page's last build: the
+    // reasons, each removal with why, and the command that confirms it.
+    const out: string[] = [];
+    expect(
+      await catalogBuild(root, {}, { out: (l) => out.push(l), err: (l) => out.push(l) }),
+    ).not.toBe(0);
+    const last = (await call("/api/build")).body.last;
+    expect(last).toMatchObject({
+      command: "atticus catalog build",
+      outcome: "refused",
+      refused: { reasons: ["large-removals"], allowRemovals: n },
+      run: [`atticus catalog build --allow-removals ${n}`],
+      counts: { removed: n, written: 0 },
+    });
+    expect(last.refused.command).toBe(`atticus catalog build --allow-removals ${n}`);
+    expect(last.removed).toHaveLength(n);
+    for (const x of last.removed) {
+      expect(x.reasons).toContain("slot");
+      expect(x.explainedBy.join(" ")).toMatch(/slot changed/);
+    }
     const before = await catalog();
     const wrong = await job("/api/build", { allowRemovals: n + 1 });
     expect(wrong.state).toBe("failed");
@@ -219,7 +334,9 @@ describe("the build's confirm steps", () => {
     expect(ok.state).toBe("done");
     const after = await call("/api/build");
     expect(after.body.pending.upToDate).toBe(true);
+    expect(after.body.last).toMatchObject({ outcome: "written", counts: { removed: n } });
     expect(after.body.last.removed).toHaveLength(n);
+    expect(after.body.last.undo).toBeGreaterThan(0);
   });
 
   it("lists the undo copies and puts back exactly the files listed", async () => {
@@ -273,5 +390,132 @@ describe("the build's confirm steps", () => {
       if (j.body.state !== "running" && j.body.state !== "queued") break;
       await new Promise((r) => setTimeout(r, 50));
     }
+  });
+});
+
+describe("a removal an answer explains is listed as the person's own action", () => {
+  it("names the input that changed, an answer as such, in the last build's report", async () => {
+    const undoDir = await undoDirOf(root);
+    const report = await readBuildReport(root);
+    expect(report).toBeDefined();
+    const removal = {
+      path: "catalog/generated/interface/if-ledger-to-notify.yaml",
+      kind: "Interface",
+      id: "if-ledger-to-notify",
+      repos: ["forge-ledger"],
+      explainedBy: ["an input changed (questions)"],
+      reasons: ["input" as const],
+    };
+    try {
+      await writeBuildReport(undoDir, {
+        ...report!,
+        command: "atticus verify forge-ledger --write",
+        removed: [removal],
+        counts: { ...report!.counts, removed: 1 },
+      });
+      const last = (await call("/api/build")).body.last;
+      expect(last.command).toBe("atticus verify forge-ledger --write");
+      expect(last.removed).toEqual([
+        { ...removal, inputs: [{ what: "answers", path: "questions" }] },
+      ]);
+    } finally {
+      await writeBuildReport(undoDir, report!);
+    }
+  });
+});
+
+describe("the upgrade to source slots as the app's confirm step (ADR 0195 point 6)", () => {
+  let up: string;
+  let upSrv: RunningServer;
+  const callUp = callOn(() => upSrv);
+  const jobUp = jobOn(callUp);
+  beforeAll(async () => {
+    // A catalog from before beta.27: the golden slots built, then catalog/sources and the state
+    // folder's build files taken away, so catalog/generated is all there is.
+    up = await mkdtemp(join(tmpdir(), "atticus-cs3-upgrade-"));
+    await cp(join(FORGE, "metarepo/org-pack"), join(up, "org-pack"), { recursive: true });
+    await writeFile(join(up, "org-pack/sources.yaml"), "schemaVersion: 1\nwikis: []\n");
+    await cp(join(SLOTS, "readers"), join(up, "catalog/sources/readers"), { recursive: true });
+    expect(await catalogBuild(up, {}, quiet)).toBe(0);
+    await rm(join(up, "catalog/sources"), { recursive: true });
+    await rm(join(up, ".index"), { recursive: true, force: true });
+    upSrv = await startServer({
+      root: up,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) => extendUiRoutes(r, ctx),
+    });
+  }, 240_000);
+  afterAll(async () => {
+    await upSrv?.close();
+    await rm(up, { recursive: true, force: true });
+  });
+
+  it("shows every file it writes and the copy it keeps, writes nothing on another plan, then upgrades", async () => {
+    const before = await tree(join(up, "catalog/generated"));
+    const b = await callUp("/api/build");
+    expect(b.body.upgrade).toBe(true);
+    expect(b.body.pending.refused.reasons).toContain("not-upgraded");
+    // The upgrade's other steps wait here: they may change an input the slots record, so this
+    // step waits for them (Run the upgrade, POST /api/upgrade, runs them and only shows this one).
+    const first = await callUp("/api/build/upgrade");
+    if (first.body.others.length) {
+      const plan = { count: first.body.writes.length, plan: first.body.plan };
+      expect((await callUp("/api/build/upgrade", "POST", plan)).status).toBe(409);
+      expect(existsSync(join(up, "catalog/sources"))).toBe(false);
+      const settings = await jobUp("/api/upgrade", {});
+      expect(settings.state, settings.result?.lines.join("\n")).toBe("done");
+      expect(existsSync(join(up, "catalog/sources"))).toBe(false);
+    }
+    const v = await callUp("/api/build/upgrade");
+    expect(v.body.others).toEqual([]);
+    expect(v.status).toBe(200);
+    expect(v.body).toMatchObject({
+      pending: true,
+      applies: true,
+      firstBuildChanges: [],
+      run: "atticus upgrade --yes",
+      copy: {
+        dir: "catalog/sources/legacy/generated-before-upgrade",
+        files: Object.keys(before).length,
+      },
+    });
+    expect(v.body.records).toBe(Object.keys(before).length);
+    const n = v.body.writes.length as number;
+    expect(n).toBeGreaterThan(Object.keys(before).length);
+    expect(v.body.plan).toMatch(/^[0-9a-f]{64}$/);
+    // Nothing is written by looking, or by a confirm of another count or another plan.
+    expect(existsSync(join(up, "catalog/sources"))).toBe(false);
+    for (const wrong of [
+      { count: n + 1, plan: v.body.plan },
+      { count: n, plan: "0".repeat(64) },
+    ])
+      expect((await callUp("/api/build/upgrade", "POST", wrong)).status).toBe(409);
+    expect((await callUp("/api/build/upgrade", "POST", { count: n })).status).toBe(400);
+    expect(existsSync(join(up, "catalog/sources"))).toBe(false);
+    const j = await jobUp("/api/build/upgrade", { count: n, plan: v.body.plan });
+    expect(j.state, j.result?.lines.join("\n")).toBe("done");
+    // Exactly the files listed, with the hashes listed; catalog/generated byte for byte.
+    const { createHash } = await import("node:crypto");
+    const written = await tree(join(up, "catalog/sources"));
+    expect(
+      Object.keys(written)
+        .map((p) => `catalog/sources/${p}`)
+        .sort(),
+    ).toEqual((v.body.writes as { path: string }[]).map((w) => w.path).sort());
+    for (const w of v.body.writes as { path: string; sha256: string }[])
+      expect(
+        createHash("sha256")
+          .update(written[w.path.slice("catalog/sources/".length)]!)
+          .digest("hex"),
+      ).toBe(w.sha256);
+    expect(await tree(join(up, "catalog/generated"))).toEqual(before);
+    const after = await callUp("/api/build");
+    expect(after.body.upgrade).toBeUndefined();
+    expect(after.body.pending.upToDate).toBe(true);
+    expect((await callUp("/api/build/upgrade")).body.pending).toBe(false);
+    const again = await callUp("/api/build/upgrade", "POST", { count: n, plan: v.body.plan });
+    expect(again.status).toBe(409);
   });
 });

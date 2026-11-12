@@ -1,8 +1,11 @@
-import { mkdir } from "node:fs/promises";
-import { dirname, relative, sep } from "node:path";
-import { writeFileAtomic } from "@maycombhq/core";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
+import { headFromFiles, isAdopted, writeFileAtomic } from "@maycombhq/core";
 import {
   dismissalsAfter,
+  planPromote,
+  writePromote,
+  type LineOf,
   dismissalsPath,
   readCrossCheck,
   readDismissals,
@@ -10,12 +13,16 @@ import {
   type CrossCheckItem,
   type RepoCrossCheck,
 } from "@maycombhq/scanner";
+import { baseClonePath } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 
 /**
- * `atticus catalog crosscheck [<repo>] [--json] [--dismiss <key> | --undismiss <key>]` (ADR 0195
- * point 3, ticket CS3): the readers' cross-check of each repo with facts, from the slots, and a
- * person's dismissal of an item. A dismissal is kept in `facts/<repo>.crosscheck.yaml` at the
+ * `atticus catalog crosscheck [<repo>] [--json] [--dismiss <key> | --undismiss <key> | --promote
+ * <key>]` (ADR 0195 point 3, ticket CS3): the readers' cross-check of each repo with facts, from
+ * the slots, a person's dismissal of an item, and a person's promote to assert: what the readers
+ * found, written as the person's own fact (`by: person`, the reader's citation) into
+ * `facts/<repo>.jsonl`, an edit to propose, which `atticus verify <repo>` then checks on its line
+ * and `atticus verify <repo> --write` puts in the catalog (`planPromote`). A dismissal is kept in `facts/<repo>.crosscheck.yaml` at the
  * readers' value the item has now, so it is listed again when that value changes; taking it back
  * lists it again at once. Nothing here changes a slot or a catalog record: the facts are the
  * source, and the readers slot is kept whole. The app's Readers found page runs this command, so
@@ -63,19 +70,64 @@ export function itemLine(i: CrossCheckItem): string {
   return `disagree: ${i.key}: ${f}${cite(i, "readers")}${mark}`;
 }
 
+/**
+ * The cited line's text at the reader's commit, from the repo's checkout (the base clone, or the
+ * root when adopted in place), only when the checkout is at that commit: files only, no git runs.
+ */
+export function checkoutLineOf(root: string, repo: string): LineOf {
+  const dir = isAdopted(root) ? root : baseClonePath(root, repo);
+  return async (file, line, commit) => {
+    const head = await headFromFiles(dir).catch(() => undefined);
+    if (!head || !(head.startsWith(commit) || commit.startsWith(head))) return undefined;
+    if (file.split(/[\\/]/).includes("..")) return undefined;
+    const text = await readFile(join(dir, ...file.split("/")), "utf8").catch(() => undefined);
+    return text?.replace(/\r\n?/g, "\n").split("\n")[line - 1];
+  };
+}
+
+/** `--promote <key>`: the person's fact, written into the live facts file (or why not). */
+async function promote(root: string, repo: string, key: string, io: Output): Promise<number> {
+  const plan = await planPromote(root, repo, key, { lineOf: checkoutLineOf(root, repo) });
+  if (!plan.can) {
+    io.err(`${repo}: ${key} can't be promoted: ${plan.why}. Nothing written.`);
+    return 1;
+  }
+  const at = `${plan.cite!.file}:${plan.cite!.line}`;
+  if (plan.already) {
+    io.out(
+      `${repo}: ${key} is promoted already, as ${plan.fact} in ${plan.factsFile} (${at}). Nothing written.`,
+    );
+    return 0;
+  }
+  await writePromote(root, plan);
+  if (plan.fromSnapshot)
+    io.out(
+      `${plan.factsFile} wasn't here: it is started from the facts verify last kept (catalog/sources/facts/${repo}.jsonl).`,
+    );
+  io.out(
+    `${repo}: promoted ${key} to your own fact ${plan.fact} (by: person, ${plan.factKind}) in ${plan.factsFile}, citing ${at} at ${short(plan.cite!.commit)}${plan.cite!.text !== undefined ? `: ${plan.cite!.text.trim()}` : ""}.`,
+  );
+  io.out(
+    `Next: atticus verify ${repo} checks it on its line; atticus verify ${repo} --write puts it in the catalog. Propose ${plan.factsFile} for review so the team keeps it.`,
+  );
+  return 0;
+}
+
 export async function catalogCrossCheck(
   root: string,
-  o: { repo?: string; json?: boolean; dismiss?: string; undismiss?: string },
+  o: { repo?: string; json?: boolean; dismiss?: string; undismiss?: string; promote?: string },
   io: Output,
 ): Promise<number> {
-  if ((o.dismiss !== undefined || o.undismiss !== undefined) && !o.repo) {
-    io.err("Say which repo: atticus catalog crosscheck <repo> --dismiss <key>.");
+  const asked = [o.dismiss, o.undismiss, o.promote].filter((x) => x !== undefined).length;
+  if (asked && !o.repo) {
+    io.err("Say which repo: atticus catalog crosscheck <repo> --dismiss|--promote <key>.");
     return 2;
   }
-  if (o.dismiss !== undefined && o.undismiss !== undefined) {
-    io.err("--dismiss and --undismiss take one key each, one at a time.");
+  if (asked > 1) {
+    io.err("--dismiss, --undismiss and --promote take one key each, one at a time.");
     return 2;
   }
+  if (o.promote !== undefined) return promote(root, o.repo!, o.promote, io);
   const view = await readCrossCheck(root, o.repo ? { repo: o.repo } : {});
   if (o.repo && !view.repos.length) {
     io.err(`${o.repo} isn't a repo the manifests list (a prototype isn't compared).`);

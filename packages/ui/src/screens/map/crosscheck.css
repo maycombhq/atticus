@@ -92,6 +92,16 @@
   margin: 0;
   font-size: 13px;
 }
+/* ADR 0195 (CS3): the cited line a promote shows, wrapped so a narrow panel never scrolls sideways. */
+.xc-line {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line, currentColor);
+  border-radius: 4px;
+}
 .xc-fields {
   width: 100%;
   table-layout: fixed;
@@ -195,4 +205,9 @@
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   padding: 4px 0;
+}
+/* The dialog's own list scrolls (and takes the focus): a long list inside it doesn't scroll again. */
+.cb-dialog-list .cb-list {
+  max-height: none;
+  overflow-y: visible;
 }

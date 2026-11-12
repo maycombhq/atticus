@@ -894,7 +894,7 @@ export const COPY = {
   crossCheck: {
     title: "Readers found / facts say",
     intro:
-      "For each repo with verified facts, what the built-in readers found is compared with what the facts say. The facts are the map; the readers are a cross-check. Nothing here changes the catalog: check the cited line, then dismiss what the readers got wrong, or ask your assistant to read the repo again.",
+      "For each repo with verified facts, what the built-in readers found is compared with what the facts say. The facts are the map; the readers are a cross-check. Nothing here changes the catalog: check the cited line, then promote what the readers got right to your own fact, dismiss what they got wrong, or ask your assistant to read the repo again.",
     openFromTrust: "Readers found / facts say",
     openFromTrustOf: (repo: string) => `Readers found / facts say for ${repo}`,
     /** The repo picker's option: the counts in short. */
@@ -959,6 +959,34 @@ export const COPY = {
     failed: (why: string) => `Nothing written: ${why}`,
     proposeHint: "The dismissals file is yours to propose for review, like any edit.",
     problems: "Files that couldn't be read",
+    promote: "Promote to assert…",
+    promoteOf: (key: string) => `Promote ${key} to your own fact`,
+    promoteLoading: "Reading the cited line…",
+    promoteCant: (why: string) => `It can't be promoted: ${why}.`,
+    promoteTitle: "Promote to your own fact",
+    promoteIntro: (repo: string) =>
+      `Check the cited line first. Atticus writes what the readers found as your own fact (by: person) with their citation, then verify checks it on its line in ${repo}. Nothing reaches the catalog until you Apply it.`,
+    promoteFact: (kind: string, id: string) => `Fact ${id}, of kind ${kind}`,
+    promoteCite: (at: string, commit: string) => `Cites ${at} at commit ${commit}`,
+    promoteValue: (value: string) => `It claims ${value} is written on that line.`,
+    promoteNoText:
+      "The checkout isn't at the readers' commit here, so the line's text can't be shown: open it at that commit to check it.",
+    promoteInto: (file: string) => `Added to ${file}, an edit to propose for review.`,
+    promoteFromSnapshot: (file: string) =>
+      `${file} isn't here: it is started from the facts verify last kept.`,
+    promoteAlready: "It is promoted already: verify runs again on it.",
+    promoteConfirm: "Write it, then verify",
+    promotedNote: (key: string) => `Promoted ${key}; verify checked it.`,
+    promoteVerifyStopped: (why: string) => `Your fact is written; verify stopped: ${why}`,
+    promoted: {
+      written: "Your fact: not verified yet",
+      verified: "Your fact: verified on its line",
+      rejected: "Your fact: verify rejected it",
+    } as Record<string, string>,
+    promotedVerifiedHint: (repo: string) =>
+      `Apply ${repo} on Map › Trust (atticus verify ${repo} --write) to put it in the catalog.`,
+    promotedRejectedHint:
+      "It is kept in the rejected file with why: check the line, or dismiss the item.",
   },
   catalogBuild: {
     title: "Catalog builds",
@@ -1023,14 +1051,78 @@ export const COPY = {
     discardIntro:
       "The build replaces these files with what the slots build. Their bytes are kept in the undo copy first.",
     confirmDiscard: (n: number) => `Discard ${n} ${n === 1 ? "edit" : "edits"}`,
-    upgradeTodo: "Upgrade the metarepo on Set up › Settings, or in a terminal:",
+    upgradeTodo:
+      "Review the upgrade below: it shows every file it writes before it writes one. In a terminal:",
     lastTitle: "The last build here",
-    lastNone: "No build has been written on this machine yet.",
+    lastNone: "No build has run on this machine yet.",
+    lastIntro:
+      "Every command that builds leaves its report here, in the app or a terminal: a scan, Apply (verify --write), a rename, a build.",
     lastLine: (command: string, at: string) => `${command}, ${at}`,
+    outcome: {
+      written: "Written",
+      unchanged: "Nothing to change",
+      refused: "Refused: nothing written",
+      stopped: "Stopped part way",
+    } as Record<string, string>,
     lastCounts: (added: number, changed: number, removed: number) =>
       `${added} added · ${changed} changed · ${removed} removed`,
+    lastWouldCounts: (added: number, changed: number, removed: number) =>
+      `It would have added ${added}, changed ${changed} and removed ${removed}.`,
     lastSlots: (n: number) => `${n} slot ${n === 1 ? "file" : "files"} written`,
-    lastRemoved: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} it removed`,
+    lastRemoved: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} it removed, and why`,
+    lastWouldRemove: (n: number) =>
+      `The ${n} ${n === 1 ? "record" : "records"} it would have removed, and why`,
+    lastStopped: (why: string) =>
+      `The write stopped part way (${why}). The undo copy holds what it replaced; the next build finishes it.`,
+    lastRun: "To go on, in a terminal:",
+    lastUnread: "The repos it couldn't read in full:",
+    lastDiscarded: (n: number) =>
+      `${n} hand ${n === 1 ? "edit" : "edits"} discarded (their bytes are in the undo copy).`,
+    lastAdded: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} added`,
+    lastChanged: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} changed`,
+    input: {
+      answers: (path: string) => `An answer changed (${path}): your own action`,
+      pairings: (path: string) => `A pairing changed (${path})`,
+      "org-pack": (path: string) => `The org pack changed (${path})`,
+      curated: (path: string) => `A curated decision changed (${path})`,
+      traffic: (path: string) => `The traffic evidence changed (${path})`,
+      shared: (path: string) => `A shared map changed (${path})`,
+      inputs: (path: string) => `inputs/ changed (${path})`,
+      proposals: (path: string) => `A proposal changed (${path})`,
+      federated: (path: string) => `A federated catalog changed (${path})`,
+      other: (path: string) => `An input changed (${path})`,
+    } as Record<string, (path: string) => string>,
+    upgradeTitle: "Upgrade to source slots",
+    upgradeIntro:
+      "This catalog was written before beta.27. The upgrade adopts every record into source slots, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
+    upgradeRecords: (records: number, slots: number) =>
+      `${records} ${records === 1 ? "record" : "records"} adopted into ${slots} slot ${slots === 1 ? "file" : "files"}:`,
+    upgradeSlotsCaption: "The slots the upgrade writes",
+    upgradeSlotCol: { path: "Slot", repo: "Repo", records: "Records" },
+    upgradeJoins: "joined and evidence-less records",
+    upgradeCopy: (dir: string, files: number) =>
+      `The catalog as it is now, ${files} ${files === 1 ? "file" : "files"}, is copied to ${dir}, committed with the upgrade.`,
+    upgradeFirstBuild: "The first build after it gives every record byte for byte as it is now.",
+    upgradeOthers:
+      "Other upgrade steps wait first, and may change what this one writes. Run them here (as Home offers), then confirm this list.",
+    upgradeDiffers: (n: number) =>
+      `Its first build would give ${n} record ${n === 1 ? "file" : "files"} differently, so the upgrade refuses and writes nothing:`,
+    upgradeVerifiable: (repos: string) =>
+      `These repos' facts passed verify as they are; Apply each next to put its facts in: ${repos}.`,
+    upgradeReview: (n: number) => `Review the ${n} files it writes…`,
+    upgradeConfirmTitle: (n: number) => `Upgrade: write ${n} ${n === 1 ? "file" : "files"}`,
+    upgradeConfirmIntro:
+      "atticus upgrade --yes writes exactly these files, after an undo copy. catalog/generated is left as it is.",
+    upgradeFilesCaption: "Every file the upgrade writes",
+    upgradeWhat: {
+      "readers-slot": "readers slot",
+      "legacy-joins": "legacy joins",
+      copy: "copy",
+      "build-manifest": "build manifest",
+    } as Record<string, string>,
+    upgradeBytes: (n: number) => `${n.toLocaleString("en")} bytes`,
+    confirmUpgrade: (n: number) => `Write ${n} ${n === 1 ? "file" : "files"}`,
+    upgradeNone: "Nothing to upgrade: catalog/sources is here already.",
     undoTitle: "Undo",
     undoIntro:
       "The last five builds on this machine keep an undo copy. Undo puts back catalog/generated, build.json and the slots as they were before a build, and can itself be undone. Git keeps everything older.",

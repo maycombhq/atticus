@@ -2,7 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { CatalogBuildsPage, RefusalView } from "../src/screens/setup/CatalogBuild.js";
+import {
+  CatalogBuildsPage,
+  ConfirmDialog,
+  RefusalView,
+  RemovalsTable,
+  whyWords,
+} from "../src/screens/setup/CatalogBuild.js";
 import { scanBuildRefusal, scanSources, ScanSourcesTable } from "../src/screens/know/Know.js";
 
 /**
@@ -96,6 +102,37 @@ const UNDO: Api.CatalogUndoViewT = {
   },
 };
 const fail = () => Promise.reject(new Error("no write in a render"));
+/** The latest build's own report (CS2's build-report.json), as GET /api/build gives it. */
+const report = (o: Partial<Api.BuildReportViewT> = {}): Api.BuildReportViewT => {
+  const removed = o.removed ?? [];
+  const added = o.added ?? [
+    {
+      path: "catalog/generated/endpoint/ledger-api.get-balance.yaml",
+      kind: "Endpoint",
+      id: "ledger-api.get-balance",
+    },
+  ];
+  return {
+    command: "atticus catalog build --allow-removals 3",
+    at: "2026-11-11T18:02:00.000Z",
+    generated: "catalog/generated",
+    outcome: "written",
+    run: [],
+    counts: {
+      records: 50,
+      added: added.length,
+      changed: 0,
+      removed: removed.length,
+      written: added.length,
+      unchanged: 49,
+    },
+    added,
+    changed: [],
+    removed,
+    slots: [],
+    ...o,
+  };
+};
 
 const page = (o: Partial<Parameters<typeof CatalogBuildsPage>[0]> = {}) =>
   html(
@@ -162,24 +199,233 @@ describe("Catalog builds, in every state", () => {
 
   it("says what the last build changed and what explains each removal", () => {
     const out = page({
-      build: view(
-        { upToDate: true, removals: [] },
-        {
-          n: 3,
-          command: "atticus catalog build --allow-removals 3",
-          at: "2026-11-11T18:02:00.000Z",
-          added: [],
-          changed: [],
-          removed: REMOVALS,
-          slots: [],
-        },
-      ),
+      build: view({ upToDate: true, removals: [] }, report({ removed: REMOVALS, undo: 4 })),
     });
-    expect(out).toContain(esc(B.lastCounts(0, 0, 3)));
+    expect(out).toContain(esc(B.outcome.written!));
+    expect(out).toContain(esc(B.lastIntro));
+    expect(out).toContain(esc(B.lastCounts(1, 0, 3)));
     expect(out).toContain(esc(B.lastRemoved(3)));
+    expect(out).toContain(esc(B.lastAdded(1)));
     expect(out).toContain("catalog/sources/readers/forge-gateway.json");
   });
+
+  it("lists a terminal's refused build: why, what it would have removed, and the command on", () => {
+    const out = page({
+      build: view(
+        { upToDate: false, removals: [], refused: LARGE },
+        report({
+          command: "atticus scan",
+          outcome: "refused",
+          refused: { ...LARGE, command: "atticus scan --allow-removals 3" },
+          run: ["atticus scan --allow-removals 3"],
+          removed: REMOVALS,
+          added: [],
+        }),
+      ),
+    });
+    expect(out).toContain(esc(B.outcome.refused!));
+    expect(out).toContain(esc(B.lastLine("atticus scan", "2026-11-11 18:02:00 UTC")));
+    expect(out).toContain(esc(B.lastWouldCounts(0, 0, 3)));
+    expect(out).toContain(esc(B.lastWouldRemove(3)));
+    expect(out).toContain(esc(B.lastRun));
+    expect(out).toContain("atticus scan --allow-removals 3");
+    // Opened, since a refusal's list is what it says.
+    expect(out).toMatch(/<details open="">\s*<summary>The 3 records it would have removed/);
+  });
+
+  it("says which repos a scan that read nothing couldn't read, and a stopped write", () => {
+    const out = page({
+      build: view(
+        { upToDate: true, removals: [] },
+        report({
+          command: "atticus scan",
+          outcome: "refused",
+          refused: {
+            reasons: ["nothing-read"],
+            message: "x",
+            unread: [{ repo: "forge-ledger", why: "it isn't cloned here" }],
+            command: "atticus scan",
+          },
+          run: [],
+          added: [],
+        }),
+      ),
+    });
+    expect(out).toContain(esc(B.reason["nothing-read"]!(0)));
+    expect(out).toContain(esc(B.lastUnread));
+    expect(out).toContain("it isn&#x27;t cloned here");
+    const stopped = page({
+      build: view(
+        { upToDate: true, removals: [] },
+        report({
+          outcome: "stopped",
+          stopped: "ENOSPC: no space left",
+          run: ["atticus catalog build"],
+        }),
+      ),
+    });
+    expect(stopped).toContain(esc(B.outcome.stopped!));
+    expect(stopped).toContain(esc(B.lastStopped("ENOSPC: no space left")));
+  });
+
+  it("names an answer that explains a removal as the person's own action", () => {
+    const r: Api.BuildRemovalT = {
+      path: "catalog/generated/interface/if-ledger-to-notify.yaml",
+      kind: "Interface",
+      id: "if-ledger-to-notify",
+      repos: ["forge-ledger"],
+      explainedBy: ["an input changed (questions)", "the build changed (1 to 2)"],
+      reasons: ["input", "build"],
+      inputs: [{ what: "answers", path: "questions" }],
+    };
+    expect(whyWords(r)).toEqual([B.input.answers!("questions"), "the build changed (1 to 2)"]);
+    const out = html(<RemovalsTable removals={[r]} />);
+    expect(out).toContain(esc(B.input.answers!("questions")));
+    expect(out).not.toContain("an input changed (questions)");
+    // Without inputs, the build's own words stand.
+    expect(whyWords({ ...r, inputs: undefined } as Api.BuildRemovalT)).toEqual(r.explainedBy);
+  });
 });
+
+const UPGRADE: Api.CatalogUpgradeViewT = {
+  pending: true,
+  records: 53,
+  write: [
+    { path: "catalog/sources/readers/forge-ledger.json", records: 31, repo: "forge-ledger" },
+    { path: "catalog/sources/legacy/joins.json", records: 4 },
+  ],
+  writes: [
+    {
+      path: "catalog/sources/readers/forge-ledger.json",
+      what: "readers-slot",
+      bytes: 41210,
+      sha256: "1".repeat(64),
+    },
+    {
+      path: "catalog/sources/legacy/joins.json",
+      what: "legacy-joins",
+      bytes: 5120,
+      sha256: "2".repeat(64),
+    },
+    {
+      path: "catalog/sources/legacy/generated-before-upgrade/endpoint/ledger-api.get-balance.yaml",
+      what: "copy",
+      bytes: 512,
+      sha256: "3".repeat(64),
+    },
+    {
+      path: "catalog/sources/build.json",
+      what: "build-manifest",
+      bytes: 9000,
+      sha256: "4".repeat(64),
+    },
+  ],
+  copy: { dir: "catalog/sources/legacy/generated-before-upgrade", files: 1 },
+  firstBuildChanges: [],
+  applies: true,
+  run: "atticus upgrade --yes",
+  verifiable: ["forge-ledger"],
+  plan: "5".repeat(64),
+  others: [],
+};
+
+describe("the upgrade to source slots, shown first and confirmed with its count", () => {
+  const upgrade = (u: Partial<Api.CatalogUpgradeViewT> | "loading" | "error") =>
+    page({
+      build: ready<Api.CatalogBuildViewT>({
+        sources: SOURCES,
+        pending: {
+          upToDate: false,
+          removals: [],
+          refused: {
+            reasons: ["not-upgraded"],
+            message: "x",
+            edits: [],
+            discardEdits: 53,
+            command: "atticus upgrade",
+          },
+        },
+        upgrade: true,
+        orphaned: [],
+        problems: [],
+      }),
+      upgrade:
+        u === "loading"
+          ? { state: "loading" }
+          : u === "error"
+            ? ({ state: "error", error: "boom", reload: () => undefined } as never)
+            : ready({ ...UPGRADE, ...u }),
+    });
+
+  it("lists each slot, the copy kept and that the first build changes nothing, behind Review", () => {
+    const out = upgrade({});
+    expect(out).toContain(esc(B.upgradeTitle));
+    expect(out).toContain(esc(B.upgradeRecords(53, 2)));
+    expect(out).toContain("catalog/sources/readers/forge-ledger.json");
+    expect(out).toContain(esc(B.upgradeJoins));
+    expect(out).toContain(esc(B.upgradeCopy("catalog/sources/legacy/generated-before-upgrade", 1)));
+    expect(out).toContain(esc(B.upgradeFirstBuild));
+    expect(out).toContain(esc(B.upgradeVerifiable("forge-ledger")));
+    expect(out).toContain(esc(B.upgradeReview(4)));
+    expect(out).toContain("atticus upgrade --yes");
+    // The confirm (with its count box) opens on Review, not before.
+    expect(out).not.toContain('role="dialog"');
+  });
+
+  it("refuses with the records the first build would change, and offers no confirm", () => {
+    const out = upgrade({ applies: false, firstBuildChanges: ["system/reports.yaml"] });
+    expect(out).toContain(esc(B.upgradeDiffers(1)));
+    expect(out).toContain("system/reports.yaml");
+    expect(out).not.toContain(esc(B.upgradeReview(4)));
+  });
+
+  it("waits for the other upgrade steps first, and offers no confirm until they ran", () => {
+    const out = upgrade({ others: [{ id: "questions-v2", summary: "Move the questions to v2" }] });
+    expect(out).toContain(esc(B.upgradeOthers));
+    // Home's own offer lists the steps and runs them (it loads itself, so not in a render).
+    expect(out).not.toContain("Move the questions to v2");
+    expect(out).not.toContain(esc(B.upgradeReview(4)));
+  });
+
+  it("has its loading, error and nothing-to-upgrade states", () => {
+    expect(upgrade("loading")).toContain('aria-busy="true"');
+    expect(upgrade("error")).toContain(COPY.app.tryAgain);
+    expect(upgrade({ pending: false })).toContain(esc(B.upgradeNone));
+    // A catalog already upgraded shows no upgrade panel at all.
+    expect(page()).not.toContain(esc(B.upgradeTitle));
+  });
+
+  it("its confirm lists every file it writes, with what each is, and asks for their count", () => {
+    const out = html(
+      <ConfirmDialog
+        title={B.upgradeConfirmTitle(4)}
+        intro={B.upgradeConfirmIntro}
+        confirm={B.confirmUpgrade(4)}
+        count={4}
+        onConfirm={fail}
+        onClose={() => undefined}
+      >
+        <UpgradePanelFiles />
+      </ConfirmDialog>,
+    );
+    expect(out).toContain('role="dialog"');
+    expect(out).toContain(esc(B.typeCount(4)));
+    expect(out).toMatch(/disabled=""[^>]*>Write 4 files/);
+  });
+});
+
+/** The confirm's list as UpgradePanel renders it inside its dialog. */
+function UpgradePanelFiles() {
+  return (
+    <ul className="cb-list mono" aria-label={B.upgradeFilesCaption}>
+      {UPGRADE.writes.map((w) => (
+        <li key={w.path}>
+          {w.path} ({B.upgradeWhat[w.what]}, {B.upgradeBytes(w.bytes)})
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 describe("a refused build: its list and its ways on, nothing written until confirmed", () => {
   it("names a large removal with its count and opens its confirm only on a press", () => {

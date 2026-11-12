@@ -1,5 +1,5 @@
 import { Api, headFromFiles, isAdopted } from "@maycombhq/core";
-import { forgetCatalogs, readCrossCheck } from "@maycombhq/scanner";
+import { promotedStates, readCrossCheck } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -24,12 +24,17 @@ import { captured, type LocalJob } from "./ui-api-steps.js";
  * - GET /api/build/undo[?n=]: the builds kept to undo (1 the latest) and what taking back the n
  *   latest puts back.
  * - GET /api/build/prune: the slot files no build reads.
+ * - GET /api/build/upgrade: the upgrade to source slots as a dry run (`atticus upgrade --json`).
+ * - GET /api/crosscheck/{repo}/promote?key=: the person's fact promoting an item would write.
  *
  * Writes: each the CLI's own command, as a local job (one at a time with Apply, Propose and Bring
  * in), so its lines are in the Console (ADR 0187) and the app and `atticus …` never disagree.
  * Each confirms exactly what the page listed: the build with the counts the refusal named (the
  * command refuses any other), undo with the builds and the number of files listed, prune and the
- * hand edits' curate with the count listed (409 and nothing run when it is no longer that).
+ * hand edits' curate with the count listed, the upgrade with the count of files listed and the
+ * listing's hash, a promote with the hash of the fact line previewed (409 and nothing run when it
+ * is no longer that). A promote is the person's own fact: refused inside a Copilot session
+ * (`ai/src/person-only.ts`), as the command line refuses it.
  * Everything here writes the metarepo's own files or this machine's, for review in the catalog
  * PR (ADR 0186: no confirmation of a shared system).
  */
@@ -54,16 +59,10 @@ async function headOf(root: string, repo: string): Promise<string | undefined> {
   }
 }
 
-/**
- * The server keeps the catalogs it read in memory until its watcher hears a change (ADR 0119),
- * which can come after a step's own write: a build in the same job as the curated decisions it
- * follows, or a look right after a hand edit, would read the folder as it was. Each build and
- * each look here reads the files.
- */
-function fresh<T>(f: () => Promise<T>): Promise<T> {
-  forgetCatalogs();
-  return f();
-}
+// The server keeps the catalogs it read in memory until its watcher hears a change (ADR 0119).
+// Every build and every look here goes through CS2's `loadBuildInputs`, which forgets every kept
+// read first (`forgetKeptReads`), so a build in the same job as the curated decisions it follows
+// reads them (ui-api-catalog.test.ts: curate then build in one job keeps the hand edit).
 
 /** The routes; `asJob` is ui-api.ts's local job (one at a time with Apply, Propose and Bring in). */
 export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
@@ -90,10 +89,59 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       const one = v.repos[0];
       if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
       const head = await headOf(root, repo);
+      // Each readers-only item a person promoted: verified on its line, not yet, or rejected.
+      const promoted = await promotedStates(
+        root,
+        repo,
+        one.items.filter((i) => i.state === "readers-only").map((i) => i.key),
+      );
+      const items = one.items.map((i) => {
+        const p = i.state === "readers-only" ? promoted.get(i.key) : undefined;
+        return p ? { ...i, promoted: p } : i;
+      });
       return {
         status: 200,
-        body: Api.RepoCrossCheck.parse({ ...one, ...(head ? { head } : {}) }),
+        body: Api.RepoCrossCheck.parse({ ...one, items, ...(head ? { head } : {}) }),
       };
+    })
+    .add("GET", "/api/crosscheck/{repo}/promote", async ({ params, query }) => {
+      const repo = repoOf(params);
+      const key = (query.get("key") ?? "").trim();
+      if (!key || key.length > 500)
+        throw badRequest("key is the item's key, as the cross-check names it.");
+      const v = await readCrossCheck(root, { repo });
+      if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
+      const { planPromote } = await import("@maycombhq/scanner");
+      const { checkoutLineOf } = await import("./crosscheck-commands.js");
+      const { next: _next, ...plan } = await planPromote(root, repo, key, {
+        lineOf: checkoutLineOf(root, repo),
+      });
+      void _next;
+      return { status: 200, body: Api.CrossCheckPromoteView.parse(plan) };
+    })
+    .add("POST", "/api/crosscheck/{repo}/promote", async ({ params, body }) => {
+      const repo = repoOf(params);
+      const b = parse(Api.CrossCheckPromoteRequest, body);
+      const v = await readCrossCheck(root, { repo });
+      if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
+      const { planPromote } = await import("@maycombhq/scanner");
+      const { catalogCrossCheck, checkoutLineOf } = await import("./crosscheck-commands.js");
+      const plan = await planPromote(root, repo, b.key, { lineOf: checkoutLineOf(root, repo) });
+      if (!plan.can)
+        throw conflict(`${b.key} can't be promoted now: ${plan.why}. Nothing written.`);
+      if (plan.sha256 !== b.sha256)
+        throw conflict(
+          `The fact promoting ${b.key} writes isn't the one the page showed any more. Nothing written: look at it again.`,
+        );
+      const { verifyCommand } = await import("./verify-commands.js");
+      // The person's fact, then the verifier on it: one job, both commands' lines in the Console.
+      return asJob(`Promote on ${repo}: ${b.key}, then atticus verify ${repo}`, () =>
+        captured(async (io) => {
+          const code = await catalogCrossCheck(root, { repo, promote: b.key }, io);
+          if (code !== 0) return code;
+          return verifyCommand(root, repo, { write: false, verbose: false, json: false }, io);
+        }),
+      );
     })
     .add("POST", "/api/crosscheck/{repo}/dismiss", async ({ params, body }) => {
       const repo = repoOf(params);
@@ -115,10 +163,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     })
     .add("GET", "/api/build", async () => {
       const { catalogBuildView } = await import("./build-report.js");
-      return {
-        status: 200,
-        body: Api.CatalogBuildView.parse(await fresh(() => catalogBuildView(root))),
-      };
+      return { status: 200, body: Api.CatalogBuildView.parse(await catalogBuildView(root)) };
     })
     .add("POST", "/api/build", async ({ body }) => {
       const b = parse(Api.CatalogBuildRequest, body);
@@ -129,15 +174,13 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       ];
       return asJob(["atticus catalog build", ...flags].join(" "), () =>
         captured((io) =>
-          fresh(() =>
-            catalogBuild(
-              root,
-              {
-                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
-                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
-              },
-              io,
-            ),
+          catalogBuild(
+            root,
+            {
+              ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+              ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+            },
+            io,
           ),
         ),
       );
@@ -145,7 +188,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     .add("POST", "/api/build/edits/curate", async ({ body }) => {
       const b = parse(Api.CatalogEditsRequest, body);
       const { catalogBuildView } = await import("./build-report.js");
-      const now = (await fresh(() => catalogBuildView(root))).pending.refused;
+      const now = (await catalogBuildView(root)).pending.refused;
       const edits = now?.reasons.includes("hand-edits") ? (now.edits ?? []) : [];
       if (edits.length !== b.count)
         throw conflict(
@@ -156,8 +199,8 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       // what the edited files hold, so nothing is overwritten), in one job.
       return asJob("atticus catalog edits --curate, then atticus catalog build", () =>
         captured(async (io) => {
-          const code = await fresh(() => catalogEdits(root, { curate: true, by: ctx.user }, io));
-          return code === 0 ? fresh(() => catalogBuild(root, {}, io)) : code;
+          const code = await catalogEdits(root, { curate: true, by: ctx.user }, io);
+          return code === 0 ? catalogBuild(root, {}, io) : code;
         }),
       );
     })
@@ -180,27 +223,55 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         );
       const { catalogUndo } = await import("./catalog-build-commands.js");
       return asJob(`atticus catalog undo ${b.n} --yes`, () =>
-        captured((io) => fresh(() => catalogUndo(root, { n: b.n, yes: true }, io))),
+        captured((io) => catalogUndo(root, { n: b.n, yes: true }, io)),
       );
     })
     .add("GET", "/api/build/prune", async () => {
       const { catalogPruneView } = await import("./build-report.js");
       return {
         status: 200,
-        body: Api.CatalogPruneView.parse(await fresh(() => catalogPruneView(root))),
+        body: Api.CatalogPruneView.parse(await catalogPruneView(root)),
       };
     })
     .add("POST", "/api/build/prune", async ({ body }) => {
       const b = parse(Api.CatalogPruneRequest, body);
       const { catalogPruneView } = await import("./build-report.js");
-      const v = await fresh(() => catalogPruneView(root));
+      const v = await catalogPruneView(root);
       if (v.files.length !== b.count)
         throw conflict(
           `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to remove; there ${v.files.length === 1 ? "is" : "are"} ${v.files.length} now. Nothing was removed: look at the list again.`,
         );
       const { catalogPrune } = await import("./catalog-build-commands.js");
       return asJob("atticus catalog prune --yes", () =>
-        captured((io) => fresh(() => catalogPrune(root, { yes: true }, io))),
+        captured((io) => catalogPrune(root, { yes: true }, io)),
+      );
+    })
+    .add("GET", "/api/build/upgrade", async () => {
+      const { catalogUpgradeView } = await import("./build-report.js");
+      return { status: 200, body: Api.CatalogUpgradeView.parse(await catalogUpgradeView(root)) };
+    })
+    .add("POST", "/api/build/upgrade", async ({ body }) => {
+      const b = parse(Api.CatalogUpgradeRequest, body);
+      const { catalogUpgradeView } = await import("./build-report.js");
+      const v = await catalogUpgradeView(root);
+      if (!v.pending) throw conflict("Nothing to upgrade: catalog/sources is here already.");
+      // The other steps may change an input the slots record, and would make the files written
+      // differ from the ones listed: they run first (Run the upgrade, POST /api/upgrade).
+      if (v.others.length)
+        throw conflict(
+          `Other upgrade steps wait first (${v.others.map((s) => s.summary).join("; ")}): run the upgrade (Run the upgrade, on Home or on Catalog builds) first, then look at this list again. Nothing written.`,
+        );
+      if (!v.applies)
+        throw conflict(
+          `The upgrade would refuse: its first build gives ${v.firstBuildChanges.length} record ${v.firstBuildChanges.length === 1 ? "file" : "files"} differently. Nothing written.`,
+        );
+      if (v.writes.length !== b.count || v.plan !== b.plan)
+        throw conflict(
+          `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to write; the upgrade writes ${v.writes.length === b.count ? "other files" : `${v.writes.length}`} now. Nothing written: look at the list again.`,
+        );
+      const { upgradeCommand } = await import("./upgrade.js");
+      return asJob("atticus upgrade --yes", () =>
+        captured((io) => upgradeCommand(root, { by: ctx.user, yes: true }, io)),
       );
     });
 }

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
+import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam } from "../know/common.js";
+import { ConfirmDialog, whyStopped } from "../setup/CatalogBuild.js";
 import "./crosscheck.css";
+
+/** Promote to assert: the preview of the person's fact, and the write then verify, as a job. */
+export interface PromoteSteps {
+  preview: (repo: string, key: string) => Promise<Api.CrossCheckPromoteViewT>;
+  promote: (repo: string, key: string, sha256: string) => Promise<unknown>;
+}
 
 /**
  * Map › Trust › Readers found / facts say (ADR 0195 point 3, ticket CS3). For each repo with
@@ -15,7 +22,10 @@ import "./crosscheck.css";
  * facts have. The facts are the map and nothing here changes the catalog: a person checks the
  * cited line, then dismisses what the readers got wrong (`atticus catalog crosscheck <repo>
  * --dismiss`, run as a local job, its lines in the Console), which is listed again when the
- * readers' value changes. Reads GET /api/crosscheck and /api/crosscheck/{repo}.
+ * readers' value changes; or promotes what the readers got right to their own fact (`--promote`,
+ * the fact and its cited line shown first, then `atticus verify <repo>` in the same job), and the
+ * item says whether the verifier found it on its line. Reads GET /api/crosscheck and
+ * /api/crosscheck/{repo}.
  */
 
 const X = COPY.crossCheck;
@@ -100,17 +110,84 @@ function Cites({ cites, commit }: { cites: readonly Cite[]; commit?: string }) {
   );
 }
 
-/** Dismiss, or List again, as the CLI command run as a local job. */
+/** The person's fact promoting an item writes, shown before it is written. */
+export function PromotePreview({ plan }: { plan: Api.CrossCheckPromoteViewT }) {
+  const c = plan.cite!;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p style={{ margin: 0 }}>{X.promoteFact(plan.factKind ?? "", plan.fact ?? "")}</p>
+      <p className="mono" style={{ margin: 0 }}>
+        {X.promoteCite(`${c.file}:${c.line}`, short(c.commit))}
+      </p>
+      {c.text !== undefined ? (
+        <pre className="xc-line mono">{c.text}</pre>
+      ) : (
+        <p className="work-say" style={{ margin: 0 }}>
+          {X.promoteNoText}
+        </p>
+      )}
+      <p style={{ margin: 0 }}>{X.promoteValue(c.value)}</p>
+      <p className="work-say" style={{ margin: 0 }}>
+        {plan.already ? X.promoteAlready : X.promoteInto(plan.factsFile)}
+        {plan.fromSnapshot ? ` ${X.promoteFromSnapshot(plan.factsFile)}` : ""}
+      </p>
+    </div>
+  );
+}
+
+/** Where a promoted item's fact stands: verified on its line, not yet, or rejected with why. */
+function PromotedNote({ repo, p }: { repo: string; p: NonNullable<Item["promoted"]> }) {
+  return (
+    <div className="stack" style={{ gap: 2 }}>
+      <span
+        style={{ alignSelf: "flex-start" }}
+        className={`chip ${p.state === "verified" ? "done" : p.state === "rejected" ? "blocking" : "warn"}`}
+      >
+        {X.promoted[p.state] ?? p.state}
+      </span>
+      <span className="work-say mono">
+        {p.fact} · {p.file}:{p.line}
+      </span>
+      {p.state === "verified" && <span className="work-say">{X.promotedVerifiedHint(repo)}</span>}
+      {p.state === "rejected" && (
+        <span className="work-say">
+          {p.message ? `${p.message} ` : ""}
+          {X.promotedRejectedHint}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Dismiss, or List again, as the CLI command run as a local job; and Promote to assert. */
 function ItemAction(p: {
   repo: string;
   item: Item;
   run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  steps?: PromoteSteps | undefined;
   onDone: (note: string, job?: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [reading, setReading] = useState(false);
+  const [asking, setAsking] = useState<Api.CrossCheckPromoteViewT | undefined>();
   if (p.item.state === "facts-only") return <p className="work-say xc-note">{X.factsOnlyNote}</p>;
   const undo = !!p.item.dismissed;
+  const canPromote =
+    !!p.steps &&
+    p.item.state === "readers-only" &&
+    !p.item.dismissed &&
+    (!p.item.promoted || p.item.promoted.state === "rejected");
+  const openPromote = () => {
+    setReading(true);
+    setError(undefined);
+    p.steps!.preview(p.repo, p.item.key)
+      .then(
+        (plan) => (plan.can ? setAsking(plan) : setError(X.promoteCant(plan.why ?? ""))),
+        (e: unknown) => setError(X.failed(whyStopped(e))),
+      )
+      .finally(() => setReading(false));
+  };
   const go = async () => {
     setBusy(true);
     setError(undefined);
@@ -144,11 +221,48 @@ function ItemAction(p: {
         >
           {busy ? X.working : undo ? X.undismiss : X.dismiss}
         </button>
+        {canPromote && (
+          <button
+            type="button"
+            className="btn"
+            disabled={reading || busy}
+            aria-busy={reading}
+            aria-label={X.promoteOf(p.item.key)}
+            onClick={openPromote}
+          >
+            {reading ? X.promoteLoading : X.promote}
+          </button>
+        )}
       </div>
       {error && (
         <p role="alert" className="state error" style={{ margin: 0 }}>
           {error}
         </p>
+      )}
+      {asking && (
+        <ConfirmDialog
+          title={X.promoteTitle}
+          intro={X.promoteIntro(p.repo)}
+          confirm={X.promoteConfirm}
+          working={X.working}
+          onConfirm={async () => {
+            try {
+              await p.steps!.promote(p.repo, p.item.key, asking.sha256!);
+              setAsking(undefined);
+              p.onDone(X.promotedNote(p.item.key));
+            } catch (e) {
+              // Verify rejecting the fact ends the job unsuccessfully: the item says why.
+              if (!(e instanceof JobFailed)) throw e;
+              setAsking(undefined);
+              // The last line is why verify stopped (the lines before are the promote's own, in the Console).
+              setError(X.promoteVerifyStopped(e.lines.at(-1) ?? e.message));
+              p.onDone(X.promotedNote(p.item.key));
+            }
+          }}
+          onClose={() => setAsking(undefined)}
+        >
+          <PromotePreview plan={asking} />
+        </ConfirmDialog>
       )}
     </div>
   );
@@ -158,6 +272,7 @@ function ItemRow(p: {
   repo: Repo;
   item: Item;
   run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  steps?: PromoteSteps | undefined;
   onDone: (note: string) => void;
 }) {
   const { item: i } = p;
@@ -218,7 +333,8 @@ function ItemRow(p: {
           </div>
         )}
       </div>
-      <ItemAction repo={p.repo.repo} item={i} run={p.run} onDone={p.onDone} />
+      {i.promoted && <PromotedNote repo={p.repo.repo} p={i.promoted} />}
+      <ItemAction repo={p.repo.repo} item={i} run={p.run} steps={p.steps} onDone={p.onDone} />
     </li>
   );
 }
@@ -229,6 +345,7 @@ export function RepoCrossCheckView(p: {
   show: Show | undefined;
   onShow: (s: Show) => void;
   run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  steps?: PromoteSteps | undefined;
   onChanged?: () => void;
 }) {
   const [kind, setKind] = useState("");
@@ -344,6 +461,7 @@ export function RepoCrossCheckView(p: {
                         repo={r}
                         item={i}
                         run={p.run}
+                        steps={p.steps}
                         onDone={(n) => {
                           setNote(n);
                           p.of.reload?.();
@@ -382,6 +500,7 @@ export function CrossCheckPage(p: {
   show: Show | undefined;
   onShow: (s: Show) => void;
   run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  steps?: PromoteSteps | undefined;
   job?: string | undefined;
 }) {
   return (
@@ -438,6 +557,7 @@ export function CrossCheckPage(p: {
                     show={p.show}
                     onShow={p.onShow}
                     run={p.run}
+                    steps={p.steps}
                     onChanged={p.list.reload}
                   />
                 )}
@@ -478,6 +598,19 @@ export function CrossCheck({ hash }: { hash: string }) {
       undefined,
       setJob,
     );
+  const steps: PromoteSteps = {
+    preview: (r, key) =>
+      api<Api.CrossCheckPromoteViewT>(
+        `/api/crosscheck/${encodeURIComponent(r)}/promote?key=${encodeURIComponent(key)}`,
+      ),
+    promote: (r, key, sha256) =>
+      followJob(
+        `/api/crosscheck/${encodeURIComponent(r)}/promote`,
+        { key, sha256 },
+        undefined,
+        setJob,
+      ),
+  };
   return (
     <CrossCheckPage
       list={list}
@@ -494,6 +627,7 @@ export function CrossCheck({ hash }: { hash: string }) {
         setQueryParam("crosscheck", "show", s);
       }}
       run={run}
+      steps={steps}
       job={job}
     />
   );

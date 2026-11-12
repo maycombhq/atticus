@@ -58,6 +58,11 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
       w[0] === "catalog" && w[1] === "crosscheck" && flag(a, "--dismiss", "--undismiss"),
     why: "a person dismisses what the readers found, after checking its line (ADR 0195)",
   },
+  {
+    // ADR 0195 point 3: promote to assert writes a `by: person` fact; only a person vouches.
+    test: (w, a) => w[0] === "catalog" && w[1] === "crosscheck" && flag(a, "--promote"),
+    why: "a person promotes what the readers found to their own fact, after checking its line (ADR 0195)",
+  },
   { test: (w) => w[0] === "triage" && w[1] === "decide", why: "a person decides a triage item" },
   { test: (w) => w[0] === "finding", why: "a person acts on a finding (it is recorded with them)" },
   {

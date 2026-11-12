@@ -700,6 +700,7 @@ Usage:
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)
           [--undismiss <key>]          Take a dismissal back
+          [--promote <key>]            Promote what the readers found to your own fact (by: person, the reader's citation) in facts/<repo>.jsonl, an edit to propose; atticus verify <repo> then checks it on its line
   atticus catalog prune                List the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog); with --yes, remove exactly those [--json]
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
@@ -3005,6 +3006,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         json: values.json === true,
         ...(str(values.dismiss) !== undefined ? { dismiss: str(values.dismiss)! } : {}),
         ...(str(values.undismiss) !== undefined ? { undismiss: str(values.undismiss)! } : {}),
+        ...(str(values.promote) !== undefined ? { promote: str(values.promote)! } : {}),
       },
       io,
     );

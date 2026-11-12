@@ -1,42 +1,82 @@
-import { readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
-import { cmpText, type Api } from "@maycombhq/core";
+import { createHash } from "node:crypto";
+import {
+  evidenceRelOf,
+  factsRelOf,
+  proposalsRelOf,
+  questionsRelOf,
+  sharedRelOf,
+  type Api,
+} from "@maycombhq/core";
 import {
   buildAndWrite,
-  buildManifestPath,
   listUndo,
-  parseBuildManifest,
   planUndo,
+  readBuildReport,
   undoDirOf,
-  type BuildAndWrite,
-  type BuildManifestT,
+  upgradeSlotsView,
+  type BuildRefusal,
+  type BuildReport,
   type Removal,
 } from "@maycombhq/scanner";
 
 /**
- * What the app shows of the catalog's build (ADR 0195 points 4 and 7, ticket CS3), read from the
- * metarepo's files and this machine's undo copies; nothing here writes. The writes are the CLI's
- * own commands (`atticus catalog build|edits|undo|prune`), run by the routes as local jobs.
+ * What the app shows of the catalog's build (ADR 0195 points 4, 6 and 7, ticket CS3), read from
+ * the metarepo's files and this machine's state folder; nothing here writes. The writes are the
+ * CLI's own commands (`atticus catalog build|edits|undo|prune`, `atticus upgrade --yes`), run by
+ * the routes as local jobs.
  *
  * - `catalogBuildView`: each repo's source, what `atticus catalog build` would do now (built in
- *   memory and guarded, as `--check` does), and what the last build here changed, from its undo
- *   copy: the record files it added, changed and removed, each removal with the sources in its
- *   build.json entry that changed since (what explained it).
+ *   memory and guarded, as `--check` does), and the latest build's own report (`buildAndWrite`
+ *   writes it on every build: a scan, a verify --write, a rename, a build, in the app or a
+ *   terminal, written or refused), each removal with why, an input's change named as such.
  * - `catalogUndoView`, `catalogPruneView`: the lists the confirm steps show, as the commands
  *   without `--yes` say them.
- *
- * TODO(CS2): the last build's report is derived here from the newest undo copy (it names the
- * command, and holds the build.json it replaced). A build report written by `buildAndWrite`
- * itself (removals with their reasons as the guard said them, refusals of commands run in a
- * terminal) would let the app show those too; until then a refusal is shown as the build would
- * refuse now, and a scan's own refusal in its job's result.
+ * - `catalogUpgradeView`: the upgrade to source slots as a dry run, as `atticus upgrade --json`
+ *   lists it, with a hash of the files listed that its confirm sends back.
  */
-
-const posix = (p: string) => p.split(sep).join("/");
 
 const BUILD = "atticus catalog build";
 
-function removalView(r: Removal): Api.BuildRemovalT {
+type RemovalInput = NonNullable<Api.BuildRemovalT["inputs"]>[number];
+
+/**
+ * The inputs other than a slot that explain a removal, from the build's words for them (`an
+ * input changed (<path>)`): an answer named as such, per the owner's decision of 2026-11-11 (a
+ * changed input explains a removal, and it is listed).
+ */
+export function removalInputs(root: string, r: Removal): RemovalInput[] | undefined {
+  const out: RemovalInput[] = [];
+  for (const words of r.explainedBy) {
+    const m = /^an input changed \((.+)\)$/.exec(words);
+    if (!m) continue;
+    const path = m[1]!;
+    const what: RemovalInput["what"] =
+      path === questionsRelOf(root)
+        ? "answers"
+        : path === `${factsRelOf(root)}/*.corrections.jsonl`
+          ? "pairings"
+          : path === `${evidenceRelOf(root)}/traffic`
+            ? "traffic"
+            : path === sharedRelOf(root)
+              ? "shared"
+              : path === proposalsRelOf(root) || /(^|\/)proposals$/.test(path)
+                ? "proposals"
+                : path.startsWith("federated/")
+                  ? "federated"
+                  : /(^|\/)curated$/.test(path)
+                    ? "curated"
+                    : /(^|\/)inputs$/.test(path)
+                      ? "inputs"
+                      : /(^|\/)org-pack$/.test(path)
+                        ? "org-pack"
+                        : "other";
+    out.push({ what, path });
+  }
+  return out.length ? out : undefined;
+}
+
+function removalView(root: string, r: Removal): Api.BuildRemovalT {
+  const inputs = removalInputs(root, r);
   return {
     path: r.path,
     kind: r.kind,
@@ -44,103 +84,66 @@ function removalView(r: Removal): Api.BuildRemovalT {
     repos: r.repos,
     explainedBy: r.explainedBy,
     ...(r.reasons?.length ? { reasons: r.reasons } : {}),
+    ...(inputs ? { inputs } : {}),
   };
 }
 
 /** The refusal as the page shows it, with the command that goes on in a terminal. */
 export function refusalView(
-  r: NonNullable<BuildAndWrite["guard"]["refused"]>,
+  root: string,
+  r: BuildRefusal,
   command = BUILD,
+  run?: readonly string[],
 ): Api.BuildRefusalViewT {
-  const next = r.reasons.includes("not-upgraded")
-    ? "atticus upgrade"
-    : r.reasons.includes("hand-edits")
-      ? "atticus catalog edits --curate"
-      : r.reasons.includes("large-removals")
-        ? `${command} --allow-removals ${r.allowRemovals ?? 0}`
-        : command;
+  const next =
+    run?.[0] ??
+    (r.reasons.includes("not-upgraded")
+      ? "atticus upgrade"
+      : r.reasons.includes("hand-edits")
+        ? "atticus catalog edits --curate"
+        : r.reasons.includes("large-removals")
+          ? `${command} --allow-removals ${r.allowRemovals ?? 0}`
+          : command);
   return {
     reasons: r.reasons,
     message: r.message,
-    ...(r.removals ? { removals: r.removals.map(removalView) } : {}),
-    ...(r.unexplained ? { unexplained: r.unexplained.map(removalView) } : {}),
+    ...(r.removals ? { removals: r.removals.map((x) => removalView(root, x)) } : {}),
+    ...(r.unexplained ? { unexplained: r.unexplained.map((x) => removalView(root, x)) } : {}),
     ...(r.allowRemovals !== undefined ? { allowRemovals: r.allowRemovals } : {}),
     ...(r.edits ? { edits: r.edits } : {}),
     ...(r.discardEdits !== undefined ? { discardEdits: r.discardEdits } : {}),
+    ...(r.unread ? { unread: r.unread } : {}),
     command: next,
   };
 }
 
-/** A record file's kind folder and id, from its path under catalog/generated. */
-function kindAndId(path: string): { kind: string; id: string } {
-  const parts = path.split("/");
-  const file = parts.pop() ?? "";
-  return { kind: parts.pop() ?? "", id: file.replace(/\.ya?ml$/, "") };
-}
-
-/** What the last build here changed, from its undo copy (undefined when no build kept one). */
-export async function lastBuildOf(root: string): Promise<Api.CatalogBuildViewT["last"]> {
-  const undoDir = await undoDirOf(root);
-  const latest = (await listUndo(undoDir))[0];
-  if (!latest) return undefined;
-  const manifestRel = posix(relative(root, buildManifestPath(root)));
-  const read = async (p: string) =>
-    readFile(p, "utf8").then(
-      (t) => t.replace(/\r\n?/g, "\n"),
-      () => undefined,
-    );
-  const parse = (t: string | undefined): BuildManifestT | undefined => {
-    if (t === undefined) return undefined;
-    const p = parseBuildManifest(t);
-    return p.ok ? p.slot : undefined;
-  };
-  const before = parse(
-    await read(join(undoDir, String(latest.n), "files", ...manifestRel.split("/"))),
-  );
-  const after = parse(await read(join(undoDir, String(latest.n), "next-build.json")));
-  const was = new Map((before?.files ?? []).map((f) => [f.path, f]));
-  const now = new Map((after?.files ?? []).map((f) => [f.path, f]));
-  const nowSources = new Set(
-    (after?.files ?? []).flatMap((f) => f.sources.map((s) => `${s.path}\u0000${s.sha256}`)),
-  );
-  const touched = new Map(latest.files.map((f) => [f.path, f.before]));
-  const added: string[] = [];
-  const changed: string[] = [];
-  const removed: Api.BuildRemovalT[] = [];
-  const slots: string[] = [];
-  for (const f of latest.files) {
-    if (f.path === manifestRel) continue;
-    if (!f.path.includes("/generated/")) slots.push(f.path);
-  }
-  for (const [path, f] of now) {
-    const prev = was.get(path);
-    if (!prev) added.push(path);
-    else if (prev.sha256 !== f.sha256 && touched.has(path)) changed.push(path);
-  }
-  for (const [path, f] of was) {
-    if (now.has(path)) continue;
-    const why = f.sources
-      .filter((s) => !nowSources.has(`${s.path}\u0000${s.sha256}`))
-      .map((s) => s.path);
-    removed.push({
-      path,
-      ...kindAndId(path),
-      repos: [],
-      explainedBy: [...new Set(why)].sort(cmpText),
-    });
-  }
+/** A build's report as the page shows it. */
+export function reportView(root: string, r: BuildReport): Api.BuildReportViewT {
   return {
-    n: latest.n,
-    command: latest.command,
-    at: latest.at,
-    added: added.sort(cmpText),
-    changed: changed.sort(cmpText),
-    removed: removed.sort((a, b) => cmpText(a.path, b.path)),
-    slots: slots.sort(cmpText),
+    command: r.command,
+    at: r.at,
+    generated: r.generated,
+    outcome: r.outcome,
+    ...(r.refused ? { refused: refusalView(root, r.refused, r.command, r.run) } : {}),
+    ...(r.stopped !== undefined ? { stopped: r.stopped } : {}),
+    run: r.run,
+    counts: r.counts,
+    added: r.added,
+    changed: r.changed,
+    removed: r.removed.map((x) => removalView(root, x)),
+    slots: r.slots,
+    ...(r.undo !== undefined ? { undo: r.undo } : {}),
+    ...(r.discarded?.length ? { discarded: r.discarded } : {}),
   };
 }
 
-/** GET /api/catalog/build: built in memory and guarded, as `atticus catalog build --check`. */
+/** The latest build's own report on this machine, whatever command built (none: undefined). */
+export async function lastBuildOf(root: string): Promise<Api.BuildReportViewT | undefined> {
+  const r = await readBuildReport(root);
+  return r ? reportView(root, r) : undefined;
+}
+
+/** GET /api/build: built in memory and guarded, as `atticus catalog build --check`. */
 export async function catalogBuildView(root: string): Promise<Api.CatalogBuildViewT> {
   const r = await buildAndWrite(root, { command: BUILD, check: true });
   const last = await lastBuildOf(root);
@@ -154,15 +157,40 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
     })),
     pending: {
       upToDate: r.upToDate === true,
-      removals: r.guard.removals.map(removalView),
-      ...(r.guard.refused ? { refused: refusalView(r.guard.refused) } : {}),
+      removals: r.guard.removals.map((x) => removalView(root, x)),
+      ...(r.guard.refused ? { refused: refusalView(root, r.guard.refused) } : {}),
     },
     ...(last ? { last } : {}),
+    ...(r.guard.refused?.reasons.includes("not-upgraded") ? { upgrade: true as const } : {}),
     orphaned: r.build.orphaned,
     problems: r.build.problems.map((p) => ({
       file: p.source,
       message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
     })),
+  };
+}
+
+/** The hash a confirm of the upgrade sends back: of every file listed, by path and content hash. */
+export function upgradePlanHash(writes: readonly { path: string; sha256: string }[]): string {
+  return createHash("sha256")
+    .update(writes.map((w) => `${w.path}\u0000${w.sha256}`).join("\n"), "utf8")
+    .digest("hex");
+}
+
+/**
+ * GET /api/build/upgrade: the upgrade to source slots as a dry run (`atticus upgrade --json`
+ * without `--yes`, under `slots`), with the hash of the files it lists.
+ */
+export async function catalogUpgradeView(root: string): Promise<Api.CatalogUpgradeViewT> {
+  const v = await upgradeSlotsView(root);
+  // The other steps run before this one and may change an input the slots record (atticus
+  // upgrade plans this step again after them), so they are run first (Run the upgrade, POST /api/upgrade).
+  const { upgradeCheck } = await import("./upgrade.js");
+  const c = await upgradeCheck(root);
+  return {
+    ...v,
+    plan: upgradePlanHash(v.writes),
+    others: c.pending.map((p) => ({ id: p.id, summary: p.summary })),
   };
 }
 
@@ -196,7 +224,7 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
 }
 
 /**
- * GET /api/catalog/prune: exactly what `atticus catalog prune` lists (its own `--json`, without
+ * GET /api/build/prune: exactly what `atticus catalog prune` lists (its own `--json`, without
  * `--yes`), so the confirm step shows the list the command removes.
  */
 export async function catalogPruneView(root: string): Promise<Api.CatalogPruneViewT> {

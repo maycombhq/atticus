@@ -278,6 +278,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)
           [--undismiss <key>]          Take a dismissal back
+          [--promote <key>]            Promote what the readers found to your own fact (by: person, the reader's citation) in facts/<repo>.jsonl, an edit to propose; atticus verify <repo> then checks it on its line
   atticus catalog prune                List the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog); with --yes, remove exactly those [--json]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
