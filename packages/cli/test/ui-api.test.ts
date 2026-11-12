@@ -243,8 +243,10 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect(job.kind).toBe("scan");
     const read = Api.Job.parse((await call(`/api/jobs/${jobId}`)).body);
     expect(read.progress).toEqual({ done: 1, total: 1, message: "Scanned" });
-    // Beta.26 safety stop: no repo is cloned here, so the scan wrote nothing; the job ends with
-    // problems, its result names each repo and why, and its errors say what to do, in words.
+    // No repo is cloned here, so the scan wrote nothing; the job ends with problems, its result
+    // names each repo and why, and its errors say what to do, in words. ADR 0195 point 4:
+    // beta.26's stop stays only as the guard for a scan that read nothing, which writes no slot
+    // either, and says "every slot and catalog/generated" where beta.26 said "catalog/generated".
     expect(job.state).toBe("failed");
     const refused = (read.result as { refused: { repos: { repo: string; why: string }[] } })
       .refused;
@@ -259,7 +261,9 @@ describe("the write side of the local API runs the CLI's own commands", () => {
       "forge-reports-job",
     ]);
     expect(refused.repos.every((x) => x.why === "not-cloned")).toBe(true);
-    expect(read.errors[0]).toMatch(/^Nothing written: catalog\/generated is as it was/);
+    expect(read.errors[0]).toMatch(
+      /^Nothing written: the scan read no repo in full, so every slot and catalog\/generated are as they were/,
+    );
     expect(read.errors).toContain(
       "  forge-ledger: not cloned here; clone it with atticus workspace sync",
     );
@@ -270,7 +274,9 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     const lines = srv.jobs.linesOf(jobId)?.lines ?? [];
     expect(lines.some((l) => /^\s*[{}[\]"]/.test(l))).toBe(false);
     expect(lines.join("\n")).toMatch(/Scanned 0 repos: \d+ records?/);
-    expect(lines.join("\n")).toMatch(/Nothing written: catalog\/generated is as it was/);
+    expect(lines.join("\n")).toMatch(
+      /Nothing written: the scan read no repo in full, so every slot and catalog\/generated are as they were/,
+    );
     expect(lines.join("\n")).toMatch(/forge-ledger: not cloned here/);
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });
