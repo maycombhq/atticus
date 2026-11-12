@@ -761,13 +761,21 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       message: `${(i.slots.legacy as { problem: string }).problem}; its records aren't used`,
     });
   const byKey = new Map(records.map((r) => [`${r.kind}/${r.id}`, r]));
-  for (const r of legacyRecords) byKey.set(`${r.kind}/${r.id}`, r);
   // Each component's and system's repos, from every slot on disk (an archived repo's too).
   const ends = endReposOf([
     ...code,
     ...legacyAll,
     ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
   ]);
+  // A live repo's legacy records, as they are; an arrow of one to a repo removed or archived
+  // leaves with that repo (point 6), as a legacy join does.
+  // (The whole-catalog passes read the legacy records as context, so theirs come back through
+  // them: one no current source derives is taken out.)
+  for (const r of legacyRecords) {
+    const key = `${r.kind}/${r.id}`;
+    if (!endsGone(r, ends, live).length) byKey.set(key, r);
+    else if (!derivedKeys.has(key)) byKey.delete(key);
+  }
   if (legacySlot) {
     const changedSince = Object.entries(legacySlot.slot.inputs).some(([path, h]) => {
       const now = currentHashOf(path, i, used);
@@ -881,7 +889,15 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   // ---- the files and build.json
   const files = new Map<string, string>();
   for (const r of out) files.set(recordPath(r), serializeRecord(r));
-  const manifest = manifestOf(root, out, files, i, used, legacySlot ? legacySlot.sha : undefined);
+  // joins.json as this build leaves it (its retired joins out): what the next build reads.
+  const manifest = manifestOf(
+    root,
+    out,
+    files,
+    i,
+    used,
+    legacyJoins !== undefined ? sha(legacyJoins) : legacySlot ? legacySlot.sha : undefined,
+  );
   const stats = {
     records: out.length,
     interfaces: out.filter((r) => r.kind === "Interface").length,
