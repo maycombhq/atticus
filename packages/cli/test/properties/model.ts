@@ -207,7 +207,7 @@ export class Model {
    * legacy readers slot, or to a repo with no source, is admitted but not required: the old
    * catalog's records hold no calls to re-derive it from.
    */
-  arrows(): { admitted: Set<string>; required: Set<string> } {
+  arrows(withLegacy = true): { admitted: Set<string>; required: Set<string> } {
     const admitted = new Set<string>();
     const required = new Set<string>();
     const add = (k: string, must: boolean) => {
@@ -240,8 +240,37 @@ export class Model {
             );
         }
     }
-    for (const j of this.liveLegacy()) add(j.key, true);
+    if (withLegacy) for (const j of this.liveLegacy()) add(j.key, true);
     return { admitted, required };
+  }
+
+  /**
+   * The legacy joins a written build retired (ADR 0195 point 6: once a slot or input the derived
+   * record comes from has changed since the upgrade, the derived record takes the id and the
+   * legacy copy leaves joins.json). `kept` is the ids joins.json still holds after the write.
+   * A join may leave only when the current sources can derive its arrow (a call or topic of a
+   * live caller to a live repo, legacy joins aside) and a repo at one end is read from a
+   * current, non-legacy source; otherwise it is returned as wrongly retired. The others leave
+   * the model: their arrow is a derived one from now on, and goes when its caller drops it.
+   */
+  retire(kept: ReadonlySet<string>): LegacyJoin[] {
+    const derivable = this.arrows(false).admitted;
+    const fresh = (slot: number) => {
+      const s = this.source(slot);
+      return !!s && s.from !== "legacy";
+    };
+    const wrong: LegacyJoin[] = [];
+    const stay: LegacyJoin[] = [];
+    for (const j of this.legacyJoins) {
+      if (kept.has(j.id) || !this.isLive(j.from) || !this.isLive(j.to)) stay.push(j);
+      else if (derivable.has(j.key) && (fresh(j.from) || fresh(j.to))) continue;
+      else {
+        wrong.push(j);
+        stay.push(j);
+      }
+    }
+    this.legacyJoins = stay;
+    return wrong;
   }
 
   allowedArrows(): Set<string> {
