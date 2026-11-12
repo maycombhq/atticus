@@ -109,6 +109,7 @@ export async function planStories(
             discarded: r.discarded,
             files: r.files,
             ...(r.waiting ? { waiting: r.waiting } : {}),
+            ...(r.kept ? { kept: r.kept } : {}),
           },
           null,
           2,
@@ -126,6 +127,8 @@ export async function planStories(
       io.out(
         "These are draft stories from the design as it stands; plan again once the design is approved.",
       );
+    // Beta.27 review: forced over a person's files, where their copy is.
+    if (r.kept) io.out(`The files a person wrote are copied to ${r.kept} first (--force).`);
     io.out(
       `Planned ${plural(r.skeleton.stories.length, "story")} and ${plural(r.skeleton.tasks.length, "task")} for ${r.change} in ${plural(r.skeleton.repos.length, "repo")}.`,
     );
@@ -183,6 +186,7 @@ export async function snowDraft(
       );
       return r.drafts.some((d) => d.missing.length) ? 1 : 0;
     }
+    if (r.kept) io.out(`The snow.md a person wrote is copied to ${r.kept} first (--force).`);
     if (r.drafts.length === 0) {
       io.out(`${changeId} needs no service-desk request.`);
       return 0;

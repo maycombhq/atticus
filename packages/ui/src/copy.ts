@@ -3,6 +3,11 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
+
+/** "a", "a and b", "a, b and c". */
+const listWords = (xs: readonly string[]) =>
+  xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)!}`;
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -5845,6 +5850,11 @@ export const COPY = {
     // Beta.27 review: stories a person wrote stand for the stage's work; the change goes on.
     byPersonGoOn: "Go on from them on At a glance",
     byPersonAgain: "Or have the stage write them instead (it replaces them):",
+    /** Review of the fix: the button names what it replaces, and asks once. */
+    byPersonReplace: (files: string[]) => `Draft the stories again, replacing ${listWords(files)}…`,
+    byPersonConfirm: (files: string[]) =>
+      `This replaces ${listWords(files)}, which a person wrote. A copy of ${files.length === 1 ? "it" : "each"} is kept first in the change's stage/stories-by-person/ folder, and the stage says where. Draft the stories again?`,
+    byPersonKeep: "Keep them",
     starting: "Writing the prompt…",
     prompt: "The prompt for your assistant",
     criticPrompt: "The critic's prompt for your assistant",

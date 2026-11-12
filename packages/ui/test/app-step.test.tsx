@@ -282,6 +282,10 @@ describe("Draft the stories again", () => {
     await tick();
     m.render();
     handoffRefusal = undefined;
+    // Beta.27 review: the refusal is an alert in the app's words (journey 28 no longer reaches
+    // it: the Stories page offers drafting again before any refusal).
+    const alert = all(m.tree).find((e) => (e.props as { role?: string }).role === "alert")!;
+    expect(text(alert)).toContain(COPY.app.forceStories("add-a-limit"));
     expect(text(m.tree)).toContain(COPY.app.forceStories("add-a-limit"));
     expect(text(m.tree)).not.toContain("--force");
     const again = all(m.tree).find((e) => e.type === HandoffStep)!;

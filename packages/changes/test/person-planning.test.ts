@@ -6,6 +6,7 @@ import {
   changeReport,
   DEFAULT_CHANGE_POLICY,
   GENERATED_MARK,
+  keepPersonWritten,
   personWrittenPlanning,
   stageCompletion,
   stageIdle,
@@ -44,6 +45,31 @@ describe("planning files a person wrote", () => {
     expect(await personWrittenPlanning(dir)).toEqual(["stories.md", "tasks.md"]);
     await generated(dir, "stories.md");
     expect(await personWrittenPlanning(dir)).toEqual(["tasks.md"]);
+  });
+
+  it("a byte-order mark or blank lines before the mark (Windows) still read as Atticus's", async () => {
+    const { dir } = await estate();
+    const was = await readFile(join(dir, "stories.md"), "utf8");
+    await writeFile(join(dir, "stories.md"), `﻿${GENERATED_MARK} stories. -->\n${was}`);
+    await writeFile(join(dir, "tasks.md"), `\r\n  \n${GENERATED_MARK} tasks. -->\n${was}`);
+    expect(await personWrittenPlanning(dir)).toEqual([]);
+    // The mark anywhere but first is still a person's file.
+    await writeFile(join(dir, "tasks.md"), `# My tasks\n${GENERATED_MARK} -->\n`);
+    expect(await personWrittenPlanning(dir)).toEqual(["tasks.md"]);
+  });
+
+  it("are copied aside before a forced draft replaces them, a new folder each time", async () => {
+    const { dir } = await estate();
+    const stories = await readFile(join(dir, "stories.md"), "utf8");
+    const rel = `openspec/changes/${ID}`;
+    expect(await keepPersonWritten(dir, rel, "stories", ["stories.md", "tasks.md"])).toBe(
+      `${rel}/stage/stories-by-person/1/`,
+    );
+    expect(await readFile(join(dir, "stage/stories-by-person/1/stories.md"), "utf8")).toBe(stories);
+    expect(await keepPersonWritten(dir, rel, "stories", ["stories.md"])).toBe(
+      `${rel}/stage/stories-by-person/2/`,
+    );
+    expect(await keepPersonWritten(dir, rel, "stories", [])).toBeUndefined();
   });
 
   it("stand for the stories stage's work, and the stages the change passed read as skipped", async () => {

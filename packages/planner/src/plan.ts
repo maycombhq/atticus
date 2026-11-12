@@ -1,6 +1,6 @@
 import { readdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { personWritten, writeFileAtomic } from "@maycombhq/changes";
+import { join, relative, sep } from "node:path";
+import { keepPersonWritten, personWritten, writeFileAtomic } from "@maycombhq/changes";
 import type { RunSummary } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
 import { loadPlanContext, type PlanContext } from "./context.js";
@@ -35,6 +35,8 @@ export interface PlanStoriesResult {
   run?: RunSummary;
   waiting?: { runId: string };
   promptSha256?: string;
+  /** Beta.27 review: forced, where the copy of the files a person wrote is (metarepo-relative). */
+  kept?: string;
 }
 
 /** Refuse to overwrite planning files a person wrote, unless forced. */
@@ -46,6 +48,21 @@ async function guard(ctx: PlanContext, rels: string[], force?: boolean): Promise
       "refused",
       `${ctx.change.id} already has planning files a person wrote: ${own.join(", ")}. Re-run with --force to replace them.`,
     );
+}
+
+/**
+ * Beta.27 review: forced, a copy of each of `rels` a person wrote, kept just before the run
+ * writes over or removes them; the folder, metarepo-relative, so the run says where.
+ */
+async function keepForced(
+  ctx: PlanContext,
+  rels: string[],
+  force: boolean | undefined,
+  stage: string,
+): Promise<string | undefined> {
+  if (!force) return undefined;
+  const own = await personWritten(ctx.dir, rels);
+  return keepPersonWritten(ctx.dir, relative(ctx.root, ctx.dir).split(sep).join("/"), stage, own);
 }
 
 /** Which tasks wait for which service-desk requests: the tasks of the story that has the hop. */
@@ -124,6 +141,12 @@ export async function planStories(
   }
   linkWaits(skeleton, snowNeeds(ctx));
 
+  // Beta.27 review: forced, what a person wrote is copied aside before anything is written,
+  // the story files this run removes too.
+  const stale = (await readdir(join(ctx.dir, "stories")).catch(() => [] as string[]))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => `stories/${f}`);
+  const kept = await keepForced(ctx, [...new Set([...rels, ...stale])], o.force, "stories");
   // Remove generated story files of stories that no longer exist.
   const keep = new Set(skeleton.stories.map((s) => `${s.id}.md`));
   for (const f of await readdir(join(ctx.dir, "stories")).catch(() => [] as string[])) {
@@ -138,13 +161,22 @@ export async function planStories(
     );
   await writeFileAtomic(join(ctx.dir, "stories.md"), renderIndex(skeleton, prose));
   await writeFileAtomic(join(ctx.dir, "tasks.md"), renderTasks(skeleton, skeleton.tasks));
-  return { ...base, state: "written", prose, fallback, files: rels.sort() };
+  return {
+    ...base,
+    state: "written",
+    prose,
+    fallback,
+    files: rels.sort(),
+    ...(kept ? { kept } : {}),
+  };
 }
 
 export interface SnowDraftResult {
   change: string;
   drafts: SnowDraft[];
   file: string;
+  /** Beta.27 review: forced, where the copy of the snow.md a person wrote is. */
+  kept?: string;
 }
 
 /** snow.md from the org pack's request templates and their triggers. */
@@ -159,8 +191,9 @@ export async function snowDraft(
   const drafts = needs.map((n) => draftFor(ctx, n));
   const skeleton = buildSkeleton(ctx);
   const waits = linkWaits(skeleton, needs);
+  const kept = await keepForced(ctx, ["snow.md"], o.force, "snow");
   await writeFileAtomic(join(ctx.dir, "snow.md"), renderSnow(drafts, waits));
-  return { change: ctx.change.id, drafts, file: "snow.md" };
+  return { change: ctx.change.id, drafts, file: "snow.md", ...(kept ? { kept } : {}) };
 }
 
 export type { TaskPlan };

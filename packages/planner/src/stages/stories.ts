@@ -42,6 +42,7 @@ import {
   testPlanFor,
   writeFileAtomic,
   wroteThis,
+  keepPersonWritten,
   personWrittenPlanning,
   type ChangeContext,
 } from "@maycombhq/changes";
@@ -4192,14 +4193,18 @@ export async function storiesStage(
     );
   // Files a person wrote are kept unless forced.
   // Beta.27 review: the one definition the plan gate, the next step and the app read too.
-  if (!o.force) {
-    const own = await personWrittenPlanning(dir);
-    if (own.length)
-      throw new PlannerError(
-        "refused",
-        `${change.id} already has planning files a person wrote: ${own.join(", ")}. Re-run with --force to replace them.`,
-      );
-  }
+  const own = await personWrittenPlanning(dir);
+  if (!o.force && own.length)
+    throw new PlannerError(
+      "refused",
+      `${change.id} already has planning files a person wrote: ${own.join(", ")}. Re-run with --force to replace them.`,
+    );
+  // Review of the fix: forced, a copy of each is kept first, whatever the loop's iteration (the
+  // loop keeps copies only of edits since its own last write), and said.
+  const keptOwn = o.force ? await keepPersonWritten(dir, rel, "stories", own) : undefined;
+  const ownNote = keptOwn
+    ? `${own.join(", ")} ${own.length === 1 ? "was" : "were"} written by a person; a copy is in ${keptOwn}, and the stage writes ${own.length === 1 ? "it" : "them"} again (--force).`
+    : undefined;
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
@@ -4643,6 +4648,7 @@ Rules:
   await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
   res.notes.push(...attached.notes, ...runNotes, ...writeNotes);
+  if (ownNote) res.notes.unshift(ownNote);
   // ADR 0156: a flow these stories add as new that a repo's open seed adds too collides at
   // archive; the remedy is to accept the seed, then run this stage again.
   if (res.answer)

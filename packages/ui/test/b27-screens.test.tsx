@@ -14,7 +14,7 @@ import {
 } from "../src/screens/architecture/Canvas.js";
 import { WORDS } from "../src/screens/architecture/words.js";
 import { stageMark } from "../src/screens/work/Cockpit.js";
-import { StageThreadView } from "../src/screens/work/StageThread.js";
+import { ReplacePersonFiles, StageThreadView } from "../src/screens/work/StageThread.js";
 import { RaiseHandoff } from "../src/screens/know/Phase.js";
 import { TrustRow } from "../src/screens/map/Trust.js";
 import { askedKind, openingKind, OwnerQuestionCard } from "../src/screens/OwnerQuestions.js";
@@ -76,8 +76,21 @@ describe("1: planning files a person wrote", () => {
     expect(out).toContain(esc(v.headline));
     expect(out).toContain('href="#/cockpit?change=add-transfer-limit"');
     expect(out).toContain(esc(COPY.thread.byPersonGoOn));
-    expect(out).toContain(esc(COPY.appStep.storiesAgain));
+    // Review of the fix: the button names the files it replaces, and asks once first.
+    expect(out).toContain(esc("Draft the stories again, replacing stories.md and tasks.md…"));
+    expect(out).not.toContain(esc(COPY.appStep.storiesAgain) + "<");
     expect(out).not.toContain(`>${esc(COPY.thread.start)}<`);
+    const asked = renderToStaticMarkup(
+      <ReplacePersonFiles files={v.byPerson!} args={[...v.step, "--force"]} asking />,
+    );
+    expect(asked).toContain(
+      esc(
+        "This replaces stories.md and tasks.md, which a person wrote. A copy of each is kept first in the change's stage/stories-by-person/ folder",
+      ),
+    );
+    expect(asked).toContain(`>${esc(COPY.appStep.storiesAgain)}<`);
+    expect(asked).toContain(`>${esc(COPY.thread.byPersonKeep)}<`);
+    expect(asked).toMatch(/role="group" aria-labelledby="[^"]+"/);
   });
 });
 
