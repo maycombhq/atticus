@@ -107,12 +107,26 @@ function rewriteFactsFile(name: string, text: string, from: string, to: string):
   }
 }
 
+/**
+ * A test hook (ADR 0195 point 10, "the new slots fail to build"): the rename's new slot files are
+ * made unreadable before they are checked, so the rename must change nothing. Never set outside
+ * tests.
+ */
+export const renameHooks: { breakNewSlots?: boolean } = {};
+
 export async function repoRename(
   root: string,
   from: string | undefined,
   to: string | undefined,
   io: Output,
+  o: { json?: boolean; allowRemovals?: number; discardEdits?: number } = {},
 ): Promise<number> {
+  const breakSlots = renameHooks.breakNewSlots === true;
+  renameHooks.breakNewSlots = undefined;
+  const refusedJson = (reasons: string[], message: string, more: Record<string, unknown> = {}) => {
+    if (o.json)
+      io.out(JSON.stringify({ renamed: false, refused: { reasons, message, ...more } }, null, 2));
+  };
   if (!from || !to) {
     io.err("Usage: atticus repo rename <old id> <new id>");
     return 2;
@@ -179,17 +193,18 @@ export async function repoRename(
   const rText = await readText(rOld);
   if (rText !== undefined) {
     const read = readersSlotRead(rText);
-    const next =
+    const next0 =
       "slot" in read
         ? serializeReadersSlot(
             renamed({ ...read.slot }, from, to).value as Parameters<typeof serializeReadersSlot>[0],
           )
         : undefined;
+    const next = breakSlots && next0 ? next0.slice(0, -10) : next0;
     const check = next === undefined ? undefined : readersSlotRead(next);
     if (!next || !check || !("slot" in check) || check.slot.repo !== to) {
-      io.err(
-        `The readers slot of ${from} doesn't read under ${to} (${"problem" in read ? read.problem : "renamed, it isn't a slot"}); nothing was changed.`,
-      );
+      const why = `The readers slot of ${from} doesn't read under ${to} (${"problem" in read ? read.problem : "problem" in (check ?? {}) ? (check as { problem: string }).problem : "renamed, it isn't a slot"}); nothing was changed.`;
+      io.err(why);
+      refusedJson(["build-failed"], why);
       return 1;
     }
     slotWrites.push({ path: readersSlotPath(root, to), text: next });
@@ -212,11 +227,11 @@ export async function repoRename(
     } catch {
       meta = undefined;
     }
-    const check = factsSlotOf(to, facts, meta);
+    const check = factsSlotOf(to, facts, breakSlots && meta ? meta.slice(0, -10) : meta);
     if (!check?.ok || facts === undefined || meta === undefined) {
-      io.err(
-        `The facts snapshot of ${from} doesn't read under ${to} (${check && !check.ok ? check.problem : "its meta isn't JSON"}); nothing was changed.`,
-      );
+      const why = `The facts snapshot of ${from} doesn't read under ${to} (${check && !check.ok ? check.problem : "its meta isn't JSON"}); nothing was changed.`;
+      io.err(why);
+      refusedJson(["build-failed"], why);
       return 1;
     }
     const p = factsSlotPaths(root, to);
@@ -243,10 +258,15 @@ export async function repoRename(
     ...inputs,
     slots: await withSlotWrites(root, inputs.slots, slotWrites),
   });
-  const pre = await buildAndWrite(root, { command, build, check: true });
+  const confirm = {
+    ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+    ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+  };
+  const pre = await buildAndWrite(root, { command, build, check: true, ...confirm });
   if (pre.guard.refused) {
     for (const l of buildLines(root, pre)) io.err(l);
     io.err("Nothing was renamed.");
+    if (o.json) io.out(JSON.stringify({ renamed: false, refused: pre.guard.refused }, null, 2));
     return 1;
   }
 
@@ -320,7 +340,7 @@ export async function repoRename(
     // ---- the new slots, then the build, then the old slots go (ADR 0195 point 2)
     let written;
     try {
-      written = await buildAndWrite(root, { command, build, slots: slotWrites });
+      written = await buildAndWrite(root, { command, build, slots: slotWrites, ...confirm });
     } catch (e) {
       // Only the new files this wrote are taken away; the old ones stay.
       for (const w of slotWrites) if (w.text !== null) await rm(w.path, { force: true });
@@ -328,12 +348,43 @@ export async function repoRename(
     }
     if (written.guard.refused) {
       for (const l of buildLines(root, written)) io.err(l);
+      if (o.json)
+        io.out(JSON.stringify({ renamed: false, refused: written.guard.refused }, null, 2));
       return 1;
     }
     for (const l of buildLines(root, written)) said.push(l);
     forgetCatalogs();
     if (records) said.push(`${records} curated decision${records === 1 ? "" : "s"} (repo ${to})`);
 
+    if (o.json) {
+      io.out(
+        JSON.stringify(
+          {
+            renamed: true,
+            from,
+            to,
+            files: written.write
+              ? {
+                  written: written.write.written,
+                  unchanged: written.write.unchanged,
+                  removed: written.write.removed,
+                }
+              : null,
+            slots: written.write?.slots ?? [],
+            removed: (written.write?.removals ?? []).map((x) => ({
+              kind: x.kind,
+              id: x.id,
+              repos: x.repos,
+              explainedBy: x.explainedBy,
+              reasons: x.reasons,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+      return 0;
+    }
     io.out(`Renamed ${from} to ${to}:`);
     for (const l of said) io.out(`  ${l}`);
     const left = [

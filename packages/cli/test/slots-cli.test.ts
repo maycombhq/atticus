@@ -172,7 +172,11 @@ describe("a scan writes the readers slot of each repo it read in full (ADR 0195 
       const root = await scannedForge();
       const slots = files(sources(root));
       const repos = (await readdir(join(FORGE, "repos"))).sort();
-      expect(Object.keys(slots).sort()).toEqual(repos.map((r) => `readers/${r}.json`));
+      // CS2: the build's manifest beside the slots.
+      expect(Object.keys(slots).sort()).toEqual([
+        "build.json",
+        ...repos.map((r) => `readers/${r}.json`),
+      ]);
       for (const r of repos) {
         const p = parseReadersSlot(slots[`readers/${r}.json`]!);
         expect(p.ok).toBe(true);
@@ -245,7 +249,10 @@ describe("a run that didn't observe a repo leaves its slot byte for byte (ADR 01
       await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
       const c = capture();
       expect(await main(["scan", "--root", root, "--no-drift"], c.io)).toBe(1);
-      expect(files(sources(root))).toEqual(before);
+      // CS2: the repo not cloned keeps its slot byte for byte; the repo read in full is written.
+      const after = files(sources(root));
+      expect(after["readers/forge-ledger.json"]).toBe(before["readers/forge-ledger.json"]);
+      expect(after["readers/forge-events.json"]).not.toBe(before["readers/forge-events.json"]);
     },
     T,
   );
@@ -260,8 +267,11 @@ describe("a run that didn't observe a repo leaves its slot byte for byte (ADR 01
       const c = capture();
       expect(
         await main(["scan", "--root", root, "--no-drift", "--repos", "forge-ledger"], c.io),
-      ).toBe(1);
-      expect(files(sources(root))).toEqual(before);
+      ).toBe(0);
+      // CS2: the repo outside --repos keeps its slot byte for byte; the one asked is written.
+      const after = files(sources(root));
+      expect(after["readers/forge-events.json"]).toBe(before["readers/forge-events.json"]);
+      expect(after["readers/forge-ledger.json"]).not.toBe(before["readers/forge-ledger.json"]);
     },
     T,
   );
@@ -280,7 +290,10 @@ describe("a run that didn't observe a repo leaves its slot byte for byte (ADR 01
       } finally {
         steer.failOn = undefined;
       }
-      expect(files(sources(root))).toEqual(before);
+      // CS2: the repo whose reader threw keeps its slot; the other repo read in full is written.
+      const after = files(sources(root));
+      expect(after["readers/forge-portal-bff.json"]).toBe(before["readers/forge-portal-bff.json"]);
+      expect(after["readers/forge-ledger.json"]).not.toBe(before["readers/forge-ledger.json"]);
     },
     T,
   );
@@ -362,7 +375,7 @@ describe("a plugin that times out or is refused leaves the slots of the repos it
   }
 
   it(
-    "a timeout: the scan writes nothing (beta.26), every slot as it was",
+    "a timeout: the repo it applies to keeps its last good read, the others are written",
     async () => {
       const root = await pluginMetarepo();
       const loops = join(root, "org-pack", "plugins", "forge-loops");
@@ -373,6 +386,7 @@ describe("a plugin that times out or is refused leaves the slots of the repos it
       expect(await main(["scan", "--root", root, "--no-drift"], c.io), c.err.join("\n")).toBe(0);
       const before = files(sources(root));
       expect(Object.keys(before).sort()).toEqual([
+        "build.json",
         "readers/forge-anvil-notes.json",
         "readers/forge-notes-ui.json",
       ]);
@@ -382,7 +396,12 @@ describe("a plugin that times out or is refused leaves the slots of the repos it
       const t = capture();
       expect(await main(["scan", "--root", root, "--no-drift"], t.io)).toBe(1);
       expect(t.err.join("\n")).toMatch(/stopped after 1000 ms, its time limit/);
-      expect(files(sources(root))).toEqual(before);
+      // CS2: the repo the plugin timed out on keeps its slot; the other repo is written.
+      const after = files(sources(root));
+      expect(after["readers/forge-anvil-notes.json"]).toBe(
+        before["readers/forge-anvil-notes.json"],
+      );
+      expect(after["readers/forge-notes-ui.json"]).not.toBe(before["readers/forge-notes-ui.json"]);
     },
     T,
   );

@@ -1283,7 +1283,12 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   // F5: a repo's id moved with everything filed under it.
   if (group === "repo" && command === "rename") {
     const { repoRename } = await import("./repo-rename.js");
-    return repoRename(root, positionals[2], positionals[3], io);
+    const counts = countFlags(values, io);
+    if (counts === undefined) return 2;
+    return repoRename(root, positionals[2], positionals[3], io, {
+      json: values.json === true,
+      ...counts,
+    });
   }
   if (group === "repo" && (command === "add" || command === "describe")) {
     const m = await loadRepoCommands();
