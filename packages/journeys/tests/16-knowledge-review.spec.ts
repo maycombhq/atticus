@@ -288,10 +288,10 @@ test("needs across changes: every open need, marked as on a change's page (ADR 0
   await expect(change).not.toContainText("Network firewall rule");
   await accessible(page, "needs across changes, every one");
 
-  // Home's Wait on you tile counts them (with the manual steps, said apart) and links here.
+  // Home's Your needs and steps tile counts them (with the manual steps, said apart) and links here.
   await open(page, a(), "home");
   await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeAttached();
-  const needs = page.getByRole("link", { name: /^Wait on you \d+$/ });
+  const needs = page.getByRole("link", { name: /^Your needs and steps \d+$/ });
   await expect(needs).toHaveAttribute("href", "#/changes?across=needs");
   await expect(needs).toHaveAccessibleDescription(/^1 open need · /);
   // Owner questions only waiting: the link opens them (UX review).

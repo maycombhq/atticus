@@ -112,7 +112,9 @@ test("opens a tab per page, focuses one already open, closes one, and follows Ba
 test("keeps what was typed into a page, and what was opened, when its tab comes back", async ({
   page,
 }) => {
-  await open(page, app(), "questions");
+  // Beta.27 review: Questions opens on the kind that has questions (here the owner questions);
+  // the steps' list, with its filter, is asked for by name.
+  await open(page, app(), "questions?kind=steps");
   const filter = page.locator("#questions-filter");
   await filter.fill("ledger");
   const tabs = page.getByRole("tablist", { name: "Open pages" });
@@ -169,7 +171,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
     "Nothing written: catalog/generated is as it was",
   );
   await expect(panel.getByRole("log")).toContainText(
-    "forge-ledger: not cloned here; clone it with atticus workspace sync",
+    "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
   );
   await panel.getByRole("button", { name: "Hide the panel" }).click();
 });
@@ -319,6 +321,10 @@ test("in an editor's panel there is no second activity bar, and every page is st
     "true",
   );
   await expect(bar.getByRole("button", { name: "Zoom in" })).toBeVisible();
+  // Beta.27 review: with nothing picked, the details (over the canvas this narrow) start closed;
+  // Show details opens them.
+  await expect(page.locator(".viewer-aside")).toBeHidden();
+  await page.getByRole("button", { name: "Show details" }).click();
   await expect(page.locator(".viewer-aside")).toBeVisible();
   expect(await sideways(page)).toBe(false);
   await accessible(page, "the map in an editor's panel");
