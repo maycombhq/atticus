@@ -88,6 +88,11 @@ export interface LegacyJoin {
   arrow?: { key: string; from: number; to: number };
   /** The slots of the repos its evidence names (none for a record with no evidence). */
   repos: number[];
+  /**
+   * An arrow that cites no code line at its caller's end (a beta.26 write took it off): no file
+   * to check a read reached, so only a complete read of the caller tells it is gone.
+   */
+  lineless?: true;
 }
 
 /** What changed since the last write: what may explain a record leaving the catalog. */
@@ -286,7 +291,7 @@ export class Model {
       for (const j of this.liveLegacy()) {
         if (!j.arrow) continue;
         admitted.add(j.arrow.key);
-        required.add(j.arrow.key);
+        if (!this.unjoinedMayLeave(j)) required.add(j.arrow.key);
       }
     // A curated suppress of an arrow's Interface (a hand deletion made curated) takes it out:
     // the build need not make it, derived or legacy (the overlay runs last).
@@ -340,10 +345,11 @@ export class Model {
     for (const j of this.legacyJoins) {
       const took = written.has(`${j.kind}/${j.id}`) || decided.has(j.id);
       const may =
-        took &&
-        (j.arrow
-          ? derivable.has(j.arrow.key)
-          : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh));
+        (took &&
+          (j.arrow
+            ? derivable.has(j.arrow.key)
+            : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh))) ||
+        this.unjoinedMayLeave(j);
       if (kept.has(`${j.kind}/${j.id}`) || !live.has(j)) stay.push(j);
       else if (may) continue;
       else {
@@ -353,6 +359,34 @@ export class Model {
     }
     this.legacyJoins = stay;
     return wrong;
+  }
+
+  /**
+   * Beta.27.2 (ADR 0195, addendum "a legacy join its caller's facts place elsewhere", as the
+   * owner approved it on 2026-11-12): a legacy join's call arrow may leave without being derived
+   * only when both its ends are read from facts (a facts slot is always written after the
+   * upgrade; a callee still legacy gives the join nothing to place the call with) and the
+   * caller's read places every call it has with the arrow's method and path somewhere else: none
+   * is left, or each goes to a host another live repo lists. An arrow that cites no line at its
+   * caller's end (`lineless`) needs the caller's read complete too: with no file to check, a call
+   * gone from a read in parts may be one in a file it hasn't reached (`Code.unread`). May, not
+   * must: the build also asks that the read cite the file the arrow's caller line is in, which
+   * the model doesn't track. An event's arrow never leaves this way: it joins two sources, and a
+   * legacy listener gives the join nothing to pair a publish with.
+   */
+  unjoinedMayLeave(j: LegacyJoin): boolean {
+    if (!j.arrow) return false;
+    const [, , method, path] = j.arrow.key.split("|");
+    if (method === "EVENT") return false;
+    const s = this.source(j.arrow.from);
+    if (s?.from !== "facts" || this.source(j.arrow.to)?.from !== "facts") return false;
+    if (j.lineless && s.obs.code.unread) return false;
+    return s.obs.code.calls
+      .filter((c) => c.method === method && c.path === path)
+      .every((c) => {
+        const e = this.calleeOf(c.host);
+        return !!e && e.slot !== j.arrow!.to && e.slot !== j.arrow!.from;
+      });
   }
 
   allowedArrows(): Set<string> {

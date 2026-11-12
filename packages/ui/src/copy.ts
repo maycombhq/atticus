@@ -1295,6 +1295,14 @@ export const COPY = {
       "No repo is listed yet. Add your repos in Set up › Repos, then have your assistant read one with /atticus-map <repo>.",
     reportIn: (dir: string) => `The verifier's reports are in ${dir}/.`,
     summary: (trusted: number, all: number) => `${trusted} of ${all} repos trusted`,
+    /** Beta.27: the filter over the repos' sections, by repo. */
+    filterLabel: "Filter the repos",
+    /** Beta.27: every read repo can be read again from here, whatever its state. */
+    readAgain: {
+      title: "Read it again",
+      why: (repo: string) =>
+        `Reads ${repo} whole again with your assistant, every file, as when it was first read. The facts on file stay until the new read replaces them, and Apply checks them again.`,
+    },
     states: {
       "not-read": "Not read yet",
       unverified: "Not verified",

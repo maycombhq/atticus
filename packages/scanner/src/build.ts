@@ -12,6 +12,7 @@ import {
   cmpText,
   evidenceDirOf,
   evidenceRelOf,
+  factIdPart,
   FACTS_SCHEMA_VERSION,
   factsDirOf,
   factsRelOf,
@@ -21,10 +22,12 @@ import {
   loadOrgPack,
   mergeCatalog,
   listQuestions,
+  normalizePath,
   questionsRelOf,
   readSharedMaps,
   readTrafficFile,
   recordPath,
+  registrableDomain,
   serializeRecord,
   sharedDirOf,
   sharedRelOf,
@@ -33,6 +36,7 @@ import {
   type CatalogRecord,
   type ContractsFileT,
   type CuratedProblem,
+  type Fact,
   type FactJoinMiss,
   type FactsJoinResult,
   type FlowRecord,
@@ -73,6 +77,7 @@ import {
   type FactsEstateRepo,
 } from "./build-facts.js";
 import {
+  hostAliases,
   outsideProfileSystems as outsideProfileSystemsOf,
   targetsFromAnswers,
 } from "./facts-catalog.js";
@@ -533,6 +538,37 @@ export interface RetiredJoin {
   id: string;
   /** Fields where the derived record differs from the legacy copy. */
   fields: string[];
+  /**
+   * Beta.27: retired because its caller is read from facts now and the estate join doesn't make
+   * it (no derived record to differ from).
+   */
+  notJoined?: true;
+  /**
+   * The call that decided it (ADR 0195 addendum "a legacy join its caller's facts place
+   * elsewhere"): the caller repo's call at `file:line` joined to an entry, or left to a system
+   * outside the estate; or `gone`, no call at the arrow's caller line (`at`), or none with its
+   * method and path (`call`) in a complete read.
+   */
+  call?: {
+    repo: string;
+    how: "joined" | "outside" | "gone";
+    at?: string;
+    /** The entry or system it is joined or left to. */
+    to?: string;
+    /** For `gone` with no caller line: the arrow's method and path. */
+    call?: string;
+  };
+}
+
+/** The deciding call of a legacy join that left without being derived, in words. */
+export function decidingCallWords(c: NonNullable<RetiredJoin["call"]>): string {
+  if (c.how === "joined")
+    return `${c.repo}'s call at ${c.at} is joined to ${c.to ?? "another entry"}`;
+  if (c.how === "outside")
+    return `${c.repo}'s call at ${c.at} is left to ${c.to}, outside the estate`;
+  return c.at
+    ? `no call at ${c.at} in ${c.repo}'s read`
+    : `no ${c.call} call in ${c.repo}'s complete read`;
 }
 
 export interface Build {
@@ -878,12 +914,200 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     ...legacyAll,
     ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
   ]);
+  // Beta.27 (a user's Map), narrowed by its review and as the owner approved it on 2026-11-12
+  // (ADR 0195 addendum "a legacy join its caller's facts place elsewhere"): an adopted call
+  // arrow (never a topic's or a queue's) leaves without being derived only when the facts read
+  // of its caller places the call elsewhere, or shows it gone, and that read covers the arrow:
+  // - its callers are the repos its caller evidence names (an end's component or system may
+  //   name several; only one with no such evidence names its repo alone), each read from facts
+  //   whose slot changed since the upgrade; every one must place the call;
+  // - the read cites every file the arrow cites at that caller's end (a file no fact cites may
+  //   be one a read in parts hasn't reached); an arrow with no code line there, or a line with
+  //   no file, has no file to check, so the read must be complete (the meta's `readComplete`,
+  //   verify's own verdict);
+  // - every call of that read at the arrow's caller lines, or with its method and path, is
+  //   placed: joined to an entry, or left to an outside system that no live repo still read
+  //   from readers or legacy could be (a host in a domain its manifest lists, or its name);
+  //   none left is the call gone from a file the read covers;
+  // - its callee is no repo still read from readers or legacy: the join can't place a call
+  //   with a repo whose facts it doesn't read.
+  // A call the join couldn't place (a host no repo lists, a question open) keeps the arrow:
+  // point 6, never dropped because the build can't derive it yet. Until the caller's slot
+  // changes, the first build after the upgrade still changes nothing.
+  const factsOf = new Map(factRepos.map((x) => [x.repo, x.facts] as const));
+  const readWhole = new Set(
+    factRepos.flatMap((x) => {
+      const f = i.slots.facts.get(x.repo);
+      return f?.ok && f.meta.readComplete ? [x.repo] : [];
+    }),
+  );
+  const sinceUpgrade = (repo: string) =>
+    !legacySlot || (used.get(repo) ?? []).some((x) => legacySlot.slot.inputs[x.path] !== x.sha256);
+  // The live repos the join doesn't read (readers, legacy or no slot): their hosts' domains and
+  // their names, which a call the join left outside the estate may be one of.
+  const bareHost = (h: string) =>
+    h
+      .trim()
+      .toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+      .replace(/[/?#].*$/, "")
+      .replace(/:\d+$/, "")
+      .replace(/^\*\./, "");
+  const unreadHosts = new Set<string>();
+  const unreadDomains = new Set<string>();
+  const unreadNames = new Set<string>();
+  /** The first label of each of those hosts (`ledger` of `ledger` or `ledger.forge.example`). */
+  const unreadFirstLabels = new Set<string>();
+  for (const r of repos) {
+    if (factsOf.has(r.id)) continue;
+    for (const n of [r.id, r.component, r.system, ...(r.modules ?? []).map((m) => m.component)])
+      if (n) unreadNames.add(factIdPart(n));
+    for (const h of [...(r.hosts ?? []), ...(r.modules ?? []).flatMap((m) => m.hosts ?? [])]) {
+      const b = bareHost(h);
+      unreadHosts.add(b);
+      const d = registrableDomain(b);
+      if (d) unreadDomains.add(d);
+      const first = b.split(".")[0];
+      if (first) unreadFirstLabels.add(first);
+    }
+  }
+  const systemHosts = new Map(
+    outsideProfileSystemsOf(op).map((x) => [factIdPart(x.id), hostAliases(x.aliases ?? [])]),
+  );
+  /** Whether a call left outside the estate may be to a repo the join doesn't read. */
+  const unreadMayAnswer = (f: Fact, target: string): boolean => {
+    const c = f as Fact & { host?: string; to?: string };
+    const names = [target, c.to].flatMap((x) => (x ? [factIdPart(x)] : []));
+    if (names.some((x) => unreadNames.has(x))) return true;
+    const hosts = [target, c.host, ...(systemHosts.get(factIdPart(target)) ?? [])].flatMap((h) =>
+      h ? [bareHost(h)] : [],
+    );
+    return hosts.some((h) => {
+      const d = registrableDomain(h);
+      if (unreadHosts.has(h) || (!!d && unreadDomains.has(d))) return true;
+      // A host with no registrable domain (one label, `.svc`, `.svc.cluster.local`,
+      // `name.namespace`) names a Service by its first label, which an unread repo may be.
+      if (d) return false;
+      const first = h.split(".")[0]!;
+      return !!first && (unreadFirstLabels.has(first) || unreadNames.has(factIdPart(first)));
+    });
+  };
+  // A call is placed unless it is still a loose end after the merge (the estate join or the
+  // merge's hosts joined it, or its fact names its target), or left to an outside system (J2)
+  // that a repo the join doesn't read may be.
+  const looseNow = new Set(records.filter((r) => r.kind === "Unresolved").map((r) => r.id));
+  const looseCalls = new Set(
+    [...(projection?.per ?? new Map())].flatMap(([repo, x]) =>
+      [...x.looseFact].flatMap(([u, fact]) => (looseNow.has(u) ? [`${repo}\u0000${fact}`] : [])),
+    ),
+  );
+  const outsideTo = new Map(
+    (projection?.whole.outside ?? []).map((o) => [`${o.call.repo}\u0000${o.call.fact}`, o.target]),
+  );
+  type CallerEv = { repo?: string; side?: string; source?: string; path?: string; line?: number };
+  /** The entry a derived arrow joins a call to: the one citing the call's line at its caller. */
+  const joinedTo = (repo: string, f: Fact): string | undefined => {
+    for (const r of records) {
+      if (r.kind !== "Interface") continue;
+      const hit = (r.evidence as CallerEv[]).some(
+        (e) =>
+          e.side === "caller" &&
+          e.repo === repo &&
+          e.path === f.cite.file &&
+          e.line === f.cite.line,
+      );
+      if (hit) return (r as unknown as { to?: string }).to;
+    }
+    return (f as Fact & { to?: string }).to;
+  };
+  const placed = (repo: string, f: Fact): NonNullable<RetiredJoin["call"]> | undefined => {
+    const k = `${repo}\u0000${f.id}`;
+    const at = `${f.cite.file}:${f.cite.line}`;
+    const out = outsideTo.get(k);
+    if (out !== undefined)
+      return unreadMayAnswer(f, out) ? undefined : { repo, at, how: "outside", to: out };
+    if (looseCalls.has(k)) return undefined;
+    const to = joinedTo(repo, f);
+    return { repo, at, how: "joined", ...(to ? { to } : {}) };
+  };
+  const callerReadNow = (r: CatalogRecord): RetiredJoin["call"] => {
+    if (r.kind !== "Interface") return undefined;
+    const x = r as unknown as {
+      from?: string;
+      to?: string;
+      method?: string;
+      normalizedPath?: string;
+    };
+    if (!x.method || r.via === "event-bus" || r.via === "mq") return undefined;
+    const ev = r.evidence as CallerEv[];
+    // A callee still read from readers or legacy: the join can't place the call with it.
+    const callees = [
+      ...new Set(ev.flatMap((e) => (e.side === "callee" && e.repo ? [e.repo] : []))),
+    ];
+    const calleeRepos = callees.length ? callees : x.to ? (ends.get(x.to) ?? []) : [];
+    if (calleeRepos.some((repo) => live.has(repo) && !factsOf.has(repo))) return undefined;
+    // Its callers: the repos its caller evidence names; else its end's one repo, if one.
+    const named = [...new Set(ev.flatMap((e) => (e.side === "caller" && e.repo ? [e.repo] : [])))];
+    const fromEnd = x.from ? (ends.get(x.from) ?? []) : [];
+    const callers = named.length ? named : fromEnd.length === 1 ? fromEnd : [];
+    if (!callers.length) return undefined;
+    let deciding: RetiredJoin["call"];
+    for (const repo of [...callers].sort(cmpText)) {
+      const facts = factsOf.get(repo);
+      if (!facts || !sinceUpgrade(repo)) return undefined;
+      const mine = ev.filter((e) => e.side === "caller" && e.repo === repo);
+      const cited = new Set(
+        facts.flatMap((f) => [f.cite.file, ...(f.cite.with ?? []).map((w) => w.file)]),
+      );
+      if (mine.some((e) => !!e.path && !cited.has(e.path))) return undefined;
+      const lines = mine.filter((e) => e.source === "code" && !!e.path);
+      // No file to check a read reached: only a complete read tells the call is gone.
+      if ((!lines.length || mine.some((e) => !e.path)) && !readWhole.has(repo)) return undefined;
+      const at = new Set(lines.map((e) => `${e.path}:${e.line}`));
+      const calls = facts
+        .filter(
+          (f) =>
+            f.kind === "call" &&
+            (at.has(`${f.cite.file}:${f.cite.line}`) ||
+              ((f.method ?? "").toUpperCase() === x.method &&
+                normalizePath(f.path) === x.normalizedPath)),
+        )
+        .sort((a, b) => cmpText(a.id, b.id));
+      const each = calls.map((f) => placed(repo, f));
+      if (each.some((c) => !c)) return undefined;
+      // Not gone while a call with its method is still loose in the files the arrow cites there
+      // (or, with no file to check, anywhere in that read): it may be the arrow's call, moved or
+      // written with another path.
+      if (!each.length) {
+        const files = new Set(lines.map((e) => e.path!));
+        const loose = facts.some(
+          (f) =>
+            f.kind === "call" &&
+            (f.method ?? "").toUpperCase() === x.method &&
+            (!files.size || mine.some((e) => !e.path) || files.has(f.cite.file)) &&
+            looseCalls.has(`${repo}\u0000${f.id}`),
+        );
+        if (loose) return undefined;
+      }
+      deciding ??= each[0] ?? {
+        repo,
+        how: "gone",
+        ...(lines[0] ? { at: `${lines[0].path}:${lines[0].line}` } : {}),
+        call: `${x.method} ${x.normalizedPath}`,
+      };
+    }
+    return deciding;
+  };
   // A live repo's legacy records, as they are; an arrow of one to a repo removed or archived
   // leaves with that repo (point 6), as a legacy join does.
   // (The whole-catalog passes read the legacy records as context, so theirs come back through
   // them: one no current source derives is taken out.)
   for (const r of legacyRecords) {
     const key = `${r.kind}/${r.id}`;
+    if (callerReadNow(r) !== undefined) {
+      if (!derivedKeys.has(key)) byKey.delete(key);
+      continue;
+    }
     if (!endsGone(r, ends, live).length) byKey.set(key, r);
     else if (!derivedKeys.has(key)) byKey.delete(key);
   }
@@ -912,6 +1136,13 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       // Derived: a current input made it, not the legacy records the whole-catalog passes read.
       if (derived && !legacyCtx.has(key) && changedSince(derived)) {
         retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
+        continue;
+      }
+      // Beta.27: an arrow out of a repo read from facts now, which the estate join doesn't make.
+      const call = !derived || legacyCtx.has(key) ? callerReadNow(r) : undefined;
+      if (call) {
+        retired.push({ kind: r.kind, id: r.id, fields: [], notJoined: true, call });
+        byKey.delete(key);
         continue;
       }
       keep.push(r);
@@ -1696,6 +1927,12 @@ export async function guardBuild(
         why.add("a curated alias folds it into another record");
         kinds.add("curated");
       }
+      // A legacy join that left without being derived: the call its caller's facts read placed.
+      const left = b.retired.find((x) => x.call && x.id === id && x.kind === (r?.kind ?? kind));
+      if (left?.call) {
+        why.add(`its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`);
+        kinds.add("slot");
+      }
       const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];
       const removal: Removal = {
         path: f.path,
@@ -2224,7 +2461,12 @@ export function factsSnapshotWrites(
   root: string,
   repo: string,
   facts: readonly import("@maycombhq/core").Fact[],
-  o: { commit: string; contracts: ContractsFileT | null },
+  o: {
+    commit: string;
+    contracts: ContractsFileT | null;
+    /** verify's verdict that every source file is read or reviewed (the meta's readComplete). */
+    readComplete?: boolean;
+  },
 ): SlotWrite[] {
   const p = factsSlotPaths(root, repo);
   const text = serializeFactsSnapshot(facts);
@@ -2240,6 +2482,7 @@ export function factsSnapshotWrites(
         factsSchemaVersion: FACTS_SCHEMA_VERSION,
         factsHash: sha(text),
         contracts: o.contracts,
+        ...(o.readComplete ? { readComplete: true as const } : {}),
       }),
     },
   ];
@@ -2650,7 +2893,9 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
   }
   for (const x of r.build.retired)
     out.push(
-      `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
+      x.notJoined
+        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. Its caller is read from facts now, and ${x.call ? `they place the call elsewhere: ${decidingCallWords(x.call)}` : "they don't join it"}.`
+        : `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
     );
   for (const x of r.build.orphaned)
     out.push(

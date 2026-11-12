@@ -440,6 +440,43 @@ export function configLineProblem(
     return undefined;
   }
 
+  // Beta.27: a deploy token set by its name in a bundle's config.json, `{ "name": "@token@",
+  // "value": "<value>" }` in a configuration's `policies` (or `targets`, `proxies`) list, as some
+  // deploy steps write it (not the config plugin's XPath `tokens`). The setting is that token's,
+  // its key the token's name (with or without its marks), its value the object's `"value"`, its
+  // env the configuration's name.
+  if (/(^|\/)config\.json$/i.test(f.cite.file)) {
+    const around = jsonFrames(lines)
+      .filter((x) => x.type === "{" && x.start <= f.cite.line && x.end >= f.cite.line)
+      .sort((a, b) => b.start - a.start);
+    const token = around[0];
+    const own = token ? lines.slice(token.start - 1, token.end) : [];
+    if (
+      token?.name !== undefined &&
+      /^(policies|targets|proxies)$/i.test(token.under ?? "") &&
+      own.some((l) => jsonValueOn(l) !== undefined)
+    ) {
+      const dir = f.cite.file.replace(/[^/]*$/, "");
+      if (!listed().some((p) => bundleFolders.some((b) => p.startsWith(`${dir}${b}/`))))
+        return `config ${where} is a config.json beside no gateway bundle (no ${bundleFolders.map((b) => `${dir}${b}/`).join(" or ")}); a token's setting is read only from the bundle's own`;
+      const bare = (s: string) =>
+        s
+          .trim()
+          .replace(/^@(.+)@$/, "$1")
+          .replace(/^\{\{\s*(.+?)\s*\}\}$/, "$1");
+      if (bare(token.name) !== bare(f.key))
+        return `the token at ${where} is named ${token.name}, not ${f.key}; give the key the token's name`;
+      if (value !== undefined && !own.some((l) => same(jsonValueOn(l))))
+        return `the token at ${where} sets no such value; cite the token whose "value" it is`;
+      if (f.env !== undefined) {
+        const conf = around.find((x) => /^configurations$/i.test(x.under ?? ""));
+        if (!conf?.name || conf.name.trim() !== f.env.trim())
+          return `the token at ${where} is in ${conf?.name ? `the ${conf.name} configuration` : "no named configuration"}, not ${f.env}; give the env its configuration is named`;
+      }
+      return undefined;
+    }
+  }
+
   if (isYaml(f.cite.file)) {
     const y = yamlLine(at);
     const path = yamlPathAt(lines, f.cite.line);

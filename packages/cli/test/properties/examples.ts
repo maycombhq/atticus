@@ -1,5 +1,5 @@
 import type { Desc } from "./commands.js";
-import { POOL, type Code, type Estate } from "./estate.js";
+import { POOL, type Base, type Code, type Estate } from "./estate.js";
 import { InvariantError, type Invariant } from "./invariants.js";
 import { checkOrder, estateOf, runSequence } from "./runner.js";
 import { Cmd } from "./commands.js";
@@ -156,6 +156,85 @@ const FILLED: Estate = estateOf({
     },
   ],
 });
+
+/** forge-payments calling forge-notify's GET /notices in place of the ledger. */
+const paymentsToNotify: Code = {
+  ...paymentsCode,
+  calls: [{ method: "GET", path: "/notices", host: notify.host }],
+};
+/** The two repos and forge-notify, serving GET /notices. */
+const WITH_NOTIFY: Estate = {
+  repos: [
+    ...TWO.repos,
+    {
+      base: notify,
+      code: {
+        endpoints: [{ method: "GET", path: "/notices" }],
+        calls: [],
+        publishes: [],
+        consumes: [],
+      },
+    },
+  ],
+};
+/**
+ * A second repo of forge-payments' component and system (its batch jobs, an invented split): a
+ * component id then names two repos, and an arrow from it has a caller only its evidence tells.
+ */
+const paymentsJobs: Base = {
+  ...payments,
+  id: "forge-payments-jobs",
+  short: "paymentsjobs",
+  host: "payments-jobs.forge.example",
+  legacyHost: "legacy-payments-jobs.forge.example",
+  cls: "PaymentsJobs",
+  topic: "forge.payments-jobs.changed",
+};
+
+/**
+ * A repo the examples leave unread (legacy) whose manifest host is the in-cluster Service name
+ * `ledger` (an invented Forge batch service).
+ */
+const books: Base = {
+  ...notify,
+  id: "forge-books",
+  short: "books",
+  component: "books-api",
+  system: "books",
+  host: "ledger",
+  legacyHost: "legacy-books.forge.example",
+  cls: "Books",
+  topic: "forge.books.changed",
+};
+const booksCode: Code = { endpoints: [], calls: [], publishes: [], consumes: [] };
+/** forge-payments calling the ledger by an in-cluster alias no repo lists, left outside. */
+const paymentsToClusterLedger: Code = {
+  ...paymentsCode,
+  calls: [
+    {
+      method: "GET",
+      path: "/accounts",
+      host: "ledger.ns.svc.cluster.local",
+      to: "ledger.ns.svc.cluster.local",
+    },
+  ],
+};
+/** forge-payments calling the ledger twice: POST /entries (line 9), GET /accounts (line 13). */
+const paymentsTwoCalls: Code = {
+  ...paymentsCode,
+  calls: [
+    { method: "POST", path: "/entries", host: ledger.host },
+    { method: "GET", path: "/accounts", host: ledger.host },
+  ],
+};
+/**
+ * The same client edited: one call, at line 9, GET /api/accounts on a host no repo lists (loose);
+ * line 13, where the GET /accounts arrow's call was, holds none.
+ */
+const paymentsMovedLoose: Code = {
+  ...paymentsCode,
+  calls: [{ method: "GET", path: "/api/accounts", host: ledger.legacyHost }],
+};
 
 /** forge-ledger no longer serving GET /accounts. */
 const ledgerWithout: Code = { ...ledgerCode, endpoints: [] };
@@ -389,6 +468,240 @@ export const EXAMPLES: Example[] = [
       has("the topic's arrow, kept from before the upgrade", topic),
       lacks("ledger's GET /accounts, which its new read doesn't serve", getAccounts),
     ],
+  ),
+  // Beta.27.2 (the review): a legacy join out of a caller read from facts leaves without being
+  // derived only when that read places the call elsewhere, or shows it gone from a file it read.
+  seq(
+    "links-are-live",
+    "after the upgrade the publisher is read from facts while the listener stays legacy: the topic's legacy join stays, the join having no listener to pair it with",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the topic's arrow, kept from before the upgrade", topic),
+      has("the arrow from payments to GET /accounts", callsLedger),
+    ],
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the caller drops its client and is read from facts: a file no fact cites may be one the read hasn't reached, so the legacy join stays",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "change-code", slot: 1, code: { ...paymentsCode, calls: [] } },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger),
+      has("the topic's arrow, kept from before the upgrade", topic),
+    ],
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the callee and then the caller are read from facts, the caller's call gone to another repo: the legacy join leaves, and the new arrow is drawn",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      {
+        t: "change-code",
+        slot: 1,
+        code: { ...paymentsCode, calls: [{ method: "GET", path: "/notices", host: notify.host }] },
+      },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      lacks(
+        "the arrow from payments to GET /accounts, which its read places elsewhere",
+        callsLedger,
+      ),
+      has(
+        "the arrow from payments to GET /notices",
+        arrow("payments-api", "notify-api", "GET", "/notices"),
+      ),
+      has("the topic's arrow, kept from before the upgrade", topic),
+    ],
+    {
+      repos: [
+        ...TWO.repos,
+        {
+          base: notify,
+          code: {
+            endpoints: [{ method: "GET", path: "/notices" }],
+            calls: [],
+            publishes: [],
+            consumes: [],
+          },
+        },
+      ],
+    },
+  ),
+  seq(
+    "links-are-live",
+    "after the upgrade the caller's call goes to a host no repo lists and the caller is read from facts: the join can't place it, so the legacy join stays",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      {
+        t: "change-code",
+        slot: 1,
+        code: {
+          ...paymentsCode,
+          calls: [{ method: "GET", path: "/accounts", host: ledger.legacyHost }],
+        },
+      },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+  ),
+  // The review of that rule, as the owner approved it on 2026-11-12: an adopted arrow that cites
+  // no caller line leaves only after a complete read; only the repos its caller evidence names
+  // are tested; a call the join leaves outside while its callee is still legacy keeps it.
+  seq(
+    "links-are-live",
+    "an adopted arrow with no caller line stays when its caller's read is in parts, though the call it read goes elsewhere",
+    [
+      { t: "seed-beta26", verify: [], lineless: [1] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: { ...paymentsToNotify, unread: true } },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger),
+      has(
+        "the arrow from payments to GET /notices",
+        arrow("payments-api", "notify-api", "GET", "/notices"),
+      ),
+    ],
+    WITH_NOTIFY,
+  ),
+  seq(
+    "links-are-live",
+    "an adopted arrow with no caller line leaves once its caller's read is complete and places the call elsewhere",
+    [
+      { t: "seed-beta26", verify: [], lineless: [1] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: paymentsToNotify },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [
+      lacks(
+        "the arrow from payments to GET /accounts, which its complete read places elsewhere",
+        callsLedger,
+      ),
+      has(
+        "the arrow from payments to GET /notices",
+        arrow("payments-api", "notify-api", "GET", "/notices"),
+      ),
+      has("the topic's arrow, kept from before the upgrade", topic),
+    ],
+    WITH_NOTIFY,
+  ),
+  seq(
+    "links-are-live",
+    "an adopted arrow from a component two repos share stays when the repo read from facts is the one its caller evidence doesn't name",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "verify-write", slot: 2, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    {
+      repos: [
+        ...TWO.repos,
+        {
+          base: paymentsJobs,
+          code: {
+            endpoints: [{ method: "GET", path: "/payouts" }],
+            calls: [],
+            publishes: [],
+            consumes: [],
+          },
+        },
+      ],
+    },
+  ),
+  seq(
+    "links-are-live",
+    "an adopted arrow stays while its callee is legacy, though the caller's read names it as a target the join leaves outside the estate",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    {
+      repos: [
+        TWO.repos[0]!,
+        {
+          base: payments,
+          code: {
+            ...paymentsCode,
+            calls: [{ method: "GET", path: "/accounts", host: ledger.host, to: ledger.id }],
+          },
+        },
+      ],
+    },
+  ),
+  // The follow-up review: a host with no registrable domain names a Service by its first label,
+  // and a call loose in the files the arrow cites may still be the arrow's call.
+  seq(
+    "links-are-live",
+    "an adopted arrow stays when its caller's call is left outside to an in-cluster alias whose first label a repo the join doesn't read lists",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: paymentsToClusterLedger },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    { repos: [...TWO.repos, { base: books, code: booksCode }] },
+  ),
+  seq(
+    "links-are-live",
+    "an adopted arrow stays when its caller's line holds no call now but a call with its method is loose in the same file",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "confirm-removals" },
+      { t: "change-code", slot: 1, code: paymentsMovedLoose },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "confirm-removals" },
+    ],
+    [has("the arrow from payments to GET /accounts, kept from before the upgrade", callsLedger)],
+    {
+      repos: [
+        {
+          base: ledger,
+          code: {
+            ...ledgerCode,
+            endpoints: [...ledgerCode.endpoints, { method: "POST", path: "/entries" }],
+          },
+        },
+        { base: payments, code: paymentsTwoCalls },
+      ],
+    },
   ),
   seq(
     "completeness",

@@ -97,7 +97,9 @@ export async function factsSlotAt(
     ...(exclude.length ? { exclude } : {}),
   }).files.map((f) => f.path);
   const text = serializeFactsSnapshot(report.accepted);
-  const meta = { ...snap.meta, commit: at.commit, factsHash: sha256Of(text) };
+  // Carried to another commit, some facts left out to be read again: no longer a complete read.
+  const { readComplete: _complete, ...kept } = snap.meta;
+  const meta = { ...kept, commit: at.commit, factsHash: sha256Of(text) };
   return {
     slot: {
       ok: true,

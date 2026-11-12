@@ -119,7 +119,8 @@ run carries on from there.
 
 With copilot-acp allowed, Map › Trust has buttons that start the same run from the app (ADR 0173):
 **Read the stale repos with Copilot**, **Fill the gaps with Copilot**, **Read the repos not read yet
-with Copilot**, and on each repo **Read it again with Copilot** (whole, as `--force`). Each asks first:
+with Copilot**, and in each read repo's **Read it again** section **Read it again with Copilot** (whole,
+as `--force`; every read repo has it, a trusted one too). Each asks first:
 a dialog names what the run reads, the model from runtime.yaml and what a session may do, and nothing
 starts until you say yes. Where Atticus doesn't know the model's limit, the dialog asks for it (see
 [The model's limit](#the-models-limit)); it also says when the assistant files will be written

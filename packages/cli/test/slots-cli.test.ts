@@ -511,6 +511,54 @@ describe("verify --write writes the facts snapshot only when it succeeds (ADR 01
   );
 
   it(
+    "the meta says readComplete when verify's own verdict is that the read is complete, and not for a read in parts",
+    async () => {
+      // Beta.27.2, the review (ADR 0195 addendum "a legacy join its caller's facts place
+      // elsewhere"): what lets the build retire an adopted arrow that cites no caller line.
+      const { root, dir } = await verifyMetarepo();
+      const meta = () => {
+        const m = parseFactsSlotMeta(snapshot(root)["forge-ledger.meta.json"]!);
+        if (!m.ok) throw new Error(JSON.stringify(m.issues));
+        return m.slot;
+      };
+      const write = async () => {
+        const c = capture();
+        expect(
+          await verifyCommand(root, "forge-ledger", { commit: "0123abc", dir, write: true }, c.io),
+          c.err.join("\n"),
+        ).toBe(0);
+        return c.out.join("\n");
+      };
+      // The fixture's read leaves a file unknown: a read in parts, said by leaving the field out.
+      expect(await write()).toMatch(/^Next: read the 1 unknown files/m);
+      expect(meta().readComplete).toBeUndefined();
+      // That file reviewed with nothing to record: the read is complete, and the meta says so.
+      const unknown = /unknown:\n((?: {4}- .+\n)+)/.exec(
+        readFileSync(join(root, "facts", "forge-ledger.verify.yaml"), "utf8"),
+      );
+      expect(unknown).not.toBeNull();
+      const files = unknown![1]!.split("\n").flatMap((l) => (l.trim() ? [l.trim().slice(2)] : []));
+      await writeFile(
+        join(root, "facts", "forge-ledger.reviewed.jsonl"),
+        files.map((path) => JSON.stringify({ path, why: "Nothing to record." })).join("\n") + "\n",
+      );
+      expect(await write()).toMatch(/^The read is complete: every source file is read/m);
+      expect(meta().readComplete).toBe(true);
+      // A source file no fact cites and nothing reviewed: the read is in parts again.
+      await writeFile(
+        join(dir, "src/main/java/forge/ledger/Unread.java"),
+        "package forge.ledger;\n\npublic class Unread {}\n",
+      );
+      expect(await write()).toMatch(/^Next: read the 1 unknown files/m);
+      expect(meta().readComplete).toBeUndefined();
+      expect(Object.keys(JSON.parse(snapshot(root)["forge-ledger.meta.json"]!))).not.toContain(
+        "readComplete",
+      );
+    },
+    T,
+  );
+
+  it(
     "a refused --write, and a check without --write, leave the snapshot byte for byte",
     async () => {
       const { root, dir } = await verifyMetarepo();

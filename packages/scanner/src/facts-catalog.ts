@@ -68,6 +68,7 @@ import {
 } from "@maycombhq/core";
 import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
 import { callHostLabel } from "./hosts-asked.js";
+import { targetPathPrefix } from "./target-prefix.js";
 import { hostsIgnoreCovers, isJoinHostQuestion, joinHostTarget } from "./join-host-questions.js";
 import {
   offeredSuggestions,
@@ -522,23 +523,8 @@ export function targetQuestionDrafts(
  */
 export const TARGETS_SPLIT = TARGETS_SPLIT_LABEL;
 
-/** Segments a group's prefix keeps going past: an api root or a version. */
-const PREFIX_ROOT = /^(api|rest|services?|v\d+(\.\d+)*)$/i;
-
-/**
- * The part of a call's path a group of target questions shares (Q1): its first segment, with an
- * api root or version segment in front of it kept (/api/v2/accounts). A placeholder ends it.
- */
-export function targetPathPrefix(path: string): string {
-  const lead = path.startsWith("/") ? "/" : "";
-  const out: string[] = [];
-  for (const s of path.split(/[?#]/)[0]!.split("/").filter(Boolean)) {
-    if (/^[{:<]/.test(s)) break;
-    out.push(s);
-    if (!PREFIX_ROOT.test(s)) break;
-  }
-  return out.length ? `${lead}${out.join("/")}` : "/";
-}
+/** The part of a call's path a group of target questions shares (Q1): see `target-prefix.ts`. */
+export { targetPathPrefix };
 
 /** What a group's calls go through: the target they name, else their host, else their base. */
 function groupVia(f: FactOf<"call">): string {
@@ -1487,6 +1473,17 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   const droppedEndpoint = (id: unknown) => typeof id === "string" && dropped.has(`Endpoint|${id}`);
   for (const r of mixed) {
     const ev = r.evidence as unknown[];
+    // Beta.27 (a user's Map): an arrow whose every caller line is this repo's is this repo's call;
+    // it goes with them, and the join below makes it again if the facts still give it. Kept, it
+    // was an arrow with no caller ("No line cited at this end"), verified by its callee alone.
+    if (
+      r.kind === "Interface" &&
+      ev.some((e) => mine(e) && (e as Ev).side === "caller") &&
+      !ev.some((e) => !mine(e) && (e as Ev).side === "caller")
+    ) {
+      dropped.add(`${r.kind}|${r.id}`);
+      continue;
+    }
     const out: Rec = { ...(r as Rec), evidence: ev.filter((e) => !mine(e)) } as Rec;
     if (r.kind === "Interface") {
       if (droppedEndpoint(out.endpoint)) delete out.endpoint;

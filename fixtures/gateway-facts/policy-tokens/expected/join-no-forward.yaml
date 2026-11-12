@@ -1,0 +1,58 @@
+joins:
+  - call:
+      repo: forge-checkout
+      fact: call.get.northwind-pay-payments-id
+      component: checkout-api
+      at: src/main/java/forge/checkout/NorthwindPayClient.java:11
+    entry:
+      repo: northwind_pay_1-0
+      fact: entry.get.northwind-pay-payments-id
+      component: northwind-pay-proxy
+      at: apiproxy/proxies/default.xml:4
+    tie:
+      repo: forge-checkout
+      fact: config.gateway-base-url
+      component: checkout-api
+      at: src/main/resources/application.yml:3
+    how: host
+    callType: rest
+    method: GET
+    path: /northwind-pay/1.0/payments/{id}
+    interface: if-1e38001cf2beba99
+  - call:
+      repo: forge-checkout
+      fact: call.get.northwind-pay-refunds-id
+      component: checkout-api
+      at: src/main/java/forge/checkout/NorthwindPayClient.java:15
+    entry:
+      repo: northwind_pay_1-0
+      fact: entry.get.northwind-pay-refunds-id
+      component: northwind-pay-proxy
+      at: apiproxy/proxies/default.xml:13
+    tie:
+      repo: forge-checkout
+      fact: config.gateway-base-url
+      component: checkout-api
+      at: src/main/resources/application.yml:3
+    how: host
+    callType: rest
+    method: GET
+    path: /northwind-pay/1.0/refunds/{id}
+    interface: if-a3a124184c58a417
+asks: []
+misses: []
+outside:
+  - call:
+      repo: northwind_pay_1-0
+      fact: call.get.payments-id
+      component: northwind-pay-proxy
+      at: apiproxy/proxies/default.xml:4
+    target: devapi.northwind-pay.example
+  - call:
+      repo: northwind_pay_1-0
+      fact: call.post.refunds
+      component: northwind-pay-proxy
+      at: apiproxy/proxies/default.xml:10
+    target: devapi.northwind-pay.example
+lineage: []
+gaps: []

@@ -1,8 +1,8 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { main } from "../../src/main.js";
-import { git, renderFacts } from "./estate.js";
+import { git, writeRead } from "./estate.js";
 import type { CatalogSystem, Outcome } from "./seam.js";
 import { cs2Writers } from "./system-cs2.js";
 
@@ -123,11 +123,7 @@ export const todaysWriters: CatalogSystem = {
       const f = m.facts.get(r.slot);
       if (!f || !existsSync(join(from, "workspace", r.id))) continue;
       clone(r.id, f.commit);
-      await mkdir(join(to, "facts"), { recursive: true });
-      await writeFile(
-        join(to, "facts", `${r.id}.jsonl`),
-        renderFacts(r.base, r.id, f.code, f.commit),
-      );
+      await writeRead(to, r.base, r.id, f.code, f.commit);
       await run(["verify", r.id, "--root", to, "--write"]);
     }
   },

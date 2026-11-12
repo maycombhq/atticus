@@ -27,17 +27,21 @@ export function filteredWhat(o: {
     .join(" ");
 }
 
-/** The filter box: a labelled field with the shared placeholder. */
+/**
+ * The filter box: a labelled field with the shared placeholder. `label` names what it filters,
+ * where a page has more than one list (beta.27: Map › Trust's repos); the shared word otherwise.
+ */
 export function FilterBox(p: {
   id: string;
   value: string;
   onChange: (v: string) => void;
   grow?: boolean;
+  label?: string;
 }) {
   return (
     <div className="stack" style={{ gap: 4, ...(p.grow ? { flex: "1 1 200px" } : {}) }}>
       <label htmlFor={p.id} className="hud" style={{ fontSize: 10 }}>
-        {F.label}
+        {p.label ?? F.label}
       </label>
       <input
         id={p.id}

@@ -13,6 +13,13 @@ import { AnswerBoxes } from "./AnswerBoxes.js";
 import { DropFact } from "./drop-fact.js";
 import { mismatchesHash } from "../../app/contracts.js";
 import { DecidePaused, useDecisions } from "../../app/decisions.js";
+import {
+  FilterBox,
+  FilterCount,
+  FilterEmpty,
+  filteredWhat,
+  matchesWords,
+} from "../../app/filter.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
@@ -22,7 +29,8 @@ import { DecidePaused, useDecisions } from "../../app/decisions.js";
  * facts or the built-in readers, and the command to run next. It reads files only
  * (`GET /api/trust`); the app runs nothing. Above them, the estate's freshness (ADR 0141, P5):
  * which clones have moved past their facts' commit and what reading each again costs, from
- * `GET /api/trust/fresh`, which runs read-only local git and writes nothing.
+ * `GET /api/trust/fresh`, which runs read-only local git and writes nothing. Beta.27: a filter
+ * box over the repos' sections, by repo, and "Read it again" on every read repo's section.
  */
 
 const T = COPY.trust;
@@ -153,13 +161,7 @@ export function TrustRow({ r }: { r: Repo }) {
         <h3 id={head} className="h" style={{ fontSize: 14, margin: 0 }}>
           {r.repo}
         </h3>
-        <span className="row" style={{ gap: 8 }}>
-          <RunWithCopilot
-            ask={{ kind: "repos", repos: [r.repo], force: true }}
-            label={COPY.copilotRuns.start.again(r.repo)}
-          />
-          <span className={`chip ${trustChip(r.state)}`}>{T.states[r.state]}</span>
-        </span>
+        <span className={`chip ${trustChip(r.state)}`}>{T.states[r.state]}</span>
       </div>
       <p className="work-why" style={{ margin: "6px 0" }}>
         {trustWhy(r)}
@@ -440,6 +442,23 @@ export function TrustRow({ r }: { r: Repo }) {
             </>
           )}
         </div>
+      )}
+      {r.state !== "not-read" && (
+        // Beta.27: any read repo, fresh and fully covered too, can be read again from the app,
+        // whole (Copilot's `force`), by the same Read as the first read.
+        <section
+          className="stack"
+          style={{ gap: 4, marginTop: 8 }}
+          aria-labelledby={`${head}-again`}
+        >
+          <h4 id={`${head}-again`} className="h" style={{ fontSize: 13, margin: 0 }}>
+            {T.readAgain.title}
+          </h4>
+          <p className="work-say" style={{ margin: 0 }}>
+            {T.readAgain.why(r.repo)}
+          </p>
+          <ReadRepo repo={r.repo} again />
+        </section>
       )}
       <p className="work-say mono" style={{ margin: "6px 0 0" }}>
         {T.files(r.facts.path, r.verify.path)}
@@ -725,11 +744,52 @@ export function AiPrecision({ of }: { of: Loaded<Api.DecisionsViewT> & { reload?
   );
 }
 
+/** Beta.27: whether a repo's section matches the Trust filter: every word in its repo id. */
+export const trustRepoMatches = (r: Repo, text: string): boolean => matchesWords([r.repo], text);
+
+/**
+ * Beta.27: the repos' sections under one filter box (ADR 0105 addendum's box, labelled for the
+ * repos), how many it shows, and what to do when none matches.
+ */
+export function TrustRepos(p: {
+  repos: readonly Repo[];
+  filter: string;
+  onFilter: (text: string) => void;
+}) {
+  const shown = p.repos.filter((r) => trustRepoMatches(r, p.filter));
+  const active = !!p.filter.trim();
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      {p.repos.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <FilterBox
+            id="trust-filter"
+            label={T.filterLabel}
+            value={p.filter}
+            onChange={p.onFilter}
+          />
+          <FilterCount shown={shown.length} total={p.repos.length} active={active} />
+        </div>
+      )}
+      {active && !shown.length ? (
+        <FilterEmpty
+          what={filteredWhat({ text: p.filter })}
+          onClear={() => p.onFilter("")}
+          focus="trust-filter"
+        />
+      ) : (
+        shown.map((r) => <TrustRow key={r.repo} r={r} />)
+      )}
+    </div>
+  );
+}
+
 export function TrustPage({
   of,
   fresh,
   decide,
   canary,
+  filter: initial = "",
 }: {
   of: Loaded<Api.TrustViewT> & { reload?: () => void };
   fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
@@ -737,7 +797,10 @@ export function TrustPage({
   decide?: Loaded<Api.DecisionsViewT> & { reload?: () => void };
   /** ADR 0196: GET /api/trust/canaries, for the audit misread and canary pass-through rates. */
   canary?: Loaded<Api.CanaryViewT> & { reload?: () => void };
+  /** Beta.27: the repos filter's words to start with (tests render each state). */
+  filter?: string;
 }) {
+  const [filter, setFilter] = useState(initial);
   return (
     <div className="bento">
       {fresh && <FreshPanel of={fresh} />}
@@ -789,11 +852,7 @@ export function TrustPage({
               )}
               {/* Beta.24 review: the boxes an answer's words made, each with its fixes. */}
               <AnswerBoxes boxes={v.answerBoxes} />
-              <div className="stack" style={{ gap: 12 }}>
-                {v.repos.map((r) => (
-                  <TrustRow key={r.repo} r={r} />
-                ))}
-              </div>
+              <TrustRepos repos={v.repos} filter={filter} onFilter={setFilter} />
             </>
           )}
         </View>

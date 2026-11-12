@@ -1,0 +1,5 @@
+<TargetEndpoint name="TE-Vendor">
+  <HTTPTargetConnection>
+    <URL>@targetVendorUrl@</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

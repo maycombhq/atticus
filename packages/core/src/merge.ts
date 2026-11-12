@@ -3,6 +3,12 @@ import { parseRecord, type CatalogRecord, type RecordIssue } from "./catalog.js"
 import { interfaceId, normalizePath, cmpText } from "./identity.js";
 import { COMPONENT_TYPES } from "./schema/kinds.js";
 import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
+import { JOIN_GUESS_FLAGS } from "./facts-join.js";
+
+/** Beta.27: an Interface whose flags say the facts join guessed it (`JOIN_GUESS_FLAGS`). */
+const guessedLink = (d: Record<string, unknown>): boolean =>
+  Array.isArray(d.flags) &&
+  d.flags.some((f) => (JOIN_GUESS_FLAGS as readonly unknown[]).includes(f));
 
 /**
  * Merge and identity: turns the records every repo's scan produced into one catalog.
@@ -588,9 +594,17 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       ...(ep ? { endpoint: ep.id } : {}),
       evidence: unionEvidence(d.evidence, callee),
       // A person's word stays asserted (A-callers): finding the callee's code doesn't prove the
-      // caller, which nobody read, makes the call.
+      // caller, which nobody read, makes the call. Beta.27 (a user's Map): nor does it prove a
+      // guess right. An Interface the facts join guessed (by path, a host's label, J0's and J1's
+      // guesses) stays as the join made it: never verified because its callee's line is found.
       confidence:
-        d.confidence === "asserted" ? "asserted" : callee.length > 0 ? "verified" : d.confidence,
+        d.confidence === "asserted"
+          ? "asserted"
+          : guessedLink(d)
+            ? d.confidence
+            : callee.length > 0
+              ? "verified"
+              : d.confidence,
     });
   }
 

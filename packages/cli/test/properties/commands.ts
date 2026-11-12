@@ -17,10 +17,10 @@ import {
 import { main } from "../../src/main.js";
 import {
   commitCode,
-  renderFacts,
   resolve,
   sketchArb,
   writeManifest,
+  writeRead,
   type Code,
   type Sketch,
 } from "./estate.js";
@@ -56,8 +56,13 @@ import {
  * slot, so a command still means the same repo after a rename.
  */
 export type Desc =
-  /** A beta.26 metarepo, made by beta.26's writers: a full scan, then `verify --write` of some. Only first. */
-  | { t: "seed-beta26"; verify: number[] }
+  /**
+   * A beta.26 metarepo, made by beta.26's writers: a full scan, then `verify --write` of some.
+   * Only first. `lineless` (the examples): the arrows out of these slots lost their caller's
+   * line, as a beta.26 write of a caller whose facts no longer gave the call left them ("No line
+   * cited at this end"), verified by the callee's line alone.
+   */
+  | { t: "seed-beta26"; verify: number[]; lineless?: number[] }
   | { t: "scan" }
   | { t: "scan-subset"; slots: number[] }
   | { t: "scan-not-cloned"; slot: number }
@@ -445,11 +450,7 @@ async function verify(
   const r = live(m, d.slot);
   if (!r) return undefined;
   const ok = d.t === "verify-live" || d.ok;
-  await mkdir(join(w.root, "facts"), { recursive: true });
-  await writeFile(
-    join(w.root, "facts", `${r.id}.jsonl`),
-    renderFacts(r.base, r.id, r.code, r.commit, { broken: !ok }),
-  );
+  await writeRead(w.root, r.base, r.id, r.code, r.commit, { broken: !ok });
   const write = d.t === "verify-write";
   const outcome = await sut().verify(w.root, r.id, {
     write,
@@ -518,6 +519,12 @@ async function build(w: World, confirm: Confirm): Promise<Acted> {
   };
 }
 
+/** Whether an arrow cites a code line at its caller's end. */
+const callerLined = (r: Rec): boolean =>
+  ((r.evidence ?? []) as { side?: string; source?: string; path?: string }[]).some(
+    (e) => e.side === "caller" && e.source === "code" && !!e.path,
+  );
+
 /** The record files a command may pick, by path: not already edited by hand. */
 function pickable(m: Model, s: Snap, f: (r: Rec) => boolean): [string, Rec][] {
   const edited = new Set(m.handEdits.map((e) => e.path));
@@ -579,11 +586,7 @@ export async function act(
       );
       for (const slot of uniq(d.verify.map((x) => x % n))) {
         const r = m.repos[slot]!;
-        await mkdir(join(w.root, "facts"), { recursive: true });
-        await writeFile(
-          join(w.root, "facts", `${r.id}.jsonl`),
-          renderFacts(r.base, r.id, r.code, r.commit),
-        );
+        await writeRead(w.root, r.base, r.id, r.code, r.commit);
         const v = await todaysWriters.verify(w.root, r.id, { write: true });
         // A writer newer than beta.26 may refuse it (a large removal it wants confirmed): the
         // seed then has no facts for the repo, which is a beta.26 metarepo too.
@@ -594,6 +597,21 @@ export async function act(
       // upgrade has a beta.26 metarepo to adopt whichever writers made its catalog.
       for (const d of ["catalog/sources", ".index/build-undo", ".index/build-cache"])
         await rm(join(w.root, ...d.split("/")), { recursive: true, force: true });
+      if (d.lineless?.length) {
+        const callers = new Set(uniq(d.lineless.map((x) => x % n)).map((x) => m.repos[x]!.id));
+        const generated = join(w.root, "catalog", "generated");
+        for (const [path, text] of await readTree(generated)) {
+          const p = parseRecord(parse(text));
+          if (!p.ok || p.record.kind !== "Interface") continue;
+          const ev = p.record.evidence.filter(
+            (e) => !(e.side === "caller" && callers.has(e.repo!)),
+          );
+          if (ev.length === p.record.evidence.length || !ev.length) continue;
+          const only = parseRecord({ ...p.record, evidence: ev });
+          if (!only.ok) throw new Error(`harness: ${path} without its caller's line isn't C1`);
+          await writeFile(join(generated, ...path.split("/")), serializeRecord(only.record));
+        }
+      }
       m.beta26 = true;
       m.changes = noChanges();
       m.built = m.clone(false);
@@ -1042,6 +1060,9 @@ export async function act(
                   to: b.slot,
                 },
                 repos: slots,
+                // No code line at its caller's end (beta.27.2, the review): only a complete read
+                // of its caller may let it leave without being derived.
+                ...(callerLined(rec) ? {} : { lineless: true as const }),
               });
             else if (repos.length !== 1)
               m.legacyJoins.push({ kind: rec.kind, id: rec.id, repos: slots });

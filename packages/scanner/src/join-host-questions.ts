@@ -2,6 +2,7 @@ import {
   cmpNatural,
   askedByStep,
   cmpText,
+  forwardHostQuestion,
   HOSTS_NONE,
   HOSTS_OUTSIDE_INTERNAL,
   HOSTS_OUTSIDE_VENDOR,
@@ -23,6 +24,7 @@ import {
   type QuestionDraft,
 } from "@maycombhq/core";
 import { hostQuestionDrafts, type HostAsk, type HostRepo } from "./hosts-asked.js";
+import { targetPathPrefix } from "./target-prefix.js";
 
 /**
  * Beta.24 review: the join's questions about hosts, raised as question files. The estate join asks
@@ -31,7 +33,7 @@ import { hostQuestionDrafts, type HostAsk, type HostRepo } from "./hosts-asked.j
  *
  * - A host still written as a token (a gateway's forwarding call to `@targetVendorUrl@`, no
  *   deploy file setting it) is asked as a targets question (`facts-targets`), once per host of
- *   the repo, in the join's words, which say to read the gateway repo again
+ *   the repo and path prefix (beta.27, as Q1 groups the targets questions), in the join's words, which say to read the gateway repo again
  *   (`forwardHostQuestion`). Its options: the estate's repos that serve HTTP (those serving the
  *   calls' paths first), an outside system (new) named by the host, None of these and Ignore. Its
  *   answer names the target of every call it cites (`joinHostTarget`), as a targets answer does.
@@ -112,8 +114,29 @@ export function joinHostQuestionDrafts(input: {
     .filter((r) => r !== input.repo)
     .sort(cmpText);
   const factOf = new Map(input.facts.map((f) => [f.id, f] as const));
-  const out: JoinHostDraft[] = [];
+  // Beta.27: a token's calls are asked once per path prefix, as the targets questions group
+  // (Q1): one question when they share one, in the join's words as before; else one per prefix,
+  // each naming the routes it is about.
+  const groups: { host: string; asks: FactJoinAsk[]; question: string }[] = [];
   for (const [host, asks] of [...byHost].sort(([a], [b]) => cmpText(a, b))) {
+    const prefixOf = (a: FactJoinAsk) => {
+      const f = factOf.get(a.call.fact);
+      return f?.kind === "call" ? targetPathPrefix(f.path) : "/";
+    };
+    const prefixes = [...new Set(asks.map(prefixOf))].sort(cmpText);
+    if (!isTokenHost(host) || prefixes.length < 2) {
+      groups.push({ host, asks, question: asks[0]!.question });
+      continue;
+    }
+    for (const p of prefixes)
+      groups.push({
+        host,
+        asks: asks.filter((a) => prefixOf(a) === p),
+        question: forwardHostQuestion(host, input.repo, p),
+      });
+  }
+  const out: JoinHostDraft[] = [];
+  for (const { host, asks, question } of groups) {
     const calls = asks
       .map((a) => ({ id: a.call.fact, at: a.call.at, f: factOf.get(a.call.fact) }))
       .sort((a, b) => cmpNatural(a.at, b.at) || cmpText(a.id, b.id));
@@ -157,7 +180,7 @@ export function joinHostQuestionDrafts(input: {
       factIds,
       draft: {
         // The join's words: for a gateway's token, what to read again (forwardHostQuestion).
-        question: asks[0]!.question,
+        question,
         options: [
           ...ranked.map((r) => ({
             label: r,

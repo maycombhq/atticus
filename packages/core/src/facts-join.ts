@@ -767,9 +767,12 @@ export function callTargetQuestion(f: Call, component: string): string {
  * per environment (the Apigee config plugin's `config.json`), which a read before beta.24 didn't
  * record: the next step it says is to read the gateway repo again, never a guess at a repo.
  */
-export function forwardHostQuestion(host: string, repo: string): string {
+export function forwardHostQuestion(host: string, repo: string, prefix?: string): string {
   if (!placeholderIn(host)) return hostQuestionText(host);
-  return `Which repo answers on ${host}? ${repo}'s target URL is a token no fact sets. If a deploy file sets it per environment (the Apigee config plugin's config.json), read ${repo} again with your assistant (Read with my assistant): the read records each environment's value, and the calls join where they go. Else name the repo or the outside system that answers.`;
+  // Beta.27: asked once per token and path prefix (as the targets questions group, Q1), when the
+  // token's calls span more than one: each question names the routes it is about.
+  const routes = prefix ? ` for the routes under ${prefix === "/" ? "" : prefix}/**` : "";
+  return `Which repo answers on ${host}? ${repo}'s target URL${routes} is a token no fact sets. If a deploy file sets it per environment (the Apigee config plugin's config.json), read ${repo} again with your assistant (Read with my assistant): the read records each environment's value, and the calls join where they go. Else name the repo or the outside system that answers.`;
 }
 
 /** The question for a call whose gateway routes lead back where they came from (A-gateway2). */
@@ -1220,6 +1223,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     owner: Node,
     seen: ReadonlySet<string>,
     depth = 0,
+    /**
+     * Beta.27: only the settings for the owner itself (`setsFor`'s `cited`): no folder-name or
+     * platform-setting guess. A gateway bundle's deploy token takes this.
+     */
+    own = false,
   ): Resolved[] => {
     const v = raw?.trim();
     if (!v) return [];
@@ -1228,8 +1236,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
     if (placeholderIn(p.after)) {
       // Two or more in one value: each is resolved on its own, and kept only with one value.
-      const head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth);
-      const tail = resolve(p.after, owner, seen, depth);
+      const head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth, own);
+      const tail = resolve(p.after, owner, seen, depth, own);
       if (new Set(head.map((r) => r.value)).size !== 1) return [];
       if (new Set(tail.map((r) => r.value)).size !== 1) return [];
       return [
@@ -1245,14 +1253,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const named = (configsByName.get(want) ?? []).filter((s) => !seen.has(key(s.repo, s.fact.id)));
     const mine = named.flatMap((s) => {
       const how = setsFor(s, owner);
+      if (own && how !== "cited") return [];
       const guess: JoinHostGuess[] = how === "folder" ? [JOINED_BY_FOLDER_NAME] : [];
       return how ? [{ s, guess }] : [];
     });
-    const settings: { s: Node & { fact: Config }; guess: JoinHostGuess[] }[] = mine.length
-      ? mine
-      : named
-          .filter((x) => setsForAll(x, owner))
-          .map((s) => ({ s, guess: [JOINED_BY_PLATFORM_SETTING as JoinHostGuess] }));
+    const settings: { s: Node & { fact: Config }; guess: JoinHostGuess[] }[] =
+      mine.length || own
+        ? mine
+        : named
+            .filter((x) => setsForAll(x, owner))
+            .map((s) => ({ s, guess: [JOINED_BY_PLATFORM_SETTING as JoinHostGuess] }));
     // A ConfigMap's entry a `valueFrom` here follows is read through it, not as a setting itself.
     const viaRef = new Set(
       settings.flatMap(({ s }) => refTargets(s, owner, seen).map((t) => key(t.repo, t.fact.id))),
@@ -1273,6 +1283,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
                 owner,
                 new Set([...seen, k, key(t.repo, t.fact.id)]),
                 depth + 1,
+                own,
               );
           for (const r of rs)
             out.push({
@@ -1288,6 +1299,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         owner,
         new Set([...seen, k]),
         depth + 1,
+        own,
       ))
         out.push({
           value: `${p.before}${r.value}${p.after}`,
@@ -1296,7 +1308,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         });
     }
     if (out.length || !p.fallback) return out;
-    return resolve(p.fallback, owner, seen, depth + 1).map((r) => ({
+    return resolve(p.fallback, owner, seen, depth + 1, own).map((r) => ({
       ...r,
       value: `${p.before}${r.value}${p.after}`,
     }));
@@ -1976,14 +1988,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * among the others (a placeholder's setting by its name, a base's keyed setting): whatever the
    * file is called, only what the facts say is read.
    */
-  const replacedFor = (call: Node & { fact: Call }): Resolved[] => {
+  const replacedFor = (call: Node & { fact: Call }, token?: string): Resolved[] => {
+    // Beta.27: a hostless forwarding call's token, as its `<URL>` part writes it (`forwardTokenOf`).
+    const written = call.fact.host ?? call.fact.base ?? token;
     // Beta.25 review: a token is for the file that writes the call's URL: the cited line or part
     // that writes its host or base as the call gives it, when one does (a route's Condition line
     // in `proxies/default.xml` writes no URL), and that file's element is the XPath's root. A
     // bundle keeps each kind in its own folder (`targets/`, `proxies/`, `policies/`), so a
     // `/ProxyEndpoint/...` token for `default.xml` is never the target `default.xml`'s.
     const parts = [call.fact.cite, ...(call.fact.cite.with ?? [])];
-    const urlText = (call.fact.host ?? call.fact.base ?? "").trim();
+    const urlText = (written ?? "").trim();
     const writing = urlText ? parts.filter((p) => p.value.trim() === urlText) : [];
     const cited = (writing.length ? writing : parts).map((p) => p.file);
     const rootFits = (file: string, xpath: string) => {
@@ -2010,7 +2024,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       homes!.filter((h) => file.startsWith(h)).sort((a, b) => b.length - a.length)[0] ??
       (homes!.length === 1 ? homes![0] : undefined);
     // A token whose lines name the placeholder it replaces (`@targetUrl@`) is that one's only.
-    const wanted = placeholderIn(call.fact.host ?? call.fact.base)?.name;
+    const wanted = placeholderIn(written)?.name;
     const tokenNames = (n: Node & { fact: Config }) =>
       [n.fact.source, ...(n.fact.cite.with ?? []).map((w) => w.value)].flatMap((v) => {
         const p = v && /^\s*(@[^@\s]+@|\{\{[^}]+\}\})\s*$/.test(v) ? placeholderIn(v) : undefined;
@@ -2202,6 +2216,28 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   /** A gateway's forwarding call: a REST call in a gateway bundle, or of a repo the manifest types gateway. */
   const isForwarding = (c: Node & { fact: Call }) =>
     c.fact.callType === "rest" && (!!bundleRootOf(c.fact.cite.file) || gatewayRepos.has(c.repo));
+  /**
+   * Beta.27 (a user's estate): the target URL a gateway's forwarding call that names no host or
+   * base goes to, when a line its citation names writes it as a token (the target's `<URL>` line
+   * in `cite.with`, `@targetVendorUrl@` or `https://{{host}}/v1`). A read before beta.27 could
+   * leave the token out of `host`; the call was then taken for a proxy chained to another and
+   * joined to whichever entry served its path. One token, the same on every line, or none.
+   */
+  const forwardTokenOf = (c: Node & { fact: Call }): string | undefined => {
+    if (c.fact.host || c.fact.base || !isForwarding(c)) return undefined;
+    const said = new Set(
+      [c.fact.cite.value, ...(c.fact.cite.with ?? []).map((w) => w.value)].flatMap((raw) => {
+        const v = raw.trim();
+        const p = placeholderIn(v);
+        if (!p || hostIn(v)) return [];
+        // The token is the URL, or its host: nothing but a scheme before it, a path or nothing after.
+        const before = p.before.trim();
+        if (before && !/^[a-z][a-z0-9+.-]*:\/\/$/i.test(before)) return [];
+        return p.after === "" || /^[/:?]/.test(p.after) ? [v] : [];
+      }),
+    );
+    return said.size === 1 ? [...said][0] : undefined;
+  };
   /** A gateway route's proxy, as the routes of one proxy share it: its repo and bundle (or handler's proxy). */
   const proxyOf = (r: Node & { fact: Entry }) =>
     key(r.repo, bundleRootOf(r.fact.cite.file) ?? r.fact.handler?.split("/")[0] ?? "");
@@ -2336,8 +2372,18 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       guesses: JoinHostGuess[];
     };
     const cands: Cand[] = [];
+    // Beta.27: a forwarding call's host as its lines write it, when only its `<URL>` part does.
+    const token = forwardTokenOf(call);
+    const fHost = f.host ?? token;
+    // Beta.27: a deploy token in a gateway bundle (`@name@`, `{{name}}`) is set by the bundle's
+    // own deploy file (its repo's settings, or one naming it), never by a namesake setting of
+    // another repo for no one (a platform setting) or in a folder named like it (J0's guesses).
+    const own =
+      isForwarding(call) &&
+      !!bundleRootOf(f.cite.file) &&
+      TOKEN_FORMS.some((re) => re.test(fHost ?? f.base ?? ""));
     if (!hostIn(f.host)) {
-      if (placeholderIn(f.host)) cands.push(...resolve(f.host, call, new Set()));
+      if (placeholderIn(fHost)) cands.push(...resolve(fHost, call, new Set(), 0, own));
       else if (keyed.length)
         for (const t of keyed)
           for (const r of resolve(
@@ -2346,10 +2392,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
             new Set([key(t.repo, t.fact.id)]),
           ))
             cands.push({ ...r, tie: t });
-      else if (placeholderIn(f.base)) cands.push(...resolve(f.base, call, new Set()));
+      else if (placeholderIn(f.base)) cands.push(...resolve(f.base, call, new Set(), 0, own));
       // Nothing by its name: a setting that replaces the element the URL is written in, per
       // environment (one resolver among the placeholders' and the keyed base's).
-      if (!cands.some((x) => !!hostIn(x.value))) cands.push(...replacedFor(call));
+      if (!cands.some((x) => !!hostIn(x.value))) cands.push(...replacedFor(call, token));
     }
     const configs = cands.filter((x) => !!hostIn(x.value));
     const claimOf = (x: Cand) => claimed(hostIn(x.value)!, joinPaths(urlPathOf(x.value), f.path));
@@ -2378,7 +2424,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     // keyed settings' as written when they agree, so a proxy's BasePath can join the call.
     const unresolvedBase = () => {
       if (host) return undefined;
-      if (!keyed.length) return pathAroundPlaceholder(f.host) ?? pathAroundPlaceholder(f.base);
+      if (!keyed.length) return pathAroundPlaceholder(fHost) ?? pathAroundPlaceholder(f.base);
       const ps = new Set(keyed.map((t) => pathAroundPlaceholder(t.fact.value ?? t.fact.source)));
       return ps.size === 1 ? [...ps][0] : undefined;
     };
@@ -2571,11 +2617,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         continue;
       }
       const forwarding = isForwarding(call);
-      const namesHost = !!(f.host || f.base);
+      const namesHost = !!(f.host || f.base || token);
       if (forwarding && namesHost) {
         // A gateway forwards to the host its target names, never to whichever service serves the
-        // path: a host nothing resolves is asked about.
-        const named = (f.host ?? f.base)!;
+        // path: a host nothing resolves is asked about (beta.27: a token only its `<URL>` part
+        // writes too; it was joined by its path before, a guess, and nothing was asked).
+        const named = (f.host ?? f.base ?? token)!;
         asks.push({
           call: end(call),
           reason: "unknown-host",
