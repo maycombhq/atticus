@@ -237,10 +237,18 @@ test.describe("drafting the stories again over a person's stories", () => {
       thread.getByRole("link", { name: "Go on from them on At a glance" }),
     ).toBeVisible();
     await expect(thread.getByRole("button", { name: "Start the stage" })).toHaveCount(0);
-    const again = thread.getByRole("button", { name: "Draft the stories again" });
+    // Review of the fix: the button names the files it replaces, and asks once.
+    const again = thread.getByRole("button", {
+      name: "Draft the stories again, replacing stories.md and tasks.md…",
+    });
     await expect(again).toBeVisible();
     await accessible(page, "the stories a person wrote, on the Stories page");
     await again.click();
+    const ask = thread.getByRole("group", { name: /^This replaces stories\.md and tasks\.md/ });
+    await expect(ask).toContainText("stage/stories-by-person/");
+    await expect(ask.getByRole("button", { name: "Keep them" })).toBeVisible();
+    await accessible(page, "drafting the stories again, asked once");
+    await ask.getByRole("button", { name: "Draft the stories again", exact: true }).click();
     await expect(thread.getByRole("link", { name: "Open the prompt and Done" })).toBeVisible({
       timeout: 60_000,
     });
