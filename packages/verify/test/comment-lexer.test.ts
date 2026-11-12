@@ -512,6 +512,52 @@ describe("the seventh review of ADR 0196", () => {
     );
   });
 
+  // Beta.27 re-review 5: PHP's `'…'` strings run across lines; read to a line's end, one of three
+  // lines or more put its quotes out of step and flipped the rest of the file's comments.
+  it("reads a PHP `'` string across three lines or more, with only `\\\\` and `\\'` escapes", () => {
+    expectLines(
+      "src/Http/views.php",
+      ["-", "<?php"],
+      ["-", "$h = '<div"],
+      ["-", '  class="a'],
+      ["-", "  b\">';"],
+      ["-", '$u = "/*";'],
+      ["-", "$app->get('/x', f());"],
+      ["-", '$v = "*/";'],
+    );
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php"],
+      ["-", "$s = 'a"],
+      ["-", "b"],
+      ["-", "c \" d';"],
+      ["-", '$u = "/*";'],
+      ["-", "$app->get('/ledger', f());"],
+      ["-", '$v = "*/";'],
+    );
+    // a `/*`, `//` or `#` inside one is no comment; `\'` doesn't end it, `\\` before `'` does
+    expectLines(
+      "src/Http/help.php",
+      ["-", "<?php"],
+      ["-", "$help = 'globs: /* and"],
+      ["-", "  // and # it\\'s"],
+      ["-", "  C:\\\\';"],
+      ["-", "$app->get('/pay', f());"],
+      ["C", "// a comment"],
+    );
+    // a `\` before a line's end, or before any other character, is the string's own
+    expectLines(
+      "src/Http/paths.php",
+      ["-", "<?php"],
+      ["-", "$d = 'C:\\"],
+      ["-", "';"],
+      ["-", "$e = 'C:\\n' . '\\x';"],
+      ["C", "/* a block"],
+      ["C", "   comment */"],
+      ["-", "$app->get('/pay', f());"],
+    );
+  });
+
   it("keeps the BOM and no-break space escapes readable in the source", () => {
     expect(isCommentLine("﻿// a note", "src/a.ts")).toBe(true);
     expect(isCommentLine(" // a note", "src/a.ts")).toBe(true);

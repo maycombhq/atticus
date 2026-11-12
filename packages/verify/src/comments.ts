@@ -5,15 +5,15 @@
  * the file as comment, so a live route below it was refused. The lexer keeps its state across
  * lines: a line comment, a block comment (nested where the language nests them: Kotlin, Rust,
  * Swift, Scala, Dart), a string in `"` or `'` (to the line's end, or past it after a `\`; a `"`
- * string across lines in Rust and PHP), a JavaScript or TypeScript template literal across lines
- * with `${…}` inside it (braces counted, so an object or a nested template in it is read), a Go
- * raw string, a Java, Kotlin, Scala, Swift, Dart, Groovy or C# triple-quoted string, a C# verbatim
- * string, a Rust raw string (`r#"…"#`, `br"…"`) and char (not a lifetime), a Dart raw string
- * (`r'…'`, no escapes), a PHP heredoc or nowdoc (to the line its label starts, PHP 7.3's flexible
- * closing) and backtick command (across lines), a JavaScript regex literal, and escapes. A line is
- * comment when it has a comment on it and every other character on it outside one is a space or
- * one of `{ } ( ) ,` (a JSX comment, `{/* … *\/}`, and the `{/*` and `*\/}` lines of one across
- * lines). Linear in the file's length.
+ * string across lines in Rust, a `"` or `'` one in PHP), a JavaScript or TypeScript template
+ * literal across lines with `${…}` inside it (braces counted, so an object or a nested template in
+ * it is read), a Go raw string, a Java, Kotlin, Scala, Swift, Dart, Groovy or C# triple-quoted
+ * string, a C# verbatim string, a Rust raw string (`r#"…"#`, `br"…"`) and char (not a lifetime), a
+ * Dart raw string (`r'…'`, no escapes), a PHP heredoc or nowdoc (to the line its label starts, PHP
+ * 7.3's flexible closing) and backtick command (across lines), a JavaScript regex literal, and
+ * escapes. A line is comment when it has a comment on it and every other character on it outside
+ * one is a space or one of `{ } ( ) ,` (a JSX comment, `{/* … *\/}`, and the `{/*` and `*\/}` lines
+ * of one across lines). Linear in the file's length.
  *
  * A `/` starts a regex literal after an operator, an opening bracket, `;` or a keyword
  * (`return`…), and after `}` in a script, but not after `}` before `>` (JSX's `}/>`), after `++` or
@@ -29,10 +29,10 @@
  *
  * Not read: C++ raw strings (`R"(…)"`), Swift's `#"…"#`, C#'s raw strings of four quotes or more
  * (`""""…""""`, read as a triple-quoted one, so a `"""` in one closes it), Scala's `raw"…\""` (its
- * `\` read as an escape), PHP's `'…'` across lines (read to the line's end) and `?>` (HTML after it
- * is read as PHP), Groovy's slashy strings, a string an interpolation nests inside another
- * string's interpolation outside JavaScript (Kotlin's `"${m["k"]}"`). Each of these can misread
- * the lines it spans and, when it holds an unclosed `/*`, those after it up to the next `*\/`.
+ * `\` read as an escape), PHP's `?>` (HTML after it is read as PHP), Groovy's slashy strings, a
+ * string an interpolation nests inside another string's interpolation outside JavaScript (Kotlin's
+ * `"${m["k"]}"`). Each of these can misread the lines it spans and, when it holds an unclosed
+ * `/*`, those after it up to the next `*\/`.
  */
 
 /** What the lexer reads in a file, by its language. */
@@ -61,7 +61,7 @@ export interface CommentLexis {
   rustChar: boolean;
   /** Dart: `r'…'` and `r"…"` (and their triple forms) are raw, with no escapes. */
   dartRaw: boolean;
-  /** The quotes whose strings run across lines (`"` in Rust and PHP). */
+  /** The quotes whose strings run across lines (`"` in Rust, `"` and `'` in PHP). */
   spanQuotes: string;
   /** PHP: a doc block's line with a live annotation is code; heredocs and backticks are read. */
   php: boolean;
@@ -94,7 +94,9 @@ export function commentLexisOf(file: string, php: boolean): CommentLexis {
     verbatim: !php && /\.(cs|csx)$/i.test(file),
     rustChar: rust,
     dartRaw: !php && /\.dart$/i.test(file),
-    spanQuotes: rust || php ? '"' : "",
+    // Beta.27 re-review 5: PHP's `'…'` runs across lines too (its escapes, `\\` and `\'`, are read
+    // as any `\` is: the character after one never closes it unless it is a quote escaped)
+    spanQuotes: php ? `"'` : rust ? '"' : "",
     php,
   };
 }
@@ -175,10 +177,6 @@ export function lexCommentLines(
   let base = 0; // where the line starts in the file
   let prevAt = -2; // where `prev` is in the file
   let pair = false; // `prev` and `prev2` are one token's two characters (`++`, `--`)
-  // PHP: a `'` string cut at the previous line's end (read to a line's end only): on the line
-  // after it, a `"` or a backtick is read to the line's end as well, not across lines, so a quote
-  // in the cut string's continuation (`'<div class="a` / `b">'`) can't flip the rest of the file.
-  let cutNext = false;
   const sawCode = (c: string, at: number) => {
     if (word && isWord(c) && isWord(prev)) word += c;
     else word = isWord(c) ? c : "";
@@ -204,8 +202,6 @@ export function lexCommentLines(
     let synthetic = false;
     let cont = false; // a string continued past the line's end by a `\`
     let regexOk = lx.js;
-    const lineBound = cutNext;
-    cutNext = false;
     if (alone && mode === "code" && DOC_STAR_START.test(l)) {
       // a doc block's line read alone, whose opening isn't there: read as one, for this line only
       mode = "block";
@@ -339,7 +335,7 @@ export function lexCommentLines(
             mode = "tpl";
             escapes = true;
             doubled = false;
-          } else if (lx.php) openString("`", { escapes: true, lines: !lineBound });
+          } else if (lx.php) openString("`", { escapes: true, lines: true });
           else if (lx.goRaw) openString("`", { escapes: false, lines: true });
           else if (lx.tickIdent) openString("`", { escapes: false, lines: false });
           else sawCode(c, base + i);
@@ -353,7 +349,7 @@ export function lexCommentLines(
           sawCode(c, base + i);
           i++;
         } else {
-          openString(c, { escapes: true, lines: lx.spanQuotes.includes(c) && !lineBound });
+          openString(c, { escapes: true, lines: lx.spanQuotes.includes(c) });
           i++;
         }
         continue;
@@ -402,10 +398,7 @@ export function lexCommentLines(
       i++;
     }
     // (`openString` sets the mode too, which the compiler's narrowing doesn't follow)
-    if ((mode as Mode) === "str" && !cont) {
-      if (lx.php && close === "'") cutNext = true;
-      mode = "code";
-    }
+    if ((mode as Mode) === "str" && !cont) mode = "code";
     if (synthetic && mode === "block") {
       mode = "code";
       depth = 0;
