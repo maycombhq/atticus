@@ -41,6 +41,29 @@ const verify = (root: string, c = capture()) =>
     c.io,
   );
 
+/**
+ * ADR 0195 point 2: the build joins every repo's facts slot at once, and only `verify <repo>
+ * --write` writes a repo's slot (the snapshot of its facts), so the repos the portal calls
+ * through the gateway are verified first, as a team's estate has them: a live facts file alone is
+ * no part of the catalog (beta.26's verify joined every live file).
+ */
+async function verifyOthers(root: string): Promise<void> {
+  for (const [repo, commit] of [
+    ["forge-accounts", "9999ccc"],
+    ["forge-gateway", "7777aaa"],
+  ] as const) {
+    cpSync(join(GW, "repos", repo), join(root, "workspace", repo), { recursive: true });
+    const c = capture();
+    const code = await verifyCommand(
+      root,
+      repo,
+      { commit, dir: join(root, "workspace", repo), write: true },
+      c.io,
+    );
+    expect(code, [...c.out, ...c.err].join("\n")).toBe(0);
+  }
+}
+
 /** Every file under a folder, as text. */
 const textUnder = (dir: string): string =>
   readdirSync(dir, { withFileTypes: true, recursive: true })
@@ -116,6 +139,7 @@ describe("atticus verify --write with contract files and traffic", () => {
       { source: "apigee", from: "2026-09-01", to: "2026-09-30" },
       capture().io,
     );
+    await verifyOthers(root);
     const c = capture();
     expect(await verify(root, c)).toBe(0);
     expect(parse(readFileSync(join(root, "facts", `${REPO}.contracts.yaml`), "utf8"))).toEqual(

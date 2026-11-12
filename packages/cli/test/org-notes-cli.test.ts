@@ -8,6 +8,7 @@ import { answerQuestion, listQuestions, RepoType, TERM_STEP } from "@maycombhq/c
 import { mapCommand } from "../src/map-commands.js";
 import { repoTypeNote, repoTypeRules, termNoteOffer } from "../src/repo-type-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
+import { confirmed } from "./seed-slots.js";
 
 /**
  * Org notes per repo type (ADR 0163), on the invented estate of fixtures/term-notes: the notes a
@@ -35,8 +36,32 @@ function metarepo(edit?: (repo: string, text: string) => string) {
     }
   return root;
 }
+// ADR 0195 point 4: a write whose removals are large (the facts replacing what an earlier
+// build had) waits for their count; confirmed here as a person would.
 const verify = (root: string, repo: string, write = true, c = capture()) =>
-  verifyCommand(root, repo, { commit: COMMIT, dir: join(root, "workspace", repo), write }, c.io);
+  confirmed(
+    (io, allowRemovals) =>
+      verifyCommand(
+        root,
+        repo,
+        {
+          commit: COMMIT,
+          dir: join(root, "workspace", repo),
+          write,
+          ...(allowRemovals !== undefined ? { allowRemovals } : {}),
+        },
+        io,
+      ),
+    c.io,
+  );
+/**
+ * ADR 0195 point 2: the build joins the facts slots of every repo at once, and only a repo's own
+ * `verify --write` writes its slot; so the other repos a test's join needs are verified first, as
+ * a team has them (beta.26's verify joined every live facts file, verified or not).
+ */
+async function verified(root: string, repos: readonly string[]): Promise<void> {
+  for (const repo of repos) expect(await verify(root, repo)).toBe(0);
+}
 const grants = (root: string) => {
   const dir = join(root, "catalog", "generated", "accessgrant");
   return existsSync(dir)
@@ -118,6 +143,7 @@ describe("the notes a read is handed", () => {
 describe("verify --write: terms across the estate", () => {
   it("writes the consumers a proxy lists as access grants, and checks access against calls", async () => {
     const root = metarepo();
+    await verified(root, ["forge-statements", "forge-ledger"]);
     const c = capture();
     expect(await verify(root, "forge-accounts-proxy", true, c)).toBe(0);
     expect(
@@ -173,9 +199,16 @@ describe("verify --write: terms across the estate", () => {
         )
         .join("\n");
     const root = metarepo(unknown);
+    await verified(root, ["forge-accounts-proxy"]);
+    // forge-accounts-proxy's own write asked about its terms first (its facts slot is written by
+    // its own verify now); the question across the repo type is the one this write asks.
+    const earlier = new Set(
+      (await listQuestions(root, { step: TERM_STEP })).questions.map((q) => q.id),
+    );
     const c = capture();
     expect(await verify(root, "forge-cards-proxy", true, c)).toBe(0);
-    const qs = (await listQuestions(root, { step: TERM_STEP })).questions;
+    const all = (await listQuestions(root, { step: TERM_STEP })).questions;
+    const qs = all.filter((q) => !earlier.has(q.id));
     expect(qs.map((q) => q.question)).toEqual([
       "What does `cmdb` mean in userAccess.json across 2 forge-apigee-proxy repos? It holds APP000123, APP000456.",
     ]);
@@ -184,7 +217,7 @@ describe("verify --write: terms across the estate", () => {
     // A second write asks nothing new.
     const again = capture();
     await verify(root, "forge-cards-proxy", true, again);
-    expect((await listQuestions(root, { step: TERM_STEP })).questions).toHaveLength(1);
+    expect((await listQuestions(root, { step: TERM_STEP })).questions).toHaveLength(all.length);
     // The answer offers to save as a note on the type, and the note goes into type.yaml.
     const { question } = await answerQuestion(root, qs[0]!.id, {
       option: 2,

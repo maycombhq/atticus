@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { writeChangeRepos } from "@maycombhq/workspace";
+import { seedForgeSlots } from "./seed-forge.js";
 import {
   ciArchiveGate,
   ciDrift,
@@ -229,10 +230,18 @@ describe("atticus ci", () => {
 describe("atticus glossary", () => {
   it("scans, lists, defines, links and names synonyms", async () => {
     const r = await root();
+    // ADR 0195 point 2: the glossary scan writes its inputs and builds, so the catalog it runs
+    // over is a build's (the Forge golden slots, which build to expected/scan.yaml), not record
+    // files written by hand, which a build refuses as a catalog from before the slots.
+    await rm(join(r, "catalog", "generated"), { recursive: true, force: true });
+    await seedForgeSlots(r);
     const s = io();
     expect(await glossaryScan(r, {}, s.io, { now })).toBe(0);
+    // ADR 0195 point 2 (step 5): every build makes the glossary's terms from the curated
+    // catalog, so over a catalog the build just made the glossary scan finds its 7 terms already
+    // written (beta.26 patched 10 record files in place).
     expect(s.out[0]).toBe(
-      "The glossary has 7 terms; 10 files written and 0 files removed in catalog/generated.",
+      "The glossary has 7 terms; 0 files written and 0 files removed in catalog/generated.",
     );
     const l = io();
     expect(await glossaryList(r, {}, l.io)).toBe(0);

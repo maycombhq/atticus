@@ -197,6 +197,7 @@ describe("a scan writes only what it read in full, and keeps every other repo's 
         /forge-ledger: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here\./,
       );
       expect(r.out.join("\n")).toContain("slots: catalog/sources/readers/forge-events.json");
+      expect(r.out.join("\n")).toMatch(/catalog\/sources\/readers: 1 written, 5 unchanged/);
       const j = await atticusJson<ScanReport>(root, "scan", "--no-drift");
       expect(j.json.written).toBe(true);
       expect(j.json.sources.find((s) => s.repo === "forge-ledger")).toMatchObject({
@@ -252,23 +253,6 @@ async function verifyMetarepo(): Promise<{ root: string; dir: string; commit: st
   await writeFile(join(root, "facts", "forge-ledger.jsonl"), facts.replaceAll("0123abc", commit));
   return { root, dir, commit };
 }
-
-describe("WAITS FOR CS2: what the scan says it wrote (ADR 0195 point 5)", () => {
-  // CS2's scan computes each slot's outcome after the build has written it, so a slot the scan
-  // just wrote is counted "unchanged" ("catalog/sources/readers: 0 written, 6 unchanged" beside
-  // "slots: catalog/sources/readers/forge-events.json"). Turns green when scanLocked counts the
-  // slots it wrote (packages/cli/src/scan-commands.ts).
-  it.fails(
-    "a scan that wrote one repo's slot says 1 written",
-    async () => {
-      const root = await scannedForge();
-      await commitFile(root, "forge-events", "NOTES.md", "moved on\n");
-      const r = await atticus(root, "scan", "--no-drift");
-      expect(r.out.join("\n")).toMatch(/catalog\/sources\/readers: 1 written, 6 unchanged/);
-    },
-    T,
-  );
-});
 
 describe("verify --write, then a scan, keeps the facts' records (ADR 0195 points 1 to 3)", () => {
   it(
@@ -461,7 +445,8 @@ describe("a removal an answer causes is the person's own action, written and lis
       const words = await build(root);
       expect(words.refused?.reasons).toEqual(["large-removals"]);
       expect(words.refused!.removals!.length).toBeGreaterThan(0);
-      for (const x of words.refused!.removals!) expect(x.explainedBy).toEqual(["questions"]);
+      for (const x of words.refused!.removals!)
+        expect(x.explainedBy).toEqual(["an input changed (questions)"]);
       const boxed = Object.entries(files(generated(root))).filter(([, t]) => /ignore-this/.test(t));
       expect(boxed.length).toBeGreaterThan(0);
       // The person answers Ignore instead, and builds.
@@ -480,7 +465,7 @@ describe("a removal an answer causes is the person's own action, written and lis
       expect(gone).toEqual([]);
       // Each removal is listed with the input that explains it: the answered question.
       expect(b.removed.length).toBeGreaterThanOrEqual(boxed.length);
-      for (const x of b.removed) expect(x.explainedBy).toEqual(["questions"]);
+      for (const x of b.removed) expect(x.explainedBy).toEqual(["an input changed (questions)"]);
     },
     T,
   );

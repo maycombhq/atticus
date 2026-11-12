@@ -17,6 +17,7 @@ import {
 import { readCatalog } from "@maycombhq/scanner";
 import { questionsFiles } from "../src/question-commands.js";
 import { scanCommand } from "../src/scan-commands.js";
+import { confirmed } from "./seed-slots.js";
 
 const ESTATE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/estate");
 
@@ -42,6 +43,18 @@ function git(cwd: string, ...args: string[]) {
 }
 
 /** The two-repo estate with its owners part, cloned in workspace/, and its manifest. */
+/** A scan that confirms the large removals it lists, with their count (ADR 0195 point 4). */
+const rescan = (root: string, out: ReturnType<typeof io>["io"]) =>
+  confirmed(
+    (x, allowRemovals) =>
+      scanCommand(
+        root,
+        { noDrift: true, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
+        x,
+      ),
+    out,
+  );
+
 async function metarepo() {
   const root = await mkdtemp(join(tmpdir(), "atticus-hosts-cli-"));
   await cp(join(ESTATE, "org-pack"), join(root, "org-pack"), { recursive: true });
@@ -109,7 +122,10 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(a.out.at(-1)).toBe("Next: atticus scan");
 
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
+    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
+    // records, so the rescan waits for their count: confirmed as a person would.
+    expect(await rescan(root, s2.io)).toBe(0);
     expect(s2.out.some((l) => l.includes("localhost:9966"))).toBe(false);
     expect(await interfaces(root)).toEqual(
       expect.arrayContaining([
@@ -136,7 +152,10 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
       ),
     );
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
+    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
+    // records, so the rescan waits for their count: confirmed as a person would.
+    expect(await rescan(root, s2.io)).toBe(0);
     const after = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after.map((x) => [x.id, x.state])).toEqual([[q!.id, "retired"]]);
     expect(after[0]!.retired?.why).toMatch(/forge-customers lists localhost:9966 under hosts/);
@@ -158,7 +177,10 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(old.options.map((o) => o.label)).toEqual(["forge-customers", HOSTS_NONE]);
     await writeQuestion(root, old);
     const s2 = io();
-    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
+    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
+    // records, so the rescan waits for their count: confirmed as a person would.
+    expect(await rescan(root, s2.io)).toBe(0);
     const [after] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after!.id).toBe(q!.id);
     expect(after!.evidence).toEqual(q!.evidence);
