@@ -478,8 +478,7 @@ async function rename(
   const from = r.id;
   const to = `${r.id}-core`;
   // New slot files that don't parse need slot files to write: a repo never observed has none.
-  const fail =
-    !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
+  const fail = !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
   const outcome = await sut().rename(w.root, from, to, {
     ...confirm,
     ...(d.fail ? { failBuild: true } : {}),
@@ -945,7 +944,11 @@ export async function act(
         const o = first.outcome;
         if (!o.crashed) return { ...first, crash: { first: o, mid: before } };
         const { onSuccess: _never, ...rest } = first;
-        return { ...rest, expect: { kind: "neutral" }, crash: { first: o, mid: before, whole: true } };
+        return {
+          ...rest,
+          expect: { kind: "neutral" },
+          crash: { first: o, mid: before, whole: true },
+        };
       }
       const inner: Desc =
         d.via === "scan" ? { t: "scan" } : { t: "verify-write", slot: d.slot, ok: true };

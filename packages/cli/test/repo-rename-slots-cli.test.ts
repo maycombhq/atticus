@@ -71,10 +71,7 @@ async function upgraded(): Promise<string> {
   await cp(join(FORGE, "metarepo"), root, { recursive: true });
   await cp(join(BETA26, "catalog"), join(root, "catalog"), { recursive: true });
   const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
-  await writeFile(
-    manifest,
-    (await readFile(manifest, "utf8")).replace(/\r?\n/g, "\r\n"),
-  );
+  await writeFile(manifest, (await readFile(manifest, "utf8")).replace(/\r?\n/g, "\r\n"));
   const up = await atticus(root, "upgrade", "--yes");
   expect(up.code, up.all()).toBe(0);
   expect(existsSync(join(root, "catalog", "sources", "legacy", "joins.json"))).toBe(true);
@@ -137,7 +134,14 @@ describe("atticus repo rename computes first, then writes everything in one step
       const undoDir = await undoDirOf(root);
       const copies = (await listUndo(undoDir)).map((c) => c.n);
       renameHooks.breakNewSlots = true;
-      const r = await atticus(root, "repo", "rename", "forge-ledger", "forge-ledger-core", "--json");
+      const r = await atticus(
+        root,
+        "repo",
+        "rename",
+        "forge-ledger",
+        "forge-ledger-core",
+        "--json",
+      );
       expect(r.code).toBe(1);
       expect(JSON.parse(r.out.join("\n"))).toMatchObject({
         renamed: false,
@@ -153,10 +157,23 @@ describe("atticus repo rename computes first, then writes everything in one step
     "a guard's refusal (a hand edit) writes nothing: no input is renamed before the build is checked",
     async () => {
       const root = await upgraded();
-      const hand = join(root, "catalog", "generated", "setting", "portal-bff.ledger-read-timeout.yaml");
+      const hand = join(
+        root,
+        "catalog",
+        "generated",
+        "setting",
+        "portal-bff.ledger-read-timeout.yaml",
+      );
       await writeFile(hand, (await readFile(hand, "utf8")).replace("5000ms", "7000ms"));
       const before = tree(root);
-      const r = await atticus(root, "repo", "rename", "forge-ledger", "forge-ledger-core", "--json");
+      const r = await atticus(
+        root,
+        "repo",
+        "rename",
+        "forge-ledger",
+        "forge-ledger-core",
+        "--json",
+      );
       expect(r.code).toBe(1);
       expect(JSON.parse(r.out.join("\n")).refused.reasons).toContain("hand-edits");
       expect(tree(root)).toEqual(before);
@@ -168,7 +185,14 @@ describe("atticus repo rename computes first, then writes everything in one step
     "succeeds whole: the inputs renamed with the slots, the manifest's CRLF kept, and the next check has nothing to do",
     async () => {
       const root = await upgraded();
-      const r = await atticus(root, "repo", "rename", "forge-ledger", "forge-ledger-core", "--json");
+      const r = await atticus(
+        root,
+        "repo",
+        "rename",
+        "forge-ledger",
+        "forge-ledger-core",
+        "--json",
+      );
       expect(r.code, r.all()).toBe(0);
       const report = JSON.parse(r.out.join("\n")) as { renamed: boolean; slots: string[] };
       expect(report.renamed).toBe(true);

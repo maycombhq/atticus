@@ -114,7 +114,6 @@ function rewriteFactsFile(name: string, text: string, from: string, to: string):
   }
 }
 
-
 /**
  * A test hook (ADR 0195 point 10, "the new slots fail to build"): the rename's new slot files are
  * made unreadable before they are checked, so the rename must change nothing. Never set outside

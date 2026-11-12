@@ -322,7 +322,9 @@ export async function joinAnswerQuestions(root: string): Promise<Question[]> {
  * `listQuestions`' order.
  */
 export function joinAnswerQuestionsOf(all: readonly Question[]): Question[] {
-  const sorted = [...all].sort((a, b) => cmpText(a.askedBy.at, b.askedBy.at) || cmpText(a.id, b.id));
+  const sorted = [...all].sort(
+    (a, b) => cmpText(a.askedBy.at, b.askedBy.at) || cmpText(a.id, b.id),
+  );
   return [
     ...sorted.filter((q) => askedByStep(q, TARGETS_STEP_ID)),
     ...sorted.filter((q) => askedByStep(q, HOSTS_STEP)),
