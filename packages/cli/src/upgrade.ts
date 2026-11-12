@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cp, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
@@ -47,6 +48,7 @@ import {
 } from "@maycombhq/core";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { recordUpgraded } from "./propose.js";
 import { VERSION } from "./version.js";
 
 /**
@@ -504,6 +506,36 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
+/** The stamp's path as Git and the app's Propose name it. */
+const STAMP_REL = STAMP_FILE.split(sep).join("/");
+
+/**
+ * Beta.27 review: each file under the given paths (a file, or a folder read whole), by its
+ * content's hash, metarepo-relative and "/"-separated. A path that isn't there has none.
+ */
+async function contentOf(root: string, paths: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const walk = async (rel: string): Promise<void> => {
+    if (out.has(rel)) return;
+    const abs = join(root, ...rel.split("/"));
+    const s = await stat(abs).catch(() => undefined);
+    if (!s) return;
+    if (s.isDirectory()) {
+      for (const e of (await readdir(abs)).sort()) await walk(`${rel}/${e}`);
+      return;
+    }
+    if (s.isFile())
+      out.set(
+        rel,
+        createHash("sha256")
+          .update(await readFile(abs))
+          .digest("hex"),
+      );
+  };
+  for (const p of paths) await walk(p.split("\\").join("/").replace(/\/+$/, ""));
+  return out;
+}
+
 function packRel(root: string, file: string): string {
   return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/${file}`;
 }
@@ -748,6 +780,19 @@ export async function upgradeCommand(
     stampTime.replace(/[-:]/g, "").replace("T", "-").replace("Z", ""),
   );
   const changed: string[] = [];
+  // Beta.27 review: what this run changes is kept with it, so the app proposes exactly that:
+  // what every step returned, and each file under what a step named (a change's whole folder,
+  // say) that it wrote, rewrote or removed, as content before and after tells. Kept even when a
+  // step fails, so the steps that had run are proposed once the upgrade is run again.
+  const named = [".atticus/.gitignore", ...c.pending.flatMap((p) => p.files)];
+  const before = await contentOf(root, named);
+  const keep = async () => {
+    const after = await contentOf(root, named);
+    const touched = [...new Set([...before.keys(), ...after.keys()])].filter(
+      (f) => before.get(f) !== after.get(f),
+    );
+    await recordUpgraded(root, { add: [...changed, ...touched, STAMP_REL] });
+  };
   if (c.pending.length) {
     await mkdir(backup, { recursive: true });
     await ensureLocalIgnore(root);
@@ -777,6 +822,7 @@ export async function upgradeCommand(
       } catch (e) {
         // Said with where the files as they were are kept, and which steps already ran.
         const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
+        await keep().catch(() => undefined);
         throw new Error(
           `${e instanceof Error ? e.message : String(e)} The files as they were before this upgrade are in ${relative(root, backup).split(sep).join("/")}${done.length ? `; these steps had already run: ${done.join(", ")}` : ""}. Run atticus upgrade again once it's fixed.`,
           { cause: e },
@@ -799,6 +845,7 @@ export async function upgradeCommand(
     });
     changed.push(STORE_MARKER);
   }
+  await keep();
   if (o.json)
     io.out(
       JSON.stringify(

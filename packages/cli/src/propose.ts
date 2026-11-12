@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -132,11 +132,49 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
     // or archived (a pathspec's * crosses folders); nothing else of the change.
     case "outcomes":
       return [`${changesRelOf(root)}/*/review/outcomes.yaml`];
-    // Beta.27 review: what `atticus upgrade` changed (the org pack's files, the facts and the
-    // catalog a step brings up to date) and its stamp, for the upgrade panel's Propose.
+    // Beta.27 review: exactly what `atticus upgrade` changed, path by path (every step's files,
+    // kept with the run in upgraded.json), and its stamp, for the upgrade panel's Propose; never
+    // the app's other pending work. Literal pathspecs: a path is a path, never a glob.
     case "upgrade":
-      return [...scopeDirs(root, "work"), ".atticus/metarepo.yaml"];
+      return [...new Set([...upgradedPaths(root), UPGRADE_STAMP])].map((p) => `:(literal)${p}`);
   }
+}
+
+/** The stamp `atticus upgrade` writes (upgrade.ts's STAMP_FILE, "/"-separated). */
+const UPGRADE_STAMP = ".atticus/metarepo.yaml";
+
+/**
+ * Beta.27 review: what `atticus upgrade` changed, path by path: the files every step returned,
+ * the files under a folder a step named that it rewrote or removed, and the stamp. Kept on this
+ * machine (in .index, which Git ignores) so the upgrade panel's Propose, later, carries exactly
+ * those. A run adds to what an earlier one left unproposed; proposing them takes them off.
+ */
+export const upgradedFile = (root: string) => join(stateDirOf(root), ".index", "upgraded.json");
+
+/** The paths kept by the upgrades not yet proposed, metarepo-relative and "/"-separated. */
+export function upgradedPaths(root: string): string[] {
+  try {
+    const j = JSON.parse(readFileSync(upgradedFile(root), "utf8")) as { files?: unknown };
+    return Array.isArray(j.files)
+      ? j.files.filter((f): f is string => typeof f === "string" && !!f && !f.startsWith(".."))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps an upgrade run's paths beside those an earlier run left; `drop` takes proposed ones off. */
+export async function recordUpgraded(
+  root: string,
+  o: { add?: string[]; drop?: string[] },
+): Promise<void> {
+  const drop = new Set(o.drop ?? []);
+  const files = [...new Set([...upgradedPaths(root), ...(o.add ?? [])])]
+    .map((f) => f.split("\\").join("/"))
+    .filter((f) => !drop.has(f))
+    .sort();
+  await mkdir(dirname(upgradedFile(root)), { recursive: true });
+  await writeFile(upgradedFile(root), JSON.stringify({ files }, null, 2) + "\n", "utf8");
 }
 
 export interface ProposePlan {
@@ -359,6 +397,8 @@ export async function proposeForReview(
   } catch {
     // Only a hint for the next list: the PR is open either way.
   }
+  // Beta.27 review: what an upgrade changed and is now proposed is no longer waiting on one.
+  if (o.scope === "upgrade") await recordUpgraded(root, { drop: files }).catch(() => undefined);
   // A manual Git host records a step: the person opens the PR and records its link (ADR 0032).
   io.out(
     pr.url.startsWith("manual:")

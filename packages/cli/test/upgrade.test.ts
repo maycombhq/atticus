@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,10 +7,27 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
 import { starterReviewText } from "@maycombhq/naysayer";
+import { GENERATED_MARK } from "@maycombhq/changes";
+import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { doctorChecks } from "../src/doctor.js";
+import { proposePlan, scopeDirs } from "../src/propose.js";
 import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
+
+const git = (cwd: string, ...a: string[]) =>
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...a], {
+    cwd,
+    encoding: "utf8",
+  });
+
+/** Every path Git sees changed, added or removed, "/"-separated (renames as two paths). */
+const changedPaths = (root: string) =>
+  git(root, "-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    .split("\0")
+    .filter((e) => e.length > 3)
+    .map((e) => e.slice(3))
+    .sort();
 
 /** A metarepo as an earlier Atticus left it: a version-1 record, no local ignore, no stamp. */
 async function oldMetarepo(): Promise<string> {
@@ -579,5 +597,87 @@ describe("atticus upgrade and the starter review (ADR 0120)", () => {
     expect(await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8")).toBe(
       await starterReviewText(),
     );
+  });
+});
+
+describe("the upgrade panel's Propose (beta.27 review)", () => {
+  it("proposes every path the upgrade changed, its stamp with them, and none of the app's other work", async () => {
+    const root = await oldMetarepo();
+    // A change whose stories are in the long form, with a task prompt Atticus wrote before: the
+    // stories step writes the change's files again and removes that prompt.
+    const STAGES = join(FIXTURES, "stages");
+    for (const r of [
+      ...(parse(await readFile(join(FIXTURES, "specs/catalog.yaml"), "utf8")) as unknown[]),
+      ...(parse(await readFile(join(STAGES, "catalog-extra.yaml"), "utf8")) as unknown[]),
+      ...(parse(await readFile(join(STAGES, "footprint/catalog.yaml"), "utf8")) as unknown[]),
+    ]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(`bad fixture record: ${JSON.stringify(p.issues)}`);
+      const f = join(root, "catalog/generated", recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+    await cp(join(STAGES, "specs"), join(root, "specs"), { recursive: true });
+    const ch = join(root, "openspec/changes/screen-order-consent");
+    await cp(join(STAGES, "footprint/screen-order-consent"), ch, { recursive: true });
+    const story = join(ch, "stories/s1-place-order.md");
+    await writeFile(
+      story,
+      `${await readFile(story, "utf8")}\nPrompt for Copilot or Claude Code:\n\nDo it.\n`,
+    );
+    await writeFile(
+      join(ch, "stage/stories-answer.yaml"),
+      [
+        "stories:",
+        "  - id: s1-place-order",
+        "    title: Screen a consenting customer's order",
+        "    asA: buyer",
+        "    iWant: my order screened when I consented",
+        "    soThat: stolen cards are refused",
+        "    tasks:",
+        '      - id: "1.1"',
+        "        criteria:",
+        '          - text: "Given a consenting customer, when the order is placed, then it is screened"',
+        "",
+      ].join("\n"),
+    );
+    await mkdir(join(ch, "tasks"), { recursive: true });
+    await writeFile(join(ch, "tasks/9.9-old.prompt.md"), `${GENERATED_MARK} -->\n\nOld.\n`);
+    git(root, "init", "-q", "-b", "main");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "as an earlier Atticus left it");
+    // The app's other pending work, which "Upgrade this metarepo" must never carry.
+    const theirs = [
+      "catalog/curated/system/billing.yaml",
+      "openspec/changes/screen-order-consent/snow.md",
+      "org-pack/notes.md",
+    ];
+    for (const f of theirs) {
+      await mkdir(dirname(join(root, f)), { recursive: true });
+      await writeFile(join(root, f), "a person's own work\n");
+    }
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    const upgraded = changedPaths(root).filter((f) => !theirs.includes(f));
+    // What the steps the review named write: both ignore files, the stamp, and the change's
+    // stories written again with the old prompt removed.
+    expect(upgraded).toEqual(
+      expect.arrayContaining([
+        ".gitignore",
+        ".atticus/.gitignore",
+        ".atticus/metarepo.yaml",
+        "openspec/changes/screen-order-consent/stories.md",
+        "openspec/changes/screen-order-consent/tasks.md",
+        "openspec/changes/screen-order-consent/stories/s1-place-order.md",
+        "openspec/changes/screen-order-consent/tasks/9.9-old.prompt.md",
+      ]),
+    );
+    const plan = await proposePlan(root, "upgrade");
+    expect(plan.title).toBe("Upgrade this metarepo");
+    expect(plan.files.map((f) => f.path).sort()).toEqual(upgraded);
+    expect(plan.files.find((f) => f.path.endsWith("9.9-old.prompt.md"))?.status).toBe("D");
+  }, 120_000);
+
+  it("is the stamp alone before any upgrade ran here", () => {
+    expect(scopeDirs("/m", "upgrade")).toEqual([":(literal).atticus/metarepo.yaml"]);
   });
 });

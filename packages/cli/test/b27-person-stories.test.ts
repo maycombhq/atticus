@@ -232,10 +232,12 @@ describe("a change whose change.yaml doesn't read (beta.27 review)", () => {
 });
 
 describe("the upgrade panel's Propose (beta.27 review)", () => {
-  it("proposes what an upgrade changes: the org pack, the facts and catalog, and its stamp", () => {
+  // Review of the fix: the paths the upgrade run changed and its stamp, never the app's other
+  // work (upgrade.test.ts runs one and compares with Git).
+  it("proposes what an upgrade changed and its stamp, not the app's other work", () => {
     const dirs = scopeDirs(root, "upgrade");
-    expect(dirs).toContain(".atticus/metarepo.yaml");
-    expect(dirs).toContain("org-pack");
-    expect(dirs).toEqual(expect.arrayContaining(scopeDirs(root, "work")));
+    expect(dirs).toContain(":(literal).atticus/metarepo.yaml");
+    expect(dirs).not.toContain("org-pack");
+    expect(dirs.some((d) => scopeDirs(root, "work").includes(d))).toBe(false);
   });
 });
