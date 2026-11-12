@@ -7,6 +7,7 @@
 // finds the same file installed as it does in a checkout, with no change to the code.
 // Pure functions only: scripts/bundle/npm-atticus.mjs builds the package with them, and
 // packages/conformance/test/npm-layout.test.ts tests them.
+import { createHash } from "node:crypto";
 import { builtinModules } from "node:module";
 import { relative, sep } from "node:path";
 
@@ -146,3 +147,39 @@ export function assetEntries(manifest) {
 
 /** Whether a copied asset is left out: source maps and TypeScript declarations. */
 export const skipAsset = (path) => /\.(map|d\.ts)$/.test(path);
+
+/**
+ * The build id (ADR 0195 point 9: the build cache's code stamp). The bundle defines this global
+ * (esbuild's `define`) as BUILD_ID_PLACEHOLDER; once every file of the package is in dist/, the
+ * placeholder is written over with `buildIdOf` the package's version and every file it carries,
+ * so the id changes with every release and every change to the code or a file it reads. The
+ * scanner's build cache keys on it, and is off when it finds the placeholder still there.
+ */
+export const BUILD_ID_NAME = "__ATTICUS_BUILD_ID__";
+/** 64 characters, as the id is, and never one an id can be (not hexadecimal). */
+export const BUILD_ID_PLACEHOLDER = `atticus-build-id:${"=".repeat(47)}`;
+
+/** esbuild's `define` entry for the build id: the placeholder, written over later. */
+export const buildIdDefine = () => ({ [BUILD_ID_NAME]: JSON.stringify(BUILD_ID_PLACEHOLDER) });
+
+/**
+ * The build id of a package of this version carrying these files (path and bytes, or their
+ * sha256): a sha256, in path order.
+ */
+export function buildIdOf(version, files) {
+  const lines = files
+    .map((f) => {
+      const h = f.sha256 ?? createHash("sha256").update(f.bytes).digest("hex");
+      return `${f.path}\u0000${h}`;
+    })
+    .sort();
+  return createHash("sha256")
+    .update(`${version}\n${lines.join("\n")}`, "utf8")
+    .digest("hex");
+}
+
+/** A bundled file's text with the build id in place of the placeholder (as many as it holds). */
+export function stampBuildId(text, id) {
+  if (!/^[0-9a-f]{64}$/.test(id)) throw new Error(`${id} isn't a build id`);
+  return text.split(BUILD_ID_PLACEHOLDER).join(id);
+}

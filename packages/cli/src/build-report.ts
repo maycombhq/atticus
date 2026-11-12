@@ -11,6 +11,7 @@ import {
   buildAndWrite,
   listUndo,
   planUndo,
+  type BuildAndWrite,
   readBuildReport,
   refusalCommands,
   undoDirOf,
@@ -153,7 +154,7 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
       upToDate: r.upToDate === true,
       removals: r.guard.removals.map((x) => removalView(root, x)),
       ...(r.guard.refused ? { refused: refusalView(root, r.guard.refused) } : {}),
-      plan: pendingPlan(r.guard.refused?.removals ?? r.guard.removals, r.guard.refused?.edits),
+      plan: buildPlanOf(r.guard),
     },
     ...(last ? { last } : {}),
     ...(r.guard.refused?.reasons.includes("not-upgraded") ? { upgrade: true as const } : {}),
@@ -170,6 +171,15 @@ export function planHash(lines: readonly string[]): string {
   return createHash("sha256")
     .update([...lines].sort().join("\n"), "utf8")
     .digest("hex");
+}
+
+/**
+ * The plan of a build as GET /api/build lists it (`pending.plan`): of what it removes or would,
+ * and the hand edits it lists. `atticus catalog build` and `catalog edits --curate`, run for the
+ * app's confirm, work it out again under the lock and write nothing when it isn't this.
+ */
+export function buildPlanOf(g: BuildAndWrite["guard"]): string {
+  return pendingPlan(g.refused?.removals ?? g.removals, g.refused?.edits);
 }
 
 /** The hash of what a refused build lists: each removal (path, reasons, words) and hand edit. */
@@ -240,12 +250,24 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
         command: c.command,
       })),
       files: plan.files.map((f) => ({ path: f.path, to: f.to })),
-      hash: planHash([
-        ...plan.copies.map((c) => `copy\u0000${c.n}\u0000${c.command}\u0000${c.at}`),
-        ...plan.files.map((f) => `file\u0000${f.path}\u0000${f.to}\u0000${f.from}`),
-      ]),
+      hash: undoPlanHash(plan),
     },
   };
+}
+
+/** The hash of an undo's plan (GET /api/build/undo's `plan.hash`): the builds and the files. */
+export function undoPlanHash(
+  plan: Exclude<Awaited<ReturnType<typeof planUndo>>, { problem: string }>,
+): string {
+  return planHash([
+    ...plan.copies.map((c) => `copy\u0000${c.n}\u0000${c.command}\u0000${c.at}`),
+    ...plan.files.map((f) => `file\u0000${f.path}\u0000${f.to}\u0000${f.from}`),
+  ]);
+}
+
+/** The hash of what prune removes (GET /api/build/prune's `plan`). */
+export function prunePlanHash(files: readonly { path: string; why: string }[]): string {
+  return planHash(files.map((f) => `${f.path}\u0000${f.why}`));
 }
 
 /**
@@ -260,7 +282,7 @@ export async function catalogPruneView(root: string): Promise<Api.CatalogPruneVi
   try {
     const j = JSON.parse(out.join("\n")) as { files?: { path: string; why: string }[] };
     const files = j.files ?? [];
-    return { files, plan: planHash(files.map((f) => `${f.path}\u0000${f.why}`)) };
+    return { files, plan: prunePlanHash(files) };
   } catch {
     throw new Error(err.join("\n") || "atticus catalog prune didn't say what it would remove.");
   }

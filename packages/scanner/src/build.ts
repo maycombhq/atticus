@@ -1,3 +1,5 @@
+import { isUtf8 } from "node:buffer";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -75,7 +77,7 @@ import {
   outsideProfileSystems as outsideProfileSystemsOf,
   targetsFromAnswers,
 } from "./facts-catalog.js";
-import { pairsOfRepo } from "./facts-scan.js";
+import { pairsOfText } from "./facts-scan.js";
 import { forgetCatalogs, readCatalog, writeCatalog } from "./files.js";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { joinAnswerQuestions, joinAnswerQuestionsOf } from "./join-host-questions.js";
@@ -222,6 +224,14 @@ async function treeHash(
     }
   const put = (r: string, text: string) =>
     lines.push(`${r}\u0000${sha(text.replace(/\r\n?/g, "\n"))}`);
+  // A text file is hashed as LF-normalised text, so a Windows checkout (core.autocrlf) records
+  // the hashes a Linux one does (ADR 0195 point 2); any other file (a PDF, an image: not UTF-8,
+  // or with a NUL, which git doesn't convert either) by its bytes, so bytes UTF-8 would read
+  // alike still differ.
+  const putBytes = (r: string, bytes: Buffer) => {
+    if (!bytes.includes(0) && isUtf8(bytes)) put(r, bytes.toString("utf8"));
+    else lines.push(`${r}\u0000${createHash("sha256").update(bytes).digest("hex")}`);
+  };
   async function walk(d: string, rel: string) {
     const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
     const names = new Map<string, "dir" | "file">();
@@ -241,7 +251,7 @@ async function treeHash(
       else if (extra.has(r)) {
         const text = extra.get(r);
         if (typeof text === "string") put(r, text);
-      } else put(r, await readFile(join(d, name), "utf8").catch(() => ""));
+      } else putBytes(r, await readFile(join(d, name)).catch(() => Buffer.alloc(0)));
     }
   }
   await walk(dir, "");
@@ -625,11 +635,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         proposalsDir: join(dirname(i.curatedDir), "proposals"),
         orgPackDir: i.orgPackDir,
         wikis: op.sources.wikis,
-        files: [...i.corrections.keys()].map((repo) =>
-          join(factsDirOf(root), `${repo}.corrections.jsonl`),
-        ),
       });
-  const kept = await loadKept<Build>(i.stateDir, cacheKey);
+  const kept = await loadKept<Build>(i.stateDir, cacheKey?.key);
   if (kept.hit) return kept.hit;
   const problems: ScanProblem[] = [];
   const notes: string[] = [];
@@ -674,8 +681,10 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         { path: relOf(root, p.meta), sha256: f.metaSha },
       ]);
       const pairs: Record<string, PersonPair> = {};
+      // The repo's corrections as the inputs hold them (a command's pending write in place of
+      // the file, a rename's included), not read from disk again.
       const corr = i.corrections.get(r.id);
-      if (corr !== undefined) Object.assign(pairs, await pairsFrom(root, r.id, f.facts));
+      if (corr !== undefined) Object.assign(pairs, pairsOfText(corr, f.facts));
       Object.assign(pairs, i.extraPairs?.get(r.id) ?? {});
       const ai: Record<string, { runtime: string; run: string }> = {};
       const targets = targetsFromAnswers(r.id, f.facts, i.questions, { repoType: r.type, ai });
@@ -1047,7 +1056,10 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     problems,
     stats,
   };
-  stageKept(build, i.stateDir, cacheKey, textKeys);
+  // Kept only when what the passes read themselves is still what the key hashed: a file changed
+  // while they ran may be in the build or not, so the build is no build of either.
+  if (cacheKey && (await cacheKey.unchanged()))
+    stageKept(build, i.stateDir, cacheKey.key, textKeys);
   return build;
 }
 
@@ -1069,14 +1081,6 @@ function slotsKeyOf(s: BuildSlots): unknown {
 /** The part of a build's shared-map join about one repo (ADR 0160), for its verify report. */
 export function sharedAbout(b: Build, repo: string): SharedJoinResult | undefined {
   return b.shared ? sharedJoinAbout(b.shared, repo) : undefined;
-}
-
-async function pairsFrom(
-  root: string,
-  repo: string,
-  facts: readonly import("@maycombhq/core").Fact[],
-): Promise<Record<string, PersonPair>> {
-  return pairsOfRepo(root, repo, facts);
 }
 
 /** A legacy record whose repos the manifests no longer list (or list archived): it leaves. */
@@ -1109,7 +1113,10 @@ function serializedOf(
   kept?: KeptTexts,
   keyed?: { textKeys: Map<string, string>; path: string },
 ): string {
-  const key = JSON.stringify(r);
+  // JSON writes -0 as 0 and the YAML as -0: a record with a -0 is keyed apart (rare: a zero is
+  // looked at again only when the JSON has one).
+  let key = JSON.stringify(r);
+  if (/[[:,]0[,\]}]/.test(key)) key = JSON.stringify(r, negZeroApart);
   // The hash the build cache keeps the text by (point 9: the last build's texts, on disk).
   let hashed: string | undefined;
   const hashOf = () => (hashed ??= recordJsonKey(key));
@@ -1128,6 +1135,7 @@ function serializedOf(
   return text;
 }
 const SERIALIZED = new Map<string, string>();
+const negZeroApart = (_k: string, v: unknown) => (v === 0 && Object.is(v, -0) ? "\u0000-0" : v);
 const SERIALIZED_MAX = 20_000;
 
 /** Forget the texts kept in this process (a test of the build cache on disk, alone). */
@@ -2334,7 +2342,7 @@ export async function buildAndWrite(
     ...(o.now ? { now: o.now } : {}),
   });
   // The build cache keeps what these inputs build, written or refused (point 9).
-  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], pack.stateDir, {
+  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
     path: target.manifest,
     text: manifests.mine,
   });

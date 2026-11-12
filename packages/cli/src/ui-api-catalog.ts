@@ -67,38 +67,49 @@ async function headOf(root: string, repo: string): Promise<string | undefined> {
 // read first (`forgetKeptReads`), so a build in the same job as the curated decisions it follows
 // reads them (ui-api-catalog.test.ts: curate then build in one job keeps the hand edit).
 
+/**
+ * One run of `work` at a time, shared: a call while none runs starts one; a call while one runs
+ * waits for the next, which starts once it ends (so it reads the files as they are once it was
+ * asked), and every call until that one starts shares it. Two runs never overlap, and no call
+ * is answered by a run that started before it.
+ */
+export function coalesced<T>(work: () => Promise<T>): () => Promise<T> {
+  let running: Promise<T> | undefined;
+  let next: Promise<T> | undefined;
+  const start = (): Promise<T> => {
+    const p = work();
+    running = p;
+    const done = () => {
+      if (running === p) running = undefined;
+    };
+    p.then(done, done);
+    return p;
+  };
+  return () => {
+    // `next` is set from the moment it is asked for until it starts (then it is `running`).
+    if (next) return next;
+    if (!running) return start();
+    const after = running.then(
+      () => undefined,
+      () => undefined,
+    );
+    const n = after.then(() => {
+      next = undefined;
+      return start();
+    });
+    next = n;
+    return n;
+  };
+}
+
 /** The routes; `asJob` is ui-api.ts's local job (one at a time with Apply, Propose and Bring in). */
 export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
   const root = ctx.root;
   // The review: every file event reloads the page, and each GET /api/build is a whole build in
-  // memory. One runs at a time; a request while it runs waits for the one queued after it (so
-  // it reads the files as they are once it asked), and every request in between shares it.
-  let running: Promise<Api.CatalogBuildViewT> | undefined;
-  let queued: Promise<Api.CatalogBuildViewT> | undefined;
-  const buildViewNow = (): Promise<Api.CatalogBuildViewT> => {
-    const once = async () => (await import("./build-report.js")).catalogBuildView(root);
-    if (!running) {
-      running = once().finally(() => {
-        running = queued;
-        queued = undefined;
-      });
-      return running;
-    }
-    if (!queued) {
-      const after = running.then(
-        () => undefined,
-        () => undefined,
-      );
-      queued = after.then(once);
-      const q = queued;
-      void q
-        .finally(() => {
-          if (running === q) running = undefined;
-        })
-        .catch(() => undefined);
-    }
-    return queued;
-  };
+  // memory, so the builds are coalesced (`coalesced`).
+  const buildViewNow = coalesced(async () =>
+    (await import("./build-report.js")).catalogBuildView(root),
+  );
   const repoOf = (params: Record<string, string | undefined>) => {
     const repo = params.repo ?? "";
     if (!REPO.test(repo)) throw badRequest("repo is a repo id, as the manifests name it.");
@@ -242,6 +253,8 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         ...(b.allowRemovals !== undefined ? [`--allow-removals ${b.allowRemovals}`] : []),
         ...(b.discardEdits !== undefined ? [`--discard-edits ${b.discardEdits}`] : []),
       ];
+      // The plan is checked again under the command's lock (as upgrade --yes checks its own):
+      // a writer between this check and the job writes nothing the page didn't list.
       return asJob(["atticus catalog build", ...flags].join(" "), () =>
         captured((io) =>
           catalogBuild(
@@ -249,6 +262,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
             {
               ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
               ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+              ...(b.plan !== undefined ? { plan: b.plan } : {}),
             },
             io,
           ),
@@ -272,7 +286,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       // what the edited files hold, so nothing is overwritten), in one job.
       return asJob("Make the hand edits curated, then build", () =>
         captured(async (io) => {
-          const code = await catalogEdits(root, { curate: true, by: ctx.user }, io);
+          const code = await catalogEdits(root, { curate: true, by: ctx.user, plan: b.plan }, io);
           return code === 0 ? catalogBuild(root, {}, io) : code;
         }),
       );
@@ -300,7 +314,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         );
       const { catalogUndo } = await import("./catalog-build-commands.js");
       return asJob(`atticus catalog undo ${b.n} --yes`, () =>
-        captured((io) => catalogUndo(root, { n: b.n, yes: true }, io)),
+        captured((io) => catalogUndo(root, { n: b.n, yes: true, plan: b.plan }, io)),
       );
     })
     .add("GET", "/api/build/prune", async () => {
@@ -324,7 +338,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         );
       const { catalogPrune } = await import("./catalog-build-commands.js");
       return asJob("atticus catalog prune --yes", () =>
-        captured((io) => catalogPrune(root, { yes: true }, io)),
+        captured((io) => catalogPrune(root, { yes: true, plan: b.plan }, io)),
       );
     })
     .add("GET", "/api/build/upgrade", async () => {

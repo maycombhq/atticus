@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cmpText, writeFileAtomic } from "@maycombhq/core";
 import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
@@ -28,8 +28,11 @@ import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
 /** Bumped when what the cache holds changes shape. */
 export const BUILD_CACHE_FORMAT = 1;
 
-/** A test's switch: with `off`, nothing is read from or written to the cache. */
-export const buildCacheHooks: { off?: boolean } = {};
+/**
+ * A test's switches: with `off`, nothing is read from or written to the cache; `stamp` stands
+ * for the code's stamp (null: there is none, so the cache is off).
+ */
+export const buildCacheHooks: { off?: boolean; stamp?: string | null } = {};
 
 const stats = { memoHits: 0, memoMisses: 0, textsReused: 0, readersTrusted: 0 };
 /** How often the cache was used in this process (tests and the benchmark read it). */
@@ -45,52 +48,172 @@ const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("
 
 // ------------------------------------------------------------------ the code's stamp
 
-let stamp: string | undefined;
 /**
- * A hash of the built code of the packages a build runs (their dist folders), so a cache made by
- * other code is never used, even at the same build version (a developer's build, say).
+ * The bundle's build id: `scripts/bundle/npm-atticus.mjs` defines this name (esbuild's `define`)
+ * as a placeholder and, once every file of the package is in dist/, writes in its place the hash
+ * of the package's version and of every file it carries (`buildIdOf` in npm-layout.mjs). Not
+ * defined in a checkout.
  */
-function codeStamp(): string {
-  if (stamp !== undefined) return stamp;
-  const h = createHash("sha256");
-  h.update(`${BUILD_VERSION}\u0000${SLOT_VERSION}\u0000${BUILD_CACHE_FORMAT}\u0000`);
-  const here = dirname(fileURLToPath(import.meta.url));
-  const dirs = new Set<string>([here]);
-  for (const p of [
-    "@maycombhq/core",
-    "@maycombhq/features",
-    "@maycombhq/glossary",
-    "@maycombhq/extractors",
-    "@maycombhq/intake",
-    "@maycombhq/ingestors",
-  ])
-    try {
-      dirs.add(dirname(fileURLToPath(import.meta.resolve(p))));
-    } catch {
-      h.update(`${p}\u0000unresolved\u0000`);
-    }
-  const walk = (d: string) => {
-    let names: string[];
-    try {
-      names = readdirSync(d).sort(cmpText);
-    } catch {
-      return;
-    }
-    for (const n of names) {
-      const p = join(d, n);
-      if (/\.(js|ts|mjs)$/.test(n) && !n.endsWith(".d.ts")) {
-        try {
-          h.update(`${p}\u0000${sha(readFileSync(p, "utf8"))}\u0000`);
-        } catch {
-          walk(p);
-        }
-      } else if (!n.includes(".")) walk(p);
-    }
-  };
-  for (const d of [...dirs].sort(cmpText)) walk(d);
-  stamp = h.digest("hex");
-  return stamp;
+declare const __ATTICUS_BUILD_ID__: unknown;
+const bundledBuildId = (): unknown =>
+  typeof __ATTICUS_BUILD_ID__ === "undefined" ? undefined : __ATTICUS_BUILD_ID__;
+
+/** Where the code stamp came from, or why there is none (the cache is then off). */
+export type CodeStamp =
+  { stamp: string; from: "bundle" | "checkout" } | { stamp?: undefined; why: string };
+
+/**
+ * The stamp of the code that builds, so a cache made by other code is never used, even at the
+ * same build version (an upgrade, a developer's build). Installed, the bundle's build id, which
+ * changes with every release and every change to any file the package carries. In a checkout,
+ * a hash of every workspace package the scanner reaches through its dependencies (each one's
+ * package.json and the files it publishes, its dist folder among them, and the folder this
+ * module runs from) and the name and version of every third-party package they reach (yaml,
+ * zod and theirs). When neither can be worked out (a bundle whose id wasn't written, a module
+ * run from a folder that isn't the scanner's package, a workspace dependency not found), there
+ * is no stamp, and the cache is off: a stamp is never guessed.
+ */
+export function codeStampOf(o: { buildId: unknown; moduleUrl: string }): CodeStamp {
+  const head = `${BUILD_VERSION}\u0000${SLOT_VERSION}\u0000${BUILD_CACHE_FORMAT}\u0000`;
+  if (o.buildId !== undefined) {
+    if (typeof o.buildId !== "string" || !/^[0-9a-f]{64}$/.test(o.buildId))
+      return { why: "the bundle's build id wasn't written (the placeholder is still there)" };
+    return { stamp: sha(`${head}bundle\u0000${o.buildId}`), from: "bundle" };
+  }
+  let here: string;
+  try {
+    here = dirname(fileURLToPath(o.moduleUrl));
+  } catch {
+    return { why: `${o.moduleUrl} isn't a file` };
+  }
+  const c = checkoutHash(here);
+  return "why" in c ? c : { stamp: sha(`${head}checkout\u0000${c.hash}`), from: "checkout" };
 }
+
+const SCANNER = "@maycombhq/scanner";
+
+/** The nearest folder at or above `dir` with a package.json, and its manifest. */
+function nearestPackage(dir: string): { dir: string; m: PackageJson } | undefined {
+  for (let d = dir; ; d = dirname(d)) {
+    const m = readManifest(d);
+    if (m) return { dir: d, m };
+    if (dirname(d) === d) return undefined;
+  }
+}
+
+interface PackageJson {
+  name?: string;
+  version?: string;
+  main?: string;
+  files?: string[];
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+}
+
+function readManifest(dir: string): PackageJson | undefined {
+  try {
+    return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as PackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A package as Node finds it from `from` (each folder up: node_modules/<name>), its real folder. */
+function packageFrom(name: string, from: string): string | undefined {
+  for (let d = from; ; d = dirname(d)) {
+    if (basename(d) !== "node_modules") {
+      const p = join(d, "node_modules", ...name.split("/"));
+      if (existsSync(join(p, "package.json")))
+        try {
+          return realpathSync(p);
+        } catch {
+          return undefined;
+        }
+    }
+    if (dirname(d) === d) return undefined;
+  }
+}
+
+const isThirdParty = (dir: string) => /[\\/]node_modules[\\/]/.test(dir);
+
+function checkoutHash(here: string): { hash: string } | { why: string } {
+  const start = nearestPackage(here);
+  if (!start || start.m.name !== SCANNER)
+    return { why: `${here} isn't in the ${SCANNER} package of a checkout` };
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  const queue: { dir: string; m: PackageJson }[] = [start];
+  const fileLines = (dir: string, extra: readonly string[]) => {
+    const out: string[] = [];
+    const walk = (abs: string, rel: string) => {
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        return;
+      }
+      if (st.isDirectory()) {
+        for (const n of readdirSync(abs).sort(cmpText))
+          if (n !== "node_modules" && !n.startsWith("."))
+            walk(join(abs, n), rel ? `${rel}/${n}` : n);
+      } else if (st.isFile() && !/\.(map|d\.ts|tsbuildinfo)$/.test(rel))
+        out.push(`${rel}\u0000${createHash("sha256").update(readFileSync(abs)).digest("hex")}`);
+    };
+    walk(join(dir, "package.json"), "package.json");
+    for (const e of extra) walk(join(dir, e), e);
+    return [...new Set(out)].sort(cmpText);
+  };
+  while (queue.length) {
+    const { dir, m } = queue.shift()!;
+    if (seen.has(dir)) continue;
+    seen.add(dir);
+    const third = isThirdParty(dir);
+    if (third) lines.push(`third\u0000${m.name ?? "?"}@${m.version ?? "?"}`);
+    else {
+      const main = (m.main ?? "./dist/index.js").replace(/^\.\//, "").split("/")[0]!;
+      const entries = [...new Set([main, ...(m.files ?? []).map((f) => f.replace(/^\.\//, ""))])];
+      // The folder this module runs from (src/ under a test runner) is the scanner's code too.
+      if (dir === start.dir) {
+        const r = relative(dir, here).split(sep).join("/");
+        if (r && !r.startsWith("..")) entries.push(r);
+      }
+      lines.push(`workspace\u0000${m.name ?? "?"}@${m.version ?? "?"}`);
+      for (const l of fileLines(dir, entries)) lines.push(`  ${l}`);
+    }
+    const deps = [
+      ...Object.keys(m.dependencies ?? {}).map((n) => [n, false] as const),
+      ...Object.keys(m.optionalDependencies ?? {}).map((n) => [n, true] as const),
+    ].sort((a, b) => cmpText(a[0], b[0]));
+    for (const [name, optional] of deps) {
+      const at = packageFrom(name, dir);
+      const dm = at ? readManifest(at) : undefined;
+      if (!at || !dm) {
+        // A workspace package's dependency not found: the code that runs can't be named.
+        if (!third && !optional) return { why: `${m.name ?? dir} needs ${name}, not found` };
+        lines.push(`absent\u0000${m.name ?? "?"}\u0000${name}`);
+        continue;
+      }
+      queue.push({ dir: at, m: dm });
+    }
+  }
+  return { hash: sha(lines.join("\n")) };
+}
+
+let stamp: CodeStamp | undefined;
+/** This code's stamp (once per process), or undefined when there is none: the cache is off. */
+function codeStamp(): string | undefined {
+  if (buildCacheHooks.stamp !== undefined) return buildCacheHooks.stamp ?? undefined;
+  stamp ??= codeStampOf({ buildId: bundledBuildId(), moduleUrl: import.meta.url });
+  return stamp.stamp;
+}
+
+/** This code's stamp and where it came from (a check of the bundle reads it). */
+export function codeStampInfo(): CodeStamp {
+  return codeStampOf({ buildId: bundledBuildId(), moduleUrl: import.meta.url });
+}
+
+/** Whether the cache is used: not switched off, and the code that builds has a stamp. */
+const cacheOn = () => !buildCacheHooks.off && codeStamp() !== undefined;
 
 // ------------------------------------------------------------------ encoding
 
@@ -98,11 +221,16 @@ class Unkeepable extends Error {}
 const MAP = "\u0000map";
 const SET = "\u0000set";
 const UNDEF = "\u0000undefined";
+const NEG_ZERO = "\u0000-0";
 
-/** JSON that keeps Maps, Sets and fields set to undefined; anything else not plain can't be kept. */
+/**
+ * JSON that keeps Maps, Sets, fields set to undefined and -0 (which JSON writes as 0, and a
+ * record's YAML as -0); anything else not plain can't be kept.
+ */
 export function encodeKept(value: unknown): string {
   return JSON.stringify(value, (_k, v: unknown) => {
     if (v === undefined) return { [UNDEF]: 1 };
+    if (v === 0 && Object.is(v, -0)) return { [NEG_ZERO]: 1 };
     if (v instanceof Map) return { [MAP]: [...v] };
     if (v instanceof Set) return { [SET]: [...v] };
     if (typeof v === "function" || typeof v === "symbol" || typeof v === "bigint")
@@ -129,6 +257,7 @@ function revive(v: unknown): unknown {
     const keys = Object.keys(o);
     if (keys.length === 1) {
       if (keys[0] === UNDEF) return undefined;
+      if (keys[0] === NEG_ZERO) return -0;
       if (keys[0] === MAP) return new Map((revive(o[MAP]) as [unknown, unknown][]) ?? []);
       if (keys[0] === SET) return new Set((revive(o[SET]) as unknown[]) ?? []);
     }
@@ -138,8 +267,9 @@ function revive(v: unknown): unknown {
   return v;
 }
 
-/** The same JSON value, key order and fields set to undefined included. */
+/** The same JSON value, key order, fields set to undefined and -0 (not 0) included. */
 export function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (typeof a === "number") return Object.is(a, b);
   if (a === b) return true;
   if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
   if (Array.isArray(a)) {
@@ -182,7 +312,7 @@ export const readersKeyOf = (repo: string | undefined, textSha: string) =>
 
 /** The slot of this key as it was read and checked before, or undefined. */
 export function keptReaders(key: string): unknown {
-  if (buildCacheHooks.off) return undefined;
+  if (!cacheOn()) return undefined;
   let json = fresh.get(key);
   if (json === undefined && readersDir)
     try {
@@ -203,7 +333,7 @@ export function keptReaders(key: string): unknown {
 
 /** Keep a slot as read and checked, when its JSON gives it back exactly (no class, no undefined). */
 export function keepReaders(key: string, slot: unknown): void {
-  if (buildCacheHooks.off) return;
+  if (!cacheOn()) return;
   const json = JSON.stringify(slot);
   if (!sameJsonValue(slot, JSON.parse(json))) return;
   if (fresh.size >= FRESH_MAX) fresh.clear();
@@ -214,13 +344,14 @@ export function keepReaders(key: string, slot: unknown): void {
 /** Before a build reads its slots: the state folder whose cache it reads. */
 export async function loadReadersTrust(stateDir: string): Promise<void> {
   used.clear();
-  readersDir = buildCacheHooks.off ? undefined : join(buildCacheDirOf(stateDir), "readers");
+  readersDir = cacheOn() ? join(buildCacheDirOf(stateDir), "readers") : undefined;
   await Promise.resolve();
 }
 
-/** Write the checked reads this build used and take away those it didn't. */
-async function keepReadersOnDisk(stateDir: string): Promise<void> {
-  const dir = join(buildCacheDirOf(stateDir), "readers");
+/** Write the checked reads this build used (to the state folder it loaded them from) and take away those it didn't. */
+async function keepReadersOnDisk(): Promise<void> {
+  if (!readersDir) return;
+  const dir = readersDir;
   for (const key of [...used].sort(cmpText)) {
     const json = fresh.get(key);
     if (json === undefined) continue;
@@ -267,7 +398,7 @@ const hitManifests = new WeakMap<object, { path: string; sha256: string }>();
 /** Whether this build.json text at this path is one this code serialized. */
 export function isWrittenManifest(path: string, text: string): boolean {
   const h = written.get(path);
-  return !buildCacheHooks.off && h !== undefined && h === sha(text);
+  return cacheOn() && h !== undefined && h === sha(text);
 }
 
 /**
@@ -285,7 +416,10 @@ export function hitManifestText(
     : undefined;
 }
 
-/** Hash a folder's files in path order (what the passes read of it), or a marker when none. */
+/**
+ * Hash a folder's files in path order (what the passes read of it), each by its bytes (a PDF's
+ * bytes, say, that UTF-8 would read alike), or a marker when none.
+ */
 async function folderHash(dir: string): Promise<string> {
   const lines: string[] = [];
   async function walk(d: string, rel: string) {
@@ -298,8 +432,12 @@ async function folderHash(dir: string): Promise<string> {
     for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(join(d, e.name), r);
-      else if (e.isFile())
-        lines.push(`${r}\u0000${sha(await readFile(join(d, e.name), "utf8").catch(() => ""))}`);
+      else if (e.isFile()) {
+        const bytes = await readFile(join(d, e.name)).catch(() => undefined);
+        lines.push(
+          `${r}\u0000${bytes ? createHash("sha256").update(bytes).digest("hex") : "\u0000unreadable"}`,
+        );
+      }
     }
   }
   await walk(dir, "");
@@ -308,21 +446,16 @@ async function folderHash(dir: string): Promise<string> {
 
 const isUrl = (s: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s);
 
-/**
- * The key of a build: everything it reads. `inputs` is the build's inputs object as it is (each
- * slot replaced by the hash of its bytes); `folders` are what the passes read themselves.
- * Undefined when the build can't be kept (the cache is off, or an input isn't plain data).
- */
-export async function buildKeyOf(o: {
+interface KeyInputs {
   inputs: Record<string, unknown>;
   slots: unknown;
   proposalsDir: string;
   orgPackDir: string;
   wikis: readonly { id: string; type: string; location: string }[];
-  /** Other files the passes read themselves (a repo's corrections, read again for its pairs). */
-  files?: readonly string[];
-}): Promise<string | undefined> {
-  if (buildCacheHooks.off) return undefined;
+}
+
+/** The folders the passes read themselves, each hashed now. */
+async function foldersOf(o: KeyInputs): Promise<[string, string][]> {
   const folders: [string, string][] = [];
   folders.push(["proposals", await folderHash(o.proposalsDir)]);
   const inputsDir = o.inputs.inputsDir;
@@ -332,12 +465,32 @@ export async function buildKeyOf(o: {
       const dir = isAbsolute(w.location) ? w.location : resolve(o.orgPackDir, w.location);
       folders.push([`wiki ${w.id}`, await folderHash(dir)]);
     }
-  for (const f of [...(o.files ?? [])].sort(cmpText))
-    folders.push([f, sha(await readFile(f, "utf8").catch(() => "\u0000absent"))]);
+  return folders;
+}
+
+/** A build's key, and whether what the passes read themselves is still what it hashed. */
+export interface BuildKey {
+  key: string;
+  /**
+   * The folders the key hashed, hashed again: false when a file in them changed since (while the
+   * passes ran), so the build, which may have read either, isn't kept.
+   */
+  unchanged(): Promise<boolean>;
+}
+
+/**
+ * The key of a build: everything it reads. `inputs` is the build's inputs object as it is (each
+ * slot replaced by the hash of its bytes); the folders are what the passes read themselves.
+ * Undefined when the build can't be kept (the cache is off, or an input isn't plain data).
+ */
+export async function buildKeyOf(o: KeyInputs): Promise<BuildKey | undefined> {
+  if (!cacheOn()) return undefined;
+  const folders = await foldersOf(o);
   const rest: Record<string, unknown> = {};
   for (const k of Object.keys(o.inputs).sort(cmpText)) if (k !== "slots") rest[k] = o.inputs[k];
+  let key: string;
   try {
-    return sha(
+    key = sha(
       encodeKept({
         format: BUILD_CACHE_FORMAT,
         stamp: codeStamp(),
@@ -351,6 +504,8 @@ export async function buildKeyOf(o: {
     if (e instanceof Unkeepable) return undefined;
     throw e;
   }
+  const was = JSON.stringify(folders);
+  return { key, unchanged: async () => JSON.stringify(await foldersOf(o)) === was };
 }
 
 /** What a build loads of the last build: whole when its key is this one, else its texts. */
@@ -358,7 +513,7 @@ export async function loadKept<B>(
   stateDir: string,
   key: string | undefined,
 ): Promise<{ hit?: B; texts?: KeptTexts }> {
-  if (buildCacheHooks.off) return {};
+  if (!cacheOn()) return {};
   const text = await readFile(join(buildCacheDirOf(stateDir), MEMO), "utf8").catch(() => undefined);
   if (!text) return {};
   try {
@@ -470,7 +625,7 @@ export function stageKept(
   key: string | undefined,
   keys: Map<string, string>,
 ): void {
-  if (key === undefined || buildCacheHooks.off) return;
+  if (key === undefined || !cacheOn()) return;
   staged.set(build, { stateDir, key, keys });
 }
 
@@ -481,17 +636,17 @@ export function stageKept(
  */
 export async function keepBuild(
   build: { records: unknown[]; files: Map<string, string> } & Record<string, unknown>,
-  stateDir: string,
   /** The build.json this build writes: its path and text. */
   manifest?: { path: string; text: string },
 ): Promise<void> {
-  if (buildCacheHooks.off) return;
-  const dir = buildCacheDirOf(stateDir);
+  if (!cacheOn()) return;
+  await keepReadersOnDisk().catch(() => undefined);
+  const s = staged.get(build);
+  if (!s) return;
+  staged.delete(build);
+  // The state folder the build was staged for (its inputs' own), not the caller's.
+  const dir = buildCacheDirOf(s.stateDir);
   try {
-    await keepReadersOnDisk(stateDir).catch(() => undefined);
-    const s = staged.get(build);
-    if (!s) return;
-    staged.delete(build);
     const order = Object.keys(build);
     const meta: Record<string, unknown> = { [ORDER]: order };
     for (const k of order)
@@ -500,7 +655,7 @@ export async function keepBuild(
     const parts: string[] = [];
     const header: MemoHeader = {
       format: BUILD_CACHE_FORMAT,
-      stamp: codeStamp(),
+      stamp: codeStamp() ?? "",
       key: s.key,
       records: build.records.length,
       files: build.files.size,

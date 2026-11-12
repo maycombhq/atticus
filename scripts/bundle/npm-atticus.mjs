@@ -13,6 +13,8 @@
 //   dist/third-party.json, THIRD-PARTY-LICENSES.txt   every third party inside, its licence
 //   dist/files.json                every file the package carries, with its sha256 (the pack
 //                                  check holds the tarball to it)
+// The command line carries its build id (npm-layout.mjs's buildIdOf: the version and every file
+// above), the build cache's stamp of the code (ADR 0195 point 9).
 // The model and onnxruntime stay separate packages (optionalDependencies), found at run time.
 // Each bundled module keeps its place (scripts/bundle/npm-layout.mjs), so the code is unchanged.
 import { createHash } from "node:crypto";
@@ -33,6 +35,9 @@ import { FONT_ALLOWED, licenceAllowed, licenceOf, licenceText } from "./inventor
 import {
   assetEntries,
   banner,
+  BUILD_ID_PLACEHOLDER,
+  buildIdDefine,
+  buildIdOf,
   EXTERNAL,
   inlineCreatedRequires,
   injectPlace,
@@ -40,6 +45,7 @@ import {
   placeOf,
   REPO_FILES,
   skipAsset,
+  stampBuildId,
   VENDOR_FILES,
 } from "./npm-layout.mjs";
 
@@ -92,6 +98,7 @@ const common = {
     "import.meta.url": "__atticus_import_meta_url",
     __dirname: "__atticus_dirname",
     __filename: "__atticus_filename",
+    ...buildIdDefine(),
   },
   plugins: [keepPlaces],
   metafile: true,
@@ -252,6 +259,44 @@ writeFileSync(
     .join("\n")}`,
 );
 cpSync(join(REPO, "LICENSE"), join(PKG, "LICENSE"));
+
+// ---- the build id, written over the placeholder in the command line's code: of the version and
+// every file the package carries (the code with the placeholder in it), so it changes with
+// every release and every change to what the package runs or reads
+const listFiles = () => {
+  const out = [];
+  const walkAll = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) walkAll(f);
+      else out.push(f);
+    }
+  };
+  walkAll(DIST);
+  out.push(join(PKG, "THIRD-PARTY-LICENSES.txt"));
+  return out;
+};
+const buildId = buildIdOf(
+  read(join(PKG, "package.json")).version,
+  listFiles().map((f) => ({
+    path: relative(PKG, f).split("\\").join("/"),
+    bytes: readFileSync(f),
+  })),
+);
+let stamped = 0;
+for (const out of Object.keys(main.metafile.outputs).map((o) => join(REPO, o))) {
+  if (!out.endsWith(".js")) continue;
+  const text = readFileSync(out, "utf8");
+  if (!text.includes(BUILD_ID_PLACEHOLDER)) continue;
+  writeFileSync(out, stampBuildId(text, buildId));
+  stamped++;
+}
+if (!stamped) {
+  console.error(
+    "The build id's placeholder isn't in the bundled code: the build cache would be off.",
+  );
+  process.exit(1);
+}
 
 // ---- every file it carries, with its sha256: the pack check finds each one in the tarball
 const listed = [];

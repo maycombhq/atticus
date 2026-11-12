@@ -42,8 +42,16 @@ export async function pairsOfRepo(
   const text = await readFile(join(factsDirOf(root), `${repo}.corrections.jsonl`), "utf8").catch(
     () => undefined,
   );
+  return text ? pairsOfText(text, facts) : {};
+}
+
+/**
+ * A repo's pairings from its corrections file's text (the build's, from its inputs: a command's
+ * corrections not written yet, ADR 0195 point 2, read as the file will be).
+ */
+export function pairsOfText(text: string, facts: readonly Fact[]): Record<string, PersonPair> {
   // Round 48: a person's "none" (an unlink) is read too, so an AI answer doesn't join the call.
-  if (!text || !/"(?:un)?link"/.test(text)) return {};
+  if (!/"(?:un)?link"/.test(text)) return {};
   return pairsFromCorrections(facts, parseCorrections(text).corrections, { declined: true });
 }
 

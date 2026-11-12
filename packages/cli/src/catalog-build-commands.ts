@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import {
@@ -35,6 +36,7 @@ import {
   type HandEdit,
 } from "@maycombhq/scanner";
 import { gitUser } from "@maycombhq/workspace";
+import { buildPlanOf, prunePlanHash, undoPlanHash } from "./build-report.js";
 import type { Output } from "./commands.js";
 
 /**
@@ -127,16 +129,47 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   return r.message.split("\n")[0] ?? "Nothing written.";
 }
 
+/**
+ * The app's confirm of a list (ADR 0195, the review: a confirm is of the list shown): the plan
+ * the page showed is worked out again under the lock, and nothing is written when it isn't that.
+ * No flag of the command line takes it: the routes pass it.
+ */
+const pageChanged = (what: string) =>
+  `Nothing written: ${what} isn't what the page listed any more (another command wrote meanwhile). Look at the list again.`;
+
+function refuseChanged(io: Output, json: boolean | undefined, message: string): number {
+  io.err(message);
+  if (json) io.out(JSON.stringify({ refused: { reasons: ["changed"], message } }, null, 2));
+  return 1;
+}
+
 /** atticus catalog build [--check] [--json] [--allow-removals <n>] [--discard-edits <n>]. */
 export async function catalogBuild(
   root: string,
-  o: { check?: boolean; json?: boolean; allowRemovals?: number; discardEdits?: number },
+  o: {
+    check?: boolean;
+    json?: boolean;
+    allowRemovals?: number;
+    discardEdits?: number;
+    /** The app's: GET /api/build's `pending.plan` the confirm is of, checked under the lock. */
+    plan?: string;
+  },
   io: Output,
 ): Promise<number> {
   const command = "atticus catalog build";
   const run = async () => {
+    // The app's confirm: the build guarded as the page listed it (no counts), and written only
+    // when it lists what the page did; the same build is then written, with the counts.
+    let build: BuildAndWrite["build"] | undefined;
+    if (o.plan !== undefined && !o.check) {
+      const listed = await buildAndWrite(root, { command, check: true });
+      if (buildPlanOf(listed.guard) !== o.plan)
+        return refuseChanged(io, o.json, pageChanged("what the build would remove or discard"));
+      build = listed.build;
+    }
     const r = await buildAndWrite(root, {
       command,
+      ...(build ? { build } : {}),
       ...(o.check ? { check: true } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
@@ -171,7 +204,13 @@ export async function catalogBuild(
 /** atticus catalog undo [<n>] [--yes]: list the copies kept, and take back the latest (or back to before n). */
 export async function catalogUndo(
   root: string,
-  o: { n?: number; yes?: boolean; json?: boolean },
+  o: {
+    n?: number;
+    yes?: boolean;
+    json?: boolean;
+    /** The app's: GET /api/build/undo's `plan.hash` the confirm is of, checked under the lock. */
+    plan?: string;
+  },
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
@@ -207,6 +246,8 @@ export async function catalogUndo(
         io.out(JSON.stringify({ refused: { reasons: ["changed"], message: why } }, null, 2));
       return 1;
     }
+    if (o.plan !== undefined && undoPlanHash(again) !== o.plan)
+      return refuseChanged(io, o.json, pageChanged("what the undo puts back"));
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
@@ -299,7 +340,12 @@ export async function pruneList(root: string): Promise<{ path: string; why: stri
 /** atticus catalog prune [--yes]: the slot files no build reads, listed, and removed only on confirmation. */
 export async function catalogPrune(
   root: string,
-  o: { yes?: boolean; json?: boolean },
+  o: {
+    yes?: boolean;
+    json?: boolean;
+    /** The app's: GET /api/build/prune's `plan` the confirm is of, checked under the lock. */
+    plan?: string;
+  },
   io: Output,
 ): Promise<number> {
   const files = await pruneList(root);
@@ -321,7 +367,10 @@ export async function catalogPrune(
   }
   return locked(root, "atticus catalog prune", io, async () => {
     // Listed again under the lock: it removes exactly what it listed, or nothing.
-    if (JSON.stringify(await pruneList(root)) !== JSON.stringify(files)) {
+    const again = await pruneList(root);
+    if (o.plan !== undefined && prunePlanHash(again) !== o.plan)
+      return refuseChanged(io, o.json, pageChanged("what prune removes"));
+    if (JSON.stringify(again) !== JSON.stringify(files)) {
       const why = changedMeanwhile("atticus catalog prune");
       io.err(why);
       if (o.json)
@@ -374,14 +423,22 @@ interface EditPlan {
  * The hand edits and what `edits --curate` would draft for each, from the files as they are: what
  * the command lists, and plans again under the lock before it writes (ADR 0195 point 2).
  */
-async function planEdits(root: string, undoDir: string): Promise<EditPlan[]> {
+async function planEdits(
+  root: string,
+  undoDir: string,
+): Promise<EditPlan[] & { buildPlan?: string }> {
   const inputs = await loadBuildInputs(root);
   const b = await buildCatalog(inputs);
   const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
   const edits = g.refused?.reasons.includes("hand-edits") ? (g.refused.edits ?? []) : [];
   const built = new Map(b.records.map((r) => [recordPath(r), r]));
   const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
-  const out: EditPlan[] = [];
+  const out: EditPlan[] & { buildPlan?: string } = [];
+  // The plan GET /api/build lists for this build (an app's confirm checks it under the lock).
+  Object.defineProperty(out, "buildPlan", {
+    value: buildPlanOf(g),
+    enumerable: false,
+  });
   for (const e of edits) {
     const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
     const derivedNow = built.get(rel);
@@ -468,7 +525,15 @@ async function planEdits(root: string, undoDir: string): Promise<EditPlan[]> {
  */
 export async function catalogEdits(
   root: string,
-  o: { curate?: boolean; json?: boolean; by?: string; now?: Date; dropFields?: number },
+  o: {
+    curate?: boolean;
+    json?: boolean;
+    by?: string;
+    now?: Date;
+    dropFields?: number;
+    /** The app's: GET /api/build's `pending.plan` the confirm is of, checked under the lock. */
+    plan?: string;
+  },
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
@@ -520,6 +585,8 @@ export async function catalogEdits(
         io.out(JSON.stringify({ edits, decisions: [], refused: { message: why } }, null, 2));
       return 1;
     }
+    if (o.plan !== undefined && plans.buildPlan !== o.plan)
+      return refuseChanged(io, o.json, pageChanged("the hand edits"));
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
     const curatedDir = join(catalogDirOf(root), "curated");
@@ -540,13 +607,20 @@ export async function catalogEdits(
         });
         continue;
       }
+      // A record made curated before (an earlier curate of it): one decision, with the fields
+      // it asserted and these, so a second curate never takes back the first's.
+      const placed = await decisionFor(
+        curatedDir,
+        slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
+        p.decision,
+      );
       const record = parseRecord({
         kind: "CuratedDecision",
-        id: slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
+        id: placed.id,
         schemaVersion: 2,
         status: "current",
         confidence: "asserted",
-        ...p.decision,
+        ...placed.decision,
         reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
         by,
         at,
@@ -606,3 +680,50 @@ export async function catalogEdits(
 }
 
 const pick = (p: EditPlan) => ({ path: p.path, fields: p.fields ?? [] });
+
+/**
+ * Where `edits --curate` puts a decision, and what it says: under its id, with the fields an
+ * assert of the same record already there asserts kept (this one's over them); an id of its
+ * own (`-2`, `-3`, ...) when that file holds another decision, so none is written over.
+ */
+async function decisionFor(
+  curatedDir: string,
+  id: string,
+  decision: Record<string, unknown>,
+): Promise<{ id: string; decision: Record<string, unknown> }> {
+  const fileOf = (x: string) => join(curatedDir, "curateddecision", `${x}.yaml`);
+  const held = async (x: string) => {
+    const p = deserializeRecord(await readFile(fileOf(x), "utf8").catch(() => ""));
+    return p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+  };
+  if (!existsSync(fileOf(id))) return { id, decision };
+  const was = await held(id);
+  const sameAssert =
+    was?.kind === "CuratedDecision" &&
+    was.action === "assert" &&
+    decision.action === "assert" &&
+    was.target === decision.target &&
+    was.value !== null &&
+    typeof was.value === "object" &&
+    !Array.isArray(was.value);
+  if (sameAssert)
+    return {
+      id,
+      decision: {
+        ...decision,
+        value: {
+          ...(was.value as Record<string, unknown>),
+          ...(decision.value as Record<string, unknown>),
+        },
+      },
+    };
+  // The same suppress again says what the file says.
+  if (
+    was?.action === decision.action &&
+    decision.action === "suppress" &&
+    was?.target === decision.target
+  )
+    return { id, decision };
+  for (let n = 2; ; n++)
+    if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, decision };
+}

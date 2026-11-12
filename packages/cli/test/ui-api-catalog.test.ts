@@ -14,7 +14,8 @@ import {
   writeBuildReport,
 } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { catalogBuild } from "../src/catalog-build-commands.js";
+import { catalogBuild, listHooks } from "../src/catalog-build-commands.js";
+import { coalesced } from "../src/ui-api-catalog.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 
 /**
@@ -449,6 +450,114 @@ describe("the build's confirm steps", () => {
       if (j.body.state !== "running" && j.body.state !== "queued") break;
       await new Promise((r) => setTimeout(r, 50));
     }
+  });
+});
+
+describe("a confirm whose list changed between the page's check and the job writes nothing (the review, S3)", () => {
+  let r2: string;
+  let srv2: RunningServer;
+  const call2 = callOn(() => srv2);
+  const job2 = jobOn(call2);
+  beforeAll(async () => {
+    r2 = await mkdtemp(join(tmpdir(), "atticus-cs3-swap-"));
+    await cp(join(FORGE, "metarepo/org-pack"), join(r2, "org-pack"), { recursive: true });
+    await writeFile(join(r2, "org-pack/sources.yaml"), "schemaVersion: 1\nwikis: []\n");
+    await cp(join(SLOTS, "readers"), join(r2, "catalog/sources/readers"), { recursive: true });
+    expect(await catalogBuild(r2, {}, quiet)).toBe(0);
+    srv2 = await startServer({
+      root: r2,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) => extendUiRoutes(r, ctx),
+    });
+  }, 240_000);
+  afterAll(async () => {
+    listHooks.afterList = undefined;
+    await srv2?.close();
+    await rm(r2, { recursive: true, force: true });
+  });
+
+  it("a writer that swaps the removal list for another of the same count after the check: the build refuses, under its lock", async () => {
+    // The ledger's columns but one: a large removal, of the same count whichever one stays.
+    const slot = readersSlotPath(r2, "forge-ledger");
+    const p = parseReadersSlot(await readFile(slot, "utf8"), "forge-ledger");
+    if (!p.ok) throw new Error("slot");
+    const columns = p.slot.records.filter((x) => x.kind === "Column");
+    const keep = (n: number) =>
+      writeFile(
+        slot,
+        serializeReadersSlot({
+          ...p.slot,
+          records: p.slot.records.filter((x) => x.kind !== "Column" || x === columns[n]),
+        }),
+      );
+    await keep(0);
+    const r = await call2("/api/build");
+    const n = r.body.pending.refused.allowRemovals as number;
+    const plan = r.body.pending.plan as string;
+    // The other list, for the record: the same count, other removals.
+    await keep(1);
+    const other = (await call2("/api/build")).body.pending;
+    expect(other.refused.allowRemovals).toBe(n);
+    expect(other.plan).not.toBe(plan);
+    await keep(0);
+    const before = await tree(join(r2, "catalog/generated"));
+    // The route checks the page's plan, then the job starts; a writer comes in between.
+    listHooks.afterList = () => keep(1);
+    const j = await job2("/api/build", { allowRemovals: n, plan });
+    expect(j.state).toBe("failed");
+    expect(j.result!.lines.join(" ")).toMatch(/isn't what the page listed any more/);
+    expect(await tree(join(r2, "catalog/generated"))).toEqual(before);
+  });
+});
+
+describe("GET /api/build's builds, coalesced (the review, N3)", () => {
+  it("never runs two at once, and never answers a request with a build started before it", async () => {
+    let active = 0;
+    let most = 0;
+    let started = 0;
+    const ends: (() => void)[] = [];
+    const view = coalesced(() => {
+      const n = ++started;
+      active++;
+      most = Math.max(most, active);
+      return new Promise<number>((resolve) =>
+        ends.push(() => {
+          active--;
+          resolve(n);
+        }),
+      );
+    });
+    const settle = async (count: number) => {
+      for (let k = 0; k < 20 && started < count; k++) await new Promise((r) => setImmediate(r));
+      expect(started).toBe(count);
+    };
+    const a = view(); // build 1
+    const b = view(); // waits for build 2
+    const c = view(); // shares build 2
+    await settle(1);
+    ends.shift()!();
+    expect(await a).toBe(1);
+    await settle(2);
+    const d = view(); // build 2 runs: waits for build 3
+    ends.shift()!();
+    expect([await b, await c]).toEqual([2, 2]);
+    await settle(3);
+    const e = view(); // build 3 runs: waits for build 4
+    const f = view();
+    ends.shift()!();
+    expect(await d).toBe(3);
+    await settle(4);
+    ends.shift()!();
+    expect([await e, await f]).toEqual([4, 4]);
+    // Nothing runs: the next request starts its own at once.
+    const g = view();
+    await settle(5);
+    ends.shift()!();
+    expect(await g).toBe(5);
+    expect(most).toBe(1);
+    expect(active).toBe(0);
   });
 });
 

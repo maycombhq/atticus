@@ -227,3 +227,117 @@ describe("a legacy join retires only when a slot its derived record comes from c
     T,
   );
 });
+
+describe("the app's confirm is of the list the page showed, checked under the lock (the review, S3)", () => {
+  const setting = "setting/portal-bff.ledger-read-timeout.yaml";
+  const quiet = () => {
+    const lines: string[] = [];
+    return { lines, io: { out: (l: string) => lines.push(l), err: (l: string) => lines.push(l) } };
+  };
+  const edit = async (root: string, rel: string, from: RegExp, to: string) => {
+    const p = join(root, "catalog", "generated", ...rel.split("/"));
+    await writeFile(p, (await readFile(p, "utf8")).replace(from, to));
+  };
+
+  it(
+    "catalog edits --curate with the page's plan writes no decision when the hand edits changed since the page listed them",
+    async () => {
+      const root = await upgraded();
+      await edit(root, setting, /valueOrRef: \S+/, "valueOrRef: 7000ms");
+      const { catalogBuildView } = await import("../src/build-report.js");
+      const { catalogEdits } = await import("../src/catalog-build-commands.js");
+      const plan = (await catalogBuildView(root)).pending.plan;
+      // Another hand edit lands after the page listed one, before the job.
+      const other = Object.keys(files(join(root, "catalog", "generated"))).find(
+        (p) => p.startsWith("setting/") && p !== setting,
+      )!;
+      await edit(root, other, /valueOrRef: \S+/, "valueOrRef: 1234ms");
+      const curated = files(join(root, "catalog", "curated"));
+      const q = quiet();
+      expect(await catalogEdits(root, { curate: true, by: "pat", plan }, q.io)).toBe(1);
+      expect(q.lines.join("\n")).toMatch(/isn't what the page listed any more/);
+      expect(files(join(root, "catalog", "curated"))).toEqual(curated);
+      // With the plan the page shows now, it goes ahead.
+      const now = (await catalogBuildView(root)).pending.plan;
+      expect(await catalogEdits(root, { curate: true, by: "pat", plan: now }, q.io)).toBe(0);
+    },
+    T,
+  );
+
+  it(
+    "catalog undo --yes with the page's plan undoes nothing when another build wrote since the page listed it",
+    async () => {
+      const root = await upgraded();
+      const { catalogUndoView } = await import("../src/build-report.js");
+      const { catalogUndo } = await import("../src/catalog-build-commands.js");
+      const plan = (await catalogUndoView(root)).plan!.hash;
+      await edit(root, setting, /valueOrRef: \S+/, "valueOrRef: 9000ms");
+      expect((await atticus(root, "catalog", "edits", "--curate", "--by", "pat")).code).toBe(0);
+      expect((await atticus(root, "catalog", "build")).code).toBe(0);
+      const before = {
+        g: files(join(root, "catalog", "generated")),
+        s: files(join(root, "catalog", "sources")),
+      };
+      const q = quiet();
+      expect(await catalogUndo(root, { yes: true, plan }, q.io)).toBe(1);
+      expect(q.lines.join("\n")).toMatch(/isn't what the page listed any more/);
+      expect({
+        g: files(join(root, "catalog", "generated")),
+        s: files(join(root, "catalog", "sources")),
+      }).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "catalog prune --yes with the page's plan removes nothing when what it lists changed since the page listed it",
+    async () => {
+      const root = await upgraded();
+      const { catalogPruneView } = await import("../src/build-report.js");
+      const { catalogPrune } = await import("../src/catalog-build-commands.js");
+      const plan = (await catalogPruneView(root)).plan;
+      const copy = join(root, "catalog", "sources", "legacy", "generated-before-upgrade");
+      await rm(join(copy, ...setting.split("/")));
+      const left = files(copy);
+      const q = quiet();
+      expect(await catalogPrune(root, { yes: true, plan }, q.io)).toBe(1);
+      expect(q.lines.join("\n")).toMatch(/isn't what the page listed any more/);
+      expect(files(copy)).toEqual(left);
+    },
+    T,
+  );
+});
+
+describe("a second catalog edits --curate of a record keeps the first's fields (the review, N6)", () => {
+  it(
+    "two curates of one Setting, each of another field: one decision with both, and the build keeps both",
+    async () => {
+      const root = await upgraded();
+      const setting = "setting/portal-bff.ledger-read-timeout.yaml";
+      const path = join(root, "catalog", "generated", ...setting.split("/"));
+      await writeFile(path, (await readFile(path, "utf8")).replace("5000ms", "7000ms"));
+      const first = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      expect(first.code, first.all()).toBe(0);
+      expect((await atticus(root, "catalog", "build")).code).toBe(0);
+      await writeFile(
+        path,
+        (await readFile(path, "utf8")).replace("target: ledger-api", "target: ledger-api-v2"),
+      );
+      const second = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      expect(second.code, second.all()).toBe(0);
+      const decisions = files(join(root, "catalog", "curated", "curateddecision"));
+      const mine = Object.entries(decisions).filter(([, t]) =>
+        t.includes("target: portal-bff.ledger-read-timeout"),
+      );
+      expect(mine).toHaveLength(1);
+      expect(mine[0]![1]).toMatch(/valueOrRef: 7000ms/);
+      expect(mine[0]![1]).toMatch(/target: ledger-api-v2/);
+      const b = await atticus(root, "catalog", "build");
+      expect(b.code, b.all()).toBe(0);
+      const built = await readFile(path, "utf8");
+      expect(built).toMatch(/valueOrRef: 7000ms/);
+      expect(built).toMatch(/target: ledger-api-v2/);
+    },
+    T,
+  );
+});
