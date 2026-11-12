@@ -590,6 +590,33 @@ describe("the seventh review of ADR 0196", () => {
     );
   });
 
+  // Its review: any `<?` opened PHP, `<?xml` and a `"<?"` in a script too, so a quote after it
+  // opened a string across lines and a real comment below read as live code.
+  it("opens PHP at a short `<?` only when a space or the line's end follows it", () => {
+    expectLines(
+      "src/Http/feed.php",
+      ["-", '<script>if (s.startsWith("<?")) skip();</script>'],
+      ["-", "<?php"],
+      ["C", "// $gone = 1;"],
+    );
+    expectLines(
+      "src/Http/feed.php",
+      ["-", "<p>type <?then don't</p>"],
+      ["-", "<?xml-stylesheet title=Forge's ?>"],
+      ["-", "<?php"],
+      ["C", "// $gone = 1;"],
+      ["-", "$app->get('/feed', f());"],
+    );
+    expectLines(
+      "src/Http/short.php",
+      ["-", "<? $x = 1;"],
+      ["C", "// $gone = 2;"],
+      ["-", "?>"],
+      ["-", "<?"],
+      ["C", "# $gone = 3;"],
+    );
+  });
+
   it("keeps PHP mode at a `?>` inside a string, a block comment or a heredoc", () => {
     expectLines(
       "src/Http/routes.php",

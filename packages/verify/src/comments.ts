@@ -29,7 +29,7 @@
  *
  * A PHP file read whole starts as inline HTML (beta.27 re-review 6: HTML after `?>` was read as
  * PHP, and an apostrophe in its prose opened a `'` string across lines that put every later quote
- * out of step): `<?php`, `<?=` or `<?` opens PHP, and `?>` in its code closes it, ending a `//` or
+ * out of step): `<?php`, `<?=` or `<?` and a space opens PHP, and `?>` in its code closes it, ending a `//` or
  * `#` comment too, as PHP does (not one in a string, a heredoc or a block comment). Inline HTML is
  * text, neither code the lexer reads nor comment: a line of it is no comment line, as before, and
  * an HTML `<!-- -->` hides no PHP (PHP still runs inside it). In a Blade template (`.blade.php`)
@@ -74,7 +74,7 @@ export interface CommentLexis {
   spanQuotes: string;
   /**
    * PHP: a doc block's line with a live annotation is code; heredocs and backticks are read; a
-   * file read whole starts as inline HTML, `<?php`, `<?=` or `<?` opens PHP and `?>` closes it.
+   * file read whole starts as inline HTML, `<?php`, `<?=` or `<?` and a space opens PHP and `?>` closes it.
    */
   php: boolean;
   /** A Blade template (`.blade.php`): in its HTML, `{{-- … --}}` is a comment. */
@@ -169,8 +169,11 @@ const isWord = (c: string) =>
  */
 type Mode = "code" | "block" | "str" | "raw" | "tpl" | "heredoc" | "html" | "blade";
 
-/** PHP's open tags, where inline HTML has `<?`: `<?php` (then a space or the line's end), `<?=`, `<?`. */
-const PHP_OPEN = /<\?(?:php(?=\s|$)|=)?/iy;
+/** PHP's open tags, where inline HTML has `<?`: `<?php` (then a space or the line's end), `<?=`,
+ * and a short `<?` only when a space or the line's end follows it, so `<?xml`, `"<?"` in a script
+ * and `<?` in prose stay inline HTML (reading them as PHP would let a quote after them read a
+ * comment further down as live code). */
+const PHP_OPEN = /<\?(?:php(?=\s|$)|=|(?=\s|$))/iy;
 
 /**
  * Which lines are all comment, in one pass. With `codeOut`, each line's text outside its comments
