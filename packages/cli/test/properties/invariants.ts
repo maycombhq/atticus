@@ -627,11 +627,19 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
           `${recId(r)} is in ${at.length} legacy slots after atticus upgrade --yes, not exactly one`,
         );
       const repos = [...repoOf(r)];
-      const want = repos.length === 1 ? `readers/${repos[0]}.json` : "legacy/joins.json";
+      // A cross-repo arrow (its two ends in different repos) is a joined Interface whatever its
+      // evidence names, an arrow inferred from a call's host included: it goes to joins.json, so
+      // it stays until derived again (ADR 0195 point 6, "A cross-repo arrow from before the
+      // upgrade is therefore never dropped because the build cannot derive it yet").
+      const a = r.kind === "Interface" ? s.modelBefore.slotOfEnd(String(r.from)) : undefined;
+      const b = r.kind === "Interface" ? s.modelBefore.slotOfEnd(String(r.to)) : undefined;
+      const crossRepo = !!a && !!b && a.slot !== b.slot;
+      const want =
+        !crossRepo && repos.length === 1 ? `readers/${repos[0]}.json` : "legacy/joins.json";
       if (at[0] !== want)
         fail(
           "upgrade-is-lossless",
-          `${recId(r)}, with evidence from ${repos.join(", ") || "no repo"}, is in ${at[0]}, not ${want}`,
+          `${recId(r)}, ${crossRepo ? "a cross-repo arrow" : `with evidence from ${repos.join(", ") || "no repo"}`}, is in ${at[0]}, not ${want}`,
         );
     }
     const copy = new Map(
