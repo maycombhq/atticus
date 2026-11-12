@@ -564,10 +564,24 @@ export function createWorkspace(
       // folder there with anything in it (git doesn't look inside a submodule's folder) would
       // go with the file put back.
       for (const p of swapped) {
-        // never looked into through a link (a link there or on its way is refused as one)
-        if (await throughLink(dest, p))
-          return keep(`${p} is a link, where one commit has a submodule and the other a file`);
-        if ((await readdir(join(dest, p)).catch(() => [])).length > 0)
+        // never looked into through a link (a link on its way is refused as one)
+        if (await throughLink(dest, dirname(p)))
+          return keep(
+            `a folder on the way to ${p} is a link, where one commit has a submodule and the other a file`,
+          );
+        const st = await lstat(join(dest, p)).catch(() => undefined);
+        // Beta.27 re-review 5: a link (mode 120000) in one commit, a submodule in the other: a
+        // link whose text is that commit's blob is git's own, left by the stopped checkout, and is
+        // put back like any file (never followed); any other link there is a person's.
+        if (st?.isSymbolicLink()) {
+          const to = await readlink(join(dest, p));
+          let gits = false;
+          for (const b of blobs.get(keyOf(p)) ?? [])
+            if ((await git(["cat-file", "blob", b], dest).catch(() => undefined))?.stdout === to)
+              gits = true;
+          if (!gits)
+            return keep(`${p} is a link, where one commit has a submodule and the other a file`);
+        } else if (st?.isDirectory() && (await readdir(join(dest, p))).length > 0)
           return keep(
             `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
           );
