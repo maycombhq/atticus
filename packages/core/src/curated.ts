@@ -49,6 +49,23 @@ const SCOPES = ["diagram", "triage"];
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Decisions apply oldest first by the instant their `at` names (an offset is allowed, so
+ * text order isn't time order), then by id; an `at` that doesn't parse sorts by its text after
+ * every one that does. */
+export function byDecisionTime(
+  a: { at: string; id: string },
+  b: { at: string; id: string },
+): number {
+  const x = Date.parse(a.at);
+  const y = Date.parse(b.at);
+  const xs = Number.isNaN(x);
+  const ys = Number.isNaN(y);
+  if (xs !== ys) return xs ? 1 : -1;
+  if (!xs && x !== y) return x < y ? -1 : 1;
+  if (xs && a.at !== b.at) return a.at < b.at ? -1 : 1;
+  return a.id === b.id ? 0 : a.id < b.id ? -1 : 1;
+}
+
 export function applyCurated(
   records: CatalogRecord[],
   decisions: readonly CatalogRecord[],
@@ -56,7 +73,7 @@ export function applyCurated(
   const list = (decisions as CatalogRecord[])
     .filter((d): d is CuratedDecisionRecord => d.kind === "CuratedDecision")
     .filter((d) => d.status === "current")
-    .sort((a, b) => (a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? -1 : 1));
+    .sort(byDecisionTime);
   const work = records.filter((r) => r.kind !== "CuratedDecision").map((r) => r as unknown as Rec);
   const current = new Map<number, Rec>(work.map((r, i) => [i, r]));
   const dropped = new Set<number>();

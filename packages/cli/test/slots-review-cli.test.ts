@@ -360,6 +360,32 @@ describe("a second catalog edits --curate of a record is its own decision (the r
   );
 
   it(
+    "a later curate of the same field wins over an earlier decision whose `at` has an offset (its text sorts after now)",
+    async () => {
+      const root = await upgraded();
+      const path = join(root, "catalog", "generated", ...SETTING.split("/"));
+      await writeFile(path, (await readFile(path, "utf8")).replace("5000ms", "7000ms"));
+      expect((await atticus(root, "catalog", "edits", "--curate", "--by", "alice")).code).toBe(0);
+      // Alice's decision, dated an hour ago in +14:00: its text is tomorrow's, after now's.
+      const aliceFile = join(root, ...DECISIONS, FIRST);
+      const p = deserializeRecord(await readFile(aliceFile, "utf8"));
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const hourAgo = new Date(Date.now() - 3_600_000 + 14 * 3_600_000);
+      const at = `${hourAgo.toISOString().slice(0, 19)}+14:00`;
+      expect(at > new Date().toISOString()).toBe(true);
+      await writeFile(aliceFile, serializeRecord({ ...p.record, at } as CatalogRecord));
+      expect((await atticus(root, "catalog", "build")).code).toBe(0);
+      await writeFile(path, (await readFile(path, "utf8")).replace("7000ms", "9000ms"));
+      const second = await atticus(root, "catalog", "edits", "--curate", "--by", "bob");
+      expect(second.code, second.all()).toBe(0);
+      const b = await atticus(root, "catalog", "build");
+      expect(b.code, b.all()).toBe(0);
+      expect(await readFile(path, "utf8")).toMatch(/valueOrRef: 9000ms/);
+    },
+    T,
+  );
+
+  it(
     "a field deleted in a hand edit is said and refused (a decision can't remove a field), never silently put back",
     async () => {
       const root = await upgraded();

@@ -759,13 +759,13 @@ async function decisionFor(
   );
   if (same) return { keep: same.file };
   let at = now;
+  // By the instant each `at` names, as applyCurated orders them (an offset is allowed).
   const latest = held
-    .map(({ d }) => d.at)
-    .filter((x): x is string => typeof x === "string" && !Number.isNaN(Date.parse(x)))
-    .sort(cmpText)
-    .pop();
-  if (latest !== undefined && cmpText(at, latest) <= 0)
-    at = new Date(Date.parse(latest) + 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    .map(({ d }) => (typeof d.at === "string" ? Date.parse(d.at) : NaN))
+    .filter((x) => !Number.isNaN(x))
+    .reduce((m, x) => Math.max(m, x), -Infinity);
+  if (latest !== -Infinity && Date.parse(at) <= latest)
+    at = new Date(Math.floor(latest / 1000) * 1000 + 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
   const fileOf = (x: string) => join(dir, `${x}.yaml`);
   if (!existsSync(fileOf(id))) return { id, at };
   for (let n = 2; ; n++) if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, at };

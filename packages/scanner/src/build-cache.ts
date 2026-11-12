@@ -253,7 +253,9 @@ function checkoutHash(
  * stamp and the cache is off for this process rather than kept under the newer code's stamp.
  * The process's own clock, not Date (a test's fake time would date every file after it).
  */
-const LOADED_AT = performance.timeOrigin + performance.now();
+// The process's start, not this module's load: a package loaded before the scanner (core, under
+// `atticus ui`) and rebuilt before it must not be stamped as the code that runs.
+const LOADED_AT = performance.timeOrigin;
 
 let stamp: CodeStamp | undefined;
 /** This code's stamp (once per process), or undefined when there is none: the cache is off. */
