@@ -159,8 +159,9 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
     "aria-selected",
     "true",
   );
+  // ADR 0195 (CS2): the refusal's line names the slots too.
   await expect(panel.getByRole("log")).toContainText(
-    "Nothing written: catalog/generated is as it was",
+    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
   );
   await expect(panel.getByRole("log")).toContainText(
     "forge-ledger: not cloned here; clone it with atticus workspace sync",
