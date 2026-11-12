@@ -563,11 +563,15 @@ export function createWorkspace(
       // Beta.27 re-review (round 3): where one commit has a submodule and the other a file, a
       // folder there with anything in it (git doesn't look inside a submodule's folder) would
       // go with the file put back.
-      for (const p of swapped)
+      for (const p of swapped) {
+        // never looked into through a link (a link there or on its way is refused as one)
+        if (await throughLink(dest, p))
+          return keep(`${p} is a link, where one commit has a submodule and the other a file`);
         if ((await readdir(join(dest, p)).catch(() => [])).length > 0)
           return keep(
             `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
           );
+      }
       if (!(await dropKilledLock(dest, atStop)))
         return no(
           `git's lock ${join(dest, ".git", "index.lock")} is there: if no git is running in ${dest}, delete it; the next sync puts the clone back (its mark ${mark} stays until then)`,
@@ -702,15 +706,19 @@ export function createWorkspace(
   ): Promise<KeptCopy[]> {
     const files: string[] = [];
     const links: string[] = [];
-    const seen = new Set<string>();
+    // one copy per file: a name that is the same file as one kept already, in another case only
+    // (a case-only rename on a file system that ignores case); two tracked paths that are hard
+    // links of each other are both named
+    const seen = new Map<string, string>();
     const first = [...new Set(paths)].sort((a, b) => +indexed.has(b) - +indexed.has(a));
     for (const p of first) {
       if (await throughLink(dest, dirname(p))) continue;
       const st = await lstat(join(dest, p), { bigint: true }).catch(() => undefined);
       if (!st) continue;
       const id = `${st.dev}:${st.ino}`;
-      if (st.ino !== 0n && seen.has(id)) continue;
-      seen.add(id);
+      const was = seen.get(id);
+      if (st.ino !== 0n && was !== undefined && was.toLowerCase() === p.toLowerCase()) continue;
+      if (was === undefined) seen.set(id, p);
       if (st.isFile()) files.push(p);
       else if (st.isSymbolicLink()) links.push(p);
     }
@@ -734,6 +742,9 @@ export function createWorkspace(
     if (theirs.length === 0) return [];
     const top = join(dest, ".git", PUT_BACK_DIR);
     await mkdir(top, { recursive: true });
+    // never copied through a link put at the put-back folder's place
+    if (!(await lstat(top)).isDirectory())
+      throw new Error(`${top} isn't a folder of its own (a link?): nothing was copied there`);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     let at = join(top, stamp);
     for (let n = 2; ; n++) {

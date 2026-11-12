@@ -100,7 +100,12 @@ async function setUp(
     const gitlinks: string[] = [];
     for (const [p, t] of Object.entries(files)) {
       await rm(join(work, p), { recursive: true, force: true });
-      if (t === null) continue;
+      // a removed path leaves the index by name, so a case-only rename is a delete and an add on
+      // a file system that ignores case too (where add -A would record it as a change)
+      if (t === null) {
+        realGit(work, "rm", "-q", "-r", "--cached", "--ignore-unmatch", "--", p);
+        continue;
+      }
       await mkdir(dirname(join(work, p)), { recursive: true });
       if (typeof t === "string") await writeFile(join(work, p), t);
       else if ("link" in t) await symlink(t.link, join(work, p));
