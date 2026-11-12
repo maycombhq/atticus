@@ -66,6 +66,7 @@ terms:
     evidence:
       - inputs/wiki/ledger-glossary.md:12
       - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1
+      - forge-reports-job/src/main/java/forge/reports/DailyEntriesJob.java:14
   - id: term.holder-name
     term: Holder name
     definition: The name of the person who owns the account, as on their ID.
@@ -83,8 +84,8 @@ terms:
     fields: []
     flags: [ai-proposed]
     evidence:
-      - inputs/partner-specs/northwind-pay-openapi.yaml:6
       - forge-events/topics/payments.initiated.yaml:1
+      - inputs/partner-specs/northwind-pay-openapi.yaml:6
   - id: term.remaining-limit
     term: Remaining limit
     definition: "What an account can still send today: its daily limit minus today's outgoing transfers."
@@ -102,8 +103,8 @@ terms:
     evidence:
       - inputs/wiki/ledger-glossary.md:16
       - inputs/wiki/portal-help.md:8
-      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
       - forge-events/topics/transfers.completed.yaml:1
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
 columnLinks:
   - { column: ledger-db.account.account-number, term: term.account-number, how: name }
   - { column: ledger-db.account.daily-limit, term: term.daily-limit, how: name }

@@ -174,7 +174,8 @@ const RECORDED: Record<string, Rule> = {
   standards: all,
   openspec: only("setup"),
   templates: only("draft"),
-  catalog: only("migrate"),
+  // ADR 0195: the build's commands write the catalog and its slots; the cross-check its dismissals.
+  catalog: only("migrate", "build", "edits", "undo", "prune", "crosscheck"),
   diagram: all,
   "assistant-files": all,
   site: only("build"),
@@ -191,10 +192,24 @@ const NOT_RECORDED_FLAGS = new Set(["help", "version", "check", "dry-run"]);
 /** Sub-commands of a kept command that are a quick look. */
 const QUICK = new Set(["map render", "verify audit", "scan review", "critic stats"]);
 
+/**
+ * Sub-commands that write only with one of these flags; without them they list what they would
+ * do, which is a look, not a run (ADR 0195, the review: the run log keeps the catalog commands'
+ * writes, not their listings).
+ */
+const WRITES_WITH: Record<string, readonly string[]> = {
+  "catalog edits": ["curate"],
+  "catalog undo": ["yes"],
+  "catalog prune": ["yes"],
+  "catalog crosscheck": ["dismiss", "undismiss", "promote"],
+};
+
 export function recordedCommand(positionals: readonly string[], flags: readonly string[]): boolean {
   const [group, command] = positionals;
   if (!group || flags.some((f) => NOT_RECORDED_FLAGS.has(f))) return false;
   if (command && QUICK.has(`${group} ${command}`)) return false;
+  const writes = command ? WRITES_WITH[`${group} ${command}`] : undefined;
+  if (writes && !flags.some((f) => writes.includes(f))) return false;
   const rule = RECORDED[group];
   if (rule === undefined) return false;
   if (rule === true) return true;

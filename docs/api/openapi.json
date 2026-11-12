@@ -5179,6 +5179,897 @@
         }
       }
     },
+    "/api/crosscheck": {
+      "get": {
+        "operationId": "getCrossCheck",
+        "summary": "3.12.0 (ADR 0195 point 3): each repo's readers' cross-check counts: what the built-in readers found that its facts don't have, where they disagree, and what only the facts have; or why it isn't compared (no facts, no readers slot yet, a legacy slot). Reads files only",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossCheckView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crosscheck/{repo}": {
+      "get": {
+        "operationId": "getRepoCrossCheck",
+        "summary": "3.12.0: one repo's cross-check with its items, each with the readers' and the facts' value and their citations, and whether it is dismissed. Reads files only",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCrossCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crosscheck/{repo}/dismiss": {
+      "post": {
+        "operationId": "dismissCrossCheckItem",
+        "summary": "3.12.0: dismiss a cross-check item at the readers' value it has now (listed again when that value changes), or take the dismissal back (undo): atticus catalog crosscheck <repo> --dismiss|--undismiss <key> as a local job, writing facts/<repo>.crosscheck.yaml. Changes no catalog record",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "undo": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the command printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crosscheck/{repo}/promote": {
+      "get": {
+        "operationId": "getCrossCheckPromote",
+        "summary": "3.12.0 (ADR 0195 point 3): what promoting a readers-only item to assert would write: the by: person fact with the reader's citation, the cited line's text, the facts file it goes into and the hash the confirm sends back; or why it can't be promoted. Writes nothing",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The item's key, as the cross-check names it",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossCheckPromoteView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "promoteCrossCheckItem",
+        "summary": "3.12.0: atticus catalog crosscheck <repo> --promote <key>, then atticus verify <repo>, as one local job: the by: person fact is added to facts/<repo>.jsonl (an edit to propose) and the verifier checks it on its line; GET /api/crosscheck/{repo} then says whether it verified. 409 when the fact is no longer the one previewed. Changes no catalog record (verify --write does, on Apply)",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "key",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the commands printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build": {
+      "get": {
+        "operationId": "getCatalogBuild",
+        "summary": "3.12.0 (ADR 0195 points 4 and 7): each repo's source, what atticus catalog build would do now (nothing, the removals it writes, or its refusal with the removals and hand edits it lists and the counts that confirm them), and what the last build here changed. Builds in memory; writes nothing",
+        "tags": [
+          "scans"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogBuildView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "runCatalogBuild",
+        "summary": "3.12.0: atticus catalog build as a local job, confirming exactly the removals and hand edits listed with their counts (--allow-removals, --discard-edits); any other count refuses again and writes nothing",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the build printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build/edits/curate": {
+      "post": {
+        "operationId": "curateHandEdits",
+        "summary": "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "count",
+                  "plan"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the command printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build/undo": {
+      "get": {
+        "operationId": "getCatalogUndo",
+        "summary": "3.12.0 (ADR 0195 point 7): the builds kept to undo on this machine (the last five), newest first and numbered 1 (the latest) to 5, and the files taking back the n latest would put back (1 when left out). Writes nothing",
+        "tags": [
+          "scans"
+        ],
+        "parameters": [
+          {
+            "name": "n",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "How many of the latest builds to take back",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogUndoView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "runCatalogUndo",
+        "summary": "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before the n latest builds; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "files": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "n",
+                  "files",
+                  "plan"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the command printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build/upgrade": {
+      "get": {
+        "operationId": "getCatalogUpgrade",
+        "summary": "3.12.0 (ADR 0195 point 6): the upgrade to source slots as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
+        "tags": [
+          "scans"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogUpgradeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "runCatalogUpgrade",
+        "summary": "3.12.0: atticus upgrade --yes as a local job, confirming the files listed (their count, typed by the person, and the listing's plan hash). 409 when the upgrade no longer waits, would refuse, or its files are no longer the ones listed",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "acceptChanges": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "count",
+                  "plan"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the upgrade printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build/prune": {
+      "get": {
+        "operationId": "getCatalogPrune",
+        "summary": "3.12.0 (ADR 0195 point 4): the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog), each with why. Writes nothing",
+        "tags": [
+          "scans"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPruneView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "runCatalogPrune",
+        "summary": "3.12.0: atticus catalog prune --yes as a local job, removing exactly the files listed (an undo copy keeps them). 409 when the list is no longer the count listed",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "count",
+                  "plan"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines the command printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{repo}": {
       "get": {
         "operationId": "getRepoFacts",
@@ -5932,6 +6823,16 @@
                   },
                   "askAll": {
                     "type": "boolean"
+                  },
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   }
                 },
                 "additionalProperties": false
@@ -45008,6 +45909,1632 @@
           "written",
           "answers",
           "repos"
+        ],
+        "additionalProperties": false
+      },
+      "CrossCheckView": {
+        "type": "object",
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoCrossCheck"
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "repos",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "RepoCrossCheck": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "compared",
+              "no-facts",
+              "no-readers",
+              "legacy",
+              "unusable"
+            ]
+          },
+          "readersCommit": {
+            "type": "string"
+          },
+          "factsCommit": {
+            "type": "string"
+          },
+          "readersSlot": {
+            "type": "string"
+          },
+          "factsSlot": {
+            "type": "string"
+          },
+          "dismissals": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "agree": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "readersOnly": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "factsOnly": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "disagree": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "dismissed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "agree",
+              "readersOnly",
+              "factsOnly",
+              "disagree",
+              "dismissed"
+            ],
+            "additionalProperties": false
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "agree",
+                    "readers-only",
+                    "facts-only",
+                    "disagree"
+                  ]
+                },
+                "readers": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {},
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "commit": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "value",
+                    "cites"
+                  ],
+                  "additionalProperties": false
+                },
+                "facts": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {},
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "commit": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "value",
+                    "cites"
+                  ],
+                  "additionalProperties": false
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "readers": {},
+                      "facts": {}
+                    },
+                    "required": [
+                      "field",
+                      "readers",
+                      "facts"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "dismissed": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "readersSha256": {
+                  "type": "string"
+                },
+                "promoted": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "written",
+                        "verified",
+                        "rejected"
+                      ]
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "state",
+                    "file",
+                    "line"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "key",
+                "kind",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problem": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "state",
+          "dismissals",
+          "counts",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "CatalogBuildView": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "facts",
+                    "readers",
+                    "legacy",
+                    "none"
+                  ]
+                },
+                "commit": {
+                  "type": "string"
+                },
+                "slot": {
+                  "type": "string"
+                },
+                "problem": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pending": {
+            "type": "object",
+            "properties": {
+              "upToDate": {
+                "type": "boolean"
+              },
+              "removals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "refused": {
+                "type": "object",
+                "properties": {
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "nothing-read",
+                        "empty",
+                        "unexplained-removals",
+                        "large-removals",
+                        "hand-edits",
+                        "not-upgraded"
+                      ]
+                    }
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "removals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "unexplained": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "edits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "changed",
+                            "added",
+                            "deleted"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "how"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "unread": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string"
+                        },
+                        "why": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "why"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reasons",
+                  "message",
+                  "command"
+                ],
+                "additionalProperties": false
+              },
+              "plan": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "upToDate",
+              "removals",
+              "plan"
+            ],
+            "additionalProperties": false
+          },
+          "last": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "generated": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "written",
+                  "unchanged",
+                  "refused",
+                  "stopped"
+                ]
+              },
+              "refused": {
+                "type": "object",
+                "properties": {
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "nothing-read",
+                        "empty",
+                        "unexplained-removals",
+                        "large-removals",
+                        "hand-edits",
+                        "not-upgraded"
+                      ]
+                    }
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "removals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "unexplained": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "edits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "changed",
+                            "added",
+                            "deleted"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "how"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "unread": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string"
+                        },
+                        "why": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "why"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reasons",
+                  "message",
+                  "command"
+                ],
+                "additionalProperties": false
+              },
+              "stopped": {
+                "type": "string"
+              },
+              "run": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "added": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "changed": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "removed": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "written": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "unchanged": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "records",
+                  "added",
+                  "changed",
+                  "removed",
+                  "written",
+                  "unchanged"
+                ],
+                "additionalProperties": false
+              },
+              "added": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "changed": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "removed": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "undo": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "discarded": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "changed",
+                        "added",
+                        "deleted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "how"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "command",
+              "at",
+              "generated",
+              "outcome",
+              "run",
+              "counts",
+              "added",
+              "changed",
+              "removed",
+              "slots"
+            ],
+            "additionalProperties": false
+          },
+          "upgrade": {
+            "type": "boolean",
+            "const": true
+          },
+          "orphaned": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "enum": [
+                    "not-listed",
+                    "archived"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "repo",
+                "why",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sources",
+          "pending",
+          "orphaned",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CatalogUndoView": {
+        "type": "object",
+        "properties": {
+          "copies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "command": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "commit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "files": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "n",
+                "command",
+                "at",
+                "commit",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "n": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "takesBack": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "command": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "command"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string",
+                      "enum": [
+                        "file",
+                        "absent"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "to"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "n",
+              "takesBack",
+              "files",
+              "hash"
+            ],
+            "additionalProperties": false
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "copies"
+        ],
+        "additionalProperties": false
+      },
+      "CatalogPruneView": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "plan": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "plan"
+        ],
+        "additionalProperties": false
+      },
+      "CatalogUpgradeView": {
+        "type": "object",
+        "properties": {
+          "pending": {
+            "type": "boolean"
+          },
+          "records": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "write": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "records": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "repo": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "records"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "what": {
+                  "type": "string",
+                  "enum": [
+                    "readers-slot",
+                    "legacy-joins",
+                    "copy",
+                    "build-manifest"
+                  ]
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "what",
+                "bytes",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "copy": {
+            "type": "object",
+            "properties": {
+              "dir": {
+                "type": "string"
+              },
+              "files": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "dir",
+              "files"
+            ],
+            "additionalProperties": false
+          },
+          "firstBuildChanges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "how": {
+                  "type": "string",
+                  "enum": [
+                    "added",
+                    "changed",
+                    "removed"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "how"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "acceptChanges": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "applies": {
+            "type": "boolean"
+          },
+          "run": {
+            "type": "string"
+          },
+          "verifiable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "plan": {
+            "type": "string"
+          },
+          "others": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "summary"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "pending",
+          "records",
+          "write",
+          "writes",
+          "copy",
+          "firstBuildChanges",
+          "changes",
+          "acceptChanges",
+          "applies",
+          "run",
+          "verifiable",
+          "plan",
+          "others"
+        ],
+        "additionalProperties": false
+      },
+      "CrossCheckPromoteView": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "can": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          },
+          "factsFile": {
+            "type": "string"
+          },
+          "fact": {
+            "type": "string"
+          },
+          "factKind": {
+            "type": "string"
+          },
+          "line": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "cite": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "value": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "line",
+              "value",
+              "commit"
+            ],
+            "additionalProperties": false
+          },
+          "fromSnapshot": {
+            "type": "boolean"
+          },
+          "already": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "key",
+          "can",
+          "factsFile"
         ],
         "additionalProperties": false
       },

@@ -1,0 +1,28 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.balance
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-api.get-balance, portal-bff.get-balance."
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 8
+    path: src/main/java/forge/ledger/LedgerEndpoints.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 12
+    path: src/main/java/forge/portal/BalanceController.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+fields: []
+flags:
+  - undefined
+term: Balance

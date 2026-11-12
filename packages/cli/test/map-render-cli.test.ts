@@ -16,17 +16,34 @@ import {
   answerQuestion,
   interfaceId,
   listQuestions,
-  loadOrgPack,
+  parseFacts,
   parseRecord,
   serializeRecord,
   type CatalogRecord,
   type FactsJoinResult,
 } from "@maycombhq/core";
-import { estateRepos, mergeEstate, readCatalog, writeCatalog } from "@maycombhq/scanner";
+import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
-import { verifyCommand } from "../src/verify-commands.js";
+import { confirmed, seedReadersSlots } from "./seed-slots.js";
+import { verifyCommand as verifyCommandRaw } from "../src/verify-commands.js";
+
+// ADR 0195 (CS2): the first --write over a repo the readers read replaces its readers' records
+// with its facts', a large removal a person confirms with the count listed: so do these tests.
+const verifyCommand: typeof verifyCommandRaw = (root, repo, o, out) =>
+  o.write
+    ? confirmed(
+        (x, allowRemovals) =>
+          verifyCommandRaw(
+            root,
+            repo,
+            { ...o, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
+            x,
+          ),
+        out,
+      )
+    : verifyCommandRaw(root, repo, o, out);
 
 /**
  * atticus verify <repo> --write and atticus map render <repo> (ADR 0124, A3b), end to end on an
@@ -52,17 +69,14 @@ async function metarepo(facts?: string): Promise<string> {
   cpSync(join(META, "org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(META, "catalog"), join(root, "catalog"), { recursive: true });
   cpSync(join(VERIFY, "repo"), join(root, "workspace", "forge-ledger"), { recursive: true });
-  // The catalog as a reader scan wrote it, before the assistant's facts.
-  const op = await loadOrgPack(join(root, "org-pack"));
+  // The catalog as a reader scan wrote it, before the assistant's facts: since ADR 0195 (CS2)
+  // the readers' records are each repo's readers slot, and the build makes the catalog.
   const raw = (parse(readFileSync(join(META, "scan-before.yaml"), "utf8")) as object[]).map((x) => {
     const p = parseRecord({ schemaVersion: 2, status: "current", ...x });
     if (!p.ok) throw new Error(JSON.stringify(p.issues));
     return p.record;
   });
-  await writeCatalog(
-    join(root, "catalog", "generated"),
-    mergeEstate(op, estateRepos(op), raw).records,
-  );
+  await seedReadersSlots(root, raw);
   mkdirSync(join(root, "facts"), { recursive: true });
   writeFileSync(
     join(root, "facts", "forge-ledger.jsonl"),
@@ -108,7 +122,8 @@ describe("atticus verify <repo> --write says what it wrote in a few lines", () =
   it("counts the records by kind and the flows, and lists each only with --verbose", async () => {
     const root = await metarepo();
     const o = io();
-    expect(await write(root, o)).toBe(0);
+    const code = await write(root, o);
+    expect(code, o.err.join("\n")).toBe(0);
     const at = o.out.findIndex((l) => l.startsWith("Wrote the catalog for forge-ledger:"));
     expect(at).toBeGreaterThanOrEqual(0);
     const records = o.out[at + 1]!;
@@ -556,12 +571,9 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       ),
     ).toBe(1);
     expect(readFileSync(factsFile).equals(bytes)).toBe(true);
-    // So a scan doesn't take the half-read repo from its facts: they aren't verified yet.
-    const { factsForScan } = await import("@maycombhq/scanner");
-    const op = await loadOrgPack(join(root, "org-pack"));
-    const used = await factsForScan(root, op, "forge-ledger", "0123abc", []);
-    expect(used.records).toBeUndefined();
-    expect(used.note).toMatch(/aren't verified yet/);
+    // So no build takes the half-read repo: a refused --write takes no facts snapshot (ADR 0195),
+    // and only a snapshot reaches the catalog.
+    expect(existsSync(join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"))).toBe(false);
   });
 
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
@@ -738,7 +750,8 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const md = readFileSync(join(root, "map", "forge-ledger", "map.md"), "utf8");
     expect(md).toContain(`(../../questions/${q.id}.yaml)`);
     await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
-    expect(await write(root)).toBe(0);
+    const w2 = io();
+    expect(await write(root, w2), w2.err.join("\n")).toBe(0);
     const catalog = (await readCatalog(join(root, "catalog", "generated"))).records;
     expect(
       catalog.some(
@@ -769,27 +782,36 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
    * the facts' commit unless `clone` is false (then estate fresh says no-checkout).
    */
   function notifyRead(root: string, o: { clone?: boolean } = {}) {
-    writeFileSync(
-      join(root, "facts", "forge-notify.jsonl"),
-      `${JSON.stringify({
-        kind: "entry",
-        id: "entry.get.status",
-        repo: "forge-notify",
-        commit: "0456def",
-        entryType: "rest",
-        method: "GET",
-        path: "/status",
-        cite: {
-          file: "src/Status.java",
-          line: 3,
-          value: "/status",
-          quote: '@GetMapping("/status")',
-        },
-        verified: "line",
-        by: "assistant",
-        conf: "declared",
-      })}\n`,
-    );
+    const text = `${JSON.stringify({
+      kind: "entry",
+      id: "entry.get.status",
+      repo: "forge-notify",
+      commit: "0456def",
+      entryType: "rest",
+      method: "GET",
+      path: "/status",
+      cite: {
+        file: "src/Status.java",
+        line: 3,
+        value: "/status",
+        quote: '@GetMapping("/status")',
+      },
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+    })}\n`;
+    writeFileSync(join(root, "facts", "forge-notify.jsonl"), text);
+    // ADR 0195 (CS2): forge-notify is read when its verify --write took its facts snapshot; the
+    // build joins only facts snapshots, never the assistant's working file.
+    const p = parseFacts(text);
+    if (!p.ok) throw new Error("bad facts");
+    for (const w of factsSnapshotWrites(root, "forge-notify", p.facts, {
+      commit: "0456def",
+      contracts: null,
+    })) {
+      mkdirSync(dirname(w.path), { recursive: true });
+      writeFileSync(w.path, w.text!);
+    }
     if (o.clone === false) return;
     const git = join(root, "workspace", "forge-notify", ".git");
     mkdirSync(git, { recursive: true });
@@ -818,7 +840,8 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
   it("keeps the answer a person gave again after it reopened (review item 2)", async () => {
     const { root, q } = await answered();
     notifyRead(root);
-    expect(await write(root)).toBe(0);
+    const w9 = io();
+    expect(await write(root, w9), w9.err.join("\n")).toBe(0);
     expect((await stateOf(root, q.id)).state).toBe("open");
     // The person looks and says the same again: it is their word, and it holds.
     await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-25T10:00:00Z" });
@@ -1001,6 +1024,9 @@ describe("the command line", () => {
         dir,
         "--root",
         root,
+        // ADR 0195 (CS2): the facts' read replaces the readers' (one record goes): confirmed.
+        "--allow-removals",
+        "1",
       ],
       o.io,
     );
@@ -1019,9 +1045,11 @@ describe("the command line", () => {
     const dir = join(root, "workspace", "forge-ledger");
     const o = io();
     const args = ["verify", "forge-ledger", "--write", "--root", root];
-    expect(await main([...args, "--commit", "0123abc", "--dir", dir], o.io), o.err.join("\n")).toBe(
-      0,
-    );
+    // ADR 0195 (CS2): the one removal the facts' read makes is confirmed with its count.
+    expect(
+      await main([...args, "--commit", "0123abc", "--dir", dir, "--allow-removals", "1"], o.io),
+      o.err.join("\n"),
+    ).toBe(0);
     expect(o.out.join("\n")).toMatch(/Wrote the catalog for forge-ledger/);
   });
 });

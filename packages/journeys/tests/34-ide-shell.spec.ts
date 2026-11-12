@@ -145,8 +145,8 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   const before = catalogFiles(app().root);
   expect(Object.keys(before).length).toBeGreaterThan(20);
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
-  // Beta.26 safety stop: no repo is cloned here, so the scan writes nothing and says so in the
-  // page, each repo with why and what to do; the catalog is as it was.
+  // No repo is cloned here, so the scan writes nothing and says so in the page, each repo with why
+  // and what to do; the catalog is as it was (ADR 0195 point 4: a scan that read nothing).
   await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
     timeout: 60_000,
   });
@@ -167,8 +167,9 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
     "aria-selected",
     "true",
   );
+  // ADR 0195 point 4: the nothing-read guard writes no slot either, and says so.
   await expect(panel.getByRole("log")).toContainText(
-    "Nothing written: catalog/generated is as it was",
+    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
   );
   await expect(panel.getByRole("log")).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",

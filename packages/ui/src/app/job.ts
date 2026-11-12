@@ -28,6 +28,8 @@ export class JobFailed extends Error {
     message: string,
     readonly lines: string[],
     readonly next?: NextStep,
+    /** The job's exit code, when it ended with one (a step that says which part refused). */
+    readonly code?: number,
   ) {
     super(message);
   }
@@ -61,7 +63,13 @@ export async function followJob(
       const errors = j.errors ?? [];
       // A failure's own words: its errors (a sync's stderr), else what it printed.
       const lines = failed ? (errors.length ? errors : said) : said.length ? said : errors;
-      if (failed) throw new JobFailed(lines.join(" ") || j.state, lines, nextStepOf(j.result));
+      if (failed)
+        throw new JobFailed(
+          lines.join(" ") || j.state,
+          lines,
+          nextStepOf(j.result),
+          j.result?.code,
+        );
       // Beta.27 review, final round: the rest of the result (the upgrade's `upgraded`).
       return { code, lines, ...(j.result ? { result: j.result } : {}) };
     }

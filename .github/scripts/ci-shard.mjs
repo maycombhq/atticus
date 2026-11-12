@@ -60,6 +60,9 @@ const UNIT_DEFAULT = 5;
 const CLI_WEIGHTS = {
   "propose.test.ts": 149,
   "learn-cli.test.ts": 103,
+  // ADR 0195's property tests: 100 sequences of up to 10 commands took 41 s of CPU on Linux
+  // (2026-11-11, beta.26's writers), with the known failures, examples and mutants about 100 s.
+  "properties/catalog-properties.test.ts": 100,
   "map-all-cli.test.ts": 64,
   "ui-api-task-run.test.ts": 57,
   "run-cli.test.ts": 39,

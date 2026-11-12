@@ -66,8 +66,18 @@ describe("scanner plugins in the scan (ADR 0080)", () => {
   }, 120_000);
 
   it("stops and reports each plugin that misbehaves; the scan and the good plugin go on", async () => {
-    const { endpoints, problems } = await scan();
-    expect(endpoints).toEqual(["DELETE /notes/{id} notes-svc", "GET /notes/{id} notes-svc"]);
+    const { s, endpoints, problems } = await scan();
+    // ADR 0195 point 1 (CS2): a repo a plugin run failed on isn't read in full, so this scan is no
+    // observation of it: it keeps its last good read (none here), and its records aren't built.
+    // beta.26 put the partial read in; the readers' records of the good plugin still ran.
+    expect(endpoints).toEqual([]);
+    expect(s.observations.find((x) => x.repo === "forge-anvil-notes")).toMatchObject({
+      full: false,
+      why: "run-failed",
+    });
+    expect(
+      s.repos.find((r) => r.repo === "forge-anvil-notes")!.runs.map((r) => r.extractor),
+    ).toContain("plugin-forge-anvil-routes");
     expect(problems).toEqual([
       "forge-anvil-notes | plugin-forge-hogs-memory | stopped: it used more than its 32 MB memory limit",
       "forge-anvil-notes | plugin-forge-loops | stopped after 1000 ms, its time limit",

@@ -66,6 +66,20 @@ describe("which commands keep a run log", () => {
     expect(recordedCommand(["task", "run-ready", "c1"], [])).toBe(true);
     expect(recordedCommand(["knowledge", "scan"], [])).toBe(true);
     expect(recordedCommand(["upgrade"], [])).toBe(true);
+    // ADR 0195 (CS3): the build's commands and the cross-check's dismissals, from a terminal too.
+    expect(recordedCommand(["catalog", "build"], ["allow-removals"])).toBe(true);
+    expect(recordedCommand(["catalog", "undo"], ["yes"])).toBe(true);
+    expect(recordedCommand(["catalog", "prune"], ["yes"])).toBe(true);
+    expect(recordedCommand(["catalog", "edits"], ["curate"])).toBe(true);
+    expect(recordedCommand(["catalog", "crosscheck", "forge-ledger"], ["dismiss"])).toBe(true);
+    expect(recordedCommand(["catalog", "crosscheck", "forge-ledger"], ["promote"])).toBe(true);
+    // The review: a listing of what they would do is a look, not a run.
+    expect(recordedCommand(["catalog", "prune"], [])).toBe(false);
+    expect(recordedCommand(["catalog", "undo"], ["json"])).toBe(false);
+    expect(recordedCommand(["catalog", "edits"], [])).toBe(false);
+    expect(recordedCommand(["catalog", "crosscheck", "forge-ledger"], ["json"])).toBe(false);
+    expect(recordedCommand(["catalog", "build"], ["check"])).toBe(false);
+    expect(recordedCommand(["catalog", "validate", "x"], [])).toBe(false);
     expect(recordedCommand(["handoff", "done", "run-1"], [])).toBe(true);
     // Beta.26 review: every command that writes, run anywhere, is in the Console.
     expect(recordedCommand(["change", "new", "c1"], ["type"])).toBe(true);

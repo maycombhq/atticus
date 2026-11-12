@@ -1,0 +1,26 @@
+schemaVersion: 5
+kind: DataStore
+id: ledger-db
+status: current
+confidence: verified
+entitiesHeld:
+  - account
+  - entry
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 1
+    path: src/main/resources/db/migration/V1__create_account.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: terraform-gcp@1.0.0
+    extractor: dialect-terraform-gcp@1.0.0
+    line: 1
+    path: terraform/ledger-db.tf
+    repo: forge-infra
+    scannedAt: 2026-10-18T09:00:00Z
+    source: infrastructure
+ownerComponent: ledger-api
+storeType: postgresql

@@ -30,6 +30,18 @@ describe("detectFeatures on the Forge catalog (golden)", () => {
     }
   });
 
+  it("cites every repo its records come from (ADR 0195, CS2: provenance and locality)", () => {
+    const records = forgeRecords();
+    const byId = new Map(records.map((r) => [r.id, r]));
+    for (const f of detectFeatures(records)) {
+      const cited = new Set(f.evidence.map((e) => e.repo));
+      const from = new Set(
+        f.records.flatMap((id) => (byId.get(id)?.evidence ?? []).map((e) => e.repo)),
+      );
+      for (const repo of from) if (repo) expect(cited.has(repo), `${f.id} ${repo}`).toBe(true);
+    }
+  });
+
   it("is deterministic: input order doesn't matter, and features already in the input are rebuilt", () => {
     const records = forgeRecords();
     const first = detectFeatures(records);

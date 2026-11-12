@@ -1,0 +1,35 @@
+{
+  "invariant": "undo-restores",
+  "note": "undo-restores: atticus catalog undo left catalog/generated unlike before the last write: component/ledger-api.yaml, component/payments-api.yaml, system/customers.yaml, system/ledger.yaml, system/notify.yaml (atticus catalog undo: not a command of this system)",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "undo"
+    }
+  ]
+}

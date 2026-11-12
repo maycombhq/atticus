@@ -1,0 +1,9 @@
+{
+  "slotVersion": 1,
+  "kind": "facts",
+  "repo": "forge-ledger",
+  "commit": "0123abc",
+  "factsSchemaVersion": 5,
+  "factsHash": "9aa1b7fc48afc9d2ee35d3091dcde60785144b1e8a0a2749ba6e1d40d0f36c7e",
+  "contracts": null
+}

@@ -559,7 +559,28 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   and not yet scored, and how often a claim graded as backed is wrong as two numbers side by
  *   side, never pooled (`rates`: the audit misread rate from the sample audit's answers, a link's
  *   answer counted as given; the canary pass-through rate from the canaries), each with its count
- *   and 95% interval. Files only. Additive only.
+ *   and 95% interval. Files only.
+ *   The catalog (ADR 0195 ticket CS3, the owner's decision of 2026-11-11): the readers'
+ *   cross-check and the build's confirm steps. GET /api/crosscheck (every repo) and
+ *   GET /api/crosscheck/{repo} (one, with its items): what the readers found that the facts
+ *   don't have, where they disagree (both values, with citations), and a count of what only the
+ *   facts have; POST /api/crosscheck/{repo}/dismiss keeps or takes back a dismissal in
+ *   facts/<repo>.crosscheck.yaml, as `atticus catalog crosscheck <repo> --dismiss|--undismiss`.
+ *   GET /api/build: each repo's source, what `atticus catalog build` would do now (its
+ *   refusal with the removals and hand edits it lists, and the counts that confirm them) and what
+ *   the last build changed; POST /api/build confirms with those counts
+ *   (`allowRemovals`, `discardEdits`), POST /api/build/edits/curate makes the hand edits
+ *   curated; GET and POST /api/build/undo list the last five builds and take one back; GET and
+ *   POST /api/build/prune list the slot files no build reads and remove exactly those; GET and
+ *   POST /api/build/upgrade show the upgrade to source slots as a dry run and apply it
+ *   (`atticus upgrade --yes`) with the count of files listed and the listing's hash; GET and
+ *   POST /api/crosscheck/{repo}/promote show and write a readers-only item as a person's fact
+ *   (`--promote`), then verify the repo. `last` is the latest build's own report, a terminal's
+ *   refusals included. Every
+ *   write is the CLI's own command as a local job (its lines in the Console), and is refused
+ *   (409, nothing written) when what it would change is no longer what the page showed.
+ *   POST /api/scan takes `allowRemovals` and `discardEdits`, and its job's result gives each
+ *   repo's `sources` (read in full, or kept its last good read and why). Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -1643,6 +1664,400 @@ export const AnswerBoxResult = z.object({
   stamp: z.string().optional(),
 });
 export type AnswerBoxResultT = z.infer<typeof AnswerBoxResult>;
+
+// ------------------------------------------------------------------ the catalog build (ADR 0195, CS3)
+
+/** 3.12.0: where a value is said, at the slot's commit. */
+export const CrossCheckCite = z.object({
+  file: z.string(),
+  line: z.number().int().optional(),
+  commit: z.string().optional(),
+});
+/** 3.12.0: one side of a cross-check item: its record's id, the kind's value, its citations. */
+export const CrossCheckSide = z.object({
+  id: z.string(),
+  value: z.unknown(),
+  cites: z.array(CrossCheckCite),
+});
+/**
+ * 3.12.0 (ADR 0195 point 3): one item of a repo's cross-check. `readers-only`: the readers found
+ * it, the facts don't have it; `disagree`: both have it, with the `fields` that differ;
+ * `facts-only`: the facts have it, the readers don't. `dismissed` while it is dismissed at the
+ * readers' value it has now.
+ */
+export const CrossCheckItem = z.object({
+  key: z.string(),
+  kind: z.string(),
+  state: z.enum(["agree", "readers-only", "facts-only", "disagree"]),
+  readers: CrossCheckSide.optional(),
+  facts: CrossCheckSide.optional(),
+  fields: z
+    .array(z.object({ field: z.string(), readers: z.unknown(), facts: z.unknown() }))
+    .optional(),
+  dismissed: z.literal(true).optional(),
+  /**
+   * The SHA-256 of the readers' value as shown (its JSON), for a readers-only or disagreeing
+   * item: a dismissal sends it back, so it dismisses the value the page showed (409 when the
+   * readers say another now). Only GET /api/crosscheck/{repo} says it.
+   */
+  readersSha256: z.string().optional(),
+  /**
+   * A readers-only item a person promoted to assert: the `by: person` fact in the repo's facts
+   * file and where it stands: `written` (not verified yet), `verified` (the verifier found it on
+   * its line; `atticus verify <repo> --write` puts it in the catalog) or `rejected` (with why, in
+   * facts/<repo>.rejected.jsonl). Only GET /api/crosscheck/{repo} says it.
+   */
+  promoted: z
+    .object({
+      fact: z.string(),
+      state: z.enum(["written", "verified", "rejected"]),
+      file: z.string(),
+      line: z.number().int(),
+      message: z.string().optional(),
+    })
+    .optional(),
+});
+export type CrossCheckItemT = z.infer<typeof CrossCheckItem>;
+export const CrossCheckCounts = z.object({
+  agree: z.number().int(),
+  readersOnly: z.number().int(),
+  factsOnly: z.number().int(),
+  disagree: z.number().int(),
+  dismissed: z.number().int(),
+});
+/**
+ * 3.12.0: a repo's cross-check. `state` says whether it is compared: `no-facts` (the readers are
+ * its source), `no-readers` (no readers slot yet), `legacy` (the upgrade's slot, not compared
+ * until a scan), `unusable` (a slot that doesn't read, `problem`).
+ */
+export const RepoCrossCheck = z.object({
+  repo: z.string(),
+  state: z.enum(["compared", "no-facts", "no-readers", "legacy", "unusable"]),
+  readersCommit: z.string().optional(),
+  factsCommit: z.string().optional(),
+  readersSlot: z.string().optional(),
+  factsSlot: z.string().optional(),
+  dismissals: z.string(),
+  counts: CrossCheckCounts,
+  /** Every item but those that agree (GET /api/crosscheck lists none: each repo's own call does). */
+  items: z.array(CrossCheckItem),
+  problem: z.string().optional(),
+  /** The base clone's commit, when it is there: a slot behind it is shown as read at its commit. */
+  head: z.string().optional(),
+});
+export type RepoCrossCheckT = z.infer<typeof RepoCrossCheck>;
+export const CrossCheckView = z.object({
+  repos: z.array(RepoCrossCheck),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type CrossCheckViewT = z.infer<typeof CrossCheckView>;
+/** 3.12.0: dismiss an item at the readers' value it has now, or take the dismissal back. */
+export const CrossCheckDismissRequest = z.strictObject({
+  key: z.string().trim().min(1).max(500),
+  undo: z.literal(true).optional(),
+  /** The item's `readersSha256` as the page showed it: required to dismiss (not to list again). */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+/**
+ * 3.12.0 (ADR 0195 point 3): GET /api/crosscheck/{repo}/promote?key=, what promoting a
+ * readers-only item to assert writes: the `by: person` fact (its JSON `line`, appended to
+ * `factsFile`), the line it cites with that line's text, and `sha256` of the fact line, which the
+ * confirm sends back; or why it can't be (`why`). `fromSnapshot`: the facts file isn't there, so
+ * it is started from the snapshot verify last kept. `already`: the same fact is in the file.
+ */
+export const CrossCheckPromoteView = z.object({
+  repo: z.string(),
+  key: z.string(),
+  can: z.boolean(),
+  why: z.string().optional(),
+  factsFile: z.string(),
+  fact: z.string().optional(),
+  factKind: z.string().optional(),
+  line: z.string().optional(),
+  sha256: z.string().optional(),
+  cite: z
+    .object({
+      file: z.string(),
+      line: z.number().int(),
+      value: z.string(),
+      text: z.string().optional(),
+      commit: z.string(),
+    })
+    .optional(),
+  fromSnapshot: z.boolean().optional(),
+  already: z.boolean().optional(),
+});
+export type CrossCheckPromoteViewT = z.infer<typeof CrossCheckPromoteView>;
+/** 3.12.0: promote the item to assert, as the preview showed it (`sha256` of its fact line). */
+export const CrossCheckPromoteRequest = z.strictObject({
+  key: z.string().trim().min(1).max(500),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+/**
+ * 3.12.0: a build input other than a slot whose change explains a removal (the owner's decision
+ * of 2026-11-11: it is the person's own action, so it is listed as such): the answers, the
+ * pairings, the org pack, the curated decisions, the traffic, a shared map, inputs/, the
+ * proposals, a federated catalog, or another input (`other`), with its path.
+ */
+export const BuildRemovalInput = z.object({
+  what: z.enum([
+    "answers",
+    "pairings",
+    "org-pack",
+    "curated",
+    "traffic",
+    "shared",
+    "inputs",
+    "proposals",
+    "federated",
+    "other",
+  ]),
+  path: z.string(),
+});
+/** 3.12.0: one removal a build lists (ADR 0195 point 4): its record, repos and what explains it. */
+export const BuildRemoval = z.object({
+  path: z.string(),
+  kind: z.string(),
+  id: z.string(),
+  repos: z.array(z.string()),
+  explainedBy: z.array(z.string()),
+  /** What kind of change explains it: a slot, the manifests, archived, curated, an input, the build. */
+  reasons: z
+    .array(z.enum(["slot", "manifest", "archived", "curated", "input", "build"]))
+    .optional(),
+  /** The inputs other than a slot that changed and explain it (an answer, say), when any did. */
+  inputs: z.array(BuildRemovalInput).optional(),
+});
+export type BuildRemovalT = z.infer<typeof BuildRemoval>;
+export const BuildHandEdit = z.object({
+  path: z.string(),
+  how: z.enum(["changed", "added", "deleted"]),
+});
+/**
+ * 3.12.0: a refused build: every reason, the whole refusal in words, and the lists with the
+ * counts that confirm them (`allowRemovals`, `discardEdits`); `command` goes on in a terminal.
+ */
+export const BuildRefusalView = z.object({
+  reasons: z.array(
+    z.enum([
+      "nothing-read",
+      "empty",
+      "unexplained-removals",
+      "large-removals",
+      "hand-edits",
+      "not-upgraded",
+    ]),
+  ),
+  message: z.string(),
+  removals: z.array(BuildRemoval).optional(),
+  unexplained: z.array(BuildRemoval).optional(),
+  allowRemovals: z.number().int().optional(),
+  edits: z.array(BuildHandEdit).optional(),
+  discardEdits: z.number().int().optional(),
+  /** A scan that read nothing: each repo it couldn't read in full, and why. */
+  unread: z.array(z.object({ repo: z.string(), why: z.string() })).optional(),
+  /** What goes on in a terminal (the build, the hand edits' curate, or the upgrade). */
+  command: z.string(),
+});
+export type BuildRefusalViewT = z.infer<typeof BuildRefusalView>;
+/** 3.12.0: a record file a build added or changed, as its report lists it. */
+export const BuildReportFile = z.object({ path: z.string(), kind: z.string(), id: z.string() });
+/**
+ * 3.12.0: what the latest build on this machine did or refused, whichever command built (a scan,
+ * `verify --write`, a rename, `catalog build`, in the app or a terminal): the build's own report
+ * (`.index/build-report.json`). `outcome` `written`, `unchanged`, `refused` (nothing written;
+ * `refused` says why and lists it, `run` the commands that go on) or `stopped` (the write threw
+ * part way: an undo copy holds what it replaced, and the next build finishes it).
+ */
+export const BuildReportView = z.object({
+  command: z.string(),
+  at: z.string(),
+  generated: z.string(),
+  outcome: z.enum(["written", "unchanged", "refused", "stopped"]),
+  refused: BuildRefusalView.optional(),
+  stopped: z.string().optional(),
+  run: z.array(z.string()),
+  counts: z.object({
+    records: z.number().int(),
+    added: z.number().int(),
+    changed: z.number().int(),
+    removed: z.number().int(),
+    written: z.number().int(),
+    unchanged: z.number().int(),
+  }),
+  added: z.array(BuildReportFile),
+  changed: z.array(BuildReportFile),
+  /** Every removal with why: for a refusal, those it would have made, unexplained ones included. */
+  removed: z.array(BuildRemoval),
+  slots: z.array(z.string()),
+  /** The undo copy a written build took. */
+  undo: z.number().int().optional(),
+  discarded: z.array(BuildHandEdit).optional(),
+});
+export type BuildReportViewT = z.infer<typeof BuildReportView>;
+/** 3.12.0: each repo's source in the build (point 5). */
+export const BuildSourceView = z.object({
+  repo: z.string(),
+  source: z.enum(["facts", "readers", "legacy", "none"]),
+  commit: z.string().optional(),
+  slot: z.string().optional(),
+  problem: z.string().optional(),
+});
+/**
+ * 3.12.0: GET /api/build. `pending`: what `atticus catalog build` would do now (nothing
+ * when catalog/generated is what the slots build; else the removals it would write, or its
+ * refusal). `last`: the latest build's own report on this machine, whatever command built and
+ * whether it wrote or refused, when there is one. `upgrade`: the upgrade to source slots waits
+ * (a catalog from before beta.27): GET /api/build/upgrade shows what it writes.
+ */
+export const CatalogBuildView = z.object({
+  sources: z.array(BuildSourceView),
+  pending: z.object({
+    upToDate: z.boolean(),
+    removals: z.array(BuildRemoval),
+    refused: BuildRefusalView.optional(),
+    /**
+     * A hash of what the lists say (each removal's path, reasons and words; each hand edit's path
+     * and how), which a confirm of them sends back (POST /api/build, POST
+     * /api/build/edits/curate): a list that changed meanwhile is a 409 and nothing runs.
+     */
+    plan: z.string(),
+  }),
+  last: BuildReportView.optional(),
+  upgrade: z.literal(true).optional(),
+  orphaned: z.array(
+    z.object({
+      repo: z.string(),
+      why: z.enum(["not-listed", "archived"]),
+      files: z.array(z.string()),
+    }),
+  ),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type CatalogBuildViewT = z.infer<typeof CatalogBuildView>;
+/** 3.12.0: confirm a refused build with the counts it listed (point 4). */
+export const CatalogBuildRequest = z.strictObject({
+  allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
+  discardEdits: z.number().int().min(0).max(1_000_000).optional(),
+  /** GET /api/build's `pending.plan`: required with a count (the list it confirms). */
+  plan: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+/**
+ * 3.12.0: make the hand edits listed curated decisions; `count` is how many were listed and
+ * `plan` GET /api/build's `pending.plan` for them.
+ */
+export const CatalogEditsRequest = z.strictObject({
+  count: z.number().int().min(1).max(1_000_000),
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
+});
+/** 3.12.0: a build kept on this machine to undo (point 7), numbered as `atticus catalog undo` does. */
+export const UndoCopyView = z.object({
+  /** 1 is the latest build, up to 5. */
+  n: z.number().int(),
+  command: z.string(),
+  at: z.string(),
+  commit: z.string().nullable(),
+  files: z.number().int(),
+});
+/**
+ * 3.12.0: GET /api/build/undo: the builds kept, newest first, and what taking back the `n`
+ * latest puts back (the builds it takes back, and each file restored or removed).
+ */
+export const CatalogUndoView = z.object({
+  copies: z.array(UndoCopyView),
+  plan: z
+    .object({
+      n: z.number().int(),
+      takesBack: z.array(z.object({ n: z.number().int(), command: z.string() })),
+      files: z.array(z.object({ path: z.string(), to: z.enum(["file", "absent"]) })),
+      /** A hash of the undo copies it takes back (their folder numbers) and each file, sent back by the confirm. */
+      hash: z.string(),
+    })
+    .optional(),
+  /** Why there is nothing to undo, in words. */
+  problem: z.string().optional(),
+});
+export type CatalogUndoViewT = z.infer<typeof CatalogUndoView>;
+/** 3.12.0: take back the `n` latest builds; `files` is how many files the page listed. */
+export const CatalogUndoRequest = z.strictObject({
+  n: z.number().int().min(1).max(5),
+  files: z.number().int().min(0),
+  /** GET /api/build/undo's `plan.hash` for that `n`. */
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
+});
+/** 3.12.0: GET /api/build/prune: the slot files no build reads, each with why. */
+export const CatalogPruneView = z.object({
+  files: z.array(z.object({ path: z.string(), why: z.string() })),
+  /** A hash of the files listed and why, sent back by the confirm. */
+  plan: z.string(),
+});
+export type CatalogPruneViewT = z.infer<typeof CatalogPruneView>;
+/** 3.12.0: remove exactly the files listed; `count` is how many the page listed. */
+export const CatalogPruneRequest = z.strictObject({
+  count: z.number().int().min(1),
+  /** GET /api/build/prune's `plan`. */
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
+});
+/**
+ * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
+ * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
+ * writes with its size and hash, the copy of catalog/generated kept in
+ * generated-before-upgrade/, and what the first build would change (nothing; else each file,
+ * accepted with their count). `plan` is a hash of the files listed and the changes, which the
+ * confirm sends back.
+ */
+export const CatalogUpgradeView = z.object({
+  pending: z.boolean(),
+  records: z.number().int(),
+  write: z.array(
+    z.object({ path: z.string(), records: z.number().int(), repo: z.string().optional() }),
+  ),
+  writes: z.array(
+    z.object({
+      path: z.string(),
+      what: z.enum(["readers-slot", "legacy-joins", "copy", "build-manifest"]),
+      bytes: z.number().int(),
+      sha256: z.string(),
+    }),
+  ),
+  copy: z.object({ dir: z.string(), files: z.number().int() }),
+  firstBuildChanges: z.array(z.string()),
+  /** The record files the first build gives differently, each with how (relative to catalog/generated). */
+  changes: z.array(z.object({ path: z.string(), how: z.enum(["added", "changed", "removed"]) })),
+  /**
+   * The count of `changes` the confirm accepts (`atticus upgrade --yes --accept-changes <n>`);
+   * 0 when the first build changes nothing and plain `--yes` applies it.
+   */
+  acceptChanges: z.number().int(),
+  applies: z.boolean(),
+  run: z.string(),
+  verifiable: z.array(z.string()),
+  plan: z.string(),
+  /**
+   * The upgrade's other steps that wait (GET /api/upgrade's `pending`). They may change an input
+   * the slots record, so this step is confirmed only once they have run (Run the upgrade, on Home or on Catalog builds):
+   * the confirm is refused (409) while any waits.
+   */
+  others: z.array(z.object({ id: z.string(), summary: z.string() })),
+});
+export type CatalogUpgradeViewT = z.infer<typeof CatalogUpgradeView>;
+/**
+ * 3.12.0: apply the upgrade listed: `count` files (typed by the person) and the listing's `plan`;
+ * when the first build changes the catalog, `acceptChanges` is the count of `changes` the person
+ * accepted (typed), as `atticus upgrade --yes --accept-changes <n>` names it.
+ */
+export const CatalogUpgradeRequest = z.strictObject({
+  count: z.number().int().min(1),
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
+  acceptChanges: z.number().int().min(1).optional(),
+});
 
 /**
  * 2.34.0 (ADR 0141, plan item P5): which repos' clones have moved past their facts' commit, and
@@ -3218,6 +3633,13 @@ export const ScanRequest = z.strictObject({
    * file); `askAll` asks for every repo, as the command line's `atticus scan` does.
    */
   askAll: z.boolean().optional(),
+  /**
+   * 3.12.0 (ADR 0195 point 4): confirms the large removals a refused build listed, with their
+   * count (`--allow-removals`); any other count refuses again.
+   */
+  allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
+  /** 3.12.0: discards the hand edits a refused build listed, with their count (`--discard-edits`). */
+  discardEdits: z.number().int().min(0).max(1_000_000).optional(),
 });
 
 /** ADR 0123: each repo's branches, as the Repos screen shows them. */
@@ -6708,6 +7130,176 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "CanaryView", description: "OK" },
     },
   },
+  "/api/crosscheck": {
+    get: {
+      id: "getCrossCheck",
+      summary:
+        "3.12.0 (ADR 0195 point 3): each repo's readers' cross-check counts: what the built-in readers found that its facts don't have, where they disagree, and what only the facts have; or why it isn't compared (no facts, no readers slot yet, a legacy slot). Reads files only",
+      tag: "workspace",
+      ok: { status: 200, schema: "CrossCheckView", description: "OK" },
+    },
+  },
+  "/api/crosscheck/{repo}": {
+    get: {
+      id: "getRepoCrossCheck",
+      summary:
+        "3.12.0: one repo's cross-check with its items, each with the readers' and the facts' value and their citations, and whether it is dismissed. Reads files only",
+      tag: "workspace",
+      params: [p("repo")],
+      ok: { status: 200, schema: "RepoCrossCheck", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/crosscheck/{repo}/dismiss": {
+    post: {
+      id: "dismissCrossCheckItem",
+      summary:
+        "3.12.0: dismiss a cross-check item at the readers' value it has now (listed again when that value changes), or take the dismissal back (undo): atticus catalog crosscheck <repo> --dismiss|--undismiss <key> as a local job, writing facts/<repo>.crosscheck.yaml. Changes no catalog record",
+      tag: "workspace",
+      params: [p("repo")],
+      body: CrossCheckDismissRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the command printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/crosscheck/{repo}/promote": {
+    get: {
+      id: "getCrossCheckPromote",
+      summary:
+        "3.12.0 (ADR 0195 point 3): what promoting a readers-only item to assert would write: the by: person fact with the reader's citation, the cited line's text, the facts file it goes into and the hash the confirm sends back; or why it can't be promoted. Writes nothing",
+      tag: "workspace",
+      params: [
+        p("repo"),
+        q("key", { type: "string" }, "The item's key, as the cross-check names it"),
+      ],
+      ok: { status: 200, schema: "CrossCheckPromoteView", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "promoteCrossCheckItem",
+      summary:
+        "3.12.0: atticus catalog crosscheck <repo> --promote <key>, then atticus verify <repo>, as one local job: the by: person fact is added to facts/<repo>.jsonl (an edit to propose) and the verifier checks it on its line; GET /api/crosscheck/{repo} then says whether it verified. 409 when the fact is no longer the one previewed. Changes no catalog record (verify --write does, on Apply)",
+      tag: "workspace",
+      params: [p("repo")],
+      body: CrossCheckPromoteRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the commands printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/build": {
+    get: {
+      id: "getCatalogBuild",
+      summary:
+        "3.12.0 (ADR 0195 points 4 and 7): each repo's source, what atticus catalog build would do now (nothing, the removals it writes, or its refusal with the removals and hand edits it lists and the counts that confirm them), and what the last build here changed. Builds in memory; writes nothing",
+      tag: "scans",
+      ok: { status: 200, schema: "CatalogBuildView", description: "OK" },
+    },
+    post: {
+      id: "runCatalogBuild",
+      summary:
+        "3.12.0: atticus catalog build as a local job, confirming exactly the removals and hand edits listed with their counts (--allow-removals, --discard-edits); any other count refuses again and writes nothing",
+      tag: "scans",
+      body: CatalogBuildRequest,
+      bodyOptional: true,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the build printed",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/build/edits/curate": {
+    post: {
+      id: "curateHandEdits",
+      summary:
+        "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
+      tag: "scans",
+      body: CatalogEditsRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the command printed",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/build/undo": {
+    get: {
+      id: "getCatalogUndo",
+      summary:
+        "3.12.0 (ADR 0195 point 7): the builds kept to undo on this machine (the last five), newest first and numbered 1 (the latest) to 5, and the files taking back the n latest would put back (1 when left out). Writes nothing",
+      tag: "scans",
+      params: [q("n", { type: "integer" }, "How many of the latest builds to take back")],
+      ok: { status: 200, schema: "CatalogUndoView", description: "OK" },
+      errors: [400],
+    },
+    post: {
+      id: "runCatalogUndo",
+      summary:
+        "3.12.0: atticus catalog undo <n> --yes as a local job: puts back the files listed, as they were before the n latest builds; its own undo copy is kept, so it can be undone. 409 when the plan is no longer the files listed",
+      tag: "scans",
+      body: CatalogUndoRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the command printed",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/build/upgrade": {
+    get: {
+      id: "getCatalogUpgrade",
+      summary:
+        "3.12.0 (ADR 0195 point 6): the upgrade to source slots as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
+      tag: "scans",
+      ok: { status: 200, schema: "CatalogUpgradeView", description: "OK" },
+    },
+    post: {
+      id: "runCatalogUpgrade",
+      summary:
+        "3.12.0: atticus upgrade --yes as a local job, confirming the files listed (their count, typed by the person, and the listing's plan hash). 409 when the upgrade no longer waits, would refuse, or its files are no longer the ones listed",
+      tag: "scans",
+      body: CatalogUpgradeRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the upgrade printed",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/build/prune": {
+    get: {
+      id: "getCatalogPrune",
+      summary:
+        "3.12.0 (ADR 0195 point 4): the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog), each with why. Writes nothing",
+      tag: "scans",
+      ok: { status: 200, schema: "CatalogPruneView", description: "OK" },
+    },
+    post: {
+      id: "runCatalogPrune",
+      summary:
+        "3.12.0: atticus catalog prune --yes as a local job, removing exactly the files listed (an undo copy keeps them). 409 when the list is no longer the count listed",
+      tag: "scans",
+      body: CatalogPruneRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines the command printed",
+      },
+      errors: [400, 409],
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -8897,6 +9489,13 @@ export function openApiDocument(): Record<string, unknown> {
     MarkedNeed,
     TrustView,
     AnswerBoxResult,
+    CrossCheckView,
+    RepoCrossCheck,
+    CatalogBuildView,
+    CatalogUndoView,
+    CatalogPruneView,
+    CatalogUpgradeView,
+    CrossCheckPromoteView,
     FreshView,
     CanaryView,
     ChangeKnowledgeView,

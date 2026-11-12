@@ -1,0 +1,42 @@
+schemaVersion: 5
+kind: Interface
+id: if-f1cd1f189eaa4b7b
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: topic.transfers-completed
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 9
+    path: src/main/java/forge/ledger/LedgerEvents.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: topics@1.0.0
+    line: 1
+    path: topics/transfers.completed.yaml
+    repo: forge-events
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: event-config
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 17
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+from: ledger-api
+normalizedPath: transfers.completed
+pattern:
+  code: A.EB.PUB
+  source: inferred
+sync: async
+to: reports-job
+via: event-bus

@@ -1,0 +1,21 @@
+schemaVersion: 5
+kind: IndexConstraint
+id: ledger-db.entry.fk-account
+status: current
+confidence: verified
+columns:
+  - account_id
+constraintKind: foreign-key
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 3
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+references:
+  columns:
+    - id
+  table: ledger-db.account
+table: ledger-db.entry

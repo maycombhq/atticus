@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { denyHash, intakeTraffic } from "../src/link-evidence-files.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { snapshotFactsFiles, verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * ADR 0151 from the command line: `atticus intake traffic` keeps an invented gateway export as
@@ -29,6 +30,7 @@ function metarepo() {
   const root = mkdtempSync(join(tmpdir(), "atticus-link-evidence-"));
   cpSync(join(GW, "org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(GW, "facts"), join(root, "facts"), { recursive: true });
+  snapshotFactsFiles(root, [REPO]);
   cpSync(join(GW, "repos", REPO), join(root, "workspace", REPO), { recursive: true });
   cpSync(join(LE, REPO), join(root, "workspace", REPO), { recursive: true });
   return root;

@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { deserializeRecord } from "@maycombhq/core";
+import { serializeReadersSlot, SLOT_VERSION } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 
 /**
@@ -122,11 +124,27 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
     const kind = kinds.find((k) => !k.endsWith(".yaml"))!;
     const file = (await ls(join(dir, "generated", kind)))[0]!;
     const text = await readFile(join(dir, "generated", kind, file), "utf8");
-    await writeFile(
-      join(dir, "generated", kind, `ledger-${file}`),
+    // ADR 0195 (CS2): what that earlier scan read is forge-ledger's readers slot of the branch
+    // (the branch's own sources/), from which every build of the branch makes its records.
+    const p = deserializeRecord(
       text
         .replace(/^id: .*$/m, `id: ledger-${file.replace(/\.yaml$/, "")}`)
         .replace(/repo: forge-notes/g, "repo: forge-ledger"),
+    );
+    if (!p.ok) throw new Error("not a record");
+    await mkdir(join(dir, "sources", "readers"), { recursive: true });
+    await writeFile(
+      join(dir, "sources", "readers", "forge-ledger.json"),
+      serializeReadersSlot({
+        slotVersion: SLOT_VERSION,
+        kind: "readers",
+        repo: "forge-ledger",
+        commit: "a".repeat(40),
+        status: "read",
+        extractors: [],
+        settings: "0".repeat(64),
+        records: [p.record],
+      }),
     );
     const meta = parse(await readFile(join(dir, "branch.yaml"), "utf8")) as {
       repos: { id: string; commit: string }[];
@@ -149,10 +167,36 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
       repos: { id: string }[];
     };
     expect(after.repos.map((x) => x.id)).toEqual(["forge-ledger", "forge-notes"]);
-    // forge-ledger leaves the manifest: the next scan drops its records and its commit.
+    // forge-ledger leaves the manifest: the next scan drops its records and its commit, once
+    // the removals are confirmed with their count (ADR 0195 point 4: a removed repo's records
+    // leave only through the confirmed removal guard).
     await writeFile(manifest, listed);
+    const refused = await run([
+      "scan",
+      "--ref",
+      "develop",
+      "--repos",
+      "forge-notes",
+      "--root",
+      root,
+    ]);
+    const n = /--allow-removals (\d+)/.exec(refused.err)?.[1];
+    expect(n, refused.err).toBeDefined();
+    expect(existsSync(join(dir, "generated", kind, `ledger-${file}`))).toBe(true);
     expect(
-      (await run(["scan", "--ref", "develop", "--repos", "forge-notes", "--root", root])).code,
+      (
+        await run([
+          "scan",
+          "--ref",
+          "develop",
+          "--repos",
+          "forge-notes",
+          "--root",
+          root,
+          "--allow-removals",
+          n!,
+        ])
+      ).code,
     ).toBeLessThan(2);
     expect(existsSync(join(dir, "generated", kind, `ledger-${file}`))).toBe(false);
     const gone = parse(await readFile(join(dir, "branch.yaml"), "utf8")) as {

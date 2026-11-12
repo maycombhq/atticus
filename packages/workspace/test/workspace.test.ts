@@ -178,7 +178,12 @@ describe("base clones", () => {
       const ws = createWorkspace(root);
       const [r] = await ws.sync([repos[0]!]);
       const base = baseClonePath(root, "forge-ledger");
-      expect(await checkoutState(base)).toEqual({ commit: r!.sha, dirty: false });
+      // ADR 0195 (CS1): HEAD's committer date too, the time a slot's evidence carries.
+      expect(await checkoutState(base)).toEqual({
+        commit: r!.sha,
+        committedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+        dirty: false,
+      });
       await writeFile(join(base, "new.txt"), "x\n");
       expect((await checkoutState(base)).dirty).toBe(true);
     },

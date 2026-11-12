@@ -46,9 +46,13 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   // Beta.27 review: a safety stop is its own outcome, never a failed run.
   await expect(scan).toContainText("refused: nothing written", { timeout: 60_000 });
   await expect(scan).not.toContainText(/failed/);
-  // Beta.26 safety stop: no repo is cloned on this metarepo, so the scan wrote nothing, and its
-  // lines and the page say which repos and what to do; the catalog is as it was.
-  await expect(log).toContainText("Nothing written: catalog/generated is as it was");
+  // No repo is cloned on this metarepo, so the scan wrote nothing, and its lines and the page say
+  // which repos and what to do; the catalog is as it was. ADR 0195 point 4: beta.26's stop stays
+  // only as the guard for a scan that read nothing, which writes no slot and runs no build, and
+  // says so ("every slot and catalog/generated", where beta.26 said "catalog/generated").
+  await expect(log).toContainText(
+    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
+  );
   // In the app's words, the command after them.
   await expect(log).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",

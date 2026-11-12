@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: System
+id: audit
+status: current
+confidence: inferred
+accessGroup: everyone
+boundary: internal
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 10
+    path: src/main/java/forge/portal/AuditPublisher.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+name: Audit
+repos: []
+tags: []

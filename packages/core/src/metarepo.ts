@@ -143,6 +143,8 @@ export const FACTS_COMPANIONS = [
   ".specs.yaml",
   // ADR 0157: the prompt for a second pass on the gaps the last verify listed.
   ".gaps.md",
+  // ADR 0195 point 3: a person's dismissals of what the readers found.
+  ".crosscheck.yaml",
 ] as const;
 
 /**

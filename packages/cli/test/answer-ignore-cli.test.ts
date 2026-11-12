@@ -18,7 +18,8 @@ import {
   type Question,
 } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Beta.24 review, end to end: a person answered a join question with words meaning "ignore this",

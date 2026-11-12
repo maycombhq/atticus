@@ -1401,10 +1401,10 @@ export function applyFactJoins(
 }
 
 /** "METHOD /path" of the entry a join reaches, or its gRPC or SOAP name or topic. */
-const entryText = (j: FactJoin) => (j.method ? `${j.method} ${j.path}` : j.path);
+export const entryText = (j: FactJoin) => (j.method ? `${j.method} ${j.path}` : j.path);
 
 /** The part of an estate join about one repo: its calls, and the other repos' calls into it. */
-function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
+export function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
   // A join through a gateway of this repo too (A-callers): its routes are this repo's records,
   // so writing the gateway after the caller doesn't drop the GatewayRoute the call goes through.
   const joins = all.joins.filter(

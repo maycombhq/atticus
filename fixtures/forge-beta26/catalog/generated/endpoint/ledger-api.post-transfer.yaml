@@ -1,0 +1,30 @@
+schemaVersion: 5
+kind: Endpoint
+id: ledger-api.post-transfer
+status: current
+confidence: verified
+auth: oauth2
+component: ledger-api
+endpointType: rest
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 11
+    path: src/main/java/forge/ledger/LedgerEndpoints.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: openapi@1.0.1
+    line: 14
+    path: api/ledger-openapi.yaml
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: spec
+method: POST
+normalizedPath: /transfers
+pathOrTopic: /transfers
+schemaRefs: []

@@ -1,0 +1,40 @@
+{
+  "invariant": "locality",
+  "note": "locality: no repo's observation changed, yet scan changed System/payments (forge-payments-core)",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "rename",
+      "slot": 0,
+      "fail": false
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}

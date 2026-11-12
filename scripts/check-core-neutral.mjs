@@ -340,6 +340,8 @@ export const ALLOW = [
   { file: "packages/core/src/setup-edit.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/core/src/json-schema.ts", names: ["github"], reason: OWN_HOST },
   { file: "packages/core/src/schema/executors.ts", names: ["github"], reason: OWN_HOST },
+  // ADR 0195: the source slots' JSON Schema ids.
+  { file: "packages/scanner/src/slots.ts", names: ["github"], reason: OWN_HOST },
   // --- the service-desk artifact, named after one product (debt, see SNOW_ARTIFACT)
   { file: "packages/changes/src/lifecycle.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/changes/src/policy.ts", names: ["snow"], reason: SNOW_ARTIFACT },

@@ -4,8 +4,8 @@
 #
 # Rows omit schemaVersion and status: current; the test adds them. entryPoints start with
 # the outermost entry point (the one no other entry point's flow reaches), then the rest in
-# id order; records are sorted by id; evidence is the entry points' evidence, compared as a
-# set of (repo, path, line, side).
+# id order; records are sorted by id; evidence is the entry points' evidence, then the first evidence of each
+# other repo its records come from (ADR 0195, CS2), compared as a set of (repo, path, line, side).
 #
 # Why each feature is what it is:
 # - Account balance: the UI calls the BFF's balance endpoint, the BFF calls the ledger's
@@ -41,6 +41,8 @@
     - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/BalanceController.java, line: 12, side: callee }
     - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 8, side: callee }
     - { source: spec, repo: forge-ledger, path: api/ledger-openapi.yaml, line: 6, side: definition }
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/proxies/default.xml, line: 9, side: gateway }
+    - { source: code, repo: forge-portal-ui, path: src/api/balance.ts, line: 3, side: caller }
 
 - kind: Capability
   id: feature.daily-entries-report
@@ -51,6 +53,7 @@
   records: [ledger-db.entry, reports-job]
   evidence:
     - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java }
+    - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 1 }
 
 - kind: Capability
   id: feature.payments
@@ -71,6 +74,7 @@
     - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/PaymentEvents.java, line: 11, side: caller }
     - { source: event-config, repo: forge-events, path: topics/payments.initiated.yaml, line: 1, side: definition }
     - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 6, side: callee }
+    - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java, line: 14, side: caller }
 
 - kind: Capability
   id: feature.transfers
@@ -93,3 +97,5 @@
     - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 9, side: caller }
     - { source: event-config, repo: forge-events, path: topics/transfers.completed.yaml, line: 1, side: definition }
     - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java, line: 17, side: callee }
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/proxies/default.xml, line: 9, side: gateway }
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/LedgerClient.java, line: 11, side: caller }

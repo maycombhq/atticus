@@ -1,3 +1,4 @@
+import { adoptSeeded } from "./seed-slots.js";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,6 +48,8 @@ async function forgeRoot(o: { changeOrgPack?: boolean } = {}): Promise<string> {
     await writeFile(f, serializeRecord(p.record));
   }
   await cp(join(FORGE, "inputs"), join(root, "inputs"), { recursive: true });
+  // ADR 0195 (CS2): the seeded catalog adopted into slots and built.
+  await adoptSeeded(root);
   return root;
 }
 

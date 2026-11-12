@@ -8,12 +8,12 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Extractor } from "@maycombhq/sdk";
 
 /**
- * Beta.26 safety stop (atticus scan, Set up › Scans): a scan replaces the whole of
- * catalog/generated, so it writes only when it has read every production repo in full. A repo
- * not cloned, a clone that can't be read, a failed reader run or a repo --repos left out writes
- * nothing, names each repo and why, and exits 1; so does a scan that found no records where the
- * catalog has some. A scan that read everything writes exactly what it did before. Invented
- * Forge estate (CLAUDE.md rule 3).
+ * ADR 0195 (CS2) lifts beta.26's all-or-nothing stop: a scan writes the readers slot of each
+ * repo it read in full and builds the catalog from every slot; a repo not cloned, a clone that
+ * can't be read, a failed reader run or a repo --repos left out keeps its last good read, and the
+ * scan says which and why (exit 1 for the problem). A scan that read no repo in full still writes
+ * nothing (the stop, kept as a guard), and a build with no record from code over a catalog with
+ * some is refused. Invented Forge estate (CLAUDE.md rule 3).
  */
 
 // A reader that fails on one repo, for the failed-run case: the scanner's own extractors option,
@@ -39,7 +39,8 @@ vi.mock("@maycombhq/scanner", async (orig) => {
 
 const { main } = await import("../src/main.js");
 const { scanRefusal } = await import("../src/scan-commands.js");
-const { diffCatalogs, readCatalog, scanEstate } = await import("@maycombhq/scanner");
+const { diffCatalogs, readCatalog, scanEstate, readersSlotPath } =
+  await import("@maycombhq/scanner");
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 const T = 180_000;
@@ -105,148 +106,145 @@ function files(dir: string): Record<string, string> {
 }
 
 const generated = (root: string) => join(root, "catalog", "generated");
+const sources = (root: string) => join(root, "catalog", "sources");
 
-interface Refused {
-  repos: { repo: string; why: string; message: string; runs?: { extractor: string }[] }[];
-  empty?: { before: number };
-  message: string;
+/** The record files whose evidence names only this repo: what its last good read keeps. */
+const own = (root: string, repo: string) =>
+  Object.fromEntries(
+    Object.entries(files(generated(root))).filter(
+      ([, t]) =>
+        t.includes(`repo: ${repo}\n`) &&
+        !/repo: (?!REPO)\S+\n/.test(t.replaceAll(`repo: ${repo}\n`, "repo: REPO\n")),
+    ),
+  );
+
+interface Source {
+  repo: string;
+  source: string;
+  slot: string;
+  reason?: string;
+  detail?: string;
 }
 
-describe("atticus scan writes nothing unless every production repo was read in full (beta.26)", () => {
+describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)", () => {
   it(
-    "a repo not cloned: nothing written, the repo named with how to clone it, exit 1",
+    "a repo not cloned keeps its readers slot and its records; the others are read and written; said, exit 1",
     async () => {
       const root = await scannedForge();
-      const before = files(generated(root));
-      expect(Object.keys(before).length).toBeGreaterThan(20);
+      const slot = readFileSync(readersSlotPath(root, "forge-ledger"), "utf8");
+      const ledger = own(root, "forge-ledger");
+      expect(Object.keys(ledger).length).toBeGreaterThan(3);
       await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
       const c = capture();
-      expect(await main(["scan", "--root", root, "--no-drift"], c.io)).toBe(1);
-      expect(files(generated(root))).toEqual(before);
-      const said = c.err.join("\n");
-      expect(said).toMatch(/Nothing written: catalog\/generated is as it was/);
-      expect(said).toMatch(/forge-ledger: not cloned here; clone it with atticus workspace sync/);
-      expect(c.out.join("\n")).not.toMatch(/^- /m);
+      expect(await main(["scan", "--root", root, "--no-drift", "--json"], c.io)).toBe(1);
+      const report = JSON.parse(c.out.join("\n")) as { written: boolean; sources: Source[] };
+      expect(report.written).toBe(true);
+      expect(report.sources.find((s) => s.repo === "forge-ledger")).toMatchObject({
+        source: "readers",
+        slot: "kept-last-good",
+        reason: "not-cloned",
+      });
+      expect(readFileSync(readersSlotPath(root, "forge-ledger"), "utf8")).toBe(slot);
+      expect(own(root, "forge-ledger")).toEqual(ledger);
+      const t = capture();
+      await rm(join(root, "workspace", "forge-events"), { recursive: true, force: true });
+      expect(await main(["scan", "--root", root, "--no-drift"], t.io)).toBe(1);
+      expect(t.out.join("\n")).toMatch(
+        /forge-ledger: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here/,
+      );
     },
     T,
   );
 
   it(
-    "--json says it under refused, machine-readable, and written is false",
+    "a clone that can't be read, or a failed reader run, keeps the repo's last good read",
     async () => {
       const root = await scannedForge();
-      const before = files(generated(root));
-      await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
+      const events = readFileSync(readersSlotPath(root, "forge-events"), "utf8");
+      const bff = readFileSync(readersSlotPath(root, "forge-portal-bff"), "utf8");
+      await rm(join(root, "workspace", "forge-events", ".git"), { recursive: true });
+      failing.on = "forge-portal-bff";
+      try {
+        const c = capture();
+        expect(await main(["scan", "--root", root, "--no-drift", "--json", "--full"], c.io)).toBe(
+          1,
+        );
+        const report = JSON.parse(c.out.join("\n")) as { sources: Source[]; refused?: unknown };
+        expect(report.refused).toBeUndefined();
+        const of = (r: string) => report.sources.find((s) => s.repo === r);
+        expect(of("forge-events")).toMatchObject({ slot: "kept-last-good", reason: "unreadable" });
+        expect(of("forge-portal-bff")).toMatchObject({
+          slot: "kept-last-good",
+          reason: "run-failed",
+          detail: "northwind-reader",
+        });
+      } finally {
+        failing.on = undefined;
+      }
+      expect(readFileSync(readersSlotPath(root, "forge-events"), "utf8")).toBe(events);
+      expect(readFileSync(readersSlotPath(root, "forge-portal-bff"), "utf8")).toBe(bff);
+    },
+    T,
+  );
+
+  it(
+    "--repos reads those repos; every other repo keeps its last good read",
+    async () => {
+      const root = await scannedForge();
+      const before = files(sources(root));
+      const others = own(root, "forge-portal-ui");
+      const c = capture();
+      expect(
+        await main(
+          ["scan", "--root", root, "--no-drift", "--json", "--repos", "forge-ledger"],
+          c.io,
+        ),
+      ).toBe(0);
+      const report = JSON.parse(c.out.join("\n")) as { written: boolean; sources: Source[] };
+      expect(report.written).toBe(true);
+      expect(report.sources.find((s) => s.repo === "forge-portal-ui")).toMatchObject({
+        slot: "kept-last-good",
+        reason: "not-asked",
+      });
+      expect(report.sources.find((s) => s.repo === "forge-ledger")?.slot).toBe("unchanged");
+      expect(files(sources(root))).toEqual(before);
+      expect(own(root, "forge-portal-ui")).toEqual(others);
+    },
+    T,
+  );
+
+  it(
+    "a scan that read no repo in full writes nothing: no slot and no build (beta.26's stop, as a guard)",
+    async () => {
+      const root = await scannedForge();
+      const before = { g: files(generated(root)), s: files(sources(root)) };
+      for (const id of await readdir(join(root, "workspace")))
+        await rm(join(root, "workspace", id), { recursive: true });
       const c = capture();
       expect(await main(["scan", "--root", root, "--no-drift", "--json"], c.io)).toBe(1);
       const report = JSON.parse(c.out.join("\n")) as {
         written: boolean;
-        files: unknown;
-        refused: Refused;
-        diff: { removed: unknown[] };
+        refused: { reasons: string[]; repos: { repo: string; why: string }[]; message: string };
       };
       expect(report.written).toBe(false);
-      expect(report.files).toBeNull();
-      expect(report.refused.repos).toEqual([
-        {
-          repo: "forge-ledger",
-          why: "not-cloned",
-          message: "not cloned here; clone it with atticus workspace sync",
-        },
-      ]);
-      expect(report.refused.message).toMatch(/Nothing written/);
-      // Nothing changed, so the report shows no change.
-      expect(report.diff.removed).toEqual([]);
-      expect(files(generated(root))).toEqual(before);
+      expect(report.refused.reasons).toEqual(["nothing-read"]);
+      expect(report.refused.repos.every((r) => r.why === "not-cloned")).toBe(true);
+      expect(report.refused.message).toMatch(/read no repo in full/);
+      expect({ g: files(generated(root)), s: files(sources(root)) }).toEqual(before);
+      // CS3: the refusal is the latest build's report, for the app to show.
+      const { readBuildReport } = await import("@maycombhq/scanner");
+      expect(await readBuildReport(root)).toMatchObject({
+        outcome: "refused",
+        command: "atticus scan",
+        refused: { reasons: ["nothing-read"] },
+        counts: { added: 0, changed: 0, removed: 0 },
+      });
     },
     T,
   );
 
   it(
-    "a clone that can't be read: nothing written, said with what reading it said",
-    async () => {
-      const root = await scannedForge();
-      const before = files(generated(root));
-      await rm(join(root, "workspace", "forge-events", ".git"), { recursive: true });
-      const c = capture();
-      expect(await main(["scan", "--root", root, "--no-drift", "--json"], c.io)).toBe(1);
-      const report = JSON.parse(c.out.join("\n")) as { refused: Refused };
-      expect(report.refused.repos.map((r) => [r.repo, r.why])).toEqual([
-        ["forge-events", "unreadable"],
-      ]);
-      expect(report.refused.repos[0]!.message).toMatch(
-        /^its clone can't be read \(.+\); clone it again with atticus workspace sync$/,
-      );
-      expect(files(generated(root))).toEqual(before);
-    },
-    T,
-  );
-
-  it(
-    "a failed reader run: nothing written, the extractor named",
-    async () => {
-      const root = await scannedForge();
-      const before = files(generated(root));
-      failing.on = "forge-portal-bff";
-      try {
-        const c = capture();
-        expect(await main(["scan", "--root", root, "--no-drift", "--full"], c.io)).toBe(1);
-        expect(files(generated(root))).toEqual(before);
-        expect(c.err.join("\n")).toMatch(
-          /forge-portal-bff: the run of northwind-reader failed \(the reader stopped on a file it can't parse\)/,
-        );
-        const j = capture();
-        expect(await main(["scan", "--root", root, "--no-drift", "--json"], j.io)).toBe(1);
-        const report = JSON.parse(j.out.join("\n")) as { refused: Refused };
-        expect(report.refused.repos).toMatchObject([
-          {
-            repo: "forge-portal-bff",
-            why: "run-failed",
-            runs: [{ extractor: "northwind-reader" }],
-          },
-        ]);
-      } finally {
-        failing.on = undefined;
-      }
-      expect(files(generated(root))).toEqual(before);
-    },
-    T,
-  );
-
-  it(
-    "--repos never writes the shared catalog: it says a scan of some repos would replace it",
-    async () => {
-      const root = await scannedForge();
-      const before = files(generated(root));
-      const c = capture();
-      expect(
-        await main(["scan", "--root", root, "--no-drift", "--repos", "forge-ledger"], c.io),
-      ).toBe(1);
-      expect(files(generated(root))).toEqual(before);
-      const said = c.err.join("\n");
-      expect(said).toMatch(/left out by --repos/);
-      expect(said).toMatch(/forge-portal-ui/);
-      expect(said).toMatch(
-        /a scan of only some repos would replace the catalog with them alone, so it isn't written/,
-      );
-      expect(said).toMatch(/atticus verify <repo> --write/);
-      const j = capture();
-      expect(
-        await main(
-          ["scan", "--root", root, "--no-drift", "--json", "--repos", "forge-ledger,forge-events"],
-          j.io,
-        ),
-      ).toBe(1);
-      const report = JSON.parse(j.out.join("\n")) as { refused: Refused };
-      expect(report.refused.repos.every((r) => r.why === "not-asked")).toBe(true);
-      expect(report.refused.repos.map((r) => r.repo)).not.toContain("forge-ledger");
-      expect(report.refused.repos.length).toBe(5);
-    },
-    T,
-  );
-
-  it(
-    "an archived repo or a prototype never holds a scan back",
+    "archiving a repo removes its records only once the removals are confirmed with their count",
     async () => {
       const root = await scannedForge();
       const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
@@ -255,16 +253,37 @@ describe("atticus scan writes nothing unless every production repo was read in f
         manifest,
         text.replace("  - id: forge-ledger\n", "  - id: forge-ledger\n    archived: true\n"),
       );
-      await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
+      const before = files(generated(root));
       const c = capture();
-      expect(await main(["scan", "--root", root, "--no-drift"], c.io), c.err.join("\n")).toBe(0);
-      expect(c.out.join("\n")).toMatch(/catalog\/generated: \d+ written/);
+      expect(await main(["scan", "--root", root, "--no-drift", "--json"], c.io)).toBe(1);
+      const report = JSON.parse(c.out.join("\n")) as {
+        refused: { reasons: string[]; allowRemovals: number };
+      };
+      expect(report.refused.reasons).toEqual(["large-removals"]);
+      expect(files(generated(root))).toEqual(before);
+      const n = report.refused.allowRemovals;
+      const wrong = capture();
+      expect(
+        await main(
+          ["scan", "--root", root, "--no-drift", "--allow-removals", String(n + 1)],
+          wrong.io,
+        ),
+      ).toBe(1);
+      expect(files(generated(root))).toEqual(before);
+      const ok = capture();
+      expect(
+        await main(["scan", "--root", root, "--no-drift", "--allow-removals", String(n)], ok.io),
+        ok.err.join("\n"),
+      ).toBe(0);
+      expect(ok.out.join("\n")).toMatch(new RegExp(`Removed ${n} records`));
+      expect(Object.keys(own(root, "forge-ledger"))).toEqual([]);
+      expect(existsSync(readersSlotPath(root, "forge-ledger"))).toBe(true);
     },
     T,
   );
 
   it(
-    "everything cloned and read writes exactly what the scan merges, as before",
+    "everything cloned and read writes exactly what the scan merges, and a rescan writes nothing new",
     async () => {
       const root = await scannedForge();
       const written = await readCatalog(generated(root));
@@ -272,33 +291,23 @@ describe("atticus scan writes nothing unless every production repo was read in f
       const scan = await scanEstate({ root, cache: null });
       expect(scan.unread).toEqual([]);
       expect(scan.problems).toEqual([]);
-      // Field for field (evidence differs only by when each scan ran).
       const d = diffCatalogs(written.records, scan.records);
-      expect({ ...d, evidenceOnly: [] }).toEqual({
-        added: [],
-        removed: [],
-        changed: [],
-        evidenceOnly: [],
-      });
-      expect(written.records.length).toBe(scan.records.length);
-      // A rescan of an unchanged estate writes nothing new.
+      expect(d).toEqual({ added: [], removed: [], changed: [], evidenceOnly: [] });
+      const before = { g: files(generated(root)), s: files(sources(root)) };
       const c = capture();
-      expect(await main(["scan", "--root", root, "--no-drift"], c.io)).toBe(0);
+      expect(await main(["scan", "--root", root, "--no-drift", "--full"], c.io)).toBe(0);
       expect(c.out.join("\n")).toMatch(/No catalog changes/);
+      // The same commits read again, without the cache, write the same bytes (no time in a slot).
+      expect({ g: files(generated(root)), s: files(sources(root)) }).toEqual(before);
     },
     T,
   );
 
   it(
-    "a scan that found no records in code where the catalog has some writes nothing",
+    "a build with no record from any repo's code over a catalog that has some is refused, confirmed or not",
     async () => {
       const root = await scannedForge();
       const before = files(generated(root));
-      const fromCode = (await readCatalog(generated(root))).records.filter((r) =>
-        r.evidence.some((e) => !!e.repo),
-      ).length;
-      expect(fromCode).toBeGreaterThan(20);
-      // Every repo archived: nothing is left to read, and only the profile's systems are found.
       const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
       const text = await readFile(manifest, "utf8");
       await writeFile(
@@ -306,30 +315,43 @@ describe("atticus scan writes nothing unless every production repo was read in f
         text.replace(/^ {2}- id: (.+)$/gm, "  - id: $1\n    archived: true"),
       );
       const j = capture();
-      expect(await main(["scan", "--root", root, "--no-drift", "--json"], j.io)).toBe(1);
-      const report = JSON.parse(j.out.join("\n")) as { refused: Refused; written: boolean };
-      expect(report.written).toBe(false);
-      expect(report.refused.repos).toEqual([]);
-      expect(report.refused.empty?.before).toBe(fromCode);
-      expect(report.refused.message).toMatch(/found no records in any repo's code/);
+      expect(await main(["catalog", "build", "--root", root, "--json"], j.io)).toBe(1);
+      const report = JSON.parse(j.out.join("\n")) as {
+        refused: { reasons: string[]; allowRemovals: number };
+      };
+      expect(report.refused.reasons).toContain("empty");
+      const again = capture();
+      expect(
+        await main(
+          [
+            "catalog",
+            "build",
+            "--root",
+            root,
+            "--allow-removals",
+            String(report.refused.allowRemovals),
+          ],
+          again.io,
+        ),
+      ).toBe(1);
+      expect(again.err.join("\n")).toMatch(/no record from any repo's code/);
       expect(files(generated(root))).toEqual(before);
     },
     T,
   );
 
-  it("refuses a scan of zero records over a catalog that has some, and allows one over none", () => {
-    expect(scanRefusal({ unread: [], records: [] }, [])).toBeUndefined();
-    const had = [
-      {
-        kind: "Component",
-        id: "ledger-api",
-        evidence: [{ repo: "forge-ledger", path: "pom.xml" }],
-      },
-    ] as unknown as Parameters<typeof scanRefusal>[1];
-    expect(scanRefusal({ unread: [], records: [] }, had)).toMatchObject({
+  it("scanRefusal refuses only a scan that read no repo in full", () => {
+    const full = { repo: "a", full: true } as never;
+    const none = { repo: "b", full: false, why: "not-cloned" } as never;
+    // A scan with no repo to read reads none in full either (the CS4 invariant "a scan that
+    // observes no repo in full writes nothing" holds with no repo too): it refuses.
+    expect(scanRefusal({ unread: [], observations: [] })).toMatchObject({
+      reasons: ["nothing-read"],
       repos: [],
-      empty: { before: 1 },
     });
-    expect(scanRefusal({ unread: [], records: [...had] }, had)).toBeUndefined();
+    expect(scanRefusal({ unread: [], observations: [full, none] })).toBeUndefined();
+    expect(
+      scanRefusal({ unread: [{ repo: "b", why: "not-cloned" }], observations: [none] }),
+    ).toMatchObject({ reasons: ["nothing-read"], repos: [{ repo: "b", why: "not-cloned" }] });
   });
 });

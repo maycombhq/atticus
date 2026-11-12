@@ -1,0 +1,42 @@
+{
+  "invariant": "equivalence",
+  "note": "equivalence: the catalog differs from a fresh build of the final observations in 1 files: + Component/ledger-api (forge-ledger)",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan-subset",
+      "slots": [1, 0]
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "delete"
+    },
+    {
+      "t": "prune",
+      "yes": false
+    }
+  ]
+}

@@ -58,6 +58,8 @@ export interface DetectOptions {
   decisions?: readonly CatalogRecord[];
   /** AI name proposals for detected features. */
   proposals?: readonly FeatureNameProposal[];
+  /** False: the result's `flows` is left empty (a scan needs the features only). Default true. */
+  keepFlows?: boolean;
 }
 
 export interface DetectProblem {
@@ -95,6 +97,15 @@ export interface Flow {
   hops: Iface[];
 }
 
+/** A flow as `Tracer.traceIx` gives it: what it spans and reaches, by `Tracer.indexOf` number. */
+export interface FlowIx {
+  entry: EntryPoint;
+  records: Int32Array;
+  reached: Int32Array;
+  visits?: Flow["visits"];
+  hops?: Iface[];
+}
+
 export interface DetectResult {
   features: Capability[];
   flows: Map<string, Flow>;
@@ -107,6 +118,11 @@ const modeOf = (method?: string): Mode =>
   !method ? "any" : WRITES.has(method.toUpperCase()) ? "write" : "read";
 
 const union = (a: Set<string>, b: Iterable<string>) => new Set([...a, ...b]);
+/** `union(a, b)`, or `a` itself when `b` adds nothing (the same words, in the same order). */
+const unionNew = (a: Set<string>, b: Set<string>) => {
+  for (const x of b) if (!a.has(x)) return union(a, b);
+  return a;
+};
 const sorted = (s: Iterable<string>) => [...s].sort();
 
 /** Builds entry points and traces flows over one catalog. */
@@ -114,6 +130,15 @@ export class Tracer {
   readonly g: FlowGraph;
   private claimed = new Map<string, Set<string>>();
   private entriesAt = new Map<string, EntryPoint[]>();
+  // Memos (ADR 0195 point 9, the budgets): the graph never changes after the constructor, so a
+  // hop's, a call's, a table's and a component's words are worked out once, not on every trace
+  // that passes them. The sets are never handed out to be changed (a flow's words are a union).
+  private hopMemo = new Map<Iface, Set<string>>();
+  private callMemo = new Map<Iface, Set<string>>();
+  private tableMemo = new Map<TableUse["table"], Set<string>>();
+  private outsMemo = new Map<string, Iface[]>();
+  /** How many starts each component has, for the entry points in play (reset with them). */
+  private startsMemo = new Map<string, number>();
 
   constructor(
     records: readonly CatalogRecord[],
@@ -247,6 +272,7 @@ export class Tracer {
   useEntries(entries: EntryPoint[]): void {
     this.entriesAt.clear();
     this.claimed.clear();
+    this.startsMemo.clear();
     for (const e of entries) {
       const l = this.entriesAt.get(e.component) ?? [];
       l.push(e);
@@ -255,14 +281,130 @@ export class Tracer {
   }
 
   private hopTokens(i: Iface): Set<string> {
-    return tokens(i.sync === "async" ? topicWords(i.normalizedPath) : pathWords(i.normalizedPath));
+    let t = this.hopMemo.get(i);
+    if (!t) {
+      t = tokens(i.sync === "async" ? topicWords(i.normalizedPath) : pathWords(i.normalizedPath));
+      this.hopMemo.set(i, t);
+    }
+    return t;
   }
 
   private callTokens(i: Iface): Set<string> {
-    return union(
-      this.hopTokens(i),
-      this.g.classTokens(i.evidence, this.g.ownWords(i.from), ["caller"]),
-    );
+    let t = this.callMemo.get(i);
+    if (!t) {
+      t = union(
+        this.hopTokens(i),
+        this.g.classTokens(i.evidence, this.g.ownWords(i.from), ["caller"]),
+      );
+      this.callMemo.set(i, t);
+    }
+    return t;
+  }
+
+  private tableTokens(t: TableUse["table"]): Set<string> {
+    let x = this.tableMemo.get(t);
+    if (!x) {
+      x = tokens(splitWords(t.name));
+      this.tableMemo.set(t, x);
+    }
+    return x;
+  }
+
+  /** A component's calls and events out, by id (the graph's `outOf`, kept). */
+  private outsOf(component: string): Iface[] {
+    let o = this.outsMemo.get(component);
+    if (!o) {
+      o = this.g.outOf(component);
+      this.outsMemo.set(component, o);
+    }
+    return o;
+  }
+
+  /**
+   * The calls and events out of each component by word (a trace follows the ones sharing a
+   * word with it: `outs.filter((i) => overlaps(toks, this.callTokens(i)))`).
+   */
+  private outWordsMemo = new Map<string, Map<string, number[]>>();
+
+  /**
+   * Which of `items` share a word with `toks` (`hit[k]` is 1 where `overlaps(toks, wordsOf(x))`),
+   * and how many, through an index of a component's items by word (kept in `memo`), so a trace
+   * looks up its words instead of comparing them with every item. `items` must be the same list
+   * for the same component every time.
+   */
+  private sharingHits<T>(
+    memo: Map<string, Map<string, number[]>>,
+    component: string,
+    items: readonly T[],
+    toks: Set<string>,
+    wordsOf: (x: T) => Set<string>,
+  ): { hit: Uint8Array; n: number } {
+    // One buffer per memo, reused: its hits are read before the next call with the same memo.
+    let hit = this.hitBufs.get(memo);
+    if (!hit || hit.length < items.length) {
+      hit = new Uint8Array(Math.max(items.length, 2 * (hit?.length ?? 32)));
+      this.hitBufs.set(memo, hit);
+    } else hit.fill(0, 0, items.length);
+    let n = 0;
+    if (items.length < 8) {
+      for (let k = 0; k < items.length; k++)
+        if (overlaps(toks, wordsOf(items[k]!))) {
+          hit[k] = 1;
+          n++;
+        }
+      return { hit, n };
+    }
+    let idx = memo.get(component);
+    if (!idx) {
+      idx = new Map<string, number[]>();
+      items.forEach((x, k) => {
+        for (const t of wordsOf(x)) {
+          const l = idx!.get(t);
+          if (l) l.push(k);
+          else idx!.set(t, [k]);
+        }
+      });
+      memo.set(component, idx);
+    }
+    words: for (const t of toks) {
+      const l = idx.get(t);
+      if (!l) continue;
+      for (const k of l)
+        if (!hit[k]) {
+          hit[k] = 1;
+          // Every item shares a word already: the rest of the words change nothing.
+          if (++n === items.length) break words;
+        }
+    }
+    return { hit, n };
+  }
+
+  private hitBufs = new Map<object, Uint8Array>();
+
+  /** A component's calls and events out as numbers: id, endpoint (or -1), callee, each. */
+  private outsIxOf(component: string, outs: readonly Iface[]): Int32Array {
+    let x = this.outsIxMemo.get(component);
+    if (!x) {
+      x = new Int32Array(outs.length * 3);
+      outs.forEach((i, k) => {
+        x![k * 3] = this.indexOf(i.id);
+        x![k * 3 + 1] = i.endpoint ? this.indexOf(i.endpoint) : -1;
+        x![k * 3 + 2] = this.indexOf(i.to);
+      });
+      this.outsIxMemo.set(component, x);
+    }
+    return x;
+  }
+  private outsIxMemo = new Map<string, Int32Array>();
+  private tableWordsMemo = new Map<string, Map<string, number[]>>();
+
+  private startCount(component: string): number {
+    let n = this.startsMemo.get(component);
+    if (n === undefined) {
+      n = this.starts(component).length;
+      this.startsMemo.set(component, n);
+    }
+    return n;
   }
 
   /** Where work starts at a component: its entry points and the calls and events into it. */
@@ -284,77 +426,190 @@ export class Tracer {
       c = new Set<string>();
       const starts = this.starts(component);
       for (const u of this.g.tables.get(component) ?? [])
-        if (starts.some((t) => overlaps(t, tokens(splitWords(u.table.name))))) c.add(u.table.id);
+        if (starts.some((t) => overlaps(t, this.tableTokens(u.table)))) c.add(u.table.id);
       this.claimed.set(component, c);
     }
     return c;
   }
 
-  private tablesFor(component: string, toks: Set<string>, mode: Mode): TableUse[] {
-    const uses = [...(this.g.tables.get(component) ?? [])];
-    const named = uses.filter((u) => overlaps(toks, tokens(splitWords(u.table.name))));
-    if (named.length) return named;
-    const claimed = this.claimedAt(component);
-    return uses.filter(
-      (u) => !claimed.has(u.table.id) && (mode === "any" || (mode === "write" ? u.write : u.read)),
+  /** Whether a component (by its number) is our own: `g.isOwn`, kept. */
+  private ownAt(k: number, id: string): boolean {
+    let o = this.ownMark[k];
+    if (o === undefined) {
+      o = this.g.isOwn(id) ? 1 : 0;
+      this.ownMark[k] = o;
+    }
+    return o === 1;
+  }
+  private ownMark: (0 | 1)[] = [];
+
+  /**
+   * The tables a flow takes at a component, each given to `add` by its number, in the order of
+   * the component's tables: those that share a word with the flow's words, else the ones no
+   * start there claims that the flow's mode reads or writes (any, for "any").
+   */
+  private tablesIx(
+    component: string,
+    toks: Set<string>,
+    mode: Mode,
+    add: (k: number) => void,
+  ): void {
+    const uses = this.g.tables.get(component);
+    if (!uses?.length) return;
+    let tix = this.tablesIxMemo.get(component);
+    if (!tix) {
+      tix = Int32Array.from(uses, (u) => this.indexOf(u.table.id));
+      this.tablesIxMemo.set(component, tix);
+    }
+    const { hit, n } = this.sharingHits(this.tableWordsMemo, component, uses, toks, (u) =>
+      this.tableTokens(u.table),
     );
+    if (n) {
+      for (let k = 0; k < uses.length; k++) if (hit[k]) add(tix[k]!);
+      return;
+    }
+    const claimed = this.claimedAt(component);
+    for (let k = 0; k < uses.length; k++) {
+      const u = uses[k]!;
+      if (!claimed.has(u.table.id) && (mode === "any" || (mode === "write" ? u.write : u.read)))
+        add(tix[k]!);
+    }
+  }
+  private tablesIxMemo = new Map<string, Int32Array>();
+
+  // A trace marks what it holds by number (ADR 0195 point 9: a flow of a big estate holds
+  // thousands of ids, and thousands of flows are traced): each id once, in the order a trace
+  // first adds it, as a Set of the ids would hold them.
+  private ids: string[] = [];
+  private ixOf = new Map<string, number>();
+  private recMark: number[] = [];
+  private reachMark: number[] = [];
+  private queuedMark: number[] = [];
+  private pass = 0;
+
+  /** The number a trace marks this id by. */
+  indexOf(id: string): number {
+    let k = this.ixOf.get(id);
+    if (k === undefined) {
+      k = this.ids.length;
+      this.ids.push(id);
+      this.ixOf.set(id, k);
+    }
+    return k;
+  }
+
+  /** The id of a number `indexOf` gave. */
+  idOf(k: number): string {
+    return this.ids[k]!;
   }
 
   trace(entry: EntryPoint): Flow {
-    const g = this.g;
-    const flow: Flow = {
+    const f = this.traceIx(entry, true);
+    return {
       entry,
-      records: new Set([entry.id, entry.component]),
-      reached: new Set([entry.id]),
-      visits: [],
-      hops: [],
+      records: new Set(Array.from(f.records, (k) => this.idOf(k))),
+      reached: new Set(Array.from(f.reached, (k) => this.idOf(k))),
+      visits: f.visits!,
+      hops: f.hops!,
     };
+  }
+
+  /**
+   * A flow as the numbers of what it spans and reaches, each in the order `trace` adds them;
+   * its visits and hops only with `keep` (a scan's features need neither).
+   */
+  traceIx(entry: EntryPoint, keep: boolean): FlowIx {
+    const g = this.g;
+    const pass = ++this.pass;
+    const recMark = this.recMark;
+    const reachMark = this.reachMark;
+    const records: number[] = [];
+    const reached: number[] = [];
+    const rec = (k: number) => {
+      if (recMark[k] !== pass) {
+        recMark[k] = pass;
+        records.push(k);
+      }
+    };
+    const reach = (k: number) => {
+      if (reachMark[k] !== pass) {
+        reachMark[k] = pass;
+        reached.push(k);
+      }
+    };
+    const visits: Flow["visits"] | undefined = keep ? [] : undefined;
+    const hops: Iface[] | undefined = keep ? [] : undefined;
+    rec(this.indexOf(entry.id));
+    rec(this.indexOf(entry.component));
+    reach(this.indexOf(entry.id));
     const iface = g.interfaces.get(entry.id);
     if (iface) {
       // an event consumer: the event and who publishes it
-      flow.records.add(iface.from);
-      if (iface.endpoint) flow.records.add(iface.endpoint);
+      rec(this.indexOf(iface.from));
+      if (iface.endpoint) rec(this.indexOf(iface.endpoint));
     } else if (g.endpoints.has(entry.id)) {
       // an endpoint: the calls into it and who makes them
       for (const c of g.callers.get(entry.id) ?? []) {
-        flow.records.add(c.id);
-        flow.records.add(c.from);
+        rec(this.indexOf(c.id));
+        rec(this.indexOf(c.from));
       }
     }
-    const seen = new Set<string>();
-    const queue: { component: string; toks: Set<string>; depth: number; mode: Mode }[] = [
-      { component: entry.component, toks: entry.tokens, depth: 0, mode: entry.mode },
-    ];
-    while (queue.length) {
-      const { component, toks, depth, mode } = queue.shift()!;
-      if (seen.has(component) || !g.isOwn(component)) continue;
-      seen.add(component);
-      flow.records.add(component);
-      flow.visits.push({ component, tokens: toks });
-      for (const u of this.tablesFor(component, toks, mode)) flow.records.add(u.table.id);
+    // Breadth first; a component is visited once, with the words of the first hop that queued
+    // it. A component already queued is not queued again: the later copy would be skipped when
+    // it came up, so it is never made (nor its words' union).
+    const queuedMark = this.queuedMark;
+    const first = this.indexOf(entry.component);
+    queuedMark[first] = pass;
+    const queue: { component: string; at: number; toks: Set<string>; depth: number; mode: Mode }[] =
+      [{ component: entry.component, at: first, toks: entry.tokens, depth: 0, mode: entry.mode }];
+    for (let q = 0; q < queue.length; q++) {
+      const { component, at, toks, depth, mode } = queue[q]!;
+      if (!this.ownAt(at, component)) continue;
+      rec(at);
+      visits?.push({ component, tokens: toks });
+      this.tablesIx(component, toks, mode, rec);
       if (depth >= this.maxDepth) continue;
-      const outs = g.outOf(component);
-      let follow = outs.filter((i) => overlaps(toks, this.callTokens(i)));
-      if (!follow.length && this.starts(component).length <= 1) follow = outs;
-      for (const i of follow) {
-        flow.hops.push(i);
-        flow.records.add(i.id);
-        flow.reached.add(i.id);
-        if (i.endpoint) {
-          flow.records.add(i.endpoint);
-          flow.reached.add(i.endpoint);
+      const outs = this.outsOf(component);
+      const { hit, n } = this.sharingHits(this.outWordsMemo, component, outs, toks, (i) =>
+        this.callTokens(i),
+      );
+      // None shares a word: all of them, where nothing else starts work.
+      const all = n === 0 && this.startCount(component) <= 1;
+      if (n === 0 && !all) continue;
+      const oix = this.outsIxOf(component, outs);
+      for (let k = 0; k < outs.length; k++) {
+        if (!all && !hit[k]) continue;
+        const i = outs[k]!;
+        hops?.push(i);
+        const id = oix[k * 3]!;
+        const ep = oix[k * 3 + 1]!;
+        const to = oix[k * 3 + 2]!;
+        rec(id);
+        reach(id);
+        if (ep >= 0) {
+          rec(ep);
+          reach(ep);
         }
-        flow.records.add(i.to);
-        if (g.isOwn(i.to) && !seen.has(i.to))
+        rec(to);
+        if (queuedMark[to] !== pass && this.ownAt(to, i.to)) {
+          queuedMark[to] = pass;
           queue.push({
             component: i.to,
-            toks: union(toks, this.hopTokens(i)),
+            at: to,
+            toks: unionNew(toks, this.hopTokens(i)),
             depth: depth + 1,
             mode: i.sync === "async" ? "any" : modeOf(i.method),
           });
+        }
       }
     }
-    return flow;
+    return {
+      entry,
+      records: Int32Array.from(records),
+      reached: Int32Array.from(reached),
+      ...(visits ? { visits } : {}),
+      ...(hops ? { hops } : {}),
+    };
   }
 }
 
@@ -373,7 +628,12 @@ class Groups {
   find(x: string): string {
     let r = x;
     while (this.parent.get(r) !== r) r = this.parent.get(r)!;
-    this.parent.set(x, r);
+    // Every id on the way points at the root now (the same groups, found faster).
+    for (let y = x; y !== r;) {
+      const next = this.parent.get(y)!;
+      this.parent.set(y, r);
+      y = next;
+    }
     return r;
   }
   join(a: string, b: string): void {
@@ -392,7 +652,9 @@ class Groups {
     const out = new Map<string, string[]>();
     for (const id of [...this.parent.keys()].sort()) {
       const r = this.find(id);
-      out.set(r, [...(out.get(r) ?? []), id]);
+      const l = out.get(r);
+      if (l) l.push(id);
+      else out.set(r, [id]);
     }
     return [...out.values()];
   }
@@ -429,6 +691,23 @@ function pinsFrom(decisions: Decision[]): Map<string, string> {
 }
 
 const evKey = (e: EvidenceT) => JSON.stringify(Object.entries(e).sort());
+
+/**
+ * A feature's evidence: its entry points', then the first evidence (by record id) of each other
+ * repo its records come from, by repo id. A feature traced through several repos cites each, so
+ * it changes only when one of them does (ADR 0195, CS2; CLAUDE.md rule 6).
+ */
+function withEachRepo(
+  own: EvidenceT[],
+  records: readonly (CatalogRecord | undefined)[],
+): EvidenceT[] {
+  const have = new Set(own.flatMap((e) => (e.repo ? [e.repo] : [])));
+  const first = new Map<string, EvidenceT>();
+  for (const r of records)
+    for (const e of r?.evidence ?? [])
+      if (e.repo && !have.has(e.repo) && !first.has(e.repo)) first.set(e.repo, e);
+  return [...own, ...[...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, e]) => e)];
+}
 
 function dedupeEvidence(list: EvidenceT[]): EvidenceT[] {
   const seen = new Set<string>();
@@ -488,23 +767,49 @@ export function detectFeaturesWithReport(
       });
     }
   }
+  const byId = new Map(records.map((r) => [r.id, r]));
   const list = [...entries.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
   tracer.useEntries(list);
-  const flows = new Map(list.map((e) => [e.id, tracer.trace(e)]));
+  const keep = o.keepFlows !== false;
+  const traced = new Map(list.map((e) => [e.id, tracer.traceIx(e, keep)]));
+  const flows = new Map<string, Flow>();
+  if (keep)
+    for (const [id, f] of traced)
+      flows.set(id, {
+        entry: f.entry,
+        records: new Set(Array.from(f.records, (k) => tracer.idOf(k))),
+        reached: new Set(Array.from(f.reached, (k) => tracer.idOf(k))),
+        visits: f.visits!,
+        hops: f.hops!,
+      });
+  /** The entry points, by their number in the traces. */
+  const entryAt = new Map<number, string>();
+  for (const e of list) entryAt.set(tracer.indexOf(e.id), e.id);
 
   const groups = new Groups(
     list.map((e) => e.id),
     (id) => pins.get(id),
   );
   // An entry point another flow passes through is part of that flow's feature.
-  for (const f of flows.values())
-    for (const r of sorted(f.reached))
-      if (
-        r !== f.entry.id &&
-        entries.has(r) &&
-        ["endpoint", "consumer", "pinned"].includes(entries.get(r)!.kind)
-      )
-        groups.join(f.entry.id, r);
+  /** The flows that reach each entry point, by entry id (in flow order). */
+  const reachers = new Map<string, string[]>();
+  const joining = new Set(["endpoint", "consumer", "pinned"]);
+  for (const f of traced.values()) {
+    const hit: string[] = [];
+    for (const k of f.reached) {
+      const r = entryAt.get(k);
+      if (r !== undefined) {
+        hit.push(r);
+        const l = reachers.get(r);
+        if (l) l.push(f.entry.id);
+        else reachers.set(r, [f.entry.id]);
+      }
+    }
+    // With no pins the groups don't depend on the order of the joins (each is a connected
+    // part, rooted at its least id), so only pinned groups need them in id order.
+    for (const r of pins.size ? hit.sort() : hit)
+      if (r !== f.entry.id && joining.has(entries.get(r)!.kind)) groups.join(f.entry.id, r);
+  }
   // Flows about the same primary resource are one feature.
   const bySlug = new Map<string, string>();
   for (const e of list) {
@@ -518,8 +823,9 @@ export function detectFeaturesWithReport(
   for (const members of groups.groups()) {
     const pin = members.map((m) => pins.get(m)).find(Boolean);
     // outermost first: the entry points no other member's flow passes through
+    const inGroup = new Set(members);
     const reachedByOthers = (m: string) =>
-      members.some((x) => x !== m && flows.get(x)!.reached.has(m));
+      (reachers.get(m) ?? []).some((x) => x !== m && inGroup.has(x));
     const outer = members.filter((m) => !reachedByOthers(m)).sort();
     const inner = members.filter((m) => reachedByOthers(m)).sort();
     let resource = entries.get(members[0]!)!.resource;
@@ -542,12 +848,24 @@ export function detectFeaturesWithReport(
   }
 
   let features = new Map<string, { members: string[]; name: string; records: Set<string> }>();
-  for (const b of built.sort((x, y) => (x.id < y.id ? -1 : 1)))
+  // Each feature's records: its members' flows', each once, marked by number.
+  const markedFor: number[] = [];
+  let feature = 0;
+  for (const b of built.sort((x, y) => (x.id < y.id ? -1 : 1))) {
+    feature++;
+    const ids: string[] = [];
+    for (const m of b.members)
+      for (const k of traced.get(m)!.records)
+        if (markedFor[k] !== feature) {
+          markedFor[k] = feature;
+          ids.push(tracer.idOf(k));
+        }
     features.set(b.id, {
       members: b.members,
       name: displayName(b.resource),
-      records: new Set(b.members.flatMap((m) => [...flows.get(m)!.records])),
+      records: new Set(ids),
     });
+  }
 
   // Merges: an alias whose value names other features folds them into the target.
   for (const d of decisions.filter((x) => x.action === "alias")) {
@@ -586,17 +904,21 @@ export function detectFeaturesWithReport(
   const out: Capability[] = [];
   for (const [id, f] of features) {
     const p = proposals.get(id);
+    const records = sorted(f.records);
     out.push(
       capability({
         id,
         name: p?.name ?? f.name,
         ...(p?.description ? { description: p.description } : {}),
         entryPoints: f.members,
-        records: sorted(f.records),
+        records,
         tags: p ? [...p.tags] : [],
         externalRefs: [],
         namedBy: p ? "ai" : "detected",
-        evidence: dedupeEvidence(f.members.flatMap((m) => entries.get(m)!.evidence)),
+        evidence: withEachRepo(
+          dedupeEvidence(f.members.flatMap((m) => entries.get(m)!.evidence)),
+          records.map((r) => byId.get(r)),
+        ),
       }),
     );
   }

@@ -188,10 +188,13 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     for (const g of more) if (g.section !== "Change") expect(g.phases).toBeUndefined();
   });
 
-  it("reaches a change's picture, Ask, a system, an outside system, the mismatches, the first steps and the words by link", () => {
+  it("reaches a change's picture, Ask, a system, an outside system, the mismatches, the first steps, the words, the readers' cross-check and the catalog's builds by link", () => {
     const aside = SCREENS.filter((s) => s.aside).map((s) => s.id);
     expect(aside.sort()).toEqual(
       [
+        // ADR 0195 (CS3): from Trust and Scans.
+        "catalog-builds",
+        "crosscheck",
         "change-diagram",
         "explore",
         "mismatches",

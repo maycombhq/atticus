@@ -31,7 +31,15 @@ export function listShippedDialects(): string[] {
 
 /** The shipped dialects parsed against contract C2 (their own tests are not run here). */
 export async function loadShippedDialects(): Promise<Dialect[]> {
-  const out: Dialect[] = [];
-  for (const p of listShippedDialects()) out.push(Dialect.parse(parse(await readFile(p, "utf8"))));
-  return out;
+  // The files ship with the package and don't change while it runs: parsed once per process,
+  // and each caller given its own copy (ADR 0195, CS2: the build's budget).
+  shipped ??= (async () => {
+    const out: Dialect[] = [];
+    for (const p of listShippedDialects())
+      out.push(Dialect.parse(parse(await readFile(p, "utf8"))));
+    return out;
+  })();
+  shipped.catch(() => (shipped = undefined));
+  return structuredClone(await shipped);
 }
+let shipped: Promise<Dialect[]> | undefined;

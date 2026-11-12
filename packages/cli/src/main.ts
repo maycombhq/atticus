@@ -485,8 +485,10 @@ Usage:
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
-  atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated, only when every production repo was read in full (cloned, readable, no reader run failed); otherwise write nothing, name each repo and why, and exit 1
-          [--repos a,b]                Only these repos: a check that writes nothing (a scan of some repos would replace the catalog with them alone; put one repo in from its facts with atticus verify <repo> --write)
+  atticus scan [--no-drift]            Scan every repo's base clone: write the readers slot of each repo read in full (catalog/sources/readers/<repo>.json), keep every other repo's last good read and say why, then build catalog/generated from every slot (ADR 0195); a scan that read no repo in full writes nothing
+          [--repos a,b]                Only these repos: the others keep their last good read
+          [--allow-removals <n>]       Confirm the removals a refused build listed, with the count it named (more than 10% of a repo's records, or 200)
+          [--discard-edits <n>]        Discard the hand edits to catalog/generated a refused build listed, with their count (a copy is kept for atticus catalog undo)
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
           [--warnings]                 List what the scan left out or couldn't read, not just how many
@@ -505,7 +507,7 @@ Usage:
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
   atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended; with --mode copilot-acp (runtime.yaml version 3, ADR 0171) Atticus drives Copilot itself through its Agent Client Protocol, one new session per part, unattended. Then the estate is joined once. A part is done when verify's coverage leaves no file under it unaccounted; after --idle minutes (30) with nothing written it stops waiting, saying how to carry on; --force reads the repos (all, or --repos) whole again, the facts on file kept as already kept (ADR 0170) [--max-tokens n] [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off|copilot-acp] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
-          [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
+          [--write]                    When nothing is rejected: take the facts snapshot (catalog/sources/facts/<repo>.jsonl), build the catalog from every slot, write the flows in specs/<repo>/, ask about calls nothing joins, and render the map [--allow-removals <n>] [--discard-edits <n>]
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
   atticus verify --here                Check facts.jsonl in this read folder against its copy: the claim on each cited line, rejected facts to rejected.jsonl, the coverage and the lines no fact cites to verify.yaml; exits 1 while any is rejected or a line doesn't read [--facts file] [--skipped]
@@ -576,6 +578,8 @@ Usage:
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
+          [--yes]                      Apply the step that adopts a catalog from before beta.27 into source slots (ADR 0195); without it the step only shows what it would write
+          [--accept-changes <n>]       With --yes: accept the record files the first build would change, with the count the step listed
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
@@ -703,6 +707,17 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
+  atticus catalog build                Build catalog/generated from the source slots and inputs (ADR 0195): after a curated file is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
+          [--check]                    Write nothing; exit 1 when catalog/generated isn't what the slots build (for a metarepo's CI)
+  atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
+          [--curate]                   Make each a curated decision, an edit to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
+          [--drop-fields <n>]          With --curate: also make curated the files that change fields no decision can set (evidence, confidence), with the count listed; the next build puts those fields back
+  atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
+  atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
+          [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)
+          [--undismiss <key>]          Take a dismissal back
+          [--promote <key>]            Promote what the readers found to your own fact (by: person, the reader's citation) in facts/<repo>.jsonl, an edit to propose; atticus verify <repo> then checks it on its line
+  atticus catalog prune                List the slot files no build reads (repos no longer listed or archived, the upgrade's copy of the catalog); with --yes, remove exactly those [--json]
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
   atticus task run-ready <change>      Run all ready tasks: every task whose dependencies are done, in cross-repo order, one task run each, stopping on the first that needs a person (ADR 0181) [--level draft|pr] [--mode m] [--approve] [--dry-run]
@@ -1441,7 +1456,12 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   // F5: a repo's id moved with everything filed under it.
   if (group === "repo" && command === "rename") {
     const { repoRename } = await import("./repo-rename.js");
-    return repoRename(root, positionals[2], positionals[3], io);
+    const counts = countFlags(values, io);
+    if (counts === undefined) return 2;
+    return repoRename(root, positionals[2], positionals[3], io, {
+      json: values.json === true,
+      ...counts,
+    });
   }
   if (group === "repo" && (command === "add" || command === "describe")) {
     const m = await loadRepoCommands();
@@ -2186,6 +2206,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       return 2;
     }
     const { verifyCommand } = await import("./verify-commands.js");
+    const counts = countFlags(v.values, io);
+    if (counts === undefined) return 2;
     return verifyCommand(
       // --write is a switch, so a --root right after it is read (it once took --root as its value).
       text(v.values.root) ? resolve(text(v.values.root)!) : root,
@@ -2205,6 +2227,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         verbose: v.values.verbose === true,
         json: v.values.json === true,
         ...(v.values.skipped === true ? { skipped: true } : {}),
+        ...counts,
       },
       io,
     );
@@ -2287,6 +2310,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       throw e;
     }
   }
+  const scanCounts = group === "scan" ? countFlags(values, io) : {};
+  if (scanCounts === undefined) return 2;
   if (group === "scan")
     return scanCommand(
       root,
@@ -2298,6 +2323,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         noDrift: values["no-drift"] === true,
         warnings: values.warnings === true,
         ...(typeof values.ref === "string" && values.ref.trim() ? { ref: values.ref.trim() } : {}),
+        ...scanCounts,
       },
       io,
     );
@@ -2360,6 +2386,17 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       io,
     );
   }
+  if (
+    group === "upgrade" &&
+    values["accept-changes"] !== undefined &&
+    !(typeof values["accept-changes"] === "string" && /^\d+$/.test(values["accept-changes"]))
+  ) {
+    // ADR 0195 (review): a count that isn't one confirms nothing, and is said, not ignored.
+    io.err(
+      "--accept-changes takes the count of the first build's changes atticus upgrade listed, a whole number. Nothing was written.",
+    );
+    return 2;
+  }
   if (group === "upgrade")
     return upgradeCommand(
       root,
@@ -2369,6 +2406,11 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ...(values.check === true || values["dry-run"] === true ? {} : { by: who() }),
         json: values.json === true,
         ...(values["openspec-store"] === true ? { openspecStore: true } : {}),
+        ...(values.yes === true ? { yes: true } : {}),
+        ...(typeof values["accept-changes"] === "string" &&
+        Number.isInteger(Number(values["accept-changes"]))
+          ? { acceptChanges: Number(values["accept-changes"]) }
+          : {}),
       },
       io,
     );
@@ -3196,6 +3238,55 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     );
   if (group === "catalog" && command === "migrate")
     return catalogMigrate(root, io, { dryRun: values["dry-run"] === true });
+  if (group === "catalog" && command === "crosscheck") {
+    const { catalogCrossCheck } = await import("./crosscheck-commands.js");
+    return catalogCrossCheck(
+      root,
+      {
+        ...(arg ? { repo: arg } : {}),
+        json: values.json === true,
+        ...(str(values.dismiss) !== undefined ? { dismiss: str(values.dismiss)! } : {}),
+        ...(str(values.undismiss) !== undefined ? { undismiss: str(values.undismiss)! } : {}),
+        ...(str(values.promote) !== undefined ? { promote: str(values.promote)! } : {}),
+      },
+      io,
+    );
+  }
+  if (
+    group === "catalog" &&
+    (command === "build" || command === "undo" || command === "prune" || command === "edits")
+  ) {
+    const m = await import("./catalog-build-commands.js");
+    const counts = countFlags(values, io);
+    if (counts === undefined) return 2;
+    const json = values.json === true;
+    if (command === "build")
+      return m.catalogBuild(root, { check: values.check === true, json, ...counts }, io);
+    if (command === "edits") {
+      const drop = values["drop-fields"];
+      if (drop !== undefined && !(typeof drop === "string" && /^\d+$/.test(drop))) {
+        io.err("--drop-fields takes the count of files catalog edits listed, a whole number.");
+        return 2;
+      }
+      return m.catalogEdits(
+        root,
+        {
+          curate: values.curate === true,
+          json,
+          by: who(),
+          ...(typeof drop === "string" ? { dropFields: Number(drop) } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "prune") return m.catalogPrune(root, { yes: values.yes === true, json }, io);
+    const n = arg === undefined ? undefined : Number(arg);
+    if (n !== undefined && !(Number.isInteger(n) && n > 0)) {
+      io.err("catalog undo takes the number of an undo copy (atticus catalog undo lists them).");
+      return 2;
+    }
+    return m.catalogUndo(root, { ...(n ? { n } : {}), yes: values.yes === true, json }, io);
+  }
   if (group === "feature") {
     const rest = positionals.slice(3);
     const writes = ["name", "tag", "merge", "split", "link"].includes(command ?? "");
@@ -4065,6 +4156,32 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
  * the person thought they'd asked for. Known: every option in OPTIONS (the questions commands'
  * own and --handoff among them) and every flag the help names. Undefined when all are known.
  */
+/**
+ * ADR 0195 point 4: `--allow-removals <n>` and `--discard-edits <n>`, each the count a refused
+ * build listed (a confirmation never covers more than was shown). Undefined, said, when one isn't
+ * a whole number.
+ */
+function countFlags(
+  values: Record<string, unknown>,
+  io: Output,
+): { allowRemovals?: number; discardEdits?: number } | undefined {
+  const out: { allowRemovals?: number; discardEdits?: number } = {};
+  for (const [flag, key] of [
+    ["allow-removals", "allowRemovals"],
+    ["discard-edits", "discardEdits"],
+  ] as const) {
+    const v = values[flag];
+    if (v === undefined) continue;
+    const n = Number(v);
+    if (typeof v !== "string" || !Number.isInteger(n) || n < 0) {
+      io.err(`--${flag} takes the count the refused build listed, a whole number.`);
+      return undefined;
+    }
+    out[key] = n;
+  }
+  return out;
+}
+
 async function checkFlags(
   argv: string[],
   positionals: string[],

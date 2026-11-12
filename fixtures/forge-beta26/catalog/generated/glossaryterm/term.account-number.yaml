@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.account-number
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-db.account.account-number."
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 3
+    path: src/main/resources/db/migration/V1__create_account.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+fields:
+  - ledger-db.account.account-number
+flags:
+  - undefined
+term: Account number

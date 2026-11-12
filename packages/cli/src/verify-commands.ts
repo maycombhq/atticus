@@ -78,6 +78,9 @@ export interface VerifyCommandOptions {
   write?: boolean;
   /** With --write: list every record changed and flow written, not only the counts. */
   verbose?: boolean;
+  /** With --write: `--allow-removals <count>`, `--discard-edits <count>` (ADR 0195 point 4). */
+  allowRemovals?: number;
+  discardEdits?: number;
   json?: boolean;
   /** R1: print every skipped line, reviewed glob holding some and uncovered spec operation. */
   skipped?: boolean;
@@ -425,16 +428,24 @@ export async function verifyCommand(
   const rejectedNote = `Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
   if (o.json) {
     let written;
+    let refusedBuild: unknown;
     if (o.write && !failed) {
       const { writeFactsIntoCatalog } = await import("./map-render-commands.js");
       written = await writeFactsIntoCatalog(
         root,
         repo,
         report.accepted,
-        { dir, command: `atticus verify ${repo} --write` },
+        {
+          dir,
+          command: `atticus verify ${repo} --write`,
+          ...(commit ? { commit } : {}),
+          ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+          ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+          onRefused: (r) => (refusedBuild = r.guard.refused),
+        },
         { ...io, out: () => undefined },
       );
-      if (!written) return 1;
+      if (!written && !refusedBuild) return 1;
     } else if (o.write) io.err(rejectedNote);
     io.out(
       JSON.stringify(
@@ -450,12 +461,13 @@ export async function verifyCommand(
           },
           ...(reviewedBad.length ? { reviewedProblems: reviewedBad } : {}),
           ...(written ? { written } : {}),
+          ...(refusedBuild ? { refused: refusedBuild } : {}),
         },
         null,
         2,
       ),
     );
-    return failed ? 1 : 0;
+    return failed || refusedBuild ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
   const cov = report.coverage;
@@ -687,7 +699,14 @@ export async function verifyCommand(
     root,
     repo,
     report.accepted,
-    { dir, command: `atticus verify ${repo} --write`, verbose: o.verbose === true },
+    {
+      dir,
+      command: `atticus verify ${repo} --write`,
+      verbose: o.verbose === true,
+      ...(commit ? { commit } : {}),
+      ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+      ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+    },
     io,
   );
   return written ? 0 : 1;

@@ -99,6 +99,37 @@ function definitionSort(d: string): string | undefined {
   return undefined;
 }
 
+/** How many uses a term cites beyond each repo's first. */
+const USES_CITED = 5;
+
+/**
+ * The uses a code term cites (ADR 0195, CS2; CLAUDE.md rule 6, every fact keeps its provenance):
+ * the first use (by record id) in each repo that uses it, by repo id, so a term that exists
+ * partly because of a repo cites it; then further uses by record id, up to five in all. Uses
+ * with no repo (an input's record) count as further uses.
+ */
+export function usesCited<U extends { record: string; evidence: EvidenceT; all?: EvidenceT[] }>(
+  uses: readonly U[],
+): EvidenceT[] {
+  const byRecord = [...uses].sort((a, b) =>
+    a.record < b.record ? -1 : a.record > b.record ? 1 : 0,
+  );
+  // Each repo's first use, and the evidence of it that names the repo (a join names several).
+  const first = new Map<string, EvidenceT>();
+  for (const u of byRecord)
+    for (const e of u.all ?? [u.evidence]) if (e.repo && !first.has(e.repo)) first.set(e.repo, e);
+  const out = [...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, e]) => e);
+  const key = (e: EvidenceT) => JSON.stringify(e);
+  const cited = new Set(out.map(key));
+  for (const u of byRecord) {
+    if (out.length >= USES_CITED) break;
+    if (cited.has(key(u.evidence))) continue;
+    cited.add(key(u.evidence));
+    out.push(u.evidence);
+  }
+  return out;
+}
+
 const ALIASES = (d: Decision) => (Array.isArray(d.value) ? d.value : [d.value]).map(String);
 
 export function buildGlossary(input: GlossaryInput): GlossaryBuild {
@@ -231,8 +262,11 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
       if (r?.kind === "Column") types[col] = r.type;
     }
     const sorts = new Map<string, string[]>();
-    for (const [f, t] of Object.entries(types))
-      sorts.set(typeSort(t), [...(sorts.get(typeSort(t)) ?? []), f]);
+    for (const [f, t] of Object.entries(types)) {
+      const l = sorts.get(typeSort(t));
+      if (l) l.push(f);
+      else sorts.set(typeSort(t), [f]);
+    }
     const expected = ds.length || person || proposal ? definitionSort(definition) : undefined;
     const off = expected ? Object.entries(types).filter(([, t]) => typeSort(t) !== expected) : [];
     if (sorts.size > 1 || off.length) {
@@ -268,7 +302,7 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
 
     const evidence: EvidenceT[] = [
       ...ds.map((d) => ({ source: "document" as const, path: d.path, line: d.line })),
-      ...(c?.uses ?? []).slice(0, 5).map((u) => u.evidence),
+      ...usesCited(c?.uses ?? []),
     ];
     if (!evidence.length && person) evidence.push({ source: "manual", by: person.by });
     if (!evidence.length) evidence.push({ source: "manual" });

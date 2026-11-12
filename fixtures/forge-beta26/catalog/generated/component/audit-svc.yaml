@@ -1,0 +1,16 @@
+schemaVersion: 5
+kind: Component
+id: audit-svc
+status: current
+confidence: inferred
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 10
+    path: src/main/java/forge/portal/AuditPublisher.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+system: audit
+type: service

@@ -188,9 +188,20 @@ describe("decisions", () => {
 });
 
 describe("the glossary in a metarepo", () => {
+  // ADR 0195 (the review): catalog/generated is the build's, so the scan leaves it alone unless a
+  // caller asks it to patch (writeTerms: true); it says what the build would write.
+  it("by default, scan leaves catalog/generated as it is and says what the build would write", async () => {
+    const root = await metarepo({ extra: extraRecords(), pages: true, decisions: decisions() });
+    const before = await readRecords(join(root, "catalog/generated"));
+    const r = await scanGlossary(root);
+    expect(r.written).toContain("glossaryterm/term.account.yaml");
+    const after = await readRecords(join(root, "catalog/generated"));
+    expect(after.records).toEqual(before.records);
+  });
+
   it("scan writes the terms and column links into catalog/generated, idempotently", async () => {
     const root = await metarepo({ extra: extraRecords(), pages: true, decisions: decisions() });
-    const r = await scanGlossary(root);
+    const r = await scanGlossary(root, { writeTerms: true });
     expect(r.problems).toEqual([]);
     expect(r.written).toEqual([
       "column/ledger-db.account.account-number.yaml",
@@ -216,14 +227,14 @@ describe("the glossary in a metarepo", () => {
     expect(col).toMatchObject({ glossaryTerm: "term.account-number" });
     const rl = cat.records.find((c) => c.id === "term.remaining-limit");
     expect(rl).toMatchObject({ confidence: "asserted" });
-    const again = await scanGlossary(root);
+    const again = await scanGlossary(root, { writeTerms: true });
     expect(again.written).toEqual([]);
     expect(again.removed).toEqual([]);
   });
 
   it("define and link decisions show on the next build; a dropped term's file and links go", async () => {
     const root = await metarepo({ extra: extraRecords(), pages: true });
-    await scanGlossary(root);
+    await scanGlossary(root, { writeTerms: true });
     const g = await loadGlossary(root);
     const term = g.terms.find((t) => t.id === "term.daily-total")!;
     await writeDecisions(join(root, "catalog/curated"), [
@@ -237,7 +248,7 @@ describe("the glossary in a metarepo", () => {
         at: "2026-10-18T09:00:00Z",
       }),
     ]);
-    const r = await scanGlossary(root);
+    const r = await scanGlossary(root, { writeTerms: true });
     const dt = r.terms.find((t) => t.id === "term.daily-total")!;
     expect(dt).toMatchObject({
       term: "Daily total",

@@ -194,7 +194,17 @@ export interface ScanGlossaryResult extends LoadedGlossary {
  */
 export async function scanGlossary(
   root: string,
-  o: { runtime?: AiRuntime; now?: Date } = {},
+  o: {
+    runtime?: AiRuntime;
+    now?: Date;
+    /**
+     * ADR 0195: catalog/generated is the build's, so by default this leaves it alone (the build
+     * writes the terms, from the proposals and decisions this wrote); `written` and `removed` say
+     * what the build would. `true` patches the files in place, as before beta.27, for a caller
+     * outside a metarepo's build (none in Atticus itself; the review: false by default).
+     */
+    writeTerms?: boolean;
+  } = {},
 ): Promise<ScanGlossaryResult> {
   let g = await loadGlossary(root);
   let propose: ProposeResult | undefined;
@@ -217,16 +227,17 @@ export async function scanGlossary(
   for (const f of (await readdir(termDir).catch(() => [] as string[])).sort()) {
     const rel = `glossaryterm/${f}`;
     if (!want.has(rel)) {
-      await rm(join(termDir, f), { force: true });
+      if (o.writeTerms === true) await rm(join(termDir, f), { force: true });
       removed.push(rel);
     }
   }
   const before = new Map(g.base.map((r) => [`${r.kind}/${r.id}`, r]));
   const put = async (rel: string, text: string) => {
+    written.push(rel);
+    if (o.writeTerms !== true) return;
     const full = join(generated, ...rel.split("/"));
     await mkdir(dirname(full), { recursive: true });
     await writeFile(full, text, "utf8");
-    written.push(rel);
   };
   for (const [rel, text] of want) {
     const cur = await readFile(join(generated, ...rel.split("/")), "utf8").catch(() => undefined);
@@ -255,7 +266,7 @@ export async function scanGlossary(
 export async function completeGlossaryDefinitions(
   root: string,
   run: Pick<Run, "runId" | "output" | "request"> & Partial<Run>,
-  o: { now?: Date } = {},
+  o: { now?: Date; writeTerms?: boolean } = {},
 ): Promise<ScanGlossaryResult & { propose: ProposeResult }> {
   const g = await loadGlossary(root);
   const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -273,6 +284,6 @@ export async function completeGlossaryDefinitions(
     ...(run.state ? { run: toRunSummary(run as Run) } : {}),
     promptSha256: run.request.pack.manifest.promptSha256,
   };
-  const scanned = await scanGlossary(root);
+  const scanned = await scanGlossary(root, o.writeTerms === true ? { writeTerms: true } : {});
   return { ...scanned, propose };
 }

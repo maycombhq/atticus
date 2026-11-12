@@ -57,7 +57,7 @@ describe("glossary scan in hand-off mode", () => {
     const run = await rt.done(runId);
     expect(run.state).toBe("validated");
 
-    const done = await completeGlossaryDefinitions(root, run, { now: NOW });
+    const done = await completeGlossaryDefinitions(root, run, { now: NOW, writeTerms: true });
     expect(done.propose.proposals.map((p) => [p.term, p.definition, p.evidence])).toEqual([
       ["term.entry", "One posting to an account.", ["ledger-db.entry"]],
     ]);
@@ -86,7 +86,7 @@ describe("glossary scan in hand-off mode", () => {
     expect(a).toEqual(b);
     // The generated term files are written too, and a later scan keeps the proposal.
     expect(done.written).toContain("glossaryterm/term.entry.yaml");
-    expect((await scanGlossary(root)).written).toEqual([]);
+    expect((await scanGlossary(root, { writeTerms: true })).written).toEqual([]);
   });
 
   it("only takes terms the definer was sent", async () => {

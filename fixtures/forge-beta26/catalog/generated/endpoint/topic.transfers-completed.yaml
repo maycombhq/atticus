@@ -1,0 +1,18 @@
+schemaVersion: 5
+kind: Endpoint
+id: topic.transfers-completed
+status: current
+confidence: verified
+component: ledger-api
+endpointType: event-topic
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: topics@1.0.0
+    line: 1
+    path: topics/transfers.completed.yaml
+    repo: forge-events
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: event-config
+pathOrTopic: transfers.completed
+schemaRefs: []

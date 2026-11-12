@@ -1,0 +1,26 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.entry
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: ledger-db.entry."
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 1
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 14
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+fields: []
+flags:
+  - undefined
+term: Entry

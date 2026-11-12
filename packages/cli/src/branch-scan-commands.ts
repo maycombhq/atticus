@@ -2,7 +2,16 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { parse, stringify } from "yaml";
 import { catalogDirOf, renameRetrying, writeFileAtomic, type CatalogRecord } from "@maycombhq/core";
-import { diffCatalogs, readCatalog, scanEstate, writeCatalog } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  diffCatalogs,
+  readCatalog,
+  readersSlotRead,
+  scanEstate,
+  serializeReadersSlot,
+  type SlotWrite,
+} from "@maycombhq/scanner";
+import { readdir } from "node:fs/promises";
 import { branchSlug, createWorkspace, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { branchCatalogFolder } from "./repo-branches.js";
@@ -26,7 +35,13 @@ const fromRepos = (records: CatalogRecord[], repos: Set<string>) =>
 export async function scanBranch(
   root: string,
   branch: string,
-  o: { repos?: string[]; full?: boolean; json?: boolean },
+  o: {
+    repos?: string[];
+    full?: boolean;
+    json?: boolean;
+    allowRemovals?: number;
+    discardEdits?: number;
+  },
   io: Output,
 ): Promise<number> {
   const all = (await loadRepos(root)).filter((r) => !r.archived && !isInPlace(r.url));
@@ -61,6 +76,25 @@ export async function scanBranch(
   if (!dirs.size) return 1;
   const ids = [...dirs.keys()];
   const scannedAt = new Date().toISOString();
+  const rel = branchCatalogRel(branch);
+  const dir = join(catalogDirOf(root), ...rel.split("/"));
+  // Review round 46: a scan an earlier version kept under the name's own case moves to the
+  // lower-case folder first, so what it kept for other repos is kept as before.
+  const at = await branchCatalogFolder(root, branch);
+  if (at.legacy) await renameRetrying(join(catalogDirOf(root), "branches", at.legacy), dir);
+  const ofRepos = new Set(ids);
+  // ADR 0195 (CS2): the branch's catalog is built from the baseline's slots with the branch's
+  // readers slots in place of its repos' (catalog/branches/<branch>/sources/readers/<repo>.json):
+  // this scan's full reads, and what an earlier scan of the branch read of other repos. The
+  // `others` carry of the records it wrote is gone.
+  const branchSlots = join(dir, "sources", "readers");
+  const kept = new Map<string, ReturnType<typeof readersSlotRead>>();
+  for (const n of (await readdir(branchSlots).catch(() => [] as string[])).sort()) {
+    if (!n.endsWith(".json")) continue;
+    const text = await readFile(join(branchSlots, n), "utf8").catch(() => undefined);
+    if (text !== undefined) kept.set(n.slice(0, -5), readersSlotRead(text.replace(/\r\n?/g, "\n")));
+  }
+  const listed = new Set(all.map((r) => r.id));
   const scan = await scanEstate({
     root,
     repos: ids,
@@ -70,30 +104,41 @@ export async function scanBranch(
     federated: [],
     scannedAt,
     ...(o.full ? { cache: null } : {}),
+    slots: (on) => {
+      const readers = new Map(on.readers);
+      for (const [repo, x] of kept) if (listed.has(repo)) readers.set(repo, x);
+      return { ...on, readers };
+    },
   });
-  const rel = branchCatalogRel(branch);
-  const dir = join(catalogDirOf(root), ...rel.split("/"));
-  // Review round 46: a scan an earlier version kept under the name's own case moves to the
-  // lower-case folder first, so what it kept for other repos is merged as before.
-  const at = await branchCatalogFolder(root, branch);
-  if (at.legacy) await renameRetrying(join(catalogDirOf(root), "branches", at.legacy), dir);
-  const ofRepos = new Set(ids);
-  // Merged with what an earlier scan of this branch kept for other repos (Set up › Repos scans
-  // one repo's row at a time): their records and commits stay; only this scan's repos are new.
-  const kept = await readCatalog(join(dir, "generated"), { cacheRoot: root }).catch(() => ({
-    records: [] as CatalogRecord[],
-  }));
-  // Only repos the manifests still list (and not archived): a removed repo's records go.
-  const listed = new Set(all.map((r) => r.id));
-  const others = kept.records.filter(
-    (r) =>
-      r.evidence.length > 0 &&
-      r.evidence.every((e) => !e.repo || !ofRepos.has(e.repo)) &&
-      r.evidence.some((e) => e.repo && listed.has(e.repo)),
+  const writes: SlotWrite[] = scan.observations.flatMap((x) =>
+    x.full && ofRepos.has(x.repo)
+      ? [{ path: join(branchSlots, `${x.repo}.json`), text: serializeReadersSlot(x.slot) }]
+      : [],
   );
-  const ids2 = new Set(scan.records.map((r) => `${r.kind}/${r.id}`));
-  const merged = [...scan.records, ...others.filter((r) => !ids2.has(`${r.kind}/${r.id}`))];
-  const write = await writeCatalog(join(dir, "generated"), merged);
+  const target = {
+    generated: join(dir, "generated"),
+    manifest: join(dir, "sources", "build.json"),
+  };
+  // A branch folder an earlier version wrote has no build.json: its records are a comparison,
+  // replaced by this build (the undo copy keeps them).
+  const first = !(await readFile(target.manifest, "utf8").catch(() => undefined));
+  const firstFiles = first
+    ? (await readCatalog(target.generated, { cacheRoot: root })).records.length
+    : 0;
+  const built = await buildAndWrite(root, {
+    command: `atticus scan --ref ${branch}`,
+    build: scan.build,
+    slots: writes,
+    target,
+    ...(first && firstFiles ? { discardEdits: firstFiles } : {}),
+    ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+    ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+  });
+  if (built.guard.refused) {
+    for (const l of built.guard.refused.message.split("\n")) io.err(l);
+    return 1;
+  }
+  const write = built.write!;
   const was =
     (
       parse(await readFile(join(dir, "branch.yaml"), "utf8").catch(() => "")) as

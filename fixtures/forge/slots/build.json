@@ -1,0 +1,2686 @@
+{
+  "version": 1,
+  "buildVersion": "2.0.0-beta.27.1",
+  "files": [
+    {
+      "path": "catalog/generated/accessgrant/gw-ledger-v1.oauth-scopes.yaml",
+      "sha256": "82c90058c4c861ab0bc09b1e6f606cf6da66d69c21048c72c7461a1fb31640ed",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/capability/feature.account-balance.yaml",
+      "sha256": "81a2ee1785ef9d77303e8c78fb0f8e40c8ab8f708913191d2031f4f5dbc008fe",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-ui.json",
+          "sha256": "01d70769a00066a700a81699730428e968aa520264611df8a8e4fb1d18cec132"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/capability/feature.daily-entries-report.yaml",
+      "sha256": "44e0d4875471521e571073ee894119c6851626cbc5108c6aab8a36d8b6b12b74",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/capability/feature.payments.yaml",
+      "sha256": "dd6647a6aabf3d22971b6b6393dcd00cad9d46a3ec2b1eaf3d9f3ace5fd617eb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/capability/feature.transfers.yaml",
+      "sha256": "7b516cf6b6f406bb6e5428444849e2f9506590f066b57b2ad783c81368086d6e",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.account.account-number.yaml",
+      "sha256": "e5d2ec040e6546f3134217765d88aae52c973e1fb457dccecacb3125d513c54e",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.account.holder-name.yaml",
+      "sha256": "b53f04ffa39816490ecc058fa7b67a707501ab09c30368026bf51b72267dd831",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.account.id.yaml",
+      "sha256": "d7e98d141868fd61516e5f2c5117016f7dd8e8770d6d003155ca3f7212ebc46f",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.entry.account-id.yaml",
+      "sha256": "dda1b8c4566c4742f68a5e6d7ac0e413270e58e80e18d4e56315fd5fce3fbfeb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.entry.amount.yaml",
+      "sha256": "a88ff0cfb7be5772af653c181209cd8ce1855e45f06be5e832f59b5c6062d1fb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.entry.id.yaml",
+      "sha256": "42538413ae7a4d8d098b82d8a85a6b6768b556a02443cab4b9dc2bcd848479fe",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/column/ledger-db.entry.posted-at.yaml",
+      "sha256": "2381e1dc03692f75961e5eab762156ac697cdb8110ab1cd9e51af4e0b79a6a3d",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/component/audit-svc.yaml",
+      "sha256": "ecd868c64c8f0763b16065ccd4d9c32414bf08069e716c17f1f973da0d565031",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/component/ledger-api.yaml",
+      "sha256": "f653f93c98508ecdc52c858d4d7a757b98677488728913f77f9f3fc13eea955f",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/component/portal-bff.yaml",
+      "sha256": "b04dffc123783dc0fb97a4caa6be2d5e90451068a2888e047b7be8cf09ef2143",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/component/portal-ui.yaml",
+      "sha256": "41e1adb9ad55c534e014332dd22357a2e5e22e2311511f935c65e166bf9900d8",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-ui.json",
+          "sha256": "01d70769a00066a700a81699730428e968aa520264611df8a8e4fb1d18cec132"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/component/reports-job.yaml",
+      "sha256": "61e3eab8a41cde4a16af6430518baf0a1d81ab7dfc515507d54d8f0ff1352555",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/datastore/ledger-db.yaml",
+      "sha256": "d184e6f2dd5f379a7623abc040422bfb13c3a5488a0a564e8253d7314d039ccb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-infra.json",
+          "sha256": "07a6ce27395f4eb78ba9c515b35c589f0af82d8b316f371baff71b387c568221"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/deployment/ledger-api.prod.yaml",
+      "sha256": "86f683e9e44cfb8347f802d9ab17697f93f0f6ded81f2a928b8fed7d790d6096",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-infra.json",
+          "sha256": "07a6ce27395f4eb78ba9c515b35c589f0af82d8b316f371baff71b387c568221"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/deployment/portal-bff.prod.yaml",
+      "sha256": "5ceab30589353f430a30552b8b8ca81264592afeda430076ab1a67a970f2c836",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-infra.json",
+          "sha256": "07a6ce27395f4eb78ba9c515b35c589f0af82d8b316f371baff71b387c568221"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/endpoint/ledger-api.get-balance.yaml",
+      "sha256": "a08011363b8a313f74ed70b942679226c2f4e5d3b2c0f608dcf1271c0bf5b22e",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/endpoint/ledger-api.post-transfer.yaml",
+      "sha256": "a4eb977b9081e80c2c7721114e213e607567e608fe48d10c39d8fb737da46e96",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/endpoint/portal-bff.get-balance.yaml",
+      "sha256": "97be1511f2a1f35c797dde5b25ff4d99f16970f69ffdcd9cee265312e299011b",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/endpoint/topic.payments-initiated.yaml",
+      "sha256": "ad0bbc9a3a4fd7a414315bcae2f69453ad2cdeeb455a14da4d6ec109bb351c20",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/endpoint/topic.transfers-completed.yaml",
+      "sha256": "32e6aa64674a74a786816d00f7f40f6ca5d3f0dab9313c6a52096e8b09ec7b21",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/gatewayroute/gw-ledger-v1.yaml",
+      "sha256": "a64608a1ef734791cb760656e37d826d378520d4b37c3f6db73ed7bf83f721d7",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.account-number.yaml",
+      "sha256": "49adef18c52655bae1c44e8b656890be8b254cfb3c66e11bd2e87fbbdfe117a6",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.account.yaml",
+      "sha256": "3c353ce95742622d07552175ec02f772579c2280e05de3cd276e8cdb81044788",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.balance.yaml",
+      "sha256": "35a676167391e3c5b0443c723a085a621407202a0d14e37c277e2512e572ebd6",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.entry.yaml",
+      "sha256": "dd69ef5a473fcb8f13d534b668b7c5e33c70ca93c37cfe5ff0d355c2c66536f9",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.holder-name.yaml",
+      "sha256": "418c5638d652fb30d7464b311c49d7a9ccc8e669d92658297eb26acdb049491c",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.payment.yaml",
+      "sha256": "1eccf3dc4a43a51ad0c38b4e82c08c028bdb442607e07b7ee52ece6acd114f19",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.transfer.yaml",
+      "sha256": "71f948dec416491c3469fbdf5d62163a6c4acdec4f735038c716dd921d8df0b2",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/indexconstraint/ledger-db.account.pk.yaml",
+      "sha256": "8408146954bacedc342f2cbd6fc6d960aa9f2ef687facf9c9792a2b4fdb584b2",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/indexconstraint/ledger-db.entry.fk-account.yaml",
+      "sha256": "8fb76ec349afcb795aaa9ae6d55bba73e840a212d8cbeb995b67623bdbe47b05",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/indexconstraint/ledger-db.entry.idx-entry-account.yaml",
+      "sha256": "38f087e44cb3ebe0ae84c5d8be4252746f1715265adfee82a73efc16b10416e3",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/indexconstraint/ledger-db.entry.pk.yaml",
+      "sha256": "16173c60daff15b5828ea9774d9f7b151091b1aa9d8c8d1ce01120e694c2bf7a",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-32d38aecd11b86b1.yaml",
+      "sha256": "53382097cdf529954bc0766802fe090674ff84c0db2cfb50a58f3f5cdcd3863a",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-5c55930b735276a9.yaml",
+      "sha256": "1e7e377d38123338b3952b8638dfab0b8689b474b839c87bd6238167e29413cb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-75b5e8d8aa780837.yaml",
+      "sha256": "b899ee2052a44353ab5704c8ec485d358bf640ad8ad6d9402f631e071d7ffead",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-d99f508a2ac9b6e0.yaml",
+      "sha256": "31bb98798f2146b95c89925ae64fb469edd46ddd156041b5cde2faaa1207ab8e",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-e7344c9455608119.yaml",
+      "sha256": "a504dbfb1acba963f177d3a92fdf630b3df87f216b89318b569ca553c2224d04",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-f1cd1f189eaa4b7b.yaml",
+      "sha256": "a8fe9b4876180e859ac91afb3bf7c499c4696a1cb8930e74d74b27ea71968e17",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-events.json",
+          "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/interface/if-f5c8b4b06d75284f.yaml",
+      "sha256": "497dbf3f00230a02a1b6dc19d5fcc6524e1aa8b011f55fc04e45f5de9f330beb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-ui.json",
+          "sha256": "01d70769a00066a700a81699730428e968aa520264611df8a8e4fb1d18cec132"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/migration/ledger-db.v1.yaml",
+      "sha256": "d946c54278949cdcaa88cea9b872e7db5f481f53bcb67905b3be116245da6bd9",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/migration/ledger-db.v2.yaml",
+      "sha256": "e436fd1bd7240b3db7689352a72842058e49b658fc640790102877b2d3506a03",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/observabilityasset/ledger-api.alert.error-rate.yaml",
+      "sha256": "77a358e0d468eb98c3fdb41feb31cc52ef42a32c58425d31ce413ac333097fe4",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-infra.json",
+          "sha256": "07a6ce27395f4eb78ba9c515b35c589f0af82d8b316f371baff71b387c568221"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/setting/portal-bff.ledger-connect-timeout.yaml",
+      "sha256": "33199ccd3828dbe8944192ce966492340039b04309634d5e92e1fd34f082a5cc",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/setting/portal-bff.ledger-read-timeout.yaml",
+      "sha256": "e36f44d5b4634bc41b2ea12a6815a6d11d8935778992632b586927e3b916867c",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/system/audit.yaml",
+      "sha256": "5ff3b10ff73de8ef244b41f20b8ad645ef6c4d2797ebd4efde8b32e62852872c",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/system/ledger.yaml",
+      "sha256": "0beddb3c23c6764e74280c7f9c8c81e50c86f177f8d6eda0d2cc4fb933dbd642",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/system/northwind-pay.yaml",
+      "sha256": "886835dfe636c36a16cb2057a697a71d5452ce81807610497a75ca951f083642",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/system/portal.yaml",
+      "sha256": "e9ecf489fd7dbf64ea92eb2e9aff8a43405fa2191fda128e3940aa867890f301",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-ui.json",
+          "sha256": "01d70769a00066a700a81699730428e968aa520264611df8a8e4fb1d18cec132"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/system/reports.yaml",
+      "sha256": "e9fd8d75d180f0afb5674ba3e3fc8a263e7164e92a1e2ac0f231e8591af046e3",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/table/ledger-db.account.yaml",
+      "sha256": "02506a884240e3acf6a974ced4b70893ccdc212faffe4808473f5edf15ddad1d",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "path": "catalog/generated/table/ledger-db.entry.yaml",
+      "sha256": "7dc9e537971650941a524f3ddb3d5a2792f052a9e0355d73ffd8455c0a85eabb",
+      "sources": [
+        {
+          "path": "catalog/curated",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/proposals",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "catalog/sources",
+          "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
+        },
+        {
+          "path": "evidence/traffic",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "facts/*.corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "inputs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "org-pack",
+          "sha256": "872b99fc12359b44d896d594ed8ee94c6bce522457c04f6484e8b22065142279"
+        },
+        {
+          "path": "questions",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "shared",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ]
+}

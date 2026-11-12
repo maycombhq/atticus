@@ -1,0 +1,726 @@
+{
+  "repos": [
+    {
+      "repo": "forge-portal-ui",
+      "dismissals": "facts/forge-portal-ui.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-portal-ui.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repo": "forge-portal-bff",
+      "dismissals": "facts/forge-portal-bff.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-portal-bff.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repo": "forge-ledger",
+      "dismissals": "facts/forge-ledger.crosscheck.yaml",
+      "counts": {
+        "agree": 5,
+        "readersOnly": 15,
+        "factsOnly": 12,
+        "disagree": 2,
+        "dismissed": 0
+      },
+      "items": [
+        {
+          "key": "Column|account.account_number",
+          "kind": "Column",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.account.account-number",
+            "value": {
+              "type": "varchar(34)",
+              "nullable": false
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 3,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Column|account.holder_name",
+          "kind": "Column",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.account.holder-name",
+            "value": {
+              "type": "varchar(200)",
+              "nullable": false
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 4,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Column|account.id",
+          "kind": "Column",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.account.id",
+            "value": {
+              "type": "bigint",
+              "nullable": false
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 2,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Column|entry.id",
+          "kind": "Column",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.entry.id",
+            "value": {
+              "type": "bigint",
+              "nullable": false
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V2__create_entry.sql",
+                "line": 2,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Column|entry.posted_at",
+          "kind": "Column",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.entry.posted-at",
+            "value": {
+              "type": "timestamp",
+              "nullable": false
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V2__create_entry.sql",
+                "line": 5,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Endpoint|GET /accounts/{}/balance",
+          "kind": "Endpoint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-api.get-balance",
+            "value": {
+              "method": "GET",
+              "path": "/accounts/{id}/balance"
+            },
+            "cites": [
+              {
+                "file": "api/ledger-openapi.yaml",
+                "line": 6,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              {
+                "file": "src/main/java/forge/ledger/LedgerEndpoints.java",
+                "line": 8,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Endpoint|POST /transfers",
+          "kind": "Endpoint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-api.post-transfer",
+            "value": {
+              "method": "POST",
+              "path": "/transfers"
+            },
+            "cites": [
+              {
+                "file": "api/ledger-openapi.yaml",
+                "line": 14,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              {
+                "file": "src/main/java/forge/ledger/LedgerEndpoints.java",
+                "line": 11,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "IndexConstraint|ledger-db.account.pk",
+          "kind": "IndexConstraint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.account.pk",
+            "value": {
+              "constraintKind": "primary-key",
+              "table": "ledger-db.account"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 2,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "IndexConstraint|ledger-db.entry.fk-account",
+          "kind": "IndexConstraint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.entry.fk-account",
+            "value": {
+              "constraintKind": "foreign-key",
+              "table": "ledger-db.entry"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V2__create_entry.sql",
+                "line": 3,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "IndexConstraint|ledger-db.entry.idx-entry-account",
+          "kind": "IndexConstraint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.entry.idx-entry-account",
+            "value": {
+              "constraintKind": "index",
+              "table": "ledger-db.entry"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V2__create_entry.sql",
+                "line": 7,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "IndexConstraint|ledger-db.entry.pk",
+          "kind": "IndexConstraint",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.entry.pk",
+            "value": {
+              "constraintKind": "primary-key",
+              "table": "ledger-db.entry"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V2__create_entry.sql",
+                "line": 2,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Interface|ledger-api POST /v2/payments",
+          "kind": "Interface",
+          "state": "readers-only",
+          "readers": {
+            "id": "if-e7344c9455608119",
+            "value": {
+              "from": "ledger-api",
+              "to": "northwind-pay",
+              "method": "POST",
+              "path": "/v2/payments",
+              "via": "direct"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/NorthwindClient.java",
+                "line": 8,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Migration|ledger-db.v1",
+          "kind": "Migration",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-db.v1",
+            "value": {
+              "dataStore": "ledger-db",
+              "file": "src/main/resources/db/migration/V1__create_account.sql",
+              "tool": "flyway",
+              "version": "1"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 1,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Unresolved|ledger-api.publish.transfers.completed",
+          "kind": "Unresolved",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-api.publish.transfers.completed",
+            "value": {
+              "owner": "ledger-api",
+              "raw": "transfers.completed",
+              "unresolvedKind": "event-publish"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/LedgerEvents.java",
+                "line": 9,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Unresolved|ledger-api.subscribe.payments.initiated",
+          "kind": "Unresolved",
+          "state": "readers-only",
+          "readers": {
+            "id": "ledger-api.subscribe.payments.initiated",
+            "value": {
+              "owner": "ledger-api",
+              "raw": "payments.initiated",
+              "unresolvedKind": "event-subscribe"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/LedgerEvents.java",
+                "line": 6,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Component|ledger-api",
+          "kind": "Component",
+          "state": "disagree",
+          "readers": {
+            "id": "ledger-api",
+            "value": {
+              "repo": "forge-ledger",
+              "system": "ledger",
+              "type": "forge-service"
+            },
+            "cites": [
+              {
+                "file": "forge.yaml",
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          },
+          "facts": {
+            "id": "ledger-api",
+            "value": {
+              "repo": "forge-ledger",
+              "system": "ledger",
+              "type": "service"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/FxClient.java",
+                "line": 31,
+                "commit": "0123abc"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "field": "type",
+              "readers": "forge-service",
+              "facts": "service"
+            }
+          ]
+        },
+        {
+          "key": "DataStore|ledger-db",
+          "kind": "DataStore",
+          "state": "disagree",
+          "readers": {
+            "id": "ledger-db",
+            "value": {
+              "ownerComponent": "ledger-api",
+              "storeType": "unknown"
+            },
+            "cites": [
+              {
+                "file": "src/main/resources/db/migration/V1__create_account.sql",
+                "line": 1,
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          },
+          "facts": {
+            "id": "ledger-db",
+            "value": {
+              "ownerComponent": "ledger-api",
+              "storeType": "relational"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/AccountRepository.java",
+                "line": 12,
+                "commit": "0123abc"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "field": "storeType",
+              "readers": "unknown",
+              "facts": "relational"
+            }
+          ]
+        },
+        {
+          "key": "Deployment|ledger-api.prod",
+          "kind": "Deployment",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.prod",
+            "value": {
+              "component": "ledger-api",
+              "env": "prod",
+              "platform": "kubernetes",
+              "replicas": 3
+            },
+            "cites": [
+              {
+                "file": "k8s/ledger-api.yaml",
+                "line": 7,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Endpoint|GET /accounts/{}",
+          "kind": "Endpoint",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.get-accounts-accountid",
+            "value": {
+              "method": "GET",
+              "path": "/accounts/{accountId}"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/AccountController.java",
+                "line": 18,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Endpoint|POST /accounts/{}/entries",
+          "kind": "Endpoint",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.post-accounts-accountid-entries",
+            "value": {
+              "method": "POST",
+              "path": "/accounts/{accountId}/entries"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/EntryController.java",
+                "line": 22,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Endpoint|forge.payments.settled",
+          "kind": "Endpoint",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.on-forge-payments-settled",
+            "value": {
+              "path": "forge.payments.settled"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/SettlementListener.java",
+                "line": 14,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Interface|ledger-api GET /v1/rates/{}",
+          "kind": "Interface",
+          "state": "facts-only",
+          "facts": {
+            "id": "if-0bb6f0b5cb457f7f",
+            "value": {
+              "from": "ledger-api",
+              "to": "northwind-fx",
+              "method": "GET",
+              "path": "/v1/rates/{}",
+              "via": "direct"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/FxClient.java",
+                "line": 31,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Schema|if-0bb6f0b5cb457f7f.request",
+          "kind": "Schema",
+          "state": "facts-only",
+          "facts": {
+            "id": "if-0bb6f0b5cb457f7f.request",
+            "value": {
+              "format": "other",
+              "ref": "if-0bb6f0b5cb457f7f"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/FxClient.java",
+                "line": 31,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Schema|ledger-api.post-accounts-accountid-entries.request",
+          "kind": "Schema",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.post-accounts-accountid-entries.request",
+            "value": {
+              "format": "other",
+              "ref": "ledger-api.post-accounts-accountid-entries"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/EntryRequest.java",
+                "line": 7,
+                "commit": "0123abc"
+              },
+              {
+                "file": "src/main/java/forge/ledger/EntryRequest.java",
+                "line": 8,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Setting|fx.client.base-url",
+          "kind": "Setting",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.fx.client.base-url",
+            "value": "https://fx.northwind.example/api",
+            "cites": [
+              {
+                "file": "src/main/resources/application.yml",
+                "line": 12,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Setting|fx.client.read-timeout",
+          "kind": "Setting",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.fx.client.read-timeout",
+            "value": "1500ms",
+            "cites": [
+              {
+                "file": "src/main/resources/application.yml",
+                "line": 13,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Setting|spring.datasource.password",
+          "kind": "Setting",
+          "state": "facts-only",
+          "facts": {
+            "id": "ledger-api.spring.datasource.password",
+            "value": "env:LEDGER_DB_PASSWORD",
+            "cites": [
+              {
+                "file": "src/main/resources/application.yml",
+                "line": 21,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Unresolved|unresolved.c-notify",
+          "kind": "Unresolved",
+          "state": "facts-only",
+          "facts": {
+            "id": "unresolved.c-notify",
+            "value": {
+              "owner": "ledger-api",
+              "raw": "POST http://notify.internal/notify",
+              "unresolvedKind": "http-call"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/Notifier.java",
+                "line": 9,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        },
+        {
+          "key": "Unresolved|unresolved.ledger-api.on-forge-payments-settled",
+          "kind": "Unresolved",
+          "state": "facts-only",
+          "facts": {
+            "id": "unresolved.ledger-api.on-forge-payments-settled",
+            "value": {
+              "owner": "ledger-api",
+              "raw": "forge.payments.settled",
+              "unresolvedKind": "event-subscribe"
+            },
+            "cites": [
+              {
+                "file": "src/main/java/forge/ledger/SettlementListener.java",
+                "line": 14,
+                "commit": "0123abc"
+              }
+            ]
+          }
+        }
+      ],
+      "state": "compared",
+      "readersSlot": "catalog/sources/readers/forge-ledger.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "factsSlot": "catalog/sources/facts/forge-ledger.jsonl",
+      "factsCommit": "0123abc"
+    },
+    {
+      "repo": "forge-reports-job",
+      "dismissals": "facts/forge-reports-job.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-reports-job.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repo": "forge-gateway",
+      "dismissals": "facts/forge-gateway.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-gateway.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repo": "forge-events",
+      "dismissals": "facts/forge-events.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-events.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repo": "forge-infra",
+      "dismissals": "facts/forge-infra.crosscheck.yaml",
+      "counts": {
+        "agree": 0,
+        "readersOnly": 0,
+        "factsOnly": 0,
+        "disagree": 0,
+        "dismissed": 0
+      },
+      "items": [],
+      "state": "no-facts",
+      "readersSlot": "catalog/sources/readers/forge-infra.json",
+      "readersCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "problems": []
+}

@@ -378,6 +378,35 @@ export async function glossaryList(
   return 0;
 }
 
+/**
+ * ADR 0195: after the glossary's inputs changed (proposals, decisions), the build writes
+ * catalog/generated, its guards first; a refusal is said with the command that goes on.
+ */
+async function glossaryBuild(root: string, command: string, io: Output): Promise<number> {
+  const { acquireLock, LockHeldError } = await import("@maycombhq/core");
+  const { buildAndWrite } = await import("@maycombhq/scanner");
+  let lock;
+  try {
+    lock = await acquireLock(root, "scan", command);
+  } catch (e) {
+    if (e instanceof LockHeldError) {
+      io.err(e.message);
+      return 1;
+    }
+    throw e;
+  }
+  try {
+    const r = await buildAndWrite(root, { command: "atticus catalog build" });
+    if (r.guard.refused) {
+      for (const l of r.guard.refused.message.split("\n")) io.err(l);
+      return 1;
+    }
+    return 0;
+  } finally {
+    await lock.release();
+  }
+}
+
 /** atticus glossary scan [--mode <mode>] [--json] */
 export async function glossaryScan(
   root: string,
@@ -390,7 +419,11 @@ export async function glossaryScan(
     const r = await scanGlossary(root, {
       ...(runtime ? { runtime } : {}),
       ...(deps.now ? { now: deps.now() } : {}),
+      writeTerms: false,
     });
+    // ADR 0195 (CS2): the glossary writes its own inputs (proposals); the build writes the terms.
+    const built = await glossaryBuild(root, "atticus glossary scan", io);
+    if (built !== 0) return built;
     if (o.json) {
       for (const p of r.problems) io.err(p);
       io.out(
@@ -448,7 +481,12 @@ export async function completeGlossaryScan(
   deps: { now?: Date } = {},
 ): Promise<number> {
   try {
-    const r = await completeGlossaryDefinitions(root, run, deps.now ? { now: deps.now } : {});
+    const r = await completeGlossaryDefinitions(root, run, {
+      ...(deps.now ? { now: deps.now } : {}),
+      writeTerms: false,
+    });
+    const built = await glossaryBuild(root, "atticus glossary scan", io);
+    if (built !== 0) return built;
     printGlossaryScan(r, io);
     return 0;
   } catch (e) {
@@ -466,7 +504,8 @@ async function decide(
     const g = await loadGlossary(root);
     const ds = make(g);
     const files = await writeDecisions(join(g.catalogDir, "curated"), ds);
-    await scanGlossary(root);
+    const built = await glossaryBuild(root, "atticus catalog build", io);
+    if (built !== 0) return built;
     io.out(
       `Wrote ${files.map((f) => `catalog/curated/${f}`).join(" and ")}: ${said}. Commit it so every scan keeps it.`,
     );

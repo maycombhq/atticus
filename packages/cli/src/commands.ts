@@ -42,6 +42,8 @@ export async function schemaExport(dir: string, io: Output): Promise<number> {
     ["orgpack", orgPackJsonSchemas()],
     ["ai", aiJsonSchemas()],
     ["executors", executorJsonSchemas()],
+    // ADR 0195: the source slots, build.json and the cross-check's dismissals (not contracts).
+    ["sources", (await import("@maycombhq/scanner")).slotJsonSchemas()],
   ];
   let n = 0;
   for (const [group, schemas] of groups) {

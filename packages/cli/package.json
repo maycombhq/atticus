@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000 --exclude test/home-speed.test.ts",
-    "test:speed": "vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=300000 test/home-speed.test.ts"
+    "test:speed": "vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=300000 test/home-speed.test.ts",
+    "test:properties:nightly": "node test/properties/nightly.mjs"
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
@@ -64,6 +65,7 @@
     "@maycombhq/embed-model": "workspace:*"
   },
   "devDependencies": {
+    "fast-check": "^4.10.2",
     "yaml": "^2.9.1"
   }
 }

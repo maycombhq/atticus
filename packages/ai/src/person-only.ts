@@ -52,6 +52,36 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   },
   { test: (w) => w[1] === "accept", why: "a person accepts what is proposed" },
   { test: (w) => w[0] === "baseline", why: "a person accepts the catalog as the baseline" },
+  {
+    // ADR 0195 point 3: a person checks the cited line, then dismisses what the readers found.
+    test: (w, a) =>
+      w[0] === "catalog" && w[1] === "crosscheck" && flag(a, "--dismiss", "--undismiss"),
+    why: "a person dismisses what the readers found, after checking its line (ADR 0195)",
+  },
+  {
+    // ADR 0195 point 3: promote to assert writes a `by: person` fact; only a person vouches.
+    test: (w, a) => w[0] === "catalog" && w[1] === "crosscheck" && flag(a, "--promote"),
+    why: "a person promotes what the readers found to their own fact, after checking its line (ADR 0195)",
+  },
+  {
+    // ADR 0195 (the review): a confirmation names the count a person was shown; only a person
+    // confirms that what a build removes or discards may go, on any command that builds.
+    test: (_w, a) => flag(a, "--allow-removals", "--discard-edits"),
+    why: "a person confirms what a build removes or discards, with the count it listed (ADR 0195)",
+  },
+  {
+    test: (w, a) =>
+      w[0] === "catalog" && (w[1] === "undo" || w[1] === "prune") && switchOn(a, "--yes"),
+    why: "a person confirms an undo or a prune after reading what it puts back or removes (ADR 0195)",
+  },
+  {
+    test: (w, a) => w[0] === "catalog" && w[1] === "edits" && switchOn(a, "--curate"),
+    why: "a person makes their hand edits curated decisions (ADR 0195)",
+  },
+  {
+    test: (w, a) => w[0] === "upgrade" && (switchOn(a, "--yes") || flag(a, "--accept-changes")),
+    why: "a person confirms the upgrade to source slots after reading what it writes (ADR 0195)",
+  },
   { test: (w) => w[0] === "triage" && w[1] === "decide", why: "a person decides a triage item" },
   { test: (w) => w[0] === "finding", why: "a person acts on a finding (it is recorded with them)" },
   {
@@ -135,9 +165,12 @@ export function personOnlyWhy(argv: readonly string[]): string | undefined {
   return RULES.find((r) => r.test(words, argv))?.why;
 }
 
-/** Files under facts/ that hold a person's record: an audit's answers, a person's corrections. */
+/**
+ * Files under facts/ that hold a person's record: an audit's answers, a person's corrections, a
+ * person's dismissals of what the readers found (ADR 0195 point 3).
+ */
 export const isPersonsFactsFile = (name: string) =>
-  /\.audit\.yaml$|\.corrections\.jsonl$/i.test(windowsName(name));
+  /\.audit\.yaml$|\.corrections\.jsonl$|\.crosscheck\.yaml$/i.test(windowsName(name));
 
 /**
  * Final review: the name Windows opens for a path's last part. It drops trailing dots and spaces,

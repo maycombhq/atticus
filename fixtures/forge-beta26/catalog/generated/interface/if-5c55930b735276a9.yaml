@@ -1,0 +1,22 @@
+schemaVersion: 5
+kind: Interface
+id: if-5c55930b735276a9
+status: current
+confidence: inferred
+conflicts: []
+direction: outbound
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 10
+    path: src/main/java/forge/portal/AuditPublisher.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+from: portal-bff
+method: POST
+normalizedPath: /audit/events
+sync: sync
+to: audit-svc
+via: direct

@@ -252,6 +252,91 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     ).toEqual(["${Topics.PAYMENTS}", "${Topics.PAYMENTS}"]);
     expect(r.records.filter((x) => x.kind !== "Unresolved" && x.id.includes("topics"))).toEqual([]);
   });
+
+  it("gives a pair the topic's Endpoint only when it is the topic's definition or one of the pair serves it (ADR 0195, locality)", () => {
+    // forge-payments' facts read its listener as an Endpoint of its own on the topic: the
+    // arrow from the publisher to forge-ledger, another consumer, doesn't point at it.
+    const own = {
+      ...base,
+      kind: "Endpoint",
+      id: "pay.on-forge-notify-changed",
+      component: "pay",
+      endpointType: "event",
+      pathOrTopic: "forge.notify.changed",
+      normalizedPath: "forge.notify.changed",
+      evidence: [{ ...ev[0]!, repo: "forge-pay", side: "callee" }],
+    } as unknown as CatalogRecord;
+    const r = merged([
+      component("notify", "portal"),
+      component("api", "ledger"),
+      component("pay", "ledger"),
+      own,
+      loose("notify", "event-publish", "forge.notify.changed", "caller"),
+      loose("api", "event-subscribe", "forge.notify.changed", "callee"),
+      loose("pay", "event-subscribe", "forge.notify.changed", "callee"),
+    ]);
+    const ifs = r.records.filter((x) => x.kind === "Interface") as unknown as {
+      to: string;
+      endpoint?: string;
+    }[];
+    const by = Object.fromEntries(ifs.map((i) => [i.to, i.endpoint]));
+    expect(by.api).toBeUndefined();
+    expect(by.pay).toBe("pay.on-forge-notify-changed");
+  });
+
+  it("two consumers' own Endpoints on a topic with no definition: the second's changes nothing of the first's arrow or Endpoint (ADR 0195, locality)", () => {
+    const ownOf = (component: string, repo: string) =>
+      ({
+        ...base,
+        kind: "Endpoint",
+        id: `${component}.on-forge-notify-changed`,
+        component,
+        endpointType: "event-topic",
+        pathOrTopic: "forge.notify.changed",
+        normalizedPath: "forge.notify.changed",
+        evidence: [{ ...ev[0]!, repo, side: "callee" }],
+      }) as unknown as CatalogRecord;
+    const estate = (second: boolean) =>
+      merged([
+        component("notify", "portal"),
+        component("api", "ledger"),
+        component("pay", "ledger"),
+        ownOf("pay", "forge-pay"),
+        ...(second ? [ownOf("api", "forge-api")] : []),
+        loose("notify", "event-publish", "forge.notify.changed", "caller"),
+        loose("api", "event-subscribe", "forge.notify.changed", "callee"),
+        loose("pay", "event-subscribe", "forge.notify.changed", "callee"),
+      ]);
+    // forge-pay's verify --write took its snapshot; then forge-api's does.
+    const first = estate(false).records;
+    const after = estate(true).records;
+    const of = (rs: CatalogRecord[], kind: string, pick: (r: Record<string, unknown>) => boolean) =>
+      rs.find((r) => r.kind === kind && pick(r as unknown as Record<string, unknown>));
+    const payArrow = (rs: CatalogRecord[]) => of(rs, "Interface", (r) => r.to === "pay");
+    expect(payArrow(after)).toEqual(payArrow(first));
+    expect(of(after, "Endpoint", (r) => r.id === "pay.on-forge-notify-changed")).toEqual(
+      of(first, "Endpoint", (r) => r.id === "pay.on-forge-notify-changed"),
+    );
+    // Each pair names its own consumer's Endpoint.
+    const ends = Object.fromEntries(
+      after
+        .filter((r) => r.kind === "Interface")
+        .map((r) => {
+          const i = r as unknown as { to: string; endpoint?: string };
+          return [i.to, i.endpoint];
+        }),
+    );
+    expect(ends).toEqual({
+      api: "api.on-forge-notify-changed",
+      pay: "pay.on-forge-notify-changed",
+    });
+    expect(
+      after
+        .filter((r) => r.kind === "Endpoint")
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(["api.on-forge-notify-changed", "pay.on-forge-notify-changed"]);
+  });
 });
 
 describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {

@@ -1,0 +1,21 @@
+schemaVersion: 5
+kind: Deployment
+id: ledger-api.prod
+status: current
+confidence: verified
+component: ledger-api
+env: prod
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: infra@1.1.0
+    line: 7
+    path: k8s/ledger-api.yaml
+    repo: forge-infra
+    scannedAt: 2026-10-18T09:00:00Z
+    source: infrastructure
+networkPolicies: []
+platform: kubernetes
+replicas: 3
+resources:
+  cpu: "1"
+  memory: 1Gi

@@ -1,0 +1,37 @@
+{
+  "invariant": "large-removals-confirmed",
+  "note": "large-removals-confirmed: verify-write removed 1 of forge-ledger's 3 records without the removals being confirmed",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": ["forge.ledger.changed"],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,6 +11,7 @@ import { starterReviewText } from "@maycombhq/naysayer";
 import { GENERATED_MARK } from "@maycombhq/changes";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { doctorChecks } from "../src/doctor.js";
+import { main } from "../src/main.js";
 import {
   proposePlan,
   recordUpgraded,
@@ -155,7 +157,9 @@ describe("atticus upgrade", () => {
     );
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/12 upgrade steps to run/);
+    // ADR 0195 (CS2): and the step that adopts its catalog into source slots, shown first.
+    expect(r.out[0]).toMatch(/13 upgrade steps to run/);
+    expect(r.out.join("\n")).toMatch(/Adopt the catalog into source slots \(ADR 0195\)/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -281,8 +285,57 @@ describe("atticus upgrade", () => {
       2, 2, 2, 2,
     ]);
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
-    expect(await upgradeCommand(root, { check: true }, io().io, "1.0.0")).toBe(0);
+    // ADR 0195 (CS2): the slots step was only shown (it writes with --yes): --check still waits
+    // on it. This old metarepo's catalog is a hand-made one, not a scan's (it lacks the profile's
+    // other systems a build makes), so --yes refuses and writes nothing, listing the files; the
+    // lossless upgrade of a scanned catalog is upgrade-slots-cli.test.ts's.
+    expect(r.out.join("\n")).toMatch(/atticus upgrade --yes applies this step/);
+    expect(await upgradeCommand(root, { check: true }, io().io, "1.0.0")).toBe(1);
+    const y = io();
+    expect(
+      await upgradeCommand(
+        root,
+        { by: "pat", yes: true, now: new Date("2026-10-19T10:00:00Z") },
+        y.io,
+        "1.0.0",
+      ),
+    ).toBe(1);
+    expect(y.err.join("\n")).toMatch(/The first build would change 4 record files/);
+    expect(y.err.join("\n")).toMatch(/atticus upgrade --yes --accept-changes 4/);
+    expect(existsSync(join(root, "catalog/sources"))).toBe(false);
     expect(await readdir(join(root, ".atticus/backups"))).toEqual(["20261019-100000"]);
+    // The changes shown, then accepted with their count (any other count refuses again): the
+    // slots, the copy of the catalog as it was, and the first build's catalog are written.
+    const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
+    const wrong = io();
+    expect(
+      await upgradeCommand(root, { by: "pat", yes: true, acceptChanges: 3 }, wrong.io, "1.0.0"),
+    ).toBe(1);
+    expect(wrong.err.join("\n")).toMatch(/--accept-changes 3 doesn't name the 4 listed/);
+    expect(existsSync(join(root, "catalog/sources"))).toBe(false);
+    const ok = io();
+    expect(
+      await upgradeCommand(root, { by: "pat", yes: true, acceptChanges: 4 }, ok.io, "1.0.0"),
+    ).toBe(0);
+    expect(existsSync(join(root, "catalog/sources/build.json"))).toBe(true);
+    expect(
+      await readFile(
+        join(root, "catalog/sources/legacy/generated-before-upgrade/system/ledger.yaml"),
+        "utf8",
+      ),
+    ).toBe(before);
+    // The review: the upgrade leaves its build report, as every writer does (Catalog builds).
+    const { readBuildReport } = await import("@maycombhq/scanner");
+    const report = await readBuildReport(root);
+    expect(report).toMatchObject({
+      outcome: "written",
+      command: "atticus upgrade --yes --accept-changes 4",
+    });
+    expect(report!.counts.added + report!.counts.changed + report!.counts.removed).toBe(4);
+    expect(report!.slots.length).toBeGreaterThan(0);
+    expect(report!.undo).toBeGreaterThan(0);
+    const check = io();
+    expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });
 
   it("moves a version 1 change-types.yaml to version 2, every type still standard (ADR 0113)", async () => {

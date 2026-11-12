@@ -1,0 +1,28 @@
+schemaVersion: 5
+kind: Capability
+id: feature.daily-entries-report
+status: current
+confidence: inferred
+entryPoints:
+  - reports-job
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: component@1.3.0
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    source: config
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 1
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+externalRefs: []
+name: Daily entries report
+namedBy: detected
+records:
+  - ledger-db.entry
+  - reports-job
+tags: []

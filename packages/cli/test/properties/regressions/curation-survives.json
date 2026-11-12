@@ -1,0 +1,46 @@
+{
+  "invariant": "curation-survives",
+  "note": "curation-survives: ledger-api.get-account is suppressed by cd-suppress-ledger-api.get-account and its repo still serves it, yet rename wrote it",
+  "seed": 11,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/accounts"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "curate",
+      "action": "suppress",
+      "pick": 0
+    },
+    {
+      "t": "rename",
+      "slot": 0
+    }
+  ]
+}
