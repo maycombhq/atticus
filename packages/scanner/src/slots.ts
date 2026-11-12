@@ -105,6 +105,12 @@ export const FactsSlotMeta = z.strictObject({
   factsHash: SHA256,
   /** The repo's `<repo>.contracts.yaml` as read at the facts' commit (ADR 0151), or null. */
   contracts: ContractsFile.nullable(),
+  /**
+   * Beta.27.2 (ADR 0195 addendum "a legacy join its caller's facts place elsewhere"): verify's
+   * own verdict that the read is complete, every source file read or reviewed. Left out for a
+   * read in parts (never false), so a meta written before it reads as one.
+   */
+  readComplete: z.literal(true).optional(),
 });
 export type FactsSlotMetaT = z.infer<typeof FactsSlotMeta>;
 
@@ -198,6 +204,7 @@ export function serializeFactsSlotMeta(m: FactsSlotMetaT): string {
     factsSchemaVersion: m.factsSchemaVersion,
     factsHash: m.factsHash,
     contracts: m.contracts === null ? null : canonicalize(m.contracts, ["schemaVersion"]),
+    ...(m.readComplete ? { readComplete: true } : {}),
   });
 }
 
@@ -506,7 +513,14 @@ export async function writeReadersSlots(
  */
 export async function writeFactsSlot(
   root: string,
-  s: { repo: string; commit: string; facts: readonly Fact[]; contracts: ContractsFileT | null },
+  s: {
+    repo: string;
+    commit: string;
+    facts: readonly Fact[];
+    contracts: ContractsFileT | null;
+    /** verify's verdict that every source file is read or reviewed. */
+    readComplete?: boolean;
+  },
 ): Promise<{ facts: "written" | "unchanged"; meta: "written" | "unchanged"; count: number }> {
   const paths = factsSlotPaths(root, s.repo);
   const text = serializeFactsSnapshot(s.facts);
@@ -518,6 +532,7 @@ export async function writeFactsSlot(
     factsSchemaVersion: FACTS_SCHEMA_VERSION,
     factsHash: sha256Of(text),
     contracts: s.contracts,
+    ...(s.readComplete ? { readComplete: true as const } : {}),
   });
   const facts = await writeSlotFile(paths.facts, text);
   return { facts, meta: await writeSlotFile(paths.meta, meta), count: s.facts.length };

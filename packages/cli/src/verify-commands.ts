@@ -396,6 +396,11 @@ export async function verifyCommand(
   // would take the half-read repo from them). Without --write the check keeps its inner loop
   // (ADR 0124 A3b): the kept facts in canonical form, the rejected ones in <repo>.rejected.jsonl.
   const refusedWrite = o.write === true && failed;
+  // Verify's own verdict ("The read is complete: every source file is read or reviewed"),
+  // kept in the facts slot's meta as `readComplete` (ADR 0195 addendum "a legacy join its
+  // caller's facts place elsewhere"): only a complete read retires an adopted arrow that cites
+  // no caller line.
+  const complete = !failed && report.coverage.unknown.length === 0;
   const summary = await writeVerifyFiles(
     root,
     repo,
@@ -445,6 +450,7 @@ export async function verifyCommand(
           dir,
           command: `atticus verify ${repo} --write`,
           ...(commit ? { commit } : {}),
+          ...(complete ? { readComplete: true } : {}),
           ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
           ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
           ...(o.plan !== undefined ? { plan: o.plan } : {}),
@@ -711,6 +717,7 @@ export async function verifyCommand(
       command: `atticus verify ${repo} --write`,
       verbose: o.verbose === true,
       ...(commit ? { commit } : {}),
+      ...(complete ? { readComplete: true } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined ? { plan: o.plan } : {}),

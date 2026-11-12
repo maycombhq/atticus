@@ -35,6 +35,11 @@ export interface Ep {
 
 export interface Call extends Ep {
   host: string;
+  /**
+   * The target the assistant names for the call (a fact's `to`), when the examples give one: the
+   * join takes a target it doesn't know for one outside the estate (beta.27.2, the review).
+   */
+  to?: string;
 }
 
 /** What a repo's code holds at one commit. */
@@ -49,6 +54,11 @@ export interface Code {
    * point 4, so small explained removals are written, not only confirmed. 0 when absent.
    */
   filler?: number;
+  /**
+   * A source file no fact cites and nothing marks reviewed (the examples' read in parts): verify
+   * then says the read isn't complete, and its facts slot doesn't say `readComplete`.
+   */
+  unread?: true;
 }
 
 /** Every endpoint a repo's code serves: its own, then its filler routes. */
@@ -274,6 +284,12 @@ export function renderCode(b: Base, code: Code): Rendered {
     lines.push("}");
     file(`${b.cls}Listener.java`, lines, marks);
   }
+  if (code.unread)
+    file(
+      `${b.cls}Jobs.java`,
+      [`package forge.${b.short};`, "", `public class ${b.cls}Jobs {}`],
+      [],
+    );
   return { files, at };
 }
 
@@ -282,6 +298,27 @@ const slug = (s: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+
+/**
+ * What the assistant writes for a repo's read under `<root>/facts/`: its facts, and pom.xml
+ * marked reviewed with nothing to record, so the read is complete (verify says so, and its facts
+ * slot's meta says `readComplete`) unless the code has a file no fact cites (`Code.unread`).
+ */
+export async function writeRead(
+  root: string,
+  b: Base,
+  repo: string,
+  code: Code,
+  commit: string,
+  o: { broken?: boolean } = {},
+): Promise<void> {
+  await mkdir(join(root, "facts"), { recursive: true });
+  await writeFile(join(root, "facts", `${repo}.jsonl`), renderFacts(b, repo, code, commit, o));
+  await writeFile(
+    join(root, "facts", `${repo}.reviewed.jsonl`),
+    `${JSON.stringify({ path: "pom.xml", why: "The build file names the artifact only." })}\n`,
+  );
+}
 
 /**
  * The facts the assistant writes for a repo's code at a commit (ADR 0124): one per entry, call
@@ -333,6 +370,7 @@ export function renderFacts(
       method: c.method,
       path: c.path,
       host: c.host,
+      ...(c.to ? { to: c.to } : {}),
       sync: "sync",
       cite: cite(key.call(c), c.path),
       ...tail,

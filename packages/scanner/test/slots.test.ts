@@ -94,6 +94,32 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
     ]);
   });
 
+  it("a facts meta may say its read is complete (readComplete: true), and nothing else", () => {
+    // Beta.27.2, the review (ADR 0195 addendum "a legacy join its caller's facts place
+    // elsewhere"): verify --write records its own verdict that every source file is read or
+    // reviewed, so the build can tell a whole read from one in parts.
+    const meta = JSON.parse(read("facts/forge-ledger.meta.json")) as Record<string, unknown>;
+    const done = parseFactsSlotMeta(JSON.stringify({ ...meta, readComplete: true }));
+    expect(done.ok, done.ok ? "" : JSON.stringify(done.issues)).toBe(true);
+    if (!done.ok) return;
+    expect(done.slot.readComplete).toBe(true);
+    const text = serializeFactsSlotMeta(done.slot);
+    expect(Object.keys(JSON.parse(text) as object)).toEqual([
+      "slotVersion",
+      "kind",
+      "repo",
+      "commit",
+      "factsSchemaVersion",
+      "factsHash",
+      "contracts",
+      "readComplete",
+    ]);
+    // A read in parts says nothing: the field is left out, never false.
+    expect(parseFactsSlotMeta(JSON.stringify({ ...meta, readComplete: false })).ok).toBe(false);
+    const s = slotJsonSchemas() as Record<string, { properties: Record<string, unknown> }>;
+    expect(Object.keys(s.FactsSlotMeta!.properties)).toContain("readComplete");
+  });
+
   it("the legacy joins slot", () => {
     const text = read("legacy/joins.json");
     const p = parseLegacyJoins(text);

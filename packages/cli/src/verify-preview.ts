@@ -238,6 +238,7 @@ export async function verifyWritePreview(
     ...(op ? { op } : {}),
     contracts,
     cache: false,
+    ...(report.coverage.unknown.length === 0 ? { readComplete: true } : {}),
     ...(o.extra?.length ? { extraPairs: pairsFromCorrections(report.accepted, o.extra) } : {}),
   });
   const catalogRel = layoutOf(root).catalog.replace(/\/+$/, "");

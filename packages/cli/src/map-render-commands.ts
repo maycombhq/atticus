@@ -502,6 +502,12 @@ export async function projectFactsIntoCatalog(
     extraPairs?: Readonly<Record<string, PersonPair>>;
     /** The commit verify checked the facts at (the snapshot's). */
     commit?: string;
+    /**
+     * Verify's verdict that the read is complete (every source file read or reviewed): the
+     * snapshot's meta says `readComplete` (ADR 0195 addendum "a legacy join its caller's facts
+     * place elsewhere").
+     */
+    readComplete?: boolean;
   } = {},
 ) {
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
@@ -525,6 +531,7 @@ export async function projectFactsIntoCatalog(
   const snap = factsSnapshotWrites(root, repo, facts, {
     commit: given.commit ?? snapshotCommitOf(facts),
     contracts: contracts && contracts.entries.length ? contracts : null,
+    ...(given.readComplete ? { readComplete: true } : {}),
   });
   const inputs = await loadBuildInputs(root, { op });
   const build = await buildCatalog({
@@ -600,6 +607,8 @@ export async function writeFactsIntoCatalog(
     verbose?: boolean;
     /** The commit verify checked the facts at (the snapshot's commit); default the facts' own. */
     commit?: string;
+    /** Verify's verdict that the read is complete: the snapshot's meta says `readComplete`. */
+    readComplete?: boolean;
     /** `--allow-removals <count>` and `--discard-edits <count>` (ADR 0195 point 4). */
     allowRemovals?: number;
     discardEdits?: number;
@@ -672,6 +681,7 @@ export async function writeFactsIntoCatalog(
       existing: existing.records,
       contracts,
       commit: snapshotCommit,
+      ...(o.readComplete ? { readComplete: true } : {}),
     });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)

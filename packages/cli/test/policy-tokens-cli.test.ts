@@ -20,6 +20,7 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
+import { lastBuildOf } from "../src/build-report.js";
 import { projectFactsIntoCatalog } from "../src/map-render-commands.js";
 // ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
 import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
@@ -161,6 +162,8 @@ const rereadWithout = (id: string) =>
   lines(factsOf(PROXY))
     .filter((l) => !l.includes(`"id":"${id}"`))
     .join("\n") + "\n";
+/** The bundle's descriptor, read and found to have nothing to record. */
+const REVIEWED = `${JSON.stringify({ path: "apiproxy/northwind_pay_1-0.xml", why: "The bundle's descriptor: names and revision only." })}\n`;
 const GUESSED = [
   ["payments-api", "GET", "/payments/{}"],
   ["payments-api", "POST", "/payments"],
@@ -272,6 +275,10 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
     });
     expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
     expect(await fromProxy(root)).toEqual(GUESSED);
+    // The services the arrows go to are read from facts first: while a callee is still legacy,
+    // the join can't place a call with it, and its arrows stay (the owner's narrowing).
+    for (const r of Object.keys(COMMIT)) if (r !== PROXY) await verify(root, r);
+    expect(await fromProxy(root)).toEqual(GUESSED);
 
     // The read again with the token's settings, a route's forwarding call said not to be one.
     writeFileSync(
@@ -279,19 +286,80 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
       `${notACall("call.get.refunds-id", 13, "/refunds/*")}\n`,
     );
     writeFileSync(join(root, "facts", `${PROXY}.jsonl`), rereadWithout("call.post.payments"));
+    // The arrow that lost its caller's line has no file to check the read reached: it leaves
+    // only once the read is complete, the bundle's descriptor reviewed with nothing to record.
+    writeFileSync(join(root, "facts", `${PROXY}.reviewed.jsonl`), REVIEWED);
     const said = (await verify(root, PROXY)).split("\n");
+    expect(said).toContainEqual(expect.stringMatching(/^The read is complete: /));
     expect(await fromProxy(root)).toEqual(toVendor("call.get.payments-id", "call.post.refunds"));
-    // Each arrow said as it leaves, with why, and counted in the write's links.
-    expect(
-      said.filter((l) =>
-        /^A legacy join left catalog\/sources\/legacy\/joins\.json: Interface\/if-[0-9a-f]+\. Its caller is read from facts now, and they don't join it\.$/.test(
+    // Each arrow said as it leaves, with the call that decided it, and counted in the write's
+    // links: two calls left to the vendor, one said not to be a call (the arrow that had lost
+    // its caller's line, the read complete), one no longer read at its line.
+    const left = said.flatMap((l) => {
+      const m =
+        /^A legacy join left catalog\/sources\/legacy\/joins\.json: Interface\/if-[0-9a-f]+\. Its caller is read from facts now, and they place the call elsewhere: (.+)\.$/.exec(
           l,
-        ),
-      ),
-    ).toHaveLength(4);
-    expect(said.filter((l) => /^ {2}removed Interface\/if-/.test(l))).toHaveLength(4);
-    // The two calls left are drawn to the vendor (the review): two arrows in, four out.
-    expect(said.some((l) => /Links: .*Interfaces \+2 -4\b/.test(l))).toBe(true);
+        );
+      return m ? [m[1]!] : [];
+    });
+    // The checkout's adopted arrows to the proxy leave too, their calls joined to it now that
+    // it is read from facts.
+    expect(left.filter((l) => l.startsWith("forge-checkout's call at "))).toHaveLength(2);
+    expect(left.filter((l) => !l.startsWith("forge-checkout's call at ")).sort()).toEqual([
+      `no GET /refunds/{} call in ${PROXY}'s complete read`,
+      `no call at apiproxy/proxies/default.xml:7 in ${PROXY}'s read`,
+      `${PROXY}'s call at apiproxy/proxies/default.xml:10 is left to devapi.northwind-pay.example, outside the estate`,
+      `${PROXY}'s call at apiproxy/proxies/default.xml:4 is left to devapi.northwind-pay.example, outside the estate`,
+    ]);
+    expect(said.filter((l) => /^ {2}removed Interface\/if-/.test(l))).toHaveLength(6);
+    // The build report the Catalog builds page reads says the same for each removal.
+    const last = await lastBuildOf(root);
+    const why = (last?.removed ?? []).flatMap((x) =>
+      x.explainedBy.filter((w) => w.startsWith("its caller's facts place the call elsewhere: ")),
+    );
+    expect(
+      why.map((w) => w.replace(/^its caller's facts place the call elsewhere: /, "")).sort(),
+    ).toEqual(left.sort());
+    // The two calls left are drawn to the vendor (the review), and the checkout's calls to the
+    // proxy as the join makes them now: four arrows in, six out.
+    expect(said.some((l) => /Links: .*Interfaces \+4 -6\b/.test(l))).toBe(true);
+  }, 240_000);
+
+  it("keeps the adopted arrows while a repo the join doesn't read lists a host in the domain their calls are left to (the review)", async () => {
+    // A beta.26 metarepo with the path-guessed arrows, adopted by the upgrade, the services read
+    // from facts since; the manifest also lists a sandbox of the vendor's, not read (no slot).
+    const root = metarepo(pathGuessed());
+    for (const r of Object.keys(COMMIT)) await verify(root, r);
+    rmSync(join(root, "catalog", "sources"), { recursive: true, force: true });
+    rmSync(join(root, ".atticus"), { recursive: true, force: true });
+    const up = { out: [] as string[], err: [] as string[] };
+    const code = await main(["upgrade", "--yes", "--root", root], {
+      out: (l) => up.out.push(l),
+      err: (l) => up.err.push(l),
+    });
+    expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
+    for (const r of Object.keys(COMMIT)) if (r !== PROXY) await verify(root, r);
+    const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    const m = parse(readFileSync(manifest, "utf8")) as { repos: Record<string, unknown>[] };
+    m.repos.push({
+      id: "forge-pay-sandbox",
+      url: "https://git.forge.example/forge/forge-pay-sandbox.git",
+      type: "spring-boot",
+      owner: "team-payments",
+      component: "pay-sandbox-api",
+      system: "payments",
+      hosts: ["sandbox.northwind-pay.example"],
+    });
+    writeFileSync(manifest, stringify(m));
+
+    // The proxy read whole: the join, which reads no sandbox facts, leaves its calls to the
+    // vendor, but the sandbox may be what answers on them, so the arrows stay.
+    writeFileSync(join(root, "facts", `${PROXY}.jsonl`), factsOf(PROXY));
+    const said = (await verify(root, PROXY)).split("\n");
+    expect(
+      said.filter((l) => /^A legacy join left/.test(l) && l.includes(`${PROXY}'s call`)),
+    ).toEqual([]);
+    for (const g of GUESSED) expect(await fromProxy(root)).toContainEqual(g);
   }, 240_000);
 
   it("keeps the adopted arrows while the proxy's read hasn't reached the file their calls are in (the review)", async () => {
@@ -306,6 +374,7 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
       err: (l) => up.err.push(l),
     });
     expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
+    for (const r of Object.keys(COMMIT)) if (r !== PROXY) await verify(root, r);
     expect(await fromProxy(root)).toEqual(GUESSED);
 
     // A read in parts: its first part read config.json, not the proxy's flows. Nothing it read

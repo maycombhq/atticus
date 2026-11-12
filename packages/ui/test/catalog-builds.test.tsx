@@ -299,6 +299,23 @@ describe("Catalog builds, in every state", () => {
     // Without inputs, the build's own words stand.
     expect(whyWords({ ...r, inputs: undefined } as Api.BuildRemovalT)).toEqual(r.explainedBy);
   });
+
+  it("shows the call that decided a legacy join's leaving, as the build report says it", () => {
+    // ADR 0195 addendum "a legacy join its caller's facts place elsewhere": the removal's reason
+    // names the caller's call (joined, left outside, or gone), not only the CLI's line.
+    const decided =
+      "its caller's facts place the call elsewhere: forge-payments's call at src/main/java/forge/payments/PaymentsClient.java:9 is joined to notify-api";
+    const r: Api.BuildRemovalT = {
+      path: "catalog/generated/interface/if-payments-to-ledger.yaml",
+      kind: "Interface",
+      id: "if-payments-to-ledger",
+      repos: ["forge-ledger", "forge-payments"],
+      explainedBy: [decided, "the build changed (2.0.0-beta.27.1 to 2.0.0-beta.27.2)"],
+      reasons: ["slot", "build"],
+    };
+    expect(whyWords(r)).toEqual(r.explainedBy);
+    expect(html(<RemovalsTable removals={[r]} />)).toContain(esc(decided));
+  });
 });
 
 const UPGRADE: Api.CatalogUpgradeViewT = {
