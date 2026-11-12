@@ -189,8 +189,15 @@ function partners(m: Model, slot: number): number[] {
     .map((r) => r.slot);
 }
 
-/** The kinds a join makes or unmakes in a partner's own records: its loose ends and features. */
-const JOINED = new Set(["Unresolved", "Capability"]);
+/**
+ * The kinds a join makes or unmakes in a partner's own records: its loose ends, features and
+ * glossary terms. A term is a word two or more records use (ADR 0195's CS2 addendum, "Glossary
+ * evidence": it "exists partly because of each repo that uses it"), so when a partner's loose
+ * call becomes an arrow to the repo read, the term's uses change with the join, though an arrow
+ * inferred from a host cites only its caller (the same kinds the build's removal guard counts as
+ * join-derived, JOIN_DERIVED in scanner/src/build.ts).
+ */
+const JOINED = new Set(["Unresolved", "Capability", "GlossaryTerm"]);
 
 const unchangedSince = (a: Map<string, string>, b: Map<string, string>, skip: string[]) =>
   changedPaths(a, b).filter((p) => !skip.includes(p));

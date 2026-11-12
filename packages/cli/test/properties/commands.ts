@@ -759,7 +759,10 @@ export async function act(
         // A record a person adds by hand: a copy of an endpoint, on a path no repo serves.
         const id = `${rec.id}.by-hand`;
         const path = `/by-hand/${rec.id}`;
-        if (m.curated.some((x) => x.target === id)) return undefined;
+        // Added once already and not discarded (it stays a hand edit: an added record is never
+        // made a curated decision), or made curated before: nothing new to add.
+        if (m.curated.some((x) => x.target === id) || m.handEdits.some((e) => e.id === id))
+          return undefined;
         const doc = parse(await readFile(full(rel), "utf8")) as Record<string, unknown>;
         const p = parseRecord({ ...doc, id, pathOrTopic: path, normalizedPath: path });
         if (!p.ok) throw new Error(`harness: bad added record ${JSON.stringify(p.issues)}`);
