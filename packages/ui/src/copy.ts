@@ -30,7 +30,22 @@ export const COPY = {
       `The server answered with something that isn't Atticus's (status ${status}). Check that the address is the one atticus ui printed.`,
     offlinePanel:
       "The Atticus server the extension started isn't answering. Run Atticus: Open the app from the Command Palette to start it again, then press Try again.",
-    offlineShort: "the server isn't answering (the note at the top says how to fix it)",
+    /**
+     * Beta.27 review: the words a section says while the server is down, beside the one note
+     * that says it (above the page in either layout; the Explorer is beside the page, not under
+     * it, so not "at the top").
+     */
+    offlineShort: "the server isn't answering (the note above the page says how to fix it)",
+    /** A section's quiet state while the server is down: the note above says the rest. */
+    notLoadedOffline:
+      "Not loaded: the server isn't answering (the note above the page says how to fix it).",
+    /**
+     * Beta.27 review (blocker): `atticus ui` started again, with a new session token, and the
+     * page couldn't read it: one note, with Reload.
+     */
+    restarted:
+      "The Atticus app restarted, so this page's session ended. Reload the page to go on where you were.",
+    reload: "Reload the page",
     online: "The server is answering again.",
     /** Review of beta.23: a write run as a job ended without its answer (stopped, or it broke). */
     jobEnded: (state: string, words: string) =>
@@ -2044,6 +2059,15 @@ export const COPY = {
     } as Record<string, string>,
     askItem: (question: string) => `Ask: ${question}`,
     askDetail: "answer from the catalog, with the query shown",
+    /** Beta.27 review: Ctrl+K's actions, found by their words ("sync"). */
+    sync: {
+      label: "Sync the repos",
+      detail:
+        "Clone each repo's base clone, or bring it up to date; the Console shows it as it runs",
+      also: ["sync", "clone the repos", "update the repos", "workspace sync", "base clones"],
+      started: "Syncing the repos: the Console shows each repo as it goes.",
+      failed: (why: string) => `The sync didn't start: ${why}`,
+    },
     goToAScreen: "Go to a screen, change or record, or ask a question",
     goToAScreen2: "Go to a screen, change or record… or ask a question",
     nothingMatches: "Nothing matches.",
@@ -5106,6 +5130,12 @@ export const COPY = {
       cancelled: "cancelled",
       ended: "ended without saying",
     } as Record<string, string>,
+    /** Beta.27 review: a job of an earlier run of the app, running when that app closed. */
+    appClosedState: "stopped when the app closed",
+    appClosed:
+      "The app closed (or restarted) while this ran, so it stopped there. Its lines up to then are below; start it again from where you started it.",
+    /** Beta.27 review: Stop was asked and the job is ending. */
+    stoppingState: "stopping…",
     from: (where: string) => `from ${where}`,
     at: (time: string) => `at ${time}`,
     exitCode: (code: number) => `exit code ${code}`,

@@ -12,6 +12,7 @@ import {
   runningDirOf,
   runLogsDirOf,
   runTitle,
+  startAppRun,
   startedByOf,
   startTerminalRun,
   tailTerminalRunLines,
@@ -829,5 +830,59 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
       ".retitled-beta27",
       "20261101-100000-4242-ab12.json",
     ]);
+  });
+});
+
+/**
+ * Beta.27 review: the app's jobs were in memory only, so a restart of the app lost them from the
+ * Console, Runs and Problems. Each is kept in the run log as a command run is, `app` as where it
+ * started, with its job and the app's own title; one still running when the app closed says so.
+ */
+describe("a job the app started, in the run log", () => {
+  it("records its title, job, lines and end, and is never retitled", async () => {
+    const root = await fresh();
+    const rec = startAppRun(root, {
+      title: "Sync forge-ledger, forge-portal",
+      job: { id: "job-3", kind: "sync" },
+      now: at("2026-11-11T10:00:00.000Z"),
+      redact: HOME,
+    })!;
+    rec.line("forge-ledger: cloned into /home/tom/work/forge");
+    rec.end(0);
+    const [r] = readTerminalRuns(root, { alive: () => true });
+    expect(r).toMatchObject({
+      title: "Sync forge-ledger, forge-portal",
+      startedBy: "app",
+      job: { id: "job-3", kind: "sync" },
+      state: "done",
+      command: [],
+    });
+    expect(readTerminalRunLines(root, rec.runId)!.lines[0]).not.toContain("/home/tom");
+    expect(retitleTerminalRuns(root, () => ({ command: ["x"], title: "atticus x" }))).toBe(0);
+    expect(readTerminalRuns(root, { alive: () => true })[0]!.title).toBe(
+      "Sync forge-ledger, forge-portal",
+    );
+  });
+
+  it("one running when the app closed says so; one whose app crashed reads as stale", async () => {
+    const root = await fresh();
+    const closed = startAppRun(root, { title: "Scan", job: { id: "job-1", kind: "scan" } })!;
+    closed.end(143, "app-closed");
+    const crashed = startAppRun(root, { title: "Sync", job: { id: "job-2", kind: "sync" } })!;
+    const runs = readTerminalRuns(root, { alive: () => false });
+    const byId = new Map(runs.map((r) => [r.runId, r]));
+    expect(byId.get(closed.runId)).toMatchObject({ state: "cancelled", appClosed: true });
+    expect(byId.get(crashed.runId)).toMatchObject({ state: "running", stale: true });
+  });
+
+  it("several jobs started in one second each get their own record", async () => {
+    const root = await fresh();
+    const now = at("2026-11-11T10:00:00.000Z");
+    const ids = new Set<string>();
+    for (let i = 0; i < 20; i++)
+      ids.add(
+        startAppRun(root, { title: `Job ${i}`, job: { id: `job-${i}`, kind: "work" }, now })!.runId,
+      );
+    expect(ids.size).toBe(20);
   });
 });

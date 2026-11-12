@@ -162,8 +162,13 @@ export function View<T>(p: {
   return <>{p.children(p.of.data)}</>;
 }
 
-/** Why a load failed, in words, with Try again when the call can be run again. */
+/**
+ * Why a load failed, in words, with Try again when the call can be run again. Beta.27 review:
+ * while the server is down the one note above the page says so (an alert, with Try again); a
+ * section only says, quietly, that it isn't loaded, and the page loads again when it is back.
+ */
 export function LoadError({ error, retry }: { error: string; retry?: (() => void) | undefined }) {
+  if (isOffline(error)) return <div className="state muted">{COPY.app.notLoadedOffline}</div>;
   return (
     <div className="state error" role="alert">
       <p style={{ margin: 0 }}>

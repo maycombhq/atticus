@@ -119,6 +119,27 @@ describe("the local index", () => {
     ix.close();
   });
 
+  // Beta.27 review: Ctrl+K couldn't find a system by its name: words came back by kind and id
+  // (columns before systems), and the palette shows the first six.
+  it("puts the best match of the words first: the exact name, then its start, then a word in it", async () => {
+    const ix = await openIndex(await forgeRoot());
+    const ledger = ix.query("ledger", { limit: 6 }).rows.map((r) => `${r.kind}/${r.id}`);
+    expect(ledger[0]).toBe("System/ledger");
+    // Then what starts with it, systems and components before tables and columns.
+    const rest = ix.query("ledger").rows.map((r) => `${r.kind}/${r.id}`);
+    const at = (k: string) => rest.findIndex((x) => x.startsWith(`${k}/`));
+    expect(at("Component")).toBeGreaterThan(-1);
+    if (at("Column") >= 0) expect(at("Component")).toBeLessThan(at("Column"));
+    // An exact name, whatever its case, first.
+    expect(ix.query("Northwind Pay").rows[0]!.id).toBe("northwind-pay");
+    expect(ix.query("PORTAL", { limit: 1 }).rows.map((r) => `${r.kind}/${r.id}`)).toEqual([
+      "System/portal",
+    ]);
+    // Filters alone keep their order by kind and id.
+    expect(ids(ix.query("refby:if-5c55930b735276a9").rows)).toEqual(["audit-svc", "portal-bff"]);
+    ix.close();
+  });
+
   it("lists one kind page by page", async () => {
     const ix = await openIndex(await forgeRoot());
     const p1 = ix.list("Column", { limit: 4 });

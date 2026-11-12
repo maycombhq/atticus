@@ -53,6 +53,34 @@ describe("the build command runner", () => {
     expect(r.exitCode === null || r.exitCode !== 0).toBe(true);
   }, 30_000);
 
+  // Beta.27 review: Stop in the app (the job's signal) stopped nothing while a build ran.
+  it("stops the build when its job is stopped (the app's Stop), and says it was stopped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
+    const stop = new AbortController();
+    const started = Date.now();
+    const run = shellCommandRunner()(
+      `${node} -e "require('fs').writeFileSync('pid', String(process.pid)); setTimeout(() => {}, 20000)"`,
+      dir,
+      { signal: stop.signal },
+    );
+    await until(() => existsSync(join(dir, "pid")));
+    stop.abort();
+    const r = await run;
+    expect(Date.now() - started).toBeLessThan(12_000);
+    expect(r.stopped).toBe(true);
+    const pid = Number(await readFile(join(dir, "pid"), "utf8"));
+    await until(() => !alive(pid));
+    expect(alive(pid)).toBe(false);
+  }, 30_000);
+
+  it("a build asked for after its job was stopped doesn't start", async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const r = await shellCommandRunner()("echo never", tmpdir(), { signal: stop.signal });
+    expect(r).toMatchObject({ exitCode: null, stopped: true });
+    expect(r.stdout).toBe("");
+  });
+
   it.runIf(posix)(
     "stops the build when Atticus gets Ctrl+C, and Atticus still ends",
     async () => {

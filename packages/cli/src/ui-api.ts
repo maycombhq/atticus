@@ -583,6 +583,9 @@ async function artifactPath(
   return files[0]!;
 }
 
+/** The most files one GET .../artifacts/{artifact}/files gives (3.12.0). */
+export const ARTIFACT_FILES_MAX = 200;
+
 export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Router {
   const { root, user, jobs } = ctx;
   /**
@@ -993,6 +996,41 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           },
         };
       })
+      // 3.12.0 (beta.27 review): several files of a many-file artifact in one call; the Stories
+      // tab asked once per story. Each as the one-file read below gives it.
+      .add(
+        "GET",
+        "/api/changes/{changeId}/artifacts/{artifact}/files",
+        async ({ params, query }) => {
+          await readChange(root, params.changeId!);
+          const asked = [...new Set(query.getAll("file").filter(Boolean))];
+          if (!asked.length)
+            throw badRequest(
+              "Name the files: ?file=<path>&file=<path>, each from the change folder.",
+            );
+          if (asked.length > ARTIFACT_FILES_MAX)
+            throw badRequest(`At most ${ARTIFACT_FILES_MAX} files a call (${asked.length} asked).`);
+          const files = [];
+          for (const file of asked) {
+            const rel = await artifactPath(root, params.changeId!, params.artifact!, {
+              orNew: true,
+              file,
+            });
+            const content = await readFile(
+              join(changesDirOf(root), params.changeId!, rel),
+              "utf8",
+            ).catch(() => "");
+            files.push({
+              file,
+              artifact: params.artifact,
+              path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
+              content,
+              sha256: sha(content),
+            });
+          }
+          return { status: 200, body: { files } };
+        },
+      )
       .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, query }) => {
         await readChange(root, params.changeId!);
         const rel = await artifactPath(root, params.changeId!, params.artifact!, {
@@ -1842,11 +1880,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           "sync",
           async (c) => {
             c.progress(0, 1, "Syncing base clones");
-            const res = await run((io) => workspaceSync(root, b.repos, io));
+            // Beta.27 review (blocker): Stop answered 200 and the sync ran on. The job's signal
+            // goes to every git the sync starts: Stop kills it, takes a half-made clone away,
+            // gives the base clone's lock back and starts no other repo.
+            const res = await run((io) => workspaceSync(root, b.repos, io, { signal: c.signal }));
             // Review of beta.23: the code and every line, the errors too, so the page says why a
             // sync failed; its progress says Stopped then, never Synced.
             c.progress(1, 1, res.code === 0 ? "Synced" : "Stopped");
             const lines = [...res.out, ...res.err];
+            // Stopped: the job ends `cancelled` (its Console line says Stopped), not failed.
+            if (c.cancelled) return { result: { code: res.code, lines } };
             return {
               result: { code: res.code, lines },
               errors: res.code === 0 ? [] : res.err.length ? res.err : lines,

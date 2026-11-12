@@ -200,6 +200,8 @@ export async function startUi(
      * editor serves from its own files asks for the person's confirmations with it.
      */
     pageKey?: string;
+    /** Beta.27 review: keep each job in the run log (ServerOptions.runLog). */
+    runLog?: boolean;
     /** Start the machine checks as the server starts, for the Set up page's first load. */
     warm?: boolean;
   } = {},
@@ -212,6 +214,7 @@ export async function startUi(
     ...(o.full ? { full: true } : {}),
     ...(o.token ? { token: o.token } : {}),
     ...(o.pageKey ? { pageKey: o.pageKey } : {}),
+    ...(o.runLog ? { runLog: true } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
@@ -403,6 +406,8 @@ export async function uiCommand(
       ...(given ? { token: given } : {}),
       ...(pageKey ? { pageKey } : {}),
       warm: true,
+      // Beta.27 review: the jobs it starts are kept in the run log, for after a restart.
+      runLog: true,
       ...(o.full ? { full: true } : {}),
       ...(o.port !== undefined ? { port: o.port } : {}),
       ...(o.user ? { user: o.user } : {}),

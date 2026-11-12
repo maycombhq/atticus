@@ -5,6 +5,7 @@ import { RunStep } from "../../app/runstep.js";
 import { inAppWords } from "../../app/app-words.js";
 import { message } from "../run/shared.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
+import { artifactFile } from "../../api/batch.js";
 import { confirmed } from "../../api/confirm.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
@@ -304,8 +305,10 @@ export function ArtifactPanel({
   /** Eighth UX walk: told after each save, so the page's gate reads again. */
   onSaved?: () => void;
 }) {
+  // Beta.27 review: a story's file is read with the other stories shown, in one call.
   const a = useApi<Artifact & { artifact: string }>(
     listed ? artifactUrl(change, artifact, file) : undefined,
+    file ? { load: artifactFile } : {},
   );
   const [edit, setEdit] = useState(false);
   // Closing the editor puts the keyboard back on Edit, which comes back with the panel.

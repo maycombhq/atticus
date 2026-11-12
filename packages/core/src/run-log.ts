@@ -59,7 +59,11 @@ export const TERMINAL_RUN_ID = /^\d{8}-\d{6}-\d{1,10}-[0-9a-f]{4}$/;
 export const runLogsDirOf = (root: string) => join(root, ".atticus", "logs", "runs");
 export const runningDirOf = (root: string) => join(root, ".atticus", "logs", "running");
 
-export type StartedBy = "terminal" | "vscode" | "intellij" | "copilot";
+/**
+ * `app` (beta.27 review): a job the app started (a sync, a scan, an AI step), kept here too, so
+ * it is still in the Console after the app restarts; its `job` says which.
+ */
+export type StartedBy = "terminal" | "vscode" | "intellij" | "copilot" | "app";
 export type TerminalRunState = "running" | "done" | "failed" | "cancelled";
 
 export interface TerminalRunRecord {
@@ -84,6 +88,10 @@ export interface TerminalRunRecord {
   procStart?: string;
   /** When a running command last wrote its record (every RUN_HEARTBEAT_MS). */
   beatAt?: string;
+  /** A job the app started (startedBy `app`): its id in that app's run and its kind. */
+  job?: { id: string; kind: string };
+  /** A job the app started that was still running when the app closed. */
+  appClosed?: true;
 }
 
 /** A record as read: `stale` when its process is gone though it never said it ended. */
@@ -398,6 +406,8 @@ export function retitleTerminalRuns(
     try {
       const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
       if (!raw || typeof raw !== "object" || typeof raw.title !== "string") continue;
+      // An app's job has the app's own title, no command words to make one from.
+      if (raw.startedBy === "app") continue;
       const words = Array.isArray(raw.command) ? raw.command.map(String) : [];
       const flags = Array.isArray(raw.flags) ? raw.flags.map(String) : [];
       const { command, title } = retitle({ command: words, flags });
@@ -473,7 +483,7 @@ export interface TerminalRunRecorder {
   /** Print a line (or several, split at newlines) to the run's log. */
   line(text: string): void;
   /** Record how it ended: 0 done, 130 or 143 (Ctrl+C, a stop) cancelled, else failed. */
-  end(code: number, how?: "crash"): void;
+  end(code: number, how?: "crash" | "app-closed"): void;
 }
 
 export interface StartRunOptions {
@@ -498,6 +508,11 @@ export interface StartRunOptions {
   procStart?: () => string | undefined;
   /** Whether a process is there (pidAlive), for the runs pruned as this one starts. */
   alive?: (pid: number) => boolean;
+  /**
+   * Beta.27 review: a job the app started (startAppRun): its title in the app's own words
+   * (redacted as a line is), its job, and `app` as where it started; no command words.
+   */
+  app?: { title: string; job: { id: string; kind: string } };
 }
 
 const writeJson = (file: string, v: unknown) => {
@@ -561,7 +576,10 @@ export function startTerminalRun(
   const keep = Math.max(o.keep ?? RUN_LOG_KEEP, 1);
   const maxBytes = Math.max(o.maxBytes ?? RUN_LOG_MAX_BYTES, 256);
   const started = now();
-  const runId = idAt(started, pid);
+  // An app starts several jobs in a second: an id already taken is drawn again.
+  let runId = idAt(started, pid);
+  for (let n = 0; n < 8 && existsSync(join(runningDirOf(root), `${runId}.json`)); n++)
+    runId = idAt(started, pid);
   const heartbeatMs = o.heartbeatMs ?? (o.hookProcess ? RUN_HEARTBEAT_MS : undefined);
   // When this process started: only for its own pid (a test's made-up pid has none).
   const procStart = o.procStart
@@ -569,7 +587,9 @@ export function startTerminalRun(
     : pid === process.pid
       ? procStartOf(pid)
       : undefined;
-  const { command, title } = runTitle(o.positionals, o.flags, o.values, o.redact);
+  const { command, title } = o.app
+    ? { command: [] as string[], title: runLogLines(o.app.title, o.redact).join(" ") }
+    : runTitle(o.positionals, o.flags, o.values, o.redact);
   const rec: TerminalRunRecord = {
     schemaVersion: 1,
     runId,
@@ -578,13 +598,14 @@ export function startTerminalRun(
     title,
     command,
     flags: o.flags.filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f)),
-    startedBy: startedByOf(o.env),
+    startedBy: o.app ? "app" : startedByOf(o.env),
     startedAt: started.toISOString(),
     state: "running",
     lines: 0,
     dropped: 0,
     ...(procStart ? { procStart } : {}),
     ...(heartbeatMs ? { beatAt: started.toISOString() } : {}),
+    ...(o.app ? { job: { id: o.app.job.id, kind: o.app.job.kind } } : {}),
   };
   const jsonFile = join(runningDirOf(root), `${runId}.json`);
   const logFile = join(runLogsDirOf(root), `${runId}.log`);
@@ -681,6 +702,7 @@ export function startTerminalRun(
               ? "cancelled"
               : "failed";
       rec.exitCode = code;
+      if (how === "app-closed") rec.appClosed = true;
       rec.finishedAt = now().toISOString();
       save();
     },
@@ -706,6 +728,31 @@ export function startTerminalRun(
     }
   }
   return recorder;
+}
+
+/**
+ * Beta.27 review: a job the app started, kept in the run log as a command run is (ADR 0187), so
+ * the Console, Runs and Problems still have it after the app restarts. Its title is the app's
+ * own words; it beats while it runs, so one left running by an app that crashed reads as ended.
+ */
+export function startAppRun(
+  root: string,
+  o: {
+    title: string;
+    job: { id: string; kind: string };
+    now?: () => Date;
+    redact?: { home?: string; user?: string };
+    heartbeatMs?: number;
+  },
+): TerminalRunRecorder | undefined {
+  return startTerminalRun(root, {
+    positionals: [],
+    flags: [],
+    app: { title: o.title, job: o.job },
+    heartbeatMs: o.heartbeatMs ?? RUN_HEARTBEAT_MS,
+    ...(o.now ? { now: o.now } : {}),
+    ...(o.redact ? { redact: o.redact } : {}),
+  });
 }
 
 /** Whether a process is there: signal 0 asks without sending anything. */
@@ -772,14 +819,22 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
       !["running", "done", "failed", "cancelled"].includes(r.state as string)
     )
       return undefined;
+    const { job, appClosed, ...rest } = r as TerminalRunRecord;
+    const jobOk =
+      !!job &&
+      typeof job === "object" &&
+      typeof job.id === "string" &&
+      typeof job.kind === "string";
     return {
-      ...(r as TerminalRunRecord),
+      ...(rest as TerminalRunRecord),
       command: Array.isArray(r.command) ? r.command.map(String) : [],
       flags: Array.isArray(r.flags) ? r.flags.map(String) : [],
       lines: Number(r.lines) || 0,
       dropped: Number(r.dropped) || 0,
       ...(typeof r.procStart === "string" ? { procStart: r.procStart } : {}),
       ...(typeof r.beatAt === "string" ? { beatAt: r.beatAt } : {}),
+      ...(jobOk ? { job: { id: job.id, kind: job.kind } } : {}),
+      ...(appClosed === true ? { appClosed: true as const } : {}),
     };
   } catch {
     return undefined;

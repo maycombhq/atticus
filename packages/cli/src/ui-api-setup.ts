@@ -209,6 +209,7 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
             const srv = await startUi(d, {
               port: 0,
               user,
+              runLog: true,
               ...(ctx.version ? { version: ctx.version } : {}),
             });
             ctx.onClose?.add(() => void srv.close());

@@ -15,6 +15,8 @@ interface Item {
   href: string;
   /** A command's: what it does, in place of opening an address. */
   run?: () => void;
+  /** Other words it is found by (a page's id and words, a command's). */
+  also?: readonly string[];
 }
 
 /** ADR 0194: something Ctrl+K does rather than opens (Switch to the classic layout). */
@@ -40,6 +42,50 @@ export interface PaletteCommand {
 export const itemKey = (i: Pick<Item, "kind" | "label" | "detail" | "href">): string =>
   `${i.kind}/${i.label}/${i.detail}/${i.href}`;
 
+/** How many records Ctrl+K asks the server for (best first). */
+export const PALETTE_RECORDS = 20;
+
+/**
+ * What Ctrl+K sends /api/search for typed words: the words as free text (a quote or a colon
+ * would read as the query language's), so "Northwind Pay" finds the system of that name.
+ */
+export const searchWords = (typed: string): string =>
+  typed
+    .replace(/["]/g, " ")
+    .split(/\s+/)
+    .map((w) => w.replace(/^-+/, "").replace(/:/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+
+/**
+ * Beta.27 review: how well typed words match a name, best first: 0 exactly (any case), 1 it
+ * starts with them, 2 a word in it does, 3 they are only inside it, 4 not at all.
+ */
+export function matchScore(typed: string, names: readonly string[]): number {
+  const t = typed.trim().toLowerCase();
+  let best = 4;
+  for (const raw of names) {
+    const n = raw.toLowerCase();
+    if (!t || !n.includes(t)) continue;
+    const s =
+      n === t ? 0 : n.startsWith(t) ? 1 : new RegExp(`[\\s.\\-_/·:]${escapeRe(t)}`).test(n) ? 2 : 3;
+    best = Math.min(best, s);
+  }
+  return best;
+}
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The names an item is found by: its label, and a record's id and name. */
+function wordsOf(i: Item): string[] {
+  const parts = i.label.split(" · ");
+  return [
+    i.label,
+    ...parts,
+    ...(i.also ?? []),
+    ...(i.kind === "change" ? [i.detail.split(" · ")[0]!] : []),
+  ];
+}
+
 export function paletteItems(
   text: string,
   changes: { id: string; title: string; state: string }[],
@@ -58,6 +104,7 @@ export function paletteItems(
             detail: c.detail,
             href: "",
             run: c.run,
+            also: c.also ?? [],
           }))
       : []),
     ...SCREENS.filter((s) => hit(s.label) || hit(s.id) || (s.also ?? []).some(hit)).map((s) => ({
@@ -67,6 +114,7 @@ export function paletteItems(
         ? `${sectionLabel(s.section)} · ${groupLabel(s.group)}`
         : sectionLabel(s.section),
       href: `#/${s.id}`,
+      also: [s.id, ...(s.also ?? [])],
     })),
     ...changes
       .filter((c) => hit(c.id) || hit(c.title))
@@ -86,6 +134,16 @@ export function paletteItems(
           : `#/explore?q=${encodeURIComponent(r.id)}`,
     })),
   ];
+  // Beta.27 review: the best match first (a system typed by its name came after every page and
+  // change that held the word), then commands, pages, changes and records, each as it came.
+  if (t) {
+    const order = { command: 0, screen: 1, change: 2, record: 3, ask: 4 } as const;
+    const scored = out.map((item, at) => ({ item, at, score: matchScore(t, wordsOf(item)) }));
+    scored.sort(
+      (a, b) => a.score - b.score || order[a.item.kind] - order[b.item.kind] || a.at - b.at,
+    );
+    out.splice(0, out.length, ...scored.map((s) => s.item));
+  }
   if (t)
     out.push({
       kind: "ask",
@@ -152,7 +210,9 @@ export function CommandPalette({
     let live = true;
     const timer = setTimeout(() => {
       void api<{ rows: { kind: string; id: string; name?: string }[] }>(
-        `/api/search?q=${encodeURIComponent(t.split(/\s+/)[0]!)}&limit=6`,
+        // Beta.27 review: every word typed (the server ranks the best match first), and enough
+        // rows that a system isn't cut off by six columns that hold the word.
+        `/api/search?q=${encodeURIComponent(searchWords(t))}&limit=${PALETTE_RECORDS}`,
       )
         .then((r) => live && setRecords(r.rows))
         .catch(() => live && setRecords([]));

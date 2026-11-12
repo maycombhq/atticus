@@ -212,6 +212,9 @@ async function repoFactsViewNow(root: string, repo: string): Promise<View> {
   };
 }
 
+/** The most repos one GET /api/facts gives (3.12.0). */
+export const FACTS_BATCH_MAX = 500;
+
 const repoOf = (v: string) => {
   if (!REPO.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a repo name.`);
   return v;
@@ -347,6 +350,37 @@ export function uiFactsRoutes(
   const write = deps.write ?? writeFileAtomic;
   return (
     r
+      // 3.12.0 (beta.27 review): several repos' facts in one call; the Map asked once per repo
+      // (65 calls on a large estate). Each repo as GET /api/facts/{repo} gives it, or its problem.
+      .add("GET", "/api/facts", async ({ query }) => {
+        const names = [
+          ...new Set(
+            query
+              .getAll("repo")
+              .flatMap((v) => v.split(","))
+              .map((v) => v.trim())
+              .filter(Boolean),
+          ),
+        ];
+        if (!names.length) throw badRequest("Name the repos: /api/facts?repo=<id>&repo=<id>.");
+        if (names.length > FACTS_BATCH_MAX)
+          throw badRequest(`At most ${FACTS_BATCH_MAX} repos a call (${names.length} asked).`);
+        const facts: Record<string, Awaited<ReturnType<typeof repoFactsView>>> = {};
+        const problems: Record<string, { status: number; title: string; detail?: string }> = {};
+        for (const name of names) {
+          try {
+            facts[name] = await repoFactsView(ctx.root, repoOf(name));
+          } catch (e) {
+            if (!(e instanceof HttpError)) throw e;
+            problems[name] = {
+              status: e.status,
+              title: e.title,
+              ...(e.detail ? { detail: e.detail } : {}),
+            };
+          }
+        }
+        return { status: 200, body: { facts, problems } };
+      })
       .add("GET", "/api/facts/{repo}", async ({ params }) => ({
         status: 200,
         body: await repoFactsView(ctx.root, repoOf(params.repo!)),

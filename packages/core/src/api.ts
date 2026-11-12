@@ -524,8 +524,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
+ * 3.12.0 (beta.27 review, the app's plumbing): GET /api/facts?repo=<id>&repo=<id> gives several
+ *   repos' facts in one call (the Map asked once per repo, 65 calls on a large estate): `facts`
+ *   by repo as GET /api/facts/{repo} gives each, and `problems` by repo for a name refused or
+ *   not found. GET /api/changes/{changeId}/artifacts/{artifact}/files?file=<path>&file=<path>
+ *   gives several files of a many-file artifact in one call (the Stories tab asked once per
+ *   story). A job (GET /api/jobs/{jobId}) and a Console entry say `stopping` once Stop was asked
+ *   and until the job ends. A Console entry `where: app` that is not this app's job is a job an
+ *   earlier run of the app started (kept in the run log); `ended` there means it stopped when
+ *   that app closed. Additive only.
  */
-export const API_VERSION = "3.11.0";
+export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -923,6 +932,8 @@ export const Job = z.object({
   errors: z.array(z.string()),
   /** Kind-specific outcome, e.g. scan diff counts. */
   result: z.record(z.string(), z.unknown()).optional(),
+  /** 3.12.0: Stop was asked and the job is ending (it stops at its next safe point). */
+  stopping: z.boolean().optional(),
 });
 export const JobAccepted = z.object({ jobId: z.string() });
 
@@ -1002,6 +1013,11 @@ export const ArtifactContent = z.object({
   content: z.string(),
   /** sha256 of the content; send it back on save to detect concurrent edits. */
   sha256: z.string(),
+});
+/** 3.12.0: several files of a many-file artifact, each as GET .../artifacts/{artifact} gives it. */
+export const ArtifactFiles = z.object({
+  /** By the file asked for (`file`), in the order asked. */
+  files: z.array(ArtifactContent.extend({ file: z.string() })),
 });
 
 export const Task = z.object({
@@ -1815,6 +1831,16 @@ export const RepoFactsView = z.object({
   verify: z.string(),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
+/** 3.12.0: several repos' facts in one call (GET /api/facts?repo=...), the Map's one read. */
+export const RepoFactsBatch = z.object({
+  /** By repo, as asked: what GET /api/facts/{repo} gives. */
+  facts: z.record(z.string(), RepoFactsView),
+  /** By repo: the problem GET /api/facts/{repo} would have answered (a name refused, none). */
+  problems: z.record(
+    z.string(),
+    z.object({ status: z.number().int(), title: z.string(), detail: z.string().optional() }),
+  ),
+});
 /** Mark a fact wrong (with why) or correct its claim: its fields, or the line it is on. */
 export const FactCorrectionRequest = z.strictObject({
   fact: z.string().min(1),
@@ -2220,6 +2246,7 @@ export type OutsideViewT = z.infer<typeof OutsideView>;
 
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
+export type RepoFactsBatchT = z.infer<typeof RepoFactsBatch>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
 export type FactCorrectionRequestT = z.infer<typeof FactCorrectionRequest>;
 export type LinkCorrectionsRequestT = z.infer<typeof LinkCorrectionsRequest>;
@@ -5262,6 +5289,8 @@ export const ActivityEntry = z.object({
   rev: z.string().optional(),
   /** The route that stops it (POST), when the app can; a command stops in its terminal. */
   stop: z.string().optional(),
+  /** 3.12.0: Stop was asked and it is ending. */
+  stopping: z.boolean().optional(),
   jobId: z.string().optional(),
   copilotRunId: z.string().optional(),
   /** A command's run id (its files in .atticus/logs/). */
@@ -6470,6 +6499,17 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "FreshView", description: "OK" },
     },
   },
+  "/api/facts": {
+    get: {
+      id: "getReposFacts",
+      summary:
+        "3.12.0: several repos' facts in one call, each as GET /api/facts/{repo} gives it, and the problem of each repo that can't be read (the Map's one read for all its repos)",
+      tag: "workspace",
+      params: [q("repo", str, "A repo, once per repo (or several, comma-separated); at most 500")],
+      ok: { status: 200, schema: "RepoFactsBatch", description: "OK" },
+      errors: [400],
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -6857,6 +6897,25 @@ const OPS: Record<string, Record<string, Op>> = {
       body: SyncRequest,
       ok: { status: 200, schema: "ChangeDetail", description: "OK" },
       errors: [400, 403, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/artifacts/{artifact}/files": {
+    get: {
+      id: "getArtifactFiles",
+      summary:
+        "3.12.0: several files of a many-file artifact in one call (a change's stories), each as GET /api/changes/{changeId}/artifacts/{artifact}?file= gives it",
+      tag: "changes",
+      params: [
+        p("changeId"),
+        p("artifact", { schema: { type: "string", enum: ChangeArtifact.options } }),
+        q(
+          "file",
+          str,
+          "One file, relative to the change folder (stories/<id>.md), once per file; at most 200",
+        ),
+      ],
+      ok: { status: 200, schema: "ArtifactFiles", description: "OK" },
+      errors: [400, 404],
     },
   },
   "/api/changes/{changeId}/artifacts/{artifact}": {
@@ -8539,6 +8598,7 @@ export function openApiDocument(): Record<string, unknown> {
     InitiativeSavedView,
     ChangeDetail,
     ArtifactContent,
+    ArtifactFiles,
     Task,
     RunView,
     RunList,
@@ -8635,6 +8695,7 @@ export function openApiDocument(): Record<string, unknown> {
     KnowledgeConflictView,
     SetChangeKnowledgeResult,
     RepoFactsView,
+    RepoFactsBatch,
     FactCorrectionResult,
     LinkCorrectionsResult,
     VerifyPreviewView,

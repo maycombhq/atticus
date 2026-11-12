@@ -65,6 +65,29 @@ beforeAll(async () => {
 });
 afterAll(() => srv?.close());
 
+/** 3.12.0 (beta.27 review): the Map asked once per repo (65 calls on a large estate). */
+describe("several repos' facts in one call", () => {
+  it("gives each repo as its own call does, and the problem of each that can't be read", async () => {
+    const one = await call("GET", "/api/facts/forge-ledger");
+    const r = await call("GET", "/api/facts?repo=forge-ledger&repo=forge-portal,bad%20name");
+    expect(r.status).toBe(200);
+    const v = Api.RepoFactsBatch.parse(r.body);
+    expect(v.facts["forge-ledger"]).toEqual(one.body);
+    // A repo with no facts file is as its own call answers it; a name refused is a problem.
+    const portal = await call("GET", "/api/facts/forge-portal");
+    if (portal.status === 200) expect(v.facts["forge-portal"]).toEqual(portal.body);
+    else expect(v.problems["forge-portal"]?.status).toBe(portal.status);
+    expect(v.problems["bad name"]).toMatchObject({ status: 400 });
+    expect(Object.keys(v.facts)).not.toContain("bad name");
+  });
+
+  it("refuses a call that names no repo, or too many", async () => {
+    expect((await call("GET", "/api/facts")).status).toBe(400);
+    const many = Array.from({ length: 501 }, (_, i) => `repo=forge-${i}`).join("&");
+    expect((await call("GET", `/api/facts?${many}`)).status).toBe(400);
+  });
+});
+
 describe("a repo's facts as the Map cites them", () => {
   it("gives each fact's line, quote, claim and who checked it, a flow's steps, and the open questions", async () => {
     const r = await call("GET", "/api/facts/forge-ledger");

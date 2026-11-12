@@ -132,6 +132,59 @@ function glob(v: string): string {
 const VALUE = `lower(CASE je.type WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(je.value AS TEXT) END)`;
 
 /** Turn parsed terms into a WHERE clause over `records r` with its parameters. */
+/**
+ * Beta.27 review: the kinds a person looks for by name first (Ctrl+K), then the rest; the
+ * columns, settings and the like last.
+ */
+const KIND_RANK: Record<string, number> = {
+  System: 0,
+  Component: 1,
+  Capability: 2,
+  Product: 2,
+  Initiative: 2,
+  Flow: 2,
+  Interface: 3,
+  Endpoint: 3,
+  DataStore: 3,
+  Party: 3,
+  Column: 5,
+  FieldMapping: 5,
+  Setting: 5,
+  IndexConstraint: 5,
+  Migration: 5,
+};
+const kindRankSql = `CASE r.kind ${Object.entries(KIND_RANK)
+  .map(([k, n]) => `WHEN '${k}' THEN ${n}`)
+  .join(" ")} ELSE 4 END`;
+
+/**
+ * Beta.27 review: how well a record matches a query's words, best first: 0 its id or name is the
+ * words exactly (any case), 1 it starts with them, 2 a word in it does, 3 they are only inside
+ * it. The best of the words; undefined for a query with no words (filters alone keep their
+ * order by kind and id).
+ */
+export function compileRank(terms: Term[]): { sql: string; params: string[] } | undefined {
+  const words = terms
+    .filter((t): t is Extract<Term, { type: "text" }> => t.type === "text" && !t.neg)
+    .flatMap((t) => t.values.map((v) => v.toLowerCase()));
+  if (!words.length) return undefined;
+  // Several words are a name too ("northwind pay"): matched whole as well as each.
+  if (words.length > 1) words.unshift(words.join(" "));
+  const params: string[] = [];
+  const name = "lower(coalesce(r.name, ''))";
+  const id = "lower(r.id)";
+  const one = (w: string) => {
+    const esc = w.replace(/[\\%_]/g, (c) => `\\${c}`);
+    params.push(w, w, `${esc}%`, `${esc}%`, `% ${esc}%`, `%-${esc}%`, `%.${esc}%`);
+    return `CASE WHEN ${id} = ? OR ${name} = ? THEN 0 WHEN ${id} LIKE ? ESCAPE '\\' OR ${name} LIKE ? ESCAPE '\\' THEN 1 WHEN ${name} LIKE ? ESCAPE '\\' OR ${id} LIKE ? ESCAPE '\\' OR ${id} LIKE ? ESCAPE '\\' THEN 2 ELSE 3 END`;
+  };
+  const each = words.map(one);
+  return {
+    sql: `${each.length === 1 ? each[0] : `min(${each.join(", ")})`}, ${kindRankSql}`,
+    params,
+  };
+}
+
 export function compileQuery(terms: Term[]): { where: string; params: (string | number)[] } {
   const parts: string[] = [];
   const params: (string | number)[] = [];

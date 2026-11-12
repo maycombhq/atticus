@@ -16,7 +16,7 @@ import {
   type Matrix,
   type MeaningState,
 } from "./vectors.js";
-import { compileQuery, parseQuery } from "./query.js";
+import { compileQuery, compileRank, parseQuery } from "./query.js";
 import { listSources } from "./sources.js";
 import { ensureSchema, updateIndex, type IndexProblem, type UpdateResult } from "./store.js";
 import {
@@ -337,9 +337,14 @@ export class CatalogIndex {
     return linksOf(this, key);
   }
 
-  /** Records matching a query in the catalog query language, ordered by kind and id. */
+  /**
+   * Records matching a query in the catalog query language, ordered by kind and id; beta.27
+   * review: a query with words, best match first (compileRank), so Ctrl+K finds a system by name.
+   */
   query(text: string, o: { limit?: number; offset?: number } = {}): { rows: Row[]; total: number } {
-    const { where, params } = compileQuery(parseQuery(text));
+    const terms = parseQuery(text);
+    const { where, params } = compileQuery(terms);
+    const rank = compileRank(terms);
     const total = (
       this.db.prepare(`SELECT count(*) AS n FROM records r WHERE ${where}`).get(...params) as {
         n: number;
@@ -347,9 +352,9 @@ export class CatalogIndex {
     ).n;
     const rows = this.db
       .prepare(
-        `SELECT kind, id, status, confidence, name, system, file FROM records r WHERE ${where} ORDER BY kind, id LIMIT ? OFFSET ?`,
+        `SELECT kind, id, status, confidence, name, system, file FROM records r WHERE ${where} ORDER BY ${rank ? `${rank.sql}, ` : ""}kind, id LIMIT ? OFFSET ?`,
       )
-      .all(...params, o.limit ?? 100, o.offset ?? 0) as unknown as Row[];
+      .all(...params, ...(rank?.params ?? []), o.limit ?? 100, o.offset ?? 0) as unknown as Row[];
     return { rows, total };
   }
 

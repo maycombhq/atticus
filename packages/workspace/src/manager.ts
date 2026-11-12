@@ -33,7 +33,7 @@ function withBaseCloneLock<T>(
     what: `git work on the base clone of ${id}`,
   });
 }
-import { createGit, GitError, type GitRunner } from "./git.js";
+import { createGit, GitError, GitStoppedError, type GitRunner } from "./git.js";
 import {
   baseClonePath,
   branchCheckoutPath,
@@ -47,7 +47,8 @@ import { removeEditorWorkspaces, writeEditorWorkspaces } from "./editors.js";
 
 export interface SyncResult {
   id: string;
-  action: "cloned" | "updated" | "skipped" | "failed";
+  /** `stopped` (beta.27 review): the sync was stopped before this repo was done, or begun. */
+  action: "cloned" | "updated" | "skipped" | "failed" | "stopped";
   sha?: string;
   reason?: string;
   /**
@@ -146,6 +147,12 @@ export interface WorkspaceOptions {
    * minutes, as a terminal waits). The app's routes that answer at once pass a short one.
    */
   lockWaitMs?: number;
+  /**
+   * Beta.27 review: stops the work (Stop on a sync in the app). Each git it runs is given it, so
+   * a stop kills the git under way; a clone half made is taken away, the base clone's lock is
+   * given back, and no other repo is started (each is `stopped`).
+   */
+  signal?: AbortSignal;
 }
 
 export function createWorkspace(
@@ -153,7 +160,8 @@ export function createWorkspace(
   git: GitRunner = createGit(),
   opts: WorkspaceOptions = {},
 ): WorkspaceManager {
-  const g = (args: string[], cwd = root) => git(args, cwd);
+  const signal = opts.signal;
+  const g = (args: string[], cwd = root) => (signal ? git(args, cwd, { signal }) : git(args, cwd));
   const withBaseClone = <T>(dest: string, id: string, work: () => Promise<T>) =>
     withBaseCloneLock(dest, id, work, opts.lockWaitMs);
   const head = async (cwd: string) => (await g(["rev-parse", "HEAD"], cwd)).stdout.trim();
@@ -228,6 +236,34 @@ export function createWorkspace(
     return { id: repo.id, action: "cloned", sha: await head(dest), from };
   }
 
+  /**
+   * Beta.27 review: a repo whose git was stopped. A clone this sync made is taken away (Windows
+   * may hold its files a moment after the kill: tried a few times), so the next sync clones it
+   * again; a base clone that was there keeps everything but the index lock a killed git leaves.
+   * A folder that can't be taken away is named, to delete by hand.
+   */
+  async function stoppedOne(repo: ManifestRepo, dest: string, made: boolean): Promise<SyncResult> {
+    if (made) {
+      const gone = await rm(dest, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        .then(() => true)
+        .catch(() => false);
+      return {
+        id: repo.id,
+        action: "stopped",
+        reason: gone
+          ? "stopped: the clone it had started was taken away; sync again to clone it"
+          : `stopped: the clone it had started couldn't be taken away; delete ${dest} before you sync again`,
+      };
+    }
+    await rm(join(dest, ".git", "index.lock"), { force: true }).catch(() => undefined);
+    return {
+      id: repo.id,
+      action: "stopped",
+      reason:
+        "stopped: the base clone is as it was before this sync, or part-way updated; sync again",
+    };
+  }
+
   async function syncOne(
     repo: ManifestRepo,
     local: Map<string, string> | undefined,
@@ -293,6 +329,7 @@ export function createWorkspace(
         ...(await remoteDefault(dest)),
       };
     } catch (err) {
+      if (signal?.aborted || err instanceof GitStoppedError) return stoppedOne(repo, dest, made);
       if (made) await rm(dest, { recursive: true, force: true }).catch(() => undefined);
       const msg = (err as Error).message;
       return {
@@ -389,7 +426,12 @@ export function createWorkspace(
       if (repos.some((r) => !r.archived && !isInPlace(r.url))) await ensureGitignore(root);
       const out: SyncResult[] = [];
       const local = opts.from ? await localClones(opts.from, git) : undefined;
-      for (const repo of repos)
+      for (const repo of repos) {
+        // Beta.27 review: stopped, the rest are not begun.
+        if (signal?.aborted) {
+          out.push({ id: repo.id, action: "stopped", reason: "not started: the sync was stopped" });
+          continue;
+        }
         out.push(
           // Nothing to lock (nor a folder to make) for an archived or in-place repo.
           repo.archived || isInPlace(repo.url)
@@ -398,6 +440,7 @@ export function createWorkspace(
                 syncOne(repo, local),
               ),
         );
+      }
       return out;
     },
 

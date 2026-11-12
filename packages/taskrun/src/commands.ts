@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { currentSignal } from "@maycombhq/core";
 
 /**
  * Runs a repo's build or test command (repos.manifest.yaml `build`). Injectable: tests pass a
@@ -15,7 +16,15 @@ export interface CommandResult {
 export type CommandRunner = (
   command: string,
   cwd: string,
-  o?: { timeoutMs?: number; env?: Record<string, string> },
+  o?: {
+    timeoutMs?: number;
+    env?: Record<string, string>;
+    /**
+     * Beta.27 review: stops the build (the app's Stop on its job); by default the signal of the
+     * job this runs in (currentSignal), so every build a job starts stops with it.
+     */
+    signal?: AbortSignal;
+  },
 ) => Promise<CommandResult>;
 
 /** The most of each stream kept for the log: the end of it, where a build says what failed. */
@@ -163,6 +172,12 @@ export function shellCommandRunner(): CommandRunner {
         resolve({ exitCode: null, stdout: "", stderr: "Atticus is stopping.", stopped: true });
         return;
       }
+      // Beta.27 review: nor one whose job was stopped (the app's Stop).
+      const signal = o.signal ?? currentSignal();
+      if (signal?.aborted) {
+        resolve({ exitCode: null, stdout: "", stderr: "Stopped.", stopped: true });
+        return;
+      }
       const child = spawn(command, {
         cwd,
         shell: true,
@@ -183,9 +198,16 @@ export function shellCommandRunner(): CommandRunner {
         clearTimeout(timer);
         clearTimeout(kill);
         clearTimeout(drain);
+        signal?.removeEventListener("abort", onStop);
         untrack(child);
-        resolve(stopping ? { ...r, stopped: true } : r);
+        resolve(stopping || signal?.aborted ? { ...r, stopped: true } : r);
       };
+      // The job stopped: the build's tree is stopped as a timeout stops it.
+      const onStop = () => {
+        stopTree(child);
+        kill ??= setTimeout(() => stopTree(child, "SIGKILL"), STOP_GRACE_MS);
+      };
+      signal?.addEventListener("abort", onStop, { once: true });
       const timer = setTimeout(
         () => {
           stopTree(child);

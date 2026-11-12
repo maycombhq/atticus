@@ -7,7 +7,12 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { catalogMayHaveChanged, isOffline, useFileChanges } from "../../api/client.js";
+import {
+  catalogMayHaveChanged,
+  isOffline,
+  useFileChanges,
+  useServerBack,
+} from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { useKnownAnswer, useLazyApi, type Lazy } from "./explorer-data.js";
 import {
@@ -248,12 +253,14 @@ function SectionBody(p: ExplorerViewProps & { s: SectionModel; title: string }):
         <span className="skeleton" style={{ width: "64%" }} />
       </div>
     );
+  // Beta.27 review: the server down is said once, by the note above the page; each section says
+  // quietly that it isn't loaded, and reads again when the server answers (useServerBack).
+  if (s.state === "error" && (!s.error || isOffline(s.error)))
+    return <p className="ex-state">{COPY.app.notLoadedOffline}</p>;
   if (s.state === "error")
     return (
       <div className="ex-state error" role="alert">
-        <span>
-          {E.couldntLoad(!s.error || isOffline(s.error) ? COPY.app.offlineShort : s.error)}
-        </span>
+        <span>{E.couldntLoad(s.error ?? "")}</span>
         <button
           type="button"
           className="btn ex-retry"
@@ -431,6 +438,11 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const repoCounts = repoCountsOf(manifest, estate.state === "ready" ? estate.data : undefined);
   const pins = usePins();
 
+  // Beta.27 review: the server answering again reads the sections again (each said quietly that
+  // it wasn't loaded while the server was down).
+  useServerBack(() => {
+    for (const s of [changes, estate, questions, owner]) if (s.state === "error") s.reload();
+  });
   // What an assistant, the CLI or another page writes shows here without a reload.
   useFileChanges((events) => {
     const files = events.some((e) => e.type === "file.changed");

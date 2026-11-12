@@ -69,6 +69,20 @@ export interface ActivityCtx {
 export const ActivityContext = createContext<ActivityCtx | undefined>(undefined);
 export const useActivity = () => useContext(ActivityContext);
 
+/**
+ * Beta.27 review: an entry's state in words: a job the app ran before it restarted, running when
+ * it closed, says so; one Stop was asked of says it is stopping until it ends.
+ */
+export function stateWords(e: Pick<Entry, "state" | "where" | "stopping" | "jobId">): string {
+  if (e.state === "ended" && e.where === "app") return T.appClosedState;
+  if (e.state === "running" && e.stopping) return T.stoppingState;
+  return T.states[e.state] ?? e.state;
+}
+
+/** Whether Stop was asked of an entry: this page asked just now, or the server says so. */
+export const isStopping = (a: Pick<ActivityCtx, "stopping">, e: Entry): boolean =>
+  a.stopping === e.id || (e.state === "running" && e.stopping === true);
+
 /** The name of an entry: its own words, else its kind's. */
 export const titleOf = (e: Entry): string => e.title ?? T.kinds[e.kind] ?? e.kind;
 
@@ -274,7 +288,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       const entry = e.entry as Entry;
       const was = entriesNow.current.find((x) => x.id === entry.id);
       if (was && was.state === "running" && entry.state !== "running")
-        announce(T.changed(titleOf(entry), T.states[entry.state] ?? entry.state), true);
+        announce(T.changed(titleOf(entry), stateWords(entry)), true);
       setListed((old) => upsert(old, entry));
       setState("ready");
     } else if (e.type === "activity.lines") {
@@ -513,9 +527,9 @@ export function ActivityStrip() {
                 type="button"
                 className="btn danger"
                 onClick={() => void a.stop(first)}
-                disabled={a.stopping === first.id}
+                disabled={isStopping(a, first)}
               >
-                {a.stopping === first.id ? T.stopping : T.stop}
+                {isStopping(a, first) ? T.stopping : T.stop}
               </button>
             ) : first.kind === "command" ? (
               <span className="work-say">{T.stopTerminal}</span>
@@ -639,7 +653,7 @@ export function EntryMeta({ e }: { e: Entry }) {
       <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
       <span className="activity-title">{titleOf(e)}</span>
       <span className="activity-meta">
-        <span className={`activity-state ${e.state}`}>{T.states[e.state] ?? e.state}</span>
+        <span className={`activity-state ${e.state}`}>{stateWords(e)}</span>
         {" · "}
         {T.from(T.where[e.where] ?? e.where)}
         {" · "}
@@ -694,7 +708,7 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <strong>{titleOf(shown)}</strong>
         <span className="work-say">
-          {T.states[shown.state] ?? shown.state}
+          {stateWords(shown)}
           {shown.exitCode !== undefined && shown.state !== "done"
             ? ` (${T.exitCode(shown.exitCode)})`
             : ""}
@@ -709,16 +723,18 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
             type="button"
             className="btn danger"
             onClick={() => void a.stop(shown)}
-            disabled={a.stopping === shown.id}
+            disabled={isStopping(a, shown)}
           >
-            {a.stopping === shown.id ? T.stopping : T.stop}
+            {isStopping(a, shown) ? T.stopping : T.stop}
           </button>
         )}
         {shown.state === "running" && shown.kind === "command" && (
           <span className="work-say">{T.stopTerminal}</span>
         )}
       </div>
-      {shown.state === "ended" && <p className="work-say">{T.endedWithoutSaying}</p>}
+      {shown.state === "ended" && (
+        <p className="work-say">{shown.where === "app" ? T.appClosed : T.endedWithoutSaying}</p>
+      )}
       {shown.state === "waiting" && <p className="work-say">{T.handoffWaits}</p>}
       {shown.kind === "copilot" && copilot?.run?.runId === shown.id ? (
         <CopilotRunTabs />

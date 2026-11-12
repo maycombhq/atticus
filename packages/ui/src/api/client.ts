@@ -29,9 +29,119 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The session token: the one read again after the server restarted (renewToken), else the one
+ * the page came with in <meta name="atticus-token">.
+ */
+let renewed: { token: string; pageKey?: string } | undefined;
 export function token(): string {
+  if (renewed) return renewed.token;
+  if (typeof document === "undefined") return "";
   return document.querySelector<HTMLMetaElement>('meta[name="atticus-token"]')?.content ?? "";
 }
+/** The page key read with a renewed token (confirm.ts's pageKey), if one was. */
+export const renewedPageKey = (): string | undefined => renewed?.pageKey;
+/** Tests: the token the page holds now. */
+export function setSessionToken(t: string): void {
+  renewed = { token: t };
+}
+
+/** The words the server refuses a call with when its session token isn't this start's. */
+export const TOKEN_REFUSED = "Missing or wrong session token";
+
+const unescapeAttr = (s: string) =>
+  s
+    .replace(/&lt;/g, "<")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+
+/** The session token and page key the app's page carries (its meta tags only), if any. */
+export function tokenOfPage(html: string): { token?: string; pageKey?: string } {
+  const meta = (name: string) => {
+    const m = new RegExp(`<meta name="${name}" content="([^"]*)"\\s*/?>`).exec(html);
+    const v = m ? unescapeAttr(m[1]!) : "";
+    return v || undefined;
+  };
+  const token = meta("atticus-token");
+  const pageKey = meta("atticus-page-key");
+  return { ...(token ? { token } : {}), ...(token && pageKey ? { pageKey } : {}) };
+}
+
+/**
+ * Beta.27 review (blocker): whether the page holds a session token the server refused and no
+ * new one could be read; the app then says once that it restarted, with Reload. Heard with
+ * onSession: "renewed" when a new token was read, "stale" when none could be.
+ */
+let stale = false;
+export const sessionStale = (): boolean => stale;
+const sessionEvents = new EventTarget();
+export function onSession(f: (state: "renewed" | "stale") => void): () => void {
+  const on = (e: Event) => f((e as CustomEvent<"renewed" | "stale">).detail);
+  sessionEvents.addEventListener("session", on);
+  return () => sessionEvents.removeEventListener("session", on);
+}
+const tellSession = (state: "renewed" | "stale") => {
+  stale = state === "stale";
+  sessionEvents.dispatchEvent(new CustomEvent("session", { detail: state }));
+};
+
+let renewing: Promise<boolean> | undefined;
+/**
+ * After `atticus ui` restarted, the server has a new session token and refuses the page's (401).
+ * The page reads it again the way it first got it: from the app's own page, which only a page
+ * of this server can read (other sites can't read a cross-origin answer, and the Host check
+ * stops DNS rebinding). Never from a URL, never logged. One read at a time, however many calls
+ * were refused; true when a new token was read.
+ */
+export function renewToken(): Promise<boolean> {
+  renewing ??= (async () => {
+    const before = token();
+    try {
+      const r = await fetch("/", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "text/html" },
+      });
+      if (!r.ok) return false;
+      const got = tokenOfPage(await r.text());
+      if (!got.token || got.token === before) return false;
+      renewed = { token: got.token, ...(got.pageKey ? { pageKey: got.pageKey } : {}) };
+      setMeta("atticus-token", got.token);
+      if (got.pageKey) setMeta("atticus-page-key", got.pageKey);
+      tellSession("renewed");
+      return true;
+    } catch {
+      return false;
+    }
+  })().finally(() => {
+    renewing = undefined;
+  });
+  return renewing;
+}
+
+function setMeta(name: string, content: string): void {
+  if (typeof document === "undefined") return;
+  const m = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  if (m) m.content = content;
+}
+
+/**
+ * A call sent with `sentWith` was refused for its token: true when it can be sent again, as the
+ * token was read again meanwhile or is now; false (and the app says it restarted) otherwise.
+ */
+export async function retryAfterRefusal(sentWith: string): Promise<boolean> {
+  if (token() !== sentWith) return true;
+  if (await renewToken()) return true;
+  if (!stale) tellSession("stale");
+  return false;
+}
+
+const refusedForToken = (status: number, body: unknown) =>
+  status === 401 &&
+  !!body &&
+  typeof body === "object" &&
+  (body as { title?: unknown }).title === TOKEN_REFUSED;
 
 /** The problem when the local server can't be reached at all. */
 export function unreachable(inPanel = false): Problem {
@@ -51,6 +161,23 @@ export function serverAnswered(up: boolean): void {
   down = !up;
   if (typeof dispatchEvent === "function")
     dispatchEvent(new CustomEvent(SERVER_EVENT, { detail: { up } }));
+}
+
+/**
+ * Beta.27 review: `f` runs when the server answers again after it didn't (what the page shows
+ * outside a screen, the Explorer's sections, reads again then; a screen is drawn anew).
+ */
+export function useServerBack(f: () => void): void {
+  const handler = useRef(f);
+  handler.current = f;
+  useEffect(() => {
+    if (typeof addEventListener !== "function") return;
+    const on = (e: Event) => {
+      if ((e as CustomEvent<{ up: boolean }>).detail.up) handler.current();
+    };
+    addEventListener(SERVER_EVENT, on);
+    return () => removeEventListener(SERVER_EVENT, on);
+  }, []);
 }
 
 /** An error that only says the server is down: the page-wide note says how to fix it. */
@@ -116,17 +243,147 @@ export const onWrote = (f: () => void): (() => void) => {
   return () => wrote.removeEventListener(WROTE, f);
 };
 
+/**
+ * Beta.27 re-review: what the page knows changed, counted: a write it made (as it starts and as
+ * it ends) and each file or job event it heard. A read sent before the count moved may answer
+ * from before that change.
+ */
+let changes = 0;
+export const noteChange = (): void => {
+  changes++;
+};
+
+/**
+ * Beta.27 review: reads shared by everyone who asks, never stale. Asks in one moment (a page's
+ * parts mounting together: Brief read its change three times) share one read, and so do asks
+ * while a read is under way when nothing changed since it was sent (noteChange). Beta.27
+ * re-review: an ask after a change (a write, a file event), or one that says it must be `after`
+ * one (a page reading again what it just wrote), never takes the read under way, whose answer
+ * may be from before: it waits for the one read queued after it, however many ask meanwhile. A
+ * caller's signal stops its wait; the read is stopped once every caller has stopped waiting.
+ */
+export function readCoalescer() {
+  type Pending = {
+    promise: Promise<unknown>;
+    ctl: AbortController;
+    waiters: number;
+    sent: boolean;
+    dead: boolean;
+    /** The count of changes when it was sent. */
+    seq: number;
+  };
+  const reads = new Map<string, { current?: Pending; next?: Pending }>();
+  const make = (
+    key: string,
+    slot: { current?: Pending; next?: Pending },
+    run: (signal: AbortSignal) => Promise<unknown>,
+    after?: Promise<unknown>,
+  ): Pending => {
+    const ctl = new AbortController();
+    const p = { ctl, waiters: 0, sent: false, dead: false, seq: changes } as Pending;
+    p.promise = (async () => {
+      // Sent at once (the other asks of this moment join it, as nothing changed since it was
+      // sent); one queued after a read under way waits for that read to end.
+      if (after) await after.catch(() => undefined);
+      p.sent = true;
+      p.seq = changes;
+      return run(ctl.signal);
+    })();
+    const settled = () => {
+      if (slot.current === p) {
+        slot.current = slot.next;
+        slot.next = undefined;
+      } else if (slot.next === p) slot.next = undefined;
+      if (!slot.current && !slot.next && reads.get(key) === slot) reads.delete(key);
+    };
+    p.promise.then(settled, settled);
+    return p;
+  };
+  return function read<T>(
+    key: string,
+    run: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+    o: { after?: boolean } = {},
+  ): Promise<T> {
+    if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+    let slot = reads.get(key);
+    if (!slot) reads.set(key, (slot = {}));
+    const live = (p?: Pending) => (p && !p.dead ? p : undefined);
+    // A read every caller stopped waiting for is no one's: the one queued after it moves up.
+    if (slot.current?.dead) {
+      slot.current = live(slot.next);
+      slot.next = undefined;
+    }
+    if (slot.next?.dead) slot.next = undefined;
+    let p: Pending;
+    const cur = slot.current;
+    if (cur && (!cur.sent || (!o.after && cur.seq === changes))) p = cur;
+    else if (cur) p = live(slot.next) ?? (slot.next = make(key, slot, run, cur.promise));
+    else p = slot.current = make(key, slot, run);
+    p.waiters++;
+    const mine = p;
+    if (!signal) return mine.promise as Promise<T>;
+    return new Promise<T>((resolve, reject) => {
+      let done = false;
+      const stop = () => {
+        if (done) return;
+        done = true;
+        reject(new DOMException("Aborted", "AbortError"));
+        if (--mine.waiters === 0) {
+          mine.dead = true;
+          mine.ctl.abort();
+        }
+      };
+      signal.addEventListener("abort", stop, { once: true });
+      mine.promise.then(
+        (v) => {
+          if (done) return;
+          done = true;
+          signal.removeEventListener("abort", stop);
+          resolve(v as T);
+        },
+        (e: unknown) => {
+          if (done) return;
+          done = true;
+          signal.removeEventListener("abort", stop);
+          reject(e);
+        },
+      );
+    });
+  };
+}
+
+/** The app's GETs, each shared as readCoalescer says. */
+const shared = readCoalescer();
+
 /** A call to the local API; every one counts toward the loading bar while it is in flight. */
 export async function api<T>(
   path: string,
-  o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean } = {},
+  o: {
+    method?: string;
+    body?: unknown;
+    signal?: AbortSignal;
+    quiet?: boolean;
+    /** A GET whose answer must be of a read sent after this ask (readCoalescer's `after`). */
+    after?: boolean;
+  } = {},
 ): Promise<T> {
   const write = !!o.method && o.method !== "GET";
+  if (!write && o.body === undefined)
+    return shared<T>(
+      path,
+      (signal) => counted<T>(path, { signal, ...(o.quiet ? { quiet: true } : {}) }),
+      o.signal,
+      o.after ? { after: true } : {},
+    );
+  noteChange();
   try {
     const r = await counted<T>(path, o);
+    noteChange();
     if (write) wrote.dispatchEvent(new Event(WROTE));
     return r;
   } catch (e) {
+    noteChange();
     // Review of beta.24: a write that failed but wrote some files all the same is heard too.
     if (write && writtenOf(e).length) wrote.dispatchEvent(new Event(WROTE));
     throw e;
@@ -206,6 +463,7 @@ async function counted<T>(
 async function call<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal },
+  again = false,
 ): Promise<T> {
   const bridge = hostBridge();
   if (bridge) {
@@ -227,11 +485,12 @@ async function call<T>(
   }
   let r: Response;
   let text: string;
+  const sentWith = token();
   try {
     r = await fetch(path, {
       method: o.method ?? "GET",
       headers: {
-        "X-Atticus-Token": token(),
+        "X-Atticus-Token": sentWith,
         ...(o.body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       ...(o.body !== undefined ? { body: JSON.stringify(o.body) } : {}),
@@ -246,6 +505,11 @@ async function call<T>(
   }
   serverAnswered(true);
   const body = parseBody(text, r.status);
+  // Beta.27 review: the server restarted with a new token. Nothing was done (the token is checked
+  // before anything else), so the call goes again, once, with the token read again.
+  if (refusedForToken(r.status, body) && !again && !o.signal?.aborted) {
+    if (await retryAfterRefusal(sentWith)) return call<T>(path, o, true);
+  } else if (r.ok && stale && token() === sentWith) tellSession("renewed");
   if (!r.ok) throw new ApiError(problemOf(body, r.status, r.statusText));
   return body as T;
 }
@@ -319,8 +583,16 @@ export function useApi<T>(
    * `view`: what the answer is of, when the path changes only to ask again (a fresh check,
    * `?fresh=1&n=2`): the last answer stays shown while the new one comes, as a reload's does.
    */
-  o: { view?: string } = {},
+  o: {
+    view?: string;
+    /**
+     * Beta.27 review: how the path is read, when not alone (a batched read, api/batch.ts: one
+     * call for every story the page shows). A function that stays the same between renders.
+     */
+    load?: (path: string, signal: AbortSignal) => Promise<T>;
+  } = {},
 ): Loaded<T> & { reload: () => void; refreshing: boolean; at?: number } {
+  const load = o.load;
   const view = path === undefined ? undefined : (o.view ?? path);
   // What was loaded, and for which path: a new path shows loading, never the last path's answer
   // as if it were this one's (box X's candidates under box Y, change A's detail under B).
@@ -336,7 +608,7 @@ export function useApi<T>(
     if (!path) return;
     const ctl = new AbortController();
     if (answered.current) setRefreshing(true);
-    api<T>(path, { signal: ctl.signal })
+    (load ? load(path, ctl.signal) : api<T>(path, { signal: ctl.signal }))
       .then(
         (data) => {
           if (ctl.signal.aborted) return;
@@ -363,7 +635,7 @@ export function useApi<T>(
         setAt(Date.now());
       });
     return () => ctl.abort();
-  }, [path, tick]);
+  }, [path, tick, load]);
   // A reload of the same path keeps what is shown; another path (or none) is loading.
   const s: Loaded<T> = held.for === view && view !== undefined ? held.s : { state: "loading" };
   return { ...s, reload, refreshing, ...(at !== undefined ? { at } : {}) };
@@ -536,43 +808,112 @@ export function useJobPoll(
   }, [jobId]);
 }
 
-/** Live events on /api/events; reconnects with a backoff while the page is open. */
+/** How long the page's socket stays open after its last listener went (a page drawn anew). */
+export const LIVE_LINGER_MS = 2000;
+/** The first wait before the socket is opened again, doubled to LIVE_WAIT_MAX_MS. */
+export const LIVE_WAIT_MS = 500;
+export const LIVE_WAIT_MAX_MS = 10_000;
+
+/**
+ * Beta.27 review: the page's one socket to /api/events. Each part of the page that follows live
+ * events (forty-odd of them) used to open its own: 11 to 15 sockets a page. Now the first
+ * listener opens it, every event goes to every listener, and it closes a moment after the last
+ * one goes. A socket that closes is opened again with a backoff; one refused before it opened
+ * (the server restarted with a new token) reads the token again first.
+ */
+const live = {
+  listeners: new Set<(e: LiveEvent) => void>(),
+  ws: undefined as WebSocket | undefined,
+  wait: LIVE_WAIT_MS,
+  retry: undefined as ReturnType<typeof setTimeout> | undefined,
+  linger: undefined as ReturnType<typeof setTimeout> | undefined,
+};
+
+/** A file or a job that changed: a read sent before it may be stale (noteChange). */
+function heardChange(e: LiveEvent): void {
+  if (isFileChange(e) || e.type === "job.done") noteChange();
+}
+
+function openLive(): void {
+  if (live.ws || !live.listeners.size) return;
+  const url = new URL("/api/events", location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("token", token());
+  const ws = new WebSocket(url);
+  live.ws = ws;
+  let opened = false;
+  ws.onmessage = (m) => {
+    let e: LiveEvent;
+    try {
+      e = JSON.parse(String(m.data)) as LiveEvent;
+    } catch {
+      return; // not an event; ignore
+    }
+    heardChange(e);
+    for (const f of [...live.listeners]) {
+      try {
+        f(e);
+      } catch {
+        // one listener's failure is its own
+      }
+    }
+  };
+  ws.onopen = () => {
+    opened = true;
+    live.wait = LIVE_WAIT_MS;
+  };
+  ws.onclose = () => {
+    if (live.ws !== ws) return;
+    live.ws = undefined;
+    if (!live.listeners.size) return;
+    const wait = live.wait;
+    live.wait = Math.min(live.wait * 2, LIVE_WAIT_MAX_MS);
+    live.retry = setTimeout(() => {
+      live.retry = undefined;
+      // Refused before it opened: perhaps a new token; read it (once) before trying again.
+      if (opened) openLive();
+      else void renewToken().finally(openLive);
+    }, wait);
+  };
+}
+
+function closeLive(): void {
+  clearTimeout(live.retry);
+  live.retry = undefined;
+  const ws = live.ws;
+  live.ws = undefined;
+  live.wait = LIVE_WAIT_MS;
+  ws?.close();
+}
+
+/** Follow the page's live events; the returned function stops. */
+export function subscribeLive(f: (e: LiveEvent) => void): () => void {
+  live.listeners.add(f);
+  clearTimeout(live.linger);
+  live.linger = undefined;
+  openLive();
+  return () => {
+    if (!live.listeners.delete(f) || live.listeners.size) return;
+    clearTimeout(live.linger);
+    live.linger = setTimeout(() => {
+      live.linger = undefined;
+      if (!live.listeners.size) closeLive();
+    }, LIVE_LINGER_MS);
+  };
+}
+
+/** Live events on /api/events, through the page's one socket (subscribeLive). */
 export function useLiveEvents(onEvent: (e: LiveEvent) => void): void {
   const handler = useRef(onEvent);
   handler.current = onEvent;
   useEffect(() => {
     // In a VS Code panel the extension sends the events (ADR 0097).
     const bridge = hostBridge();
-    if (bridge) return bridge.onEvent((e) => handler.current(e));
-    let ws: WebSocket | undefined;
-    let stop = false;
-    let wait = 500;
-    const open = () => {
-      if (stop) return;
-      const url = new URL("/api/events", location.href);
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-      url.searchParams.set("token", token());
-      ws = new WebSocket(url);
-      ws.onmessage = (m) => {
-        try {
-          handler.current(JSON.parse(String(m.data)) as LiveEvent);
-        } catch {
-          // not an event; ignore
-        }
-      };
-      ws.onopen = () => {
-        wait = 500;
-      };
-      ws.onclose = () => {
-        if (stop) return;
-        setTimeout(open, wait);
-        wait = Math.min(wait * 2, 10_000);
-      };
-    };
-    open();
-    return () => {
-      stop = true;
-      ws?.close();
-    };
+    if (bridge)
+      return bridge.onEvent((e) => {
+        heardChange(e);
+        handler.current(e);
+      });
+    return subscribeLive((e) => handler.current(e));
   }, []);
 }

@@ -1,5 +1,5 @@
 import type { Api } from "@maycombhq/core";
-import { api } from "./client.js";
+import { api, renewedPageKey } from "./client.js";
 
 /**
  * Review round 48 (ADR 0186): a write to a shared system (a hand-off PR, the release PRs, a
@@ -10,8 +10,13 @@ import { api } from "./client.js";
  * token can't. The confirmation is used once and lasts two minutes: one per click.
  */
 
-/** The page key, from <meta name="atticus-page-key">; empty where there is no page. */
+/**
+ * The page key, from <meta name="atticus-page-key">; empty where there is no page. Beta.27
+ * review: after a restart of the server, the one read again with the session token.
+ */
 export function pageKey(): string {
+  const renewed = renewedPageKey();
+  if (renewed) return renewed;
   if (typeof document === "undefined") return "";
   return document.querySelector<HTMLMetaElement>('meta[name="atticus-page-key"]')?.content ?? "";
 }
