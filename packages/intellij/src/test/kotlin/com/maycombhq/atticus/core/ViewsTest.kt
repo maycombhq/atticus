@@ -47,7 +47,7 @@ class ViewsTest {
             description:
               text: Keeps the ledger of every posting.
               trust: verified
-              by: tomachan
+              by: bao
           - id: forge-shop-bff
             url: https://example.invalid/forge/forge-shop-bff.git
             description:

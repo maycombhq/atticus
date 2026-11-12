@@ -426,7 +426,9 @@ function readSmallFile(file: string, max: number): string | undefined {
  *
  * Beta.27 re-review: a run of `secret` is removed, record and log (beta.26 printed a mistyped
  * key back into its log). Only a regular file of at most RETITLE_MAX_BYTES is read (never a link,
- * a FIFO or a folder), a record still running is left to its process, and a record is written
+ * a FIFO or a folder), a record whose process is still running is left to it (and the mark
+ * waits, so the next command tries again; a run killed under beta.26 is titled again), a removal
+ * that fails is tried again the same way, and a record is written
  * beside itself and put in place, never through a link. A folder that can't be written is left
  * alone (nothing could change), and one whose mark can't be written isn't tried again by this
  * process. Never throws: a record that can't be read or written is left as it is.
@@ -457,22 +459,43 @@ export function retitleTerminalRuns(
     return 0;
   }
   let changed = 0;
+  // A record left for later (its run is still alive, or its removal failed): no mark is written,
+  // so the next command tries again. A run that never ends is gone after goneRun's 7 days.
+  let later = false;
+  const here = hostHash();
+  const now = Date.now();
   for (const n of names) {
     const file = join(dir, n);
+    const id = n.slice(0, -5);
     try {
       const text = readSmallFile(file, RETITLE_MAX_BYTES);
       if (text === undefined) continue;
       const raw = JSON.parse(text) as Record<string, unknown> | null;
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      if (raw.state === "running") {
+        // Beta.27 re-review 4: only a run whose process is still there is left to it; a run
+        // killed under beta.26 (Ctrl-C, a closed terminal) stays "running" for ever and is
+        // titled again like any other.
+        const r = readRecord(root, id);
+        if (r && !goneRun(r, here, pidAlive, now, root)) {
+          later = true;
+          continue;
+        }
+      }
       const words = Array.isArray(raw.command) ? raw.command.map((w) => `${w}`) : [];
       // A run of `secret` (beta.26 kept them): its record and its log go, whatever its title.
+      // The log first, then the record, so a failed removal leaves the record to try again with.
       if (words[0] === "secret" || (words[0] === "legacy" && words[1] === "secret")) {
-        rmSync(join(runLogsDirOf(root), `${n.slice(0, -5)}.log`), { force: true });
-        rmSync(file, { force: true });
-        changed++;
+        try {
+          rmSync(join(runLogsDirOf(root), `${id}.log`), { force: true });
+          rmSync(file, { force: true });
+          changed++;
+        } catch {
+          later = true;
+        }
         continue;
       }
-      if (typeof raw.title !== "string" || raw.state === "running") continue;
+      if (typeof raw.title !== "string") continue;
       const flags = Array.isArray(raw.flags) ? raw.flags.map((f) => `${f}`) : [];
       const got = retitle({ command: words, flags });
       const next: Record<string, unknown> = { ...raw, title: got.title, command: got.command };
@@ -484,6 +507,7 @@ export function retitleTerminalRuns(
       // left as it is
     }
   }
+  if (later) return changed;
   try {
     // Made new, never written through a link or over a file put there.
     writeFileSync(mark, `${new Date().toISOString()}\n`, { encoding: "utf8", flag: "wx" });

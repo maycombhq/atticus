@@ -198,9 +198,9 @@ describe("where a copy came from", () => {
     expect(await at("git@git.example.com:o/r.git")).toBe("git@git.example.com:o/r.git");
     expect(await at("https://user:pa@ss@git.example.com/r")).toBe("https://git.example.com/r");
     expect(await at("https://u:p#w@git.example.com/r")).toBe("https://git.example.com/r");
-    expect(await at("/home/tom/repos/their")).toBe("their");
-    expect(await at("C:\\Users\\tom\\their")).toBe("their");
-    expect(await at("file:///home/tom/their")).toBe("their");
+    expect(await at("/home/kit/repos/their")).toBe("their");
+    expect(await at("C:\\Users\\kit\\their")).toBe("their");
+    expect(await at("file:///home/kit/their")).toBe("their");
     expect(
       await originOf("/home/pat/their-repo", async () => Promise.reject(new Error("no"))),
     ).toBe("their-repo");

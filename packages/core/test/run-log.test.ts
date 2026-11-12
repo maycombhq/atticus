@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -897,13 +898,62 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     ]);
   });
 
-  it("writes the mark when nothing changed, and leaves a record still running to its process", async () => {
+  it("writes the mark when nothing changed", async () => {
     const root = await fresh();
-    const live = { ...record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]) };
-    live.state = "running";
-    keep(root, [live]);
+    const fine = record("20261101-100000-4242-ab12", ["map", "forge-ledger"]);
+    keep(root, [fine]);
     expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(read(root, fine.runId)).toEqual(fine);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("leaves a live run to its process and tries again later; a run killed under beta.26 is titled again", async () => {
+    const root = await fresh();
+    // Started minutes ago on another machine: its process can't be looked for, so it is live.
+    const live = {
+      ...record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]),
+      state: "running",
+      startedAt: new Date(Date.now() - 60_000).toISOString(),
+    };
+    // Ctrl-C under beta.26 days ago: still "running" in its record, its process long gone.
+    const killed = {
+      ...record("20261101-100100-4242-cd34", ["map", "forge-ledger", key]),
+      state: "running",
+    };
+    keep(root, [live, killed]);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
     expect(read(root, live.runId)).toEqual(live);
+    expect(read(root, killed.runId).title).toBe("atticus map forge-ledger");
+    expect(JSON.stringify(read(root, killed.runId))).not.toContain(key);
+    // The live one waits: no mark, so the next command looks at it again.
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(false);
+    writeFileSync(
+      join(runningDirOf(root), `${live.runId}.json`),
+      JSON.stringify({ ...live, state: "done" }),
+    );
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    expect(read(root, live.runId).title).toBe("atticus map forge-ledger");
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("tries a `secret` run's removal again when it failed, and writes no mark until it is gone", async () => {
+    const root = await fresh();
+    const set = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    keep(root, [set]);
+    // Something in the log's place that can't be removed as a file (as a file held open on
+    // Windows can't): the record stays, and so does the chance to remove it.
+    const log = join(runLogsDirOf(root), `${set.runId}.log`);
+    rmSync(log);
+    mkdirSync(log);
+    writeFileSync(join(log, "held"), key);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(join(runningDirOf(root), `${set.runId}.json`))).toBe(true);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(false);
+    rmSync(log, { recursive: true });
+    writeFileSync(log, `atticus: ${key} isn't a variable's name\n`);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    expect(existsSync(join(runningDirOf(root), `${set.runId}.json`))).toBe(false);
+    expect(existsSync(log)).toBe(false);
     expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
   });
 
