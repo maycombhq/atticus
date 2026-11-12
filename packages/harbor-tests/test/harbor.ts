@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { loadOrgPack, parseRecord, type CatalogRecord, type OrgPack } from "@maycombhq/core";
+import {
+  canonicalize,
+  loadOrgPack,
+  parseRecord,
+  type CatalogRecord,
+  type OrgPack,
+} from "@maycombhq/core";
 import { scanEstate, type EstateScan } from "@maycombhq/scanner";
 
 /** fixtures/harbor: the second reference ecosystem (ADR 0035 point 3). */
@@ -159,10 +165,10 @@ export function compare(
     const ignore = new Set(["evidence", ...(opts.ignoreFields?.[e.kind] ?? [])]);
     for (const f of [...new Set([...Object.keys(e), ...Object.keys(a)])].sort()) {
       if (ignore.has(f)) continue;
-      if (JSON.stringify(a[f]) !== JSON.stringify(e[f]))
-        out.fieldDiffs.push(
-          `${k}.${f}: expected ${JSON.stringify(e[f])}, got ${JSON.stringify(a[f])}`,
-        );
+      // A value as the catalog writes it (canonical: an object's keys in one order), so two
+      // objects with the same fields are the same whatever order the build gave them in.
+      const [av, ev] = [a[f], e[f]].map((v) => JSON.stringify(canonicalize(v)));
+      if (av !== ev) out.fieldDiffs.push(`${k}.${f}: expected ${ev}, got ${av}`);
     }
     const ea = new Set(((a.evidence as Record<string, unknown>[]) ?? []).map(evKey));
     const ee = new Set(((e.evidence as Record<string, unknown>[]) ?? []).map(evKey));

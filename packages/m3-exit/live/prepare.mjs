@@ -286,6 +286,14 @@ export async function prepare(outDir, { runs = 5, log = () => {} } = {}) {
         buildReady(runDir, "handup", replayDir, { handDown: true, built: true }),
         buildReady(runDir, "names", replayDir, { handDown: false, built: false }),
       ]);
+      // The set-up's builds leave Atticus's own build cache (ADR 0195 point 9) in each metarepo:
+      // this machine's, made again by the agent's first build, and named as a recording is (by a
+      // SHA-256), so a run starts without it.
+      for (const key of Object.keys(SANDBOXES))
+        await rm(join(metarepoOf(runDir, key), ".index", "build-cache"), {
+          recursive: true,
+          force: true,
+        });
       await writeRunFiles(runDir, n);
       const bad = await leaks(runDir);
       if (bad.length)

@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type Page } from "@playwright/test";
@@ -49,7 +49,8 @@ export function catalogFiles(root: string): Record<string, string> {
     for (const n of readdirSync(d)) {
       const p = join(d, n);
       if (statSync(p).isDirectory()) walk(p);
-      else out[relative(dir, p)] = readFileSync(p, "utf8");
+      // Keyed "/"-separated on every OS (`table/x.yaml`), as the app names catalog files.
+      else out[relative(dir, p).split(sep).join("/")] = readFileSync(p, "utf8");
     }
   };
   if (existsSync(dir)) walk(dir);

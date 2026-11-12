@@ -36,11 +36,15 @@ it("offers Sync the repos when the repo to read has no clone here", async () => 
   const m = mount(HandoffStep as never, { args: ["map", "forge-gateway"] } as never);
   const b = all(m.tree).find((e) => e.type === "button")!;
   (b.props.onClick as () => void)();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+  // Until the call has settled: on a busy machine the refusal takes more than a few turns of
+  // the event loop, and one settling after the test would land in the next test's component
+  // (the hooks are shared).
+  await vi.waitFor(() => {
+    m.render();
+    const sync = all(m.tree).find((e) => e.type === SyncFirst);
+    expect(sync?.props.repos).toEqual(["forge-gateway"]);
+  });
   posted.length = 0;
-  m.render();
-  const sync = all(m.tree).find((e) => e.type === SyncFirst);
-  expect(sync?.props.repos).toEqual(["forge-gateway"]);
   expect(text(m.tree)).not.toContain("atticus workspace sync");
 });
 const T = COPY.runStep;
@@ -50,9 +54,9 @@ it("prepares the step as a hand-off and links to its run", async () => {
   const b = all(m.tree).find((e) => e.type === "button")!;
   expect(text(b.props.children)).toBe(T.handoffPrepare);
   (b.props.onClick as () => void)();
-  await new Promise((r) => setTimeout(r, 0));
-  m.render();
+  await vi.waitFor(() => {
+    m.render();
+    expect(all(m.tree).find((e) => e.type === "a")?.props.href).toBe("#/runs?run=run-9");
+  });
   expect(posted).toEqual([{ args: ["plan", "stories", "c1"] }]);
-  const link = all(m.tree).find((e) => e.type === "a")!;
-  expect(link.props.href).toBe("#/runs?run=run-9");
 });
