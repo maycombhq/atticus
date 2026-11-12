@@ -12,8 +12,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseFacts } from "@maycombhq/core";
+import { parseFacts, staleCite, type FileChange } from "@maycombhq/core";
 import { scanEstate, writeFactsSlot } from "../src/index.js";
+import { changesOfBothSides } from "../src/facts-scan.js";
 
 /**
  * A check at a later commit (the code-against-design check on a task branch, ADR 0114) scans
@@ -205,4 +206,37 @@ describe("a scan with carryFacts from a snapshot that isn't an ancestor of the c
     },
     T,
   );
+});
+
+/**
+ * Review of beta.27: both sides' changes since the merge base were merged by path, so a path the
+ * task branch renamed another file onto hid that the snapshot's side had added it there: a fact
+ * citing it was carried. Every change of both sides counts now, and a rename's new path too.
+ */
+describe("the changes of both sides since a merge base", () => {
+  const fact = (file: string) =>
+    ({ cite: { file, line: 1 }, steps: [], errors: [] }) as unknown as Parameters<
+      typeof staleCite
+    >[0];
+  it("leaves out a fact citing a path the task branch renamed another file onto", () => {
+    const theirs: FileChange[] = [{ status: "added", path: "edge/env/prod/extra.json" }];
+    const ours: FileChange[] = [
+      { status: "renamed", path: "edge/env/prod/extra.json", from: "edge/env/prod/old.json" },
+    ];
+    const changes = changesOfBothSides(theirs, ours);
+    expect(staleCite(fact("edge/env/prod/extra.json"), changes)).toBeDefined();
+    expect(staleCite(fact("edge/env/prod/old.json"), changes)).toBeDefined();
+  });
+  it("leaves out a fact citing a path theirs renamed a file onto and ours renamed onto too", () => {
+    const theirs: FileChange[] = [{ status: "renamed", path: "a/g.xml", from: "a/h.xml" }];
+    const ours: FileChange[] = [{ status: "renamed", path: "a/g.xml", from: "a/f.xml" }];
+    expect(staleCite(fact("a/g.xml"), changesOfBothSides(theirs, ours))).toBeDefined();
+  });
+  it("carries a fact citing a file neither side touched", () => {
+    const changes = changesOfBothSides(
+      [{ status: "modified", path: "a/x.xml" }],
+      [{ status: "modified", path: "a/y.xml" }],
+    );
+    expect(staleCite(fact("a/z.xml"), changes)).toBeUndefined();
+  });
 });

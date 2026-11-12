@@ -197,7 +197,7 @@ export function refusalPlanOf(r: Pick<BuildRefusal, "removals" | "edits">): stri
  * command says when the list it works out under the lock isn't the one the page listed.
  */
 export const pageChanged = (what: string) =>
-  `Nothing written: ${what} isn't what the page listed any more (another command wrote meanwhile). Look at the list again.`;
+  `Nothing written: ${what} isn't what the page listed any more (another command wrote meanwhile). Run it again to see what it would do now.`;
 
 /** The hash of what a refused build lists: each removal (path, reasons, words) and hand edit. */
 export function pendingPlan(

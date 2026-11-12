@@ -131,29 +131,37 @@ async function sinceMergeBase(
       changedFiles(dir, base, from, git),
       changedFiles(dir, base, to, git),
     ]);
-    return { changes: { [from]: bothSides(theirs, ours) }, missing: [] };
+    return { changes: { [from]: changesOfBothSides(theirs, ours) }, missing: [] };
   } catch {
     return undefined;
   }
 }
 
-/** The changes of both sides since a merge base, by path, each as it stands on `ours`' side. */
-function bothSides(theirs: readonly FileChange[], ours: readonly FileChange[]): FileChange[] {
-  const out = new Map<string, FileChange>(ours.map((c) => [c.path, c]));
+/**
+ * The changes of both sides since a merge base, each as it stands on `ours`' side. Nothing is
+ * deduplicated by path: a path both sides touched is stale whichever side's change is read
+ * (review of beta.27: an ours-side rename onto a path theirs added hid theirs' change), and an
+ * ours-side rename's new path counts as edited too, since the snapshot's file there, if any, is
+ * not the one ours renamed into it.
+ */
+export function changesOfBothSides(
+  theirs: readonly FileChange[],
+  ours: readonly FileChange[],
+): FileChange[] {
   const link = (c: FileChange) => (c.gitlink ? { gitlink: true as const } : {});
-  const add = (c: FileChange) => {
-    if (!out.has(c.path)) out.set(c.path, c);
-  };
+  const out: FileChange[] = [...ours];
+  for (const c of ours)
+    if (c.status === "renamed") out.push({ status: "modified", path: c.path, ...link(c) });
   for (const c of theirs) {
     if (c.status === "added" || c.status === "copied")
-      add({ status: "deleted", path: c.path, ...link(c) });
-    else if (c.status === "deleted") add({ status: "added", path: c.path, ...link(c) });
+      out.push({ status: "deleted", path: c.path, ...link(c) });
+    else if (c.status === "deleted") out.push({ status: "added", path: c.path, ...link(c) });
     else if (c.status === "renamed") {
-      add({ status: "deleted", path: c.path, ...link(c) });
-      if (c.from) add({ status: "added", path: c.from, ...link(c) });
-    } else add({ status: "modified", path: c.path, ...link(c) });
+      out.push({ status: "deleted", path: c.path, ...link(c) });
+      if (c.from) out.push({ status: "added", path: c.from, ...link(c) });
+    } else out.push({ status: "modified", path: c.path, ...link(c) });
   }
-  return [...out.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /**
