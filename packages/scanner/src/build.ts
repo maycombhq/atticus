@@ -1133,6 +1133,9 @@ function sourceWords(path: string, b: Build): string {
   return `an input changed (${path})`;
 }
 
+/** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
+const JOIN_DERIVED = new Set(["Interface", "Unresolved", "Capability", "GlossaryTerm"]);
+
 /** The two limits of point 4: built in, not settings (a setting would be a C6 change). */
 export const REMOVAL_LIMITS = { share: 0.1, count: 200 } as const;
 
@@ -1523,7 +1526,13 @@ export async function guardBuild(
         }
       }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      if (estate && !why.size) {
+      // Only a record a join derives can rest on another repo's slot: an arrow, a loose end, a
+      // feature or a term traced through several repos, or an id two repos' records collided on
+      // (evidence from more than one). Any other record comes from its own repo's slot, so this
+      // explains nothing of it (the review: it explained every removal).
+      const joinDerived =
+        !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
+      if (estate && !why.size && joinDerived) {
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }

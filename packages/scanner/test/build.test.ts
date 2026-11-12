@@ -22,6 +22,7 @@ import {
   readersSlotPath,
   serializeBuildManifest,
   serializeReadersSlot,
+  sha256Of,
   undoDirOf,
   UNDO_KEEP,
 } from "../src/index.js";
@@ -252,6 +253,53 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       expect(r.guard.refused?.reasons).toContain("unexplained-removals");
       expect(r.guard.refused?.unexplained?.map((x) => x.path)).toEqual([ghost.path]);
       expect(r.guard.refused?.message).toMatch(/That is a bug/);
+      expect(await snap(root)).toEqual(before);
+    },
+    T,
+  );
+
+  // The review: "another repo's slot changed (a join with it)" explained every removal. Only a
+  // record a join derives can rest on another repo's slot.
+  it(
+    "the estate's slots changing explains the removal of a joined record only, not of one repo's own record",
+    async () => {
+      const root = await forge();
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      const path = join(root, "catalog/sources/build.json");
+      const m = JSON.parse(await readFile(path, "utf8")) as {
+        files: { path: string; sha256: string; sources: { path: string; sha256: string }[] }[];
+      };
+      // Two records the last build wrote and this one won't, which rested on the estate's slots
+      // as they were (catalog/sources had another hash) and on nothing else that changed.
+      const ghostOf = async (kind: string) => {
+        const one = m.files.find((f) => f.path.includes(`/${kind}/`))!;
+        const was = /^id: (.*)$/m.exec(await readFile(join(root, one.path), "utf8"))![1]!;
+        const text = (await readFile(join(root, one.path), "utf8")).replace(
+          /^id: .*$/m,
+          `id: ${was}-ghost`,
+        );
+        const ghost = {
+          path: `catalog/generated/${kind}/${was}-ghost.yaml`,
+          sha256: sha256Of(text),
+          sources: one.sources.map((s) =>
+            s.path === "catalog/sources" ? { ...s, sha256: "0".repeat(64) } : s,
+          ),
+        };
+        m.files.push(ghost);
+        await writeFile(join(root, ghost.path), text);
+        return { one, ghost };
+      };
+      const endpoint = await ghostOf("endpoint");
+      const feature = await ghostOf("capability");
+      m.files.sort((x, y) => (x.path < y.path ? -1 : 1));
+      await writeFile(path, JSON.stringify(m, null, 2) + "\n");
+      const before = await snap(root);
+      const r = await buildAndWrite(root, { command: "atticus catalog build", allowRemovals: 1 });
+      expect(r.guard.refused?.reasons).toContain("unexplained-removals");
+      expect(r.guard.refused?.unexplained?.map((x) => x.path)).toEqual([endpoint.ghost.path]);
+      expect(r.guard.refused?.removals?.map((x) => [x.path, x.explainedBy])).toEqual([
+        [feature.ghost.path, ["another repo's slot changed (a join with it)"]],
+      ]);
       expect(await snap(root)).toEqual(before);
     },
     T,
