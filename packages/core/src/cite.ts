@@ -358,21 +358,48 @@ export function partsBuildWord(
   return rest.length > 0 && rest.every((p) => lines.some((l) => lineNamesWord(l, p)));
 }
 
-export function partsNamePath(lines: readonly string[], path: string): boolean {
-  const parts = path
+/** A path's plain pieces: its segments (a dotted one's pieces), parameters left out. */
+const pathPieces = (path: string) =>
+  path
     .split(/[?#]/, 1)[0]!
     .split("/")
     .filter((s) => s && !PARAM.test(s))
     .flatMap((s) => s.split("."))
     .filter(Boolean);
+
+/** Whether a line names a piece at the start of a word or an identifier, or without its hyphens. */
+const linesNamePiece = (lines: readonly string[], p: string) =>
+  [p, p.replace(/-/g, "")].some((q) =>
+    lines.some((l) =>
+      new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(q)}`, "i").test(l),
+    ),
+  );
+
+export function partsNamePath(lines: readonly string[], path: string): boolean {
+  const parts = pathPieces(path);
   if (!parts.length)
     return lines.some((l) => lineNamesRoute(l, path)) || defaultActionAt(lines, path);
   // A slugified segment (`my-account`) is the name written without its hyphens (`MyAccount`).
-  return parts.every((p) =>
-    [p, p.replace(/-/g, "")].some((q) =>
-      lines.some((l) =>
-        new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(q)}`, "i").test(l),
-      ),
-    ),
+  return parts.every((p) => linesNamePiece(lines, p));
+}
+
+/**
+ * A path put together from parts, the cited lines' share checked as a path (second review of ADR
+ * 0196): each piece the parts' lines don't name must be written on the cited lines as a piece of a
+ * path or route string, after a quote, a `/`, a `:` or a tag's `>` (`"/balances"`, `'users'`,
+ * `:users`, `<Path>v1</Path>`) and ending there, not as a bare identifier. A method `balances()` under a commented-out `@GetMapping("/balances")`, with
+ * the class's `/api` as a part, names no `/api/balances`.
+ */
+export function partsNamePathAsPath(
+  cited: readonly string[],
+  partLines: readonly string[],
+  path: string,
+): boolean {
+  const pieces = pathPieces(path);
+  if (!pieces.length) return partsNamePath([...cited, ...partLines], path);
+  return pieces.every(
+    (p) =>
+      linesNamePiece(partLines, p) ||
+      cited.some((l) => new RegExp(`["'\`/:>]${escape(p)}(?![A-Za-z0-9_-])`, "i").test(l)),
   );
 }

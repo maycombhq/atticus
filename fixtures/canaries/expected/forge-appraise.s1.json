@@ -55,7 +55,7 @@
       "line": 8,
       "claim": "call POST /v2/assessments",
       "value": "/v2/assessments",
-      "needle": "v2-assessments",
+      "needle": "post v2-assessments",
       "how": "commented"
     }
   ]

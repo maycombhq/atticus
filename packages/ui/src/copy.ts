@@ -1141,7 +1141,7 @@ export const COPY = {
      * wrong, as two numbers side by side (never pooled), in the CLI's own words.
      */
     canary: {
-      title: "Canaries and the silent error rate",
+      title: "Canaries and the audit: how often a backed claim is wrong",
       intro:
         "How often a claim graded as backed is wrong, measured two ways on your own code, with nobody labelling anything. The sample audit: a person answers a random sample of kept facts and links, which shows real lines read wrongly. A canary: Atticus copies a repo to a scratch folder outside the metarepo, plants a few made-up entries, calls, topics and config keys the repo can serve, and comments out a few real lines; your assistant reads the copy as it reads any repo, and a line taken out that the read still claims and the verifier keeps is a silent error. The two are of different things, so they are shown side by side, never added up.",
       empty:

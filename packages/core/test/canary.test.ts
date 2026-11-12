@@ -3,7 +3,9 @@ import {
   auditPrecision,
   CanaryKey,
   canaryRate,
-  canaryRunRepo,
+  canaryNeedleOf,
+  canaryRunOf,
+  isCanaryMetarepoId,
   isCanaryRepoName,
   isCanaryRunName,
   foldCanary,
@@ -11,6 +13,7 @@ import {
   parseCanaryReport,
   plantedBy,
   removedBy,
+  removedMatch,
   scoreCanary,
   serializeCanaryReport,
   silentErrorRate,
@@ -247,6 +250,145 @@ describe("scoreCanary", () => {
     expect(removedBy(r, at(11, { path: "/transfers" }))).toBe("near");
   });
 
+  describe("a correct fact beside a removed line (second review of ADR 0196)", () => {
+    const base = {
+      repo: "forge-web",
+      commit: "0123abc",
+      verified: "file",
+      by: "assistant",
+      conf: "declared",
+    };
+    const route = (
+      id: string,
+      path: string,
+      file: string,
+      line: number,
+      x: Record<string, unknown> = {},
+    ) =>
+      ({
+        ...base,
+        id,
+        kind: "entry",
+        entryType: "rest",
+        method: "GET",
+        path,
+        cite: { file, line, value: path },
+        ...x,
+      }) as unknown as Fact;
+    const removedOf = (f: Fact) => ({
+      id: `remove:${f.id}`,
+      fact: f.id,
+      kind: f.kind,
+      file: f.cite.file,
+      line: f.cite.line,
+      claim: `${f.kind} x`,
+      value: f.cite.value,
+      needle: canaryNeedleOf(f),
+      how: "commented" as const,
+    });
+    const keyOf = (removed: ReturnType<typeof removedOf>[]) => ({
+      repo: "forge-web",
+      seed: "s",
+      stacks: [],
+      planted: [],
+      removed,
+    });
+
+    it("puts the method in an entry's or call's needle, and a config key exactly", () => {
+      expect(canaryNeedleOf(route("a", "/users/{id}", "r.js", 1))).toBe("get users-param");
+      expect(canaryNeedleOf(route("a", "/users", "r.js", 1, { method: undefined }))).toBe("users");
+    });
+
+    it("keeps a route on the next line whose path only holds the removed one", () => {
+      const gone = route("e-users", "/users", "src/routes.js", 3);
+      const live = route("e-user", "/users/:id", "src/routes.js", 4);
+      expect(removedBy(removedOf(gone), live)).toBe(undefined);
+      const r = scoreCanary(keyOf([removedOf(gone)]), { kept: [live], rejected: [] }, AT);
+      expect(r.removed[0]!.result).toBe("absent");
+      expect(r.passed).toMatchObject({ k: 0, n: 1 });
+    });
+
+    it("keeps another method on the same path beside it", () => {
+      const gone = route("e-users", "/users", "src/routes.js", 3);
+      const put = route("e-put", "/users", "src/routes.js", 4, { method: "PUT" });
+      expect(removedBy(removedOf(gone), put)).toBe(undefined);
+      // the same method on that path beside it is a claim of the removed line
+      expect(removedBy(removedOf(gone), route("e-get", "/users", "src/routes.js", 4))).toBe("near");
+      // a fact citing the commented line itself with its value claims it, whatever its method
+      expect(
+        removedBy(removedOf(gone), route("e-x", "/users", "src/routes.js", 3, { method: "PUT" })),
+      ).toBe("near");
+    });
+
+    it("keeps a config key beside a removed key it merely starts with", () => {
+      const cfg = (id: string, key: string, line: number, value: string) =>
+        ({
+          ...base,
+          id,
+          kind: "config",
+          key,
+          cite: { file: "application.yml", line, value },
+        }) as unknown as Fact;
+      const gone = cfg("c1", "ledger.url", 3, "url");
+      expect(removedBy(removedOf(gone), cfg("c2", "ledger.url-fallback", 4, "url-fallback"))).toBe(
+        undefined,
+      );
+      expect(removedBy(removedOf(gone), cfg("c3", "ledger.url", 4, "url"))).toBe("near");
+      expect(removedBy(removedOf(gone), cfg("c4", "ledger.url", 30, "url"))).toBe("elsewhere");
+    });
+
+    it("matches a path written without its base by the value, the same method only", () => {
+      const gone = route("e-t", "/ledger/v1/transfers", "src/C.java", 11, {
+        cite: { file: "src/C.java", line: 11, value: "/transfers" },
+      });
+      const short = route("x", "/transfers", "src/C.java", 12);
+      expect(removedMatch(removedOf(gone), short)).toBe("value");
+      expect(removedMatch(removedOf(gone), { ...short, method: "POST" } as Fact)).toBe(undefined);
+    });
+
+    it("scores in passes, so adjacent removals are matched to their own facts", () => {
+      const g1 = route("e-a", "/orders", "src/r.js", 10);
+      const g2 = route("e-b", "/orders/export", "src/r.js", 11);
+      const readB = route("x-b", "/orders/export", "src/r.js", 11);
+      const r = scoreCanary(
+        keyOf([removedOf(g1), removedOf(g2)]),
+        { kept: [readB], rejected: [] },
+        AT,
+      );
+      expect(r.removed.map((x) => [x.fact, x.result, x.by])).toEqual([
+        ["e-a", "absent", undefined],
+        ["e-b", "kept", "x-b"],
+      ]);
+      // a fact that claims the second line by its needle is not taken by the first by value
+      const both = route("x-both", "/orders/export", "src/r.js", 10, {
+        cite: { file: "src/r.js", line: 10, value: "/orders" },
+      });
+      const r2 = scoreCanary(
+        keyOf([removedOf(g1), removedOf(g2)]),
+        { kept: [both], rejected: [] },
+        AT,
+      );
+      expect(r2.removed.map((x) => [x.fact, x.result])).toEqual([
+        ["e-a", "absent"],
+        ["e-b", "kept"],
+      ]);
+      // a fact naming one removed path elsewhere never takes another's match at its line
+      const e1 = route("e-x", "/x", "src/a.js", 5);
+      const e2 = route("e-y", "/y", "src/b.js", 9);
+      const rd = route("rd", "/y", "src/b.js", 9);
+      const elsewhere = route("rd2", "/x", "src/c.js", 40);
+      const r3 = scoreCanary(
+        keyOf([removedOf(e1), removedOf(e2)]),
+        { kept: [rd, elsewhere], rejected: [] },
+        AT,
+      );
+      expect(r3.removed.map((x) => [x.fact, x.result, x.by])).toEqual([
+        ["e-x", "elsewhere", "rd2"],
+        ["e-y", "kept", "rd"],
+      ]);
+    });
+  });
+
   it("round-trips its report file and keeps the latest of each repo", () => {
     const r = scoreCanary(KEY, { kept: [plantedEntry], rejected: [] }, AT);
     const back = parseCanaryReport(serializeCanaryReport(r));
@@ -266,24 +408,34 @@ describe("canary names", () => {
   });
 
   it("knows a run folder by its name, and a key that names another folder doesn't read", () => {
-    expect(isCanaryRunName("atticus-canary-forge-portal-bff-a1B2c3", "forge-portal-bff")).toBe(
-      true,
-    );
-    expect(canaryRunRepo("atticus-canary-forge-portal-bff-a1B2c3")).toBe("forge-portal-bff");
+    // Second review of ADR 0196: `<repo>-<id8>-XXXXXX`, neutral (the read's workspace says nothing
+    // of a canary), with the metarepo's id, so no metarepo's clean takes another's run.
+    const name = "forge-portal-bff-0a1b2c3d-a1B2c3";
+    expect(isCanaryRunName(name, "forge-portal-bff", "0a1b2c3d")).toBe(true);
+    expect(isCanaryRunName(name, "forge-portal-bff", "ffffffff")).toBe(false);
+    expect(canaryRunOf(name)).toEqual({ repo: "forge-portal-bff", id: "0a1b2c3d" });
+    expect(canaryRunOf("forge-0a1b2c3d-x-0a1b2c3d-a1B2c3")).toEqual({
+      repo: "forge-0a1b2c3d-x",
+      id: "0a1b2c3d",
+    });
     for (const bad of [
-      "atticus-canary-forge-portal-bff-a1B2c",
-      "atticus-canary-forge-portal-bff-a1B2c3/..",
+      "forge-portal-bff-0a1b2c3d-a1B2c",
+      "forge-portal-bff-0a1b2c3d-a1B2c3/..",
+      "forge-portal-bff-a1B2c3",
       "atticus-canary-precious",
-      "../atticus-canary-forge-portal-bff-a1B2c3",
+      "../forge-portal-bff-0a1b2c3d-a1B2c3",
+      "forge-portal-bff-0A1B2C3D-a1B2c3",
     ])
-      expect(isCanaryRunName(bad, "forge-portal-bff"), bad).toBe(false);
+      expect(isCanaryRunName(bad, "forge-portal-bff", "0a1b2c3d"), bad).toBe(false);
     // a longer repo's run folder is not a shorter one's
-    expect(isCanaryRunName("atticus-canary-forge-portal-bff-a1B2c3", "forge-portal")).toBe(false);
+    expect(isCanaryRunName(name, "forge-portal", "0a1b2c3d")).toBe(false);
+    expect(isCanaryMetarepoId("0a1b2c3d")).toBe(true);
+    expect(isCanaryMetarepoId("../../x")).toBe(false);
     const key = {
       schema: 1,
       repo: "forge-portal-bff",
       seed: "s1",
-      run: "atticus-canary-forge-portal-bff-a1B2c3",
+      run: name,
       stacks: [],
       planted: [],
       removed: [],
@@ -293,7 +445,8 @@ describe("canary names", () => {
     for (const run of [
       "/tmp/victim/atticus-canary-precious",
       "../../victim",
-      "/tmp/atticus-canary-forge-portal-bff-a1B2c3",
+      `/tmp/atticus-reads/${name}`,
+      "forge-portal-0a1b2c3d-a1B2c3",
     ])
       expect(CanaryKey.safeParse({ ...key, run }).success, run).toBe(false);
     expect(CanaryKey.safeParse({ ...key, repo: "../../victim/package" }).success).toBe(false);

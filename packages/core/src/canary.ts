@@ -35,19 +35,37 @@ export const canaryReportsRelOf = (root: string): string =>
 export const isCanaryRepoName = (repo: string): boolean =>
   /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..");
 
-/** The start of a run folder's name: `atticus-canary-<repo>-`, then the six characters mkdtemp adds. */
-export const canaryRunPrefix = (repo: string): string => `atticus-canary-${repo}-`;
+/**
+ * The folder every run folder is made in, right in the system's temporary folder: made 0700 and
+ * this user's own, so no other user can make or swap a run folder in it (review of ADR 0196). Its
+ * name, like a run folder's, says nothing of a canary: a run folder is the read's workspace.
+ */
+export const CANARY_READS_DIR = "atticus-reads";
 
-/** Whether a folder's base name is a run folder of this repo: `atticus-canary-<repo>-XXXXXX`. */
-export const isCanaryRunName = (name: string, repo: string): boolean =>
+/**
+ * A metarepo's id in a run folder's name: the first 8 characters of its state folder's name
+ * (`metarepoStateDir`, ADR 0186), so a run folder is known as this metarepo's and no other's.
+ */
+export const isCanaryMetarepoId = (id: string): boolean => /^[0-9a-f]{8}$/.test(id);
+
+/** The start of a run folder's name: `<repo>-<id8>-`, then the six characters mkdtemp adds. */
+export const canaryRunPrefix = (repo: string, id: string): string => `${repo}-${id}-`;
+
+/**
+ * Whether a folder's base name is a run folder of this repo's and this metarepo's,
+ * `<repo>-<id8>-XXXXXX`: neutral on purpose (review of ADR 0196), as the folder is the workspace
+ * the read is made in.
+ */
+export const isCanaryRunName = (name: string, repo: string, id: string): boolean =>
   isCanaryRepoName(repo) &&
-  name.startsWith(canaryRunPrefix(repo)) &&
-  /^[A-Za-z0-9]{6}$/.test(name.slice(canaryRunPrefix(repo).length));
+  isCanaryMetarepoId(id) &&
+  name.startsWith(canaryRunPrefix(repo, id)) &&
+  /^[A-Za-z0-9]{6}$/.test(name.slice(canaryRunPrefix(repo, id).length));
 
-/** The repo a run folder's base name is of, or undefined when it is no run folder's name. */
-export function canaryRunRepo(name: string): string | undefined {
-  const m = /^atticus-canary-(.+)-[A-Za-z0-9]{6}$/.exec(name);
-  return m && isCanaryRunName(name, m[1]!) ? m[1] : undefined;
+/** The repo and metarepo id a run folder's base name is of, or undefined when it is no run's. */
+export function canaryRunOf(name: string): { repo: string; id: string } | undefined {
+  const m = /^(.+)-([0-9a-f]{8})-[A-Za-z0-9]{6}$/.exec(name);
+  return m && isCanaryRunName(name, m[1]!, m[2]!) ? { repo: m[1]!, id: m[2]! } : undefined;
 }
 
 /** What a planted item stands for: a route served, a call made, a topic, a config key. */
@@ -85,11 +103,12 @@ export const CanaryRemoved = z.strictObject({
   line: z.number().int().positive(),
   /** The fact's claim, as the facts already state it. */
   claim: z.string().min(1),
-  /** The fact's cited value: a claim of the same kind on that line naming it is the removed one. */
+  /** The fact's cited value: a fact of the kind citing that very line with it is the removed one. */
   value: z.string().min(1),
   /**
-   * The fact's path or key, folded with its parameters left out (`canaryNeedleOf`): a fact of the
-   * kind with the same, cited anywhere, claims the removed one too.
+   * What the fact claims (`canaryNeedleOf`): an entry's or call's method and path with its
+   * parameters left out (`get /ledger-v1-transfers`), a config key exactly, folded. A fact of the
+   * kind with the same needle claims the removed one.
    */
   needle: z.string().min(1),
   how: z.literal("commented"),
@@ -106,9 +125,10 @@ export type CanarySkippedT = z.infer<typeof CanarySkipped>;
 
 /**
  * The answer key a plant keeps on this machine (never in the copy, never in the metarepo). The
- * run folder is kept by its base name only, `atticus-canary-<repo>-XXXXXX` (review of ADR 0196):
- * its path is rebuilt under the system's temporary folder and checked before anything in it is
- * read, written or deleted, so a key edited by hand can't point anywhere else.
+ * run folder is kept by its base name only, `<repo>-<id8>-XXXXXX` (review of ADR 0196): its path
+ * is rebuilt under `<temporary folder>/atticus-reads` and checked (the metarepo's id included)
+ * before anything in it is read, written or deleted, so a key edited by hand can't point anywhere
+ * else.
  */
 export const CanaryKey = z
   .strictObject({
@@ -124,7 +144,7 @@ export const CanaryKey = z
     skipped: z.array(CanarySkipped).default([]),
     at: z.string(),
   })
-  .refine((k) => isCanaryRunName(k.run, k.repo), {
+  .refine((k) => canaryRunOf(k.run)?.repo === k.repo, {
     message: "run is not this repo's run folder name",
     path: ["run"],
   });
@@ -232,14 +252,30 @@ export function canaryClaimText(f: Fact): string {
 /** A path with its parameters left out (`{id}`, `:id`), folded: `/a/{id}/b` and `/a/:x/b` alike. */
 const pathKey = (p: string) => foldCanary(p.replace(/\{[^}]*\}|:[A-Za-z_]\w*/g, "-param-"));
 
-/** What a fact claims, as a removed fact is matched on: an entry's or call's path, a key, else its value. */
+/**
+ * What a fact claims, as a removed fact is matched on: an entry's or call's method and path, its
+ * parameters left out (`get ledger-v1-transfers-param`; the path alone with no method), a config
+ * key exactly, else its cited value, folded. Second review of ADR 0196: the method is part of it,
+ * so `PUT /users` beside a removed `GET /users` is no claim of it.
+ */
 export function canaryNeedleOf(f: Fact): string {
   const x = f as unknown as Record<string, unknown>;
   if ((f.kind === "entry" || f.kind === "call") && typeof x.path === "string" && pathKey(x.path))
-    return pathKey(x.path);
+    return withMethod(x.method, pathKey(x.path));
   if (f.kind === "config" && typeof x.key === "string" && foldCanary(x.key))
     return foldCanary(x.key);
   return foldCanary(f.cite.value) || f.cite.value;
+}
+
+const withMethod = (method: unknown, path: string) =>
+  typeof method === "string" && foldCanary(method) ? `${foldCanary(method)} ${path}` : path;
+
+/** Two needles alike: the same path or key, and the same method when both have one. */
+function sameNeedle(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [am, ap] = a.includes(" ") ? a.split(" ") : [undefined, a];
+  const [bm, bp] = b.includes(" ") ? b.split(" ") : [undefined, b];
+  return ap === bp && (am === undefined || bm === undefined);
 }
 
 /** Whether a fact is about a planted item: its kind, with the item's own words in its claim. */
@@ -251,18 +287,46 @@ const citesNear = (f: Fact, file: string, line: number): boolean =>
   [f.cite, ...(f.cite.with ?? [])].some((c) => c.file === file && Math.abs(c.line - line) <= 1);
 
 /**
- * Whether a fact claims a removed one, and where: `near` when it is of its kind and cites the
- * commented line or one either side (the verifier's own window), by its cite or a `cite.with`
- * part, with the removed fact's path or key, or its value, in its claim; `elsewhere` when it has
- * the same path or key but cites neither, so may well be about another line (review of ADR 0196:
- * such a fact is never counted as passed).
+ * How a fact claims a removed one (second review of ADR 0196): `near` when it is of its kind,
+ * cites the commented line or one either side (the verifier's window), by its cite or a
+ * `cite.with` part, and claims the same: the same needle (method and path, or the key exactly).
+ * `value` when it claims it by its cited value only: it cites that very line with that value, or
+ * (an entry or call) its path is the value with the same method (a path the read wrote without
+ * the base the removed fact put in front). `elsewhere` when it has the same needle but cites
+ * neither the line nor one beside it, so may well be about another line (never counted as passed).
+ * A claim that merely holds the removed value (`/users/:id` beside a removed `/users`, a key
+ * `url-fallback` beside a removed `url`) is none of these: a fact of the line beside it.
  */
-export function removedBy(r: CanaryRemovedT, f: Fact): "near" | "elsewhere" | undefined {
+export function removedMatch(
+  r: CanaryRemovedT,
+  f: Fact,
+): "near" | "value" | "elsewhere" | undefined {
   if (f.kind !== r.kind) return undefined;
-  const same = canaryNeedleOf(f) === r.needle;
-  if (citesNear(f, r.file, r.line) && (same || canaryClaimText(f).includes(foldCanary(r.value))))
-    return "near";
+  const same = sameNeedle(canaryNeedleOf(f), r.needle);
+  const near = citesNear(f, r.file, r.line);
+  if (near && same) return "near";
+  const v = foldCanary(r.value);
+  if (
+    near &&
+    v &&
+    ([f.cite, ...(f.cite.with ?? [])].some(
+      (c) => c.file === r.file && c.line === r.line && foldCanary(c.value) === v,
+    ) ||
+      ((f.kind === "entry" || f.kind === "call") &&
+        /^\//.test(r.value.trim()) &&
+        sameNeedle(
+          canaryNeedleOf(f),
+          withMethod(r.needle.includes(" ") ? r.needle.split(" ")[0] : undefined, pathKey(r.value)),
+        )))
+  )
+    return "value";
   return same ? "elsewhere" : undefined;
+}
+
+/** Whether a fact claims a removed one: at its line (`near`, by needle or value) or `elsewhere`. */
+export function removedBy(r: CanaryRemovedT, f: Fact): "near" | "elsewhere" | undefined {
+  const m = removedMatch(r, f);
+  return m === "value" ? "near" : m;
 }
 
 export function canaryRate(k: number, n: number): CanaryRateT {
@@ -281,8 +345,9 @@ export function canaryRate(k: number, n: number): CanaryRateT {
  * rejected one only, or missed; each removed one absent, still claimed at its line by a kept fact
  * (a silent fabrication), claimed there only by a rejected one (the verifier caught it), or named
  * only by a fact cited elsewhere. One fact answers for one item at most (review of ADR 0196): the
- * items are matched in order, each to the first fact not yet taken. Recall and the fabrication
- * rate with their intervals.
+ * planted items are matched in order, each to the first fact not yet taken, then the removed ones
+ * in passes, strongest match first (`removedMatch`). Recall and the fabrication rate with their
+ * intervals.
  */
 export function scoreCanary(
   key: Pick<CanaryKeyT, "repo" | "commit" | "seed" | "stacks" | "planted" | "removed"> & {
@@ -308,25 +373,31 @@ export function scoreCanary(
       result: kept ? ("found" as const) : refused ? ("rejected" as const) : ("missed" as const),
     };
   });
+  // Second review of ADR 0196: in passes, each over every removed line not yet matched, so a
+  // fact that claims one line by its needle is never taken first by the line beside it on a
+  // weaker match: the same needle at the line (kept, then refused), then the value at the line,
+  // then the same needle cited elsewhere.
+  const got = new Map<string, { result: Got; by: Fact }>();
+  type Got = "kept" | "rejected" | "elsewhere";
+  const passes: [list: readonly Fact[], m: "near" | "value" | "elsewhere", r: Got][] = [
+    [read.kept, "near", "kept"],
+    [read.rejected, "near", "rejected"],
+    [read.kept, "value", "kept"],
+    [read.rejected, "value", "rejected"],
+    [[...read.kept, ...read.rejected], "elsewhere", "elsewhere"],
+  ];
+  for (const [list, m, result] of passes)
+    for (const r of key.removed) {
+      if (got.has(r.id)) continue;
+      const f = first(list, (x) => removedMatch(r, x) === m);
+      if (f) got.set(r.id, { result, by: f });
+    }
   const removed = key.removed.map((r) => {
-    const near = (f: Fact) => removedBy(r, f) === "near";
-    const kept = first(read.kept, near);
-    const refused = kept ? undefined : first(read.rejected, near);
-    const other =
-      kept || refused
-        ? undefined
-        : first([...read.kept, ...read.rejected], (f) => removedBy(r, f) === "elsewhere");
-    const by = kept ?? refused ?? other;
+    const g = got.get(r.id);
     return {
       ...(({ needle: _n, ...rest }) => rest)(r),
-      result: kept
-        ? ("kept" as const)
-        : refused
-          ? ("rejected" as const)
-          : other
-            ? ("elsewhere" as const)
-            : ("absent" as const),
-      ...(by ? { by: by.id } : {}),
+      result: g?.result ?? ("absent" as const),
+      ...(g ? { by: g.by.id } : {}),
     };
   });
   // A line a fact names only elsewhere isn't known to be claimed or not: in neither rate's count.

@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canaryClaimText, parseFacts, type Fact } from "@maycombhq/core";
 import {
+  CANARY_SECRET_PREFIX,
+  canaryHoldsSecret,
   canaryNeverCopied,
   dirSource,
   memorySource,
@@ -72,7 +74,8 @@ describe("planCanary", () => {
       const facts = factsOf(repo);
       const plan = planCanary({ source: dirSource(dir), facts, seed: "s1" });
       const copy = planted(dirSource(dir), plan.writes);
-      expect(plan.planted.length).toBeGreaterThanOrEqual(2);
+      // a browser app (forge-portal-ui) gets a call only: no route, no topics, no process.env
+      expect(plan.planted.length).toBeGreaterThanOrEqual(repo === "forge-portal-ui" ? 1 : 2);
       for (const p of plan.planted) {
         const line = copy.read(p.file)!.split("\n")[p.line - 1]!;
         const words = p.needle.split("-").filter((w) => !["updated", "viewed", "url"].includes(w));
@@ -251,11 +254,15 @@ describe("planCanary plants only what the repo can serve (review of ADR 0196)", 
       facts: [],
       seed: "s1",
     });
+    // second review of ADR 0196: a browser has no process.env, so no config, and its call is to
+    // a path of its own origin
     expect(items(browser)).toEqual({
-      planted: ["node config", "node call"],
-      skipped: ["node entry", "node topic-in", "node topic-out"],
+      planted: ["node call"],
+      skipped: ["node config", "node entry", "node topic-in", "node topic-out"],
     });
-    expect(Object.values(browser.writes).join("\n")).not.toMatch(/express|\.get\(|kafkajs/);
+    expect(Object.values(browser.writes).join("\n")).not.toMatch(
+      /express|\.get\(|kafkajs|process\.env/,
+    );
     const server = planCanary({
       source: memorySource({
         "package.json": JSON.stringify({ dependencies: { express: "4.21.0", kafkajs: "2.2.4" } }),
@@ -270,6 +277,181 @@ describe("planCanary plants only what the repo can serve (review of ADR 0196)", 
       skipped: [],
     });
     expect(server.writes["src/app.js"]).toContain('const { Kafka } = require("kafkajs");');
+    // nothing planted would crash if it ran: no client made at load, a connect before each send
+    // and subscribe, the route's failures answered, the consumer's start caught
+    const js = server.writes["src/app.js"]!;
+    expect(js).toMatch(/= \(\) => new Kafka\(/);
+    expect(js.indexOf(".connect();")).toBeLessThan(js.indexOf(".send("));
+    expect(js.lastIndexOf("await consumer.connect();")).toBeLessThan(js.indexOf(".subscribe("));
+    expect(js).toContain("res.status(502).end();");
+    expect(js).toMatch(/^\w+\(\)\.catch\(\(\) => undefined\);$/m);
+    expect(js).not.toMatch(/^void /m);
+  });
+
+  // Second review of ADR 0196, the reviewer's probes: what a repo can serve, read per module.
+  const springApp = (pkg: string) =>
+    `package ${pkg};\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\n@SpringBootApplication\npublic class App {}\n`;
+
+  it("Spring: a Gradle version catalog's aliases and buildSrc's convention plugins count", () => {
+    const catalog = planCanary({
+      source: memorySource({
+        "settings.gradle.kts": 'include("app")',
+        "gradle/libs.versions.toml":
+          '[versions]\nboot = "3.3.0"\n[libraries]\nboot-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "boot" }\nspring_kafka = { group = "org.springframework.kafka", name = "spring-kafka" }\n',
+        "app/build.gradle.kts":
+          "dependencies {\n  implementation(libs.boot.web)\n  implementation(libs.spring.kafka)\n}\n",
+        "app/src/main/java/forge/ledger/App.java": springApp("forge.ledger"),
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(catalog).skipped).toEqual([]);
+    const conventions = planCanary({
+      source: memorySource({
+        "buildSrc/src/main/kotlin/forge-web-conventions.gradle.kts":
+          'dependencies { implementation("org.springframework.boot:spring-boot-starter-web") }',
+        "build.gradle.kts": 'plugins { id("forge-web-conventions") }',
+        "src/main/java/forge/ledger/App.java": springApp("forge.ledger"),
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(conventions).planted).toContain("spring entry");
+    // a convention plugin nothing applies declares nothing
+    const unapplied = planCanary({
+      source: memorySource({
+        "buildSrc/src/main/kotlin/forge-web-conventions.gradle.kts":
+          'dependencies { implementation("org.springframework.boot:spring-boot-starter-web") }',
+        "build.gradle.kts": "plugins { java }",
+        "src/main/java/forge/ledger/App.java": springApp("forge.ledger"),
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(unapplied).skipped).toContain("spring entry");
+  });
+
+  it("Spring: the app's own module's build, not another module's; Cloud Stream's Kafka binder counts", () => {
+    const multi = planCanary({
+      source: memorySource({
+        "pom.xml": "<modules><module>app</module><module>lib</module></modules>",
+        "app/pom.xml": pom(["spring-boot-starter"]),
+        "lib/pom.xml": pom(["spring-boot-starter-web"]),
+        "app/src/main/java/forge/ledger/App.java": springApp("forge.ledger"),
+        "lib/src/main/resources/application.yml": "server:\n  port: 8080\n",
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(multi)).toEqual({
+      planted: [],
+      skipped: [
+        "spring entry",
+        "spring call",
+        "spring topic-in",
+        "spring topic-out",
+        "spring config",
+      ],
+    });
+    const binder = planCanary({
+      source: memorySource({
+        "pom.xml": pom(["spring-boot-starter-web", "spring-cloud-stream-binder-kafka"]),
+        "src/main/java/forge/ledger/App.java": springApp("forge.ledger"),
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(binder).planted).toEqual(
+      expect.arrayContaining(["spring topic-in", "spring topic-out"]),
+    );
+    // the key is read with a default, so an app whose config doesn't set it still starts
+    expect(Object.values(binder.writes).join("\n")).toMatch(/@Value\("\$\{[a-z.-]+:\}"\)/);
+  });
+
+  it("Node: a typed app, a router with options, and only what the app's own package declares", () => {
+    const typed = planCanary({
+      source: memorySource({
+        "package.json": '{"private":true}',
+        "pnpm-workspace.yaml": "packages: ['apps/*']",
+        "apps/api/package.json": '{"dependencies":{"express":"^4"}}',
+        "apps/api/src/app.ts":
+          'import express, { Express } from "express";\nconst app: Express = express();\napp.get("/x", (req, res) => res.send(""));\nexport default app;\n',
+        "apps/web/package.json": '{"dependencies":{"react":"^18","kafkajs":"^2"}}',
+        "apps/web/src/main.tsx": 'import React from "react";\n',
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(typed).planted).toEqual(["node config", "node entry", "node call"]);
+    expect(typed.writes["apps/api/src/app.ts"]).toMatch(/^app\.get\("\/[a-z]+-[a-z]+\/:id"/m);
+    const router = planCanary({
+      source: memorySource({
+        "package.json": '{"dependencies":{"express":"^4"}}',
+        "src/routes.js":
+          'const express = require("express");\nconst router = express.Router({ mergeParams: true });\nrouter.get("/x", h);\nmodule.exports = router;\n',
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(router).planted).toContain("node entry");
+    expect(router.writes["src/routes.js"]).toMatch(/^router\.get\(/m);
+  });
+
+  it("Python: a requirements folder, requirements.in, Poetry and a typed app; a factory's app isn't one", () => {
+    const folder = planCanary({
+      source: memorySource({
+        "requirements/base.txt": "flask==3.0\nrequests==2.31\n",
+        "app/__init__.py":
+          "from flask import Flask\nfrom app.views import bp\n\ndef create_app():\n    app = Flask(__name__)\n    app.register_blueprint(bp)\n    return app\n",
+        "app/views.py": "from flask import Blueprint\nbp = Blueprint('v', __name__)\n",
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(folder).planted).toEqual(["python config", "python entry", "python call"]);
+    expect(folder.writes["app/views.py"]).toMatch(/^@bp\.get\("\/[a-z]+-[a-z]+\/<item_id>"\)/m);
+    // a factory's app with no blueprint registered: no route, said why
+    const factory = planCanary({
+      source: memorySource({
+        "requirements.txt": "flask==3.0\n",
+        "app/__init__.py":
+          "from flask import Flask\n\ndef create_app():\n    app = Flask(__name__)\n    return app\n",
+        "app/views.py": "from flask import Blueprint\nbp = Blueprint('v', __name__)\n",
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(factory).skipped).toContain("python entry");
+    expect(factory.skipped.find((s) => s.what === "entry")!.reason).toMatch(/factory/);
+    const poetry = planCanary({
+      source: memorySource({
+        "pyproject.toml":
+          '[tool.poetry.dependencies]\npython = "^3.11"\nfastapi = {extras = ["standard"], version = "^0.110"}\nhttpx = "^0.27"\nkafka-python = "^2.0"\n',
+        "src/svc/main.py": "from fastapi import FastAPI\napp: FastAPI = FastAPI()\n",
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(poetry).planted).toEqual([
+      "python config",
+      "python entry",
+      "python call",
+      "python topic-out",
+      "python topic-in",
+    ]);
+    // no Kafka client made at import, where it would fail with no broker: only where it is used
+    const py = poetry.writes["src/svc/main.py"]!;
+    expect(py).not.toMatch(/^\w+ = Kafka(Producer|Consumer)\(/m);
+    expect(py).toMatch(/^def \w+\(\):\n {4}return KafkaProducer\(\)$/m);
+    const pipTools = planCanary({
+      source: memorySource({
+        "requirements.in": "fastapi\n",
+        "main.py": "from fastapi import FastAPI\napp = FastAPI()\n",
+      }),
+      facts: [],
+      seed: "s1",
+    });
+    expect(items(pipTools).planted).toContain("python entry");
   });
 
   it("Python: the HTTP client the build declares, a Flask route in Flask's words, no topics without kafka-python", () => {
@@ -344,6 +526,44 @@ describe("canaryNeverCopied", () => {
       "credentials.json",
       "secrets/db.txt",
       ".npmrc::$DATA",
+      // second review of ADR 0196: the rest of them, and their backups
+      ".envrc",
+      ".env.local",
+      "config/.env.production",
+      ".pgpass",
+      ".my.cnf",
+      ".s3cfg",
+      ".boto",
+      ".vault-token",
+      ".dockercfg",
+      ".yarnrc",
+      ".terraformrc",
+      "credentials.tfrc.json",
+      "local.settings.json",
+      "secrets.json",
+      "appsettings.Secrets.json",
+      "src/Forge.Api/appsettings.Development.secrets.json",
+      "auth.json",
+      "sa-key.json",
+      "deploy/forge-sa-key-prod.json",
+      "gcp-key.json",
+      "firebase-adminsdk-abc12.json",
+      "client_secret_123.apps.googleusercontent.com.json",
+      "host.keytab",
+      "priv.asc",
+      "signing.gpg",
+      "prod.ovpn",
+      "id_rsa.ppk",
+      "wallet.dat",
+      "settings-security.xml",
+      ".config/gh/hosts.yml",
+      ".cargo/credentials",
+      ".gradle/gradle.properties",
+      ".ssh/config",
+      ".netrc.bak",
+      ".git-credentials.old",
+      "secrets.yaml.orig",
+      "server.key~",
     ])
       expect(canaryNeverCopied(p), p).toBe(true);
     for (const p of [
@@ -354,7 +574,32 @@ describe("canaryNeverCopied", () => {
       "infra/main.tf",
       "src/main/java/forge/ledger/KeyStoreLoader.java",
       "pom.xml",
+      "gradle.properties",
+      "src/main/resources/application.yml.bak",
+      "appsettings.json",
+      "docs/keys.md",
     ])
       expect(canaryNeverCopied(p), p).toBe(false);
+  });
+
+  it("knows a secret by what a file's start holds, whatever it is named", () => {
+    // built at run time: no literal key or token in the repo
+    const dash = "-".repeat(5);
+    for (const t of [
+      `${dash}BEGIN RSA PRIVATE KEY${dash}\nMIIE...`,
+      `${dash}BEGIN OPENSSH PRIVATE KEY${dash}`,
+      `${dash}BEGIN PGP PRIVATE KEY BLOCK${dash}`,
+      "[default]\naws_secret_access_key = x\n",
+      '{"type": "service_account", "private_key": "x"}',
+      ["//registry.forge.example/:_auth", "Token=x"].join(""),
+    ])
+      expect(canaryHoldsSecret(t), t).toBe(true);
+    for (const t of [
+      "server:\n  port: 8080\n",
+      "const privateKey = loadKey();",
+      "# how to set aws credentials: see docs",
+    ])
+      expect(canaryHoldsSecret(t), t).toBe(false);
+    expect(CANARY_SECRET_PREFIX).toBe(64 * 1024);
   });
 });

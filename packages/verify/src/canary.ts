@@ -3,6 +3,7 @@ import {
   canaryNeedleOf,
   foldCanary,
   isSecretPath,
+  removedBy,
   seededShuffle,
   type CanaryPlantedT,
   type CanaryRemovedT,
@@ -102,29 +103,71 @@ const NOT_NODE_SOURCE = /(\.d\.ts$|\.config\.[cm]?[jt]s$|\.min\.js$)/;
  * with more than one link as a precaution.
  */
 const NEVER_COPIED = [
-  /(^|\/)[._]?(npmrc|pypirc|netrc|git-credentials|htpasswd)$/i,
+  // registries, hosts, databases, clouds and vaults (second review of ADR 0196: the rest of them)
+  /(^|\/)[._]?(npmrc|pypirc|netrc|git-credentials|htpasswd|envrc|pgpass|my\.cnf|s3cfg|boto|vault-token|dockercfg|yarnrc|terraformrc|bowerrc)$/i,
   /(^|\/)\.yarnrc\.yml$/i,
   /(^|\/)kubeconfig([._-][^/]*)?$/i,
   /(^|\/)\.kube\/config$/i,
   /(^|\/)\.docker\/config\.json$/i,
+  /(^|\/)\.ssh\//i,
+  /(^|\/)\.config\/gh\/hosts\.ya?ml$/i,
+  /(^|\/)\.cargo\/credentials(\.toml)?$/i,
+  /(^|\/)\.gradle\/gradle\.properties$/i,
+  /(^|\/)credentials\.tfrc\.json$/i,
+  /(^|\/)settings-security\.xml$/i,
+  /(^|\/)wallet\.dat$/i,
   /\.env$/i,
-  /(^|\/|[-_.])secrets?\.ya?ml$/i,
+  /(^|\/)\.env\.[^/]+$/i,
+  /(^|\/|[-_.])secrets?\.(ya?ml|json)$/i,
+  /(^|\/)local\.settings\.json$/i,
+  /(^|\/)appsettings\.[^/]*secrets?[^/]*\.json$/i,
+  /(^|\/)auth\.json$/i,
   /(^|\/)service[-_]?account[^/]*\.json$/i,
+  /(^|\/)[^/]*sa[-_]key[^/]*\.json$/i,
+  /(^|\/)[^/]*[-_]key\.json$/i,
+  /(^|\/)firebase-adminsdk[^/]*\.json$/i,
+  /(^|\/)client_secret[^/]*\.json$/i,
   /\.tfvars(\.json)?$/i,
   /\.tfstate([.][^/]*)?$/i,
-  /\.(p8|p12|pfx|kdbx|keystore|jks|pem|key)$/i,
+  /\.(p8|p12|pfx|kdbx|keystore|jks|pem|key|ppk|keytab|asc|gpg|ovpn)$/i,
 ];
+/** A backup's or editor's copy of a file: `.netrc.bak`, `.git-credentials.old`, `id_rsa~`. */
+const BACKUP = /(\.(bak|old|orig|backup|save|swp|tmp)|~)$/i;
 
 /** Whether a file is never copied into a canary's copy, nor any line of it taken out. */
 export function canaryNeverCopied(path: string): boolean {
   if (isSecretPath(path)) return true;
   // read as isSecretPath reads it: an NTFS stream's name and trailing dots and spaces dropped
-  const p = path
+  let p = path
     .replace(/\\/g, "/")
     .split("/")
     .map((x) => x.replace(/:.*$/, "").replace(/[. ]+$/, ""))
     .join("/");
-  return NEVER_COPIED.some((re) => re.test(p));
+  for (;;) {
+    if (NEVER_COPIED.some((re) => re.test(p))) return true;
+    // a backup of a file never copied is never copied either
+    const q = p.replace(BACKUP, "");
+    if (q === p) return false;
+    if (isSecretPath(q)) return true;
+    p = q;
+  }
+}
+
+/** How much of a file's start `canaryHoldsSecret` is given to read: no file is read whole for it. */
+export const CANARY_SECRET_PREFIX = 64 * 1024;
+
+/**
+ * Whether a file's start holds a secret by its content, whatever the file is named (second review
+ * of ADR 0196): a private key's header, an AWS secret key, a service account's `"private_key":`,
+ * a registry's `_authToken`. A file that does is never copied.
+ */
+export function canaryHoldsSecret(prefix: string): boolean {
+  return (
+    /-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----/.test(prefix) ||
+    /\baws_secret_access_key\s*[=:]/i.test(prefix) ||
+    /"private_key"\s*:/.test(prefix) ||
+    /_authToken\s*=/.test(prefix)
+  );
 }
 
 /** An item a stack's template has that this repo can't serve, and why. */
@@ -152,6 +195,8 @@ interface StackHere {
   skipped: Skip[];
   /** Python: the HTTP client the build files declare. */
   http?: "httpx" | "requests";
+  /** Node: the package runs in a browser (no server declared, a browser library is). */
+  browser?: boolean;
 }
 
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
@@ -166,22 +211,117 @@ function hostOf(file: string, text: string, re: RegExp) {
   return { file, v: m[1]!, line: text.slice(0, m.index).split("\n").length, call: m[2] };
 }
 
-/** A module-level app or router, by the call that makes it. */
+/**
+ * A module-level app or router, by the call that makes it: typed or not (`const app: Express =
+ * express()`), a router with its options (`express.Router({ mergeParams: true })`).
+ */
 const NODE_APP =
-  /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(express\s*\.\s*Router|express|Router)\s*\(\s*\)/m;
-const PY_APP = /^([A-Za-z_]\w*)\s*=\s*(APIRouter|FastAPI|Flask|Blueprint)\s*\(/m;
+  /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[\w$.<>[\], ]+?\s*)?=\s*(express\s*\.\s*Router|express|Router)\s*\(\s*(?:\{[^(){}]*\}\s*)?\)/m;
+/** A module-level app or router (`app = FastAPI()`, `app: FastAPI = FastAPI()`, `bp = Blueprint(`). */
+const PY_APP =
+  /^([A-Za-z_]\w*)\s*(?::\s*[\w.[\], ]+?\s*)?=\s*(APIRouter|FastAPI|Flask|Blueprint)\s*\(/m;
+/** A Flask or FastAPI app made inside a function: an app factory, no module-level app. */
+const PY_FACTORY = /^\s+[A-Za-z_]\w*\s*(?::[^=\n]+)?=\s*(Flask|FastAPI)\s*\(/m;
 
-/** The build files' text, all of them, as a stack's libraries are looked for in. */
-const buildText = (src: FileSource, files: string[], re: RegExp) =>
-  files
-    .filter((f) => re.test(baseOf(f)))
-    .map((f) => src.read(f) ?? "")
-    .join("\n");
+/** Whether a folder is the other or one above it (`""` is the repo's root). */
+const within = (dir: string, of: string) => of === "" || dir === of || dir.startsWith(`${of}/`);
 
-/** Every package a package.json of the copy declares, of any kind of dependency. */
+/**
+ * The build files a module is built by (second review of ADR 0196: per module, not pooled): those
+ * in the file's folder or one above it, a file in a `requirements/` folder counted as its parent's.
+ */
+function buildFilesOf(files: readonly string[], file: string, isBuild: (p: string) => boolean) {
+  const at = dirOf(file);
+  return files.filter((f) => {
+    if (!isBuild(f)) return false;
+    const home = /(^|\/)requirements\/[^/]+$/.test(f) ? dirOf(dirOf(f)) : dirOf(f);
+    return within(at, home);
+  });
+}
+
+const GRADLE_BUILD = /(^|\/)(pom\.xml|build\.gradle(\.kts)?)$/;
+const CONVENTION = /(^|\/)(buildSrc|build-logic)\/.*\.gradle(\.kts)?$/;
+const CATALOG = /(^|\/)gradle\/([^/]+)\.versions\.toml$/;
+/** `.` and `_` read as `-`: `libs.spring.boot.starter.web` and `spring-boot-starter-web` alike. */
+const dashed = (s: string) => s.replace(/[._]/g, "-");
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The text a Spring module's libraries are looked for in: its own and its parents' build files,
+ * the convention plugins of `buildSrc` or `build-logic` they apply (by id, to a fixpoint), and
+ * the artifacts a version catalog's aliases they use stand for (`libs.boot.web` for
+ * `spring-boot-starter-web`); `.` and `_` read as `-`.
+ */
+function springBuildText(src: FileSource, files: readonly string[], file: string): string {
+  const parts = buildFilesOf(files, file, (f) => GRADLE_BUILD.test(f) && !CONVENTION.test(f)).map(
+    (f) => src.read(f) ?? "",
+  );
+  const conventions = files
+    .filter((f) => CONVENTION.test(f))
+    .map((f) => ({ id: baseOf(f).replace(/\.gradle(\.kts)?$/, ""), text: src.read(f) ?? "" }));
+  const applied = new Set<string>();
+  for (let more = true; more;) {
+    more = false;
+    const all = parts.join("\n");
+    for (const c of conventions)
+      if (!applied.has(c.id) && new RegExp(`["'\`]${escapeRe(c.id)}["'\`]`).test(all)) {
+        applied.add(c.id);
+        parts.push(c.text);
+        more = true;
+      }
+  }
+  let text = dashed(parts.join("\n"));
+  for (const f of files.filter((x) => CATALOG.test(x))) {
+    const name = dashed(CATALOG.exec(f)![2]!);
+    for (const l of (src.read(f) ?? "").split("\n")) {
+      const m =
+        /^\s*([A-Za-z0-9_.-]+)\s*=\s*(?:\{[^}]*?\bmodule\s*=\s*"[^":]+:([^":]+)"|\{[^}]*?\bname\s*=\s*"([^"]+)"|"[^":]+:([^":]+)(?::[^"]*)?")/.exec(
+          l,
+        );
+      const artifact = m && (m[2] ?? m[3] ?? m[4]);
+      if (!artifact) continue;
+      if (new RegExp(`\\b${escapeRe(`${name}-${dashed(m[1]!)}`)}(?![A-Za-z0-9-])`).test(text))
+        text += `\n${artifact}`;
+    }
+  }
+  return text;
+}
+
+const SPRING_WEB =
+  /spring-boot-starter-web\b|spring-boot-starter-webflux|spring-webmvc|spring-webflux|spring-web\b/;
+/** Spring Kafka, or Spring Cloud Stream's Kafka binder, which brings it. */
+const SPRING_KAFKA =
+  /\bspring-kafka\b|\bspring-cloud-stream-binder-kafka\b|\bspring-cloud-starter-stream-kafka\b/;
+
+/** Servers a Node package may serve routes with, and the libraries of an app run in a browser. */
+const NODE_SERVERS = ["express", "fastify", "koa", "@hapi/hapi", "@nestjs/core", "hono", "next"];
+const BROWSER_LIBS = [
+  "react",
+  "react-dom",
+  "vue",
+  "svelte",
+  "@angular/core",
+  "preact",
+  "solid-js",
+  "vite",
+  "@vitejs/plugin-react",
+  "webpack",
+  "parcel",
+];
+
+/** The package.json nearest a file: its own folder's, else the nearest folder above's. */
+function packageOf(files: readonly string[], file: string): string | undefined {
+  const all = new Set(files);
+  for (let d = dirOf(file); ; d = dirOf(d)) {
+    if (all.has(join(d, "package.json"))) return join(d, "package.json");
+    if (d === "") return undefined;
+  }
+}
+
+/** Every package a package.json declares, of any kind of dependency. */
 function nodePackages(src: FileSource, files: string[]): Set<string> {
   const out = new Set<string>();
-  for (const f of files.filter((x) => baseOf(x) === "package.json")) {
+  for (const f of files) {
     try {
       const j = JSON.parse(src.read(f) ?? "") as Record<string, unknown>;
       for (const k of [
@@ -227,15 +367,19 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
     );
     const spring = app ?? pick(springFiles, "spring")!;
     const pkg = /^\s*package\s+([\w.]+)\s*;/m.exec(src.read(spring) ?? "")?.[1];
-    const config = files
+    // the module the class is built in: the folder of the nearest build file above it
+    const module = buildFilesOf(files, spring, (f) => GRADLE_BUILD.test(f) && !CONVENTION.test(f))
+      .map(dirOf)
+      .sort((a, b) => b.length - a.length)[0];
+    const configs = files
       .filter((f) => /(^|\/)application\.(ya?ml|properties)$/.test(f) && source(f))
-      .sort((a, b) => a.length - b.length || (a < b ? -1 : 1))[0];
-    const build = buildText(src, files, /^(pom\.xml|build\.gradle(\.kts)?)$/);
-    const web =
-      /spring-boot-starter-web\b|spring-boot-starter-webflux|spring-webmvc|spring-webflux|spring-web\b/.test(
-        build,
-      );
-    const kafka = /\bspring-kafka\b/.test(build);
+      .sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+    const config =
+      configs.find((f) => module !== undefined && within(dirOf(f), module)) ??
+      (module === undefined || module === "" ? configs[0] : undefined);
+    const build = springBuildText(src, files, spring);
+    const web = SPRING_WEB.test(build);
+    const kafka = SPRING_KAFKA.test(build);
     const can = new Set<CanaryWhat>();
     const skipped: Skip[] = [];
     if (!app)
@@ -249,14 +393,17 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
       if (web) can.add("entry").add("call");
       else
         skipped.push(
-          ...skip(["entry", "call"], "the build files declare no Spring web library (spring-web)"),
+          ...skip(
+            ["entry", "call"],
+            "the app's module's build files declare no Spring web library (spring-web)",
+          ),
         );
       if (kafka) can.add("topic-in").add("topic-out");
       else
         skipped.push(
           ...skip(
             ["topic-in", "topic-out"],
-            "the build files declare no Kafka client (spring-kafka)",
+            "the app's module's build files declare no Kafka client (spring-kafka, or Spring Cloud Stream's Kafka binder)",
           ),
         );
     }
@@ -280,36 +427,50 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
       (f) => NODE_SOURCE.test(f) && !NOT_NODE_SOURCE.test(f) && source(f),
     );
     const ext = nodeFiles.some((f) => /\.tsx?$/.test(f)) ? ("ts" as const) : ("js" as const);
-    const pkgs = nodePackages(src, files);
-    const express = pkgs.has("express");
-    const app = express
-      ? pick(
-          nodeFiles.filter((f) => NODE_APP.test(src.read(f) ?? "")),
-          "node-app",
-        )
-      : undefined;
+    // Second review of ADR 0196: what a file can use is what its own package declares (the
+    // package.json nearest it), not what any package of a workspace does.
+    const pkgsCache = new Map<string, Set<string>>();
+    const pkgsOf = (f: string) => {
+      const p = packageOf(files, f) ?? "";
+      if (!pkgsCache.has(p)) pkgsCache.set(p, nodePackages(src, p ? [p] : []));
+      return pkgsCache.get(p)!;
+    };
+    const app = pick(
+      nodeFiles.filter((f) => pkgsOf(f).has("express") && NODE_APP.test(src.read(f) ?? "")),
+      "node-app",
+    );
     const under = nodeFiles.filter((f) => /(^|\/)src\//.test(f));
     const node = app ?? pick(under.length ? under : nodeFiles, "node");
     if (node) {
+      const pkgs = pkgsOf(node);
       const text = app ? (src.read(app) ?? "") : "";
       const cjs = !/^\s*(import|export)\s/m.test(text) && /\brequire\(/.test(text);
-      // fetch is global in Node 18 and in browsers, and process.env is Node's own
-      const can = new Set<CanaryWhat>(["call", "config"]);
+      // an app run in a browser has no process.env: no config is planted there, and its call
+      // goes to a path of its own origin
+      const browser =
+        !NODE_SERVERS.some((s) => pkgs.has(s)) && BROWSER_LIBS.some((s) => pkgs.has(s));
+      // fetch is global in Node 18 and in browsers
+      const can = new Set<CanaryWhat>(["call"]);
       const skipped: Skip[] = [];
+      if (browser)
+        skipped.push(
+          ...skip(["config"], "a browser app (its package declares no server) has no process.env"),
+        );
+      else can.add("config");
       if (app) can.add("entry");
       else
         skipped.push(
           ...skip(
             ["entry"],
-            express
+            pkgs.has("express")
               ? "no express app or router made at a module's top level to serve a route on"
-              : "the build files declare no server (express): a browser app serves no route",
+              : "its package declares no server (express): a browser app serves no route",
           ),
         );
-      if (pkgs.has("kafkajs")) can.add("topic-in").add("topic-out");
+      if (pkgs.has("kafkajs") && !browser) can.add("topic-in").add("topic-out");
       else
         skipped.push(
-          ...skip(["topic-in", "topic-out"], "the build files declare no Kafka client (kafkajs)"),
+          ...skip(["topic-in", "topic-out"], "its package declares no Kafka client (kafkajs)"),
         );
       const h = app ? hostOf(app, text, NODE_APP)! : undefined;
       out.push({
@@ -317,6 +478,7 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
         dir: dirOf(node),
         ext,
         ...(h ? { host: { file: h.file, v: h.v, line: h.line, ...(cjs ? { cjs } : {}) } } : {}),
+        ...(browser ? { browser } : {}),
         can,
         skipped,
       });
@@ -326,24 +488,43 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
   const pyFiles = files.filter(
     (f) => f.endsWith(".py") && source(f) && baseOf(f) !== "__init__.py",
   );
-  const pyBuild = buildText(
-    src,
-    files,
-    /^(pyproject\.toml|setup\.py|setup\.cfg|Pipfile|requirements[^/]*\.txt)$/,
-  );
-  const declares = (name: string) =>
-    new RegExp(`(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|$)`, "im").test(pyBuild);
+  const pyText = (f: string) => src.read(f) ?? "";
+  // pip-tools' requirements.in, a requirements/ folder, Pipfile, setup files, pyproject (PEP 621
+  // or Poetry), each module's own and those above it (second review of ADR 0196)
+  const PY_BUILD =
+    /(^|\/)(pyproject\.toml|setup\.py|setup\.cfg|Pipfile|requirements[^/]*\.(txt|in)|requirements\/[^/]+\.(txt|in))$/;
+  const declaresIn = (f: string) => {
+    const text = buildFilesOf(files, f, (p) => PY_BUILD.test(p))
+      .map(pyText)
+      .join("\n");
+    return (name: string) =>
+      new RegExp(`(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|$)`, "im").test(text);
+  };
+  const allPy = files.filter((f) => f.endsWith(".py") && source(f));
+  /** A Blueprint or APIRouter is served only when some module registers it on its app. */
+  const registered = (v: string, call: string) =>
+    call !== "Blueprint" && call !== "APIRouter"
+      ? true
+      : allPy.some((f) =>
+          new RegExp(
+            `\\b${call === "Blueprint" ? "register_blueprint" : "include_router"}\\s*\\(\\s*(?:[A-Za-z_]\\w*\\.)?${v}\\b`,
+          ).test(pyText(f)),
+        );
   const served = (f: string) => {
-    const kind = PY_APP.exec(src.read(f) ?? "")?.[2];
-    return kind === "Flask" || kind === "Blueprint" ? declares("flask") : declares("fastapi");
+    const m = PY_APP.exec(pyText(f));
+    if (!m || !registered(m[1]!, m[2]!)) return false;
+    return m[2] === "Flask" || m[2] === "Blueprint"
+      ? declaresIn(f)("flask")
+      : declaresIn(f)("fastapi");
   };
   const pyApp = pick(
-    pyFiles.filter((f) => PY_APP.test(src.read(f) ?? "") && served(f)),
+    pyFiles.filter((f) => PY_APP.test(pyText(f)) && served(f)),
     "python-app",
   );
   const py = pyApp ?? pick(pyFiles, "python");
   if (py) {
-    const h = pyApp ? hostOf(pyApp, src.read(pyApp) ?? "", PY_APP)! : undefined;
+    const declares = declaresIn(py);
+    const h = pyApp ? hostOf(pyApp, pyText(pyApp), PY_APP)! : undefined;
     const http = declares("httpx") ? "httpx" : declares("requests") ? "requests" : undefined;
     const can = new Set<CanaryWhat>(["config"]);
     const skipped: Skip[] = [];
@@ -352,7 +533,9 @@ export function canaryStacks(src: FileSource, seed: string): StackHere[] {
       skipped.push(
         ...skip(
           ["entry"],
-          "no app or router the build files' web framework makes to serve a route on",
+          files.some((f) => f.endsWith(".py") && PY_FACTORY.test(pyText(f)))
+            ? "the app is made inside a function (an app factory), and no module-level router or blueprint is registered on it to serve a route on"
+            : "no app or router the build files' web framework makes to serve a route on",
         ),
       );
     if (http) can.add("call");
@@ -446,7 +629,8 @@ function springPlanting(h: StackHere, n: Names, taken: Set<string>): Planting {
     `public class ${name}Resource {`,
     "  private final RestTemplate http = new RestTemplate();",
     "",
-    h.config ? `  @Value("\${${key}}")` : { text: `  @Value("\${${key}}")`, what: "config" },
+    // with a default, so an app whose config file doesn't set the key still starts
+    h.config ? `  @Value("\${${key}:}")` : { text: `  @Value("\${${key}:}")`, what: "config" },
     "  private String baseUrl;",
     "",
     { text: `  @GetMapping("/${n.entry.join("-")}/{id}")`, what: "entry" },
@@ -514,47 +698,62 @@ function nodePlanting(h: StackHere, n: Names, taken: Set<string>): Planting {
   const producer = `${camel(n.topicOut)}Events`;
   const consumer = `${camel(n.topicIn)}Updates`;
   const url = `${camel(n.config)}Url`;
-  const kafkaLines: Line[] = kafkaOn
-    ? [
-        `const ${kafka} = new Kafka({ brokers: [] });`,
-        `const ${producer} = ${kafka}.producer();`,
-        `const ${consumer} = ${kafka}.consumer({ groupId: "${n.topicIn.join("-")}" });`,
-      ]
-    : [];
+  // Second review of ADR 0196: nothing planted would crash if it ran. The client is made only
+  // when used; the producer connects before it sends and the consumer before it subscribes;
+  // the route answers 502 on any failure, so an async handler never rejects unhandled; and the
+  // consumer's start catches its own failure.
+  const kafkaLines: Line[] = kafkaOn ? [`const ${kafka} = () => new Kafka({ brokers: [] });`] : [];
+  const pad = at ? "    " : "  ";
   const send: Line[] = kafkaOn
     ? [
+        `${pad}const ${producer} = ${kafka}().producer();`,
+        `${pad}await ${producer}.connect();`,
         {
-          text: `  await ${producer}.send({ topic: "${n.topicOut.join(".")}.viewed", messages: [{ value: ${at ? "req.params.id" : "id"} }] });`,
+          text: `${pad}await ${producer}.send({ topic: "${n.topicOut.join(".")}.viewed", messages: [{ value: ${at ? "req.params.id" : "id"} }] });`,
           what: "topic-out",
         },
+        `${pad}await ${producer}.disconnect();`,
       ]
     : [];
   const subscribe: Line[] = kafkaOn
     ? [
         "",
+        `async function ${consumer}() {`,
+        `  const consumer = ${kafka}().consumer({ groupId: "${n.topicIn.join("-")}" });`,
+        "  await consumer.connect();",
         {
-          text: `void ${consumer}.subscribe({ topic: "${n.topicIn.join(".")}.updated" });`,
+          text: `  await consumer.subscribe({ topic: "${n.topicIn.join(".")}.updated" });`,
           what: "topic-in",
         },
+        "}",
+        `${consumer}().catch(() => undefined);`,
       ]
     : [];
   const kafkaImport = kafkaOn
     ? [at?.cjs ? 'const { Kafka } = require("kafkajs");' : 'import { Kafka } from "kafkajs";']
     : [];
-  const config: Line = { text: `const ${url} = process.env.${env} ?? "";`, what: "config" };
+  // A browser app has no process.env: its call goes to a path of its own origin, no config.
+  const config: Line[] = h.can.has("config")
+    ? [{ text: `const ${url} = process.env.${env} ?? "";`, what: "config" }]
+    : [];
+  const base = h.can.has("config") ? `\${${url}}` : "";
   if (at) {
     // on the repo's own app or router: a route that calls out, and the topics beside it
     const body: Line[] = [
       ...kafkaLines,
-      config,
+      ...config,
       "",
       { text: `${at.v}.get("/${n.entry.join("-")}/:id", async (req, res) => {`, what: "entry" },
+      "  try {",
       {
-        text: `  const r = await fetch(\`\${${url}}/${n.call.join("-")}/\${req.params.id}\`);`,
+        text: `    const r = await fetch(\`${base}/${n.call.join("-")}/\${req.params.id}\`);`,
         what: "call",
       },
       ...send,
-      "  res.json(await r.json());",
+      "    res.json(await r.json());",
+      "  } catch {",
+      "    res.status(502).end();",
+      "  }",
       "});",
       ...subscribe,
     ];
@@ -573,11 +772,11 @@ function nodePlanting(h: StackHere, n: Names, taken: Set<string>): Planting {
           ...kafkaImport,
           ...(kafkaOn ? [""] : []),
           ...kafkaLines,
-          config,
-          "",
+          ...config,
+          ...(kafkaLines.length || config.length ? [""] : []),
           `export async function ${camel(n.entry)}(${id}) {`,
           {
-            text: `  const r = await fetch(\`\${${url}}/${n.call.join("-")}/\${id}\`);`,
+            text: `  const r = await fetch(\`${base}/${n.call.join("-")}/\${id}\`);`,
             what: "call",
           },
           ...send,
@@ -607,10 +806,12 @@ function pythonPlanting(h: StackHere, n: Names, taken: Set<string>): Planting {
           },
         ]
       : []),
+    // the producer made where it sends (second review of ADR 0196: one made at import would
+    // fail the import with no broker), so a failure is the route's own, answered 500
     ...(kafkaOn
       ? [
           {
-            text: `    ${producer}.send("${n.topicOut.join(".")}.viewed", item_id.encode())`,
+            text: `    ${producer}().send("${n.topicOut.join(".")}.viewed", item_id.encode())`,
             what: "topic-out" as const,
           },
         ]
@@ -632,14 +833,15 @@ function pythonPlanting(h: StackHere, n: Names, taken: Set<string>): Planting {
       : [];
   const body: Line[] = [
     { text: `${url} = os.environ.get("${env}", "")`, what: "config" },
-    ...(kafkaOn ? [`${producer} = KafkaProducer()`] : []),
+    ...(kafkaOn ? ["", "", `def ${producer}():`, "    return KafkaProducer()"] : []),
     ...fn,
     ...(kafkaOn
       ? [
           "",
           "",
+          `def ${snake(n.topicIn)}_updates():`,
           {
-            text: `${snake(n.topicIn)}_updates = KafkaConsumer("${n.topicIn.join(".")}.updated")`,
+            text: `    return KafkaConsumer("${n.topicIn.join(".")}.updated")`,
             what: "topic-in" as const,
           },
         ]
@@ -749,14 +951,25 @@ export function planCanary(o: {
       f.by !== "person" &&
       (f.kind === "entry" || f.kind === "call" || f.kind === "config"),
   );
-  // Another fact of the kind claiming the same value beside the line would be scored as the
-  // removed one; such a line isn't drawn.
+  // Another fact of the repo's that the score would take as a claim of the removed line (the
+  // score's own `removedBy`, second review of ADR 0196) is still right once the line goes: a
+  // read that writes it would be counted as a fabrication, so such a line isn't drawn.
   const near = (a: Fact, b: Fact) =>
     a.id !== b.id &&
-    a.kind === b.kind &&
-    a.cite.file === b.cite.file &&
-    Math.abs(a.cite.line - b.cite.line) <= 1 &&
-    foldCanary(a.cite.value) === foldCanary(b.cite.value);
+    removedBy(
+      {
+        id: `remove:${a.id}`,
+        fact: a.id,
+        kind: a.kind,
+        file: a.cite.file,
+        line: a.cite.line,
+        claim: a.kind,
+        value: a.cite.value || "-",
+        needle: canaryNeedleOf(a),
+        how: "commented",
+      },
+      b,
+    ) === "near";
   // A path or key another fact of the kind also claims is still in the code once one line goes:
   // a read that names it is right, so such a fact isn't drawn.
   const claimCount = new Map<string, number>();

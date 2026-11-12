@@ -64,7 +64,7 @@
       "line": 11,
       "claim": "call POST /ledger/v1/transfers",
       "value": "/transfers",
-      "needle": "ledger-v1-transfers",
+      "needle": "post ledger-v1-transfers",
       "how": "commented"
     },
     {
@@ -86,7 +86,7 @@
       "line": 12,
       "claim": "entry GET /api/balance/{accountId}",
       "value": "/balance/{accountId}",
-      "needle": "api-balance-param",
+      "needle": "get api-balance-param",
       "how": "commented"
     }
   ]

@@ -79,6 +79,14 @@ export const MAP_READ_WHOLE =
 /** Write the facts file: the shape, generated from the schema, and the rules every fact follows. */
 export const mapWriteStep = (): string =>
   `Write the facts file: one JSON object per line, in this shape (generated from the schema Atticus checks with):\n\n${factsReference()}\n\n${FACT_RULES}`;
+/**
+ * The recall loop after the verify loop (second review of ADR 0196: a canary's read keeps it, so
+ * it measures the read the map makes): the files the coverage lists as unknown, the reviewed file,
+ * and the lists of what no fact cites, by where the lists are, where the reviewed file is and the
+ * command that prints every line.
+ */
+export const mapRecallStep = (o: { lists: string; reviewed: string; all: string }): string =>
+  `Then look at the files ${o.lists} lists as \`unknown\` (a file is read when a fact, a flow's step or error, or their \`cite.with\` cites it): read those that could hold a fact, add their facts and verify again. A file you read and found nothing to record in goes in ${o.reviewed}, one \`{"path": "<file or glob>", "why": "..."}\` per line; verify counts it reviewed, not read, and shows the person each line with its why. It also lists \`entriesNoFlowFollows\` (listeners and rest or gRPC entries no flow starts): write a flow for each that does real work. And \`skipped\`, \`reviewedHolds\` and \`specOpsUncovered\` (lines with a path, URL or topic no fact cites, reviewed globs holding some, spec operations no entry covers; all of them: ${o.all}): for each, write the fact if it is real, or a reviewed line saying why not.`;
 /** The verify loop, by the command that checks the read and the file its rejections are in. */
 export const mapVerifyStep = (command: string, rejected: string): string =>
   `Run \`${command}\`. While it exits 1, read ${rejected}: for each fact in it, read the cited lines again, then rewrite the fact in the facts file or drop it. Run \`${command}\` again, until it exits 0.`;
@@ -105,7 +113,8 @@ export function mapCommand(): CommandDef {
         mapWriteStep(),
         "Write what the code can't settle (which host is production, whether a folder is generated) to `<repo>.questions.jsonl` beside the facts file, one question per line in the shape above. Never guess, and never answer a question yourself.",
         mapVerifyStep("atticus verify {{ARGS}}", "`<repo>.rejected.jsonl` beside the facts file"),
-        'Then look at the files `<repo>.verify.yaml` lists as `unknown` (a file is read when a fact, a flow\'s step or error, or their `cite.with` cites it): read those that could hold a fact, add their facts and verify again. A file you read and found nothing to record in goes in `<repo>.reviewed.jsonl` beside the facts file, one `{"path": "<file or glob>", "why": "..."}` per line; verify counts it reviewed, not read, and shows the person each line with its why. It also lists `entriesNoFlowFollows` (listeners and rest or gRPC entries no flow starts): write a flow for each that does real work. And `skipped`, `reviewedHolds` and `specOpsUncovered` (lines with a path, URL or topic no fact cites, reviewed globs holding some, spec operations no entry covers; all of them: `atticus verify {{ARGS}} --skipped`): for each, write the fact if it is real, or a reviewed line saying why not. Generated or vendored code isn\'t read: propose an exclusion (`exclude: [{path: "<glob>"}]` in the org pack\'s `scan/<repo>.yaml`) for the person to accept in a pull request; never write it yourself. When these lists are long or this chat is near its limit, run `atticus map {{ARGS}} --gaps` and tell the person to start a new chat and run `/atticus-map {{ARGS}} --gaps` there: a fresh session holds only those files and lines.',
+        `${mapRecallStep({ lists: "`<repo>.verify.yaml`", reviewed: "`<repo>.reviewed.jsonl` beside the facts file", all: "`atticus verify {{ARGS}} --skipped`" })} ` +
+          "Generated or vendored code isn't read: propose an exclusion (`exclude: [{path: \"<glob>\"}]` in the org pack's `scan/<repo>.yaml`) for the person to accept in a pull request; never write it yourself. When these lists are long or this chat is near its limit, run `atticus map {{ARGS}} --gaps` and tell the person to start a new chat and run `/atticus-map {{ARGS}} --gaps` there: a fresh session holds only those files and lines.",
         "If your assistant shows the tokens this read used, record them: `atticus map {{ARGS}} --spent <tokens>` (with `--sessions <n>`, and `--part <n>` for a read in parts). If it doesn't show them, say so and skip this; never guess a number.",
         "The questions you raised don't stop the loop: a fact that waits on one is left out or marked `conf: inferred`. When `atticus verify {{ARGS}}` exits 0, show the person each question with its options, and say they answer with `/atticus-answer` or `atticus questions answer <id> --option <n>`. Never answer one yourself.",
       ],

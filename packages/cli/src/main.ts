@@ -505,10 +505,11 @@ Usage:
   atticus verify audit <repo>          Confirm a reproducible random sample of the repo's kept facts and its links, each with its cited lines (right, wrong or unsure); the answers go to facts/<repo>.audit.yaml, a person's record for a pull request (ADR 0148) [--size n] [--seed s] [--answers file] [--right ids] [--wrong ids] [--unsure ids] [--dir path] [--json]
   atticus verify audit <repo> --report  Precision from the answers, per kind of fact and for links (by how each was joined), with the sample size and a 95% interval; without a repo, every repo audited and the estate [--json]
   atticus canary plant <repo>          A canary (ADR 0196): copy the repo to a run folder outside the metarepo (no file of secrets, no link), plant a few synthetic entries, calls, topics and config keys the repo can serve and comment out a few real lines its verified facts cite, by a seed drawn at random (the same seed plants the same again), and write /atticus-map's prompt for the copy; open the run folder as your assistant's workspace; what was planted is kept on this machine, apart from the copy [--seed s] [--size n] [--json]
-  atticus canary check <repo>          The canary read's own verify loop: check the facts the assistant wrote against the copy, rejected ones to the run's rejected.jsonl; exits 1 while any is rejected or a line doesn't read; run in the run folder, it needs no metarepo [--facts file]
+  atticus canary check <repo>          The canary read's own verify loop: check the facts the assistant wrote against the copy, rejected ones to the run's rejected.jsonl and the coverage and the lines no fact cites to its verify.yaml, printed as atticus verify prints them; exits 1 while any is rejected or a line doesn't read; run in the run folder, it needs no metarepo [--facts file] [--skipped]
+  atticus verify --here                The same check by a name that says nothing of a canary, as the canary's prompt names it: run in a run folder the plant made, it checks that read [--facts file] [--skipped]
   atticus canary score <repo>          Score the canary read: recall on the planted, fabrication on the commented-out (and how much the verifier kept), written to reports/canaries/<date>-<repo>.yaml (item kinds and results, no planted word); the copy, the facts and the key are deleted once it scores (kept when nothing in the facts file reads) [--facts file] [--json]
   atticus canary report [--json]       How often a claim graded as backed is wrong, as two numbers side by side: the audit misread rate (the sample audit's answers) and the canary pass-through rate (the latest canary of each repo), each with its count and a 95% interval, and what the canaries cover
-  atticus canary clean [<repo>]        Delete a planted canary's run folder and key without scoring it (a key that doesn't read too, with that repo's run folders)
+  atticus canary clean <repo>          Delete a planted canary's run folder and key without scoring it (a key that doesn't read too, with the run folders of that repo this metarepo planted); --all for every one this metarepo planted on this machine [--all]
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
@@ -1913,6 +1914,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       ...(Number.isFinite(size) && size >= 0 && text(values.size) ? { size } : {}),
       ...(text(values.facts) ? { facts: text(values.facts)! } : {}),
       json: values.json === true,
+      skipped: values.skipped === true,
+      // second review of ADR 0196: every canary is cleaned only with --all, never by no repo
+      all: values.all === true,
     };
     // In the run folder the plant made (the workspace the prompt is read in), check needs no
     // metarepo: the run folder is the read's (review of ADR 0196: the prompt names no metarepo).
@@ -1943,6 +1947,21 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const v = { values, positionals };
     const repo = v.positionals[1];
     const text = (x: unknown) => (typeof x === "string" ? x : undefined);
+    // ADR 0196, second review: `atticus verify --here` is a canary read's own check, by a name
+    // that says nothing of a canary, run in the run folder its prompt is in (no metarepo).
+    if (v.values.here === true) {
+      const c = await import("./canary-commands.js");
+      return c.canaryCheckHere(
+        process.cwd(),
+        repo,
+        {
+          by: who(),
+          ...(text(v.values.facts) ? { facts: text(v.values.facts)! } : {}),
+          skipped: v.values.skipped === true,
+        },
+        io,
+      );
+    }
     // P3 (ADR 0148): atticus verify audit <repo>, the sample audit. `audit` alone, without
     // --report, is still a repo called audit.
     if (repo === "audit" && (v.positionals[2] || v.values.report === true)) {

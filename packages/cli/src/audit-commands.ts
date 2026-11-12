@@ -577,7 +577,9 @@ async function estateAuditReport(root: string, o: AuditOptions, io: Output): Pro
   const s = await silentSummary(root, { audit: { precision: estate, repos: out.length } });
   if (s.latest.length) {
     io.out("");
-    for (const l of silentLines(s.rate)) io.out(l);
+    // counted as the join makes the links now, which Map › Trust and `canary report` don't run:
+    // said beside the rate (second review of ADR 0196)
+    for (const l of silentLines(s.rate, { joined: true })) io.out(l);
   }
   return 0;
 }

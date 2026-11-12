@@ -5,21 +5,11 @@
   "planted": [
     {
       "id": "plant:1",
-      "kind": "config",
-      "what": "config",
-      "stack": "node",
-      "file": "src/api/spruce-umber.ts",
-      "line": 1,
-      "claim": "config BIRCH_REED_URL",
-      "needle": "birch-reed-url"
-    },
-    {
-      "id": "plant:2",
       "kind": "call",
       "what": "call",
       "stack": "node",
       "file": "src/api/spruce-umber.ts",
-      "line": 4,
+      "line": 2,
       "claim": "call GET /nutmeg-raven/{id}",
       "needle": "nutmeg-raven"
     }
@@ -27,18 +17,23 @@
   "skipped": [
     {
       "stack": "node",
+      "what": "config",
+      "reason": "a browser app (its package declares no server) has no process.env"
+    },
+    {
+      "stack": "node",
       "what": "entry",
-      "reason": "the build files declare no server (express): a browser app serves no route"
+      "reason": "its package declares no server (express): a browser app serves no route"
     },
     {
       "stack": "node",
       "what": "topic-in",
-      "reason": "the build files declare no Kafka client (kafkajs)"
+      "reason": "its package declares no Kafka client (kafkajs)"
     },
     {
       "stack": "node",
       "what": "topic-out",
-      "reason": "the build files declare no Kafka client (kafkajs)"
+      "reason": "its package declares no Kafka client (kafkajs)"
     }
   ],
   "removed": [
@@ -50,7 +45,7 @@
       "line": 3,
       "claim": "call GET /api/balance/{accountId}",
       "value": "/api/balance/",
-      "needle": "api-balance-param",
+      "needle": "get api-balance-param",
       "how": "commented"
     }
   ]

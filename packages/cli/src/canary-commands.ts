@@ -1,10 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmod,
   copyFile,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   readFile,
   realpath,
@@ -13,21 +14,24 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { stringify } from "yaml";
 import {
   MAP_OUTLINE,
   MAP_PURPOSE,
   MAP_READ_WHOLE,
+  mapRecallStep,
   mapVerifyStep,
   mapWriteStep,
 } from "@maycombhq/assistant-files";
 import {
+  CANARY_READS_DIR,
   CanaryKey,
   auditItemHolds,
   canaryCovers,
   auditPrecision,
   canaryReportsRelOf,
+  canaryRunOf,
   canaryRunPrefix,
-  canaryRunRepo,
   factsDirOf,
   factsRelOf,
   isCanaryRepoName,
@@ -54,17 +58,22 @@ import {
   type SilentErrorRate,
 } from "@maycombhq/core";
 import {
+  CANARY_SECRET_PREFIX,
+  canaryHoldsSecret,
   canaryNeverCopied,
   dirSource,
+  parseReviewed,
   planCanary,
   repairFormSlips,
   verifyFacts,
+  type VerifyReport,
 } from "@maycombhq/verify";
 import { createGit } from "@maycombhq/workspace";
 import type { Api } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { checkoutOf, headOf } from "./facts-files.js";
 import { metarepoStateDir } from "./user-state.js";
+import { skippedNoteLines, unfollowedNoteLines } from "./verify-commands.js";
 
 /**
  * atticus canary plant | check | score | report | clean (plan item Z2, ADR 0196). A canary is a
@@ -76,11 +85,13 @@ import { metarepoStateDir } from "./user-state.js";
  * the repo's code, calls no model and nothing on the network.
  *
  * Where things are: the copy, the prompt and the facts file the assistant writes in a run folder
- * `atticus-canary-<repo>-XXXXXX` under the system's temporary folder, outside the metarepo and
- * the repo, never a git checkout; the key (what was planted and removed) in this user's state
- * folder, apart from the copy, so the read never sees it. The key names the run folder by its base
- * name only: its path is rebuilt under the temporary folder and checked (a real folder, not a
- * link, of this repo's run folder name) before anything in it is read, written or deleted.
+ * `<repo>-<id8>-XXXXXX` (the metarepo's id; a name that says nothing of a canary) in
+ * `atticus-reads`, a folder of this user's closed to others, right in the system's temporary
+ * folder: outside the metarepo and the repo, never a git checkout. The key (what was planted and
+ * removed) in this user's state folder, apart from the copy, so the read never sees it. The key
+ * names the run folder by its base name only: its path is rebuilt under the reads folder and
+ * checked (a real folder, not a link, of this repo's and this metarepo's run folder name) before
+ * anything in it is read, written or deleted.
  */
 
 export interface CanaryOptions {
@@ -89,6 +100,10 @@ export interface CanaryOptions {
   size?: number;
   /** score and check: a facts file other than the run's (a read pasted by hand). */
   facts?: string;
+  /** check: print every line the recall lists hold, as `atticus verify --skipped` does. */
+  skipped?: boolean;
+  /** clean: every planted canary of this metarepo's (a bare `clean` deletes nothing). */
+  all?: boolean;
   by: string;
   json?: boolean;
   now?: () => Date;
@@ -99,6 +114,12 @@ export interface CanaryOptions {
   /** The plan's maker (tests: one that fails, to show a failed plant leaves nothing). */
   planner?: typeof planCanary;
 }
+
+/**
+ * The read's own check, as the prompt names it: a neutral alias (second review of ADR 0196) that
+ * runs `atticus canary check` in the run folder it is run in.
+ */
+export const HERE_COMMAND = "atticus verify --here";
 
 /** What each planted item stands for, in words. */
 const WHAT_WORDS: Record<CanaryWhat, string> = {
@@ -116,7 +137,7 @@ export const coversWords = (covers: readonly { stack: string; what: readonly str
 
 export const CANARY_WORDS = {
   usage:
-    "Usage: atticus canary plant <repo> [--seed s] [--size n], atticus canary check [<repo>] [--facts file], atticus canary score <repo> [--facts file] [--json], atticus canary report [--json], or atticus canary clean [<repo>]",
+    "Usage: atticus canary plant <repo> [--seed s] [--size n], atticus canary check [<repo>] [--facts file] [--skipped], atticus canary score <repo> [--facts file] [--json], atticus canary report [--json], or atticus canary clean <repo> | --all",
   notName: (repo: string) =>
     `"${repo}" isn't a repo's name (letters, digits, dot, dash and underscore, starting with a letter or digit).`,
   unknownRepo: (repo: string) =>
@@ -156,17 +177,30 @@ export const CANARY_WORDS = {
   prompt: (file: string) => `  The prompt:      ${file}`,
   factsFile: (file: string) => `  The facts file:  ${file} (the assistant writes it)`,
   next: (repo: string, run: string) =>
-    `Open the run folder itself as your assistant's workspace, so it asks about no file outside it: code ${run} (Copilot in agent mode), or cd ${run} && claude (Claude Code). Give it prompt.md in a new chat; it reads the copy and loops on atticus canary check there. Then, from the metarepo, run atticus canary score ${repo}. Nothing is written to the metarepo until the score, and then only its report.`,
+    `Open the run folder itself as your assistant's workspace, so it asks about no file outside it: code ${run} (Copilot in agent mode), or cd ${run} && claude (Claude Code). Give it prompt.md in a new chat; it reads the copy and loops on ${HERE_COMMAND} there (atticus canary check, by a name that says nothing of a canary). Then, from the metarepo, run atticus canary score ${repo}. Nothing is written to the metarepo until the score, and then only its report.`,
+  badReads: (dir: string) =>
+    `${dir} isn't a folder only you can write to (another user's, a link, or open to others), so no run folder is made in it: delete it, or set TMPDIR (TEMP on Windows) to a folder of your own, and plant again.`,
+  hereNoCopy: (repo: string) =>
+    `The folder ${repo} isn't here (or isn't a real folder): the repo's files to read are gone.`,
+  hereNoRead: (file: string) =>
+    `No facts in ${file} yet: write them there, then run ${HERE_COMMAND} again.`,
+  coverage: (o: { pct: number; read: number; reviewed: number; unknown: number }) =>
+    `Coverage ${o.pct}% (${o.read} read, ${o.reviewed ? `${o.reviewed} reviewed with nothing to record, ` : ""}${o.unknown} unknown).`,
+  unknownNext: (n: number, file: string) =>
+    `Next: read the ${n} unknown ${n === 1 ? "file" : "files"} (listed in ${file}). A file you read and found nothing to record in goes in reviewed.jsonl beside the facts ({"path": "<file or glob>", "why": "..."} per line).`,
+  joined:
+    " (its links counted as the join makes them now; Map › Trust and atticus canary report count a link's answer as given)",
+  cleanWhich:
+    "Say which canary to delete: atticus canary clean <repo>, or atticus canary clean --all for every one this metarepo planted on this machine.",
+  cleanBoth: "Give a repo or --all, not both.",
   noKey: (repo: string) =>
     `No canary of ${repo} is planted on this machine. Plant one: atticus canary plant ${repo}.`,
   badKey: (repo: string) =>
-    `The key of ${repo}'s canary doesn't read (or names no run folder of ${repo}'s), so it can't be scored: it is deleted, with ${repo}'s run folders. Plant it again: atticus canary plant ${repo}.`,
+    `The key of ${repo}'s canary doesn't read (or names no run folder of ${repo}'s), so it can't be scored: it is deleted, with the run folders of ${repo}'s this metarepo planted. Plant it again: atticus canary plant ${repo}.`,
   noRun: (repo: string) =>
     `The run folder of ${repo}'s canary is gone (or isn't a real folder any more): its key is deleted. Plant it again: atticus canary plant ${repo}.`,
-  notHere:
-    "This folder is in no canary's run folder; run atticus canary check <repo> from the metarepo, or from the run folder the plant named.",
-  otherRepo: (repo: string, here: string) =>
-    `This is the run folder of ${here}'s canary, not ${repo}'s.`,
+  notHere: `This folder holds no read to check: run ${HERE_COMMAND} in the folder its prompt.md is in.`,
+  otherRepo: (repo: string, here: string) => `This folder holds a read of ${here}, not of ${repo}.`,
   noRead: (repo: string, file: string) =>
     `No facts at ${file} yet: give the prompt to your assistant first, then atticus canary score ${repo}. The copy is kept until then (atticus canary clean ${repo} deletes it).`,
   notAFile: (file: string) =>
@@ -182,14 +216,15 @@ export const CANARY_WORDS = {
             : []),
           ...(o.unread ? [`fix or drop each line of ${o.facts} that doesn't read (below)`] : []),
         ].join("; ")}, and check again.`
-      : `${o.kept} kept, none rejected, every line read: the read is ready to score.`,
+      : `${o.kept} kept, none rejected, every line read.`,
   unread: (n: number, file: string) =>
     `${n} ${n === 1 ? "line" : "lines"} of ${file} didn't read as facts and ${n === 1 ? "is" : "are"} left out of the score:`,
   wrote: (file: string) =>
     `Wrote ${file}: commit it in a pull request with the sample audit (git add ${file}). The copy, the prompt, the facts and the key are deleted.`,
-  cleaned: (n: number) => `Deleted ${n} planted canary ${n === 1 ? "copy" : "copies"}.`,
+  cleaned: (copies: number, keys: number) =>
+    `Deleted ${keys} planted ${keys === 1 ? "canary" : "canaries"}: ${copies} run ${copies === 1 ? "folder" : "folders"} and ${keys} ${keys === 1 ? "key" : "keys"}${copies < keys ? ` (${keys - copies} run ${keys - copies === 1 ? "folder was" : "folders were"} already gone)` : ""}.`,
   cleanedBad: (repo: string, n: number) =>
-    `The key of ${repo}'s canary didn't read: deleted it, and ${n} run ${n === 1 ? "folder" : "folders"} of ${repo}'s.`,
+    `The key of ${repo}'s canary didn't read: deleted it, and ${n} run ${n === 1 ? "folder" : "folders"} of ${repo}'s this metarepo planted (another metarepo's are never touched).`,
   nothingToClean: "No canary is planted on this machine.",
   noReports: (rel: string) =>
     `No canary has been scored yet (${rel}). Plant one: atticus canary plant <repo>.`,
@@ -212,15 +247,64 @@ export const rateWords = (r: CanaryRateT): string =>
 
 // ------------------------------------------------------------------ names, keys and run folders
 
-/** The folder run folders are made in: the system's temporary folder, unless a test says. */
+/** The system's temporary folder (or a test's), the reads folder is made right in. */
 const scratchOf = (o: Pick<CanaryOptions, "scratch">) => resolve(o.scratch ?? tmpdir());
+
+/**
+ * The folder run folders are made in, `<temporary folder>/atticus-reads`, by its real path, and
+ * only when it is a real folder (no link) of this user's that no other user can write to; made
+ * 0700 when `make` and it isn't there. Undefined when it can't be trusted: nothing in it is
+ * then read, written or deleted (second review of ADR 0196: a shared /tmp is anyone's).
+ */
+async function readsDir(
+  o: Pick<CanaryOptions, "scratch">,
+  make = false,
+): Promise<string | undefined> {
+  let top: string;
+  try {
+    if (make) await mkdir(scratchOf(o), { recursive: true });
+    top = await realpath(scratchOf(o));
+  } catch {
+    return undefined;
+  }
+  const dir = join(top, CANARY_READS_DIR);
+  if (make) await mkdir(dir, { mode: 0o700 }).catch(() => undefined);
+  const st = await lstat(dir).catch(() => undefined);
+  if (!st || !st.isDirectory() || st.isSymbolicLink()) return undefined;
+  if (process.platform !== "win32") {
+    if (typeof process.getuid === "function" && st.uid !== process.getuid()) return undefined;
+    if (st.mode & 0o077) {
+      // ours, but opened up: closed again (a umask can't widen what mkdir was given)
+      if (!make) return undefined;
+      await chmod(dir, 0o700).catch(() => undefined);
+      const again = await lstat(dir).catch(() => undefined);
+      if (!again || again.mode & 0o077) return undefined;
+    }
+  }
+  return dir;
+}
+
+/** This metarepo's id in its run folders' names: its state folder's first 8 characters. */
+export const metarepoIdOf = (root: string, env?: NodeJS.ProcessEnv) =>
+  basename(metarepoStateDir(root, env)).slice(0, 8);
 
 const keyDir = (root: string, env?: NodeJS.ProcessEnv) =>
   join(metarepoStateDir(root, env), "canaries");
+/**
+ * A key file's name: the repo's, and a digest of it, so two names only case tells apart
+ * (`Forge-API`, `forge-api`) never share a file on a folder blind to case (second review).
+ */
+const keyName = (repo: string) =>
+  `${repo}.${createHash("sha256").update(repo).digest("hex").slice(0, 8)}.json`;
+/** The repo a key file's name is of, or undefined when it is no key's name. */
+const keyRepo = (name: string) => {
+  const m = /^(.+)\.[0-9a-f]{8}\.json$/.exec(name);
+  return m && isCanaryRepoName(m[1]!) && keyName(m[1]!) === name ? m[1] : undefined;
+};
 /** A repo's key file. Never for a name that isn't a repo's (review of ADR 0196: `../` climbed out). */
 function keyPath(root: string, repo: string, env?: NodeJS.ProcessEnv): string {
   if (!isCanaryRepoName(repo)) throw new Error(CANARY_WORDS.notName(repo));
-  return join(keyDir(root, env), `${repo}.json`);
+  return join(keyDir(root, env), keyName(repo));
 }
 
 async function readKey(
@@ -248,54 +332,72 @@ const isRealFile = async (p: string) => {
 };
 
 /**
- * A run folder of this repo's, checked: its name is `atticus-canary-<repo>-XXXXXX`, it is a real
- * folder (no link) right in the temporary folder, as the real paths of both say, and so is the
- * copy in it. Undefined when any of that fails: nothing in it is read, written or deleted then.
+ * A run folder of this repo's and this metarepo's, checked: its name is `<repo>-<id8>-XXXXXX`, and
+ * it is a real folder (no link) right in the reads folder (already checked, by its real path), as
+ * its own real path says. Undefined when any of that fails: nothing in it is read, written or
+ * deleted then.
  */
-async function runDir(scratch: string, repo: string, name: string): Promise<string | undefined> {
-  if (!isCanaryRunName(name, repo)) return undefined;
-  const dir = join(scratch, name);
+async function runDir(
+  reads: string,
+  repo: string,
+  id: string,
+  name: string,
+): Promise<string | undefined> {
+  if (!isCanaryRunName(name, repo, id)) return undefined;
+  const dir = join(reads, name);
   try {
     if (!(await isRealDir(dir))) return undefined;
-    const top = await realpath(scratch);
-    if ((await realpath(dirname(dir))) !== top) return undefined;
     const real = await realpath(dir);
-    if (dirname(real) !== top || basename(real) !== name) return undefined;
+    if (dirname(real) !== reads || basename(real) !== name) return undefined;
     return dir;
   } catch {
     return undefined;
   }
 }
 
-/** Delete one run folder, only when it checks out as this repo's; whether it did. */
-async function discardRun(scratch: string, repo: string, name: string): Promise<boolean> {
-  const dir = await runDir(scratch, repo, name);
+/** Delete one run folder, only when it checks out as this repo's and metarepo's; whether it did. */
+async function discardRun(reads: string, repo: string, id: string, name: string): Promise<boolean> {
+  const dir = await runDir(reads, repo, id, name);
   if (!dir) return false;
   await rm(dir, { recursive: true, force: true, maxRetries: 3 });
   return true;
 }
 
-/** Every run folder of this repo's in the temporary folder, deleted (a key that doesn't read). */
-async function discardRuns(scratch: string, repo: string): Promise<number> {
+/**
+ * This metarepo's run folders of this repo's, deleted (a key that doesn't read): only those named
+ * with this metarepo's id (second review of ADR 0196: another metarepo's canary of a repo of the
+ * same name is never touched), and only those of a run's shape (the copy and the prompt in it).
+ */
+async function discardRuns(reads: string, repo: string, id: string): Promise<number> {
   let n = 0;
-  for (const name of await readdir(scratch).catch(() => [] as string[]))
-    if (isCanaryRunName(name, repo) && (await discardRun(scratch, repo, name))) n++;
+  for (const name of await readdir(reads).catch(() => [] as string[])) {
+    const dir = await runDir(reads, repo, id, name);
+    if (!dir || !(await isRealDir(join(dir, repo))) || !(await isRealFile(join(dir, "prompt.md"))))
+      continue;
+    if (await discardRun(reads, repo, id, name)) n++;
+  }
   return n;
 }
 
-/** The run folder and the key, gone: the key's own run, or with no key that reads, the repo's runs. */
+/**
+ * The run folder and the key, gone: the key's own run, or with no key that reads, this
+ * metarepo's runs of the repo. How many run folders went.
+ */
 async function discard(
   root: string,
   repo: string,
   key: CanaryKeyT | undefined,
   o: Pick<CanaryOptions, "env" | "scratch">,
 ): Promise<number> {
-  const scratch = scratchOf(o);
-  const n = key
-    ? (await discardRun(scratch, repo, key.run))
-      ? 1
-      : 0
-    : await discardRuns(scratch, repo);
+  const reads = await readsDir(o);
+  const id = metarepoIdOf(root, o.env);
+  const n = !reads
+    ? 0
+    : key
+      ? (await discardRun(reads, repo, id, key.run))
+        ? 1
+        : 0
+      : await discardRuns(reads, repo, id);
   await rm(keyPath(root, repo, o.env), { force: true });
   return n;
 }
@@ -358,21 +460,23 @@ const READ_DATA =
 /**
  * The prompt the assistant reads the copy by: `/atticus-map`'s own reading protocol (its purpose,
  * outline, what to read whole, the facts' shape and rules, and its verify loop), aimed at the copy
- * in the run folder, so a canary measures the read the map makes (review of ADR 0196). It names
- * no metarepo, says nothing of what was planted or taken out, and nothing of a test: the person
- * opens the run folder itself as the workspace, and the check runs there.
+ * in the run folder, so a canary measures the read the map makes (review of ADR 0196), its recall
+ * loop included (second review). It names no metarepo, says nothing of what was planted or taken
+ * out, nothing of a test, and no path but the workspace's own (second review: an absolute path
+ * named the folder): the person opens the run folder itself as the workspace, and the check
+ * runs there as `atticus verify --here`.
  */
-export function canaryPrompt(o: {
-  repo: string;
-  copy: string;
-  facts: string;
-  commit: string;
-}): string {
+export function canaryPrompt(o: { repo: string; commit: string }): string {
   const steps = [
     MAP_OUTLINE,
     MAP_READ_WHOLE,
     `${mapWriteStep()}\n\nEvery fact's \`repo\` is \`${o.repo}\` and its \`commit\` is \`${o.commit}\`; every \`cite.file\` is relative to the folder \`${o.repo}\`.`,
-    `${mapVerifyStep(`atticus canary check ${o.repo}`, "`rejected.jsonl` in this workspace")} Run it in a terminal in this workspace.`,
+    `${mapVerifyStep(HERE_COMMAND, "`rejected.jsonl` in this workspace")} Run it in a terminal in this workspace.`,
+    mapRecallStep({
+      lists: "`verify.yaml` in this workspace",
+      reviewed: "`reviewed.jsonl` in this workspace",
+      all: `\`${HERE_COMMAND} --skipped\``,
+    }),
     "Then tell the person the read is done.",
   ];
   return [
@@ -380,7 +484,7 @@ export function canaryPrompt(o: {
     "",
     MAP_PURPOSE.replace(/\{\{ARGS\}\}/g, o.repo),
     "",
-    `The repo's files are in the folder \`${o.repo}\` of this workspace (${o.copy}). Read only the files in that folder. Write the facts to \`facts.jsonl\` in this workspace (${o.facts}), and nothing anywhere else. Don't run \`atticus map\` or \`atticus verify\` for this read, and write no questions: where the code can't settle a fact, leave the fact out.`,
+    `The repo's files are in the folder \`${o.repo}\` of this workspace. Read only the files in that folder. Write the facts to \`facts.jsonl\` in this workspace, and nothing anywhere else but \`reviewed.jsonl\` beside it. For this read, don't run \`atticus map\`, run \`atticus verify\` only as \`${HERE_COMMAND}\`, and write no questions: where the code can't settle a fact, leave the fact out.`,
     "",
     ...steps.map((s, i) => `${i + 1}. ${s}`),
     "",
@@ -390,6 +494,19 @@ export function canaryPrompt(o: {
 }
 
 // ------------------------------------------------------------------ plant
+
+/** Whether a file's start (a bounded prefix, never the whole file) holds a secret by its content. */
+async function startHoldsSecret(path: string): Promise<boolean> {
+  const h = await open(path, "r").catch(() => undefined);
+  if (!h) return true;
+  try {
+    const buf = Buffer.alloc(CANARY_SECRET_PREFIX);
+    const { bytesRead } = await h.read(buf, 0, buf.length, 0);
+    return canaryHoldsSecret(buf.subarray(0, bytesRead).toString("utf8"));
+  } finally {
+    await h.close();
+  }
+}
 
 /** atticus canary plant <repo>: the scratch copy, the plan applied to it, the prompt and the key. */
 export async function canaryPlant(
@@ -451,17 +568,26 @@ export async function canaryPlant(
     io.out(CANARY_WORDS.replaced(repo));
   }
 
-  const run = await mkdtemp(join(scratch, canaryRunPrefix(repo)));
+  // Second review of ADR 0196: run folders are made in a folder of their own, this user's and
+  // closed to others, named neutrally `<repo>-<id8>-XXXXXX` with this metarepo's id.
+  const reads = await readsDir(o, true);
+  if (!reads) {
+    io.err(CANARY_WORDS.badReads(join(scratch, CANARY_READS_DIR)));
+    return 2;
+  }
+  const run = await mkdtemp(join(reads, canaryRunPrefix(repo, metarepoIdOf(root, o.env))));
   const copy = join(run, repo);
   try {
     // The checkout's files as the verifier lists them (no .git, nothing ignored), only plain
     // files (no link, none with a second name: a hard link may be to a file anywhere), and never
-    // a file of secrets or credentials: it is no part of a read.
+    // a file of secrets or credentials, by its name or by what its start holds: it is no part of
+    // a read.
     for (const f of dirSource(dir).list()) {
       if (canaryNeverCopied(f)) continue;
       const from = join(dir, ...f.split("/"));
       const st = await lstat(from).catch(() => undefined);
       if (!st || !st.isFile() || st.isSymbolicLink() || st.nlink > 1) continue;
+      if (await startHoldsSecret(from)) continue;
       const to = join(copy, ...f.split("/"));
       await mkdir(dirname(to), { recursive: true });
       await copyFile(from, to);
@@ -484,11 +610,7 @@ export async function canaryPlant(
     }
     const factsFile = join(run, "facts.jsonl");
     const prompt = join(run, "prompt.md");
-    await writeFile(
-      prompt,
-      canaryPrompt({ repo, copy, facts: factsFile, commit: commit || "canary" }),
-      "utf8",
-    );
+    await writeFile(prompt, canaryPrompt({ repo, commit: commit || "HEAD" }), "utf8");
     const key: CanaryKeyT = {
       schema: 1,
       repo,
@@ -537,8 +659,12 @@ export async function canaryPlant(
 
 // ------------------------------------------------------------------ check
 
-/** The facts a read wrote, checked against the copy: kept and rejected, and lines that don't read. */
-async function checkRead(copy: string, file: string) {
+/**
+ * The facts a read wrote, checked against the copy: kept and rejected, lines that don't read, and
+ * the verifier's report (its coverage and recall lists). The run's `reviewed.jsonl`, the files the
+ * read found nothing in, counts as `atticus verify` counts a repo's (a link is never read).
+ */
+async function checkRead(dir: string, repo: string, file: string) {
   const text = await readFile(file, "utf8").catch(() => undefined);
   if (text === undefined || !text.trim()) return { missing: true as const };
   const parsed = parseFactsLines(text);
@@ -547,47 +673,81 @@ async function checkRead(copy: string, file: string) {
     .slice(0, 20)
     .map((b) => `line ${b.line}: ${b.issues.map((i) => i.message).join("; ")}`);
   if (!repaired.facts.length && repaired.bad.length) return { bad: issues };
-  const report = await verifyFacts({ facts: repaired.facts, source: dirSource(copy) });
+  const reviewedFile = join(dir, "reviewed.jsonl");
+  const reviewed = (await isRealFile(reviewedFile))
+    ? parseReviewed(await readFile(reviewedFile, "utf8"))
+    : { entries: [], bad: [] };
+  const report = await verifyFacts({
+    facts: repaired.facts,
+    source: dirSource(join(dir, repo)),
+    reviewed: reviewed.entries,
+  });
   return {
     kept: report.accepted,
     rejected: report.rejected,
     unread: repaired.bad.length,
-    issues,
+    issues: [...issues, ...reviewed.bad.map((b) => `reviewed.jsonl ${b.message}`)],
+    report,
   };
 }
+
+/** The run's `verify.yaml`: its coverage and the recall lists, as a repo's `<repo>.verify.yaml` has them. */
+const runVerifyYaml = (report: VerifyReport): string =>
+  stringify(
+    {
+      coverage: {
+        ratio: report.coverage.ratio,
+        read: report.coverage.read.length,
+        ...(report.coverage.reviewed.length ? { reviewed: report.coverage.reviewed.length } : {}),
+        unknown: report.coverage.unknown,
+      },
+      ...(report.reviewed.length ? { reviewed: report.reviewed } : {}),
+      ...(report.entriesNoFlowFollows.length
+        ? { entriesNoFlowFollows: report.entriesNoFlowFollows }
+        : {}),
+      ...(report.skipped.length ? { skipped: report.skipped } : {}),
+      ...(report.reviewedHolds.length ? { reviewedHolds: report.reviewedHolds } : {}),
+      ...(report.specOpsUncovered.length ? { specOpsUncovered: report.specOpsUncovered } : {}),
+    },
+    { lineWidth: 0 },
+  );
 
 /** The facts file a run is scored or checked by: the one given, else the run's own. */
 const factsFileOf = (dir: string, o: Pick<CanaryOptions, "facts">) =>
   o.facts ? resolve(o.facts) : join(dir, "facts.jsonl");
 
 /**
- * The read's own verify loop, in a run folder already checked: the facts against the copy,
- * the rejected ones to the run's `rejected.jsonl` (written by rename, so never through a link).
- * It says nothing of the key.
+ * The read's own verify loop, in a run folder already checked: the facts against the copy, the
+ * rejected ones to the run's `rejected.jsonl` and the coverage and recall lists to its
+ * `verify.yaml` (each written by rename, so never through a link), and those lists printed as
+ * `atticus verify` prints them (second review of ADR 0196: the map's recall loop is the read's
+ * too). It says nothing of the key. `here`: run in the run folder, as the read's own check, it
+ * names the run's files by their names alone and says nothing of a canary.
  */
 async function checkRun(
   dir: string,
   repo: string,
-  o: Pick<CanaryOptions, "facts">,
+  o: Pick<CanaryOptions, "facts" | "skipped"> & { here?: boolean },
   io: Output,
 ): Promise<number> {
   const copy = join(dir, repo);
   const file = factsFileOf(dir, o);
+  const named = (p: string) => (o.here && dirname(p) === dir ? basename(p) : p);
   if (!(await isRealDir(copy))) {
-    io.err(CANARY_WORDS.noRun(repo));
+    io.err(o.here ? CANARY_WORDS.hereNoCopy(repo) : CANARY_WORDS.noRun(repo));
     return 2;
   }
   if (!o.facts && (await lstat(file).catch(() => undefined)) && !(await isRealFile(file))) {
-    io.err(CANARY_WORDS.notAFile(file));
+    io.err(CANARY_WORDS.notAFile(named(file)));
     return 2;
   }
-  const r = await checkRead(copy, file);
+  const r = await checkRead(dir, repo, file);
   if ("missing" in r) {
-    io.err(CANARY_WORDS.noRead(repo, file));
+    io.err(o.here ? CANARY_WORDS.hereNoRead(named(file)) : CANARY_WORDS.noRead(repo, file));
     return 2;
   }
   if ("bad" in r) {
-    io.err(CANARY_WORDS.notFacts(file));
+    io.err(CANARY_WORDS.notFacts(named(file)));
     for (const b of r.bad ?? []) io.err(`  ${b}`);
     return 2;
   }
@@ -598,17 +758,38 @@ async function checkRun(
       .map((x) => JSON.stringify({ id: x.fact.id, code: x.code, message: x.message, fact: x.fact }))
       .join("\n") + (r.rejected.length ? "\n" : ""),
   );
+  const verifyYaml = join(dir, "verify.yaml");
+  await writeFileAtomic(verifyYaml, runVerifyYaml(r.report));
+  const cov = r.report.coverage;
   io.out(
     CANARY_WORDS.checked({
       kept: r.kept.length,
       rejected: r.rejected.length,
       unread: r.unread,
-      file: rejectedFile,
-      facts: file,
+      file: named(rejectedFile),
+      facts: named(file),
     }),
   );
   for (const x of r.rejected.slice(0, 20)) io.out(`  ${x.fact.id}: ${x.code}: ${x.message}`);
   for (const b of r.issues) io.out(`  ${b}`);
+  // the recall loop's lists, as `atticus verify` says them
+  const yamlName = named(verifyYaml);
+  io.out(
+    CANARY_WORDS.coverage({
+      pct: Math.round(cov.ratio * 100),
+      read: cov.read.length,
+      reviewed: cov.reviewed.length,
+      unknown: cov.unknown.length,
+    }),
+  );
+  if (cov.unknown.length) io.out(CANARY_WORDS.unknownNext(cov.unknown.length, yamlName));
+  for (const l of skippedNoteLines(r.report, {
+    verifyYaml: yamlName,
+    seeAll: `${o.here ? HERE_COMMAND : `atticus canary check ${repo}`} --skipped prints every one`,
+    all: o.skipped === true,
+  }))
+    io.out(l);
+  for (const l of unfollowedNoteLines(r.report, yamlName)) io.out(l);
   return r.rejected.length || r.unread ? 1 : 0;
 }
 
@@ -633,7 +814,8 @@ export async function canaryCheck(
     io.err(key === "none" ? CANARY_WORDS.noKey(repo) : CANARY_WORDS.badKey(repo));
     return 2;
   }
-  const dir = await runDir(scratchOf(o), repo, key.run);
+  const reads = await readsDir(o);
+  const dir = reads && (await runDir(reads, repo, metarepoIdOf(root, o.env), key.run));
   if (!dir) {
     await discard(root, repo, key, o);
     io.err(CANARY_WORDS.noRun(repo));
@@ -644,31 +826,32 @@ export async function canaryCheck(
 
 /**
  * The run folder a folder is in (the folder itself or one above it): a real folder right in the
- * temporary folder, named as a run of some repo's. What `atticus canary check` run in the run
- * folder, as the prompt says, checks; no metarepo is named or needed.
+ * reads folder, by the real paths of both, named as a run of some repo's and metarepo's. What
+ * `atticus verify --here` (or `atticus canary check`) run in the run folder, as the prompt says,
+ * checks; no metarepo is named or needed.
  */
 export async function runHolding(
   cwd: string,
   o: Pick<CanaryOptions, "scratch"> = {},
 ): Promise<{ dir: string; repo: string } | undefined> {
-  let top: string;
+  const reads = await readsDir(o);
+  if (!reads) return undefined;
   let at: string;
   try {
-    top = await realpath(scratchOf(o));
     at = await realpath(cwd);
   } catch {
     return undefined;
   }
   for (let d = at; dirname(d) !== d; d = dirname(d)) {
-    if (dirname(d) !== top) continue;
-    const repo = canaryRunRepo(basename(d));
-    const dir = repo ? await runDir(top, repo, basename(d)) : undefined;
-    return dir && repo ? { dir, repo } : undefined;
+    if (dirname(d) !== reads) continue;
+    const of = canaryRunOf(basename(d));
+    const dir = of ? await runDir(reads, of.repo, of.id, basename(d)) : undefined;
+    return dir && of ? { dir, repo: of.repo } : undefined;
   }
   return undefined;
 }
 
-/** atticus canary check [<repo>], in the run folder: that run's read, checked. */
+/** atticus verify --here (atticus canary check [<repo>]), in the run folder: its read, checked. */
 export async function canaryCheckHere(
   cwd: string,
   repo: string | undefined,
@@ -684,7 +867,7 @@ export async function canaryCheckHere(
     io.err(CANARY_WORDS.otherRepo(repo, here.repo));
     return 2;
   }
-  return checkRun(here.dir, here.repo, o, io);
+  return checkRun(here.dir, here.repo, { ...o, here: true }, io);
 }
 
 // ------------------------------------------------------------------ score
@@ -724,7 +907,8 @@ export async function canaryScore(
     io.err(CANARY_WORDS.badKey(repo));
     return 2;
   }
-  const dir = await runDir(scratchOf(o), repo, key.run);
+  const reads = await readsDir(o);
+  const dir = reads && (await runDir(reads, repo, metarepoIdOf(root, o.env), key.run));
   if (!dir || !(await isRealDir(join(dir, repo)))) {
     await discard(root, repo, key, o);
     io.err(CANARY_WORDS.noRun(repo));
@@ -735,7 +919,7 @@ export async function canaryScore(
     io.err(CANARY_WORDS.notAFile(file));
     return 2;
   }
-  const r = await checkRead(join(dir, repo), file);
+  const r = await checkRead(dir, repo, file);
   if ("missing" in r) {
     io.err(CANARY_WORDS.noRead(repo, file));
     return 2;
@@ -801,10 +985,10 @@ export function reportLines(r: CanaryReportT): string[] {
 }
 
 /** The two numbers in words, side by side, with what the canaries cover. */
-export function silentLines(s: SilentErrorRate): string[] {
+export function silentLines(s: SilentErrorRate, o: { joined?: boolean } = {}): string[] {
   return [
     CANARY_WORDS.ratesHead,
-    `  ${CANARY_WORDS.misread(s.repos.audited)}: ${rateWords(s.misread)}.`,
+    `  ${CANARY_WORDS.misread(s.repos.audited)}${o.joined ? CANARY_WORDS.joined : ""}: ${rateWords(s.misread)}.`,
     `  ${CANARY_WORDS.passed(s.repos.canaries)}: ${rateWords(s.passed)}.`,
     ...(s.repos.canaries
       ? [
@@ -837,14 +1021,16 @@ export async function canaryReports(root: string): Promise<{
 }
 
 /**
- * The two numbers from the latest canary of each repo and the sample audit. `join` takes the
- * audit as `atticus verify audit --report` does (a link's answer stops counting once the join no
- * longer makes it); without, from the files alone, as Map › Trust reads it. `audit`, when the
- * caller has it already (`verify audit --report`), is taken as it is.
+ * The two numbers from the latest canary of each repo and the sample audit. By default from the
+ * files alone, as Map › Trust reads them (an audit's link answer counted as given), so `atticus
+ * canary report` and Trust give the same audit misread rate (second review of ADR 0196). `join`
+ * takes the audit as `atticus verify audit --report` does (a link's answer stops counting once
+ * the join no longer makes it); `audit`, when the caller has it already (`verify audit
+ * --report`), is taken as it is. Either is said so beside the rate (`silentLines`' `joined`).
  */
 export async function silentSummary(
   root: string,
-  o: { join?: boolean; audit?: { precision: AuditPrecision; repos: number } } = { join: true },
+  o: { join?: boolean; audit?: { precision: AuditPrecision; repos: number } } = {},
 ): Promise<{
   rate: SilentErrorRate;
   latest: { path: string; report: CanaryReportT }[];
@@ -857,7 +1043,7 @@ export async function silentSummary(
   let audit: { precision: AuditPrecision; repos: number } | undefined = o.audit;
   if (audit) {
     // given
-  } else if (o.join !== false) {
+  } else if (o.join === true) {
     const { estateAuditPrecision } = await import("./audit-commands.js");
     const a = await estateAuditPrecision(root);
     if (a.bad)
@@ -919,7 +1105,7 @@ export async function canaryReport(root: string, o: CanaryOptions, io: Output): 
 }
 
 /**
- * GET /api/trust/canaries (ADR 0196, C4 3.12.0): the latest canary of each repo, those planted
+ * GET /api/trust/canaries (ADR 0196, C4 3.13.0): the latest canary of each repo, those planted
  * here and not yet scored, and the two numbers, from the files alone (an audit's link answer
  * counted as given, as Map › Trust counts it). Reads only; runs nothing.
  */
@@ -979,9 +1165,8 @@ export async function plantedHere(
   problems: { file: string; message: string }[];
 }> {
   const names = (await readdir(keyDir(root, env)).catch(() => [] as string[]))
-    .filter((n) => n.endsWith(".json"))
-    .map((n) => n.slice(0, -".json".length))
-    .filter(isCanaryRepoName)
+    .map(keyRepo)
+    .filter((r): r is string => r !== undefined)
     .sort();
   const pending: { repo: string; at: string; seed: string }[] = [];
   const bad: string[] = [];
@@ -994,39 +1179,54 @@ export async function plantedHere(
     pending,
     bad,
     problems: bad.map((repo) => ({
-      file: `canaries/${repo}.json`,
+      file: `canaries/${keyName(repo)}`,
       message: `(this machine's key of ${repo}'s canary) doesn't read: atticus canary clean ${repo} deletes it`,
     })),
   };
 }
 
-/** atticus canary clean [<repo>]: delete a planted canary's copy and key without scoring it. */
+/**
+ * atticus canary clean <repo> | --all: delete a planted canary's copy and key without scoring it.
+ * Every canary of this metarepo's only with an explicit `--all` (second review of ADR 0196: a
+ * stray `-rf` read as flags left no repo, which cleaned them all).
+ */
 export async function canaryClean(
   root: string,
   repo: string | undefined,
   o: CanaryOptions,
   io: Output,
 ): Promise<number> {
+  if (repo === undefined && o.all !== true) {
+    io.err(CANARY_WORDS.cleanWhich);
+    return 2;
+  }
+  if (repo !== undefined && o.all === true) {
+    io.err(CANARY_WORDS.cleanBoth);
+    return 2;
+  }
   if (repo !== undefined && !isCanaryRepoName(repo)) {
     io.err(CANARY_WORDS.notName(repo));
     return 2;
   }
   const here = await plantedHere(root, o.env);
   const repos = repo ? [repo] : [...here.pending.map((p) => p.repo), ...here.bad];
-  let n = 0;
+  let copies = 0;
+  let keys = 0;
   const said: string[] = [];
   for (const r of [...new Set(repos)].sort()) {
     const k = await readKey(root, r, o.env);
     if (k === "none") continue;
     if (k === "bad") {
-      // A key that doesn't read says nowhere safe: this repo's run folders, checked, go.
+      // A key that doesn't read says nowhere safe: this metarepo's run folders of the repo go.
       said.push(CANARY_WORDS.cleanedBad(r, await discard(root, r, undefined, o)));
       continue;
     }
-    await discard(root, r, k, o);
-    n++;
+    // what was deleted, counted as it went (second review: a key whose copy was gone was counted)
+    copies += await discard(root, r, k, o);
+    keys++;
   }
   for (const l of said) io.out(l);
-  if (n || !said.length) io.out(n ? CANARY_WORDS.cleaned(n) : CANARY_WORDS.nothingToClean);
+  if (keys || !said.length)
+    io.out(keys ? CANARY_WORDS.cleaned(copies, keys) : CANARY_WORDS.nothingToClean);
   return 0;
 }

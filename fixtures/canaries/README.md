@@ -15,8 +15,10 @@ repos, one per stack the canary templates cover, read by hand into verified fact
 - `expected/<repo>.s1.json`: the canary plan for each with seed `s1` (what is planted where, what
   the repo can't serve and so isn't planted, and which real lines are commented out), checked by
   hand; `packages/verify/test/canary.test.ts` holds the plan to it. The browser app gets a call
-  and a config key, no route and no topic (it declares no server and no Kafka client); the
-  Python service gets no topic (no Kafka client).
+  only (to a path of its own origin): no route and no topic (it declares no server and no Kafka
+  client), and no config key (a browser has no `process.env`); the Python service gets no topic
+  (no Kafka client). Each removed line's needle is its method and path (`get api-balance-param`)
+  or its key, so a correct fact on the line beside it is never scored as claiming it.
 - `reads/forge-portal-bff.s1.jsonl`: a read of the planted copy (seed `s1`) written by hand, as an
   assistant might write it, since no model runs in tests: it finds four of the five planted items
   and misses the listener, and claims the three commented-out lines. The verifier catches all

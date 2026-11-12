@@ -243,6 +243,8 @@ export const OPTIONS = {
   report: { type: "boolean" },
   verbose: { type: "boolean" },
   skipped: { type: "boolean" },
+  // ADR 0196, second review: `atticus verify --here`, a canary read's own check in its run folder.
+  here: { type: "boolean" },
 } satisfies ParseArgsOptionsConfig;
 
 type Options = typeof OPTIONS;

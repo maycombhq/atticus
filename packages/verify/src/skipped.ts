@@ -66,11 +66,16 @@ export function notReadForSkipped(path: string, rules: ReadRules = DEFAULT_READ_
   return rules.notRead.test(path);
 }
 
-/** A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive), `<!--` or SQL's `-- `. */
+/**
+ * A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive, a shebang, nor a PHP 8 or
+ * Rust attribute, `#[Route('/api')]`: second review of ADR 0196), `<!--` or SQL's `-- `. A block
+ * comment closed on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`)
+ * is code.
+ */
 export const isCommentLine = (l: string) =>
-  /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!))/.test(
+  /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!)(?!\[))/.test(
     l,
-  );
+  ) && !/^\s*\/\*.*?\*\/\s*[^\s/]/.test(l);
 
 /** A line that imports: its strings name modules, not routes. */
 const IMPORT_LINE =

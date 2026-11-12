@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseFacts, type Fact } from "@maycombhq/core";
-import { dirSource, entriesNoFlowFollows, memorySource, verifyFacts } from "../src/index.js";
+import {
+  dirSource,
+  entriesNoFlowFollows,
+  isCommentLine,
+  memorySource,
+  verifyFacts,
+} from "../src/index.js";
 
 const fixtures = join(__dirname, "fixtures");
 const repo = join(fixtures, "repo");
@@ -671,6 +677,127 @@ describe("what the revised reads found about the verifier (A4)", () => {
         facts: [call("c-near", "/ledger/v1/transfers", 8, "createTransfer", [[5, "/ledger/v1"]])],
       });
       expect(r.rejected.map((x) => x.code)).toEqual(["claim-in-comment"]);
+    });
+  });
+
+  // Second review of ADR 0196: with parts, what they don't name the cited lines write as a path,
+  // not as an identifier; an attribute (`#[Route]`, `#[get]`) is code, and so is a line after a
+  // block comment closed on it. Each case is the reviewer's probe, in Forge's names.
+  describe("parts, attributes and comment-like code (second review of ADR 0196)", () => {
+    const entry = (
+      id: string,
+      file: string,
+      path: string,
+      line: number,
+      value: string,
+      parts: [number, string][] = [],
+    ) =>
+      ({
+        ...base,
+        kind: "entry",
+        id,
+        entryType: "rest",
+        method: "GET",
+        path,
+        cite: {
+          file,
+          line,
+          value,
+          ...(parts.length ? { with: parts.map(([l, v]) => ({ file, line: l, value: v })) } : {}),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const java = {
+      "src/main/java/forge/portal/BalanceResource.java": [
+        "@RestController", // 1
+        '@RequestMapping("/api")', // 2
+        "class BalanceResource {", // 3
+        '  // @GetMapping("/balances")', // 4
+        "  public List<Balance> balances() { return null; }", // 5
+        "}",
+        "",
+      ].join("\n"),
+    };
+    const J = "src/main/java/forge/portal/BalanceResource.java";
+
+    it("refuses a method name under a commented-out mapping, with the class prefix a part", async () => {
+      expect(await one(java, entry("s1", J, "/api/balances", 5, "balances", [[2, "/api"]]))).toBe(
+        "claim-in-comment",
+      );
+      expect(await one(java, entry("s2", J, "/balances", 5, "balances"))).toBe("claim-in-comment");
+      expect(await one(java, entry("s3", J, "/balances", 4, "/balances"))).toBe("claim-in-comment");
+    });
+
+    it("keeps a live mapping beside it, and a route string after a block comment", async () => {
+      const live = {
+        [J]: java[J].replace('  // @GetMapping("/balances")', '  @GetMapping("/balances")'),
+      };
+      expect(await one(live, entry("l1", J, "/api/balances", 5, "balances", [[2, "/api"]]))).toBe(
+        "kept",
+      );
+      const js = {
+        "src/routes.js": [
+          "const express = require('express');",
+          "const router = express.Router();",
+          "/* istanbul ignore next */ router.get('/users', list);",
+          "app.use('/api', router);",
+        ].join("\n"),
+      };
+      expect(
+        await one(js, entry("j1", "src/routes.js", "/api/users", 3, "/users", [[4, "/api"]])),
+      ).toBe("kept");
+    });
+
+    it("reads a PHP 8 or Rust attribute as code, not a comment", async () => {
+      const php = {
+        "src/Controller/UserController.php": [
+          "<?php", // 1
+          "namespace Forge\\Controller;", // 2
+          "", // 3
+          "#[Route('/api')]", // 4
+          "class UserController extends AbstractController", // 5
+          "{", // 6
+          "    #[Route('/users', methods: ['GET'])]", // 7
+          "    public function list(): Response", // 8
+          "    {", // 9
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      };
+      const P = "src/Controller/UserController.php";
+      expect(await one(php, entry("p1", P, "/api/users", 7, "/users", [[4, "/api"]]))).toBe("kept");
+      // Symfony: the class-level prefix a part, the method's line cited
+      expect(await one(php, entry("p2", P, "/api/users", 8, "list", [[4, "/api"]]))).toBe("kept");
+      expect(await one(php, entry("p3", P, "/users", 7, "/users"))).toBe("kept");
+      const rs = {
+        "src/main.rs": [
+          "use actix_web::{get, web, App};",
+          "",
+          '#[get("/users")]',
+          'async fn users() -> impl Responder { "" }',
+          "",
+          "fn main() {",
+          '    App::new().service(web::scope("/api").service(users));',
+          "}",
+          "",
+        ].join("\n"),
+      };
+      expect(
+        await one(rs, entry("r1", "src/main.rs", "/api/users", 3, "/users", [[7, "/api"]])),
+      ).toBe("kept");
+      expect(
+        await one(rs, entry("r2", "src/main.rs", "/api/users", 4, "users", [[7, "/api"]])),
+      ).toBe("kept");
+      expect(isCommentLine("#[Route('/x')]")).toBe(false);
+      expect(isCommentLine('  #[get("/x")]')).toBe(false);
+      expect(isCommentLine("/* a */ router.get('/x')")).toBe(false);
+      expect(isCommentLine("/* a */ // b")).toBe(true);
+      expect(isCommentLine("# a comment")).toBe(true);
+      expect(isCommentLine("#!/bin/sh")).toBe(false);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmod,
   cp,
   link,
   lstat,
@@ -14,10 +15,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAP_OUTLINE, MAP_READ_WHOLE, mapWriteStep } from "@maycombhq/assistant-files";
+import {
+  MAP_OUTLINE,
+  MAP_READ_WHOLE,
+  mapRecallStep,
+  mapWriteStep,
+} from "@maycombhq/assistant-files";
 import {
   CanaryKey,
   canaryRate,
@@ -121,13 +127,21 @@ const opts = (h: Here, x: Record<string, unknown> = {}) => ({
   ...x,
 });
 
+/** A repo's key file: its name and a digest of it, so names only case tells apart don't share one. */
 const keyFile = (h: Here, repo: string) =>
-  join(metarepoStateDir(h.root, h.env), "canaries", `${repo}.json`);
+  join(
+    metarepoStateDir(h.root, h.env),
+    "canaries",
+    `${repo}.${createHash("sha256").update(repo).digest("hex").slice(0, 8)}.json`,
+  );
 const keyOf = async (h: Here, repo: string): Promise<CanaryKeyT> =>
   CanaryKey.parse(JSON.parse(await readFile(keyFile(h, repo), "utf8")));
+/** The folder run folders are made in (second review of ADR 0196), and this metarepo's id. */
+const readsOf = (h: Here) => join(h.scratch, "atticus-reads");
+const idOf = (h: Here) => basename(metarepoStateDir(h.root, h.env)).slice(0, 8);
 /** A key's run folder, its copy and its facts file, as the key names them by base name. */
 const runOf = (h: Here, key: CanaryKeyT) => {
-  const run = join(h.scratch, key.run);
+  const run = join(readsOf(h), key.run);
   return {
     run,
     copy: join(run, key.repo),
@@ -263,26 +277,37 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     const a = await keyOf(h, "forge-portal-bff");
     const ra = runOf(h, a);
     const copyA = await tree(ra.copy);
-    expect(a.run).toMatch(/^atticus-canary-forge-portal-bff-[A-Za-z0-9]{6}$/);
+    // second review of ADR 0196: a neutral name with this metarepo's id, in a folder of its own
+    expect(a.run).toMatch(new RegExp(`^forge-portal-bff-${idOf(h)}-[A-Za-z0-9]{6}$`));
+    expect(a.run).not.toMatch(/canary/i);
     expect(relative(h.root, ra.run).startsWith("..")).toBe(true);
     expect(await exists(join(ra.copy, ".git"))).toBe(false);
+    if (process.platform !== "win32") expect((await stat(readsOf(h))).mode & 0o777).toBe(0o700);
 
-    // The prompt is /atticus-map's protocol aimed at the copy: it names the copy and the facts
-    // file, and nothing planted or taken out, no metarepo and no test.
+    // The prompt is /atticus-map's protocol aimed at the copy: it names the folder of the copy
+    // and the facts file by their names in the workspace alone (no absolute path, which named
+    // the run folder), nothing planted or taken out, no metarepo and no test, and the check by
+    // its neutral name; the map's recall loop is in it.
     const prompt = await readFile(ra.prompt, "utf8");
-    expect(prompt).toContain(ra.copy);
-    expect(prompt).toContain(ra.facts);
+    expect(prompt).not.toContain(ra.run);
+    expect(prompt).not.toContain(h.scratch);
+    expect(prompt).not.toMatch(/(^|[\s(])\/(tmp|home|var|Users)\//m);
+    expect(prompt).toContain("folder `forge-portal-bff` of this workspace");
+    expect(prompt).toContain("`facts.jsonl` in this workspace");
     expect(prompt).toContain(MAP_OUTLINE);
     expect(prompt).toContain(MAP_READ_WHOLE);
-    expect(prompt).toContain("Run `atticus canary check forge-portal-bff`.");
+    expect(prompt).toContain("Run `atticus verify --here`.");
+    expect(prompt).toContain(
+      mapRecallStep({
+        lists: "`verify.yaml` in this workspace",
+        reviewed: "`reviewed.jsonl` in this workspace",
+        all: "`atticus verify --here --skipped`",
+      }),
+    );
     expect(prompt).not.toContain(h.root);
     expect(prompt).toContain(mapWriteStep());
     // its own words (the map's facts shape and rules aside): no scratch copy, nothing measured
-    const own = prompt
-      .split(ra.run)
-      .join("<run>")
-      .replace(mapWriteStep(), "")
-      .replace(/atticus canary check/g, "<check>");
+    const own = prompt.replace(mapWriteStep(), "");
     expect(own).not.toMatch(/scratch|measur|canar|plant|\btest|copy/i);
     for (const p of a.planted)
       for (const w of p.needle.split("-"))
@@ -344,12 +369,13 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     const h = await metarepo();
     const c = capture();
     expect(await canaryPlant(h.root, "forge-portal-ui", opts(h, { seed: "s1" }), c.io)).toBe(0);
-    expect(c.out).toContain("It plants into node (a call, a config key).");
+    // second review of ADR 0196: a browser app has no process.env either
+    expect(c.out).toContain("It plants into node (a call).");
     expect(c.out).toContain(
-      "Not planted, as the repo can't serve them: a route in node (the build files declare no server (express): a browser app serves no route); a topic listened to and a topic published in node (the build files declare no Kafka client (kafkajs)).",
+      "Not planted, as the repo can't serve them: a config key in node (a browser app (its package declares no server) has no process.env); a route in node (its package declares no server (express): a browser app serves no route); a topic listened to and a topic published in node (its package declares no Kafka client (kafkajs)).",
     );
     const key = await keyOf(h, "forge-portal-ui");
-    expect(key.skipped.map((s) => s.what)).toEqual(["entry", "topic-in", "topic-out"]);
+    expect(key.skipped.map((s) => s.what)).toEqual(["config", "entry", "topic-in", "topic-out"]);
     const copy = await tree(runOf(h, key).copy);
     expect(Object.keys(copy).sort()).toEqual([
       "package.json",
@@ -367,7 +393,10 @@ describe("atticus canary", { timeout: 60_000 }, () => {
       await perfectRead(h, repo, key);
       const checked = capture();
       const code = await canaryCheck(h.root, repo, opts(h), checked.io);
-      expect(checked.out).toEqual([expect.stringMatching(/none rejected, every line read/)]);
+      expect(checked.out[0]).toMatch(/none rejected, every line read/);
+      // the recall loop's coverage, as atticus verify says it, and its lists in verify.yaml
+      expect(checked.out[1]).toMatch(/^Coverage \d+% \(\d+ read, \d+ unknown\)\.$/);
+      expect(await exists(join(runOf(h, key).run, "verify.yaml"))).toBe(true);
       expect(code).toBe(0);
       const c = capture();
       expect(await canaryScore(h.root, repo, opts(h), c.io)).toBe(0);
@@ -516,11 +545,83 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     const other = capture();
     expect(await canaryCheckHere(run, "forge-portal-ui", opts(h), other.io)).toBe(2);
     expect(other.err[0]).toBe(
-      "This is the run folder of forge-appraise's canary, not forge-portal-ui's.",
+      "This folder holds a read of forge-appraise, not of forge-portal-ui.",
     );
     const away = capture();
     expect(await canaryCheckHere(h.root, undefined, opts(h), away.io)).toBe(2);
-    expect(away.err[0]).toMatch(/^This folder is in no canary's run folder/);
+    expect(away.err[0]).toBe(
+      "This folder holds no read to check: run atticus verify --here in the folder its prompt.md is in.",
+    );
+  });
+
+  // Second review of ADR 0196: the read's own check, by the name the prompt gives it, says
+  // nothing of a canary, names the run's files by their names alone, and keeps the map's recall
+  // loop: the coverage, the files unknown, and the lines no fact cites, as atticus verify says.
+  it("atticus verify --here: the read's own check, the map's recall loop and nothing of a canary", async () => {
+    const h = await metarepo();
+    await canaryPlant(h.root, "forge-appraise", opts(h, { seed: "s1" }), capture().io);
+    const key = await keyOf(h, "forge-appraise");
+    const { run } = runOf(h, key);
+    // nothing written yet: said without a word of a canary
+    const early = capture();
+    expect(await canaryCheckHere(run, undefined, opts(h), early.io)).toBe(2);
+    expect(early.err).toEqual([
+      "No facts in facts.jsonl yet: write them there, then run atticus verify --here again.",
+    ]);
+    // a read that leaves the planted call out: the line is listed under skipped, as verify lists it
+    const text = await perfectRead(h, "forge-appraise", key);
+    const call = key.planted.find((p) => p.what === "call")!;
+    await writeFile(
+      join(run, "facts.jsonl"),
+      text
+        .split("\n")
+        .filter((l) => !l.includes(`"id":"call.${call.needle}"`))
+        .join("\n"),
+    );
+    // and a file it found nothing in, reviewed
+    await writeFile(
+      join(run, "reviewed.jsonl"),
+      JSON.stringify({ path: "app/schemas/parcel.py", why: "a model only" }) + "\n",
+    );
+    const c = capture();
+    expect(await canaryCheckHere(run, undefined, opts(h, { skipped: true }), c.io)).toBe(0);
+    const said = [...c.out, ...c.err].join("\n");
+    expect(said).not.toMatch(/canar|plant|score|atticus-reads/i);
+    expect(said).not.toContain(run);
+    expect(c.out[0]).toMatch(/^\d+ kept, none rejected, every line read\.$/);
+    expect(c.out).toContainEqual(
+      expect.stringMatching(
+        /^Coverage \d+% \(\d+ read, 1 reviewed with nothing to record, \d+ unknown\)\.$/,
+      ),
+    );
+    expect(c.out).toContainEqual(
+      expect.stringMatching(
+        /^\d+ lines? of the files read writes? a path, URL or topic no fact cites \(a note for the reader to check, not a rejection; under skipped in verify\.yaml; atticus verify --here --skipped prints every one\):$/,
+      ),
+    );
+    expect(c.out).toContainEqual(expect.stringContaining(`${call.file}:${call.line} `));
+    const yaml = await readFile(join(run, "verify.yaml"), "utf8");
+    expect(yaml).toMatch(/^coverage:/m);
+    expect(yaml).toMatch(/^skipped:/m);
+    expect(yaml).toContain("app/schemas/parcel.py");
+    // by the dispatcher too: `atticus verify --here` from the run folder, with no metarepo
+    const out: string[] = [];
+    const cwd = process.cwd();
+    const tmp = process.env.TMPDIR;
+    process.chdir(run);
+    process.env.TMPDIR = h.scratch;
+    try {
+      const code = await main(["verify", "--here"], {
+        out: (l: string) => out.push(l),
+        err: (l: string) => out.push(l),
+      });
+      expect(out.join("\n")).not.toMatch(/canar/i);
+      expect(code).toBe(0);
+    } finally {
+      process.chdir(cwd);
+      if (tmp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = tmp;
+    }
   });
 
   it("counts lines that don't read: check exits 1 on them, and score says how many it left out", async () => {
@@ -564,11 +665,27 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     expect(await exists(copy)).toBe(true);
     expect(await exists(keyFile(h, "forge-portal-ui"))).toBe(true);
     expect(await exists(join(h.root, "reports"))).toBe(false);
-    // clean deletes a planted one without scoring it.
+    // clean deletes a planted one without scoring it; every one only with --all (second review
+    // of ADR 0196: a bare clean, or `-rf` read as flags, cleaned them all)
+    const which = capture();
+    expect(await canaryClean(h.root, undefined, opts(h), which.io)).toBe(2);
+    expect(which.err[0]).toMatch(/^Say which canary to delete/);
+    expect(await exists(run)).toBe(true);
+    const flags = capture();
+    expect(await main(["canary", "clean", "-rf", "--root", h.root], flags.io)).toBe(2);
+    expect(await exists(run)).toBe(true);
     const cleaned = capture();
-    expect(await canaryClean(h.root, undefined, opts(h), cleaned.io)).toBe(0);
-    expect(cleaned.out).toEqual(["Deleted 1 planted canary copy."]);
+    expect(await canaryClean(h.root, undefined, opts(h, { all: true }), cleaned.io)).toBe(0);
+    expect(cleaned.out).toEqual(["Deleted 1 planted canary: 1 run folder and 1 key."]);
     expect(await exists(run)).toBe(false);
+    // a key whose run folder is already gone is counted as a key, not a copy (second review)
+    await canaryPlant(h.root, "forge-portal-ui", opts(h), capture().io);
+    await rm(runOf(h, await keyOf(h, "forge-portal-ui")).run, { recursive: true });
+    const gone = capture();
+    expect(await canaryClean(h.root, "forge-portal-ui", opts(h), gone.io)).toBe(0);
+    expect(gone.out).toEqual([
+      "Deleted 1 planted canary: 0 run folders and 1 key (1 run folder was already gone).",
+    ]);
 
     // A plant that throws half way leaves no run folder and no key.
     await expect(
@@ -583,7 +700,7 @@ describe("atticus canary", { timeout: 60_000 }, () => {
         capture().io,
       ),
     ).rejects.toThrow("boom");
-    expect(await readdir(h.scratch)).toEqual([]);
+    expect(await readdir(readsOf(h))).toEqual([]);
     expect(await exists(keyFile(h, "forge-portal-ui"))).toBe(false);
   });
 
@@ -626,7 +743,7 @@ describe("atticus canary", { timeout: 60_000 }, () => {
     const go = capture();
     expect(await canaryPlant(h.root, "forge-tally", opts(h), go.io)).toBe(2);
     expect(go.err[0]).toMatch(/^Atticus has no template for forge-tally's code/);
-    expect(await readdir(h.scratch).catch(() => [])).toEqual([]);
+    expect(await readdir(readsOf(h)).catch(() => [])).toEqual([]);
     expect(await exists(keyFile(h, "forge-tally"))).toBe(false);
   });
 
@@ -722,23 +839,23 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
       expect(c.err[0]).toMatch(/^The key of forge-portal-bff's canary doesn't read/);
       expect(await exists(join(v, "plain/rejected.jsonl"))).toBe(false);
       expect(await intact(v)).toEqual(KEEP);
-      // the repo's own run folders, checked, went with the bad key
+      // this metarepo's run folder of the repo, checked, went with the bad key
       expect(await exists(run)).toBe(false);
-      expect(await readdir(h.scratch)).toEqual([]);
+      expect(await readdir(readsOf(h))).toEqual([]);
       expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
       await canaryPlant(h.root, "forge-portal-bff", opts(h, { seed: "adv" }), capture().io);
     }
-    // clean with no repo says so, and doesn't skip a bad key
+    // clean --all says so, and doesn't skip a bad key
     await writeFile(
       keyFile(h, "forge-portal-bff"),
       JSON.stringify({ ...raw, run: join(v, "atticus-canary-precious") }),
     );
     const c = capture();
-    expect(await canaryClean(h.root, undefined, opts(h), c.io)).toBe(0);
+    expect(await canaryClean(h.root, undefined, opts(h, { all: true }), c.io)).toBe(0);
     expect(c.out).toEqual([
-      "The key of forge-portal-bff's canary didn't read: deleted it, and 1 run folder of forge-portal-bff's.",
+      "The key of forge-portal-bff's canary didn't read: deleted it, and 1 run folder of forge-portal-bff's this metarepo planted (another metarepo's are never touched).",
     ]);
-    expect(await readdir(h.scratch)).toEqual([]);
+    expect(await readdir(readsOf(h))).toEqual([]);
     expect(await intact(v)).toEqual(KEEP);
     // score with a bad key: the same
     await canaryPlant(h.root, "forge-portal-bff", opts(h, { seed: "adv" }), capture().io);
@@ -747,16 +864,82 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
       JSON.stringify({ ...raw, run: join(v, "plain") }),
     );
     expect(await canaryScore(h.root, "forge-portal-bff", opts(h), capture().io)).toBe(2);
-    expect(await readdir(h.scratch)).toEqual([]);
+    expect(await readdir(readsOf(h))).toEqual([]);
     expect(await intact(v)).toEqual(KEEP);
+  });
+
+  // Second review of ADR 0196 (S1): two metarepos, the same repo, the same machine. A key of one
+  // that doesn't read (or that names the other's run) never takes the other's run folder.
+  it("cleans only this metarepo's run folders, whatever its key says", async () => {
+    const h = await metarepo();
+    const root2 = join(h.top, "metarepo2");
+    await cp(h.root, root2, { recursive: true });
+    const h2: Here = { ...h, root: root2 };
+    expect(idOf(h2)).not.toBe(idOf(h));
+    await canaryPlant(h.root, "forge-portal-bff", opts(h), capture().io);
+    const k1 = await keyOf(h, "forge-portal-bff");
+    await canaryPlant(h2.root, "forge-portal-bff", opts(h2), capture().io);
+    const k2 = await keyOf(h2, "forge-portal-bff");
+    // the second's key broken: its clean takes its own run only
+    await writeFile(keyFile(h2, "forge-portal-bff"), "{not json");
+    const c = capture();
+    expect(await canaryClean(h2.root, "forge-portal-bff", opts(h2), c.io)).toBe(0);
+    expect(c.out[0]).toMatch(/deleted it, and 1 run folder of forge-portal-bff's this metarepo/);
+    expect(await exists(runOf(h, k1).run)).toBe(true);
+    expect(await exists(runOf(h2, k2).run)).toBe(false);
+    // a key edited to name the other metarepo's run (a valid name, another id): not touched
+    await canaryPlant(h2.root, "forge-portal-bff", opts(h2), capture().io);
+    const raw = JSON.parse(await readFile(keyFile(h2, "forge-portal-bff"), "utf8"));
+    await writeFile(keyFile(h2, "forge-portal-bff"), JSON.stringify({ ...raw, run: k1.run }));
+    for (const run of [canaryCheck, canaryScore, canaryClean])
+      await run(h2.root, "forge-portal-bff", opts(h2), capture().io);
+    expect(await exists(runOf(h, k1).run)).toBe(true);
+    // a plant over a broken key spares the other too
+    await writeFile(keyFile(h2, "forge-portal-bff"), "{not json");
+    expect(await canaryPlant(h2.root, "forge-portal-bff", opts(h2), capture().io)).toBe(0);
+    expect(await exists(runOf(h, k1).run)).toBe(true);
+    // a folder of this metarepo's name but not a run's shape (no copy, no prompt) stays too
+    const odd = join(readsOf(h), `forge-portal-bff-${idOf(h)}-Odd123`);
+    await mkdir(odd);
+    await writeFile(keyFile(h, "forge-portal-bff"), "{not json");
+    await canaryClean(h.root, "forge-portal-bff", opts(h), capture().io);
+    expect(await exists(runOf(h, k1).run)).toBe(false);
+    expect(await exists(odd)).toBe(true);
+  });
+
+  it("keeps a key per repo name, case and all", async () => {
+    const h = await metarepo();
+    expect(keyFile(h, "forge-API")).not.toBe(keyFile(h, "forge-api"));
+    expect(basename(keyFile(h, "forge-API")).toLowerCase()).not.toBe(
+      basename(keyFile(h, "forge-api")).toLowerCase(),
+    );
+  });
+
+  it("makes no run folder in a reads folder another user could write to, or that is a link", async () => {
+    if (process.platform === "win32") return;
+    const h = await metarepo();
+    const v = await victims(h);
+    await mkdir(h.scratch, { recursive: true });
+    await symlink(join(v, "plain"), readsOf(h));
+    const c = capture();
+    expect(await canaryPlant(h.root, "forge-appraise", opts(h), c.io)).toBe(2);
+    expect(c.err.at(-1)).toMatch(/isn't a folder only you can write to/);
+    expect(await intact(v)).toEqual(KEEP);
+    expect((await readdir(join(v, "plain"))).sort()).toEqual(["important.txt", "out.txt"]);
+    await rm(readsOf(h));
+    // ours but opened up: closed again before anything is made in it
+    await mkdir(readsOf(h), { mode: 0o777 });
+    await chmod(readsOf(h), 0o777);
+    expect(await canaryPlant(h.root, "forge-appraise", opts(h), capture().io)).toBe(0);
+    expect((await stat(readsOf(h))).mode & 0o777).toBe(0o700);
   });
 
   it("a run folder that is a link is neither followed nor deleted through", async () => {
     const h = await metarepo();
     const v = await victims(h);
-    await mkdir(h.scratch, { recursive: true });
-    const name = "atticus-canary-forge-portal-bff-AbC123";
-    await symlink(join(v, "plain"), join(h.scratch, name));
+    await mkdir(readsOf(h), { recursive: true, mode: 0o700 });
+    const name = `forge-portal-bff-${idOf(h)}-AbC123`;
+    await symlink(join(v, "plain"), join(readsOf(h), name));
     await mkdir(dirname(keyFile(h, "forge-portal-bff")), { recursive: true });
     await writeFile(
       keyFile(h, "forge-portal-bff"),
@@ -777,7 +960,7 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
       expect(await exists(join(v, "plain/rejected.jsonl"))).toBe(false);
     }
     // the link itself is left: it isn't a run folder Atticus made
-    expect((await lstat(join(h.scratch, name))).isSymbolicLink()).toBe(true);
+    expect((await lstat(join(readsOf(h), name))).isSymbolicLink()).toBe(true);
   });
 
   it("links the read drops in the run folder aren't followed: not by check, score or clean", async () => {
@@ -835,11 +1018,57 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
       ".ssh/id_rsa",
       "deploy/key.p8",
       "vault.kdbx",
+      // second review of ADR 0196: the reviewer's list
+      ".envrc",
+      ".pgpass",
+      ".my.cnf",
+      ".s3cfg",
+      ".boto",
+      ".vault-token",
+      "local.settings.json",
+      "secrets.json",
+      "appsettings.Secrets.json",
+      "id_rsa.ppk",
+      "prod.ovpn",
+      "signing.gpg",
+      "priv.asc",
+      "host.keytab",
+      ".dockercfg",
+      ".terraformrc",
+      "credentials.tfrc.json",
+      ".gradle/gradle.properties",
+      "settings-security.xml",
+      ".cargo/credentials",
+      ".config/gh/hosts.yml",
+      ".netrc.bak",
+      ".ssh/config",
+      ".git-credentials.old",
+      "auth.json",
+      ".yarnrc",
+      ".bowerrc",
+      "wallet.dat",
+      "sa-key.json",
+      "gcp-key.json",
+      "firebase-adminsdk.json",
+      "client_secret_123.apps.googleusercontent.com.json",
     ];
     for (const f of secrets) {
       await mkdir(dirname(join(ws, f)), { recursive: true });
       await writeFile(join(ws, f), `SECRETFILE ${f}\n`);
     }
+    // a secret by what the file holds, whatever it is named (built here: no key in the repo)
+    const dash = "-".repeat(5);
+    const byContent = {
+      "src/main/resources/signing.txt": `${dash}BEGIN PRIVATE KEY${dash}\nSECRETFILE\n`,
+      "config/cloud.ini": "[default]\naws_secret_access_key = SECRETFILE\n",
+      "deploy/ledger.json": '{"type": "service_account", "private_key": "SECRETFILE"}\n',
+      "web/registry.cfg": ["//registry.forge.example/:_auth", "Token=SECRETFILE\n"].join(""),
+    };
+    for (const [f, t] of Object.entries(byContent)) {
+      await mkdir(dirname(join(ws, f)), { recursive: true });
+      await writeFile(join(ws, f), t);
+    }
+    secrets.push(...Object.keys(byContent));
     await writeFile(join(v, "secret.txt"), "OUTSIDE-SECRET\n");
     await symlink(join(v, "secret.txt"), join(ws, "src/main/resources/leak.txt"));
     await symlink(v, join(ws, "linkdir"));

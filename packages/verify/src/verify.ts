@@ -12,6 +12,7 @@ import {
   lineNamesClaim,
   partsBuildWord,
   partsNamePath,
+  partsNamePathAsPath,
   isSecretPath,
   isBinaryText,
   isLfsPointer,
@@ -982,6 +983,16 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (linesCache.size > LINES_HELD) linesCache.delete(linesCache.keys().next().value!);
     return lines;
   };
+  /**
+   * A file's lines with each comment line read as blank, made once per lines held (a WeakMap on
+   * the array `linesOf` keeps, so it goes when the file leaves the window).
+   */
+  const codeCache = new WeakMap<string[], string[]>();
+  const codeLinesOf = (lines: string[]) => {
+    let code = codeCache.get(lines);
+    if (!code) codeCache.set(lines, (code = lines.map((l) => (isCommentLine(l) ? "" : l))));
+    return code;
+  };
   const deriveEnv: DeriveEnv = { lines: linesOf, files: listed };
   /** One line of a file, as `sanitised` and `quietFact` read the lines a fact cites. */
   const lineAt = (file: string, n: number) => (n >= 1 ? linesOf(file)?.[n - 1] : undefined);
@@ -1064,12 +1075,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       // beside it names (a commented-out old route) is no code, as a main cite's isn't; and a
       // comment line is never one the claim is put together from.
       const partNear = near(ls, p.line);
-      const naming = partNear.filter(
-        (l) =>
-          lineNamesClaim(l, routeOrWord(p.value)) ||
-          lineNamesClaim(l, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") }) ||
-          partsNamePath([l], p.value),
-      );
+      // which lines name the part, looked for only when a comment line is among them (else it
+      // can't be named in a comment only): no regex is built per fact for a part on plain code
+      const naming =
+        claims && partNear.some(isCommentLine)
+          ? partNear.filter(
+              (l) =>
+                lineNamesClaim(l, routeOrWord(p.value)) ||
+                lineNamesClaim(l, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") }) ||
+                partsNamePath([l], p.value),
+            )
+          : [];
       if (
         claims &&
         naming.length &&
@@ -1089,11 +1105,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       );
     }
     // With parts, the claim is put together from code: the cited file's comment lines are read
-    // as blank (review of ADR 0196), so a commented-out line beside the cite names nothing.
+    // as blank (review of ADR 0196), so a commented-out line beside the cite names nothing. The
+    // blanked copy is made once per file (second review: once per fact made a big file quadratic).
     const codeLines =
-      parts.length && !/(^|\/)_redirects$/.test(cite.file)
-        ? lines.map((l) => (isCommentLine(l) ? "" : l))
-        : lines;
+      parts.length && !/(^|\/)_redirects$/.test(cite.file) ? codeLinesOf(lines) : lines;
     // Names a framework derives from what the cited line or a part declares (A-derived).
     let derived: DerivedName[] | undefined;
     const derivedHere = () =>
@@ -1101,6 +1116,11 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         { file: cite.file, line: cite.line },
         ...parts.map((p) => ({ file: p.file, line: p.line })),
       ].flatMap((at) => derivedNamesAt(at.file, linesOf(at.file) ?? [], at.line, deriveEnv)));
+    // A conventional route (`{controller}/{action}`, `[controller]`) is named by its class and
+    // method: a part holding its template lets an identifier name a piece of the path.
+    const conventional = [...parts.map((p) => p.value), ...partLines].some((t) =>
+      /[{[](controller|action)[}\]]/i.test(t),
+    );
     const holdsOn = (lines: string[]) => (c: Claim) =>
       claimOnLines(lines, cite.line, c) ||
       // a framework that routes by file place (Razor Pages, WebForms, Next.js)
@@ -1108,7 +1128,12 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         pageRouteMatches(cite.file, lines, (p) => linesOf(p) !== undefined, c.value)) ||
       (parts.length > 0 &&
         (c.kind === "route"
-          ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
+          ? // second review of ADR 0196: what the parts don't name, the cited lines write as a
+            // path, not as a bare identifier (a method under a commented-out mapping), unless a
+            // part is a conventional route's template, which names its action by the method
+            conventional
+            ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
+            : partsNamePathAsPath(near(lines, cite.line), partLines, c.value)
           : partLines.some((l) => lineNamesClaim(l, c)) ||
             // a word put together from parts (`namespace:task`, a key a helper prefixes)
             (c.kind === "word" &&

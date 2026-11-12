@@ -32,7 +32,9 @@ test("Trust shows the canaries, the audit misread and canary pass-through rates,
   page,
 }) => {
   await open(page, app(), "trust");
-  const panel = page.getByRole("region", { name: "Canaries and the silent error rate" });
+  const panel = page.getByRole("region", {
+    name: "Canaries and the audit: how often a backed claim is wrong",
+  });
   // Nothing scored yet: the commands to run one.
   await expect(panel.getByText(/No canary has been scored yet/)).toBeVisible();
   await expect(panel.getByText("atticus canary plant <repo>")).toBeVisible();

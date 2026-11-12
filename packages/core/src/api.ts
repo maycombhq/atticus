@@ -524,14 +524,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
- * 3.12.0 (beta.27, canaries, ADR 0196): GET /api/trust/canaries (`CanaryView`): the latest canary
- *   report of each repo in reports/canaries/ (what it covers and skipped), the canaries planted on
- *   this machine and not yet scored, and how often a claim graded as backed is wrong as two
- *   numbers side by side, never pooled (`rates`: the audit misread rate from the sample audit's
- *   answers, the canary pass-through rate from the canaries), each with its count and 95%
- *   interval. Files only. Additive only.
+ * 3.13.0 (beta.27, canaries, ADR 0196; 3.12.0 is CS3's): GET /api/trust/canaries (`CanaryView`):
+ *   the latest canary report of each repo in reports/canaries/ (what it covers and skipped), the
+ *   canaries planted on this machine and not yet scored, and how often a claim graded as backed is
+ *   wrong as two numbers side by side, never pooled (`rates`: the audit misread rate from the
+ *   sample audit's answers, a link's answer counted as given; the canary pass-through rate from
+ *   the canaries), each with its count and 95% interval. Files only. Additive only.
  */
-export const API_VERSION = "3.12.0";
+export const API_VERSION = "3.13.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1645,7 +1645,7 @@ export const FreshView = z.object({
 });
 export type FreshViewT = z.infer<typeof FreshView>;
 
-/** 3.12.0 (ADR 0196, Z2): a share with its count and its Wilson interval at 95%. */
+/** 3.13.0 (ADR 0196, Z2): a share with its count and its Wilson interval at 95%. */
 export const CanaryRateView = z.object({
   k: z.number().int(),
   n: z.number().int(),
@@ -1653,7 +1653,7 @@ export const CanaryRateView = z.object({
   low: z.number().nullable(),
   high: z.number().nullable(),
 });
-/** 3.12.0 (ADR 0196): the latest canary of one repo, from its report in reports/canaries/. */
+/** 3.13.0 (ADR 0196): the latest canary of one repo, from its report in reports/canaries/. */
 export const CanaryRepoView = z.object({
   repo: z.string(),
   /** The report's file, relative to the metarepo. */
@@ -1690,7 +1690,7 @@ export const CanaryRepoView = z.object({
   passed: CanaryRateView,
 });
 /**
- * 3.12.0 (ADR 0196): canaries for Map › Trust: the latest canary of each repo, the canaries
+ * 3.13.0 (ADR 0196): canaries for Map › Trust: the latest canary of each repo, the canaries
  * planted on this machine and not yet scored, and how often a claim graded as backed is wrong as
  * two numbers side by side (the audit misread rate and the canary pass-through rate), each with
  * its count and interval, never pooled. Files only: an audit's link answer is counted as given,
