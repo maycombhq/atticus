@@ -201,6 +201,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
           [--yes]                      Apply the step that adopts a catalog from before beta.27 into source slots (ADR 0195); without it the step only shows what it would write
+          [--accept-changes <n>]       With --yes: accept the record files the first build would change, with the count the step listed
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
