@@ -1,7 +1,7 @@
 {
   "invariant": "equivalence",
-  "note": "equivalence: the catalog differs from a fresh build of the final observations in 6 files: + Component/payments-api (forge-payments); + System/customers (no repo); + System/ledger (no repo); + System/notify (no repo); + System/orders (no repo); + System/payments (forge-payments)",
-  "seed": 7,
+  "note": "equivalence: the catalog differs from a fresh build of the final observations in 1 files: + Component/ledger-api (forge-ledger)",
+  "seed": 11,
   "estate": {
     "repos": [
       {
@@ -26,17 +26,17 @@
   },
   "commands": [
     {
-      "t": "scan-not-cloned",
-      "slot": 0
-    },
-    {
-      "t": "archive",
-      "slot": 0
+      "t": "scan-subset",
+      "slots": [1, 0]
     },
     {
       "t": "hand-edit",
       "pick": 0,
-      "how": "change"
+      "how": "delete"
+    },
+    {
+      "t": "prune",
+      "yes": false
     }
   ]
 }

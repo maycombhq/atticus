@@ -1,20 +1,28 @@
-import type { Base, Code, Estate, ManifestRepo } from "./estate.js";
+import { served, type Base, type Code, type Estate, type ManifestRepo } from "./estate.js";
 
 /**
  * The model of ADR 0195 point 10: small, and not a copy of the system. Per repo (by slot, so a
  * rename keeps it) what the person's estate is now (its code and commit, whether the manifests
- * list it, whether it is archived), and the two observations the ADR keeps: the readers' last
- * full read and the facts of the last `verify --write` that succeeded. On top: the curated
- * decisions, the answers, the hand edits not yet made curated or discarded, and what changed
- * since the last write (what explains a removal). From these, plain rules say which repo has
- * which source and which cross-repo arrows may exist.
+ * list it, whether it is archived), and the observations the ADR keeps: the readers' last full
+ * read, the facts of the last `verify --write` that succeeded, and what `atticus upgrade`
+ * adopted (legacy readers slots and legacy joins). On top: the curated decisions, the answers,
+ * the hand edits not yet made curated or discarded, and what changed since the last write (what
+ * explains a removal). From these, plain rules say which repo has which source, which records a
+ * build must make, and which cross-repo arrows may and must exist.
+ *
+ * A command whose build a guard refused changes no observation: its update is applied only when
+ * a confirmation of it succeeds. `built` is the model as of the last write that succeeded, which
+ * is what the catalog on disk must agree with; an input a person changed since (a curated file,
+ * an answer, the manifest) is in the model at once and in `built` once a build takes it.
  */
 
 export interface Observation {
   code: Code;
   commit: string;
-  /** The repo's id when it was observed. */
+  /** The repo's id when it was observed: the slot file's name. */
   id: string;
+  /** A readers slot `atticus upgrade` adopted (status legacy): the old catalog's records. */
+  legacy?: boolean;
 }
 
 export interface RepoState {
@@ -31,29 +39,70 @@ export interface RepoState {
   hosts: string[];
 }
 
+/** A curated decision, the person's (a file the harness wrote) or drafted from a hand edit. */
 export interface Decision {
-  /** The curated file's id. */
-  id: string;
-  action: "suppress" | "assert";
+  /** The curated file's id, when the harness wrote it. */
+  id?: string;
+  action: "suppress" | "assert" | "alias";
   /** The record id it targets. */
   target: string;
-  /** The endpoint it targets, by repo slot, method and path (how the model knows it is built). */
-  slot: number;
-  method: string;
-  path: string;
+  /** The target's kind. */
+  kind: string;
+  /** An Endpoint target's `component method path`: how the model knows it is built. */
+  key?: string;
+  /** An assert's fields; an alias's folded record ids. */
+  value?: Record<string, unknown> | string[];
   /** The write count when it was added: its effect is checked after a later write. */
   since: number;
+  from: "person" | "edits";
+  /** An assert drafted for a record a person added by hand. */
+  added?: boolean;
+}
+
+/** A file under catalog/generated/ a person changed, deleted or added by hand. */
+export interface HandEdit {
+  path: string;
+  how: "change" | "delete" | "add";
+  kind: string;
+  id: string;
+  /** An Endpoint's `component method path`. */
+  key?: string;
+  /** An Interface's arrow, `from|to|method|path`. */
+  arrow?: string;
+  /** A changed record's new field values. */
+  value?: Record<string, unknown>;
+}
+
+/** A cross-repo Interface `atticus upgrade` adopted into legacy/joins.json. */
+export interface LegacyJoin {
+  /** `from|to|method|path`, as `arrowKey` makes it. */
+  key: string;
+  id: string;
+  from: number;
+  to: number;
 }
 
 /** What changed since the last write: what may explain a record leaving the catalog. */
 export interface Changes {
   /** Slots whose observation, listing or id changed. */
   slots: Set<number>;
-  /** Record ids a curated decision added or removed since. */
+  /** Record ids a curated decision added or removed since (an alias's folded ids too). */
   curated: Set<string>;
   /** Hosts a person answered since. */
   answered: Set<string>;
 }
+
+export const noChanges = (): Changes => ({
+  slots: new Set(),
+  curated: new Set(),
+  answered: new Set(),
+});
+
+export const endpointKey = (component: string, method: string, path: string) =>
+  `${component} ${method} ${path}`;
+
+export const arrowKey = (from: string, to: string, method: string, path: string) =>
+  `${from}|${to}|${method}|${path}`;
 
 export class Model {
   repos: RepoState[];
@@ -63,13 +112,17 @@ export class Model {
   /** Host → slot a person said answers on it, or "none". */
   answers = new Map<string, number | "none">();
   /** Generated files edited by hand and not yet made curated or discarded. */
-  handEdits: string[] = [];
+  handEdits: HandEdit[] = [];
   /** Successful writes so far. */
   writes = 0;
-  changes: Changes = { slots: new Set(), curated: new Set(), answered: new Set() };
-  upgraded = false;
+  changes: Changes = noChanges();
+  /** The metarepo holds a beta.26 catalog (catalog/generated/, no catalog/sources/): upgrade adopts it. */
+  beta26 = false;
+  legacyJoins: LegacyJoin[] = [];
   /** Every code each repo has had, at any commit: what a join with it may ever have used. */
   history = new Map<number, Code[]>();
+  /** The model as of the last write that succeeded (none yet: the empty catalog). */
+  built: Model | undefined;
 
   constructor(estate: Estate, commits: string[]) {
     this.repos = estate.repos.map((r, slot) => ({
@@ -91,8 +144,9 @@ export class Model {
     return this.repos.filter((r) => r.listed && !r.archived);
   }
 
-  slotOf(id: string): RepoState | undefined {
-    return this.repos.find((r) => r.listed && r.id === id);
+  isLive(slot: number): boolean {
+    const r = this.repos[slot];
+    return !!r && r.listed && !r.archived;
   }
 
   slotOfComponent(component: string): RepoState | undefined {
@@ -110,14 +164,19 @@ export class Model {
     );
   }
 
-  /** ADR 0195 point 2.1: the facts slot when there is one, else the readers slot, else none. */
-  source(slot: number): { from: "facts" | "readers"; obs: Observation } | undefined {
+  /**
+   * ADR 0195 point 2.1: the facts slot when there is one, else the readers slot (a full read or
+   * the upgrade's legacy one), else none. A slot is the repo's when it is under the repo's id:
+   * a slot left under an old id (an undone rename) is orphaned.
+   */
+  source(slot: number): { from: "facts" | "readers" | "legacy"; obs: Observation } | undefined {
     const r = this.repos[slot]!;
     if (!r.listed || r.archived) return undefined;
     const f = this.facts.get(slot);
-    if (f) return { from: "facts", obs: f };
+    if (f && f.id === r.id) return { from: "facts", obs: f };
     const x = this.readers.get(slot);
-    return x ? { from: "readers", obs: x } : undefined;
+    if (x && x.id === r.id) return { from: x.legacy ? "legacy" : "readers", obs: x };
+    return undefined;
   }
 
   /** The repo a call's host reaches: the listed repo whose hosts name it. */
@@ -125,36 +184,121 @@ export class Model {
     return this.live().find((r) => r.hosts.includes(host));
   }
 
+  /** The legacy joins still in force: both repos the build reads (ADR point 6). */
+  liveLegacy(): LegacyJoin[] {
+    return this.legacyJoins.filter((j) => this.isLive(j.from) && this.isLive(j.to));
+  }
+
   /**
-   * Every cross-repo arrow the current sources and inputs allow, as `from|to|method|path`: a
-   * call in the caller's source to a host a live repo lists, and a topic the caller's source
-   * publishes that a live repo's source listens to. An arrow outside this set outlives its
-   * caller or its callee (the "links are live" invariant).
+   * The cross-repo arrows, as `from|to|method|path`. `admitted`: every arrow the current sources
+   * and inputs allow (a call in the caller's source to a host a live repo lists; a topic the
+   * caller's source publishes that a live repo's source listens to; a legacy join in force); an
+   * arrow outside it outlives its caller or its callee (links are live). `required`: the arrows
+   * a build must make: those between two repos read from current, non-legacy sources, and every
+   * legacy join in force (point 6: a legacy join stays until it is derived again, and leaves
+   * without that only when one of its repos is removed or archived). A call is required to
+   * join only when the callee's source serves that method and path. An arrow from or to a
+   * legacy readers slot, or to a repo with no source, is admitted but not required: the old
+   * catalog's records hold no calls to re-derive it from.
    */
-  allowedArrows(): Set<string> {
-    const out = new Set<string>();
+  arrows(): { admitted: Set<string>; required: Set<string> } {
+    const admitted = new Set<string>();
+    const required = new Set<string>();
+    const add = (k: string, must: boolean) => {
+      admitted.add(k);
+      if (must) required.add(k);
+    };
     for (const c of this.live()) {
       const s = this.source(c.slot);
       if (!s) continue;
       for (const call of s.obs.code.calls) {
         const e = this.calleeOf(call.host);
-        if (e && e.slot !== c.slot)
-          out.add(`${c.base.component}|${e.base.component}|${call.method}|${call.path}`);
+        if (!e || e.slot === c.slot) continue;
+        const t = this.source(e.slot);
+        const serves =
+          !!t &&
+          served(e.base, t.obs.code).some((x) => x.method === call.method && x.path === call.path);
+        add(
+          arrowKey(c.base.component, e.base.component, call.method, call.path),
+          s.from !== "legacy" && !!t && t.from !== "legacy" && serves,
+        );
       }
-      for (const t of s.obs.code.publishes)
+      for (const topic of s.obs.code.publishes)
         for (const e of this.live()) {
           if (e.slot === c.slot) continue;
-          if (this.source(e.slot)?.obs.code.consumes.includes(t))
-            out.add(`${c.base.component}|${e.base.component}|EVENT|${t}`);
+          const t = this.source(e.slot);
+          if (t?.obs.code.consumes.includes(topic))
+            add(
+              arrowKey(c.base.component, e.base.component, "EVENT", topic),
+              s.from !== "legacy" && t.from !== "legacy",
+            );
         }
+    }
+    for (const j of this.liveLegacy()) add(j.key, true);
+    return { admitted, required };
+  }
+
+  allowedArrows(): Set<string> {
+    return this.arrows().admitted;
+  }
+
+  /** The suppress decisions in force, by target id. */
+  suppressed(): Set<string> {
+    return new Set(this.curated.filter((d) => d.action === "suppress").map((d) => d.target));
+  }
+
+  /** Every REST endpoint the build must make, as `component method path` (ADR point 2). */
+  endpoints(): Set<string> {
+    const out = new Set<string>();
+    for (const r of this.live()) {
+      const s = this.source(r.slot);
+      if (!s) continue;
+      for (const e of served(r.base, s.obs.code))
+        out.add(endpointKey(r.base.component, e.method, e.path));
+    }
+    for (const d of this.curated) {
+      if (!d.key) continue;
+      if (d.action === "suppress") out.delete(d.key);
+      if (d.action === "assert" && d.added) out.add(d.key);
     }
     return out;
   }
 
-  /** Whether an endpoint is in the build: its repo's source serves it. */
-  built(d: Pick<Decision, "slot" | "method" | "path">): boolean {
-    const s = this.source(d.slot);
-    return !!s?.obs.code.endpoints.some((e) => e.method === d.method && e.path === d.path);
+  /**
+   * Every repo's own Component the build must make: each repo it reads that has a source, the
+   * readers' (they read the build file) or facts that name it (a facts file with no fact names
+   * no component).
+   */
+  components(): Set<string> {
+    const gone = this.suppressed();
+    const names = (r: RepoState) => {
+      const s = this.source(r.slot);
+      if (!s) return false;
+      if (s.from !== "facts") return true;
+      const c = s.obs.code;
+      return served(r.base, c).length + c.calls.length + c.publishes.length + c.consumes.length > 0;
+    };
+    return new Set(
+      this.live()
+        .filter((r) => names(r) && !gone.has(r.base.component))
+        .map((r) => r.base.component),
+    );
+  }
+
+  /** Whether an Endpoint decision's target is in the build: its repo's source serves it. */
+  serves(d: Pick<Decision, "key">): boolean {
+    if (!d.key) return false;
+    for (const r of this.live()) {
+      const s = this.source(r.slot);
+      if (
+        s?.obs.code &&
+        served(r.base, s.obs.code).some(
+          (e) => d.key === endpointKey(r.base.component, e.method, e.path),
+        )
+      )
+        return true;
+    }
+    return false;
   }
 
   manifest(): ManifestRepo[] {
@@ -165,14 +309,18 @@ export class Model {
 
   /** A write succeeded (and was counted): what changed before it explained it, and is cleared. */
   wrote(): void {
-    this.changes = { slots: new Set(), curated: new Set(), answered: new Set() };
+    this.changes = noChanges();
   }
 
-  /** A deep copy, for running two orders of the same commands from one state. */
-  clone(): Model {
+  /**
+   * A deep copy, for two orders of the same commands and for undo; with `withBuilt`, its
+   * `built` copied too (one level: a `built` has none of its own).
+   */
+  clone(withBuilt = true): Model {
     const copy = Object.create(Model.prototype) as Model;
-    const plain = structuredClone({ ...this });
-    // The pool entries are shared by reference in the estate; a copy keeps them equal by value.
-    return Object.assign(copy, plain);
+    const { built, ...rest } = this;
+    return Object.assign(copy, structuredClone(rest), {
+      built: withBuilt ? built?.clone(false) : undefined,
+    });
   }
 }

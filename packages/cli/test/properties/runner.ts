@@ -2,35 +2,37 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
-import { Cmd, commandArbs, type Ctx, type Desc } from "./commands.js";
+import { Cmd, commandArbs, GENERATED, prefixArb, stats, type Ctx, type Desc } from "./commands.js";
 import { POOL, estateArb, type Code, type Estate } from "./estate.js";
 import {
-  checkEquivalence,
   INVARIANTS,
   InvariantError,
   KNOWN_FAILURES,
+  settleAndCompare,
   type Invariant,
 } from "./invariants.js";
 import { changedPaths, World } from "./world.js";
 
 export const REGRESSIONS = join(dirname(fileURLToPath(import.meta.url)), "regressions");
 
+/** The test file, for a replay's `-t` filter and path. */
+export const TEST_FILE = "test/properties/catalog-properties.test.ts";
+
 /**
- * How many sequences, from which seed, checking which invariants (ADR 0195 point 10): 100 in
- * `pnpm check`, 2,000 in the nightly script. Every run prints its seed; a failure prints the
- * seed, the path and the commands' replay path fast-check gives, and these replay it exactly
- * (with the same ATTICUS_PROPERTIES_RUNS and _INVARIANTS):
+ * How many sequences, how long, from which seed, checking which invariants (ADR 0195 point 10):
+ * 100 sequences of up to 10 commands in `pnpm check`, 2,000 of up to 20 in the nightly job.
+ * Every run prints its seed; a failure prints a `Replay:` line that runs it again exactly.
  *
- *   ATTICUS_PROPERTIES_SEED=<seed> ATTICUS_PROPERTIES_PATH=<path> \
- *     ATTICUS_PROPERTIES_COMMANDS=<replay path> pnpm --filter @maycombhq/cli \
- *     exec vitest run --config ../../vitest.shared.mjs test/properties
- *
- * ATTICUS_PROPERTIES_INVARIANTS=all (or a comma list) checks known failures too;
- * ATTICUS_PROPERTIES_RECORD=1 writes a failing run's shrunk counterexample to regressions/.
+ * - ATTICUS_PROPERTIES_RUNS, _MAX_COMMANDS: the count and the length.
+ * - ATTICUS_PROPERTIES_SEED, _PATH, _COMMANDS: a seed, fast-check's path and its replay path.
+ * - ATTICUS_PROPERTIES_INVARIANTS=all (or a comma list) checks known failures too.
+ * - ATTICUS_PROPERTIES_RECORD=1 writes a failing run's shrunk counterexample to regressions/.
+ * - ATTICUS_PROPERTIES_VERBOSE=1 prints, per command, how often it ran and acted and its time.
  */
 export function settings() {
   const env = process.env;
   const runs = Number(env.ATTICUS_PROPERTIES_RUNS ?? 100);
+  const maxCommands = Number(env.ATTICUS_PROPERTIES_MAX_COMMANDS ?? 10);
   const seed = env.ATTICUS_PROPERTIES_SEED
     ? Number(env.ATTICUS_PROPERTIES_SEED)
     : Date.now() % 2 ** 31;
@@ -45,7 +47,17 @@ export function settings() {
         ? INVARIANTS
         : (asked.split(",").map((s) => s.trim()) as Invariant[]),
   );
-  return { runs, seed, path, commands, enabled, record: env.ATTICUS_PROPERTIES_RECORD === "1" };
+  return {
+    runs,
+    maxCommands,
+    seed,
+    path,
+    commands,
+    asked,
+    enabled,
+    record: env.ATTICUS_PROPERTIES_RECORD === "1",
+    verbose: env.ATTICUS_PROPERTIES_VERBOSE === "1",
+  };
 }
 
 /** A shrunk counterexample, as committed under regressions/. */
@@ -80,16 +92,30 @@ export function loadRegressions(): Recorded[] {
     .map((f) => JSON.parse(readFileSync(join(REGRESSIONS, f), "utf8")) as Recorded);
 }
 
-/** Run one sequence of commands on a fresh metarepo, checking `enabled` after each and at the end. */
+/**
+ * Run one sequence on a fresh metarepo: the prefix's commands (a beta.26 metarepo and its
+ * upgrade, or none), then `cmds`, checking `enabled` after each, then what is pending settled
+ * and the catalog compared with a fresh build.
+ */
 export async function runSequence(
   estate: Estate,
+  prefix: Desc[],
   cmds: Iterable<fc.AsyncCommand<Ctx, World>>,
   enabled: ReadonlySet<Invariant>,
+  then?: (w: World) => Promise<void>,
 ): Promise<void> {
   const w = await World.create(estate);
   try {
-    await fc.asyncModelRun(() => ({ model: { m: w.model, w, enabled }, real: w }), cmds);
-    if (enabled.has("equivalence")) await checkEquivalence(w);
+    const ctx: Ctx = { m: w.model, w, enabled };
+    const setup = () => ({ model: ctx, real: w });
+    if (prefix.length)
+      await fc.asyncModelRun(
+        setup,
+        prefix.map((d) => new Cmd(d)),
+      );
+    await fc.asyncModelRun(setup, cmds);
+    await settleAndCompare(ctx, (d) => new Cmd(d).run(ctx, w));
+    await then?.(w);
   } finally {
     await w.dispose();
   }
@@ -104,6 +130,7 @@ export function replay(r: Recorded): Promise<void> {
   }
   return runSequence(
     e,
+    [],
     r.commands.map((d) => new Cmd(d)),
     new Set([r.invariant]),
   );
@@ -112,6 +139,7 @@ export function replay(r: Recorded): Promise<void> {
 export const sequences = (maxCommands: number, replayPath?: string) =>
   fc.tuple(
     estateArb,
+    prefixArb,
     fc.commands(commandArbs(), { maxCommands, ...(replayPath ? { replayPath } : {}) }),
   );
 
@@ -136,27 +164,33 @@ export function pairOf(e: Estate, [x, y, gap]: [boolean, boolean, number]): [Des
   return [write(x, 0), write(y, 1 + (gap % (n - 1)))];
 }
 
-/** Order independence: the two writes in either order give the same catalog and slots. */
-export async function checkOrder(e: Estate, prefix: Desc[], pair: [Desc, Desc]): Promise<void> {
+/**
+ * Order independence: the two writes in either order give the same catalog and slots. A write
+ * a guard refused is confirmed with its listed count, as a person would, so both orders end
+ * with both writes made.
+ */
+export async function checkOrder(
+  e: Estate,
+  prefix: Desc[],
+  pair: [Desc, Desc],
+  then?: (w: World) => Promise<void>,
+): Promise<void> {
   const none = new Set<Invariant>();
   const one = await World.create(e);
   let two: World | undefined;
+  const runAll = async (w: World, ds: Desc[]) => {
+    const ctx: Ctx = { m: w.model, w, enabled: none };
+    for (const d of ds) {
+      await new Cmd(d).run(ctx, w);
+      if (w.pending?.removals) await new Cmd({ t: "confirm-removals" }).run(ctx, w);
+    }
+  };
   try {
-    await fc.asyncModelRun(
-      () => ({ model: { m: one.model, w: one, enabled: none }, real: one }),
-      prefix.map((d) => new Cmd(d)),
-    );
+    await runAll(one, prefix);
     two = await one.copy();
-    const w2 = two;
-    await fc.asyncModelRun(
-      () => ({ model: { m: one.model, w: one, enabled: none }, real: one }),
-      [new Cmd(pair[0]), new Cmd(pair[1])],
-    );
-    await fc.asyncModelRun(
-      () => ({ model: { m: w2.model, w: w2, enabled: none }, real: w2 }),
-      [new Cmd(pair[1]), new Cmd(pair[0])],
-    );
-    const [a, b] = [await one.snap(), await w2.snap()];
+    await runAll(one, [pair[0], pair[1]]);
+    await runAll(two, [pair[1], pair[0]]);
+    const [a, b] = [await one.snap(), await two.snap()];
     const d = [
       ...changedPaths(a.generated, b.generated).map((p) => `catalog/generated/${p}`),
       ...changedPaths(a.sources, b.sources).map((p) => `catalog/sources/${p}`),
@@ -166,6 +200,7 @@ export async function checkOrder(e: Estate, prefix: Desc[], pair: [Desc, Desc]):
         "order-independence",
         `${JSON.stringify(pair[0])} then ${JSON.stringify(pair[1])} differs from the other order in ${d.slice(0, 6).join(", ")}`,
       );
+    await then?.(one);
   } finally {
     await one.dispose();
     await two?.dispose();
@@ -204,7 +239,64 @@ export interface Failure {
   commands: Desc[];
   /** fast-check's replayPath of the command sequence, for ATTICUS_PROPERTIES_COMMANDS. */
   replay?: string;
+  /** The test's name, for the replay's `-t`. */
+  test?: string;
   error: unknown;
+}
+
+/** How often each command acted, and the run's time by command: for coverage and the budget. */
+export function statsTable(): string {
+  const rows = [...new Set([...GENERATED, ...stats.ran.keys()])]
+    .map((t) => ({
+      t,
+      ran: stats.ran.get(t) ?? 0,
+      acted: stats.acted.get(t) ?? 0,
+      ms: Math.round(stats.ms.get(t) ?? 0),
+    }))
+    .sort((a, b) => b.ms - a.ms);
+  return [
+    "command               ran  acted      ms",
+    ...rows.map(
+      (r) =>
+        `${r.t.padEnd(20)} ${String(r.ran).padStart(4)} ${String(r.acted).padStart(6)} ${String(r.ms).padStart(7)}`,
+    ),
+    `refusals by guard: ${[...stats.guards].map(([g, n]) => `${g} ${n}`).join(", ") || "none"}`,
+    `system calls: ${stats.calls}, succeeded: ${stats.succeeded}`,
+  ].join("\n");
+}
+
+/**
+ * The commands whose state comes from the system's own earlier success: an answer needs a
+ * question a scan asked, a hand edit or a curated decision needs records written, a confirmation
+ * needs a guard's refusal, undo and `again` a write before them.
+ */
+const NEEDS_SUCCESS = new Set<string>([
+  "answer",
+  "curate",
+  "uncurate",
+  "hand-edit",
+  "discard-edits",
+  "curate-edits",
+  "confirm-removals",
+  "undo",
+  "again",
+]);
+
+/**
+ * The commands that never acted in a run, so the run tested nothing of them: the generators
+ * must weight them up. A system that refused or lacked most of what it was asked (today's
+ * writers) never reaches the states the commands in NEEDS_SUCCESS start from; completeness, not
+ * coverage, is what fails it, so only the others are required of it. A confirmation of a large
+ * removal is required only after a refusal for one.
+ */
+export function neverActed(): { idle: string[]; lenient: boolean } {
+  const lenient = stats.succeeded < stats.calls / 2;
+  return {
+    lenient,
+    idle: GENERATED.filter((t) => !stats.acted.get(t))
+      .filter((t) => !lenient || !NEEDS_SUCCESS.has(t))
+      .filter((t) => t !== "confirm-removals" || !!stats.guards.get("large-removals")),
+  };
 }
 
 /**
@@ -221,6 +313,7 @@ export async function search(o: {
   maxCommands?: number;
   /** fast-check's replayPath of the command sequence to replay. */
   commands?: string;
+  test?: string;
 }): Promise<Failure | undefined> {
   const params = { numRuns: o.runs, seed: o.seed, ...(o.path ? { path: o.path } : {}) };
   let found: { estate: Estate; commands: Desc[]; replay?: string } | undefined;
@@ -242,16 +335,20 @@ export async function search(o: {
     }
   } else {
     const run = await fc.check(
-      fc.asyncProperty(sequences(o.maxCommands ?? 6, o.commands), ([e, cmds]) =>
-        runSequence(e, cmds, o.enabled),
+      fc.asyncProperty(sequences(o.maxCommands ?? 10, o.commands), ([e, prefix, cmds]) =>
+        runSequence(e, prefix, cmds, o.enabled),
       ),
       params,
     );
     r = run;
     if (run.failed && run.counterexample) {
-      const [e, cmds] = run.counterexample[0];
+      const [e, prefix, cmds] = run.counterexample[0];
       const replay = /replayPath="([^"]*)"/.exec(String(cmds))?.[1];
-      found = { estate: e, commands: ranDescs(cmds), ...(replay ? { replay } : {}) };
+      found = {
+        estate: e,
+        commands: [...prefix, ...ranDescs(cmds)],
+        ...(replay ? { replay } : {}),
+      };
     }
   }
   if (!r.failed || !found) return undefined;
@@ -262,6 +359,7 @@ export async function search(o: {
     message: err instanceof Error ? err.message : String(err),
     seed: r.seed,
     ...(r.counterexamplePath ? { path: r.counterexamplePath } : {}),
+    ...(o.test ? { test: o.test } : {}),
     error: err,
   };
   if (o.record && f.invariant) record(f.invariant, f.message, f.seed, f.estate, f.commands);
@@ -270,9 +368,19 @@ export async function search(o: {
 
 /** A failure in words: what broke, how to replay it, and the shrunk commands and estate. */
 export function said(f: Failure): string {
+  const s = settings();
+  const env = [
+    `ATTICUS_PROPERTIES_SEED=${f.seed}`,
+    `ATTICUS_PROPERTIES_PATH=${f.path ?? ""}`,
+    ...(f.replay ? [`ATTICUS_PROPERTIES_COMMANDS=${f.replay}`] : []),
+    `ATTICUS_PROPERTIES_RUNS=${s.runs}`,
+    `ATTICUS_PROPERTIES_MAX_COMMANDS=${s.maxCommands}`,
+    ...(s.asked ? [`ATTICUS_PROPERTIES_INVARIANTS=${s.asked}`] : []),
+  ].join(" ");
+  const filter = f.test ? ` -t ${JSON.stringify(f.test)}` : "";
   return [
     f.message,
-    `Replay: ATTICUS_PROPERTIES_SEED=${f.seed} ATTICUS_PROPERTIES_PATH=${f.path ?? ""}${f.replay ? ` ATTICUS_PROPERTIES_COMMANDS=${f.replay}` : ""}`,
+    `Replay: ${env} pnpm --filter @maycombhq/cli exec vitest run --config ../../vitest.shared.mjs ${TEST_FILE}${filter}`,
     `Shrunk to: ${JSON.stringify(f.commands)}`,
     `Estate: ${JSON.stringify(recordedOf(f.estate))}`,
   ].join("\n");
