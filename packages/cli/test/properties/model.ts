@@ -380,22 +380,29 @@ export class Model {
   }
 
   /**
-   * Every repo's own Component the build must make: each repo it reads that has a source, the
-   * readers' (they read the build file) or facts that name it (a facts file with no fact names
-   * no component).
+   * Whether a repo's source makes any record from code: a readers or legacy slot does (the
+   * readers read the build file, so the repo's own Component at least), a facts slot only when
+   * it holds a fact (a facts file with no fact names nothing: no Component, no Endpoint, no
+   * arrow). A repo with no source makes none.
+   */
+  makesRecords(slot: number): boolean {
+    const r = this.repos[slot]!;
+    const s = this.source(slot);
+    if (!s) return false;
+    if (s.from !== "facts") return true;
+    const c = s.obs.code;
+    return served(r.base, c).length + c.calls.length + c.publishes.length + c.consumes.length > 0;
+  }
+
+  /**
+   * Every repo's own Component the build must make: each repo it reads whose source makes a
+   * record (`makesRecords`).
    */
   components(): Set<string> {
     const gone = this.suppressed();
-    const names = (r: RepoState) => {
-      const s = this.source(r.slot);
-      if (!s) return false;
-      if (s.from !== "facts") return true;
-      const c = s.obs.code;
-      return served(r.base, c).length + c.calls.length + c.publishes.length + c.consumes.length > 0;
-    };
     return new Set(
       this.live()
-        .filter((r) => names(r) && !gone.has(r.base.component))
+        .filter((r) => this.makesRecords(r.slot) && !gone.has(r.base.component))
         .map((r) => r.base.component),
     );
   }

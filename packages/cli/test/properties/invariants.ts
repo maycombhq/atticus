@@ -288,14 +288,17 @@ function unjustified(s: Step): string | undefined {
     return undefined;
   }
   if (o.guard === "empty-catalog") {
-    // ADR point 4: no empty catalog over a full one. The model can't say what a build of no
-    // source holds (the org pack's systems, say), so it accepts the refusal whenever no repo the
-    // build reads has a source and the manifests still list one.
+    // ADR point 4: no empty catalog over a full one. The guard counts records from code; the
+    // model can't say what a build holds besides them (the org pack's systems, say), so it
+    // accepts the refusal whenever no repo the build reads has a source that makes a record and
+    // the manifests still list one. A facts file with no fact makes none (`makesRecords`): with
+    // the ledger's empty facts its only source, archiving payments leaves no record from code,
+    // and the guard is right to refuse (seed 1754877814).
     if (!s.before.generated.size) return "the catalog was empty already";
     if (!s.m.repos.some((r) => r.listed)) return "the manifests list no repo";
-    const read = s.m.live().filter((r) => s.m.source(r.slot));
+    const read = s.m.live().filter((r) => s.m.makesRecords(r.slot));
     if (read.length)
-      return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has" : "have"} a source`;
+      return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has a source that makes" : "have sources that make"} records`;
     return undefined;
   }
   return `the guard ${o.guard ?? "(none)"} isn't one the model can account for here`;
@@ -314,12 +317,14 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   const reasonsOf = (slot: number): RemovalReason[] => {
     const r = m.repos[slot]!;
     // A repo removed or archived changes the manifest, an input too: a record of a join with it
-    // may be reported by any of the three.
-    return !r.listed || unlisted
-      ? ["manifest", "slot", "input"]
-      : r.archived
-        ? ["archived", "slot", "input"]
-        : ["slot"];
+    // may be reported by any of the three. A record of a join between an archived repo and one
+    // whose id no manifest lists (a rename cut short after its slots) involves both: either may
+    // be said (seed 1361807166, its second run).
+    const gone: RemovalReason[] = [
+      ...(!r.listed || unlisted ? (["manifest"] as const) : []),
+      ...(r.listed && r.archived ? (["archived"] as const) : []),
+    ];
+    return gone.length ? [...gone, "slot", "input"] : ["slot"];
   };
   for (const slot of c.slots)
     if (involves(m, [slot], rec) || (JOINED.has(rec.kind) && involves(m, partners(m, slot), rec)))
@@ -361,8 +366,25 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const b = records(s.before.generated);
     const a = records(s.after.generated);
     const reach = [...c.slots].flatMap((x) => partners(s.m, x));
+    // The manifests are an input. Archiving or removing a repo is the person's edit to them,
+    // then a build; when a guard refuses that build, it writes nothing under catalog/ and the
+    // manifest stays as the person left it (ADR 0195 point 4), so the next build that writes,
+    // a scan's say, takes the entry in. A System lists its repos from the manifests: its
+    // `repos` changes with such an entry, though no repo's evidence names it (seed -1183949415).
+    const was = s.modelBefore.built;
+    const entries = [...c.slots].filter((x) => {
+      const a = was?.repos[x];
+      const b = s.m.repos[x];
+      return !!a && !!b && (a.listed !== b.listed || a.archived !== b.archived || a.id !== b.id);
+    });
+    const listsEntry = (r: Rec) =>
+      r.kind === "System" &&
+      Array.isArray(r.repos) &&
+      entries.some((x) => [...idsOf(s.m, x)].some((id) => (r.repos as unknown[]).includes(id)));
     const ok = (r: Rec | undefined) =>
-      involves(s.m, c.slots, r) || (!!r && JOINED.has(r.kind) && involves(s.m, reach, r));
+      involves(s.m, c.slots, r) ||
+      (!!r && JOINED.has(r.kind) && involves(s.m, reach, r)) ||
+      (!!r && listsEntry(r));
     const bad = unchangedSince(s.before.generated, s.after.generated, s.editsBefore).filter(
       (p) => !ok(a.get(p)) && !ok(b.get(p)),
     );
@@ -584,7 +606,17 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         `${s.desc.t} removed ${big.join(", ")} without the removals being confirmed`,
       );
     const edited = editedGone(s);
-    if (n !== gone.size && n !== gone.size + edited.size)
+    // Of the hand-edited records the build no longer makes, the refusal counts those whose
+    // file is still there, changed: a file the person deleted is no removal of the build's (it
+    // is already gone, and the discard confirms it), and a record the person added is none the
+    // build made (seeds 1361807166, 1361868403).
+    const changed = new Set(
+      s.handEditsBefore
+        .filter((e) => e.how === "change")
+        .map((e) => `${e.kind}/${e.id}`)
+        .filter((id) => edited.has(id)),
+    );
+    if (n !== gone.size && n !== gone.size + changed.size)
       fail(
         "large-removals-confirmed",
         `${s.desc.t} was confirmed with --allow-removals ${n}, yet removed ${gone.size} records${edited.size ? ` (and ${edited.size} edited by hand)` : ""}`,
@@ -908,9 +940,14 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
   // confirmed the same way (seed 1351551411: a rename undone leaves its slot under the old id,
   // which the manifests no longer list, so the build lists the repo's records as removals above
   // the limit; ADR 0195 point 7 and the joint review: undo puts back the slots, not the inputs).
+  // A refused command that no longer runs has nothing left to confirm: a refusal writes nothing
+  // (point 4), and its repo has since been archived or removed, so the person can't run it again
+  // and its listing is moot (seed 1754877814: verify --write of payments refused for a removal,
+  // then payments archived). The build of the rest settles.
   let built = m.beta26;
   for (let i = 0; i < 8; i++) {
     const p = w.pending;
+    const steps = w.steps;
     if (p?.removals && (p.confirm.allowRemovals !== p.removals.count || !m.handEdits.length))
       await run({ t: "confirm-removals" });
     else if (m.handEdits.length) await run({ t: "discard-edits" });
@@ -918,6 +955,7 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
       built = true;
       await run({ t: "build" });
     } else break;
+    if (p && w.steps === steps && w.pending === p) w.pending = undefined;
   }
   if (!ctx.enabled.has("equivalence") || m.beta26) return;
   // The empty-catalog guard has no confirmation (ADR point 4): a metarepo whose build would hold

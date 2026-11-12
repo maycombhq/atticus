@@ -346,6 +346,58 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
     T,
   );
 
+  it.each([
+    ["archived", "seed -2093340699"],
+    ["removed from the manifests", "seed 1361862919"],
+  ] as const)(
+    "a hand edit to the record of a repo %s, not yet built: edits --curate drafts the assert against the record as the last build made it (CS4 %s)",
+    async (how, _seed) => {
+      const root = await scanned();
+      // The person archives the ledger in the manifest, or takes its entry out. The build that
+      // follows refuses (the removal is large) and writes nothing, so the catalog still holds the
+      // ledger's records. The build no longer makes them, and the readers slot holds them as the
+      // readers gave them (the build's merge combines a spec's endpoint with the code's).
+      const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+      const { writeFileSync } = await import("node:fs");
+      const was = readFileSync(manifest, "utf8");
+      const now =
+        how === "archived"
+          ? was.replace("  - id: forge-ledger\n", "  - id: forge-ledger\n    archived: true\n")
+          : was.replace(/^ {2}- id: forge-ledger\n(?: {4}.*\n|\n)*/m, "");
+      expect(now).not.toBe(was);
+      writeFileSync(manifest, now);
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const file = readdirSync(dir)
+        .sort()
+        .find((n) => n.startsWith("ledger-api."));
+      expect(file).toBeDefined();
+      const id = file!.replace(/\.yaml$/, "");
+      const path = join(dir, file!);
+      const text = readFileSync(path, "utf8");
+      const auth = /^auth: mtls$/m.test(text) ? "basic" : "mtls";
+      writeFileSync(path, text.replace(/^auth: .*\n/m, "") + `auth: ${auth}\n`);
+      const curate = await run([
+        "catalog",
+        "edits",
+        "--curate",
+        "--root",
+        root,
+        "--by",
+        "pat",
+        "--json",
+      ]);
+      expect(curate.code, curate.out + curate.err).toBe(0);
+      const report = JSON.parse(curate.out) as { decisions: string[]; left: unknown[] };
+      expect(report.left).toEqual([]);
+      expect(report.decisions).toHaveLength(1);
+      const decision = readFileSync(join(root, report.decisions[0]!), "utf8");
+      expect(decision).toMatch(new RegExp(`^target: ${id.replace(/\./g, "\\.")}$`, "m"));
+      // The edit alone is asserted, nothing else the build makes of the record.
+      expect(decision).toMatch(new RegExp(`^value:\\n {2}auth: ${auth}\\n(?! )`, "m"));
+    },
+    T,
+  );
+
   it(
     "catalog undo lists the builds kept and takes back the latest only with --yes; it can be undone",
     async () => {
