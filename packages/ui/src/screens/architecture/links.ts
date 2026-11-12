@@ -140,6 +140,71 @@ export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefin
   return { kind: "calls", calls, ask };
 }
 
+/**
+ * Beta.27: a link a gateway proxy's routing made: no line of a caller's (joined by its path or
+ * the proxy's BasePath), so no call of its own to correct (`linkBasis`'s `routing`).
+ */
+export const isRoutingLink = (j: Join): boolean =>
+  j.how !== "declared" && !j.dependency && callerLines(j).length === 0;
+
+/** A routing link's proxy lines: each hop's line that names its repo, once each. */
+function hopLines(j: Join): { repo: string; at: string }[] {
+  const seen = new Set<string>();
+  const out: { repo: string; at: string }[] = [];
+  for (const e of j.hops) {
+    if (!e.repo || !splitAt(e.at)) continue;
+    const k = `${e.repo}\u0000${e.at}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ repo: e.repo, at: e.at });
+  }
+  return out;
+}
+
+/** The proxy repos whose facts a routing link's actions read: its hops'. */
+export const proxyRepos = (joins: readonly Join[]): string[] => [
+  ...new Set(joins.filter(isRoutingLink).flatMap((j) => hopLines(j).map((l) => l.repo))),
+];
+
+/** An open question about where a proxy's route goes, and the proxy repo it is asked of. */
+export interface RouteQuestion {
+  id: string;
+  question: string;
+  repo: string;
+}
+
+/**
+ * Beta.27: what does correct a link a proxy's routing made, of the routing links among `joins`:
+ * the open questions that read its proxy lines (a proxy's routes are asked once per host or path
+ * prefix, the question citing its forwarding call's line), and the forwarding line itself, whose
+ * facts take Correct this: the hop lines that cite a call, or, with none, those that cite any
+ * fact. Each once; none when the proxy's facts hold nothing on its lines.
+ */
+export function routingActions(
+  joins: readonly Join[],
+  viewOf: (repo: string) => FactsView | undefined,
+): { questions: RouteQuestion[]; forwarding: { repo: string; at: string }[] } {
+  const questions = new Map<string, RouteQuestion>();
+  const forwarding = new Map<string, { repo: string; at: string }>();
+  for (const j of joins.filter(isRoutingLink)) {
+    const calls: { repo: string; at: string }[] = [];
+    const any: { repo: string; at: string }[] = [];
+    for (const l of hopLines(j)) {
+      const v = viewOf(l.repo);
+      const at = splitAt(l.at);
+      if (!v || !at) continue;
+      for (const q of v.questions.filter((x) => x.evidence.includes(`${at.file}:${at.line}`)))
+        if (!questions.has(q.id))
+          questions.set(q.id, { id: q.id, question: q.question, repo: l.repo });
+      const hits = hitsAt(v, at.file, at.line).filter((h) => !h.step);
+      if (hits.some((h) => h.fact.kind === "call")) calls.push(l);
+      else if (hits.length) any.push(l);
+    }
+    for (const l of calls.length ? calls : any) forwarding.set(`${l.repo}\u0000${l.at}`, l);
+  }
+  return { questions: [...questions.values()], forwarding: [...forwarding.values()] };
+}
+
 /** The repos whose facts a link's correction reads: its caller's. */
 export const callerRepos = (joins: readonly Join[]): string[] => [
   ...new Set(joins.flatMap((j) => (j.how === "declared" ? [] : callerLines(j).map((l) => l.repo)))),

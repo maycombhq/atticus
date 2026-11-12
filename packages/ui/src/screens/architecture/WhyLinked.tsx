@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, writtenOf, type Loaded } from "../../api/client.js";
-import { Citation, useEvidence, type FactsView } from "../../app/evidence.js";
+import { Citation, CitationDetails, useEvidence, type FactsView } from "../../app/evidence.js";
 import { escapeCloses, focusIfLost } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { CopyButton, message } from "../run/shared.js";
@@ -20,10 +20,13 @@ import {
   callFactsOf,
   dependencyBatch,
   dependencyCorrections,
+  isRoutingLink,
   joinWhat,
   linkDependenciesOf,
   linkCorrection,
   predict,
+  proxyRepos,
+  routingActions,
   tickedOf,
   type Join,
   type LinkFix,
@@ -925,26 +928,154 @@ function DeclaredLinkWrong(p: { join: Join }) {
   return <DeclaredLinkWrongView join={p.join} of={{ ...of, reload }} />;
 }
 
+// ------------------------------------------------------------------ a proxy's routing (beta.27)
+
+/** A command and its copy button, under Or in a terminal. */
+function TerminalCommand({ text }: { text: string }) {
+  return (
+    <div className="work-cmd">
+      <code className="mono">{text}</code>
+      <CopyButton text={text} label={W.routing.copy(text)} />
+    </div>
+  );
+}
+
+/** Or in a terminal: the open questions, and each proxy's repo read again with its corrections. */
+function RoutingTerminal({ repos, open }: { repos: readonly string[]; open?: boolean }) {
+  return (
+    <details className="work-terminal li-terminal" open={open}>
+      <summary>{W.routing.terminal}</summary>
+      <TerminalCommand text="atticus questions" />
+      {repos.map((r) => (
+        <TerminalCommand key={r} text={`atticus verify ${r} --write`} />
+      ))}
+    </details>
+  );
+}
+
+/**
+ * Beta.27: what does correct a link a gateway proxy's routing made, which has no line of a
+ * caller's: Answer where it goes, for each open question about where the proxy's route goes (on
+ * Questions), and Correct the proxy's forwarding, which opens the forwarding line's facts with
+ * Correct this in place. With neither, it says so and gives the commands. The proxy's facts are
+ * read first (`of`, as the page's evidence has them). From its state, so tests can render each.
+ */
+export function RoutingActions(p: {
+  joins: readonly Join[];
+  of: (repo: string) => Loaded<FactsView> | undefined;
+  /** The forwarding line whose facts start open (`file:line`). */
+  openAt?: string;
+}) {
+  const R = W.routing;
+  const [openAt, setOpenAt] = useState<string | undefined>(p.openAt);
+  const openers = useRef(new Map<string, HTMLButtonElement | null>());
+  const repos = proxyRepos(p.joins);
+  const states = repos.map((r) => p.of(r));
+  const failed = states.find((s): s is { state: "error"; error: string } => s?.state === "error");
+  if (failed)
+    return (
+      <div className="li-route stack">
+        <p role="alert" className="state error" style={{ margin: 0 }}>
+          {R.failed(failed.error)}
+        </p>
+        <RoutingTerminal repos={repos} open />
+      </div>
+    );
+  if (states.some((s) => !s || s.state === "loading"))
+    return (
+      <p role="status" aria-busy="true" className="ev-say">
+        {R.loading}
+      </p>
+    );
+  const viewOf = (r: string) => {
+    const s = p.of(r);
+    return s?.state === "ready" ? s.data : undefined;
+  };
+  const { questions, forwarding } = routingActions(p.joins, viewOf);
+  if (!questions.length && !forwarding.length)
+    return (
+      <div className="li-route stack">
+        <p className="ev-say" style={{ margin: 0 }}>
+          {R.none}
+        </p>
+        <RoutingTerminal repos={repos} open />
+      </div>
+    );
+  const key = (l: { repo: string; at: string }) => `${l.repo}\u0000${l.at}`;
+  const shown = forwarding.find((l) => key(l) === openAt || l.at === openAt);
+  return (
+    <div className="li-route stack">
+      <div className="li-route-actions">
+        {questions.map((q) => (
+          <a
+            key={q.id}
+            className="btn primary"
+            href={`#/questions/${q.id}`}
+            aria-label={R.answerOf(q.question)}
+          >
+            {R.answer}
+          </a>
+        ))}
+        {forwarding.map((l) => (
+          <button
+            key={key(l)}
+            ref={(b) => {
+              openers.current.set(key(l), b);
+            }}
+            type="button"
+            className="btn"
+            aria-expanded={!!shown && key(shown) === key(l)}
+            aria-label={R.forwardingOf(l.repo, l.at)}
+            onClick={() => setOpenAt((o) => (o === key(l) || o === l.at ? undefined : key(l)))}
+          >
+            {R.forwarding}
+          </button>
+        ))}
+      </div>
+      {shown && (
+        <CitationDetails
+          repo={shown.repo}
+          at={shown.at}
+          of={p.of(shown.repo)}
+          onClose={() => {
+            setOpenAt(undefined);
+            openers.current.get(key(shown))?.focus();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * This link is wrong: the button under a call, the form, its POST and the facts read again.
  * Review of beta.24: a link a person declared offers to withdraw the declaration; one with no
- * line of a caller's (a gateway proxy's routing) says where its forwarding is corrected, as
- * correcting that changes the route for every caller; neither writes a call's correction here.
+ * line of a caller's (a gateway proxy's routing) says that correcting its forwarding changes the
+ * route for every caller, and (beta.27) offers what does: Answer where it goes and the proxy's
+ * forwarding line (RoutingActions); neither writes a call's correction here.
  */
 export function LinkWrong(p: {
   join: Join;
   known: readonly string[];
   /** The call's line was corrected: watch it move when the estate is joined again. */
   onSaved?: (call: string) => void;
+  /** Open at first (tests). */
+  startOpen?: boolean;
 }) {
   const ev = useEvidence();
   const declared = p.join.how === "declared";
   const line = declared ? undefined : callerLine(p.join);
   const repo = line?.repo;
+  const routing = !declared && !p.join.dependency && isRoutingLink(p.join);
+  const proxies = routing ? proxyRepos([p.join]).join("\u0000") : "";
   useEffect(() => {
     if (repo) ev?.need(repo);
   }, [repo, ev]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!p.startOpen);
+  // Beta.27: the proxy's facts, once its routing link's actions are asked for.
+  useEffect(() => {
+    if (open) for (const r of proxies.split("\u0000")) if (r) ev?.need(r);
+  }, [open, proxies, ev]);
   const [saving, setSaving] = useState<LinkSaving>({ state: "idle" });
   const opener = useRef<HTMLButtonElement | null>(null);
   useFocusBack({ open, done: saving.state === "done" }, opener);
@@ -1005,7 +1136,10 @@ export function LinkWrong(p: {
             onClose={() => setOpen(false)}
           />
         ) : !line ? (
-          <p className="ev-say li-note">{W.routingLink}</p>
+          <div className="li-route-left stack">
+            <p className="ev-say li-note">{W.routingLink}</p>
+            {routing && <RoutingActions joins={[p.join]} of={(r) => ev?.of(r)} />}
+          </div>
         ) : (
           <LinkWrongForm
             join={p.join}
@@ -1050,6 +1184,11 @@ export function ArrowWrongForm(p: {
   labelOf?: (id: string) => string;
   /** A caller repo's facts once read; undefined while they load. */
   viewOf: (repo: string) => FactsView | undefined;
+  /**
+   * Beta.27: a gateway proxy's facts, for its routing links' actions, as the page's evidence has
+   * them (loading, failed or read). Left out: read from `viewOf`, undefined there while loading.
+   */
+  proxyOf?: (repo: string) => Loaded<FactsView> | undefined;
   known: readonly string[];
   /** A repo's facts couldn't be read: why. */
   failed?: string;
@@ -1090,6 +1229,39 @@ export function ArrowWrongForm(p: {
   // ones and those ticked.
   const all = (found?.calls.length ?? 0) + ticked.size;
   const n = planned && "body" in planned ? planned.body.items.length : all;
+  // Beta.27: no call of a caller's to correct on the arrow (each a proxy's routing, a person's
+  // declaration, or a line with no call fact): no form and no "Correct all 0 calls", which could
+  // only fail; what each is, and for a proxy's routing what does correct it.
+  const none = !!found && found.calls.length + found.ask.length === 0;
+  const proxyOf =
+    p.proxyOf ??
+    ((r: string): Loaded<FactsView> => {
+      const v = p.viewOf(r);
+      return v ? { state: "ready", data: v } : { state: "loading" };
+    });
+  const routingJoins = (joins ?? []).filter(isRoutingLink);
+  const leftAlone = found && (
+    <div className="li-route-left stack">
+      {found.routing.length > 0 && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {found.routing.length === joins?.length
+            ? W.routing.all(found.routing.length)
+            : A.routing(found.routing.length)}
+        </p>
+      )}
+      {found.declared.length > 0 && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {A.declared(found.declared.length)}
+        </p>
+      )}
+      {found.missing.length > 0 && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {A.missing(found.missing.length)} {A.noCalls}
+        </p>
+      )}
+      {routingJoins.length > 0 && <RoutingActions joins={routingJoins} of={proxyOf} />}
+    </div>
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!joins || saving.state === "done" || saving.state === "working") return;
@@ -1114,6 +1286,13 @@ export function ArrowWrongForm(p: {
   const opener = useRef<HTMLButtonElement | null>(null);
   const result = useRef<HTMLDivElement | null>(null);
   useFocusBack({ open, done: saving.state === "done" }, opener, result);
+  // Every call the view lists, and it lists them all, is a proxy's routing or a declaration: known
+  // without any repo's facts, so the arrow never offers a correction it can't write.
+  const fixedByOthers =
+    listed.length >= p.link.count &&
+    listed.length > 0 &&
+    listed.every((j) => j.how === "declared" || isRoutingLink(j));
+  if (fixedByOthers && leftAlone) return <div className="li-fix li-arrow">{leftAlone}</div>;
   return (
     <div className="li-fix li-arrow">
       <div>
@@ -1147,6 +1326,8 @@ export function ArrowWrongForm(p: {
           <p role="status" aria-busy="true" className="ev-say">
             {joins ? W.loadingFacts : A.loadingCalls}
           </p>
+        ) : none ? (
+          leftAlone
         ) : (
           <form
             className="ev-correct stack li-form"
@@ -1155,11 +1336,11 @@ export function ArrowWrongForm(p: {
             aria-labelledby={`${id}-t`}
           >
             <h4 id={`${id}-t`} className="li-form-title">
-              {A.title(n)}
+              {A.title(n || (found?.ask.length ?? 0))}
             </h4>
             <p className="ev-say">{A.intro}</p>
             <fieldset className="ev-choice">
-              <legend className="sr">{A.title(n)}</legend>
+              <legend className="sr">{A.title(n || (found?.ask.length ?? 0))}</legend>
               {CHOICES.map((c) => (
                 <label key={c} className="li-choice">
                   <input
@@ -1239,10 +1420,14 @@ export function ArrowWrongForm(p: {
               </p>
             )}
             <div className="li-form-actions">
-              {saving.state !== "done" && (
+              {/* Beta.27: never "Correct all 0 calls": with none ticked, what to do instead. */}
+              {saving.state !== "done" && n > 0 && (
                 <button type="submit" className="btn primary" disabled={saving.state === "working"}>
                   {saving.state === "working" ? A.saving : A.save(n)}
                 </button>
+              )}
+              {saving.state !== "done" && n === 0 && problem !== A.pick.need && (
+                <span className="ev-say">{A.pick.need}</span>
               )}
               <button type="button" className="btn" onClick={() => setOpen(false)}>
                 {COPY.evidence.close}
@@ -1318,6 +1503,11 @@ export function ArrowWrong(p: {
   useEffect(() => {
     for (const r of key.split("\u0000")) if (r) ev?.need(r);
   }, [key, ev]);
+  // Beta.27: a proxy's routing links' facts, for Answer where it goes and its forwarding line.
+  const proxies = proxyRepos(joins ?? []).join("\u0000");
+  useEffect(() => {
+    for (const r of proxies.split("\u0000")) if (r) ev?.need(r);
+  }, [proxies, ev]);
   const [saving, setSaving] = useState<ArrowSaving>({ state: "idle" });
   if (!listed.length) return null;
   const viewOf = (r: string) => {
@@ -1350,6 +1540,7 @@ export function ArrowWrong(p: {
       {...(capped && p.callsPath && full.state === "error" ? { callsFailed: full.error } : {})}
       {...(p.labelOf ? { labelOf: p.labelOf } : {})}
       viewOf={viewOf}
+      proxyOf={(r) => ev?.of(r)}
       known={p.known}
       saving={saving}
       onSave={onSave}
