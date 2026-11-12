@@ -3,7 +3,9 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { parseFacts } from "@maycombhq/core";
 import { gateStatus } from "@maycombhq/naysayer";
+import { writeFactsSlot } from "@maycombhq/scanner";
 import { conformChange, CONFORM_GATE } from "../src/index.js";
 import { FIXTURES, git } from "./helpers.js";
 
@@ -59,7 +61,7 @@ afterAll(() => {
  * change's target flows and stories, and each task's branch with `after` laid over (the files
  * of fixtures/conform-gateway/after/<repo>, or the ones given).
  */
-function estate(after: Record<string, Record<string, string>> = {}) {
+async function estate(after: Record<string, Record<string, string>> = {}) {
   const root = mkdtempSync(join(tmpdir(), "atticus-conform-gateway-"));
   temps.push(root);
   cpSync(join(GQ, "org-pack"), join(root, "org-pack"), { recursive: true });
@@ -77,13 +79,22 @@ function estate(after: Record<string, Record<string, string>> = {}) {
     sh(dir, "add", "-A");
     sh(dir, "commit", "-q", "-m", "base");
     base[repo] = sh(dir, "rev-parse", "HEAD");
-    writeFileSync(
-      join(root, "facts", `${repo}.jsonl`),
-      readFileSync(join(GQ, "facts", `${repo}.jsonl`), "utf8").replaceAll(
-        `"commit":"${FACT_COMMIT[repo]}"`,
-        `"commit":"${base[repo]}"`,
-      ),
+    const text = readFileSync(join(GQ, "facts", `${repo}.jsonl`), "utf8").replaceAll(
+      `"commit":"${FACT_COMMIT[repo]}"`,
+      `"commit":"${base[repo]}"`,
     );
+    writeFileSync(join(root, "facts", `${repo}.jsonl`), text);
+    // Read into facts as `atticus verify <repo> --write` leaves it: the facts file and the
+    // snapshot of the facts it kept, of the base commit (ADR 0195 point 1: only the snapshot
+    // reaches a build, and a scan never reads the live file).
+    const parsed = parseFacts(text);
+    if (!parsed.ok) throw new Error(`${repo}: ${JSON.stringify(parsed.issues)}`);
+    await writeFactsSlot(root, {
+      repo,
+      commit: base[repo],
+      facts: parsed.facts,
+      contracts: null,
+    });
     const task = tasks[repo];
     if (!task) continue;
     sh(dir, "checkout", "-q", "-b", `task/${CHANGE}/${task}`);
@@ -104,7 +115,7 @@ describe("the code-against-design check rests on facts; a reader alone never say
   it(
     "says the Apigee LockCard flow and its forward couldn't be confirmed, not missing, when no fact covers the changed proxy",
     async () => {
-      const { root } = estate();
+      const { root } = await estate();
       const run = await conformChange(root, CHANGE, {
         task: "2.1",
         git,
@@ -131,7 +142,7 @@ describe("the code-against-design check rests on facts; a reader alone never say
   it(
     "says the teller app's config.getUri call couldn't be confirmed, not missing, when its facts cite the changed file",
     async () => {
-      const { root } = estate();
+      const { root } = await estate();
       const run = await conformChange(root, CHANGE, { task: "3.1", git });
       const r = run.results[0]!;
       expect(r.repo).toBe(TELLER);
@@ -153,7 +164,7 @@ describe("the code-against-design check rests on facts; a reader alone never say
       // The task branch touches nothing the facts cite (a README beside the code), so every
       // fact is carried to the branch's commit and no changed source file is left unread: the
       // facts say the teller app makes no lock call.
-      const { root } = estate({ [TELLER]: { "README.md": "# Teller app\n" } });
+      const { root } = await estate({ [TELLER]: { "README.md": "# Teller app\n" } });
       const run = await conformChange(root, CHANGE, { task: "3.1", git });
       const r = run.results[0]!;
       expect(r.items.filter((i) => i.status === "missing").map((i) => i.what)).toEqual([

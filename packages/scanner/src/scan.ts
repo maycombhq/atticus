@@ -45,7 +45,7 @@ import { type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState, inPlaceDir, type GitRunner } from "@maycombhq/workspace";
 import { readCatalog } from "./files.js";
 import { productionRepos, prototypeScanNotes } from "./merge-input.js";
-import { type FactBasis } from "./facts-scan.js";
+import { factsSlotAt, type FactBasis } from "./facts-scan.js";
 import {
   applyClients,
   applyPrefixes,
@@ -108,6 +108,13 @@ export interface ScanOptions {
    * branch's catalog: the baseline's slots with the branch's in place of its repos').
    */
   slots?: (onDisk: BuildSlots) => BuildSlots;
+  /**
+   * A check at the commit read, which writes nothing (the code-against-design check, ADR 0114):
+   * each repo's facts snapshot of an earlier commit is carried to it as `atticus verify` carries
+   * facts (`factsSlotAt`), and `basis` names the changed source files no fact covers. Without
+   * it the snapshot is built as verify took it (ADR 0195 point 2), as every writer does.
+   */
+  carryFacts?: boolean;
 }
 
 /** What each federated metarepo contributed. */
@@ -530,6 +537,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       }
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
   const basis: Record<string, FactBasis> = {};
+  /** With `carryFacts`: each repo's facts snapshot at the commit read (no slot: the readers'). */
+  const factsAt = new Map<string, NonNullable<Awaited<ReturnType<typeof factsSlotAt>>>>();
   /** Each repo's structured files, to tell which no record cites. */
   const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
@@ -575,6 +584,14 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       head: state.commit,
       ...(o.git ? { git: o.git } : {}),
     });
+    if (o.carryFacts) {
+      const at = await factsSlotAt(o.root, op, r.id, {
+        dir,
+        commit: state.commit,
+        ...(o.git ? { git: o.git } : {}),
+      });
+      if (at) factsAt.set(r.id, at);
+    }
     const extractors: Extractor[] = off.has("readers")
       ? []
       : [
@@ -760,7 +777,12 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       const readers = new Map(on.readers);
       for (const [repo, slot] of fresh)
         readers.set(repo, readersSlotRead(serializeReadersSlot(slot), repo));
-      return { ...on, readers };
+      if (!factsAt.size) return { ...on, readers };
+      const facts = new Map(on.facts);
+      for (const [repo, at] of factsAt)
+        if (at.slot) facts.set(repo, at.slot);
+        else facts.delete(repo);
+      return { ...on, readers, facts };
     },
     ...(o.curatedDir ? { curatedDir: o.curatedDir } : {}),
     ...(o.inputsDir === null ? { inputsDir: null } : o.inputsDir ? { inputsDir: o.inputsDir } : {}),
@@ -773,7 +795,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     if (!said.has(JSON.stringify([p.repo, p.source, p.message]))) problems.push(p);
   for (const s of build.sources)
     if (s.source === "facts" && repos.some((r) => r.id === s.repo)) {
-      basis[s.repo] = { from: "facts", unread: [] };
+      basis[s.repo] = { from: "facts", unread: factsAt.get(s.repo)?.unread ?? [] };
       factNotes.push(
         `${s.repo}: read from its facts snapshot (commit ${s.commit?.slice(0, 7) ?? "unknown"}); its readers' read is kept beside it as the cross-check, never merged.`,
       );

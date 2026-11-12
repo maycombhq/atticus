@@ -110,6 +110,10 @@ function gitScanAt(root: string, git: GitRunner): ScanAt {
         repos: [repo],
         repoDir: () => dir,
         repoState: async () => ({ commit, dirty: false }),
+        git,
+        // Rule 4 at the branch's commit: the facts verify kept, carried to it as verify carries
+        // them, never facts citing a file the branch changed (eighth UX walk, ADR 0195 point 2).
+        carryFacts: true,
       });
       const files = (await git(["ls-tree", "-r", "--name-only", commit], base)).stdout
         .split("\n")

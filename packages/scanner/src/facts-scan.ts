@@ -1,15 +1,27 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  conventionsOf,
+  effectiveComponentTypes,
   factsDirOf,
   pairsFromCorrections,
   parseCorrections,
   keptParse,
   parseFacts,
+  stackHelpersOff,
   type PersonPair,
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
+import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verify";
+import { changesSince, type GitRunner } from "@maycombhq/workspace";
+import type { FactsSlotRead } from "./build.js";
+import {
+  readFactsSlot,
+  serializeFactsSlotMeta,
+  serializeFactsSnapshot,
+  sha256Of,
+} from "./slots.js";
 import { targetsFromAnswers } from "./facts-catalog.js";
 import { productionRepos } from "./merge-input.js";
 import { joinAnswerQuestions } from "./join-host-questions.js";
@@ -28,6 +40,65 @@ export type FactBasis = { from: "facts"; unread: string[] } | { from: "readers" 
  * snapshot, which only a successful `atticus verify <repo> --write` takes; the build projects
  * every snapshot at once (build-facts.ts).
  */
+
+/**
+ * A repo's facts snapshot as it stands at another commit, for a check that writes nothing (the
+ * code-against-design check, ADR 0114, on a task branch; scan option `carryFacts`). The catalog
+ * keeps the snapshot as verify took it (ADR 0195 point 2); a check of the code at a later commit
+ * can't let facts citing a file changed since speak for it. So the snapshot's facts are carried
+ * to `at.commit` in memory as `atticus verify` carries them (a changed file invalidates only the
+ * facts that cite it, the others' lines checked again in the checkout), and `unread` lists the
+ * source files changed since that no fact covers now. No slot (the readers stand in) when the
+ * two commits can't be compared here or no fact is left. Undefined when there is nothing to
+ * carry: no snapshot, one that isn't current, or one of this very commit.
+ */
+export async function factsSlotAt(
+  root: string,
+  op: OrgPack,
+  repo: string,
+  at: { dir: string; commit: string; git?: GitRunner },
+): Promise<{ slot?: FactsSlotRead; unread: string[] } | undefined> {
+  const snap = await readFactsSlot(root, repo);
+  if (!snap?.ok || sameCommit(snap.meta.commit, at.commit)) return undefined;
+  const diff =
+    snap.meta.commit === "unknown"
+      ? undefined
+      : await changesSince(at.dir, [snap.meta.commit], at.commit, at.git).catch(() => undefined);
+  if (!diff || diff.missing.length) return { unread: [] };
+  const off = stackHelpersOff();
+  const conventions = conventionsOf(op);
+  const report = await verifyFacts({
+    facts: snap.facts,
+    source: dirSource(at.dir),
+    ...(off.has("derived-names") ? { derivedNames: false } : {}),
+    ...(off.has("readers") ? { readers: false } : {}),
+    commit: at.commit,
+    carry: diff.changes,
+    conventions,
+    // ADR 0180: a type taken out of the organisation's set after a read is flagged here too.
+    componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
+  });
+  if (!report.accepted.length) return { unread: [] };
+  const unread = rereadPlan({
+    facts: snap.facts,
+    commit: at.commit,
+    carry: diff.changes,
+    source: dirSource(at.dir),
+    conventions,
+  }).files.map((f) => f.path);
+  const text = serializeFactsSnapshot(report.accepted);
+  const meta = { ...snap.meta, commit: at.commit, factsHash: sha256Of(text) };
+  return {
+    slot: {
+      ok: true,
+      meta,
+      facts: report.accepted,
+      sha: meta.factsHash,
+      metaSha: sha256Of(serializeFactsSlotMeta(meta)),
+    },
+    unread,
+  };
+}
 
 /**
  * G1 (ADR 0174): a repo's pairings from its corrections file (`<repo>.corrections.jsonl`), met
