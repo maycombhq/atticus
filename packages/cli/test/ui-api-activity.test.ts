@@ -369,9 +369,10 @@ describe("a command run from the command line (ADR 0187)", () => {
     await main([...argv, "--root", r], io, { record: true });
     const { readTerminalRuns, runLogsDirOf, runningDirOf } = await import("@maycombhq/core");
     const [rec] = readTerminalRuns(r);
-    expect(rec?.title).toBe(
-      "atticus map forge-ledger … --pass --client-key --by --from --pw --passphrase",
-    );
+    // Beta.27 re-review: a flag the command line doesn't declare shows as one `--…`, and isn't
+    // among the record's flags.
+    expect(rec?.title).toBe("atticus map forge-ledger … --by --from --…");
+    expect(rec?.flags).toEqual(["by", "from", "root"]);
     const { readdir, readFile } = await import("node:fs/promises");
     // The record, and the lines it printed (the Console serves both).
     const read = async (dir: string) =>

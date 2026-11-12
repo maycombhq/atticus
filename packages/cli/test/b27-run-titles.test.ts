@@ -11,7 +11,7 @@ import {
   runTitle,
 } from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
-import { titleSlotsOf, titleWordsByHelp } from "../src/command-catalog.js";
+import { parseHelp, titleSlotsOf, titleWordsByHelp } from "../src/command-catalog.js";
 import { HELP_TEXT, main, titleInputsOf } from "../src/main.js";
 import { aliasArgv } from "../src/top-commands.js";
 import { uiActivityRoutes } from "../src/ui-api-activity.js";
@@ -52,9 +52,9 @@ const SECRETS = [
   "Summer2026",
   "hunter2",
   "hunter3",
-  "tom@",
-  "tom%40",
-  "tom＠",
+  "pat@",
+  "pat%40",
+  "pat＠",
   tok("sk", "-ant"),
   "https:",
   "user:pw",
@@ -73,7 +73,8 @@ const SECRETS = [
   "role=",
   "API_KEY",
   "password",
-  "salary",
+  "quarterly",
+  "correct-horse",
   "dev.azure.com",
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 ];
@@ -88,10 +89,10 @@ describe("beta.27 re-review: the reviewer's command lines give titles with no se
     ],
     ["map forge-ledger --target Summer2026", "atticus map forge-ledger --target"],
     ["map forge-ledger --target Summer2026!", "atticus map forge-ledger --target"],
-    ["map forge-ledger --by tom@bank.example", "atticus map forge-ledger --by"],
-    ["map forge-ledger --by tom%40bank.example", "atticus map forge-ledger --by"],
-    ["map forge-ledger --by tom＠bank.example", "atticus map forge-ledger --by"],
-    ["map forge-ledger --by @tom.george", "atticus map forge-ledger --by @tom.george"],
+    ["map forge-ledger --by pat@bank.example", "atticus map forge-ledger --by"],
+    ["map forge-ledger --by pat%40bank.example", "atticus map forge-ledger --by"],
+    ["map forge-ledger --by pat＠bank.example", "atticus map forge-ledger --by"],
+    ["map forge-ledger --by @bao.ops", "atticus map forge-ledger --by @bao.ops"],
     [`map forge-ledger --model ${tok("sk", "-ant-abc")}`, "atticus map forge-ledger --model"],
     ["map forge-ledger --model azure/https:x", "atticus map forge-ledger --model"],
     ["map forge-ledger --base user:pw", "atticus map forge-ledger --base"],
@@ -121,10 +122,13 @@ describe("beta.27 re-review: the reviewer's command lines give titles with no se
     [`map forge-ledger --repo a,${KEY}`, "atticus map forge-ledger --repo"],
     ["map forge-ledger --target=Zx9Kq2Lm8Pw4Rt6", "atticus map forge-ledger --target"],
     // A known flag that took the next flag as its value: the word after is that flag's.
-    ["map forge-ledger --note --pass hunter2", "atticus map forge-ledger … --note --pass"],
-    ["map forge-ledger --pass hunter2", "atticus map forge-ledger … --pass"],
+    // A flag the command line doesn't declare: its name is `--…` too (it may be the secret).
+    ["map forge-ledger --note --pass hunter2", "atticus map forge-ledger … --note --…"],
+    ["map forge-ledger --pass hunter2", "atticus map forge-ledger … --…"],
     ["map forge-ledger -p hunter2", "atticus map forge-ledger …"],
-    ["map forge-ledger --pass=hunter2 hunter3", "atticus map forge-ledger … --pass"],
+    ["map forge-ledger --pass=hunter2 hunter3", "atticus map forge-ledger … --…"],
+    ["map forge-ledger --correct-horse-battery-staple", "atticus map forge-ledger --…"],
+    ["map forge-ledger --json --hunter2 --swordfish", "atticus map forge-ledger --json --…"],
     // A word after a switch, past map's one argument: never shown.
     ["map forge-ledger --json hunter2", "atticus map forge-ledger … --json"],
     // Nothing after `--`, flags included.
@@ -141,11 +145,11 @@ describe("beta.27 re-review: the reviewer's command lines give titles with no se
     [`map forge-ledger --scope ${"a".repeat(60)}`, "atticus map forge-ledger --scope"],
     ["map forge-ledger --target ${API_KEY}", "atticus map forge-ledger --target"],
     ["map forge-ledger --target env:API_KEY", "atticus map forge-ledger --target"],
-    ["map forge-ledger --hunter2pass", "atticus map forge-ledger --hunter2pass"],
+    ["map forge-ledger --hunter2pass", "atticus map forge-ledger --…"],
     ["map --by=@bao forge-ledger", "atticus map forge-ledger --by @bao"],
     // A path or a URL in an argument's place is never shown, nor a file's name.
     ["repo add dev.azure.com/forge/_git/ledger", "atticus repo add …"],
-    ["intake add docs/salary-tom-george.pdf", "atticus intake add …"],
+    ["intake add docs/quarterly-notes.pdf", "atticus intake add …"],
     // `--ignore` is a switch the command line declares (it was help-only): the id before it stays.
     [
       "questions answer --ignore q-0123456789ab",
@@ -196,6 +200,75 @@ describe("beta.27 re-review: the reviewer's command lines give titles with no se
     // A command the help doesn't know shows its first word only.
     expect(w("frobnicate", "forge-ledger", "hunter2")).toEqual(["frobnicate", "…"]);
   });
+
+  it("never shows a word in a place the help quotes (free text), whatever its name", () => {
+    const slots = titleSlotsOf(HELP_TEXT);
+    // `alias "<name>" <id>` and `feature name <id> "<name>"`: the quoted name is typed text.
+    expect(HELP_TEXT).toMatch(/atticus alias "<name>"/);
+    expect(HELP_TEXT).toMatch(/atticus feature name <[a-z-]+> "<name>"/);
+    expect(titleWordsByHelp(["alias", "swordfish", "forge-ledger"], slots)).toEqual([
+      "alias",
+      "…",
+      "forge-ledger",
+    ]);
+    expect(titleWordsByHelp(["feature", "name", "f-1", "letmein"], slots)).toEqual([
+      "feature",
+      "name",
+      "f-1",
+      "…",
+    ]);
+    expect(titleOf("alias swordfish forge-ledger").title).toBe("atticus alias … forge-ledger");
+    // Every quoted argument of the help, in every command.
+    for (const c of parseHelp(HELP_TEXT)) {
+      // An argument's, not an option's value (`--reason "<why>"`).
+      const quoted = [...c.usage.matchAll(/"<([a-z][a-z|-]*?)(\.\.\.)?>"/g)].filter(
+        (m) => !/--[a-z-]+ ?$/.test(c.usage.slice(0, m.index)),
+      ).length;
+      if (!quoted) continue;
+      const placed = slots.get(c.words.join(" "))!;
+      const shown = placed.filter((p) => p.id).length;
+      expect(shown, c.usage).toBeLessThanOrEqual(placed.length - quoted);
+    }
+  });
+
+  it("keeps a work item's reference only for a tracker C1 names", () => {
+    for (const ref of ["ado:1234", "jira:4711", "jira:PAY-12"])
+      expect(titleOf(`knowledge verify ${ref}`).title, ref).toBe(`atticus knowledge verify ${ref}`);
+    for (const pin of ["pin:1234", "pass:1234", "otp:123456", "code:42"])
+      expect(titleOf(`knowledge verify ${pin}`).title, pin).toBe("atticus knowledge verify …");
+  });
+
+  it("titles a title's words as they are: titleWordsByHelp twice is once, over the whole help", () => {
+    const slots = titleSlotsOf(HELP_TEXT);
+    let n = 0;
+    for (const c of parseHelp(HELP_TEXT)) {
+      const typed = [
+        ...c.words,
+        ...c.args.map((a, i) => (a.choices ? a.choices[0]! : i % 2 ? "Free Text" : "forge-x")),
+        "extra",
+      ];
+      const once = titleWordsByHelp(typed, slots);
+      expect(titleWordsByHelp(once, slots), typed.join(" ")).toEqual(once);
+      // And as a run's title, then titled again as the migration does.
+      const title = runTitle(once, []);
+      expect(runTitle(titleWordsByHelp(title.command, slots), []).title).toBe(title.title);
+      n++;
+    }
+    expect(n).toBeGreaterThan(100);
+  });
+
+  it("gives `join shared refresh <team>` and `estate shared refresh <team>` the same places", () => {
+    for (const sub of ["refresh forge-team", "import ../theirs --team forge-team", "list"]) {
+      const a = titleOf(`join shared ${sub}`).title;
+      expect(titleOf(`estate shared ${sub}`).title, sub).toBe(a);
+    }
+    expect(titleOf("join shared refresh forge-team").title).toBe(
+      "atticus estate shared refresh forge-team",
+    );
+    const slots = titleSlotsOf(HELP_TEXT);
+    expect(slots.get("estate shared refresh")).toEqual(slots.get("join shared refresh"));
+    expect(slots.get("estate shared import")).toEqual(slots.get("join shared import"));
+  });
 });
 
 const metarepo = async () => {
@@ -238,52 +311,71 @@ describe("beta.27 re-review: end to end at a metarepo", () => {
     for (const s of ["hunter2", KEY, "Summer2026", "--password"]) expect(raw, s).not.toContain(s);
   });
 
+  // As beta.26 wrote them: every word that looked like an id, a key typed after the name too.
+  const beta26 = (runId: string, command: string[], flags: string[] = []) => ({
+    schemaVersion: 1,
+    runId,
+    pid: 999999,
+    host: "elsewhere",
+    title: ["atticus", ...command, ...flags.map((f) => `--${f}`)].join(" "),
+    command,
+    flags,
+    startedBy: "terminal",
+    startedAt: new Date(Date.now() - 60_000).toISOString(),
+    state: "failed",
+    finishedAt: new Date(Date.now() - 59_000).toISOString(),
+    exitCode: 2,
+    lines: 1,
+    dropped: 0,
+  });
+  const keptAt = async (
+    r: string,
+    recs: ReturnType<typeof beta26>[],
+    log = "atticus: a line\n",
+  ) => {
+    await mkdir(runningDirOf(r), { recursive: true });
+    await mkdir(runLogsDirOf(r), { recursive: true });
+    for (const rec of recs) {
+      await writeFile(join(runningDirOf(r), `${rec.runId}.json`), JSON.stringify(rec));
+      await writeFile(join(runLogsDirOf(r), `${rec.runId}.log`), log);
+    }
+  };
+
   it("titles the runs beta.26 kept again on beta.27's first command, and the Console serves those", async () => {
     const r = await metarepo();
     const running = runningDirOf(r);
-    await mkdir(running, { recursive: true });
-    await mkdir(runLogsDirOf(r), { recursive: true });
-    // As beta.26 wrote them: every word that looked like an id, a key typed after the name too.
-    const beta26 = (runId: string, command: string[], flags: string[] = []) => ({
-      schemaVersion: 1,
-      runId,
-      pid: 999999,
-      host: "elsewhere",
-      title: ["atticus", ...command, ...flags.map((f) => `--${f}`)].join(" "),
-      command,
-      flags,
-      startedBy: "terminal",
-      startedAt: new Date(Date.now() - 60_000).toISOString(),
-      state: "failed",
-      finishedAt: new Date(Date.now() - 59_000).toISOString(),
-      exitCode: 2,
-      lines: 1,
-      dropped: 0,
-    });
     const old = [
       beta26("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", KEY]),
       beta26("20261101-100100-4242-cd34", ["map", "forge-ledger", "hunter2"], ["json"]),
-      beta26("20261101-100200-4242-ef56", ["intake", "add", "docs/salary-tom-george.pdf"]),
+      beta26("20261101-100200-4242-ef56", ["intake", "add", "docs/quarterly-notes.pdf"]),
       beta26("20261101-100300-4242-0a1b", ["verify", "forge-ledger"], ["write"]),
+      beta26(
+        "20261101-100400-4242-1c2d",
+        ["map", "forge-ledger"],
+        ["correct-horse-battery-staple"],
+      ),
     ];
-    for (const rec of old) {
-      await writeFile(join(running, `${rec.runId}.json`), JSON.stringify(rec));
-      await writeFile(join(runLogsDirOf(r), `${rec.runId}.log`), "atticus: a line\n");
-    }
-    // Any command at the metarepo, recorded or not.
-    await main(["next", "--root", r], io().io);
+    // beta.26 printed a mistyped key back into a `secret` run's log.
+    await keptAt(r, old, `atticus: ${KEY} isn't a variable's name\n`);
+    // Any command at the metarepo, recorded or not, run by the command line.
+    await main(["next", "--root", r], io().io, { record: true });
     const byId = new Map(readTerminalRuns(r).map((t) => [t.runId, t]));
-    expect(byId.get(old[0]!.runId)?.title).toBe("atticus secret set ATTICUS_MODEL_KEY …");
+    // A run of `secret`: gone, its record and its log.
+    expect(byId.has(old[0]!.runId)).toBe(false);
+    expect(await readdir(running)).not.toContain(`${old[0]!.runId}.json`);
+    expect(await readdir(runLogsDirOf(r))).not.toContain(`${old[0]!.runId}.log`);
     expect(byId.get(old[1]!.runId)?.title).toBe("atticus map forge-ledger … --json");
     expect(byId.get(old[2]!.runId)?.title).toBe("atticus intake add …");
     expect(byId.get(old[3]!.runId)?.title).toBe("atticus verify forge-ledger --write");
-    expect(byId.get(old[0]!.runId)).toMatchObject({ state: "failed", exitCode: 2, lines: 1 });
-    expect(await readFile(join(runLogsDirOf(r), `${old[0]!.runId}.log`), "utf8")).toBe(
-      "atticus: a line\n",
-    );
+    expect(byId.get(old[4]!.runId)).toMatchObject({
+      title: "atticus map forge-ledger --…",
+      flags: [],
+    });
+    expect(byId.get(old[1]!.runId)).toMatchObject({ state: "failed", exitCode: 2, lines: 1 });
     expect((await readdir(running)).includes(RETITLED_MARK)).toBe(true);
     const raw = await allOf(running);
-    for (const s of [KEY, "hunter2", "salary"]) expect(raw, s).not.toContain(s);
+    for (const s of [KEY, "hunter2", "quarterly", "secret set", "correct-horse"])
+      expect(raw, s).not.toContain(s);
     const s = await startServer({
       root: r,
       port: 0,
@@ -294,10 +386,30 @@ describe("beta.27 re-review: end to end at a metarepo", () => {
     try {
       const got = await fetch(`${s.url}/api/activity`, { headers: { "X-Atticus-Token": s.token } });
       const body = JSON.stringify(await got.json());
-      expect(body).toContain("atticus secret set ATTICUS_MODEL_KEY …");
-      for (const x of [KEY, "hunter2", "salary"]) expect(body, x).not.toContain(x);
+      expect(body).toContain("atticus verify forge-ledger --write");
+      for (const x of [KEY, "hunter2", "quarterly", "secret set", "correct-horse"])
+        expect(body, x).not.toContain(x);
     } finally {
       await s.close();
     }
+  });
+
+  it("leaves the runs alone when the run log is off, and in a job the app's server runs", async () => {
+    const r = await metarepo();
+    const old = [beta26("20261101-100100-4242-cd34", ["map", "forge-ledger", "hunter2"])];
+    await keptAt(r, old);
+    // The app's server runs a command in itself: main without `record`.
+    await main(["next", "--root", r], io().io);
+    expect(await readdir(runningDirOf(r))).not.toContain(RETITLED_MARK);
+    const was = process.env.ATTICUS_RUN_LOG;
+    process.env.ATTICUS_RUN_LOG = "off";
+    try {
+      await main(["next", "--root", r], io().io, { record: true });
+    } finally {
+      if (was === undefined) delete process.env.ATTICUS_RUN_LOG;
+      else process.env.ATTICUS_RUN_LOG = was;
+    }
+    expect(await readdir(runningDirOf(r))).not.toContain(RETITLED_MARK);
+    expect(readTerminalRuns(r)[0]?.title).toBe("atticus map forge-ledger hunter2");
   });
 });

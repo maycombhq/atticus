@@ -234,7 +234,12 @@ const APPROVE_WHEN: Record<string, { flag: string; value: string }> = {
 const isWord = (t: string) => /^[a-z][a-z-]*$/.test(t);
 
 function parseArgs(id: string, usage: string): CommandArg[] {
-  const out: CommandArg[] = [];
+  return argsOf(id, usage).map((a) => a.arg);
+}
+
+/** A usage's arguments, each with whether the help quotes it (`"<name>"`: free text, typed). */
+function argsOf(id: string, usage: string): { arg: CommandArg; quoted: boolean }[] {
+  const out: { arg: CommandArg; quoted: boolean }[] = [];
   const kinds = KIND_BY_COMMAND[id];
   // <name>, "<name>", [name], <name...>, <a|b|c>; not an option's value (--type <type>).
   const re = /(\[|"?<)([a-z][a-z|-]*?)(\.\.\.)?(>"?|\])(\.\.\.)?/g;
@@ -249,11 +254,14 @@ function parseArgs(id: string, usage: string): CommandArg[] {
     const kind: ArgKind =
       kinds?.[out.length] ?? (isChoice ? "choice" : (KIND_BY_NAME[name] ?? "text"));
     out.push({
-      name,
-      kind,
-      optional: m[1] === "[",
-      many: !!(m[3] || m[5]),
-      ...(isChoice ? { choices: parts } : {}),
+      arg: {
+        name,
+        kind,
+        optional: m[1] === "[",
+        many: !!(m[3] || m[5]),
+        ...(isChoice ? { choices: parts } : {}),
+      },
+      quoted: m[1] === '"<',
     });
   }
   return out;
@@ -449,13 +457,28 @@ export interface TitleSlot {
 export function titleSlotsOf(help: string): Map<string, TitleSlot[]> {
   const out = new Map<string, TitleSlot[]>();
   for (const c of parseHelp(help)) {
-    const slots = c.args.map((a): TitleSlot => ({
-      id: TITLE_ARG_KINDS.has(a.kind) || (a.kind === "text" && TITLE_ARG_NAMES.has(a.name)),
+    // Beta.27 re-review: an argument the help quotes (`alias "<name>" <id>`, `feature name <id>
+    // "<name>"`) is free text, whatever its name: never an id's place.
+    const quoted = argsOf(c.id, c.usage).map((a) => a.quoted);
+    const slots = c.args.map((a, i): TitleSlot => ({
+      id:
+        !quoted[i] &&
+        (TITLE_ARG_KINDS.has(a.kind) || (a.kind === "text" && TITLE_ARG_NAMES.has(a.name))),
       many: a.many,
       ...(a.choices ? { choices: a.choices } : {}),
     }));
-    const had = out.get(c.words.join(" "));
-    if (!had || had.length < slots.length) out.set(c.words.join(" "), slots);
+    // Beta.27 re-review: a command named another way (`join shared refresh <team>` is `estate
+    // shared refresh`, aliasArgv) gives its places to the command that runs, which is the one a
+    // run's words name: both spellings show the same words.
+    const named = c.words.join(" ");
+    const runs = aliasArgv(
+      c.words,
+      c.words.map((_, i) => i),
+    ).join(" ");
+    for (const key of new Set([named, runs])) {
+      const had = out.get(key);
+      if (!had || had.length < slots.length) out.set(key, slots);
+    }
   }
   return out;
 }

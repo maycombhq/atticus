@@ -70,7 +70,7 @@ describe("atticus secret (ADR 0121)", () => {
     const store = memory();
     // A key typed as the name: refused, and not said back (it goes to the run's log and the screen).
     const keyLike = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
-    for (const name of [KEY, keyLike, "has spaces", "tom@bank.example"]) {
+    for (const name of [KEY, keyLike, "has spaces", "pat@bank.example"]) {
       const r = await run(["set", name], { stdin: KEY, store });
       expect(r.code, name).toBe(2);
       expect(r.out + r.err, name).not.toContain(name);

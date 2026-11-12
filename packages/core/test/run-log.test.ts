@@ -1,10 +1,21 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   readTerminalRunLines,
+  RETITLE_MAX_BYTES,
   RETITLED_MARK,
   retitleTerminalRuns,
   readTerminalRuns,
@@ -20,7 +31,9 @@ import {
   TITLE_VALUE_MAX,
   titleValue,
   titleWord,
+  WORK_ITEM_SYSTEMS,
 } from "../src/run-log.js";
+import { ExternalRef } from "../src/schema/kinds.js";
 import { hasTokenPrefix, TOKEN_PREFIXES } from "../src/cite.js";
 
 /**
@@ -35,7 +48,7 @@ const fresh = async () => {
   return root;
 };
 const at = (s: string) => () => new Date(s);
-const HOME = { home: "/home/tom", user: "tom" };
+const HOME = { home: "/home/kit", user: "kit" };
 
 describe("which commands keep a run log", () => {
   it("keeps the long ones and never the quick, read-only ones", () => {
@@ -105,7 +118,7 @@ describe("which commands keep a run log", () => {
     const t = runTitle(
       [
         "map",
-        "C:\\Users\\tom\\x",
+        "C:\\Users\\kit\\x",
         "https://u:p@host/x",
         "two words",
         "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3",
@@ -146,7 +159,7 @@ describe("which commands keep a run log", () => {
     expect(t("with", "q7Xf3Kd9Lm2Np8Rs4Tv6")).toBe("atticus sync --with");
     expect(t("with", "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3")).toBe("atticus sync --with");
     expect(t("with", "https://u:p@host/x")).toBe("atticus sync --with");
-    expect(t("with", "C:\\Users\\tom\\x")).toBe("atticus sync --with");
+    expect(t("with", "C:\\Users\\kit\\x")).toBe("atticus sync --with");
     expect(t("with", "two words")).toBe("atticus sync --with");
     expect(t("with", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")).toBe("atticus sync --with");
   });
@@ -327,7 +340,7 @@ describe("a terminal run's files", () => {
     expect(rec).toBeDefined();
     expect(rec.runId).toMatch(TERMINAL_RUN_ID);
     expect(rec.runId).not.toContain(":");
-    rec.line("Reading forge-ledger at /home/tom/work/forge");
+    rec.line("Reading forge-ledger at /home/kit/work/forge");
     rec.line("token=abc123secret and https://me:hunter2@git.example/x.git");
     rec.line("\u001b[32mgreen\u001b[0m\r\ntwo\nlines");
     const [r] = readTerminalRuns(root, { alive: () => true });
@@ -342,7 +355,7 @@ describe("a terminal run's files", () => {
       pid: 4242,
     });
     const text = readFileSync(join(runLogsDirOf(root), `${rec.runId}.log`), "utf8");
-    expect(text).not.toContain("/home/tom");
+    expect(text).not.toContain("/home/kit");
     expect(text).not.toContain("abc123secret");
     expect(text).not.toContain("hunter2");
     expect(text).toContain("~/work/forge");
@@ -632,7 +645,7 @@ describe("beta.27 re-review: a run's title shows no secret, however it was typed
       "4111-1111-1111-1111",
       "123-45-6789",
       "user:pw",
-      "tom@bank.example",
+      "pat@bank.example",
       "a,b",
       "${API_KEY}",
     ];
@@ -661,6 +674,8 @@ describe("beta.27 re-review: a run's title shows no secret, however it was typed
       "20261109-101530-4242-ab12",
       "2027-03-31",
       "ado:1234",
+      "jira:4711",
+      "jira:PAY-12",
       "link:forge-teller:ledger-post",
       "ATTICUS_MODEL_KEY",
       "forge/ledger",
@@ -671,6 +686,21 @@ describe("beta.27 re-review: a run's title shows no secret, however it was typed
     expect(titleWord("link:forge-teller:Zx9Kq2Lm8Pw4Rt6")).toBeUndefined();
   });
 
+  it("knows a work item's reference by a tracker C1 names, never any word and a number", () => {
+    expect([...WORK_ITEM_SYSTEMS].every((s) => ExternalRef.shape.system.options.includes(s))).toBe(
+      true,
+    );
+    for (const w of ["pin:1234", "pass:1234", "otp:123456", "code:42", "ado:12345678", "ADO:12"])
+      expect(titleWord(w), w).toBeUndefined();
+  });
+
+  it("shows a flag the command line doesn't declare (given as `…`) as one `--…`, last", () => {
+    expect(runTitle(["map", "forge-ledger"], ["…", "json", "…"]).title).toBe(
+      "atticus map forge-ledger --json --…",
+    );
+    expect(runTitle(["map"], ["json"]).title).toBe("atticus map --json");
+  });
+
   it("drops an allowed flag's value that isn't an id, deterministically", () => {
     const t = (flag: string, value: string) => titleValue(flag, value);
     for (const v of [
@@ -679,9 +709,9 @@ describe("beta.27 re-review: a run's title shows no secret, however it was typed
       "abcdefghijklmnopqrstuvwxyzabcdef",
       "Summer2026",
       "Summer2026!",
-      "tom@bank.example",
-      "tom%40bank.example",
-      "tom＠bank.example",
+      "pat@bank.example",
+      "pat%40bank.example",
+      "pat＠bank.example",
       tok("sk", "-ant-abc"),
       "azure/https:x",
       "user:pw",
@@ -713,7 +743,7 @@ describe("beta.27 re-review: a run's title shows no secret, however it was typed
       "a".repeat(60),
     ])
       expect(t("target", v), v).toBeUndefined();
-    expect(t("by", "@tom.george")).toBe("@tom.george");
+    expect(t("by", "@bao.ops")).toBe("@bao.ops");
     expect(t("release", "2027-03-31")).toBe("2027-03-31");
     expect(t("repos", "forge-ledger,forge-teller")).toBe("forge-ledger,forge-teller");
     expect(t("model", "sonnet-4-5")).toBe("sonnet-4-5");
@@ -779,44 +809,76 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     lines: 1,
     dropped: 0,
   });
+  const key = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
+  const keep = (root: string, recs: ReturnType<typeof record>[], log = "a line\n") => {
+    mkdirSync(runningDirOf(root), { recursive: true });
+    mkdirSync(runLogsDirOf(root), { recursive: true });
+    for (const r of recs) {
+      writeFileSync(join(runningDirOf(root), `${r.runId}.json`), JSON.stringify(r));
+      writeFileSync(join(runLogsDirOf(root), `${r.runId}.log`), log);
+    }
+  };
+  const read = (root: string, id: string) =>
+    JSON.parse(readFileSync(join(runningDirOf(root), `${id}.json`), "utf8")) as Record<
+      string,
+      unknown
+    >;
+  // The command line's rule: here, at most the command and one argument (a test's own).
+  const short = (r: { command: string[]; flags: string[] }) =>
+    runTitle(r.command.slice(0, 2), r.flags);
 
   it("writes each title and its words again by the new rules, and nothing else of it", async () => {
     const root = await fresh();
-    mkdirSync(runningDirOf(root), { recursive: true });
-    mkdirSync(runLogsDirOf(root), { recursive: true });
-    const key = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
-    const leaked = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    const long = record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]);
     const fine = record("20261101-100100-4242-cd34", ["map", "forge-ledger"], ["handoff"]);
-    for (const r of [leaked, fine]) {
-      writeFileSync(join(runningDirOf(root), `${r.runId}.json`), JSON.stringify(r));
-      writeFileSync(join(runLogsDirOf(root), `${r.runId}.log`), "a line\n");
-    }
-    // The command line's rule: here, at most the command and one argument (a test's own).
-    const n = retitleTerminalRuns(root, (r) => runTitle(r.command.slice(0, 3), r.flags));
-    expect(n).toBe(1);
-    const read = (id: string) =>
-      JSON.parse(readFileSync(join(runningDirOf(root), `${id}.json`), "utf8")) as Record<
-        string,
-        unknown
-      >;
-    const after = read(leaked.runId);
-    expect(after.title).toBe("atticus secret set ATTICUS_MODEL_KEY");
+    keep(root, [long, fine]);
+    expect(retitleTerminalRuns(root, short)).toBe(1);
+    const after = read(root, long.runId);
+    expect(after.title).toBe("atticus map forge-ledger");
     expect(JSON.stringify(after)).not.toContain(key);
     // Everything else of the record as it was; its log untouched.
     const { title: _t, command: _c, ...rest } = after;
-    const { title: _t0, command: _c0, ...was } = leaked;
+    const { title: _t0, command: _c0, ...was } = long;
     expect(rest).toEqual(was);
-    expect(read(fine.runId)).toEqual(fine);
-    expect(readFileSync(join(runLogsDirOf(root), `${leaked.runId}.log`), "utf8")).toBe("a line\n");
-    expect(readTerminalRuns(root, { alive: () => false }).map((r) => r.title)).toEqual([
-      "atticus map forge-ledger --handoff",
-      "atticus secret set ATTICUS_MODEL_KEY",
-    ]);
+    expect(read(root, fine.runId)).toEqual(fine);
+    expect(readFileSync(join(runLogsDirOf(root), `${long.runId}.log`), "utf8")).toBe("a line\n");
     // Once: the mark says it was done, so a record written after it is left alone.
     expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
-    writeFileSync(join(runningDirOf(root), `${leaked.runId}.json`), JSON.stringify(leaked));
+    writeFileSync(join(runningDirOf(root), `${long.runId}.json`), JSON.stringify(long));
     expect(retitleTerminalRuns(root, (r) => runTitle([], r.flags))).toBe(0);
-    expect(read(leaked.runId).title).toBe(leaked.title);
+    expect(read(root, long.runId).title).toBe(long.title);
+  });
+
+  it("removes a run of `secret`, its record and its log (beta.26 printed a mistyped key there)", async () => {
+    const root = await fresh();
+    const set = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    const check = record("20261101-100100-4242-cd34", ["secret", "check", "ATTICUS_MODEL_KEY"]);
+    const fine = record("20261101-100200-4242-ef56", ["map", "forge-ledger"]);
+    keep(root, [set, check, fine], `atticus: ${key} isn't a variable's name\n`);
+    expect(retitleTerminalRuns(root, short)).toBe(2);
+    expect(readdirSync(runningDirOf(root)).sort()).toEqual([
+      ".retitled-beta27",
+      `${fine.runId}.json`,
+    ]);
+    expect(readdirSync(runLogsDirOf(root))).toEqual([`${fine.runId}.log`]);
+    expect(readTerminalRuns(root, { alive: () => false }).map((r) => r.title)).toEqual([
+      "atticus map forge-ledger",
+    ]);
+  });
+
+  it("gives the flag names the command line's rule gives", async () => {
+    const root = await fresh();
+    const odd = record("20261101-100000-4242-ab12", ["map", "forge-ledger"], ["json", "hunter2"]);
+    keep(root, [odd]);
+    const n = retitleTerminalRuns(root, (r) => {
+      const flags = r.flags.map((f) => (f === "json" ? f : "…"));
+      return { ...runTitle(r.command, flags), flags: flags.filter((f) => f !== "…") };
+    });
+    expect(n).toBe(1);
+    expect(read(root, odd.runId)).toMatchObject({
+      title: "atticus map forge-ledger --json --…",
+      flags: ["json"],
+    });
   });
 
   it("does nothing where no run was kept, and never throws on a record it can't read", async () => {
@@ -824,10 +886,107 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
     mkdirSync(runningDirOf(root), { recursive: true });
     writeFileSync(join(runningDirOf(root), "20261101-100000-4242-ab12.json"), "{not json");
+    writeFileSync(join(runningDirOf(root), "20261101-100001-4242-ab13.json"), "null");
+    writeFileSync(join(runningDirOf(root), "20261101-100002-4242-ab14.json"), "[1]");
     expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
     expect(readdirSync(runningDirOf(root)).sort()).toEqual([
       ".retitled-beta27",
       "20261101-100000-4242-ab12.json",
+      "20261101-100001-4242-ab13.json",
+      "20261101-100002-4242-ab14.json",
     ]);
   });
+
+  it("writes the mark when nothing changed, and leaves a record still running to its process", async () => {
+    const root = await fresh();
+    const live = { ...record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]) };
+    live.state = "running";
+    keep(root, [live]);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(read(root, live.runId)).toEqual(live);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("reads only a small regular file: never a link, a FIFO, a folder or a big file", async () => {
+    const root = await fresh();
+    const dir = runningDirOf(root);
+    keep(root, []);
+    // Outside the metarepo, linked to from inside it: never read nor written through.
+    const outside = join(await mkdtemp(join(tmpdir(), "atticus-run-log-out-")), "theirs.json");
+    const theirs = JSON.stringify(
+      record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]),
+    );
+    writeFileSync(outside, theirs);
+    const linked = join(dir, "20261101-100000-4242-ab12.json");
+    let links = true;
+    try {
+      symlinkSync(outside, linked);
+    } catch {
+      links = false; // Windows without the right to make links
+    }
+    // A FIFO (it would block every command), where the platform has them.
+    const fifo = join(dir, "20261101-100001-4242-ab13.json");
+    let fifos = false;
+    if (process.platform !== "win32")
+      try {
+        execFileSync("mkfifo", [fifo]);
+        fifos = true;
+      } catch {
+        // no mkfifo here
+      }
+    mkdirSync(join(dir, "20261101-100002-4242-ab14.json"));
+    const big = record("20261101-100003-4242-ab15", ["map", "forge-ledger", key]);
+    writeFileSync(
+      join(dir, `${big.runId}.json`),
+      JSON.stringify({ ...big, pad: "x".repeat(RETITLE_MAX_BYTES) }),
+    );
+    const started = Date.now();
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+    if (links) {
+      expect(lstatSync(linked).isSymbolicLink()).toBe(true);
+      expect(readFileSync(outside, "utf8")).toBe(theirs);
+    }
+    if (fifos) expect(lstatSync(fifo).isFIFO()).toBe(true);
+    expect(readFileSync(join(dir, `${big.runId}.json`), "utf8")).toContain(key);
+    expect(existsSync(join(dir, RETITLED_MARK))).toBe(true);
+  });
+
+  it("never writes the mark through a link left at its name", async () => {
+    const root = await fresh();
+    keep(root, [record("20261101-100000-4242-ab12", ["map", "forge-ledger"])]);
+    const outside = join(await mkdtemp(join(tmpdir(), "atticus-run-log-out-")), "mark");
+    try {
+      symlinkSync(outside, join(runningDirOf(root), RETITLED_MARK));
+    } catch {
+      return; // Windows without the right to make links
+    }
+    // A link there (dangling) is a mark: nothing is done, nothing is made outside.
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "leaves a metarepo it can't write alone, and tries no more in this process",
+    async () => {
+      const root = await fresh();
+      const long = record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]);
+      keep(root, [long]);
+      chmodSync(runningDirOf(root), 0o555);
+      try {
+        let calls = 0;
+        const counted = (r: { command: string[]; flags: string[] }) => {
+          calls++;
+          return short(r);
+        };
+        expect(retitleTerminalRuns(root, counted)).toBe(0);
+        expect(retitleTerminalRuns(root, counted)).toBe(0);
+        // Not read at all: nothing there could be written.
+        expect(calls).toBe(0);
+        expect(read(root, long.runId)).toEqual(long);
+      } finally {
+        chmodSync(runningDirOf(root), 0o755);
+      }
+    },
+  );
 });
