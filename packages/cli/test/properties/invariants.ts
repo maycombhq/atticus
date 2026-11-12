@@ -550,7 +550,9 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
           "nothing-removed-unexplained",
           `${s.desc.t} removed ${describe(id, rec)} without listing it in its report (${o.removed ? `it listed ${list(reported.keys())}` : "it reports no removals"})`,
         );
-      if (!why.has(said!))
+      // The org pack migrated since (an upgrade's other steps) is an input every record rests
+      // on: the build may name it, though the removal must still be one the model explains.
+      if (!why.has(said!) && !(said === "input" && s.m.changes.orgPack))
         fail(
           "nothing-removed-unexplained",
           `${s.desc.t} reports ${id} removed by "${said}", but what changed is ${[...why].join(" or ")}`,

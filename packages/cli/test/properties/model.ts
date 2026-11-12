@@ -98,6 +98,12 @@ export interface Changes {
   curated: Set<string>;
   /** Hosts a person answered since. */
   answered: Set<string>;
+  /**
+   * `atticus upgrade` migrated the org pack's files since (this harness writes them at schema 1):
+   * an input every record rests on, so a build may name it ("input") for a removal that the
+   * model explains otherwise (seed 1349124163).
+   */
+  orgPack?: true;
 }
 
 export const noChanges = (): Changes => ({

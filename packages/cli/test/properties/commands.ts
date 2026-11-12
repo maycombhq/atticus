@@ -38,6 +38,7 @@ import {
 import { sut, todaysWriters, type Confirm, type Guard, type Outcome } from "./system.js";
 import {
   move,
+  readTree,
   recId,
   records,
   repoOf,
@@ -996,7 +997,11 @@ export async function act(
     }
 
     case "upgrade": {
+      const pack = join(w.root, "org-pack");
+      const packBefore = await readTree(pack);
       const outcome = await sut().upgrade(w.root, { yes: d.yes });
+      // Its other steps run without --yes too: the org pack's files migrated are an input.
+      if (!sameTree(packBefore, await readTree(pack))) m.changes.orgPack = true;
       if (!m.beta26 || !d.yes) return { outcome, expect: { kind: "dry" } };
       const afterUpgrade = await w.snap();
       const built = outcome.wrote ? await sut().build(w.root, {}) : undefined;

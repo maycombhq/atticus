@@ -48,6 +48,7 @@ const paymentsLegacy: Code = {
  * the property run's shrunk estate (seed 615329782) for a suppressed legacy join.
  */
 const notify = POOL.find((b) => b.id === "forge-notify")!;
+const orders = POOL.find((b) => b.id === "forge-orders")!;
 const THREE: Estate = {
   repos: [
     {
@@ -552,6 +553,39 @@ export const EXAMPLES: Example[] = [
       { t: "confirm-removals" },
     ],
     [has("the arrow", callsLedger), has("payments' POST /refunds", postRefunds)],
+  ),
+  seq(
+    "nothing-removed-unexplained",
+    "a removal after an upgrade migrated the org pack may be said as an input's, and is listed (seed 1349124163)",
+    [{ t: "scan-subset", slots: [3, 0] }, { t: "upgrade", yes: false }, { t: "scan" }],
+    [has("orders' POST /carts", endpoint(orders.component, "POST", "/carts"))],
+    {
+      repos: [
+        {
+          base: orders,
+          code: {
+            endpoints: [{ method: "POST", path: "/carts" }],
+            calls: [],
+            publishes: [],
+            consumes: [],
+          },
+        },
+        {
+          base: ledger,
+          code: { endpoints: [], calls: [], publishes: [ledger.topic], consumes: [] },
+        },
+        { base: notify, code: { endpoints: [], calls: [], publishes: [], consumes: [] } },
+        {
+          base: payments,
+          code: {
+            endpoints: [],
+            calls: [{ method: "POST", path: "/carts", host: orders.host }],
+            publishes: [],
+            consumes: [ledger.topic],
+          },
+        },
+      ],
+    },
   ),
   seq(
     "equivalence",
