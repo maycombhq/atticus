@@ -27,9 +27,18 @@
  * `@Get(`…, API Platform's `@ApiResource(`, Doctrine's `@ORM\…`) is code: the annotation is live, as
  * a PHP 8 attribute is.
  *
+ * A PHP file read whole starts as inline HTML (beta.27 re-review 6: HTML after `?>` was read as
+ * PHP, and an apostrophe in its prose opened a `'` string across lines that put every later quote
+ * out of step): `<?php`, `<?=` or `<?` opens PHP, and `?>` in its code closes it, ending a `//` or
+ * `#` comment too, as PHP does (not one in a string, a heredoc or a block comment). Inline HTML is
+ * text, neither code the lexer reads nor comment: a line of it is no comment line, as before, and
+ * an HTML `<!-- -->` hides no PHP (PHP still runs inside it). In a Blade template (`.blade.php`)
+ * the HTML's `{{-- … --}}` is comment, `<?php` inside one too (Blade takes them out first).
+ *
  * Not read: C++ raw strings (`R"(…)"`), Swift's `#"…"#`, C#'s raw strings of four quotes or more
  * (`""""…""""`, read as a triple-quoted one, so a `"""` in one closes it), Scala's `raw"…\""` (its
- * `\` read as an escape), PHP's `?>` (HTML after it is read as PHP), Groovy's slashy strings, a
+ * `\` read as an escape), Blade's `@php … @endphp` (read as its HTML) and a `{{--` inside PHP code
+ * in a Blade template (read as PHP's), Groovy's slashy strings, a
  * string an interpolation nests inside another string's interpolation outside JavaScript (Kotlin's
  * `"${m["k"]}"`). Each of these can misread the lines it spans and, when it holds an unclosed
  * `/*`, those after it up to the next `*\/`.
@@ -63,8 +72,13 @@ export interface CommentLexis {
   dartRaw: boolean;
   /** The quotes whose strings run across lines (`"` in Rust, `"` and `'` in PHP). */
   spanQuotes: string;
-  /** PHP: a doc block's line with a live annotation is code; heredocs and backticks are read. */
+  /**
+   * PHP: a doc block's line with a live annotation is code; heredocs and backticks are read; a
+   * file read whole starts as inline HTML, `<?php`, `<?=` or `<?` opens PHP and `?>` closes it.
+   */
   php: boolean;
+  /** A Blade template (`.blade.php`): in its HTML, `{{-- … --}}` is a comment. */
+  blade: boolean;
 }
 
 const JS = /\.(m?[jt]sx?|c[jt]s|mts)$/i;
@@ -98,6 +112,7 @@ export function commentLexisOf(file: string, php: boolean): CommentLexis {
     // as any `\` is: the character after one never closes it unless it is a quote escaped)
     spanQuotes: php ? `"'` : rust ? '"' : "",
     php,
+    blade: php && /\.blade\.php$/i.test(file),
   };
 }
 
@@ -148,7 +163,14 @@ const isWord = (c: string) =>
   c === "_" ||
   c === "$";
 
-type Mode = "code" | "block" | "str" | "raw" | "tpl" | "heredoc";
+/**
+ * `html`: a PHP file's inline HTML, outside `<?php … ?>`: text, neither code the lexer reads nor
+ * comment (a line of it is no comment, as any line of code); `blade`: a Blade comment in it.
+ */
+type Mode = "code" | "block" | "str" | "raw" | "tpl" | "heredoc" | "html" | "blade";
+
+/** PHP's open tags, where inline HTML has `<?`: `<?php` (then a space or the line's end), `<?=`, `<?`. */
+const PHP_OPEN = /<\?(?:php(?=\s|$)|=)?/iy;
 
 /**
  * Which lines are all comment, in one pass. With `codeOut`, each line's text outside its comments
@@ -163,7 +185,8 @@ export function lexCommentLines(
   alone = false,
 ): boolean[] {
   const out = new Array<boolean>(lines.length);
-  let mode: Mode = "code";
+  // a PHP file read whole starts as inline HTML (a line read alone, as PHP)
+  let mode: Mode = lx.php && !alone ? "html" : "code";
   let depth = 0; // a block comment's nesting
   let doc = false; // the block is a doc block, `/**`
   let close = ""; // what ends the string (a heredoc's label)
@@ -196,7 +219,7 @@ export function lexCommentLines(
   for (let n = 0; n < lines.length; base += lines[n]!.length + 1, n++) {
     const l = lines[n]!;
     const len = l.length;
-    let comment: boolean = mode === "block";
+    let comment: boolean = mode === "block" || mode === "blade";
     let code = false;
     let docLine: boolean = mode === "block" && doc;
     let synthetic = false;
@@ -221,11 +244,41 @@ export function lexCommentLines(
       code = l.trim() !== "";
     }
     // where the line's text outside a comment starts (-1: in one), and where a line comment cuts it
-    let seg = mode === "block" ? -1 : 0;
+    let seg = mode === "block" || mode === "blade" ? -1 : 0;
     let cut = len;
     let text = "";
     while (i < len) {
       const c = l[i]!;
+      if (mode === "html") {
+        // inline HTML: text to the next open tag; a `<!-- -->` in it hides no PHP (PHP still runs)
+        PHP_OPEN.lastIndex = i;
+        if (c === "<" && l[i + 1] === "?" && PHP_OPEN.test(l)) {
+          mode = "code";
+          prev = ";";
+          word = "";
+          i = PHP_OPEN.lastIndex;
+        } else if (lx.blade && c === "{" && l.startsWith("{{--", i)) {
+          // Blade takes its comments out before PHP runs: a `<?php` inside one is gone too
+          if (codeOut && seg >= 0) text += `${l.slice(seg, i)} `;
+          seg = -1;
+          comment = true;
+          mode = "blade";
+          i += 4;
+        } else {
+          if (!isSpace(c)) code = true;
+          i++;
+        }
+        continue;
+      }
+      if (mode === "blade") {
+        const k = l.indexOf("--}}", i);
+        if (k < 0) i = len;
+        else {
+          mode = "html";
+          i = seg = k + 4;
+        }
+        continue;
+      }
       if (mode === "block") {
         if (c === "*" && l[i + 1] === "/") {
           i += 2;
@@ -270,10 +323,26 @@ export function lexCommentLines(
       }
       // code
       const d = l[i + 1];
-      if (c === "/" && d === "/" && lx.slashSlash) {
+      if (lx.php && c === "?" && d === ">") {
+        // PHP's close tag (no string's, no block comment's): inline HTML after it
+        mode = "html";
+        i += 2;
+        continue;
+      }
+      const lineComment =
+        (c === "/" && d === "/" && lx.slashSlash) || (c === "#" && lx.hash && d !== "[");
+      if (lineComment) {
         comment = true;
-        cut = i;
-        break;
+        // in PHP a line comment ends at `?>`, and inline HTML follows it
+        const k = lx.php ? l.indexOf("?>", i + (c === "#" ? 1 : 2)) : -1;
+        if (k < 0) {
+          cut = i;
+          break;
+        }
+        if (codeOut && seg >= 0) text += `${l.slice(seg, i)} `;
+        mode = "html";
+        i = seg = k + 2;
+        continue;
       }
       if (c === "/" && d === "*") {
         if (codeOut && seg >= 0) text += `${l.slice(seg, i)} `;
@@ -285,11 +354,6 @@ export function lexCommentLines(
         if (doc) docLine = true;
         i += 2;
         continue;
-      }
-      if (c === "#" && lx.hash && d !== "[") {
-        comment = true;
-        cut = i;
-        break;
       }
       // a prefix that makes the string after it raw, at an identifier's start
       if ((lx.rustChar || lx.dartRaw) && !(i > 0 && isWord(l[i - 1]!))) {
