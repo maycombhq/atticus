@@ -36,6 +36,47 @@ vi.mock("../src/api/client.js", async () => ({
           "Bringing in what merged is running on this server (job-9): wait for it to finish, then try again.",
       });
     }
+    // ADR 0195 point 4: an Apply whose build would remove more than the limit refuses, listing
+    // the removals; the same Apply with their count confirms them.
+    if (path === "/api/facts/forge-small/apply")
+      return {
+        jobId: (o?.body as { allowRemovals?: number }).allowRemovals === 2 ? "job-7" : "job-6",
+      };
+    if (path === "/api/jobs/job-6")
+      return {
+        state: "done",
+        errors: [],
+        result: {
+          code: 1,
+          lines: ["Nothing written: catalog/generated and every slot are as they were."],
+          refused: {
+            reasons: ["large-removals"],
+            message: "This would remove 2 records (2 of forge-small's 12).",
+            removals: [
+              {
+                path: "catalog/generated/interface/if-web-api.yaml",
+                kind: "Interface",
+                id: "if-web-api",
+                repos: ["forge-small"],
+                explainedBy: ["an input changed (facts/*.corrections.jsonl)"],
+                reasons: ["input"],
+              },
+              {
+                path: "catalog/generated/capability/feature.notes.yaml",
+                kind: "Capability",
+                id: "feature.notes",
+                repos: ["forge-small"],
+                explainedBy: ["an input changed (facts/*.corrections.jsonl)"],
+                reasons: ["input"],
+              },
+            ],
+            allowRemovals: 2,
+            command: "atticus verify forge-small --write --allow-removals 2",
+          },
+        },
+      };
+    if (path === "/api/jobs/job-7")
+      return { state: "done", errors: [], result: { code: 0, lines: ["forge-small: applied"] } };
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
     if (path.endsWith("/apply")) return { jobId: "job-1" };
     if (path === "/api/propose") return { jobId: "job-2" };
@@ -204,4 +245,32 @@ it("Sync the repos syncs exactly the repos with no clone", async () => {
   for (let i = 0; i < 5; i++) await tick();
   m.render();
   expect(calls[0]).toEqual({ path: "/api/workspace/sync", body: { repos: ["forge-ok"] } });
+});
+
+it("an Apply whose build waits for a confirm lists the removals, and confirms them with their count", async () => {
+  const { RefusalView } = await import("../src/screens/setup/CatalogBuild.js");
+  const m = mount(ApplyAndPropose as never, { scope: "corrections", repo: "forge-small" } as never);
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-small"),
+  )!;
+  calls.length = 0;
+  (btn.props.onClick as () => void)();
+  await vi.waitFor(() => {
+    m.render();
+    expect(all(m.tree).find((e) => e.type === RefusalView)).toBeDefined();
+  });
+  const view = all(m.tree).find((e) => e.type === RefusalView)!;
+  const refused = view.props.refused as { allowRemovals: number; removals: unknown[] };
+  expect(refused.allowRemovals).toBe(2);
+  expect(refused.removals).toHaveLength(2);
+  expect((view.props.confirmLabel as (n: number) => string)(2)).toBe(P.confirmApply(2));
+  // Confirmed with the count listed: the same Apply again, with --allow-removals 2.
+  await (view.props.onAllowRemovals as (n: number) => Promise<void>)(2);
+  m.render();
+  expect(calls.filter((c) => c.path === "/api/facts/forge-small/apply")).toEqual([
+    { path: "/api/facts/forge-small/apply", body: {} },
+    { path: "/api/facts/forge-small/apply", body: { allowRemovals: 2 } },
+  ]);
+  expect(all(m.tree).find((e) => e.type === RefusalView)).toBeUndefined();
+  expect(text(m.tree)).toContain("forge-small: applied");
 });

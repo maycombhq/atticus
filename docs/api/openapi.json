@@ -7265,7 +7265,7 @@
     "/api/facts/{repo}/apply": {
       "post": {
         "operationId": "applyFacts",
-        "summary": "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction",
+        "summary": "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction; 3.12.0: with the counts that confirm a refused build",
         "tags": [
           "workspace"
         ],
@@ -7279,6 +7279,29 @@
             "required": true
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Started: its job's result is the code and the lines verify printed",

@@ -289,3 +289,25 @@ it("refuses Apply for a repo that isn't a repo name or isn't in the workspace", 
     await s.close();
   }
 }, 60_000);
+
+/**
+ * ADR 0195 point 4 (3.12.0): Apply confirms a refused build with the counts it listed, and takes
+ * nothing else; a body that isn't those is refused before anything runs.
+ */
+it("Apply takes only the counts that confirm a refused build", async () => {
+  const { root } = await speckitRoot({ repos: ["forge-ledger"], open: false });
+  const s = await startServer({ root, port: 0, user: "pat", extend: (r, ctx) => uiRoutes(r, ctx) });
+  try {
+    const h = { "X-Atticus-Token": s.token, "Content-Type": "application/json" };
+    for (const body of [{ allowRemovals: -1 }, { discardEdits: "all" }, { force: true }]) {
+      const r = await fetch(`${s.url}/api/facts/forge-ledger/apply`, {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify(body),
+      });
+      expect(r.status).toBe(400);
+    }
+  } finally {
+    await s.close();
+  }
+}, 60_000);

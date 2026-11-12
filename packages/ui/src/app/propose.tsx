@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import type { Api } from "@maycombhq/core";
 import {
   api,
   ApiError,
@@ -14,10 +15,22 @@ import { flash } from "./flash.js";
 import { focusIfLost } from "./ui.js";
 import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
-import { followJob, nextAfter, type NextStep } from "./job.js";
+import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
 import { SyncFirst } from "./sync-first.js";
+import { RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
+
+/**
+ * A failed Apply whose build refused for what a person confirms (ADR 0195 point 4: a large
+ * removal, a hand edit), as its job's result lists it; undefined for any other failure.
+ */
+export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
+  if (!(e instanceof JobFailed)) return undefined;
+  const r = e.result?.refused as Api.BuildRefusalViewT | undefined;
+  if (!r || !Array.isArray(r.reasons)) return undefined;
+  return r.reasons.some((x) => x === "large-removals" || x === "hand-edits") ? r : undefined;
+}
 
 /** Eighth UX walk: the app's work changed files that wait to be proposed; Home reads them again. */
 const WORK_CHANGED = "atticus:work-changed";
@@ -69,6 +82,52 @@ export function ApplyAndPropose(p: {
   const [next, setNext] = useState<NextStep | undefined>();
   // Every run the app starts shows in the Console: this one's entry, linked while it runs.
   const [jobId, setJobId] = useState<string | undefined>();
+  // ADR 0195 point 4: the build Apply ran refused (a large removal, a hand edit): its listing,
+  // confirmed here with its counts, as a scan's is on Scans.
+  const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
+  /** Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed. */
+  const applyWith = async (counts: { allowRemovals?: number; discardEdits?: number }) => {
+    setNext(undefined);
+    try {
+      const r = await followJob(
+        `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
+        counts,
+        undefined,
+        setJobId,
+      );
+      setRefused(undefined);
+      setApplied(r.lines);
+      // A correction's Apply can take its panel away (the fact it was on goes):
+      // what happened, and where to propose it, stays on the page.
+      if (p.scope === "corrections")
+        flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
+    } catch (e) {
+      // Round 41: a refusal to start (409: another local step runs) is the server's
+      // own words, not verify's problems; nothing ran.
+      if (e instanceof ApiError && e.problem.status === 409) {
+        const said = P.notStarted(e.problem.detail ?? e.problem.title);
+        if (p.scope === "corrections") flash({ text: said.slice(0, 400) });
+        throw new Error(said, { cause: e });
+      }
+      const waits = buildRefusalOf(e);
+      setRefused(waits);
+      setApplied([(e as Error).message]);
+      setNext(nextAfter(e));
+      // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
+      if (p.scope === "corrections")
+        flash({
+          text: (waits ? P.applyWaits(p.repo!) : `${P.applyFailed} ${(e as Error).message}`).slice(
+            0,
+            400,
+          ),
+        });
+      throw new Error(waits ? P.applyWaits(p.repo!) : P.applyFailed, { cause: e });
+    } finally {
+      // What waits to be applied or proposed (Home's list, the map's bar) is read
+      // again once the Apply has ended, not only when it started.
+      workChanged();
+    }
+  };
   return (
     <div className="stack" style={{ gap: 8 }}>
       {p.repo && (
@@ -78,42 +137,7 @@ export function ApplyAndPropose(p: {
               type="button"
               className="btn primary"
               disabled={apply.busy}
-              onClick={() =>
-                void apply.run(async () => {
-                  setNext(undefined);
-                  try {
-                    const r = await followJob(
-                      `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
-                      {},
-                      undefined,
-                      setJobId,
-                    );
-                    setApplied(r.lines);
-                    // A correction's Apply can take its panel away (the fact it was on goes):
-                    // what happened, and where to propose it, stays on the page.
-                    if (p.scope === "corrections")
-                      flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
-                  } catch (e) {
-                    // Round 41: a refusal to start (409: another local step runs) is the server's
-                    // own words, not verify's problems; nothing ran.
-                    if (e instanceof ApiError && e.problem.status === 409) {
-                      const said = P.notStarted(e.problem.detail ?? e.problem.title);
-                      if (p.scope === "corrections") flash({ text: said.slice(0, 400) });
-                      throw new Error(said, { cause: e });
-                    }
-                    setApplied([(e as Error).message]);
-                    setNext(nextAfter(e));
-                    // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
-                    if (p.scope === "corrections")
-                      flash({ text: `${P.applyFailed} ${(e as Error).message}`.slice(0, 400) });
-                    throw new Error(P.applyFailed, { cause: e });
-                  } finally {
-                    // What waits to be applied or proposed (Home's list, the map's bar) is read
-                    // again once the Apply has ended, not only when it started.
-                    workChanged();
-                  }
-                }, P.applied(p.repo!))
-              }
+              onClick={() => void apply.run(() => applyWith({}), P.applied(p.repo!))}
             >
               {apply.busy ? P.applying : P.apply(p.repo)}
             </button>
@@ -126,6 +150,16 @@ export function ApplyAndPropose(p: {
             </pre>
           )}
           {next && <SyncFirst repos={next.repos} />}
+          {refused && (
+            <RefusalView
+              refused={refused}
+              confirmLabel={P.confirmApply}
+              onAllowRemovals={(n) =>
+                apply.run(() => applyWith({ allowRemovals: n }), P.applied(p.repo!))
+              }
+              onDiscard={(n) => apply.run(() => applyWith({ discardEdits: n }), P.applied(p.repo!))}
+            />
+          )}
         </div>
       )}
       {!p.noPropose && <Propose scope={p.scope} />}

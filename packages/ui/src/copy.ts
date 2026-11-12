@@ -4976,6 +4976,10 @@ export const COPY = {
     cancel: "Not now",
     appliedFlash: (repo: string) =>
       `Applied the correction to ${repo}'s map. It waits on Home to be proposed for review.`,
+    /** ADR 0195 point 4: Apply's build refused; it waits for the person's confirm, listed here. */
+    applyWaits: (repo: string) =>
+      `Nothing applied to ${repo}'s map yet: its build waits for you to confirm what it lists.`,
+    confirmApply: (n: number) => `Apply, removing ${n} ${n === 1 ? "record" : "records"}`,
     toHome: "Propose it from Home",
     applyFirst:
       "Apply the answers and corrections first, so the map in the pull request matches them:",

@@ -190,6 +190,21 @@ test.describe("a correction on the canvas, applied from the app", () => {
     await expect(bar.getByRole("button", { name: "Apply to forge-studio's map" })).toBeVisible();
     await accessible(page, "a link corrected on the canvas");
     await apply.click();
+    // ADR 0195 point 4: on this one-repo estate the correction's build removes more than a tenth
+    // of forge-studio's records (the web app's arrow to the api, and what it made), so Apply
+    // lists them and waits for their count, as a scan's confirm does, before it writes anything.
+    const review = form.getByRole("button", { name: /^Review the \d+ removals$/ });
+    await expect(review).toBeVisible({ timeout: 90_000 });
+    const n = Number(/\d+/.exec((await review.textContent()) ?? "")?.[0]);
+    await review.click();
+    const dialog = page.getByRole("dialog");
+    // Each removal says what explains it: the person's own correction.
+    await expect(
+      dialog.getByRole("cell", { name: /^A pairing changed \(facts\/\*\.corrections\.jsonl\)/ }),
+    ).toHaveCount(n);
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+    await accessible(page, "a correction's removals, waiting for their count");
+    await dialog.getByRole("button", { name: `Apply, removing ${n} records` }).click();
     // Apply can take the form away (the link it was on moves): what happened stays on the page,
     // with where to propose it.
     await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({

@@ -826,8 +826,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
-      .add("POST", "/api/facts/{repo}/apply", async ({ params }) => {
+      .add("POST", "/api/facts/{repo}/apply", async ({ params, body }) => {
         const { verifyCommand } = await import("./verify-commands.js");
+        // ADR 0195 point 4: the confirm step's counts, as the refused build listed them.
+        const b = parseBody(Api.FactsApplyRequest, body);
         // Final review: the router decodes %2F and %5C, so the repo is checked as every other
         // /api/facts/{repo} route checks it, and must be one the workspace lists, before any
         // file is read under its name.
@@ -835,9 +837,31 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (!FACTS_REPO.test(repo)) throw badRequest(`${JSON.stringify(repo)} isn't a repo name.`);
         if (!(await loadRepos(root)).some((x) => x.id === repo))
           throw notFound(`There is no repo ${repo} in this workspace.`);
-        return asJob(`Applying to ${repo}`, () =>
-          run((io) => verifyCommand(root, repo, { write: true, verbose: false, json: false }, io)),
-        );
+        return asJob(`Applying to ${repo}`, async () => {
+          const { lastBuildOf } = await import("./build-report.js");
+          const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+          const ran = await run((io) =>
+            verifyCommand(
+              root,
+              repo,
+              {
+                write: true,
+                verbose: false,
+                json: false,
+                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+              },
+              io,
+            ),
+          );
+          if (ran.code === 0) return ran;
+          // The build this Apply ran refused (a large removal, a hand edit): its listing, which
+          // the app's confirm step shows and confirms with its counts. Only this job's report.
+          const last = await lastBuildOf(root);
+          return last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before
+            ? { ...ran, extra: { refused: last.refused } }
+            : ran;
+        });
       })
       // Ninth UX walk: the upgrade steps this metarepo waits on (runtime.yaml at an older schema,
       // say), and atticus upgrade run here as a local job on the person's click. It backs up what

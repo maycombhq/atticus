@@ -580,7 +580,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   write is the CLI's own command as a local job (its lines in the Console), and is refused
  *   (409, nothing written) when what it would change is no longer what the page showed.
  *   POST /api/scan takes `allowRemovals` and `discardEdits`, and its job's result gives each
- *   repo's `sources` (read in full, or kept its last good read and why). Additive only.
+ *   repo's `sources` (read in full, or kept its last good read and why). So does Apply (POST
+ *   /api/facts/{repo}/apply, `verify <repo> --write`): its job's result carries the build's
+ *   `refused` (BuildRefusalView) when the build refused. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -3620,6 +3622,16 @@ export const Health = z.object({
 });
 
 // ------------------------------------------------------------------ request bodies
+
+/**
+ * 3.12.0 (ADR 0195 point 4): Apply (`atticus verify <repo> --write`) confirms a refused build
+ * with the counts it listed (`--allow-removals`, `--discard-edits`); any other count refuses
+ * again. Its job's result carries the build's `refused` (BuildRefusalView) when it refused.
+ */
+export const FactsApplyRequest = z.strictObject({
+  allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
+  discardEdits: z.number().int().min(0).max(1_000_000).optional(),
+});
 
 export const ScanRequest = z.strictObject({
   repos: z.array(RecordId).optional(),
@@ -7470,9 +7482,10 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "applyFacts",
       summary:
-        "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction",
+        "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction; 3.12.0: with the counts that confirm a refused build",
       tag: "workspace",
       params: [p("repo")],
+      body: FactsApplyRequest,
       ok: {
         status: 202,
         schema: "JobAccepted",

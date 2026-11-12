@@ -30,6 +30,8 @@ export class JobFailed extends Error {
     readonly next?: NextStep,
     /** The job's exit code, when it ended with one (a step that says which part refused). */
     readonly code?: number,
+    /** The rest of its result (Apply's refused build, ADR 0195 point 4: what a person confirms). */
+    readonly result?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -69,6 +71,7 @@ export async function followJob(
           lines,
           nextStepOf(j.result),
           j.result?.code,
+          j.result,
         );
       // Beta.27 review, final round: the rest of the result (the upgrade's `upgraded`).
       return { code, lines, ...(j.result ? { result: j.result } : {}) };
