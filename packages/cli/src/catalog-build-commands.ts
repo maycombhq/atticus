@@ -290,8 +290,8 @@ const PROTECTED = new Set(["kind", "id", "schemaVersion", "confidence", "evidenc
 /**
  * atticus catalog edits [--curate]: the files under catalog/generated changed by hand since the
  * last build. With --curate each becomes a curated decision (ADR 0195 point 4): a changed file an
- * assert of the fields it changed, a deleted one a suppress; an added record can't be (a curated
- * decision changes or suppresses a record the build makes) and is said. When every edit is made
+ * assert of the fields it changed, a deleted one a suppress, an added record an assert of the
+ * whole record with its kind (the build adds it while it makes no record of that id). When every edit is made
  * curated, the build runs with them, and the edited files' bytes go into the undo copy.
  */
 export async function catalogEdits(
@@ -333,20 +333,53 @@ export async function catalogEdits(
     const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
     for (const e of edits) {
       const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
-      const derived = built.get(rel);
+      const derivedNow = built.get(rel);
+      let derived = derivedNow;
       let decision: Record<string, unknown> | undefined;
       if (e.how === "deleted") {
-        if (!derived) continue;
-        decision = { action: "suppress", target: derived.id, value: null };
+        // A record this build no longer makes is suppressed by the id its file named, so it
+        // stays deleted should it return.
+        const id = derived?.id ?? (rel.split("/").pop() ?? "").replace(/\.ya?ml$/, "");
+        decision = { action: "suppress", target: id, value: null };
       } else if (e.how === "added") {
-        left.push({
-          path: e.path,
-          why: "an added record can't be a curated decision (one changes or suppresses a record the build makes); put it in inputs/, or discard it",
-        });
-        continue;
+        // An assert of the whole record, its kind named: the build adds it while it makes no
+        // record of that id, and asserts its fields on the one it makes once it does.
+        const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
+        const p = deserializeRecord(text);
+        if (!p.ok || derived) {
+          left.push({
+            path: e.path,
+            why: derived
+              ? "the build makes a record of its id: change that record instead"
+              : "it doesn't read as a record",
+          });
+          continue;
+        }
+        const rec = p.record as unknown as Record<string, unknown>;
+        const value: Record<string, unknown> = { kind: rec.kind };
+        for (const k of Object.keys(rec).sort(cmpText))
+          if (!PROTECTED.has(k) && k !== "status") value[k] = rec[k];
+        decision = { action: "assert", target: String(rec.id), value };
       } else {
         const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
         const p = deserializeRecord(text);
+        // A record this build no longer makes (its repo removed or archived since): the edit is
+        // read against the record as its slot last held it, and the assert waits, orphaned,
+        // until the record returns.
+        const fromSlot = (): CatalogRecord | undefined => {
+          if (!p.ok) return undefined;
+          const { kind, id } = p.record;
+          const held = [
+            ...[...inputs.slots.readers.values()].flatMap((x) =>
+              "slot" in x ? x.slot.records : [],
+            ),
+            ...(inputs.slots.legacy && "slot" in inputs.slots.legacy
+              ? inputs.slots.legacy.slot.records
+              : []),
+          ];
+          return held.find((r) => r.kind === kind && r.id === id);
+        };
+        derived = derivedNow ?? fromSlot();
         if (!p.ok || !derived) {
           left.push({
             path: e.path,
@@ -381,7 +414,7 @@ export async function catalogEdits(
       }
       const record = parseRecord({
         kind: "CuratedDecision",
-        id: slug(`cd-edit-${String(decision.action)}-${derived!.id}`),
+        id: slug(`cd-edit-${String(decision.action)}-${String(decision.target)}`),
         schemaVersion: 2,
         status: "current",
         confidence: "asserted",

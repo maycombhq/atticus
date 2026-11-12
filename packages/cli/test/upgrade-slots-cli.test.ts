@@ -312,6 +312,33 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
   );
 
   it(
+    "a record added by hand: catalog edits --curate makes it an assert of the whole record, which every later build keeps",
+    async () => {
+      const root = await scanned();
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const [file] = readdirSync(dir).sort();
+      const { parse: parseYaml, stringify } = await import("yaml");
+      const doc = parseYaml(readFileSync(join(dir, file!), "utf8")) as Record<string, unknown>;
+      const id = `${String(doc.id)}.by-hand`;
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(
+        join(dir, `${id}.yaml`),
+        stringify({ ...doc, id, pathOrTopic: "/by-hand", normalizedPath: "/by-hand" }),
+      );
+      const curate = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
+      expect(curate.code, curate.err).toBe(0);
+      expect(curate.out).toMatch(/Wrote catalog\/curated\/curateddecision\/cd-edit-assert-/);
+      expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
+      const added = readFileSync(join(dir, `${id}.yaml`), "utf8");
+      expect(added).toMatch(/^pathOrTopic: \/by-hand$/m);
+      expect(added).toMatch(/^confidence: asserted$/m);
+      expect((await run(["scan", "--root", root, "--no-drift"])).code).toBe(0);
+      expect(readFileSync(join(dir, `${id}.yaml`), "utf8")).toBe(added);
+    },
+    T,
+  );
+
+  it(
     "an undo of a confirmed discard puts the hand edit back, as it was before the discard, and succeeds",
     async () => {
       const root = await scanned();

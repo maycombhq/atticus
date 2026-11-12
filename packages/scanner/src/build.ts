@@ -18,6 +18,8 @@ import {
   linkEvidenceOf,
   loadOrgPack,
   mergeCatalog,
+  parseRecord,
+  SCHEMA_VERSION,
   listQuestions,
   questionsRelOf,
   readSharedMaps,
@@ -801,8 +803,38 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   );
 
   // ---- 6. the curated decisions, once, last
+  // A record a person added by hand, made curated (`edits --curate`, point 4): an assert whose
+  // value names the record's kind adds it when the build doesn't make it; the assert then applies
+  // to it, as to any record (the kind is taken off the decision the assert applies).
+  const have = new Set(records.map((r) => r.id));
+  const decisions = i.curated.records.map((d) => {
+    if (d.kind !== "CuratedDecision" || d.action !== "assert") return d;
+    const v = d.value as Record<string, unknown> | null;
+    if (!v || typeof v !== "object" || Array.isArray(v) || typeof v.kind !== "string") return d;
+    const { kind, ...fields } = v;
+    if (d.status === "current" && !have.has(d.target)) {
+      const p = parseRecord({
+        ...fields,
+        schemaVersion: SCHEMA_VERSION,
+        kind,
+        id: d.target,
+        status: "current",
+        confidence: "asserted",
+        evidence: [{ source: "manual", by: d.by }],
+      });
+      if (p.ok) {
+        records.push(p.record);
+        have.add(d.target);
+      } else
+        problems.push({
+          source: "curated",
+          message: `${d.id} adds ${String(kind)} ${d.target}, which isn't a valid record: ${p.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
+        });
+    }
+    return { ...d, value: fields } as CatalogRecord;
+  });
   const sorted = [...records].sort(byKindId);
-  const applied = applyCurated(sorted, i.curated.records);
+  const applied = applyCurated(sorted, decisions);
   const present = new Set(sorted.map((r) => r.id));
   const orphanedDecisions = i.curated.records
     .filter(
@@ -1277,7 +1309,9 @@ export async function guardBuild(
     for (const f of last.manifest.files) {
       const p = strip(f.path);
       if (b.files.has(p)) continue;
-      // A file deleted by hand isn't a removal of this build's: the edits above list it.
+      // A file deleted by hand isn't a removal of this build's: the edits above list it (or
+      // `edits --curate` made it a decision the build keeps).
+      if (!onDisk.has(p)) continue;
       const r = oldRecords.get(p);
       const [kind, file] = p.split("/");
       const id = r?.id ?? (file ?? "").replace(/\.ya?ml$/, "");
