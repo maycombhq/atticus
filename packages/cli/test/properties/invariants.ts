@@ -787,12 +787,14 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
  * The catalog holds what the model says a build makes, for what the model derives: one REST
  * Endpoint per endpoint each repo's source serves (no more), each repo's own Component, and
  * every cross-repo arrow that must exist (links-are-live checks none is extra). Files edited by
- * hand are the person's, and are left out.
+ * hand are the person's, and are left out, as are those made curated whose build hasn't written.
  */
 function content(s: Step): void {
   const v = s.m.built;
   if (!v || s.m.beta26) return;
-  const edits = s.m.handEdits;
+  // A hand edit made curated whose build was refused is still on disk, the person's, until a
+  // build writes (ADR 0195 point 4: a refusal writes nothing).
+  const edits = [...s.m.handEdits, ...s.m.curatedPending];
   const skipPaths = new Set(edits.map((e) => e.path));
   const skip = new Set(
     edits.flatMap((e) => [e.id, ...(e.key ? [e.key] : []), ...(e.arrow ? [e.arrow] : [])]),
