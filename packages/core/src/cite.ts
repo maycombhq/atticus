@@ -222,6 +222,48 @@ const TOKEN_SHAPES = [
   /\bAIza[0-9A-Za-z_-]{35}/g,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
 ];
+
+/**
+ * Beta.27 review: the well-known token prefixes, whatever follows them (TOKEN_SHAPES want the
+ * whole token, so a token cut short or typed in part passes them): a Git host's personal, project
+ * and deploy tokens, a package registry's, a model hub's, a payment provider's secret, restricted,
+ * publishable and webhook keys, a chat workspace's bot, user and app tokens, a cloud's access key
+ * ids, API keys and OAuth access tokens, a JWT's header, a mail service's key, a point-of-sale
+ * provider's access and secret keys, a telephony provider's API key and account ids, a data
+ * platform's token, a storage account's key in a connection string, a shared access signature,
+ * and a bearer or Basic authorization. One list: a run's title (run-log.ts) drops a word with one.
+ */
+export const TOKEN_PREFIXES: readonly RegExp[] = [
+  /\bgh[pousr]_/,
+  /\bgithub_pat_/,
+  /\bgl(?:pat|ptt|dt|rt|cbt|imt|soat|ffct|agent)-/,
+  /\bnpm_/,
+  /\bpypi-/,
+  /\bhf_/,
+  /\b(?:sk|rk|pk)[-_]/,
+  /\bwhsec_/,
+  /\bxox[abeprs]-/,
+  /\bxapp-/,
+  /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{4}/,
+  /\bAIza/,
+  /\beyJ/,
+  /\bya29\./,
+  /\bshp(?:at|ss|ca|pa)_/,
+  /\bdop_v1_/,
+  /\bSG\./,
+  /\bsq0(?:atp|csp|idp)-/,
+  /\bEAAA[A-Za-z0-9]/,
+  /\bSK[0-9a-fA-F]{8}/,
+  /\bAC[0-9a-f]{8}/,
+  /\bdapi[0-9a-f]{8}/,
+  /AccountKey=/i,
+  /SharedAccessSignature|[?&]sig=/i,
+  /\bBearer\s/i,
+  /\bBasic\s/i,
+];
+
+/** Whether a text holds one of TOKEN_PREFIXES anywhere (beta.27 review). */
+export const hasTokenPrefix = (text: string): boolean => TOKEN_PREFIXES.some((re) => re.test(text));
 /**
  * Whether a text holds a secret by its shape alone, whatever names it (beta.24 review): a URL's
  * password (`jdbc:postgresql://user:pass@host`), a bearer or Basic token or one of the well-known token

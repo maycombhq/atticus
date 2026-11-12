@@ -75,6 +75,7 @@ describe("repos are the manifest's, the same wherever they are counted", () => {
       repos: 7,
       onMap: 4,
       notOnMap: ["forge-events", "forge-gateway", "forge-infra"],
+      offManifest: [],
     });
     // Neither read alone is the count.
     expect(repoCountsOf(undefined, ESTATE)).toBeUndefined();
@@ -92,7 +93,7 @@ describe("repos are the manifest's, the same wherever they are counted", () => {
     // The header: how many of them the map has.
     expect(systemsHeader(c)).toBe(E.reposOnMap(4, 7));
     expect(E.reposOnMap(4, 7)).toBe("4 of 7 repos on the map");
-    expect(systemsHeader({ repos: 3, onMap: 3, notOnMap: [] })).toBe(E.repos(3));
+    expect(systemsHeader({ repos: 3, onMap: 3, notOnMap: [], offManifest: [] })).toBe(E.repos(3));
     expect(systemsHeader(undefined)).toBeUndefined();
     // The tree: every manifest repo once, the ones with no box under Not on the map.
     const items = systemItems(ESTATE, c.notOnMap);
@@ -152,5 +153,39 @@ describe("repos are the manifest's, the same wherever they are counted", () => {
     expect(html).toContain(E.spoken("forge-ledger", E.components(1)));
     expect(html).toContain(E.spoken("Cards", E.noRepo));
     expect(html).toContain("forge-gateway");
+  });
+
+  it("beta.27 re-review: a box for a repo the manifest doesn't name is flagged and counted nowhere", () => {
+    // Records left for forge-legacy-batch, taken out of the manifest: the map still has its box.
+    const estate = {
+      children: [
+        ...ESTATE.children,
+        node("repo:forge-legacy-batch", "repo", "forge-legacy-batch", "system:payments"),
+      ],
+    };
+    const c = repoCountsOf(TRUST, estate)!;
+    // On the map: the manifest's repos with a box, never the one it doesn't name.
+    expect(c).toEqual({
+      repos: 7,
+      onMap: 4,
+      notOnMap: ["forge-events", "forge-gateway", "forge-infra"],
+      offManifest: ["forge-legacy-batch"],
+    });
+    expect(systemsHeader(c)).toBe(E.alsoOffManifest(E.reposOnMap(4, 7), 1));
+    expect(systemsHeader(c)).toBe("4 of 7 repos on the map, 1 more not in the manifest");
+    const items = systemItems(estate, c.notOnMap, c.offManifest);
+    // The tree's repos are the manifest's: the header and the rows add up.
+    expect(treeRepos(items)).toBe(7);
+    const payments = items.find((i) => i.label === "Payments")!;
+    expect(payments).toMatchObject({ count: 1, countOf: "repos" });
+    const legacy = payments.children!.find((x) => x.label === "forge-legacy-batch")!;
+    expect(legacy).toMatchObject({ detail: E.notInManifest, offManifest: true });
+    const onMapRows = items
+      .filter((i) => i.countOf === "repos" && i.id !== "systems/not-on-map")
+      .reduce((n, i) => n + (i.count ?? 0), 0);
+    expect(onMapRows).toBe(c.onMap);
+    // Not on the map's repos open Map › Trust, which takes no repo to select.
+    const last = items.at(-1)!;
+    expect(last.children!.every((x) => x.hash === "#/trust")).toBe(true);
   });
 });

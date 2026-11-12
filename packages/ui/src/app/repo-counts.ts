@@ -9,11 +9,22 @@
  * Explorer's header (the boxes), "7 repos" in the status bar (the manifest) and 1/1/2/1 on the
  * systems' rows (repos and components no repo holds, together). Now the header says how many of
  * the manifest's repos are on the map ("4 of 7 repos on the map"), the tree lists the rest under
- * "Not on the map" so header and tree add up, and a system's row counts its repos only.
+ * "Not on the map" so header and tree add up, and a system's row counts its repos only. Beta.27
+ * re-review: a box for a repo the manifest doesn't name (records left for a repo taken out of
+ * it) is counted nowhere, flagged on its row ("not in the manifest") and said in the header.
  */
+
+import { catalogMayHaveChanged, filesMayHaveChanged, type LiveEvent } from "../api/client.js";
 
 /** The manifest's repos: Map › Trust's read. */
 export const MANIFEST_REPOS_PATH = "/api/trust";
+
+/**
+ * Beta.27 review: the file events that can change Map › Trust's read (a count shown from it reads
+ * it again on those only): the catalog or the org pack, the manifest (a top file) and the facts.
+ */
+export const manifestMayHaveChanged = (events: LiveEvent[]): boolean =>
+  catalogMayHaveChanged(events) || filesMayHaveChanged(events, /(^|\/)facts\//);
 
 /** GET /api/trust, as far as the count reads it. */
 export interface ManifestReposAnswer {
@@ -33,6 +44,11 @@ export interface RepoCounts {
   onMap: number;
   /** Those it has none for, by name. */
   notOnMap: string[];
+  /**
+   * Beta.27 review: the repos the map has a box for that the manifest doesn't name (records left
+   * for a repo taken out of it), by name: never counted as a repo, flagged where they show.
+   */
+  offManifest: string[];
 }
 
 /** The manifest's repos, by name; undefined until known. */
@@ -55,9 +71,9 @@ export function mapRepos(nodes: readonly MapRepoNode[]): string[] {
 }
 
 /**
- * The repos, once both reads are known: the manifest's, those on the map and those not.
- * Undefined while either isn't: the boxes alone would read as the repos and disagree with the
- * status bar.
+ * The repos, once both reads are known: the manifest's, those of them on the map (the manifest's
+ * and the boxes' both), those not, and the boxes the manifest doesn't name. Undefined while either
+ * isn't: the boxes alone would read as the repos and disagree with the status bar.
  */
 export function repoCountsOf(
   manifest: ManifestReposAnswer | undefined,
@@ -65,7 +81,11 @@ export function repoCountsOf(
 ): RepoCounts | undefined {
   const named = manifestRepos(manifest);
   if (!named || !map) return undefined;
+  const listed = new Set(named);
   const boxed = new Set(mapRepos(map.children));
-  const notOnMap = named.filter((r) => !boxed.has(r)).sort((a, b) => a.localeCompare(b));
-  return { repos: named.length, onMap: named.length - notOnMap.length, notOnMap };
+  const byName = (a: string, b: string) => a.localeCompare(b);
+  const notOnMap = [...listed].filter((r) => !boxed.has(r)).sort(byName);
+  const offManifest = [...boxed].filter((r) => !listed.has(r)).sort(byName);
+  const onMap = [...listed].filter((r) => boxed.has(r)).length;
+  return { repos: listed.size, onMap, notOnMap, offManifest };
 }

@@ -1,3 +1,5 @@
+import { catalogMayHaveChanged, filesMayHaveChanged, type LiveEvent } from "../api/client.js";
+
 /**
  * Beta.27: one count of the questions to answer, the same wherever it shows (the activity bar's
  * badge, the status bar, the Explorer's Questions, Home's tile, the Questions page's line at the
@@ -17,6 +19,16 @@
 /** The two reads the count is made of. */
 export const STEP_QUESTIONS_PATH = "/api/questions?state=open";
 export const OWNER_QUESTIONS_PATH = "/api/owner-questions";
+
+/**
+ * Beta.27 review: the file events that can change each read (a count shown from it reads it
+ * again on those only): the steps' questions are files under questions/ (or .atticus/questions/);
+ * the owner questions are the catalog's gaps and the answers curated there.
+ */
+export const stepQuestionsMayHaveChanged = (events: LiveEvent[]): boolean =>
+  filesMayHaveChanged(events, /(^|\/)questions(\/|$)/);
+export const ownerQuestionsMayHaveChanged = (events: LiveEvent[]): boolean =>
+  catalogMayHaveChanged(events);
 
 /** GET /api/questions (any filter), as far as the count reads it. */
 export interface StepQuestionsAnswer {

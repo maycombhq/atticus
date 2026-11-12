@@ -12,6 +12,7 @@ import { COPY } from "../../copy.js";
 import { useKnownAnswer, useLazyApi, type Lazy } from "./explorer-data.js";
 import {
   MANIFEST_REPOS_PATH,
+  manifestMayHaveChanged,
   repoCountsOf,
   type ManifestReposAnswer,
   type RepoCounts,
@@ -387,7 +388,10 @@ function statusOf(l: Lazy<unknown>, notYetIsEmpty = false): Status {
  */
 export function systemsHeader(c: RepoCounts | undefined): string | undefined {
   if (!c) return undefined;
-  return c.onMap === c.repos ? E.repos(c.repos) : E.reposOnMap(c.onMap, c.repos);
+  const head = c.onMap === c.repos ? E.repos(c.repos) : E.reposOnMap(c.onMap, c.repos);
+  // Beta.27 re-review: boxes for repos the manifest doesn't name are said, never counted.
+  const off = c.offManifest?.length ?? 0;
+  return off ? E.alsoOffManifest(head, off) : head;
 }
 
 /**
@@ -419,7 +423,11 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
   // Beta.27 review: the manifest's repos (Map › Trust's read, the status bar's too), so the
   // header and the tree count repos as the status bar does.
-  const manifest = useKnownAnswer<ManifestReposAnswer>(MANIFEST_REPOS_PATH, want("systems"));
+  const manifest = useKnownAnswer<ManifestReposAnswer>(
+    MANIFEST_REPOS_PATH,
+    want("systems"),
+    manifestMayHaveChanged,
+  );
   const repoCounts = repoCountsOf(manifest, estate.state === "ready" ? estate.data : undefined);
   const pins = usePins();
 
@@ -437,7 +445,10 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const all = useMemo(
     () => ({
       changes: changes.state === "ready" ? changeItems(changes.data) : [],
-      systems: estate.state === "ready" ? systemItems(estate.data, repoCounts?.notOnMap ?? []) : [],
+      systems:
+        estate.state === "ready"
+          ? systemItems(estate.data, repoCounts?.notOnMap ?? [], repoCounts?.offManifest ?? [])
+          : [],
       questions:
         questions.state === "ready"
           ? questionItems(questions.data, owner.state === "ready" ? owner.data : undefined)

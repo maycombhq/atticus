@@ -5,10 +5,13 @@ import {
   createLog,
   printToCurrent,
   recordedCommand,
+  retitleTerminalRuns,
+  runTitle,
   SCHEMA_VERSION,
   startTerminalRun,
   TITLE_VALUE_FLAGS,
 } from "@maycombhq/core/light";
+import { titleSlotsOf, titleWordsByHelp, type TitleSlot } from "./command-catalog.js";
 import { basename, join, resolve } from "node:path";
 import type { Output } from "./commands.js";
 import type { AiRuntime } from "@maycombhq/ai";
@@ -898,6 +901,8 @@ export async function main(
   );
   const log = () =>
     isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
+  // Beta.27 review: the runs beta.26 kept are titled again once, by the new rules (retitled).
+  if (isMetarepoRoot(root)) retitleTerminalRuns(root, retitled);
   // ADR 0187: the command words and ids, its flag names (never their values), what it prints.
   const said = o.record ? recorderFor(argv, flags, root) : undefined;
   // Run in the app's server, inside a job, each line also goes to the job's Console entry.
@@ -973,10 +978,30 @@ function positionalsAt(argv: string[]): number[] {
   return tokens.filter((t) => t.kind === "positional").map((t) => t.index);
 }
 
+/** Each command's argument places, by the help (titleSlotsOf), read once when a title needs them. */
+let slots: Map<string, TitleSlot[]> | undefined;
+const helpSlots = () => (slots ??= titleSlotsOf(HELP));
+
+/** Argv up to `--`, as the parser reads it: nothing after it is a title's (beta.27 review). */
+function beforeTerminator(argv: string[]): string[] {
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: optionsFor(argv),
+    strict: false,
+    tokens: true,
+  });
+  const cut = tokens.find((t) => t.kind === "option-terminator");
+  return cut ? argv.slice(0, cut.index) : argv;
+}
+
 /**
- * Argv's positional words as the parser reads them (an option's value isn't one). Beta.27 review:
- * a word right after a flag the command line doesn't know, given without `=` (`--pass hunter2`),
- * is that flag's value as the person meant it, so the title shows `…` for it, never the word.
+ * Argv's positional words as a run's title may show them. Beta.27 review: the words the
+ * command declares only (titleWordsByHelp: its words, then a word in each argument's place that
+ * takes an id; `…` for the rest), never one after `--`, never one right after a flag the command
+ * line doesn't know given without `=` (`--pass hunter2`: its value as the person meant it), nor
+ * after a known flag that took the next flag as its value (`--note --pass hunter2`). A word left
+ * out is said as `…` at the end.
  */
 export function titleWordsOf(argv: string[]): string[] {
   const options = optionsFor(argv);
@@ -987,43 +1012,72 @@ export function titleWordsOf(argv: string[]): string[] {
     strict: false,
     tokens: true,
   });
-  const out: string[] = [];
+  const words: string[] = [];
+  let hidden = false;
   let prev: (typeof tokens)[number] | undefined;
   for (const t of tokens) {
+    if (t.kind === "option-terminator") {
+      hidden ||= t.index < argv.length - 1;
+      break;
+    }
     if (t.kind === "positional") {
-      const unknownFlag =
-        prev?.kind === "option" && !Object.hasOwn(options, prev.name) && prev.inlineValue !== true;
-      out.push(unknownFlag ? "…" : argv[t.index]!);
+      const flagValue =
+        prev?.kind === "option" &&
+        prev.inlineValue !== true &&
+        (!Object.hasOwn(options, prev.name) || (prev.value ?? "").startsWith("-"));
+      if (flagValue) hidden = true;
+      else words.push(argv[t.index]!);
     }
     prev = t;
   }
-  return out;
+  const out = titleWordsByHelp(words, helpSlots());
+  return hidden && out.at(-1) !== "…" ? [...out, "…"] : out;
 }
+
+/** A record's words as the new rules title them (beta.27 review: the runs beta.26 kept). */
+const retitled = (r: { command: string[]; flags: string[] }) =>
+  runTitle(titleWordsByHelp(r.command, helpSlots()), r.flags);
 
 /**
  * ADR 0187: a long command's run files, when it is one (recordedCommand) at a metarepo; else
- * nothing is written. Its positional words as the parser reads them (an option's value isn't one).
+ * nothing is written. Its positional words as its title may show them (titleWordsOf), the names
+ * and values of its flags before `--`.
  */
 function recorderFor(argv: string[], flags: string[], root: string) {
   if (process.env.ATTICUS_RUN_LOG === "off") return undefined;
-  let positionals: string[];
-  let values: Record<string, string>;
+  let title: ReturnType<typeof titleInputsOf>;
   try {
-    positionals = titleWordsOf(argv);
-    values = optionValuesOf(argv);
+    title = titleInputsOf(argv, flags);
   } catch {
     return undefined;
   }
-  if (!recordedCommand(positionals, flags) || !isMetarepoRoot(root)) return undefined;
+  if (!recordedCommand(title.positionals, flags) || !isMetarepoRoot(root)) return undefined;
   // Beta.27: the values go to the title, which keeps an id or a name and drops a secret.
-  return startTerminalRun(root, { positionals, flags, values, hookProcess: true });
+  return startTerminalRun(root, { ...title, hookProcess: true });
+}
+
+/**
+ * What a run's title is made from (core's runTitle): the words it may show (titleWordsOf), and the
+ * names and values (optionValuesOf) of the flags given before `--` (beta.27 review).
+ */
+export function titleInputsOf(
+  argv: string[],
+  flags: string[],
+): { positionals: string[]; flags: string[]; values: Record<string, string> } {
+  const shown = beforeTerminator(argv);
+  return {
+    positionals: titleWordsOf(argv),
+    flags: flags.filter((f) => shown.some((a) => a === `--${f}` || a.startsWith(`--${f}=`))),
+    values: optionValuesOf(shown),
+  };
 }
 
 /**
  * Beta.27: the value of each option a title may show (the last one given), by its name. Beta.27
  * review: only an option the command line declares as taking a string (OPTIONS) and the title's
  * allow-list names (core's TITLE_VALUE_FLAGS); an unknown `--x=v` (parseArgs, not strict, reads
- * it) and every other flag give none, so their values never reach the run's record.
+ * it) and every other flag give none, so their values never reach the run's record; nor does a
+ * value that is the next flag (`--by --pass`).
  */
 export function optionValuesOf(argv: string[]): Record<string, string> {
   const options = optionsFor(argv);
@@ -1040,6 +1094,7 @@ export function optionValuesOf(argv: string[]): Record<string, string> {
     if (
       t.kind === "option" &&
       typeof t.value === "string" &&
+      !(t.inlineValue === false && t.value.startsWith("-")) &&
       Object.hasOwn(declared, t.name) &&
       declared[t.name]!.type === "string" &&
       TITLE_VALUE_FLAGS.has(t.name)

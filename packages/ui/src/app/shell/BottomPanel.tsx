@@ -11,6 +11,7 @@ import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { inboxOf, type InboxData, type InboxItem } from "../inbox.js";
 import {
+  openStepQuestions,
   OWNER_QUESTIONS_PATH,
   questionsToAnswerOf,
   type OwnerQuestionsAnswer,
@@ -174,16 +175,23 @@ export const OWNER_QUESTIONS_URL = OWNER_QUESTIONS_PATH;
  * Beta.27 review: the Questions tab's count is the questions to answer, both kinds, as the badge,
  * the status bar, the Explorer, Home and Questions count them (question-counts.ts); beta.27's
  * first cut counted the steps' only (4 where everything else said 7). None until both are read.
+ * Beta.27 re-review: when the owner questions can't be read, the steps' count (said as theirs
+ * only, panelCountIsStepsOnly), never no count at all.
  */
 export function panelQuestionCount(
   steps: Loaded<PanelQuestions>,
   owner: Loaded<OwnerQuestionsAnswer>,
 ): number | undefined {
-  return questionsToAnswerOf(
-    steps.state === "ready" ? steps.data : undefined,
-    owner.state === "ready" ? owner.data : undefined,
-  )?.total;
+  const fromSteps = steps.state === "ready" ? steps.data : undefined;
+  if (owner.state === "error") return openStepQuestions(fromSteps);
+  return questionsToAnswerOf(fromSteps, owner.state === "ready" ? owner.data : undefined)?.total;
 }
+
+/** Whether the Questions tab's count is the steps' only: the owner questions couldn't be read. */
+export const panelCountIsStepsOnly = (
+  steps: Loaded<PanelQuestions>,
+  owner: Loaded<OwnerQuestionsAnswer>,
+): boolean => owner.state === "error" && steps.state === "ready";
 export const FINDINGS_URL = "/api/findings?state=open";
 export const TRUST_URL = "/api/trust";
 /** How many open questions the panel lists; the Questions page has them all. */
@@ -676,6 +684,7 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     ...(trust.state === "ready" ? { trust: trust.data } : {}),
   });
   const toAnswer = panelQuestionCount(questions, owner);
+  const stepsOnly = panelCountIsStepsOnly(questions, owner);
   const counts: Partial<Record<PanelTab, number>> = {
     ...(toAnswer !== undefined ? { questions: toAnswer } : {}),
     ...(findings.state === "ready" && trust.state === "ready"
@@ -727,10 +736,20 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
               <span>{P.tab[t]}</span>
               {counts[t] !== undefined && (
                 <>
-                  <span className="bp-count" aria-hidden="true">
+                  <span
+                    className="bp-count"
+                    aria-hidden="true"
+                    {...(t === "questions" && stepsOnly
+                      ? { title: P.countStepsOnly(counts[t]!) }
+                      : {})}
+                  >
                     {counts[t]!.toLocaleString()}
                   </span>
-                  <span className="sr">{P.count(counts[t]!)}</span>
+                  <span className="sr">
+                    {t === "questions" && stepsOnly
+                      ? P.countStepsOnly(counts[t]!)
+                      : P.count(counts[t]!)}
+                  </span>
                 </>
               )}
             </button>

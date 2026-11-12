@@ -9,8 +9,12 @@ export { createLog, logFileOf, NO_LOG, type Log, type LogEntry, type LogLevel } 
 // ADR 0187: a long command keeps what it prints for the app's Console.
 export {
   recordedCommand,
+  retitleTerminalRuns,
+  runTitle,
   startTerminalRun,
   TITLE_VALUE_FLAGS,
   type TerminalRunRecorder,
 } from "./run-log.js";
 export { printToCurrent, withPrinter } from "./printer.js";
+// Beta.27 review: whether a word typed where a name goes is a key (`atticus secret`).
+export { keyIsSecret } from "./cite.js";

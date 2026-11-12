@@ -12,7 +12,11 @@ import { ActivityBar } from "../src/app/shell/ActivityBar.js";
 import { StatusBar } from "../src/app/shell/StatusBar.js";
 import { shellCounts } from "../src/app/shell/Shell.js";
 import { screenOf } from "../src/app/screens.js";
-import { panelQuestionCount, QuestionsList } from "../src/app/shell/BottomPanel.js";
+import {
+  panelCountIsStepsOnly,
+  panelQuestionCount,
+  QuestionsList,
+} from "../src/app/shell/BottomPanel.js";
 import { homeQuestionsOf, waitingTiles } from "../src/screens/CommandCenter.js";
 import { topWaiting } from "../src/screens/home/HomePanels.js";
 import { waitingQuestions } from "../src/screens/OwnerQuestions.js";
@@ -115,6 +119,15 @@ describe("the questions to answer: one definition", () => {
     const ready = <T,>(data: T) => ({ state: "ready" as const, data });
     expect(panelQuestionCount(ready(steps), ready(owner))).toBe(n);
     expect(panelQuestionCount(ready(steps), { state: "loading" })).toBeUndefined();
+    expect(panelCountIsStepsOnly(ready(steps), ready(owner))).toBe(false);
+    // Beta.27 re-review: the owner questions couldn't be read: the steps' count, said as theirs.
+    const failed = { state: "error" as const, error: "The server didn't answer." };
+    expect(panelQuestionCount(ready(steps), failed)).toBe(4);
+    expect(panelCountIsStepsOnly(ready(steps), failed)).toBe(true);
+    expect(panelQuestionCount({ state: "loading" }, failed)).toBeUndefined();
+    expect(COPY.bottomPanel.countStepsOnly(4)).toBe(
+      "4 questions from the steps; the owner questions couldn't be read",
+    );
     const panel = renderToStaticMarkup(
       <QuestionsList of={ready(steps)} owner={owner.open} onRetry={() => undefined} />,
     );

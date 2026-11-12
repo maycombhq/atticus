@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "./support/hooks.js";
 
 /**
@@ -17,29 +17,46 @@ vi.mock("react", async () => {
 
 const answers = new Map<string, unknown>();
 const asked: string[] = [];
-let onFiles: (() => void) | undefined;
+type Burst = { type: string; path?: string; catalog?: boolean }[];
+/** Every mounted listener of file events, each with its latest handler (as the real hook keeps). */
+const listeners = new Set<{ on: (events: Burst) => void }>();
+/** A burst of file events, to every listener. */
+const onFiles = (events: Burst = [{ type: "file.changed", path: "catalog/generated/x.yaml" }]) => {
+  for (const l of listeners) l.on(events);
+};
 vi.mock("../src/api/client.js", async () => {
   const real = await vi.importActual<typeof import("../src/api/client.js")>("../src/api/client.js");
+  const { shim } = await import("./support/hooks.js");
   return {
     ...real,
     api: async (path: string) => {
       asked.push(path);
+      // An answer comes a moment later, as the server's does.
+      await new Promise((r) => setTimeout(r, 5));
       return answers.get(path) ?? {};
     },
-    useFileChanges: (on: () => void) => {
-      onFiles = on;
+    useFileChanges: (on: (events: Burst) => void) => {
+      const r = shim.useRef<{ on: (events: Burst) => void } | undefined>(undefined);
+      if (!r.current) {
+        r.current = { on };
+        listeners.add(r.current);
+      }
+      r.current.on = on;
     },
   };
 });
 
-const { forgetExplorerAnswers, QUIET_MS, readAnswerAgain, useKnownAnswer } =
+const { forgetExplorerAnswers, FRESH_MS, QUIET_MS, readAnswerAgain, useKnownAnswer } =
   await import("../src/app/shell/explorer-data.js");
+const { MANIFEST_REPOS_PATH, manifestMayHaveChanged } = await import("../src/app/repo-counts.js");
 const { readingPath } = await import("../src/api/client.js");
-const { STEP_QUESTIONS_PATH } = await import("../src/app/question-counts.js");
+const { STEP_QUESTIONS_PATH, stepQuestionsMayHaveChanged } =
+  await import("../src/app/question-counts.js");
 const { countsEstateSteps, questionsUrl } = await import("../src/screens/Questions.js");
 const { withRoleScope } = await import("../src/screens/RoleQuestions.js");
 
 const quiet = () => new Promise((r) => setTimeout(r, QUIET_MS + 50));
+beforeEach(() => listeners.clear());
 const repos = (n: number) => ({ repos: Array.from({ length: n }, (_, i) => `forge-${i}`) });
 
 describe("a count shown from the last answer follows the files", () => {
@@ -57,7 +74,7 @@ describe("a count shown from the last answer follows the files", () => {
     // A repo added: beta.27's first cut kept showing 7 until the page was loaded again.
     answers.set(TRUST, repos(8));
     asked.length = 0;
-    onFiles!();
+    onFiles();
     m.render();
     await quiet();
     m.render();
@@ -66,7 +83,7 @@ describe("a count shown from the last answer follows the files", () => {
     // And again on the next event.
     answers.set(TRUST, repos(9));
     asked.length = 0;
-    onFiles!();
+    onFiles();
     m.render();
     await quiet();
     m.render();
@@ -85,7 +102,7 @@ describe("a count shown from the last answer follows the files", () => {
     const stop = readingPath(TRUST);
     try {
       asked.length = 0;
-      onFiles!();
+      onFiles();
       m.render();
       await quiet();
       m.render();
@@ -101,7 +118,7 @@ describe("a count shown from the last answer follows the files", () => {
     asked.length = 0;
     const Off = () => useKnownAnswer<{ repos: string[] }>(PATH, false);
     const m = mount(Off, {});
-    onFiles!();
+    onFiles();
     m.render();
     await quiet();
     m.render();
@@ -137,5 +154,88 @@ describe("the Questions page's line at its top, after an answer", () => {
     expect(
       countsEstateSteps(withRoleScope(questionsUrl("open", "all"), { role: "architecture" })),
     ).toBe(false);
+  });
+});
+
+describe("beta.27 re-review: one read of a path per burst, and only for a burst that can change it", () => {
+  it("reads /api/trust once for a burst, however many counts show it (the status bar, the Explorer)", async () => {
+    forgetExplorerAnswers();
+    answers.set(MANIFEST_REPOS_PATH, repos(7));
+    // The shell's status bar and the Explorer's Systems header, on a page that doesn't read it.
+    const Both = () => [
+      useKnownAnswer<{ repos: string[] }>(MANIFEST_REPOS_PATH, true, manifestMayHaveChanged),
+      useKnownAnswer<{ repos: string[] }>(MANIFEST_REPOS_PATH, true, manifestMayHaveChanged),
+    ];
+    const m = mount(Both, {});
+    await quiet();
+    m.render();
+    expect(asked.filter((p) => p === MANIFEST_REPOS_PATH)).toHaveLength(1);
+    // A burst that can change it: one GET, both counts told.
+    answers.set(MANIFEST_REPOS_PATH, repos(8));
+    asked.length = 0;
+    onFiles([
+      { type: "file.changed", path: "catalog/generated/forge-ledger/x.yaml" },
+      { type: "file.changed", path: "facts/forge-ledger.jsonl" },
+      { type: "file.changed", path: "repos.manifest.yaml" },
+    ]);
+    m.render();
+    await quiet();
+    m.render();
+    expect(asked).toEqual([MANIFEST_REPOS_PATH]);
+    const [a, b] = m.tree as { repos: string[] }[];
+    expect(a!.repos).toHaveLength(8);
+    expect(b!.repos).toHaveLength(8);
+    // A burst that can't (a question answered, a run's files): no GET at all.
+    asked.length = 0;
+    onFiles([
+      { type: "file.changed", path: "questions/q-0123456789ab.yaml", catalog: false },
+      { type: "run.changed", path: ".atticus/runs/add-transfer-limit/run-1/answer.md" },
+    ]);
+    m.render();
+    await quiet();
+    m.render();
+    expect(asked).toEqual([]);
+  });
+
+  it("after an answer on Questions, reads the steps' questions once, its file events included", async () => {
+    forgetExplorerAnswers();
+    answers.set(STEP_QUESTIONS_PATH, { questions: [], counts: { open: 4 } });
+    // The status bar's count and the Questions page's line, both from the estate's read.
+    const Both = () => [
+      useKnownAnswer<{ counts: { open: number } }>(
+        STEP_QUESTIONS_PATH,
+        true,
+        stepQuestionsMayHaveChanged,
+      ),
+      useKnownAnswer<{ counts: { open: number } }>(
+        STEP_QUESTIONS_PATH,
+        true,
+        stepQuestionsMayHaveChanged,
+      ),
+    ];
+    const m = mount(Both, {});
+    await quiet();
+    m.render();
+    asked.length = 0;
+    answers.set(STEP_QUESTIONS_PATH, { questions: [], counts: { open: 3 } });
+    // The page reads it again after its answer; the answer's write comes as file events after.
+    const again = readAnswerAgain(STEP_QUESTIONS_PATH);
+    onFiles([{ type: "file.changed", path: "questions/q-0123456789ab.yaml", catalog: false }]);
+    await again;
+    m.render();
+    await quiet();
+    m.render();
+    expect(asked).toEqual([STEP_QUESTIONS_PATH]);
+    const [a, b] = m.tree as { counts: { open: number } }[];
+    expect(a!.counts.open).toBe(3);
+    expect(b!.counts.open).toBe(3);
+    // A later change, past FRESH_MS, is read again (once).
+    await new Promise((r) => setTimeout(r, FRESH_MS));
+    asked.length = 0;
+    onFiles([{ type: "file.changed", path: "questions/q-0123456789ac.yaml", catalog: false }]);
+    m.render();
+    await quiet();
+    m.render();
+    expect(asked).toEqual([STEP_QUESTIONS_PATH]);
   });
 });

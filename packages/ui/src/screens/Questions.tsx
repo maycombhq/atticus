@@ -24,6 +24,7 @@ import { RouteQuestion } from "./RouteQuestion.js";
 import {
   questionsToAnswerOf,
   STEP_QUESTIONS_PATH,
+  stepQuestionsMayHaveChanged,
   type QuestionsToAnswer,
   type StepQuestionsAnswer,
 } from "../app/question-counts.js";
@@ -460,7 +461,6 @@ export function byRepo(qs: QuestionView[]): [string, QuestionView[]][] {
   return [...out];
 }
 
-/** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
 /**
  * Beta.27 review: whether the Questions page's own read counts the estate's open questions from
  * the steps (the open list, or every state's, whose counts say how many are open): not when it
@@ -469,6 +469,7 @@ export function byRepo(qs: QuestionView[]): [string, QuestionView[]][] {
 export const countsEstateSteps = (path: string): boolean =>
   path === STEP_QUESTIONS_PATH || path === "/api/questions";
 
+/** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
 export function questionsUrl(filter: "open" | "all", whose: "all" | "mine"): string {
   const q = [
     ...(filter === "open" ? ["state=open"] : []),
@@ -1694,7 +1695,11 @@ export function Questions({ hash }: { hash: string }) {
   // answer here, never by an editor's panel (it has no status bar to share the read with).
   const ownCountsSteps = countsEstateSteps(ownPath);
   const wantSteps = !ownCountsSteps && !(typeof document !== "undefined" && inEditor(document));
-  const known = useKnownAnswer<StepQuestionsAnswer>(STEP_QUESTIONS_PATH, wantSteps);
+  const known = useKnownAnswer<StepQuestionsAnswer>(
+    STEP_QUESTIONS_PATH,
+    wantSteps,
+    stepQuestionsMayHaveChanged,
+  );
   const toAnswer = questionsToAnswerOf(
     ownCountsSteps ? (fetched.state === "ready" ? fetched.data : undefined) : known,
     owner.state === "ready" ? owner.data : undefined,

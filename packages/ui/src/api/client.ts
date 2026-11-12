@@ -455,6 +455,18 @@ export const catalogMayHaveChanged = (events: LiveEvent[]): boolean =>
     return !p || !p.includes("/") || /(^|\/)(catalog|org-pack)(\/|$)/.test(p);
   });
 
+/**
+ * Beta.27 review: whether a burst can change what a read of the files under `folder` answers: a
+ * file the pattern matches, a top folder (the watcher names top folders when many files change,
+ * and a metarepo's own top files such as its manifest), or an event that names no path.
+ */
+export const filesMayHaveChanged = (events: LiveEvent[], folder: RegExp): boolean =>
+  events.some((e) => {
+    if (e.type !== "file.changed") return false;
+    const p = typeof e.path === "string" ? e.path.replace(/^\.\//, "") : "";
+    return !p || !p.includes("/") || folder.test(p);
+  });
+
 /** A job as GET /api/jobs/{jobId} gives it. */
 export interface JobView {
   id: string;

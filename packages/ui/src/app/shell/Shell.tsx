@@ -21,14 +21,16 @@ import {
 } from "./drafts.js";
 import {
   OWNER_QUESTIONS_PATH,
+  ownerQuestionsMayHaveChanged,
   questionsToAnswerOf,
   STEP_QUESTIONS_PATH,
+  stepQuestionsMayHaveChanged,
   type OwnerQuestionsAnswer,
   type StepQuestionsAnswer,
 } from "../question-counts.js";
 import { Explorer } from "./Explorer.js";
 import { useKnownAnswer } from "./explorer-data.js";
-import { MANIFEST_REPOS_PATH, manifestRepoCount } from "../repo-counts.js";
+import { MANIFEST_REPOS_PATH, manifestMayHaveChanged, manifestRepoCount } from "../repo-counts.js";
 import { PinIcon, SearchIcon, Tip } from "./icons.js";
 import { pinHash, togglePin, usePins } from "./pinned-pages.js";
 import {
@@ -211,9 +213,18 @@ function PinTool({ hash, label }: { hash: string; label: string }) {
  * and Questions count them (question-counts.ts); none until both are known.
  */
 function useCounts(want: boolean): { questions?: number; repos?: number } {
-  const steps = useKnownAnswer<StepQuestionsAnswer>(STEP_QUESTIONS_PATH, want);
-  const owner = useKnownAnswer<OwnerQuestionsAnswer>(OWNER_QUESTIONS_PATH, want);
-  const trust = useKnownAnswer<{ repos?: unknown[] }>(TRUST_PATH, want);
+  // Beta.27 review: each read again only on the file events that can change it.
+  const steps = useKnownAnswer<StepQuestionsAnswer>(
+    STEP_QUESTIONS_PATH,
+    want,
+    stepQuestionsMayHaveChanged,
+  );
+  const owner = useKnownAnswer<OwnerQuestionsAnswer>(
+    OWNER_QUESTIONS_PATH,
+    want,
+    ownerQuestionsMayHaveChanged,
+  );
+  const trust = useKnownAnswer<{ repos?: unknown[] }>(TRUST_PATH, want, manifestMayHaveChanged);
   return shellCounts(steps, owner, trust);
 }
 

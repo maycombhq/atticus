@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   readTerminalRunLines,
+  RETITLED_MARK,
+  retitleTerminalRuns,
   readTerminalRuns,
   recordedCommand,
   runningDirOf,
@@ -17,7 +19,9 @@ import {
   TITLE_VALUE_FLAGS,
   TITLE_VALUE_MAX,
   titleValue,
+  titleWord,
 } from "../src/run-log.js";
+import { hasTokenPrefix, TOKEN_PREFIXES } from "../src/cite.js";
 
 /**
  * ADR 0187: a command run in a terminal (or by an editor, or a Copilot session) keeps what it
@@ -108,8 +112,9 @@ describe("which commands keep a run log", () => {
       ],
       ["max-tokens"],
     );
-    expect(t.title).toBe("atticus map … … … … --max-tokens");
-    expect(t.command).toEqual(["map", "…", "…", "…", "…"]);
+    // Beta.27 re-review: words dropped one after another read as one `…`.
+    expect(t.title).toBe("atticus map … --max-tokens");
+    expect(t.command).toEqual(["map", "…"]);
   });
 
   it("beta.27: keeps a flag's value that is an id, a name or a date, so the title reads as typed", () => {
@@ -212,9 +217,8 @@ describe("which commands keep a run log", () => {
     expect(t("repo", "https://git.northwind.example/forge")).toBeUndefined();
     expect(t("repo", "svc:hunter2@git.northwind.example")).toBeUndefined();
     expect(t("repo", "postgres:hunter2@db")).toBeUndefined();
-    expect(t("repo", "git.northwind.example:org/repo.git")).toBe(
-      "git.northwind.example:org/repo.git",
-    );
+    // Beta.27 re-review: no value with a `:` (a host's path too), whatever follows it.
+    expect(t("repo", "git.northwind.example:org/repo.git")).toBeUndefined();
     // Token shapes, short or long.
     for (const v of [
       "glpat-abcdefghij1234567890",
@@ -586,5 +590,244 @@ describe("tailing a run's log from where it was read", () => {
     expect(b.lines[0]).toContain(`line ${b.from - 1} `);
     expect(b.lines.at(-1)).toContain("line 59 ");
     expect(b.at.line).toBe(61);
+  });
+});
+
+/**
+ * Beta.27 re-review: the reviewer's adversarial command lines (scratch adv.mjs), as tests. Every
+ * token-shaped string is made as the test runs (push protection rejects them as literals).
+ */
+const tok = (...parts: string[]) => parts.join("");
+/** A seeded generator, so a failure can be run again. */
+const seeded = (seed: number) => () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+const BASE62 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+describe("beta.27 re-review: a run's title shows no secret, however it was typed", () => {
+  it("never keeps `secret` (a quick command: its key goes to stdin, never a title)", () => {
+    expect(recordedCommand(["secret", "set", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+    expect(recordedCommand(["secret", "forget", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+    expect(recordedCommand(["secret", "check", "ATTICUS_MODEL_KEY"], [])).toBe(false);
+  });
+
+  it("drops a positional word shaped as a key, a token, a password or a number", () => {
+    const words = [
+      "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "AbCdEfGhIjKlMnOpQrStUvWx",
+      "abcdefghijklmnopqrstuvwxyzabcdef",
+      "Summer2026",
+      "summer2026",
+      "Summer2026!",
+      "0123456789abcdef0123456789abcdef",
+      tok("gh", "p_", "16C7e42F292c6912E7710c838347Ae178B4a"),
+      tok("gl", "pat-", "x".repeat(20)),
+      tok("AK", "IA", "IOSFODNN7EXAMPLE"),
+      tok("xo", "xb-", "123456789012-abcdefABCDEF"),
+      tok("sk", "-ant-", "abc"),
+      tok("sq0", "atp-", "AbCdEf123456"),
+      tok("SG", ".abc.def"),
+      tok("SK", "1234567890"),
+      tok("da", "pi", "1234567890abcdef"),
+      tok("wJalrXUtnFEMI", "/K7MDENG/", "bPxRfiCY", "EXAMPLEKEY"),
+      "4111111111111111",
+      "4111-1111-1111-1111",
+      "123-45-6789",
+      "user:pw",
+      "tom@bank.example",
+      "a,b",
+      "${API_KEY}",
+    ];
+    for (const w of words) {
+      expect(titleWord(w), w).toBeUndefined();
+      const { title, command } = runTitle(["map", w], []);
+      expect(title, w).toBe("atticus map …");
+      expect(command, w).toEqual(["map", "…"]);
+    }
+  });
+
+  it("keeps an id: a repo, a change, a task's label, a question, a run, a date, a version", () => {
+    for (const w of [
+      "forge-ledger",
+      "add-transfer-limit",
+      "fix-limits-2027-q1",
+      "c1",
+      "t1",
+      "1.2",
+      "1.2.3",
+      "v0.27.0",
+      "1.0.0-beta.27",
+      "q-0123456789ab",
+      "run-20261109101530-ab12cd",
+      "run-20261109101530-0003",
+      "20261109-101530-4242-ab12",
+      "2027-03-31",
+      "ado:1234",
+      "link:forge-teller:ledger-post",
+      "ATTICUS_MODEL_KEY",
+      "forge/ledger",
+      "Ledger",
+      "@bao",
+    ])
+      expect(titleWord(w), w).toBe(w);
+    expect(titleWord("link:forge-teller:Zx9Kq2Lm8Pw4Rt6")).toBeUndefined();
+  });
+
+  it("drops an allowed flag's value that isn't an id, deterministically", () => {
+    const t = (flag: string, value: string) => titleValue(flag, value);
+    for (const v of [
+      "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "AbCdEfGhIjKlMnOpQrStUvWx",
+      "abcdefghijklmnopqrstuvwxyzabcdef",
+      "Summer2026",
+      "Summer2026!",
+      "tom@bank.example",
+      "tom%40bank.example",
+      "tom＠bank.example",
+      tok("sk", "-ant-abc"),
+      "azure/https:x",
+      "user:pw",
+      tok("AC", "1234567890abcdef", "1234567890abcdef"),
+      "4111111111111111",
+      "4111-1111-1111-1111",
+      "4111 1111 1111 1111",
+      tok("SG", ".abc.def"),
+      tok("xo", "xb-123-456-abc"),
+      tok("sq0", "atp-AbCdEf123456"),
+      tok("sq0", "csp-AbCdEf123456"),
+      tok("SK", "1234567890"),
+      "AccountKey/abc+def/ghij",
+      tok("Account", "Key=abc"),
+      tok("wJalrXUtnFEMI", "/K7MDENG/", "bPxRfiCY", "EXAMPLEKEY"),
+      tok("da", "pi1234567890abcdef"),
+      "ATTICUS_KEY:Zx9Kq2Lm",
+      "a,Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0",
+      "123-45-6789",
+      tok("ey", "JhbGciOi"),
+      "role=a,b",
+      "${API_KEY}",
+      "env:API_KEY",
+      tok("rk", "_live_x"),
+      tok("pk", "_test_x"),
+      tok("wh", "sec_x"),
+      tok("Bea", "rer abc"),
+      "--pass",
+      "a".repeat(60),
+    ])
+      expect(t("target", v), v).toBeUndefined();
+    expect(t("by", "@tom.george")).toBe("@tom.george");
+    expect(t("release", "2027-03-31")).toBe("2027-03-31");
+    expect(t("repos", "forge-ledger,forge-teller")).toBe("forge-ledger,forge-teller");
+    expect(t("model", "sonnet-4-5")).toBe("sonnet-4-5");
+    expect(
+      runTitle(["map", "forge-ledger"], ["system"], { system: "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0" })
+        .title,
+    ).toBe("atticus map forge-ledger --system");
+  });
+
+  it("drops every random base62 string of 16 to 31 characters, as a word or a value (fuzz)", () => {
+    const next = seeded(2027);
+    for (let n = 16; n <= 31; n++)
+      for (let i = 0; i < 400; i++) {
+        const s = Array.from({ length: n }, () => BASE62[Math.floor(next() * 62)]).join("");
+        expect(titleWord(s), s).toBeUndefined();
+        expect(titleValue("target", s), s).toBeUndefined();
+        expect(runTitle(["map", s], []).command, s).toEqual(["map", "…"]);
+      }
+  });
+
+  it("has one list of token prefixes, core's, that every check reads", () => {
+    expect(TOKEN_PREFIXES.length).toBeGreaterThan(10);
+    for (const w of [
+      tok("gh", "p_x"),
+      tok("github", "_pat_x"),
+      tok("gl", "pat-x"),
+      tok("np", "m_x"),
+      tok("sk", "-x"),
+      tok("rk", "_x"),
+      tok("pk", "_x"),
+      tok("wh", "sec_x"),
+      tok("xo", "xp-x"),
+      tok("AK", "IA", "ABCD"),
+      tok("AI", "za"),
+      tok("ey", "J"),
+      tok("SG", ".x"),
+      tok("sq0", "atp-x"),
+      tok("sq0", "csp-x"),
+      tok("SK", "0123abcd"),
+      tok("Account", "Key=x"),
+      tok("Bea", "rer x"),
+    ])
+      expect(hasTokenPrefix(w), w).toBe(true);
+    for (const w of ["forge-ledger", "task-run", "risk-limits", "Ledger", "ask"])
+      expect(hasTokenPrefix(w), w).toBe(false);
+  });
+});
+
+describe("beta.27 re-review: the runs beta.26 kept are titled again once", () => {
+  const record = (runId: string, command: string[], flags: string[] = []) => ({
+    schemaVersion: 1,
+    runId,
+    pid: 4242,
+    host: "abc",
+    title: ["atticus", ...command, ...flags.map((f) => `--${f}`)].join(" "),
+    command,
+    flags,
+    startedBy: "terminal",
+    startedAt: "2026-11-01T10:00:00.000Z",
+    state: "done",
+    finishedAt: "2026-11-01T10:00:01.000Z",
+    exitCode: 2,
+    lines: 1,
+    dropped: 0,
+  });
+
+  it("writes each title and its words again by the new rules, and nothing else of it", async () => {
+    const root = await fresh();
+    mkdirSync(runningDirOf(root), { recursive: true });
+    mkdirSync(runLogsDirOf(root), { recursive: true });
+    const key = "Zx9Kq2Lm8Pw4Rt6Yv1Bn3Cd5Fg7Hj0";
+    const leaked = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);
+    const fine = record("20261101-100100-4242-cd34", ["map", "forge-ledger"], ["handoff"]);
+    for (const r of [leaked, fine]) {
+      writeFileSync(join(runningDirOf(root), `${r.runId}.json`), JSON.stringify(r));
+      writeFileSync(join(runLogsDirOf(root), `${r.runId}.log`), "a line\n");
+    }
+    // The command line's rule: here, at most the command and one argument (a test's own).
+    const n = retitleTerminalRuns(root, (r) => runTitle(r.command.slice(0, 3), r.flags));
+    expect(n).toBe(1);
+    const read = (id: string) =>
+      JSON.parse(readFileSync(join(runningDirOf(root), `${id}.json`), "utf8")) as Record<
+        string,
+        unknown
+      >;
+    const after = read(leaked.runId);
+    expect(after.title).toBe("atticus secret set ATTICUS_MODEL_KEY");
+    expect(JSON.stringify(after)).not.toContain(key);
+    // Everything else of the record as it was; its log untouched.
+    const { title: _t, command: _c, ...rest } = after;
+    const { title: _t0, command: _c0, ...was } = leaked;
+    expect(rest).toEqual(was);
+    expect(read(fine.runId)).toEqual(fine);
+    expect(readFileSync(join(runLogsDirOf(root), `${leaked.runId}.log`), "utf8")).toBe("a line\n");
+    expect(readTerminalRuns(root, { alive: () => false }).map((r) => r.title)).toEqual([
+      "atticus map forge-ledger --handoff",
+      "atticus secret set ATTICUS_MODEL_KEY",
+    ]);
+    // Once: the mark says it was done, so a record written after it is left alone.
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+    writeFileSync(join(runningDirOf(root), `${leaked.runId}.json`), JSON.stringify(leaked));
+    expect(retitleTerminalRuns(root, (r) => runTitle([], r.flags))).toBe(0);
+    expect(read(leaked.runId).title).toBe(leaked.title);
+  });
+
+  it("does nothing where no run was kept, and never throws on a record it can't read", async () => {
+    const root = await fresh();
+    expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
+    mkdirSync(runningDirOf(root), { recursive: true });
+    writeFileSync(join(runningDirOf(root), "20261101-100000-4242-ab12.json"), "{not json");
+    expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
+    expect(readdirSync(runningDirOf(root)).sort()).toEqual([
+      ".retitled-beta27",
+      "20261101-100000-4242-ab12.json",
+    ]);
   });
 });

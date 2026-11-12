@@ -5153,6 +5153,12 @@ export const COPY = {
     } as Record<"console" | "questions" | "problems" | "runs", string>,
     /** What a tab's count says to a screen reader. */
     count: (n: number) => (n === 1 ? "1 item" : `${n.toLocaleString()} items`),
+    /**
+     * Beta.27 re-review: the Questions tab's count when the owner questions couldn't be read:
+     * the steps' questions only, and said so.
+     */
+    countStepsOnly: (n: number) =>
+      `${n === 1 ? "1 question" : `${n.toLocaleString()} questions`} from the steps; the owner questions couldn't be read`,
     expand: "Show the panel",
     collapse: "Hide the panel",
     resize: "Resize the panel",
@@ -6662,6 +6668,12 @@ export const COPY = {
     reposOnMap: (onMap: number, all: number) =>
       `${onMap} of ${all} repo${all === 1 ? "" : "s"} on the map`,
     notOnMap: "Not on the map",
+    /**
+     * Beta.27 re-review: a repo the map has a box for that the manifest doesn't name (records
+     * left for a repo taken out of it): on its row, and after the header's count.
+     */
+    notInManifest: "not in the manifest",
+    alsoOffManifest: (head: string, n: number) => `${head}, ${n} more not in the manifest`,
     /** A system the map holds no repo of: its row says so instead of a count. */
     noRepo: "no repo",
     components: (n: number) => `${n} component${n === 1 ? "" : "s"}`,

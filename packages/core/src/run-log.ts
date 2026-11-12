@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
   closeSync,
+  existsSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -14,7 +15,7 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { hasSecretShape, keyIsSecret } from "./cite.js";
+import { hasSecretShape, hasTokenPrefix, keyIsSecret } from "./cite.js";
 import { ignoreLocalSync, redactText } from "./log.js";
 
 /**
@@ -26,7 +27,8 @@ import { ignoreLocalSync, redactText } from "./log.js";
  *   (ADR 0050's redactText: no secrets, tokens, credentials in URLs or home folder), with no
  *   colour codes; bounded (its last lines are kept past RUN_LOG_MAX_BYTES).
  * - `.atticus/logs/running/<runId>.json`: who and what — the command words, the ids it was given
- *   (repo, change, run and task ids: words that look like an id and nothing else), the names of
+ *   (repo, change, run and task ids; beta.27 review: only in the places the command declares for
+ *   them, each an id's strict shape and no secret's, titleWord; the rest `…`), the names of
  *   its flags (in `flags`, never their values; beta.27: the title keeps the value of a flag on
  *   an allow-list, TITLE_VALUE_FLAGS, when it is an id, a name or a date: titleValue), the process and a hash of the
  *   machine's name, when it
@@ -160,7 +162,6 @@ const RECORDED: Record<string, Rule> = {
   diagram: all,
   "assistant-files": all,
   site: only("build"),
-  secret: only("set", "forget"),
   init: all,
   adopt: all,
   unadopt: all,
@@ -187,14 +188,10 @@ export function recordedCommand(positionals: readonly string[], flags: readonly 
     : !(rule as { except: ReadonlySet<string> }).except.has(command);
 }
 
-/** A word kept in a title: an id (repo, change, run, task), nothing that could be a value. */
-const ID_WORD = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_WORDS = 8;
 /** The flags that say where a command ran, left out of its title. */
 const WHERE_FLAGS = new Set(["root", "metarepo"]);
 type Redaction = { home?: string; user?: string };
-const safeWord = (w: string, r: Redaction = {}) =>
-  ID_WORD.test(w) && !w.includes("//") && redactText(w, r) === w ? w : "…";
 
 /**
  * Beta.27 review: the flags whose value a run's title keeps — an allow-list, never a deny-list.
@@ -252,23 +249,78 @@ export const TITLE_VALUE_FLAGS: ReadonlySet<string> = new Set([
 ]);
 /** A value kept is cut to this many characters. */
 export const TITLE_VALUE_MAX = 48;
-/** An id, a name, a date, a handle or a list of them: one word, no `@` but a handle's. */
-const VALUE_WORD = /^@?[A-Za-z0-9][A-Za-z0-9._/,:+-]{0,199}$/;
 /** A handle: `@bao`, never `bao@bank.example`. */
 const HANDLE = /^@[\w.-]+$/;
-/** Well-known token prefixes, at any length (core's shapes want the whole token). */
-const TOKEN_PREFIX =
-  /^(?:gh[pousr]_|github_pat_|glpat-|glptt-|gldt-|npm_|pypi-|hf_|(?:sk|rk|pk)[-_]|xox[abprs]-|AKIA|ASIA|AIza|eyJ|ya29\.|shpat_|dop_v1_|SG\.)/;
-/** Long runs of hex or of digits (a digest, a random id, a card or account number). */
-const LONG_RUN = /[0-9a-f]{16,}|[0-9A-F]{16,}|\d{9,}|\b\d{3}-\d{2}-\d{4}\b/;
+/**
+ * Long runs of hex or of digits (a digest, a random id, a card or account number), a card number
+ * written in fours, a national id number.
+ */
+const LONG_RUN = /[0-9a-f]{16,}|[0-9A-F]{16,}|\d{9,}|\d{4}(?:[ -]?\d{4}){3}|\b\d{3}-\d{2}-\d{4}\b/;
+/**
+ * The ids a title knows by their whole form, whatever their digits: a date, a version, a task's
+ * label (1.2), a question (q- and up to 12 hex), a run (Atticus's own two kinds), a change's or a
+ * model's slug of words and small numbers (`fix-limits-2027-q1`, `sonnet-4-5`) and a work item's
+ * reference (`ado:1234`). Each is still checked for a token's prefix first.
+ */
+const ID_FORMS: readonly RegExp[] = [
+  /^\d{4}-\d{2}-\d{2}$/,
+  /^v?\d{1,3}\.\d{1,3}\.\d{1,3}(?:-[a-z]{1,12}(?:\.\d{1,3})?)?$/,
+  /^\d{1,3}(?:\.\d{1,3}){1,2}$/,
+  /^q-[0-9a-f]{1,12}$/,
+  /^run-\d{14}-(?:\d{4}|[0-9a-f]{6})$/,
+  TERMINAL_RUN_ID,
+  /^[a-z]{1,24}(?:[-.](?:[a-z]{1,24}\d{0,3}|\d{1,4}))+$/,
+  /^[a-z]{2,8}:\d{1,7}$/,
+];
+/** `link:<repo>:<call>`: a link's id, each part an id-like word (idShaped). */
+const LINK_REF = /^link:([^:]+):([^:]+)$/;
+/**
+ * One part of an id-like word (split at `-`, `.`, `_` and `/`): a lowercase word with a small
+ * number after it (`v2`, `beta27`), a capitalised word, an acronym, or a number.
+ */
+const PART = /^(?:[a-z]{1,24}\d{0,3}|[A-Z][a-z]{1,23}|[A-Z]{1,8}|\d{1,6})$/;
+
+/**
+ * Beta.27 review: the strict shape a title's word must have, past every check for a secret: an
+ * id-like word, parts (PART) joined by `-`, `.`, `_` or `/`, with at most one run of digits. A
+ * random-looking string (mixed case and digits, `Zx9Kq2Lm…`, `Summer2026`) has none of these
+ * shapes, so it is dropped whatever its length; a harmless word dropped is the price.
+ */
+function idShaped(w: string): boolean {
+  if (!w || w.length > 100) return false;
+  if (!w.split(/[-._/]/).every((p) => PART.test(p))) return false;
+  return (w.match(/\d+/g) ?? []).length <= 1;
+}
+
+/**
+ * Beta.27 review: whether a word may show in a run's title, as a positional word or as one item
+ * of an allowed flag's value (titleValue). Never: a word with an `@` but a leading handle's, a
+ * `\`, a `//`, a space, one of core's token prefixes (cite.ts's TOKEN_PREFIXES) or shapes
+ * (hasSecretShape), or anything the log's redaction (with this machine's home folder and user
+ * name) would change. Then one of the ids it knows by their form (ID_FORMS, a link's), or no `:`,
+ * no long run of hex or digits, no key-like shape (keyIsSecret) and an id's strict shape
+ * (idShaped). The word as given, or undefined.
+ */
+export function titleWord(word: string | undefined, redact: Redaction = {}): string | undefined {
+  if (!word || word.length > 100 || /[\s\\]/.test(word) || word.includes("//")) return undefined;
+  const handle = HANDLE.test(word);
+  if (word.includes("@") && !handle) return undefined;
+  if (hasTokenPrefix(word) || hasSecretShape(word)) return undefined;
+  if (redactText(word, redact) !== word) return undefined;
+  const bare = handle ? word.slice(1) : word;
+  if (ID_FORMS.some((re) => re.test(bare))) return word;
+  const link = LINK_REF.exec(bare);
+  if (link) return idShaped(link[1]!) && idShaped(link[2]!) ? word : undefined;
+  if (bare.includes(":") || LONG_RUN.test(bare) || keyIsSecret(bare)) return undefined;
+  return idShaped(bare) ? word : undefined;
+}
 
 /**
  * Beta.27: a flag's value kept in a title, as typed (`--target 2027-03-31`, `--by @bao`,
- * `--repos forge-ledger,forge-teller`). Beta.27 review: only for a flag of TITLE_VALUE_FLAGS, and
- * even then not a value with an `@` anywhere but a leading handle's (an email, `user:pass@host`),
- * a `://`, a `:` before an `@`, a backslash, a token's prefix or shape (core's hasSecretShape and
- * keyIsSecret, the verifier's), a long run of hex or digits, or anything the log's redaction (with
- * this machine's home folder and user name) would change; one kept is cut to TITLE_VALUE_MAX.
+ * `--repos forge-ledger,forge-teller`). Beta.27 review: only for a flag of TITLE_VALUE_FLAGS;
+ * never a value with a `:` (a host's path, a user and password, a reference to a variable) or
+ * starting with `-` (the next flag, read as this one's value); a list (`a,b`) only when each of
+ * its items is a title's word (titleWord); one kept is cut to TITLE_VALUE_MAX.
  */
 export function titleValue(
   flag: string,
@@ -276,25 +328,20 @@ export function titleValue(
   redact: Redaction = {},
 ): string | undefined {
   if (value === undefined || !value || !TITLE_VALUE_FLAGS.has(flag)) return undefined;
-  if (!VALUE_WORD.test(value) || value.includes("//") || value.includes("\\")) return undefined;
-  if (value.includes("@") && !HANDLE.test(value)) return undefined;
-  if (value.includes("://") || /:.*@/.test(value)) return undefined;
-  for (const part of value.split(/[,:+]/)) {
-    if (!part) continue;
-    if (TOKEN_PREFIX.test(part) || LONG_RUN.test(part)) return undefined;
-    if (hasSecretShape(part) || keyIsSecret(part)) return undefined;
-  }
+  if (value.includes(":") || value.startsWith("-") || value.length > 400) return undefined;
+  if (!value.split(",").every((i) => titleWord(i, redact) !== undefined)) return undefined;
   if (hasSecretShape(value) || keyIsSecret(value)) return undefined;
-  if (redactText(value, redact) !== value) return undefined;
   return value.length > TITLE_VALUE_MAX ? `${value.slice(0, TITLE_VALUE_MAX)}…` : value;
 }
 
 /**
  * The command words, ids and flag names of a run, and its title. Beta.27: with the flags'
  * values (`values`, by flag name; a boolean flag has none), each kept when titleValue keeps it, so
- * the title reads as the command was typed; beta.26 dropped them all ("--target --by"). The words
- * and values are redacted as the log is (`redact`: this machine's home folder and user name by
- * default; a test gives its own).
+ * the title reads as the command was typed; beta.26 dropped them all ("--target --by"). Beta.27
+ * review: each word is a title's word (titleWord) or `…` (words dropped one after another are one
+ * `…`); the command line gives only the words a command declares (its words and its arguments'
+ * places, by the help), the rest as `…`. The words and values are redacted as the log is
+ * (`redact`: this machine's home folder and user name by default; a test gives its own).
  */
 export function runTitle(
   positionals: readonly string[],
@@ -302,7 +349,12 @@ export function runTitle(
   values: Readonly<Record<string, string | undefined>> = {},
   redact: Redaction = {},
 ): { command: string[]; title: string } {
-  const command = positionals.slice(0, MAX_WORDS).map((w) => safeWord(w, redact));
+  const command: string[] = [];
+  const add = (w: string) => {
+    if (w !== "…" || command.at(-1) !== "…") command.push(w);
+  };
+  for (const w of positionals.slice(0, MAX_WORDS)) add(titleWord(w, redact) ?? "…");
+  if (positionals.length > MAX_WORDS) add("…");
   // Where it ran (the metarepo's folder) isn't what ran (beta.26 review).
   const names = flags
     .filter((f) => /^[a-z][a-z0-9-]{0,40}$/.test(f) && !WHERE_FLAGS.has(f))
@@ -311,6 +363,57 @@ export function runTitle(
       return v === undefined ? `--${f}` : `--${f} ${v}`;
     });
   return { command, title: ["atticus", ...command, ...names].join(" ") };
+}
+
+/** Beside the records: the first run of beta.27 re-titled the runs kept before it. */
+export const RETITLED_MARK = ".retitled-beta27";
+
+/**
+ * Beta.27 review: beta.26 kept every word that looked like an id in a run's title and words, a
+ * key typed after `secret set` among them. The first command of beta.27 at a metarepo writes each
+ * record kept again with the title and words the new rules give (`retitle`, the command line's:
+ * it knows each command's arguments), from its words and flag names, and nothing else of it (its
+ * log, state and times stay); RETITLED_MARK says it was done. How many it wrote again. Never
+ * throws: a record that can't be read or written is left as it is.
+ */
+export function retitleTerminalRuns(
+  root: string,
+  retitle: (r: { command: string[]; flags: string[] }) => { command: string[]; title: string },
+): number {
+  const dir = runningDirOf(root);
+  const mark = join(dir, RETITLED_MARK);
+  let names: string[];
+  try {
+    if (existsSync(mark)) return 0;
+    names = readdirSync(dir).filter(
+      (n) => n.endsWith(".json") && TERMINAL_RUN_ID.test(n.slice(0, -5)),
+    );
+  } catch {
+    // no runs kept: nothing to do, now or later
+    return 0;
+  }
+  let changed = 0;
+  for (const n of names) {
+    const file = join(dir, n);
+    try {
+      const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object" || typeof raw.title !== "string") continue;
+      const words = Array.isArray(raw.command) ? raw.command.map(String) : [];
+      const flags = Array.isArray(raw.flags) ? raw.flags.map(String) : [];
+      const { command, title } = retitle({ command: words, flags });
+      if (title === raw.title && JSON.stringify(command) === JSON.stringify(raw.command)) continue;
+      writeJson(file, { ...raw, title, command });
+      changed++;
+    } catch {
+      // left as it is
+    }
+  }
+  try {
+    writeFileSync(mark, `${new Date().toISOString()}\n`, "utf8");
+  } catch {
+    // tried again next time
+  }
+  return changed;
 }
 
 /** Where the run was started, as its environment says. */

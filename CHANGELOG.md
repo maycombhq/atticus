@@ -19,6 +19,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The map's fit never zooms in past actual size** (a small estate filled the frame at 300 %), with the padding round it as before, and two links' labels no longer lie on each other.
 - **Repos mean the manifest's repos everywhere.** The Explorer's Systems header said 4 repos (the boxes on the map) while the status bar said 7: it says "4 of 7 repos on the map" now, and the tree lists the rest under Not on the map; a system's row counts its repos only, and one without a repo says "no repo".
 - A proposal written outside the app no longer says "Nothing has happened at this stage yet." under the line that says it was written outside the app.
+- **A key typed after `atticus secret set` is never in the Console.** In beta.26 a run's title kept every word that looked like an id, so `atticus secret set ATTICUS_MODEL_KEY <key>` showed the key in the Console (and its run record), as did a token, a password or any random string typed as a command's word. `secret` keeps no run log now, and refuses a key typed on the command line without saying it back; a title shows a word only in a place the command declares for an id, and only an id-shaped word with no token's prefix (an allowed flag's value too: random strings, `Summer2026`, card numbers and anything with a `:` are dropped); nothing after `--` is shown. beta.27 titles the runs beta.26 kept again on its first command, so an old run no longer shows a key.
+- **The status bar and the Explorer ask the server once.** A burst of file events read Map › Trust's repos once for each count shown, and the questions again after an answer on Questions; they share one read now, read again only on file events that can change them.
+- **A repo the map still has a box for, after it left the manifest, is flagged** ("not in the manifest", and said after the Systems header's count) and counted nowhere, so the header and the rows add up.
+- **The bottom panel's Questions tab still counts when the owner questions can't be read**: the steps' questions, said as theirs only.
+- `atticus questions answer <id> --ignore` is a switch the command line knows (it was read as an unknown one).
 
 ## 2.0.0-beta.26 (2026-11-11)
 
