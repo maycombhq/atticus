@@ -30,6 +30,7 @@ import {
   factsSlotOf,
   factsSlotPaths,
   forgetCatalogs,
+  forgetKeptReads,
   loadBuildInputs,
   readCatalog,
   readersSlotPath,
@@ -241,11 +242,16 @@ export async function repoRename(
   if (rText !== undefined) slotWrites.push({ path: rOld, text: null });
   if (fText !== undefined) slotWrites.push({ path: fOld.facts, text: null });
   if (mText !== undefined) slotWrites.push({ path: fOld.meta, text: null });
+  // The rename builds: its inputs as the files hold them now, never the app's kept copies (CS3).
+  forgetKeptReads();
   const op0 = await loadOrgPack(orgPackDirOf(root));
   const op = structuredClone(op0);
   for (const p of op.profiles)
     for (const r of p.repos?.repos ?? []) if (r.id === from) (r as { id: string }).id = to;
-  const curatedNow = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
+  const curatedNow = await readCatalog(join(catalogDirOf(root), "curated"), {
+    cacheRoot: root,
+    fresh: true,
+  });
   const curatedNext = curatedNow.records.map((r) => {
     const n = renamed(r, from, to);
     if (!n.changed) return r;

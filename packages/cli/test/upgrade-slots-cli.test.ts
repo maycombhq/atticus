@@ -115,6 +115,59 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
   );
 
   it(
+    "upgrade --json without --yes lists exactly the files --yes then writes, each with its hash (CS3)",
+    async () => {
+      const root = await beta26();
+      const before = generated(root);
+      const dry = await run(["upgrade", "--root", root, "--json"]);
+      expect(dry.code, dry.err).toBe(0);
+      const view = (
+        JSON.parse(dry.out) as {
+          slots: {
+            pending: boolean;
+            applies: boolean;
+            run: string;
+            records: number;
+            writes: { path: string; what: string; sha256: string; bytes: number }[];
+            firstBuildChanges: string[];
+            copy: { dir: string; files: number };
+          };
+          slotsStep: string;
+        }
+      ).slots;
+      expect(view).toMatchObject({
+        pending: true,
+        applies: true,
+        run: "atticus upgrade --yes",
+        firstBuildChanges: [],
+        copy: {
+          dir: "catalog/sources/legacy/generated-before-upgrade",
+          files: Object.keys(before).length,
+        },
+      });
+      expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
+      const kinds = new Set(view.writes.map((w) => w.what));
+      expect([...kinds].sort()).toEqual(["build-manifest", "copy", "legacy-joins", "readers-slot"]);
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      const { createHash } = await import("node:crypto");
+      const s = sources(root);
+      // Every file the view listed is written with its hash, and nothing else in catalog/sources.
+      expect(
+        Object.keys(s)
+          .map((p) => `catalog/sources/${p}`)
+          .sort(),
+      ).toEqual(view.writes.map((w) => w.path).sort());
+      for (const w of view.writes)
+        expect(
+          createHash("sha256").update(s[w.path.slice("catalog/sources/".length)]!).digest("hex"),
+          w.path,
+        ).toBe(w.sha256);
+      expect(generated(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
     "without --yes writes no byte; with --yes adopts every record into exactly one legacy slot, keeps a copy, and the catalog is byte for byte as it was",
     async () => {
       const root = await beta26();

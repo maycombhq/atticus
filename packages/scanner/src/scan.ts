@@ -64,6 +64,7 @@ import {
 } from "./slots.js";
 import {
   buildCatalog,
+  forgetKeptReads,
   loadBuildInputs,
   readersSlotRead,
   type Build,
@@ -267,7 +268,10 @@ export async function federate(
   for (const s of sources) {
     const theirs = await loadOrgPack((await orgPackDirFor(s.dir)).dir);
     const catalogRel = `${theirs.sources.layout.catalog}/generated`;
-    const cat = await readCatalog(join(s.dir, ...catalogRel.split("/")), { cacheRoot: root });
+    const cat = await readCatalog(join(s.dir, ...catalogRel.split("/")), {
+      cacheRoot: root,
+      fresh: true,
+    });
     for (const p of cat.problems)
       problems.push({ source: `federated ${s.id}`, message: `${p.file}: ${p.message}` });
     const c: FederatedContribution = { id: s.id, added: 0, shadowed: [] };
@@ -484,6 +488,8 @@ export function readersSettingsHash(s: {
  * read gives no records until the assistant reads it. The org's own plugins still run.
  */
 export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
+  // A scan builds: it reads its inputs as the files hold them now, never a kept copy (CS3).
+  forgetKeptReads();
   const pack = o.orgPack ? undefined : await orgPackDirFor(o.root);
   const orgPackDir = o.orgPack ?? pack!.dir;
   // A repo adopted in place keeps Atticus's local state in .atticus/.

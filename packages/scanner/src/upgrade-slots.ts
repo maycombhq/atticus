@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { cmpText, recordPath, serializeRecord, type CatalogRecord } from "@maycombhq/core";
+import { cmpText, type CatalogRecord } from "@maycombhq/core";
 import {
   buildCatalog,
   buildUndoDirOf,
@@ -80,7 +80,7 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     (n) => n === "build.json" || n === "readers" || n === "facts" || n === "legacy",
   );
   const generated = generatedDirOf(root);
-  const old = await readCatalog(generated, { cacheRoot: root });
+  const old = await readCatalog(generated, { cacheRoot: root, fresh: true });
   if (already || !old.records.length) return none;
   const inputs = await loadBuildInputs(root);
   const listed = new Set(estateRepos(inputs.op).map((r) => r.id));
@@ -163,7 +163,6 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
       ...(lj?.ok ? { legacy: { slot: lj.slot, sha: sha256Of(legacy!.text) } } : {}),
     },
   });
-  const was = new Map(old.records.map((r) => [recordPath(r), serializeRecord(r)]));
   const onDisk = new Map<string, string>();
   for (const f of await filesUnder(generated)) {
     const t = await readText(f);
@@ -181,7 +180,6 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     const report = await readText(join(factsDirOf(root), `${repo}.verify.yaml`));
     if (facts && report && /rejected:\s*(0|\[\])/.test(report)) verifiable.push(repo);
   }
-  void was;
   return {
     pending: true,
     slots,
@@ -190,6 +188,74 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
     writes,
     build,
     records: old.records.length,
+  };
+}
+
+/**
+ * What `atticus upgrade --yes` would write, as data (CS3: the app's upgrade screen, and
+ * `atticus upgrade --json` without `--yes`): every file with its kind, size and hash, exactly
+ * the files `applyUpgradeToSlots` writes, plus the undo copy it takes first (on this machine).
+ */
+export interface UpgradeSlotsView {
+  pending: boolean;
+  /** Records adopted (every record of catalog/generated). */
+  records: number;
+  /** Each slot written and the records it adopts. */
+  write: { path: string; records: number; repo?: string }[];
+  /** Every file --yes writes, relative to the root, in the order it writes them. */
+  writes: {
+    path: string;
+    what: "readers-slot" | "legacy-joins" | "copy" | "build-manifest";
+    bytes: number;
+    sha256: string;
+  }[];
+  /** The copy of catalog/generated kept as it is. */
+  copy: { dir: string; files: number };
+  /** Record files the first build would give differently: --yes refuses unless none. */
+  firstBuildChanges: string[];
+  /** Whether --yes would apply it (pending, and the first build changes nothing). */
+  applies: boolean;
+  /** The command that applies it. */
+  run: string;
+  /** Repos whose facts passed verify as they are (`atticus verify <repo> --write` next). */
+  verifiable: string[];
+}
+
+/** The dry-run view of the upgrade to slots (a plan made here when none is given). */
+export async function upgradeSlotsView(
+  root: string,
+  plan?: UpgradeSlotsPlan,
+): Promise<UpgradeSlotsView> {
+  const p = plan ?? (await planUpgradeToSlots(root));
+  const rel = (abs: string) => posix(relative(root, abs));
+  const copyDir = rel(generatedBeforeUpgradeDirOf(root));
+  const readersDir = rel(join(sourcesDirOf(root), "readers"));
+  const manifest = rel(buildManifestPath(root));
+  const joinsPath = rel(legacyJoinsPath(root));
+  const writes = p.writes.map((w) => {
+    const path = rel(w.path);
+    const what: UpgradeSlotsView["writes"][number]["what"] =
+      path === manifest
+        ? "build-manifest"
+        : path === joinsPath
+          ? "legacy-joins"
+          : path.startsWith(`${copyDir}/`)
+            ? "copy"
+            : path.startsWith(`${readersDir}/`)
+              ? "readers-slot"
+              : "copy";
+    return { path, what, bytes: Buffer.byteLength(w.text, "utf8"), sha256: sha256Of(w.text) };
+  });
+  return {
+    pending: p.pending,
+    records: p.records,
+    write: p.slots,
+    writes,
+    copy: { dir: copyDir, files: writes.filter((w) => w.what === "copy").length },
+    firstBuildChanges: p.differs,
+    applies: p.pending && p.differs.length === 0,
+    run: "atticus upgrade --yes",
+    verifiable: p.verifiable,
   };
 }
 
