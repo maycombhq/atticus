@@ -169,17 +169,32 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
   );
 
   it(
-    "without --yes writes no byte; with --yes adopts every record into exactly one legacy slot, keeps a copy, and the catalog is byte for byte as it was",
+    "without --yes writes nothing under catalog/, and no byte once only the slots step waits; with --yes adopts every record into exactly one legacy slot, keeps a copy, and the catalog is byte for byte as it was",
     async () => {
       const root = await beta26();
       const before = generated(root);
+      // The fixture also waits on another upgrade step (its .gitignore), which runs without
+      // --yes, as every step but the slots one does: it writes nothing under catalog/.
+      const first = await run(["upgrade", "--root", root]);
+      expect(first.code, first.err).toBe(0);
+      expect(first.out).toMatch(/atticus upgrade --yes applies this step/);
+      expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
+      expect(generated(root)).toEqual(before);
+      // The review of beta.27: once only the slots step waits, the dry run writes no byte
+      // anywhere in the metarepo (its clones and this machine's own log and caches aside, which
+      // are never committed): no stamp (.atticus/metarepo.yaml, its upgradedAt), no record of
+      // what to propose, nothing under catalog/.
+      const local = /^(workspace|\.atticus\/(logs|cache))\//;
+      const metarepo = () =>
+        Object.fromEntries(Object.entries(files(root)).filter(([p]) => !local.test(p)));
+      const everything = metarepo();
       const dry = await run(["upgrade", "--root", root]);
       expect(dry.code, dry.err).toBe(0);
       expect(dry.out).toMatch(/Adopt the catalog into source slots/);
       expect(dry.out).toMatch(/The first build changes nothing/);
       expect(dry.out).toMatch(/atticus upgrade --yes applies this step/);
-      expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
-      expect(generated(root)).toEqual(before);
+      expect(dry.out).not.toMatch(/Recorded Atticus/);
+      expect(metarepo()).toEqual(everything);
 
       const yes = await run(["upgrade", "--root", root, "--yes"]);
       expect(yes.code, yes.err).toBe(0);
