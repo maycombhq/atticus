@@ -13,6 +13,7 @@ import { startServer, type RunningServer } from "@maycombhq/server";
 import { projectFactsIntoCatalog } from "../src/map-render-commands.js";
 import { uiQuestionRoutes } from "../src/ui-api-questions.js";
 import { verifyCommand } from "../src/verify-commands.js";
+import { confirmed } from "./seed-slots.js";
 
 /**
  * Beta.24 review: the join's question about a gateway's token target URL is on the app's
@@ -45,10 +46,23 @@ const call = async (method: string, path: string, body?: unknown) => {
 
 async function apply(repo: string): Promise<string[]> {
   const out: string[] = [];
-  const code = await verifyCommand(
-    root,
-    repo,
-    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true, now: () => AT },
+  // ADR 0195 point 4 and the owner's third answer: an answer that joins a call explains the
+  // Unresolved record it removes; above 10% of a repo's records the write waits for the count
+  // it lists, confirmed as a person would (the app's confirm step is CS3's).
+  const code = await confirmed(
+    (io, allowRemovals) =>
+      verifyCommand(
+        root,
+        repo,
+        {
+          commit: COMMIT[repo]!,
+          dir: join(root, "workspace", repo),
+          write: true,
+          now: () => AT,
+          ...(allowRemovals !== undefined ? { allowRemovals } : {}),
+        },
+        io,
+      ),
     { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
   );
   expect(code, out.join("\n")).toBe(0);

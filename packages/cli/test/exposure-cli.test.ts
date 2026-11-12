@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { verifyCommand } from "../src/verify-commands.js";
+import { confirmed } from "./seed-slots.js";
 
 /**
  * J1 (ADR 0143): `atticus verify <deploy repo>` checks each Route's host and base path on its
@@ -37,6 +38,28 @@ function metarepo(edit?: { manifest?: (s: string) => string; facts?: (s: string)
     writeFileSync(p, edit.facts(readFileSync(p, "utf8")));
   }
   return root;
+}
+/**
+ * ADR 0195 point 2: the build joins the facts slots only, which only a repo's own verify --write
+ * writes, so the repos the Routes expose are verified first, as a team's estate has them
+ * (beta.26's verify joined every live facts file).
+ */
+async function verifyExposed(root: string): Promise<void> {
+  for (const repo of ["forge-accounts", "forge-cards", "forge-notifications", "forge-payments"]) {
+    cpSync(join(FIX, "repos", repo), join(root, "workspace", repo), { recursive: true });
+    const c = capture();
+    const code = await confirmed(
+      (io, allowRemovals) =>
+        verifyCommand(
+          root,
+          repo,
+          { write: true, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
+          io,
+        ),
+      c.io,
+    );
+    expect(code, [...c.out, ...c.err].join("\n")).toBe(0);
+  }
 }
 const verify = (root: string, write: boolean, c = capture()) =>
   verifyCommand(root, REPO, { commit: "e5e0010", dir: join(root, "workspace", REPO), write }, c.io);
@@ -83,6 +106,7 @@ describe("atticus verify: exposure facts in a deploy repo", () => {
           "    component: accounts-api\n    hosts: [apps.forge.internal]\n    basePath: /forge/accounts\n",
         ),
     });
+    await verifyExposed(root);
     const c = capture();
     expect(await verify(root, true, c)).toBe(0);
     const msg =
@@ -103,6 +127,7 @@ describe("atticus verify: exposure facts in a deploy repo", () => {
 
   it("--write with the manifest and the Routes agreeing reports nothing", async () => {
     const root = metarepo();
+    await verifyExposed(root);
     const c = capture();
     expect(await verify(root, true, c)).toBe(0);
     expect(c.out.filter((l) => l.startsWith("Exposure:"))).toEqual([]);
