@@ -1,0 +1,47 @@
+name: diag-win24 (temporary)
+
+# TEMPORARY, on diag/win24 only: the CLI tests that stall on Windows + Node 24, with timing
+# instrumentation (scripts/diag-setup.mjs, ATTICUS_DIAG=1).
+on:
+  push:
+    branches: [diag/win24]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/build
+
+jobs:
+  diag:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/build
+          key: turbo-build-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
+          restore-keys: turbo-build-${{ runner.os }}-node${{ matrix.node }}-
+      - run: pnpm build
+      - id: tests
+        env:
+          ATTICUS_DIAG: "1"
+          ATTICUS_DIAG_FILE: ${{ runner.temp }}/diag.log
+        working-directory: packages/cli
+        run: pnpm exec vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=60000 $(cat ../../.github/diag-files.txt)
+        shell: bash
+      - if: always()
+        run: cat "$RUNNER_TEMP/diag.log" || true
+        shell: bash
