@@ -1,0 +1,12 @@
+schemaVersion: 1
+platform: forge
+name: Forge's vendor proxy whose routes forward to a vendor's spec operations (invented)
+systems:
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: onboarding, name: Onboarding, boundary: product, owner: team-onboarding, aliases: [] }
+  - id: northwind-pay
+    name: Northwind Pay
+    boundary: vendor
+    owner: team-onboarding
+    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]
+environments: [dv, prod]

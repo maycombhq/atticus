@@ -1,0 +1,3 @@
+gateway-url: https://gw.forge.example
+northwind-pay:
+  base-url: ${gateway-url}/northwind-accounts/1.0

@@ -97,6 +97,16 @@ Below the changes, the command lists the affected repos and flows. It also lists
 - **A forwarding call to an operation the vendor doesn't publish.** This is a gap.
 - **A forwarding call that two operations fit equally well.** This is a question.
 
+How a forwarding call is matched to an operation:
+
+- **The path the vendor receives** is the target URL's own path, then the path the route forwards (the suffix after the proxy's base path, or the path a policy rewrites it to). A target URL `https://api.northwind-pay.example/api/v1` and a route `/accounts/balances` give `/api/v1/accounts/balances`. When the target URL is a deploy token (`@targetVendorUrl@`), each environment's value in `config.json` gives its own path.
+- **Each environment's path on its own.** When the environments' target URLs differ in path (`/api/v1` in dv, `/api/v2` in prod), each environment's path is matched by itself: a call that reaches `/api/v1/x` in dv and `/api/v2/x` in prod reaches both, never a question between them. A gap or a question about one environment's path names it (`GET /api/v2/bulkorders in prod`). Where a path must be picked (the operation two environments reach, the arrow on the Map), it is the prod-like environment's: the first by name of those named `pd`, `prod`, `prd` or `production` as a word of their own (`prod`, `us-prd`), else the first environment by name. The Outside systems page's join gives each match its `env`.
+- **The spec's server path** counts too: a call with a target path is matched, with it, on the operation's path with its `servers` path in front. Only a call with no target path is also matched on the operation's own path without it, so `/accounts/*` sent to `/api/v1` never reaches an operation the spec serves on `/api/v2`.
+- **A path parameter** (`{version}`, `{account_guid}`) takes any one segment, so `/api/v1/accounts/balances` matches `/api/{version}/accounts/balances`. Where a literal segment and a parameter both fit (`balances` and `{account_guid}`), the literal wins, as OpenAPI routes it.
+- **A wildcard route** (`/accounts/*`, `/cards/*/pin`, or `/**` at the end) forwards whatever is under it, so it reaches every operation it fits. It counts as a call to each of them, never as a question.
+
+Only a call that fits no operation is a gap.
+
 `--json` gives the comparison and the impact as data (`{ diff, impact }`).
 
 The command exits with:
@@ -144,6 +154,10 @@ A vendor's direct calls are still left to the gateway's routes, as before (ADR 0
 ## Every outside system on one page
 
 The app's Map › Outside systems (linked from Systems, and found by Ctrl+K) has a page for each system no repo of the estate belongs to, a vendor's or another team's. It shows who calls it (the catalog's links to it, the calls the join leaves to it, and the calls its spec's hosts and names match, with the services behind a gateway's route), the operations its newest spec in `inputs/` publishes with how many calls reach each, the calls that match nothing in that spec, and the questions open about it. Here every service's own call to a vendor is matched to its spec too, since who calls it is the point. A system with no spec says how to add one: `atticus intake add <file>`, then `atticus intake list` (and `atticus triage` if intake can't tell which system it is). It reads files only.
+
+A wildcard route is one caller that reaches several operations: the page lists them all on its row, and each operation counts it. A service that calls the gateway's own host and base path is listed behind the proxy's route ("through" the route's line), never as calling the vendor directly: the route is what forwards it. A host that a repo of the estate answers on (`repos.manifest.yaml`) is never the vendor's, and a base URL's setting name (`northwind-pay.base-url`) is never read as a host. If the profile lists such a host among the vendor's aliases (the gateway's host added by hand, say), the page says so under **Check its configuration**: take the host out of the vendor's aliases. It says so too when `repos.manifest.yaml` lists, under a repo's hosts, a host the vendor's spec serves on (its `servers`): calls to it go to that repo, so take it out of the repo's hosts if the repo doesn't answer on it.
+
+On the Map, a vendor is one box. Calls to it land on the vendor's system, whatever name they reach it by (a host's label, a name a person paired calls to, a proxy's TargetEndpoint), unless the catalog declares a component of the vendor's. A part of a vendor's system, or of another team's (a system no repo of the estate belongs to whose owner owns no system with an estate repo), is never marked "No repo known" or "Seen at one end only": there is no code of theirs to read. An internal or product system with no repo and no owner, or an estate team's, still is: its part is the estate's gap. A forwarding call drawn to the vendor keeps the target URL's path (`/api/v1/accounts/balances`); when the environments set the vendor's host with different paths, the arrow takes the prod-like environment's, by the rule above. A catalog upgraded from beta.26 keeps its arrows to a component beta.26 inferred for the vendor (a host's label, `northwind-pay-api`) byte for byte; the caller's next `atticus verify <repo> --write` moves them to the vendor's system, listed with the build's removals and why.
 
 ## Your own change's impact
 

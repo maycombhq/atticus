@@ -1,0 +1,5 @@
+<TargetEndpoint name="northwind-pay-target">
+  <HTTPTargetConnection>
+    <URL>@targetVendorUrl@</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -170,6 +170,64 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
     const v = nodeView(buildEstate(forge()), "system:audit", { lens: "architecture" });
     expect(ids(v.children)).toEqual(["component:audit-svc"]);
     expect(v.children[0]!.gaps).toEqual(expect.arrayContaining(["inferred", "no-repo"]));
+    // An estate system's repo-less component is flagged too.
+    const extra = {
+      kind: "Component",
+      id: "portal-cache",
+      confidence: "inferred",
+      system: "portal",
+      type: "service",
+      evidence: ev,
+    };
+    const p = nodeView(buildEstate(forge([extra])), "system:portal", { lens: "architecture" });
+    const cache = p.children.find((c) => c.id === "component:portal-cache")!;
+    expect(cache.gaps).toEqual(expect.arrayContaining(["inferred", "no-repo"]));
+  });
+
+  it("never says a part of a vendor or another team's system has no repo or was seen at one end (beta.27)", () => {
+    // A vendor, and an internal system another team (no estate repo's) owns: no code of theirs to
+    // read. An internal system with no owner (Forge's audit) or one an estate team owns, with no
+    // repo, is still the estate's gap (the test above).
+    const part = (id: string, system: string) => ({
+      kind: "Component",
+      id,
+      confidence: "inferred",
+      system,
+      type: "service",
+      evidence: ev,
+    });
+    const system = (id: string, owner: string) => ({
+      kind: "System",
+      id,
+      name: id,
+      boundary: "internal",
+      owner,
+      confidence: "verified",
+      evidence: ev,
+    });
+    const est = buildEstate(
+      forge([
+        part("northwind-pay-target", "northwind-pay"),
+        system("risk", "team-risk"),
+        part("risk-scorer", "risk"),
+        system("ledger-archive", "team-ledger"),
+        part("archive-svc", "ledger-archive"),
+      ]),
+    );
+    for (const sys of ["system:northwind-pay", "system:risk"]) {
+      const v = nodeView(est, sys, { lens: "architecture" });
+      const parts = v.children.filter((c) => c.kind === "component");
+      expect(parts.length, sys).toBeGreaterThan(0);
+      for (const c of parts) {
+        expect(c.gaps, c.id).not.toContain("no-repo");
+        expect(c.gaps, c.id).not.toContain("inferred");
+      }
+    }
+    // The ledger team's system has repos elsewhere: a repo-less part of it is a gap.
+    const archive = nodeView(est, "system:ledger-archive", { lens: "architecture" }).children;
+    expect(archive.find((c) => c.id === "component:archive-svc")!.gaps).toEqual(
+      expect.arrayContaining(["inferred", "no-repo"]),
+    );
   });
 
   it("refuses a node it doesn't have", () => {

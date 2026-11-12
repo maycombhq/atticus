@@ -1,0 +1,45 @@
+- repo: forge-onboarding
+  at: src/main/java/forge/onboarding/InstrumentsClient.java:11
+  seen:
+    - spec
+  operation: northwind-pay.post-account-instrument
+  through:
+    repo: northwind_accounts_1-0
+    at: apiproxy/proxies/default.xml:4
+- repo: northwind_accounts_1-0
+  at: apiproxy/proxies/default.xml:10
+  seen:
+    - interface
+    - join
+    - spec
+  operation: northwind-pay.get-account
+  operations:
+    - northwind-pay.get-account
+    - northwind-pay.get-balance
+- repo: northwind_accounts_1-0
+  at: apiproxy/proxies/default.xml:13
+  seen:
+    - interface
+    - join
+    - spec
+  operation: northwind-pay.get-pin
+- repo: northwind_accounts_1-0
+  at: apiproxy/proxies/default.xml:16
+  seen:
+    - interface
+    - join
+    - spec
+- repo: northwind_accounts_1-0
+  at: apiproxy/proxies/default.xml:4
+  seen:
+    - interface
+    - join
+    - spec
+  operation: northwind-pay.post-account-instrument
+- repo: northwind_accounts_1-0
+  at: apiproxy/proxies/default.xml:7
+  seen:
+    - interface
+    - join
+    - spec
+  operation: northwind-pay.get-balance

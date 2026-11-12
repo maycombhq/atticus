@@ -1,0 +1,133 @@
+matches:
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.get.accounts
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:10
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.get.northwind-accounts-accounts
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:10
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    how: host
+    operation: northwind-pay.get-account
+    method: GET
+    path: /api/v2/accounts/*
+    env: prod
+    wildcard: true
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.get.accounts
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:10
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.get.northwind-accounts-accounts
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:10
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    how: host
+    operation: northwind-pay.get-balances
+    method: GET
+    path: /api/v2/accounts/*
+    env: prod
+    wildcard: true
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.get.accounts-balances
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:7
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.get.northwind-accounts-accounts-balances
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:7
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    how: host
+    operation: northwind-pay.get-balances
+    method: GET
+    path: /api/v2/accounts/balances
+    env: prod
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.get.cards-pin
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:13
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.get.northwind-accounts-cards-pin
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:13
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    how: host
+    operation: northwind-pay.get-card-pin
+    method: GET
+    path: /api/v2/cards/*/pin
+    env: prod
+    wildcard: true
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.post.account-instruments
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:4
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.post.northwind-accounts-account-instruments
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:4
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    how: host
+    operation: northwind-pay.post-account-instruments
+    method: POST
+    path: /api/v2/account_instruments
+    env: prod
+gaps:
+  - call:
+      repo: northwind_accounts_1-0
+      fact: call.get.bulkorders
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:16
+    route:
+      repo: northwind_accounts_1-0
+      fact: entry.get.northwind-accounts-bulkorders
+      component: northwind-accounts-proxy
+      at: apiproxy/proxies/default.xml:16
+    tie:
+      repo: northwind_accounts_1-0
+      fact: config.target-vendor-url-prod
+      component: northwind-accounts-proxy
+      at: config.json:17
+    vendor: northwind-pay
+    method: GET
+    path: /api/v2/bulkorders
+    env: prod
+    message: northwind-accounts-proxy forwards GET /api/v2/bulkorders in prod
+      (/api/v1/bulkorders in dv) to Northwind Pay, whose spec publishes no such
+      operation
+asks: []

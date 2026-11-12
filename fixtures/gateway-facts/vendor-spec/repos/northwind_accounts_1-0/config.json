@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "name": "dv",
+      "policies": [
+        {
+          "name": "@targetVendorUrl@",
+          "value": "https://devapi.northwind-pay.example/api/v1"
+        }
+      ]
+    },
+    {
+      "name": "prod",
+      "policies": [
+        {
+          "name": "@targetVendorUrl@",
+          "value": "https://api.northwind-pay.example/api/v1"
+        }
+      ]
+    }
+  ]
+}

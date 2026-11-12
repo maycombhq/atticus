@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: Northwind Pay API
+  version: 1.4.0
+servers:
+  - url: https://devapi.northwind-pay.example
+  - url: https://api.northwind-pay.example
+paths:
+  /api/{version}/account_instruments:
+    post:
+      operationId: addAccountInstrument
+      parameters:
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { description: Added }
+  /api/{version}/accounts/{account_guid}:
+    get:
+      operationId: getAccount
+      parameters:
+        - { name: version, in: path, required: true, schema: { type: string } }
+        - { name: account_guid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The account }
+  /api/{version}/accounts/balances:
+    get:
+      operationId: getBalances
+      parameters:
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The balances }
+  /api/{version}/cards/{card_guid}/pin:
+    get:
+      operationId: getCardPin
+      parameters:
+        - { name: version, in: path, required: true, schema: { type: string } }
+        - { name: card_guid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The card's PIN block }
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      responses:
+        "200": { description: A session }

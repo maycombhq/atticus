@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   catalogDirOf,
   factIdPart,
+  hostMatches,
   inputsDirOf,
   joinConventions,
   joinSharedMaps,
@@ -18,6 +19,7 @@ import {
 import { readVendorSpec, type VendorSpec } from "@maycombhq/intake";
 import {
   componentRenames,
+  estateRepos,
   estateFacts,
   hostAliases,
   joinReposOf,
@@ -53,6 +55,25 @@ export const OUTSIDE_ADD_SPEC = (id: string): string[] => [
   "atticus intake list",
   "atticus triage",
 ];
+
+/**
+ * Beta.27: an alias of an outside system that is a host an estate repo answers on, said plainly:
+ * the calls to that host are the repo's (its routes), never the system's.
+ */
+export const OUTSIDE_ALIAS_CLASH = (name: string, host: string, repo: string): string =>
+  `${host} is one of ${name}'s aliases in the profile, but ${repo} answers on it (repos.manifest.yaml lists it), so calls to it go to ${repo}, not to ${name}. If ${repo} is the gateway in front of ${name}, take ${host} out of ${name}'s aliases.`;
+
+/**
+ * Beta.27: a host the vendor's spec serves on (its `servers`) that repos.manifest.yaml lists under
+ * an estate repo's hosts: the calls to it are that repo's, which is most likely a mistake.
+ */
+export const OUTSIDE_SPEC_HOST_CLASH = (
+  name: string,
+  host: string,
+  repo: string,
+  spec: string,
+): string =>
+  `${host} is a server in ${name}'s spec (${spec}), but repos.manifest.yaml lists it under ${repo}'s hosts, so calls to it go to ${repo}, not to ${name}. If ${repo} doesn't answer on ${host}, take it out of ${repo}'s hosts in repos.manifest.yaml.`;
 
 export async function outsideView(root: string): Promise<View> {
   const quiet = { out: () => undefined, err: () => undefined };
@@ -109,8 +130,34 @@ export async function outsideView(root: string): Promise<View> {
         vendors,
         targets: estate.targets,
         ...joinConventions(op),
+        // Beta.27: a service's call the join lands on a gateway's route reaches the system
+        // through it (listed behind the route), never as a direct call.
+        joined: joined.joins,
       })
     : { matches: [], gaps: [], asks: [] };
+  // Every operation each call reaches (a wildcard route reaches several), by repo and fact.
+  const reaches = new Map<string, string[]>();
+  for (const m of matched.matches) {
+    const k = `${m.vendor}\u0000${m.call.repo}\u0000${m.call.fact}`;
+    reaches.set(k, [...new Set([...(reaches.get(k) ?? []), m.operation])].sort());
+  }
+  const opsOf = (vendor: string, e: FactEnd) => {
+    const ops = reaches.get(`${vendor}\u0000${e.repo}\u0000${e.fact}`) ?? [];
+    return { operation: ops[0]!, ...(ops.length > 1 ? { operations: ops } : {}) };
+  };
+  // Beta.27: a host alias of an outside system that an estate repo answers on (the gateway's own
+  // host, added to a vendor's aliases): its calls are that repo's, said plainly on the page.
+  const manifests = estateRepos(op);
+  const clashes = (hosts: readonly string[]) =>
+    hosts.flatMap((h) =>
+      manifests
+        .filter((m) =>
+          [...(m.hosts ?? []), ...(m.modules ?? []).flatMap((x) => x.hosts ?? [])].some((p) =>
+            hostMatches(p, h),
+          ),
+        )
+        .map((m) => ({ host: h, repo: m.id })),
+    );
 
   // ADR 0164: the calls to each system checked against its newest spec, and what it brought.
   const contracts = await contractCheckOf(root).catch(() => undefined);
@@ -197,20 +244,19 @@ export async function outsideView(root: string): Promise<View> {
     // The operation each call reaches; and behind a gateway's forwarding call, who calls its route.
     for (const g of [...matched.gaps, ...matched.asks].filter((x) => x.vendor === s.id))
       add(callOf(g.call), "spec");
+    // A call with several matches (a wildcard route) is one caller reaching each of them.
+    const once = new Set<string>();
     for (const m of matched.matches.filter((x) => x.vendor === s.id)) {
-      add({ ...callOf(m.call), operation: m.operation }, "spec");
+      const k = `${m.call.repo}\u0000${m.call.fact}`;
+      if (once.has(k)) continue;
+      once.add(k);
+      const ops = opsOf(s.id, m.call);
+      add({ ...callOf(m.call), ...ops }, "spec");
       if (m.direct || !m.route) continue;
       const route = m.route;
       for (const j of joined.joins)
         if (j.entry.repo === route.repo && j.entry.fact === route.fact)
-          add(
-            {
-              ...callOf(j.call),
-              operation: m.operation,
-              through: { repo: route.repo, at: route.at },
-            },
-            "spec",
-          );
+          add({ ...callOf(j.call), ...ops, through: { repo: route.repo, at: route.at } }, "spec");
     }
     for (const m of sharedJoin.matches.filter((x) => x.system === s.id))
       add(
@@ -235,6 +281,16 @@ export async function outsideView(root: string): Promise<View> {
       )
       .map((q) => ({ id: q.id, repo: q.repo, question: q.question }))
       .sort((a, b) => cmp(a.id, b.id));
+    // The profile's host aliases, then the hosts its spec serves on that no alias names.
+    const aliasHosts = hostAliases(s.aliases);
+    const notes = [
+      ...clashes(aliasHosts).map((c) => OUTSIDE_ALIAS_CLASH(s.name, c.host, c.repo)),
+      ...(spec
+        ? clashes(spec.hosts.filter((h) => !aliasHosts.some((a) => hostMatches(a, h)))).map((c) =>
+            OUTSIDE_SPEC_HOST_CLASH(s.name, c.host, c.repo, spec.path),
+          )
+        : []),
+    ];
     return {
       id: s.id,
       name: s.name,
@@ -253,7 +309,8 @@ export async function outsideView(root: string): Promise<View> {
                 method: o.method,
                 path: o.fullPath,
                 cite: o.cite,
-                calls: list.filter((c) => c.operation === o.id).length,
+                calls: list.filter((c) => c.operation === o.id || !!c.operations?.includes(o.id))
+                  .length,
               })),
             },
           }
@@ -265,6 +322,7 @@ export async function outsideView(root: string): Promise<View> {
         .filter((a) => a.vendor === s.id)
         .map((a) => ({ ...callOf(a.call), seen: ["spec" as const], candidates: a.candidates })),
       questions,
+      ...(notes.length ? { notes } : {}),
       ...(spec ? {} : { addSpec: OUTSIDE_ADD_SPEC(s.id) }),
       ...contractsOf(s.id),
       ...(map

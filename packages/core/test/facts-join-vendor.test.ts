@@ -77,6 +77,7 @@ const northwind = (): JoinVendor => ({
 });
 const GW = "forge-partner-gateway";
 const DEFAULT_XML = "proxies/northwind-pay-v1/apiproxy/proxies/default.xml";
+// The TargetServer is prod's: each match, gap and question names that environment.
 const TIE = {
   repo: GW,
   fact: "config.targetserver.northwind-pay",
@@ -111,6 +112,7 @@ describe("joinVendorOperations", () => {
         operation: "op.create-charge",
         method: "POST",
         path: "/v1/charges",
+        env: "prod",
       },
       {
         call: {
@@ -131,6 +133,7 @@ describe("joinVendorOperations", () => {
         operation: "op.capture",
         method: "POST",
         path: "/v1/charges/{chargeId}/capture",
+        env: "prod",
       },
       {
         call: {
@@ -151,6 +154,7 @@ describe("joinVendorOperations", () => {
         operation: "op.refund",
         method: "POST",
         path: "/v1/charges/{chargeId}/refunds",
+        env: "prod",
       },
     ]);
   });
@@ -205,6 +209,7 @@ describe("joinVendorOperations", () => {
         vendor: "northwind-pay",
         method: "POST",
         path: "/v1/charges/{chargeId}/void",
+        env: "prod",
         message:
           "partner-gateway forwards POST /v1/charges/{chargeId}/void to Northwind Pay, whose spec publishes no such operation",
       },
@@ -264,6 +269,7 @@ describe("joinVendorOperations", () => {
         question:
           "Which of Northwind Pay's operations does /v1/charges/{chargeId}, which partner-gateway forwards, reach: DELETE /charges/{chargeId} or GET /charges/{chargeId}?",
         candidates: ["op.cancel", "op.get-charge"],
+        env: "prod",
       },
     ]);
   });

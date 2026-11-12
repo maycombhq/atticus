@@ -601,26 +601,42 @@ export function buildEstate(records: CatalogRecord[], o: BuildEstateOptions = {}
   const partNode = (ref: string) =>
     components.has(ref) ? `component:${ref}` : systems.has(ref) ? `system:${ref}` : unknown(ref);
 
+  // Beta.27 (a user's Map): a vendor's system, or another team's (its owner owns no system with an
+  // estate repo), has no code of the estate's to read, so a component in it is never missing a
+  // repo or seen at one end only. An internal or product system with no repo and no owner (or an
+  // estate team's) is still the estate's: its repo-less part keeps "No repo known".
+  const withRepo = new Set(repoSystem.values());
+  const hasRepo = (id: string) =>
+    withRepo.has(id) || (systemRecords.get(id)?.repos.length ?? 0) > 0;
+  const estateTeams = new Set(
+    [...systemRecords.values()].filter((s) => s.owner && hasRepo(s.id)).map((s) => s.owner!),
+  );
+  const outsideSystem = (id: string) => {
+    if (hasRepo(id)) return false;
+    const s = systemRecords.get(id);
+    if (s?.boundary === "vendor") return true;
+    return !!s?.owner && estateTeams.size > 0 && !estateTeams.has(s.owner);
+  };
   for (const c of components.values()) {
     const gaps: string[] = [];
     let parent: string;
+    const outsideOne = !c.repo && outsideSystem(c.system);
     if (c.repo) parent = repoNode(c.repo);
     else {
-      gaps.push("no-repo");
+      if (!outsideOne) gaps.push("no-repo");
       parent = systems.has(c.system) ? `system:${c.system}` : "estate";
     }
     if (!systems.has(c.system)) gaps.push("no-system");
-    add(
-      fromRecord(
-        c,
-        `component:${c.id}`,
-        "component",
-        c.id,
-        parent,
-        { type: c.type, runtime: c.runtime, repo: c.repo, path: c.path },
-        gaps,
-      ),
+    const node = fromRecord(
+      c,
+      `component:${c.id}`,
+      "component",
+      c.id,
+      parent,
+      { type: c.type, runtime: c.runtime, repo: c.repo, path: c.path },
+      gaps,
     );
+    add(outsideOne ? { ...node, gaps: node.gaps.filter((g) => g !== "inferred") } : node);
   }
 
   const endpointNode = new Map<string, string>();
