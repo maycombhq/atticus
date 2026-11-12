@@ -26,6 +26,7 @@ import {
   loadBuildInputs,
   planUndo,
   readBuildManifest,
+  sha256Of,
   takeUndoCopy,
   undoDirOf,
   undoHandEdits,
@@ -292,7 +293,6 @@ export async function catalogUndo(
     const bad: string[] = [];
     for (const f of m.manifest?.files ?? []) {
       const text = await readFile(join(root, ...f.path.split("/")), "utf8").catch(() => undefined);
-      const { sha256Of } = await import("@maycombhq/scanner");
       if (text === undefined || sha256Of(text.replace(/\r\n?/g, "\n")) !== f.sha256)
         bad.push(f.path);
     }
@@ -453,7 +453,88 @@ async function planEdits(
   const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
   const edits = g.refused?.reasons.includes("hand-edits") ? (g.refused.edits ?? []) : [];
   const built = new Map(b.records.map((r) => [recordPath(r), r]));
+  // A record of a repo archived or removed since the last build (its build refused, say, for a
+  // large removal, the manifest left as the person edited it): the build no longer makes it, and
+  // its slot holds what the readers gave, not what the build made of it (the merge names an
+  // endpoint by its path, and combines a spec's record with the code's). The record as the last
+  // build made it is what the same inputs build with that repo back: built once, only when an
+  // edit needs it, and never written or kept. An archived repo is built as listed. A removed
+  // one's entry is gone, so it is listed again from its slot's Component (its component, system
+  // and type), and a record of it is used only when its text is the one build.json hashed: what
+  // the last build wrote, byte for byte.
   const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
+  let restored: Map<string, CatalogRecord> | undefined;
+  const asLastBuilt = async (rel: string): Promise<CatalogRecord | undefined> => {
+    if (!restored) {
+      restored = new Map();
+      const op = inputs.op;
+      const listed = new Set(op.profiles.flatMap((p) => (p.repos?.repos ?? []).map((r) => r.id)));
+      const archived = new Set(
+        op.profiles.flatMap((p) => (p.repos?.repos ?? []).filter((r) => r.archived)),
+      );
+      const removed = [...inputs.slots.readers]
+        .filter(([repo]) => !listed.has(repo))
+        .flatMap(([repo, x]) => {
+          const c = "slot" in x ? x.slot.records.find((r) => r.kind === "Component") : undefined;
+          return c && typeof c.type === "string"
+            ? [
+                {
+                  id: repo,
+                  url: repo,
+                  defaultBranch: "main",
+                  branches: [],
+                  type: c.type,
+                  owner: "unknown",
+                  component: c.id,
+                  ...(typeof c.system === "string" ? { system: c.system } : {}),
+                  extractors: [],
+                  dialects: [],
+                  sparse: [],
+                  archived: false,
+                  hosts: [],
+                  modules: [],
+                },
+              ]
+            : [];
+        });
+      const at = op.profiles.findIndex((p) => p.repos);
+      if ((archived.size || removed.length) && at >= 0) {
+        const back: typeof op = {
+          ...op,
+          profiles: op.profiles.map((p, k) =>
+            p.repos
+              ? {
+                  ...p,
+                  repos: {
+                    ...p.repos,
+                    repos: [
+                      ...p.repos.repos.map((r) => (r.archived ? { ...r, archived: false } : r)),
+                      ...(k === at ? removed : []),
+                    ],
+                  },
+                }
+              : p,
+          ),
+        };
+        const a = await buildCatalog({ ...inputs, op: back });
+        const m = await readBuildManifest(baselineTarget(root).manifest);
+        const shas = new Map((m.manifest?.files ?? []).map((f) => [f.path, f.sha256]));
+        const fromRemoved = new Set(removed.map((r) => r.id));
+        for (const r of a.records) {
+          const p = recordPath(r);
+          const ev = new Set((r.evidence ?? []).map((e) => e.repo).filter(Boolean));
+          // A record of a removed repo is used only when its text is what the last build wrote.
+          if ([...ev].some((x) => fromRemoved.has(String(x)))) {
+            const text = a.files.get(p);
+            const want = shas.get(`${genRel}/${p}`);
+            if (text === undefined || want === undefined || sha256Of(text) !== want) continue;
+          }
+          restored.set(p, r);
+        }
+      }
+    }
+    return restored.get(rel);
+  };
   const out: EditPlan[] & { buildPlan?: string } = [];
   // The plan GET /api/build lists for this build (an app's confirm checks it under the lock).
   Object.defineProperty(out, "buildPlan", {
@@ -486,8 +567,9 @@ async function planEdits(
     const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
     const p = deserializeRecord(text);
     // A record this build no longer makes (its repo removed or archived since): the edit is
-    // read against the record as its slot last held it, and the assert waits, orphaned, until
-    // the record returns.
+    // read against the record as the build makes it with its repo not archived, or else (a repo
+    // the manifests no longer list) as its slot last held it, and the assert waits, orphaned,
+    // until the record returns.
     const fromSlot = (): CatalogRecord | undefined => {
       if (!p.ok) return undefined;
       const { kind, id } = p.record;
@@ -499,7 +581,7 @@ async function planEdits(
       ];
       return held.find((r) => r.kind === kind && r.id === id);
     };
-    const derived = derivedNow ?? fromSlot();
+    const derived = derivedNow ?? (await asLastBuilt(rel)) ?? fromSlot();
     if (!p.ok || !derived) {
       plan({ why: "it doesn't read as a record, or the build no longer makes it" });
       continue;

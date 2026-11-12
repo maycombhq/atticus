@@ -364,8 +364,25 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const b = records(s.before.generated);
     const a = records(s.after.generated);
     const reach = [...c.slots].flatMap((x) => partners(s.m, x));
+    // The manifests are an input. Archiving or removing a repo is the person's edit to them,
+    // then a build; when a guard refuses that build, it writes nothing under catalog/ and the
+    // manifest stays as the person left it (ADR 0195 point 4), so the next build that writes,
+    // a scan's say, takes the entry in. A System lists its repos from the manifests: its
+    // `repos` changes with such an entry, though no repo's evidence names it (seed -1183949415).
+    const was = s.modelBefore.built;
+    const entries = [...c.slots].filter((x) => {
+      const a = was?.repos[x];
+      const b = s.m.repos[x];
+      return !!a && !!b && (a.listed !== b.listed || a.archived !== b.archived || a.id !== b.id);
+    });
+    const listsEntry = (r: Rec) =>
+      r.kind === "System" &&
+      Array.isArray(r.repos) &&
+      entries.some((x) => [...idsOf(s.m, x)].some((id) => (r.repos as unknown[]).includes(id)));
     const ok = (r: Rec | undefined) =>
-      involves(s.m, c.slots, r) || (!!r && JOINED.has(r.kind) && involves(s.m, reach, r));
+      involves(s.m, c.slots, r) ||
+      (!!r && JOINED.has(r.kind) && involves(s.m, reach, r)) ||
+      (!!r && listsEntry(r));
     const bad = unchangedSince(s.before.generated, s.after.generated, s.editsBefore).filter(
       (p) => !ok(a.get(p)) && !ok(b.get(p)),
     );
@@ -587,7 +604,17 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         `${s.desc.t} removed ${big.join(", ")} without the removals being confirmed`,
       );
     const edited = editedGone(s);
-    if (n !== gone.size && n !== gone.size + edited.size)
+    // Of the hand-edited records the build no longer makes, the refusal counts those whose
+    // file is still there, changed: a file the person deleted is no removal of the build's (it
+    // is already gone, and the discard confirms it), and a record the person added is none the
+    // build made (seeds 1361807166, 1361868403).
+    const changed = new Set(
+      s.handEditsBefore
+        .filter((e) => e.how === "change")
+        .map((e) => `${e.kind}/${e.id}`)
+        .filter((id) => edited.has(id)),
+    );
+    if (n !== gone.size && n !== gone.size + changed.size)
       fail(
         "large-removals-confirmed",
         `${s.desc.t} was confirmed with --allow-removals ${n}, yet removed ${gone.size} records${edited.size ? ` (and ${edited.size} edited by hand)` : ""}`,

@@ -51,6 +51,7 @@ const paymentsLegacy: Code = {
  */
 const notify = POOL.find((b) => b.id === "forge-notify")!;
 const orders = POOL.find((b) => b.id === "forge-orders")!;
+const customers = POOL.find((b) => b.id === "forge-customers")!;
 const THREE: Estate = {
   repos: [
     {
@@ -679,6 +680,104 @@ export const EXAMPLES: Example[] = [
       repos: [
         { base: ledger, code: { ...empty, consumes: [payments.topic] } },
         { base: payments, code: empty },
+      ],
+    },
+  ),
+  seq(
+    "locality",
+    "an archive refused for a hand edit leaves the manifest archived: the scan whose build takes it in may change the system's repos, a record of the manifests' (seed -1183949415)",
+    // ADR 0195 point 4: archiving is the person's change to the manifest, an input, followed by
+    // a build, and it is the build a guard refuses. A refused command writes nothing under
+    // catalog/ (no slot, no record file, no build.json); the manifest is the person's own file and
+    // stays as they left it, as a curated file does. The next build that writes takes it in, here
+    // the scan's, confirmed by discarding the edit. A System lists its repos from the manifests,
+    // so it changes with them, though no repo's evidence names it.
+    [
+      { t: "scan-reader-fails", slot: 1 },
+      { t: "hand-edit", pick: 0, how: "change" },
+      { t: "archive", slot: 1 },
+      { t: "scan" },
+    ],
+    [
+      has("the ledger's GET /accounts", getAccounts),
+      has("payments' system, listing no repo now that its one repo is archived", (recs) =>
+        recs.find(
+          (r) =>
+            r.kind === "System" &&
+            r.id === payments.system &&
+            Array.isArray(r.repos) &&
+            !r.repos.includes(payments.id),
+        ),
+      ),
+    ],
+  ),
+  seq(
+    "completeness",
+    "an archive refused as a large removal leaves the manifest archived; a hand edit to the archived ledger's record is made curated against the record as the last build made it (seed -2093340699)",
+    // ADR 0195 point 4: a hand edit is made curated, and the assert waits, orphaned, while the
+    // build no longer makes its record. The ledger's readers slot holds what the readers gave,
+    // not what the build made of it (the merge names an endpoint by its path), so
+    // `edits --curate` reads the edit against what the build makes with the ledger not archived.
+    [
+      { t: "scan" },
+      { t: "archive", slot: 0 },
+      { t: "hand-edit", pick: 0, how: "change" },
+      { t: "curate-edits" },
+    ],
+    [has("payments' POST /refunds", postRefunds)],
+  ),
+  seq(
+    "completeness",
+    "a removal refused as large leaves the manifest without the ledger; a hand edit to its record is made curated against the record as the last build wrote it (seeds -2093340699, 1361862919)",
+    // As above, for a repo taken out of the manifests: its entry is gone, so `edits --curate`
+    // lists it again from its slot's Component, and uses a record of it only when its text is
+    // the one build.json hashed.
+    [
+      { t: "scan" },
+      { t: "remove", slot: 0 },
+      { t: "hand-edit", pick: 0, how: "change" },
+      { t: "curate-edits" },
+    ],
+    [has("payments' POST /refunds", postRefunds)],
+  ),
+  seq(
+    "large-removals-confirmed",
+    "an archive refused, then a record deleted by hand and one changed: the discard's confirmation counts the changed one, not the file already deleted (seed 1361807166)",
+    // ADR 0195 point 4: a large removal is confirmed with the count the refusal listed. A file
+    // the person deleted is no removal of the build's (it is gone already, and the discard of
+    // the edit confirms it); a changed one whose record the build no longer makes is.
+    [
+      { t: "scan" },
+      { t: "archive", slot: 3 },
+      { t: "hand-edit", pick: 0, how: "delete" },
+      { t: "hand-edit", pick: 0, how: "change" },
+      { t: "verify-live", slot: 0 },
+    ],
+    [has("payments' Component", (recs) => recs.find((r) => r.id === payments.component))],
+    {
+      repos: [
+        { base: payments, code: { ...empty, publishes: [payments.topic] } },
+        { base: ledger, code: { ...ledgerCode, consumes: [payments.topic] } },
+      ],
+    },
+  ),
+  seq(
+    "large-removals-confirmed",
+    "a record changed by hand and one added, then its repo removed: the discard's confirmation counts the changed one, not the added one, which the build never made (seed 1361868403)",
+    [
+      { t: "scan" },
+      { t: "hand-edit", pick: 9, how: "change" },
+      { t: "hand-edit", pick: 0, how: "add" },
+      { t: "remove", slot: 0 },
+    ],
+    [lacks("the ledger's GET /accounts", getAccounts)],
+    {
+      repos: [
+        { base: ledger, code: { ...ledgerCode, consumes: [] } },
+        {
+          base: customers,
+          code: { ...empty, endpoints: [{ method: "GET", path: "/customers" }] },
+        },
       ],
     },
   ),
