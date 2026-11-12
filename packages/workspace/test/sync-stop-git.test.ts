@@ -25,6 +25,7 @@ import {
   SYNC_CHECKOUT_MARK,
   type GitRunner,
 } from "../src/index.js";
+import { linkTextIsBlob } from "../src/manager.js";
 
 /**
  * Beta.27 re-review: a stop during the checkout of an existing base clone left it with
@@ -813,6 +814,53 @@ describe("a submodule in one commit and a file in the other (real git)", () => {
     },
     T,
   );
+
+  // Beta.27 re-review 6: a file (100644) in one commit whose bytes are a link's text: git
+  // never wrote a link there, so a link with that text is a person's.
+  it.skipIf(process.platform === "win32")(
+    "a link whose text is a file's bytes, where that commit has a file: refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp(
+        { "pom.xml": "<project/>\n", sub: LINKED },
+        { sub: { gitlink: "1".repeat(40) } },
+      );
+      await killedWith(dest, old, next, {}, true);
+      await rm(join(dest, "sub"), { recursive: true, force: true });
+      await symlink(LINKED, join(dest, "sub"));
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/sub is a link/);
+      expect((await lstat(join(dest, "sub"))).isSymbolicLink()).toBe(true);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+    },
+    T,
+  );
+});
+
+// Beta.27 re-review 6: Git for Windows (core.symlinks=true) writes a link's target with `\`, so
+// readlink's `..\shared\forge-common` is the blob `../shared/forge-common`; and only a path whose
+// mode in that commit is 120000 is a link of git's, never a file whose bytes are the link's text.
+describe("linkTextIsBlob: whether a link's text is git's own", () => {
+  const BLOB = "../shared/forge-common";
+  it("reads `\\` as `/` on Windows only", () => {
+    expect(linkTextIsBlob("..\\shared\\forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("../shared/forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("..\\shared/forge-common", "120000", BLOB, "win32")).toBe(true);
+    expect(linkTextIsBlob("..\\shared\\northwind-pay", "120000", BLOB, "win32")).toBe(false);
+    // elsewhere a `\` is a character of the name like any other
+    expect(linkTextIsBlob("..\\shared\\forge-common", "120000", BLOB, "linux")).toBe(false);
+    expect(linkTextIsBlob(BLOB, "120000", BLOB, "linux")).toBe(true);
+    expect(linkTextIsBlob(BLOB, "120000", BLOB, "darwin")).toBe(true);
+  });
+  it("takes a link as git's own only where that commit's mode for it is 120000", () => {
+    for (const platform of ["linux", "win32"] as const) {
+      expect(linkTextIsBlob(BLOB, "100644", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "100755", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "160000", BLOB, platform)).toBe(false);
+      expect(linkTextIsBlob(BLOB, "120000", BLOB, platform)).toBe(true);
+    }
+  });
 });
 
 /**
