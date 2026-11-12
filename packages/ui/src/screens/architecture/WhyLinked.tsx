@@ -1072,7 +1072,7 @@ export function RoutingActions(p: {
           {R.loading}
         </p>
       )}
-      {!some && !reading && (
+      {!some && !reading && !failed.length && (
         <p className="ev-say" style={{ margin: 0 }}>
           {R.none}
         </p>

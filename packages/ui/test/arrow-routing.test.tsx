@@ -358,6 +358,37 @@ describe("the questions a routing arrow offers", () => {
     expect(routingActions([both], () => one).questions.map((q) => q.id)).toEqual([Q_ACCOUNTS.id]);
   });
 
+  // Re-review of beta.27: when several questions cite the forwarding line and none is about this
+  // route's path, none is offered (it was all of them, so another route's became the primary action).
+  it("offers no question when several cite the forwarding line and none is this route's", () => {
+    const own = sharedView("apiproxy/proxies/default.xml:4", "apiproxy/proxies/default.xml:9");
+    const other = {
+      ...own,
+      questions: [
+        {
+          ...Q_ACCOUNTS,
+          id: "q-payments",
+          question: Q_ACCOUNTS.question.replace("/accounts/**", "/payments/**"),
+        },
+        {
+          ...Q_CARDS,
+          id: "q-refunds",
+          question: Q_CARDS.question.replace("/cards/**", "/refunds/**"),
+        },
+      ],
+    };
+    const accounts = routeThrough(
+      "if-accounts",
+      "/accounts/{id}",
+      "apiproxy/proxies/default.xml:4",
+    );
+    expect(routingActions([accounts], () => other).questions).toEqual([]);
+    // The forwarding line is still offered.
+    expect(routingActions([accounts], () => other).forwarding).toEqual([
+      { repo: PROXY, at: SHARED_LINE },
+    ]);
+  });
+
   it("labels each of several questions with what tells it apart, in its visible words", () => {
     const own = sharedView("apiproxy/proxies/default.xml:4", "apiproxy/proxies/default.xml:9");
     const joins = [
@@ -592,6 +623,8 @@ describe("an arrow whose every call is a proxy's routing", () => {
     );
     expect(failed).toContain(esc(R.failed(PROXY, "gone")));
     expect(failed).toContain(esc(`atticus verify ${PROXY} --write`));
+    // Re-review: a read that failed is not "no forwarding call found".
+    expect(failed).not.toContain(esc(R.none));
   });
 
   it("with neither a question nor a forwarding line, says so and gives the commands", () => {

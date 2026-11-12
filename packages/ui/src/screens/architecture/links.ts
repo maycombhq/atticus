@@ -274,8 +274,10 @@ function isUnder(path: string, prefix: string): boolean {
 
 /**
  * Of the open questions that cite a route's forwarding line, the route's own: when several do (a
- * TargetEndpoint line every route of a host goes through), those whose path prefix the link's
- * path is under (else its calls' paths), and whose host its calls name; if none fits, all.
+ * TargetEndpoint line every route of a host goes through), those whose path prefix the link's path
+ * is under, else those its forwarding calls' own paths are under (the prefix a question is asked
+ * with comes from them), and whose host its calls name. When several are cited and none fits,
+ * none is offered: another route's question is never the primary action.
  */
 function ownQuestions(
   j: Join,
@@ -283,18 +285,22 @@ function ownQuestions(
   calls: readonly FactCite[],
 ) {
   if (qs.length < 2) return qs;
-  const paths = j.path ? [j.path] : calls.flatMap((c) => (c.claim.path ? [c.claim.path] : []));
+  const own = calls.flatMap((c) => (c.claim.path ? [c.claim.path] : []));
   const hosts = calls.flatMap((c) =>
     [c.claim.base, c.claim.host, c.claim.to].filter((x): x is string => !!x),
   );
-  const fits = qs.filter((q) => {
-    const w = routeWords(q.question);
-    if (w.under === undefined) return false;
-    const under = w.under;
-    if (paths.length && !paths.some((p) => isUnder(p, under))) return false;
-    return !w.host || !hosts.length || hosts.includes(w.host);
-  });
-  return fits.length ? fits : qs;
+  const fitting = (paths: readonly string[]) =>
+    qs.filter((q) => {
+      const w = routeWords(q.question);
+      if (w.under === undefined) return false;
+      const under = w.under;
+      if (!paths.some((p) => isUnder(p, under))) return false;
+      return !w.host || !hosts.length || hosts.includes(w.host);
+    });
+  // The link's own path first (it tells two routes on one line apart), then the forwarding
+  // calls' paths (the prefix the question was asked with comes from them).
+  const byLink = j.path ? fitting([j.path]) : [];
+  return byLink.length ? byLink : fitting(own);
 }
 
 /**
