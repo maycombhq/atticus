@@ -118,6 +118,11 @@ const modeOf = (method?: string): Mode =>
   !method ? "any" : WRITES.has(method.toUpperCase()) ? "write" : "read";
 
 const union = (a: Set<string>, b: Iterable<string>) => new Set([...a, ...b]);
+/** `union(a, b)`, or `a` itself when `b` adds nothing (the same words, in the same order). */
+const unionNew = (a: Set<string>, b: Set<string>) => {
+  for (const x of b) if (!a.has(x)) return union(a, b);
+  return a;
+};
 const sorted = (s: Iterable<string>) => [...s].sort();
 
 /** Builds entry points and traces flows over one catalog. */
@@ -322,26 +327,11 @@ export class Tracer {
   private outWordsMemo = new Map<string, Map<string, number[]>>();
 
   /**
-   * `items.filter((x) => overlaps(toks, wordsOf(x)))`, through an index of a component's items
-   * by word (kept in `memo`), so a trace looks up its words instead of comparing them with every
-   * item. `items` must be the same list for the same component every time.
+   * Which of `items` share a word with `toks` (`hit[k]` is 1 where `overlaps(toks, wordsOf(x))`),
+   * and how many, through an index of a component's items by word (kept in `memo`), so a trace
+   * looks up its words instead of comparing them with every item. `items` must be the same list
+   * for the same component every time.
    */
-  private sharingWords<T>(
-    memo: Map<string, Map<string, number[]>>,
-    component: string,
-    items: readonly T[],
-    toks: Set<string>,
-    wordsOf: (x: T) => Set<string>,
-  ): T[] {
-    const { hit, n } = this.sharingHits(memo, component, items, toks, wordsOf);
-    if (n === 0) return [];
-    if (n === items.length) return [...items];
-    const out: T[] = [];
-    for (let k = 0; k < items.length; k++) if (hit[k]) out.push(items[k]!);
-    return out;
-  }
-
-  /** Which of `items` share a word with `toks` (`hit[k]` 1), and how many: `sharingWords`'s. */
   private sharingHits<T>(
     memo: Map<string, Map<string, number[]>>,
     component: string,
@@ -349,7 +339,12 @@ export class Tracer {
     toks: Set<string>,
     wordsOf: (x: T) => Set<string>,
   ): { hit: Uint8Array; n: number } {
-    const hit = new Uint8Array(items.length);
+    // One buffer per memo, reused: its hits are read before the next call with the same memo.
+    let hit = this.hitBufs.get(memo);
+    if (!hit || hit.length < items.length) {
+      hit = new Uint8Array(Math.max(items.length, 2 * (hit?.length ?? 32)));
+      this.hitBufs.set(memo, hit);
+    } else hit.fill(0, 0, items.length);
     let n = 0;
     if (items.length < 8) {
       for (let k = 0; k < items.length; k++)
@@ -371,14 +366,20 @@ export class Tracer {
       });
       memo.set(component, idx);
     }
-    for (const t of toks)
-      for (const k of idx.get(t) ?? [])
+    words: for (const t of toks) {
+      const l = idx.get(t);
+      if (!l) continue;
+      for (const k of l)
         if (!hit[k]) {
           hit[k] = 1;
-          n++;
+          // Every item shares a word already: the rest of the words change nothing.
+          if (++n === items.length) break words;
         }
+    }
     return { hit, n };
   }
+
+  private hitBufs = new Map<object, Uint8Array>();
 
   /** A component's calls and events out as numbers: id, endpoint (or -1), callee, each. */
   private outsIxOf(component: string, outs: readonly Iface[]): Int32Array {
@@ -431,17 +432,50 @@ export class Tracer {
     return c;
   }
 
-  private tablesFor(component: string, toks: Set<string>, mode: Mode): TableUse[] {
-    const uses = this.g.tables.get(component) ?? [];
-    const named = this.sharingWords(this.tableWordsMemo, component, uses, toks, (u) =>
+  /** Whether a component (by its number) is our own: `g.isOwn`, kept. */
+  private ownAt(k: number, id: string): boolean {
+    let o = this.ownMark[k];
+    if (o === undefined) {
+      o = this.g.isOwn(id) ? 1 : 0;
+      this.ownMark[k] = o;
+    }
+    return o === 1;
+  }
+  private ownMark: (0 | 1)[] = [];
+
+  /**
+   * The tables a flow takes at a component, each given to `add` by its number, in the order of
+   * the component's tables: those that share a word with the flow's words, else the ones no
+   * start there claims that the flow's mode reads or writes (any, for "any").
+   */
+  private tablesIx(
+    component: string,
+    toks: Set<string>,
+    mode: Mode,
+    add: (k: number) => void,
+  ): void {
+    const uses = this.g.tables.get(component);
+    if (!uses?.length) return;
+    let tix = this.tablesIxMemo.get(component);
+    if (!tix) {
+      tix = Int32Array.from(uses, (u) => this.indexOf(u.table.id));
+      this.tablesIxMemo.set(component, tix);
+    }
+    const { hit, n } = this.sharingHits(this.tableWordsMemo, component, uses, toks, (u) =>
       this.tableTokens(u.table),
     );
-    if (named.length) return named;
+    if (n) {
+      for (let k = 0; k < uses.length; k++) if (hit[k]) add(tix[k]!);
+      return;
+    }
     const claimed = this.claimedAt(component);
-    return uses.filter(
-      (u) => !claimed.has(u.table.id) && (mode === "any" || (mode === "write" ? u.write : u.read)),
-    );
+    for (let k = 0; k < uses.length; k++) {
+      const u = uses[k]!;
+      if (!claimed.has(u.table.id) && (mode === "any" || (mode === "write" ? u.write : u.read)))
+        add(tix[k]!);
+    }
   }
+  private tablesIxMemo = new Map<string, Int32Array>();
 
   // A trace marks what it holds by number (ADR 0195 point 9: a flow of a big estate holds
   // thousands of ids, and thousands of flows are traced): each id once, in the order a trace
@@ -524,16 +558,16 @@ export class Tracer {
     // it. A component already queued is not queued again: the later copy would be skipped when
     // it came up, so it is never made (nor its words' union).
     const queuedMark = this.queuedMark;
-    queuedMark[this.indexOf(entry.component)] = pass;
-    const queue: { component: string; toks: Set<string>; depth: number; mode: Mode }[] = [
-      { component: entry.component, toks: entry.tokens, depth: 0, mode: entry.mode },
-    ];
+    const first = this.indexOf(entry.component);
+    queuedMark[first] = pass;
+    const queue: { component: string; at: number; toks: Set<string>; depth: number; mode: Mode }[] =
+      [{ component: entry.component, at: first, toks: entry.tokens, depth: 0, mode: entry.mode }];
     for (let q = 0; q < queue.length; q++) {
-      const { component, toks, depth, mode } = queue[q]!;
-      if (!g.isOwn(component)) continue;
-      rec(this.indexOf(component));
+      const { component, at, toks, depth, mode } = queue[q]!;
+      if (!this.ownAt(at, component)) continue;
+      rec(at);
       visits?.push({ component, tokens: toks });
-      for (const u of this.tablesFor(component, toks, mode)) rec(this.indexOf(u.table.id));
+      this.tablesIx(component, toks, mode, rec);
       if (depth >= this.maxDepth) continue;
       const outs = this.outsOf(component);
       const { hit, n } = this.sharingHits(this.outWordsMemo, component, outs, toks, (i) =>
@@ -557,11 +591,12 @@ export class Tracer {
           reach(ep);
         }
         rec(to);
-        if (queuedMark[to] !== pass && g.isOwn(i.to)) {
+        if (queuedMark[to] !== pass && this.ownAt(to, i.to)) {
           queuedMark[to] = pass;
           queue.push({
             component: i.to,
-            toks: union(toks, this.hopTokens(i)),
+            at: to,
+            toks: unionNew(toks, this.hopTokens(i)),
             depth: depth + 1,
             mode: i.sync === "async" ? "any" : modeOf(i.method),
           });
