@@ -300,6 +300,16 @@ describe("atticus upgrade", () => {
         "utf8",
       ),
     ).toBe(before);
+    // The review: the upgrade leaves its build report, as every writer does (Catalog builds).
+    const { readBuildReport } = await import("@maycombhq/scanner");
+    const report = await readBuildReport(root);
+    expect(report).toMatchObject({
+      outcome: "written",
+      command: "atticus upgrade --yes --accept-changes 4",
+    });
+    expect(report!.counts.added + report!.counts.changed + report!.counts.removed).toBe(4);
+    expect(report!.slots.length).toBeGreaterThan(0);
+    expect(report!.undo).toBeGreaterThan(0);
     const check = io();
     expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });

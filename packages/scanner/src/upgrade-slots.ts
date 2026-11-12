@@ -11,6 +11,7 @@ import {
   loadBuildInputs,
   readersSlotRead,
   takeUndoCopy,
+  writeBuildReport,
   writeBuiltCatalog,
   type Build,
 } from "./build.js";
@@ -321,19 +322,64 @@ export async function applyUpgradeToSlots(
     );
   const pack = await orgPackDirFor(root);
   const undoDir = buildUndoDirOf(root, pack.adopted ? join(root, ".atticus") : root);
+  const manifest = baselineTarget(root).manifest;
+  const slotPaths = plan.writes
+    .filter((w) => w.path !== manifest && !w.path.startsWith(generatedBeforeUpgradeDirOf(root)))
+    .map((w) => posix(relative(root, w.path)))
+    .sort(cmpText);
+  // The review: the upgrade leaves the build report every other writer leaves (CS3: Catalog
+  // builds shows it), with its command, counts, slots and undo copy.
+  const report = (command: string, undo: number | undefined, written: number) =>
+    writeBuildReport(undoDir, {
+      version: 1,
+      at: new Date().toISOString(),
+      command,
+      generated: posix(relative(root, generatedDirOf(root))),
+      outcome: "written",
+      run: [],
+      counts: {
+        records: plan.build?.files.size ?? plan.records,
+        added: plan.changes.filter((c) => c.how === "added").length,
+        changed: plan.changes.filter((c) => c.how === "changed").length,
+        removed: plan.changes.filter((c) => c.how === "removed").length,
+        written,
+        unchanged: (plan.build?.files.size ?? plan.records) - written,
+      },
+      added: [],
+      changed: [],
+      removed: [],
+      slots: slotPaths,
+      ...(undo !== undefined ? { undo } : {}),
+    });
   if (plan.differs.length) {
-    const manifest = baselineTarget(root).manifest;
+    const command = `atticus upgrade --yes --accept-changes ${plan.differs.length}`;
     const w = await writeBuiltCatalog(plan.build!, {
       undoDir,
-      command: `atticus upgrade --yes --accept-changes ${plan.differs.length}`,
+      command,
       guard: { removals: [], edits: [] },
       slots: plan.writes.filter((x) => x.path !== manifest),
     });
+    await report(command, w.undo, w.written);
     return w.undo;
   }
   const undo = await takeUndoCopy(root, undoDir, "atticus upgrade --yes", plan.writes, {
-    nextManifest: plan.writes.find((w) => w.path === baselineTarget(root).manifest)?.text ?? "",
+    nextManifest: plan.writes.find((w) => w.path === manifest)?.text ?? "",
   });
   for (const w of plan.writes) await writeFileAtomic(w.path, w.text);
+  await report("atticus upgrade --yes", undo, 0);
   return undo;
+}
+
+/**
+ * A plan's fingerprint: every file it writes (path and hash) and every change of the first
+ * build. `atticus upgrade --yes` plans again under the lock and applies only when it is the
+ * fingerprint of what it listed (ADR 0195 point 2; the app's `plan`).
+ */
+export function upgradePlanHash(root: string, plan: UpgradeSlotsPlan): string {
+  return sha256Of(
+    JSON.stringify({
+      writes: plan.writes.map((w) => [posix(relative(root, w.path)), sha256Of(w.text)]),
+      changes: plan.changes,
+    }),
+  );
 }

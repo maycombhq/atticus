@@ -153,6 +153,10 @@
 .cb-table thead th {
   border-top: 0;
 }
+/* A record id breaks at its separators (<wbr>), and only inside a part longer than the cell. */
+.cb-table .cb-id {
+  overflow-wrap: break-word;
+}
 @media (max-width: 560px) {
   .cb-table thead {
     position: absolute;

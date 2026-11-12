@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
 import {
@@ -18,8 +19,6 @@ import {
   linkEvidenceOf,
   loadOrgPack,
   mergeCatalog,
-  parseRecord,
-  SCHEMA_VERSION,
   listQuestions,
   questionsRelOf,
   readSharedMaps,
@@ -77,7 +76,7 @@ import {
 import { pairsOfRepo } from "./facts-scan.js";
 import { forgetCatalogs, readCatalog, writeCatalog } from "./files.js";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
-import { joinAnswerQuestions } from "./join-host-questions.js";
+import { joinAnswerQuestions, joinAnswerQuestionsOf } from "./join-host-questions.js";
 import {
   curatedDirOf,
   estateMergeInput,
@@ -201,24 +200,46 @@ export interface BuildInputs {
 
 const sha = (text: string) => sha256Of(text);
 
-/** A folder's files, hashed in path order: one hash for the folder, or none when it has none. */
-async function treeHash(dir: string, skip?: (rel: string) => boolean): Promise<string | undefined> {
+/**
+ * A folder's files, hashed in path order: one hash for the folder, or none when it has none.
+ * `pending` (absolute path to text, or null for a file to go) puts a command's writes in place of
+ * what is on disk, so a build computed before they are written records the hashes they will have
+ * (a rename's manifest, curated decisions and questions, ADR 0195 point 2).
+ */
+async function treeHash(
+  dir: string,
+  skip?: (rel: string) => boolean,
+  pending?: ReadonlyMap<string, string | null>,
+): Promise<string | undefined> {
   const lines: string[] = [];
-  async function walk(d: string, rel: string) {
-    let entries;
-    try {
-      entries = await readdir(d, { withFileTypes: true });
-    } catch {
-      return;
+  const extra = new Map<string, string | null>();
+  if (pending)
+    for (const [abs, text] of pending) {
+      const r = relative(dir, abs);
+      if (r && !r.startsWith("..") && !isAbsolute(r)) extra.set(posix(r), text);
     }
-    for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
-      const r = rel ? `${rel}/${e.name}` : e.name;
+  const put = (r: string, text: string) =>
+    lines.push(`${r}\u0000${sha(text.replace(/\r\n?/g, "\n"))}`);
+  async function walk(d: string, rel: string) {
+    const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
+    const names = new Map<string, "dir" | "file">();
+    for (const e of entries)
+      if (e.isDirectory()) names.set(e.name, "dir");
+      else if (e.isFile()) names.set(e.name, "file");
+    // A pending file (or a folder holding one) not on disk yet.
+    for (const r of extra.keys()) {
+      if (rel && !r.startsWith(`${rel}/`)) continue;
+      const [head, ...more] = (rel ? r.slice(rel.length + 1) : r).split("/");
+      if (head && !names.has(head)) names.set(head, more.length ? "dir" : "file");
+    }
+    for (const name of [...names.keys()].sort(cmpText)) {
+      const r = rel ? `${rel}/${name}` : name;
       if (skip?.(r)) continue;
-      if (e.isDirectory()) await walk(join(d, e.name), r);
-      else if (e.isFile()) {
-        const text = await readFile(join(d, e.name), "utf8").catch(() => "");
-        lines.push(`${r}\u0000${sha(text.replace(/\r\n?/g, "\n"))}`);
-      }
+      if (names.get(name) === "dir") await walk(join(d, name), r);
+      else if (extra.has(r)) {
+        const text = extra.get(r);
+        if (typeof text === "string") put(r, text);
+      } else put(r, await readFile(join(d, name), "utf8").catch(() => ""));
     }
   }
   await walk(dir, "");
@@ -346,6 +367,16 @@ export async function loadBuildInputs(
     curatedDir?: string;
     inputsDir?: string | null;
     federated?: { id: string; dir: string }[];
+    /**
+     * A command's writes to build inputs, not yet written (ADR 0195 point 2, "compute, guard,
+     * then write": a rename's manifest, scan settings, curated decisions and corrections), by
+     * absolute path, null for a file that goes. The build reads and hashes them in place of
+     * the files on disk. Pass the org pack (`op`), the curated records and the questions as
+     * they will be, too: those are read whole, not file by file.
+     */
+    pending?: ReadonlyMap<string, string | null>;
+    /** Every question as it will be (with `pending`): the answers the build joins and hashes. */
+    questions?: readonly Question[];
   } = {},
 ): Promise<BuildInputs> {
   forgetKeptReads();
@@ -361,11 +392,22 @@ export async function loadBuildInputs(
   const curated = o.curated
     ? { records: o.curated, problems: [] }
     : await readCatalog(curatedDir, { cacheRoot: root, fresh: true });
-  const questions = await joinAnswerQuestions(root);
+  const questions = o.questions
+    ? joinAnswerQuestionsOf(o.questions)
+    : await joinAnswerQuestions(root);
   const corrections = new Map<string, string>();
-  for (const n of (await readdir(factsDirOf(root)).catch(() => [] as string[])).sort())
+  const fDir = factsDirOf(root);
+  const fNames = new Set(await readdir(fDir).catch(() => [] as string[]));
+  for (const [abs, text] of o.pending ?? [])
+    if (dirname(abs) === fDir) {
+      if (text === null) fNames.delete(basename(abs));
+      else fNames.add(basename(abs));
+    }
+  for (const n of [...fNames].sort())
     if (n.endsWith(".corrections.jsonl")) {
-      const t = await readText(join(factsDirOf(root), n));
+      const p = join(fDir, n);
+      const w = o.pending?.get(p);
+      const t = typeof w === "string" ? w.replace(/\r\n?/g, "\n") : await readText(p);
       if (t !== undefined) corrections.set(n.slice(0, -".corrections.jsonl".length), t);
     }
   const traffic: TrafficOnFile[] = [];
@@ -388,12 +430,14 @@ export async function loadBuildInputs(
   // Each kind of input is listed even when it has nothing yet, so the first answer, decision or
   // pairing changes a hash a record's sources recorded.
   const put = (rel: string, h: string | undefined) => inputHashes.set(rel, h ?? sha(""));
-  put(relOf(root, orgPackDir), await treeHash(orgPackDir));
-  put(relOf(root, curatedDir), await treeHash(curatedDir));
+  put(relOf(root, orgPackDir), await treeHash(orgPackDir, undefined, o.pending));
+  put(relOf(root, curatedDir), await treeHash(curatedDir, undefined, o.pending));
   // The answers, not the questions: a question raised or refreshed while open changes no build.
   const answeredQs = (
-    await listQuestions(root).catch(() => ({ questions: [] as Question[] }))
-  ).questions
+    o.questions
+      ? [...o.questions]
+      : (await listQuestions(root).catch(() => ({ questions: [] as Question[] }))).questions
+  )
     .filter((q) => q.answer !== undefined)
     .sort((a, b) => cmpText(a.id, b.id));
   put(questionsRelOf(root), answeredQs.length ? sha(JSON.stringify(answeredQs)) : undefined);
@@ -579,6 +623,9 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         proposalsDir: join(dirname(i.curatedDir), "proposals"),
         orgPackDir: i.orgPackDir,
         wikis: op.sources.wikis,
+        files: [...i.corrections.keys()].map((repo) =>
+          join(factsDirOf(root), `${repo}.corrections.jsonl`),
+        ),
       });
   const kept = await loadKept<Build>(i.stateDir, cacheKey);
   if (kept.hit) return kept.hit;
@@ -814,10 +861,16 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     else if (!derivedKeys.has(key)) byKey.delete(key);
   }
   if (legacySlot) {
-    const changedSince = Object.entries(legacySlot.slot.inputs).some(([path, h]) => {
-      const now = currentHashOf(path, i, used);
-      return now !== h;
-    });
+    // ADR 0195 point 6: "Once a slot or input that the derived record comes from has changed
+    // since the upgrade (against the slot's `inputs`), the derived record takes the id". What a
+    // derived record comes from is its own sources in build.json: the slots of the repos its
+    // evidence names (the estate-wide `catalog/sources` hash and the build inputs every record
+    // lists are what a join may rest on, not what it comes from; with them, one curated decision
+    // or one answer would retire every legacy join). A slot new since the upgrade has changed.
+    const changedSince = (derived: CatalogRecord) =>
+      repoOfEvidence(derived).some((repo) =>
+        (used.get(repo) ?? []).some((x) => legacySlot.slot.inputs[x.path] !== x.sha256),
+      );
     const keep: CatalogRecord[] = [];
     for (const r of legacySlot.slot.records) {
       const key = `${r.kind}/${r.id}`;
@@ -830,7 +883,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         continue;
       }
       // Derived: a current input made it, not the legacy records the whole-catalog passes read.
-      if (derived && changedSince && !legacyCtx.has(key)) {
+      if (derived && !legacyCtx.has(key) && changedSince(derived)) {
         retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
         continue;
       }
@@ -874,38 +927,11 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   );
 
   // ---- 6. the curated decisions, once, last
-  // A record a person added by hand, made curated (`edits --curate`, point 4): an assert whose
-  // value names the record's kind adds it when the build doesn't make it; the assert then applies
-  // to it, as to any record (the kind is taken off the decision the assert applies).
-  const have = new Set(records.map((r) => r.id));
-  const decisions = i.curated.records.map((d) => {
-    if (d.kind !== "CuratedDecision" || d.action !== "assert") return d;
-    const v = d.value as Record<string, unknown> | null;
-    if (!v || typeof v !== "object" || Array.isArray(v) || typeof v.kind !== "string") return d;
-    const { kind, ...fields } = v;
-    if (d.status === "current" && !have.has(d.target)) {
-      const p = parseRecord({
-        ...fields,
-        schemaVersion: SCHEMA_VERSION,
-        kind,
-        id: d.target,
-        status: "current",
-        confidence: "asserted",
-        evidence: [{ source: "manual", by: d.by }],
-      });
-      if (p.ok) {
-        records.push(p.record);
-        have.add(d.target);
-      } else
-        problems.push({
-          source: "curated",
-          message: `${d.id} adds ${String(kind)} ${d.target}, which isn't a valid record: ${p.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
-        });
-    }
-    return { ...d, value: fields } as CatalogRecord;
-  });
+  // A decision changes or suppresses a record the build makes; it never adds one (ADR 0195
+  // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
+  // refused by applyCurated like any other protected field.
   const sorted = [...records].sort(byKindId);
-  const applied = applyCurated(sorted, decisions);
+  const applied = applyCurated(sorted, i.curated.records);
   const present = new Set(sorted.map((r) => r.id));
   const orphanedDecisions = i.curated.records
     .filter(
@@ -1071,16 +1097,6 @@ function differingFields(a: CatalogRecord, b: CatalogRecord): string[] {
     .sort(cmpText);
 }
 
-/** The hash a path of joins.json's `inputs` has now: a slot's, or a build input's. */
-function currentHashOf(
-  path: string,
-  i: BuildInputs,
-  used: Map<string, { path: string; sha256: string }[]>,
-): string | undefined {
-  for (const xs of used.values()) for (const x of xs) if (x.path === path) return x.sha256;
-  return i.inputHashes.get(path);
-}
-
 /**
  * A record's canonical YAML, kept by its JSON for the next builds in this process: most records
  * of a build are the last build's, and the YAML writer was most of a build's time (ADR 0195,
@@ -1188,6 +1204,9 @@ function sourceWords(path: string, b: Build): string {
   if (path.endsWith("joins.json")) return "a legacy join was derived again, or left";
   return `an input changed (${path})`;
 }
+
+/** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
+const JOIN_DERIVED = new Set(["Interface", "Unresolved", "Capability", "GlossaryTerm"]);
 
 /** The two limits of point 4: built in, not settings (a setting would be a C6 change). */
 export const REMOVAL_LIMITS = { share: 0.1, count: 200 } as const;
@@ -1613,7 +1632,12 @@ export async function guardBuild(
         }
       }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      if (estate && !why.size) {
+      // Only a record a join derives can rest on another repo's slot: an arrow, a loose end, a
+      // feature or a term traced through several repos, or an id two repos' records collided on
+      // (evidence from more than one). Any other record comes from its own repo's slot, so this
+      // explains nothing of it (the review: it explained every removal).
+      const joinDerived = !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
+      if (estate && !why.size && joinDerived) {
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }
@@ -1734,6 +1758,12 @@ export interface SlotWrite {
   /** Absolute path. */
   path: string;
   text: string | null;
+  /**
+   * A build input the command writes with its slots, not a slot (a rename's manifest, curated
+   * decisions, questions and facts files): in the undo copy and written in order with the slots,
+   * but not listed among the slots written.
+   */
+  input?: true;
 }
 
 export interface WriteResult {
@@ -1770,7 +1800,13 @@ interface UndoEntry {
   commit: string | null;
   at: string;
   /** Each file the command touched, relative to the root, and whether it was there before. */
-  files: { path: string; before: "file" | "absent" }[];
+  files: { path: string; before: "file" | "absent"; after?: string | null }[];
+  /**
+   * The build inputs the command wrote with its slots (a rename's manifest, facts files,
+   * questions and curated decisions), kept the same way. Only a failed write puts them back
+   * (`rollBackUndo`); `atticus catalog undo` doesn't, as point 7 says of inputs.
+   */
+  inputs?: { path: string; before: "file" | "absent" }[];
 }
 
 /** The undo copies, newest first. */
@@ -1807,7 +1843,7 @@ export async function takeUndoCopy(
   root: string,
   undoDir: string,
   command: string,
-  touched: readonly { path: string; text: string | null }[],
+  touched: readonly { path: string; text: string | null; input?: true }[],
   extra: {
     nextManifest?: string;
     now?: Date;
@@ -1815,24 +1851,44 @@ export async function takeUndoCopy(
     known?: ReadonlyMap<string, string | null>;
   } = {},
 ): Promise<number | undefined> {
-  const changes: { path: string; before: string | null }[] = [];
+  // The bytes as they are on disk (a Windows checkout's CRLF kept), compared as text.
+  const changes: { path: string; before: Buffer | null; after: string | null; input?: true }[] = [];
   for (const t of touched) {
-    const cur = extra.known?.has(t.path)
-      ? (extra.known.get(t.path) ?? undefined)
-      : await readText(t.path);
-    if ((cur ?? null) === t.text) continue;
-    changes.push({ path: t.path, before: cur ?? null });
+    // A file the caller read already that the command leaves as it is isn't read again.
+    const next = t.text === null ? null : t.text.replace(/\r\n?/g, "\n");
+    if (extra.known?.has(t.path) && (extra.known.get(t.path) ?? null) === next) continue;
+    const raw = await readFile(t.path).catch(() => undefined);
+    const cur = raw?.toString("utf8").replace(/\r\n?/g, "\n");
+    if ((cur ?? null) === next) continue;
+    changes.push({
+      path: t.path,
+      before: raw ?? null,
+      // What the command leaves there (its LF-normalised hash), so an undo can tell a later
+      // hand edit from the command's own bytes.
+      after: next === null ? null : sha(next),
+      ...(t.input ? { input: t.input } : {}),
+    });
   }
   if (!changes.length) return undefined;
+  const listed = (cs: typeof changes) =>
+    cs
+      .map((c) => ({
+        path: relOf(root, c.path),
+        before: c.before === null ? ("absent" as const) : ("file" as const),
+        after: c.after,
+      }))
+      .sort((a, b) => cmpText(a.path, b.path));
   const list = await listUndo(undoDir);
   const n = (list[0]?.n ?? 0) + 1;
   const dir = join(undoDir, String(n));
+  // A copy cut short before its undo.json (a crash) is no copy: its folder is taken again.
+  await rm(dir, { recursive: true, force: true });
   await mkdir(join(dir, "files"), { recursive: true });
   for (const c of changes)
     if (c.before !== null) {
       const to = join(dir, "files", ...relOf(root, c.path).split("/"));
       await mkdir(dirname(to), { recursive: true });
-      await writeFile(to, c.before, "utf8");
+      await writeFile(to, c.before);
     }
   if (extra.nextManifest !== undefined)
     await writeFile(join(dir, "next-build.json"), extra.nextManifest, "utf8");
@@ -1842,12 +1898,8 @@ export async function takeUndoCopy(
     command,
     commit: await headOf(root),
     at: (extra.now ?? new Date()).toISOString(),
-    files: changes
-      .map((c) => ({
-        path: relOf(root, c.path),
-        before: c.before === null ? ("absent" as const) : ("file" as const),
-      }))
-      .sort((a, b) => cmpText(a.path, b.path)),
+    files: listed(changes.filter((c) => !c.input)),
+    ...(changes.some((c) => c.input) ? { inputs: listed(changes.filter((c) => c.input)) } : {}),
   };
   await writeFile(join(dir, "undo.json"), JSON.stringify(entry, null, 2) + "\n", "utf8");
   for (const old of list.slice(UNDO_KEEP - 1))
@@ -1904,11 +1956,11 @@ export async function writeBuiltCatalog(
     if (s.text === null) {
       if (cur !== undefined) {
         await rm(s.path, { force: true });
-        wrote.push(relOf(root, s.path));
+        if (!s.input) wrote.push(relOf(root, s.path));
       }
     } else if (cur !== s.text) {
       await writeFileAtomic(s.path, s.text);
-      wrote.push(relOf(root, s.path));
+      if (!s.input) wrote.push(relOf(root, s.path));
     }
   }
   const crash = buildWriteHooks.crash;
@@ -1967,6 +2019,30 @@ export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { pro
   return { copies, files: [...files.values()].sort((a, b) => cmpText(a.path, b.path)) };
 }
 
+/**
+ * The files an undo would put back that were changed since the command it takes back wrote them
+ * (a hand edit, or a write no undo copy covers): each file's bytes now against what the newest
+ * copy touching it says it left. Copies from before this was recorded say nothing, and are
+ * trusted. `atticus catalog undo` refuses over them where the build's own hand-edit guard can't
+ * see (a catalog with no build.json: an undo that took back the upgrade).
+ */
+export async function undoHandEdits(root: string, plan: UndoPlan): Promise<string[]> {
+  const left = new Map<string, string | null>();
+  const seen = new Set<string>();
+  for (const c of plan.copies)
+    for (const f of c.files) {
+      if (seen.has(f.path)) continue;
+      seen.add(f.path);
+      if (f.after !== undefined) left.set(f.path, f.after);
+    }
+  const out: string[] = [];
+  for (const [path, after] of left) {
+    const now = await readText(join(root, ...path.split("/")));
+    if ((now === undefined ? null : sha(now)) !== after) out.push(path);
+  }
+  return out.sort(cmpText);
+}
+
 /** Restore what a plan lists, keeping what it replaces as a new undo copy (an undo can be undone). */
 export async function applyUndo(
   root: string,
@@ -1975,26 +2051,66 @@ export async function applyUndo(
   command: string,
   now?: Date,
 ): Promise<{ restored: string[]; undo?: number }> {
-  const target: { path: string; text: string | null }[] = [];
+  const target: { path: string; text: string | null; raw: Buffer | null }[] = [];
   for (const f of plan.files) {
     const abs = join(root, ...f.path.split("/"));
-    const text =
+    // The bytes the copy kept, as they were written (a CRLF file stays CRLF).
+    const raw =
       f.to === "absent"
         ? null
-        : ((await readText(join(undoDir, String(f.from), "files", ...f.path.split("/")))) ?? null);
-    target.push({ path: abs, text });
+        : ((await readFile(join(undoDir, String(f.from), "files", ...f.path.split("/"))).catch(
+            () => undefined,
+          )) ?? null);
+    target.push({
+      path: abs,
+      text: raw === null ? null : raw.toString("utf8").replace(/\r\n?/g, "\n"),
+      raw,
+    });
   }
   const undo = await takeUndoCopy(root, undoDir, command, target, now ? { now } : {});
   const restored: string[] = [];
   for (const t of target) {
-    const cur = await readText(t.path);
-    if ((cur ?? null) === t.text) continue;
-    if (t.text === null) await rm(t.path, { force: true });
-    else await writeFileAtomic(t.path, t.text);
+    const cur = await readFile(t.path).catch(() => undefined);
+    if (t.raw === null ? cur === undefined : cur?.equals(t.raw)) continue;
+    if (t.raw === null) await rm(t.path, { force: true });
+    else await writeFileAtomic(t.path, t.raw);
     restored.push(relOf(root, t.path));
   }
   await pruneEmptyDirs(generatedDirOf(root));
   return { restored, ...(undo !== undefined ? { undo } : {}) };
+}
+
+/**
+ * Put back what the undo copies of a failed write list, and take those copies away (ADR 0195
+ * point 2: a command that fails part way changes nothing; `atticus repo rename` uses it). Every
+ * copy newer than `after` (the newest copy's number before the write began) is undone, newest
+ * first: each file goes back to the bytes it had, and a file that wasn't there is removed. A copy
+ * cut short before its undo.json was written goes too: nothing had been written after it.
+ */
+export async function rollBackUndo(
+  root: string,
+  undoDir: string,
+  after: number,
+): Promise<{ restored: string[] }> {
+  const restored = new Set<string>();
+  for (const c of await listUndo(undoDir)) {
+    if (c.n <= after) continue;
+    for (const f of [...c.files, ...(c.inputs ?? [])]) {
+      const abs = join(root, ...f.path.split("/"));
+      if (f.before === "absent") await rm(abs, { force: true });
+      else {
+        const raw = await readFile(join(undoDir, String(c.n), "files", ...f.path.split("/")));
+        await writeFileAtomic(abs, raw);
+      }
+      restored.add(f.path);
+    }
+    await rm(join(undoDir, String(c.n)), { recursive: true, force: true });
+  }
+  for (const n of await readdir(undoDir).catch(() => [] as string[]))
+    if (/^\d+$/.test(n) && Number(n) > after && !existsSync(join(undoDir, n, "undo.json")))
+      await rm(join(undoDir, n), { recursive: true, force: true });
+  await pruneEmptyDirs(generatedDirOf(root));
+  return { restored: [...restored].sort(cmpText) };
 }
 
 async function pruneEmptyDirs(dir: string): Promise<void> {

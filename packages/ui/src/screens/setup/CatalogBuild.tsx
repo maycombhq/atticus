@@ -60,13 +60,16 @@ export function ConfirmDialog(p: {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const yes = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const introId = useId();
   const countId = useId();
   useEffect(() => {
     if (typeof document === "undefined") return;
     const before = document.activeElement as HTMLElement | null;
-    (input.current ?? yes.current)?.focus();
+    // The review (S4): with no count to type, the focus starts on Cancel, so Enter never confirms
+    // an undo or a prune the person hasn't read.
+    box.current?.querySelector<HTMLElement>("[data-first-focus]")?.focus();
     return () => {
       if (before?.isConnected) before.focus();
     };
@@ -134,6 +137,7 @@ export function ConfirmDialog(p: {
             <input
               id={countId}
               ref={input}
+              data-first-focus
               className="field cb-count"
               style={{ width: "10em", maxWidth: "100%" }}
               inputMode="numeric"
@@ -156,7 +160,14 @@ export function ConfirmDialog(p: {
           </p>
         )}
         <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-          <button type="button" className="btn" onClick={p.onClose} disabled={busy}>
+          <button
+            ref={cancel}
+            {...(p.count === undefined ? { "data-first-focus": true } : {})}
+            type="button"
+            className="btn"
+            onClick={p.onClose}
+            disabled={busy}
+          >
             {B.cancel}
           </button>
           <button
@@ -188,6 +199,24 @@ export function whyWords(r: Removal): string[] {
 }
 
 /** The removals a build lists, each with its repos and what explains it. */
+/**
+ * A record id that breaks at its separators (`.`, `-`, `/`, `_`) and nowhere else (the review):
+ * a long id wraps in a narrow panel at a word's end, not inside one.
+ */
+export function Breakable({ text }: { text: string }) {
+  const parts = text.split(/(?<=[./_-])/);
+  return (
+    <>
+      {parts.map((x, i) => (
+        <span key={i}>
+          {x}
+          {i < parts.length - 1 && <wbr />}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
   return (
     <table className="cb-table">
@@ -202,8 +231,8 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
       <tbody>
         {removals.map((r) => (
           <tr key={r.path}>
-            <th scope="row" className="mono" style={{ fontWeight: "normal" }}>
-              {r.kind}/{r.id}
+            <th scope="row" className="mono cb-id" style={{ fontWeight: "normal" }}>
+              <Breakable text={`${r.kind}/${r.id}`} />
             </th>
             <td data-label={B.removalCol.repos}>
               {r.repos.length ? r.repos.join(", ") : B.noRepo}
@@ -376,7 +405,7 @@ export function RefusalView(p: {
 export function UndoPanel(p: {
   of: Loaded<Api.CatalogUndoViewT> & { reload?: () => void };
   plan: (n: number) => Promise<Api.CatalogUndoViewT>;
-  onUndo: (n: number, files: number) => Promise<void>;
+  onUndo: (n: number, files: number, plan: string) => Promise<void>;
 }) {
   const [asking, setAsking] = useState<Api.CatalogUndoViewT["plan"] | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -444,7 +473,7 @@ export function UndoPanel(p: {
           intro={B.undoPlanIntro(asking.takesBack.map((t) => `${t.n} (${t.command})`).join(", "))}
           confirm={B.confirmUndo(asking.files.length)}
           onConfirm={async () => {
-            await p.onUndo(asking.n, asking.files.length);
+            await p.onUndo(asking.n, asking.files.length, asking.hash);
             setAsking(undefined);
           }}
           onClose={() => setAsking(undefined)}
@@ -465,7 +494,7 @@ export function UndoPanel(p: {
 /** Prune: the slot files no build reads, and Remove these, listed first. */
 export function PrunePanel(p: {
   of: Loaded<Api.CatalogPruneViewT> & { reload?: () => void };
-  onPrune: (count: number) => Promise<void>;
+  onPrune: (count: number, plan: string) => Promise<void>;
 }) {
   const [asking, setAsking] = useState(false);
   return (
@@ -494,7 +523,7 @@ export function PrunePanel(p: {
                 intro={B.pruneConfirmIntro}
                 confirm={B.confirmPrune(v.files.length)}
                 onConfirm={async () => {
-                  await p.onPrune(v.files.length);
+                  await p.onPrune(v.files.length, v.plan);
                   setAsking(false);
                 }}
                 onClose={() => setAsking(false)}
@@ -840,9 +869,13 @@ export function CatalogBuildsPage(p: {
                 <RefusalView
                   refused={v.pending.refused}
                   upgradeHere
-                  onAllowRemovals={(n) => p.run("/api/build", { allowRemovals: n })}
-                  onCurate={(n) => p.run("/api/build/edits/curate", { count: n })}
-                  onDiscard={(n) => p.run("/api/build", { discardEdits: n })}
+                  onAllowRemovals={(n) =>
+                    p.run("/api/build", { allowRemovals: n, plan: v.pending.plan })
+                  }
+                  onCurate={(n) =>
+                    p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan })
+                  }
+                  onDiscard={(n) => p.run("/api/build", { discardEdits: n, plan: v.pending.plan })}
                 />
               ) : v.pending.upToDate ? (
                 <p className="state" style={{ margin: 0 }}>
@@ -865,7 +898,7 @@ export function CatalogBuildsPage(p: {
                       onClick={() => {
                         setBuilding(true);
                         setError(undefined);
-                        p.run("/api/build", {})
+                        p.run("/api/build", { plan: v.pending.plan })
                           .catch((e: unknown) => setError(B.failed(whyStopped(e))))
                           .finally(() => setBuilding(false));
                       }}
@@ -963,9 +996,12 @@ export function CatalogBuildsPage(p: {
       <UndoPanel
         of={p.undo}
         plan={p.plan}
-        onUndo={(n, files) => p.run("/api/build/undo", { n, files })}
+        onUndo={(n, files, plan) => p.run("/api/build/undo", { n, files, plan })}
       />
-      <PrunePanel of={p.prune} onPrune={(count) => p.run("/api/build/prune", { count })} />
+      <PrunePanel
+        of={p.prune}
+        onPrune={(count, plan) => p.run("/api/build/prune", { count, plan })}
+      />
     </div>
   );
 }

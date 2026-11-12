@@ -27,10 +27,12 @@ import {
   readBuildManifest,
   takeUndoCopy,
   undoDirOf,
+  undoHandEdits,
   UPGRADE_UNDONE,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
+  type HandEdit,
 } from "@maycombhq/scanner";
 import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -46,12 +48,26 @@ import type { Output } from "./commands.js";
 
 const posix = (p: string) => p.split(sep).join("/");
 
+/**
+ * A test hook (ADR 0195 point 2, the review's check-then-act): runs once after a command listed
+ * what it would change and before it takes the lock, as another command writing meanwhile would.
+ * Never set outside tests.
+ */
+export const listHooks: { afterList?: () => Promise<void> } = {};
+
+export async function afterListed(): Promise<void> {
+  const hook = listHooks.afterList;
+  listHooks.afterList = undefined;
+  await hook?.();
+}
+
 async function locked<T>(
   root: string,
   what: string,
   io: Output,
   run: () => Promise<T>,
 ): Promise<T | number> {
+  await afterListed();
   let lock: Awaited<ReturnType<typeof acquireLock>>;
   try {
     lock = await acquireLock(root, "scan", what);
@@ -181,6 +197,16 @@ export async function catalogUndo(
     return 0;
   }
   return locked(root, "atticus catalog undo", io, async () => {
+    // Planned again under the lock (ADR 0195 point 2): what it puts back is what it listed, or
+    // nothing when another command wrote meanwhile.
+    const again = await planUndo(undoDir, o.n);
+    if ("problem" in again || JSON.stringify(again) !== JSON.stringify(plan)) {
+      const why = changedMeanwhile("atticus catalog undo");
+      io.err(why);
+      if (o.json)
+        io.out(JSON.stringify({ refused: { reasons: ["changed"], message: why } }, null, 2));
+      return 1;
+    }
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
@@ -193,6 +219,26 @@ export async function catalogUndo(
           JSON.stringify({ refused: { reasons: ["hand-edits"], edits: g.refused.edits } }, null, 2),
         );
       return 1;
+    }
+    // A catalog with no build.json (an undo took back the upgrade) has no hand-edit guard of the
+    // build's: each file it would put back is checked against what the command it takes back
+    // left there (the review), so a hand edit made since is never overwritten.
+    if (g.refused?.reasons.includes("not-upgraded")) {
+      const edited = await undoHandEdits(root, plan);
+      if (edited.length) {
+        io.err(
+          `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
+        );
+        if (o.json)
+          io.out(
+            JSON.stringify(
+              { refused: { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) } },
+              null,
+              2,
+            ),
+          );
+        return 1;
+      }
     }
     const r = await applyUndo(
       root,
@@ -229,14 +275,14 @@ export async function catalogUndo(
   });
 }
 
-/** atticus catalog prune [--yes]: the slot files no build reads, listed, and removed only on confirmation. */
-export async function catalogPrune(
-  root: string,
-  o: { yes?: boolean; json?: boolean },
-  io: Output,
-): Promise<number> {
+/** What a command listed changed before it could take the lock: it writes nothing. */
+const changedMeanwhile = (command: string) =>
+  `Nothing written: what ${command} would change isn't what it listed any more (another command wrote meanwhile). Run it again to list it.`;
+
+/** The files `catalog prune` lists: the slot files no build reads, and the upgrade's copy. */
+export async function pruneList(root: string): Promise<{ path: string; why: string }[]> {
   const b = await buildCatalog(await loadBuildInputs(root));
-  const files = [
+  return [
     ...b.orphaned.flatMap((x) =>
       x.files.map((f) => ({
         path: f,
@@ -248,6 +294,15 @@ export async function catalogPrune(
       why: "the copy the upgrade kept of the catalog before it",
     })),
   ].sort((a, x) => cmpText(a.path, x.path));
+}
+
+/** atticus catalog prune [--yes]: the slot files no build reads, listed, and removed only on confirmation. */
+export async function catalogPrune(
+  root: string,
+  o: { yes?: boolean; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const files = await pruneList(root);
   if (!files.length) {
     if (o.json) io.out(JSON.stringify({ files: [], removed: [] }, null, 2));
     else io.out("Nothing to prune: every slot file is one a build reads.");
@@ -265,6 +320,20 @@ export async function catalogPrune(
     return 0;
   }
   return locked(root, "atticus catalog prune", io, async () => {
+    // Listed again under the lock: it removes exactly what it listed, or nothing.
+    if (JSON.stringify(await pruneList(root)) !== JSON.stringify(files)) {
+      const why = changedMeanwhile("atticus catalog prune");
+      io.err(why);
+      if (o.json)
+        io.out(
+          JSON.stringify(
+            { files, removed: [], refused: { reasons: ["changed"], message: why } },
+            null,
+            2,
+          ),
+        );
+      return 1;
+    }
     const undoDir = await undoDirOf(root);
     const touched = files.map((f) => ({ path: join(root, ...f.path.split("/")), text: null }));
     const undo = await takeUndoCopy(root, undoDir, "atticus catalog prune", touched);
@@ -289,159 +358,239 @@ const slug = (s: string) =>
 /** Fields an assert can't set (identity and provenance belong to the catalog). */
 const PROTECTED = new Set(["kind", "id", "schemaVersion", "confidence", "evidence"]);
 
+/** What `edits --curate` would do with one hand-edited file. */
+interface EditPlan {
+  path: string;
+  how: HandEdit["how"];
+  /** The decision drafted for it, when one can be. */
+  decision?: Record<string, unknown>;
+  /** Why it can't be made curated. */
+  why?: string;
+  /** Fields it changes that no decision can set (they would be put back by the next build). */
+  fields?: string[];
+}
+
 /**
- * atticus catalog edits [--curate]: the files under catalog/generated changed by hand since the
- * last build. With --curate each becomes a curated decision (ADR 0195 point 4): a changed file an
- * assert of the fields it changed, a deleted one a suppress, an added record an assert of the
- * whole record with its kind (the build adds it while it makes no record of that id). When every edit is made
- * curated, the build runs with them, and the edited files' bytes go into the undo copy.
+ * The hand edits and what `edits --curate` would draft for each, from the files as they are: what
+ * the command lists, and plans again under the lock before it writes (ADR 0195 point 2).
  */
-export async function catalogEdits(
-  root: string,
-  o: { curate?: boolean; json?: boolean; by?: string; now?: Date },
-  io: Output,
-): Promise<number> {
-  const undoDir = await undoDirOf(root);
+async function planEdits(root: string, undoDir: string): Promise<EditPlan[]> {
   const inputs = await loadBuildInputs(root);
   const b = await buildCatalog(inputs);
   const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
   const edits = g.refused?.reasons.includes("hand-edits") ? (g.refused.edits ?? []) : [];
+  const built = new Map(b.records.map((r) => [recordPath(r), r]));
+  const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
+  const out: EditPlan[] = [];
+  for (const e of edits) {
+    const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
+    const derivedNow = built.get(rel);
+    const plan = (x: Omit<EditPlan, "path" | "how">) =>
+      out.push({ path: e.path, how: e.how, ...x });
+    if (e.how === "deleted") {
+      // A record this build no longer makes is suppressed by the id its file named, so it
+      // stays deleted should it return.
+      const id = derivedNow?.id ?? (rel.split("/").pop() ?? "").replace(/\.ya?ml$/, "");
+      plan({ decision: { action: "suppress", target: id, value: null } });
+      continue;
+    }
+    if (e.how === "added") {
+      // ADR 0195 addendum (CS2): "an added record can't be a curated decision (one changes or
+      // suppresses a record the build makes) and is said". It stays a hand edit, and nothing is
+      // written for it, until it is discarded or said where the build reads it.
+      plan({
+        why: derivedNow
+          ? "the build makes a record of its id: change that record instead"
+          : "an added record can't be a curated decision (a decision changes or suppresses a record the build makes); discard it, or say it where the build reads it: a fact in facts/<repo>.jsonl that verify --write checks, or a rule in the org pack",
+      });
+      continue;
+    }
+    const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
+    const p = deserializeRecord(text);
+    // A record this build no longer makes (its repo removed or archived since): the edit is
+    // read against the record as its slot last held it, and the assert waits, orphaned, until
+    // the record returns.
+    const fromSlot = (): CatalogRecord | undefined => {
+      if (!p.ok) return undefined;
+      const { kind, id } = p.record;
+      const held = [
+        ...[...inputs.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
+        ...(inputs.slots.legacy && "slot" in inputs.slots.legacy
+          ? inputs.slots.legacy.slot.records
+          : []),
+      ];
+      return held.find((r) => r.kind === kind && r.id === id);
+    };
+    const derived = derivedNow ?? fromSlot();
+    if (!p.ok || !derived) {
+      plan({ why: "it doesn't read as a record, or the build no longer makes it" });
+      continue;
+    }
+    const now = p.record as unknown as Record<string, unknown>;
+    const was = derived as unknown as Record<string, unknown>;
+    const value: Record<string, unknown> = {};
+    const bad: string[] = [];
+    for (const k of [...new Set([...Object.keys(now), ...Object.keys(was)])].sort(cmpText)) {
+      if (JSON.stringify(now[k]) === JSON.stringify(was[k])) continue;
+      if (PROTECTED.has(k)) bad.push(k);
+      else if (k in now) value[k] = now[k];
+    }
+    if (bad.length && !Object.keys(value).length) {
+      plan({
+        why: `it changes only ${bad.join(", ")}, which a curated decision can't set`,
+        fields: bad,
+      });
+      continue;
+    }
+    if (!Object.keys(value).length) {
+      plan({
+        why: "its record says the same as the build's (a comment or the layout): discard it",
+      });
+      continue;
+    }
+    plan({
+      decision: { action: "assert", target: derived.id, value },
+      ...(bad.length ? { fields: bad } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * atticus catalog edits [--curate [--drop-fields <count>]]: the files under catalog/generated
+ * changed by hand since the last build. With --curate each becomes a curated decision (ADR 0195
+ * point 4) as an edit to propose: a changed file an assert of the fields it changed, a deleted
+ * one a suppress. An added record can't be one, and is said. A changed file that also changes
+ * fields no decision can set (identity and provenance: evidence, confidence) is listed with
+ * them, and made curated only with `--drop-fields <count>`, the count of such files listed: the
+ * next build replaces the file, and those fields go back to what the build makes. Nothing is
+ * built here; the next build replaces each file made curated, its bytes kept for undo.
+ */
+export async function catalogEdits(
+  root: string,
+  o: { curate?: boolean; json?: boolean; by?: string; now?: Date; dropFields?: number },
+  io: Output,
+): Promise<number> {
+  const undoDir = await undoDirOf(root);
+  const listed = await planEdits(root, undoDir);
+  const edits = listed.map((p) => ({ path: p.path, how: p.how }));
   if (!edits.length) {
     if (o.json) io.out(JSON.stringify({ edits: [], decisions: [] }, null, 2));
     else io.out("No file under catalog/generated was changed by hand since the last build.");
     return 0;
   }
+  const dropping = listed.filter((p) => p.decision && p.fields?.length);
   if (!o.curate) {
-    if (o.json) io.out(JSON.stringify({ edits, decisions: [] }, null, 2));
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          {
+            edits,
+            decisions: [],
+            ...(dropping.length
+              ? { dropFields: dropping.length, fields: dropping.map((p) => pick(p)) }
+              : {}),
+          },
+          null,
+          2,
+        ),
+      );
     else {
       io.out(
         `${edits.length} ${edits.length === 1 ? "file was" : "files were"} changed by hand since the last build:`,
       );
-      for (const e of edits) io.out(`  ${e.how}: ${e.path}`);
+      for (const e of listed)
+        io.out(
+          `  ${e.how}: ${e.path}${e.fields?.length ? ` (changes ${e.fields.join(", ")}, which a curated decision can't set)` : ""}`,
+        );
       io.out(
-        `Make them curated decisions: atticus catalog edits --curate. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
+        `Make them curated decisions: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
       );
     }
     return 1;
   }
   return locked(root, "atticus catalog edits --curate", io, async () => {
+    // Planned again under the lock: what it writes is what it listed, or nothing.
+    const plans = await planEdits(root, undoDir);
+    if (JSON.stringify(plans) !== JSON.stringify(listed)) {
+      const why =
+        "Nothing written: the hand edits changed while this ran (another command wrote meanwhile). Run atticus catalog edits again to list them.";
+      io.err(why);
+      if (o.json)
+        io.out(JSON.stringify({ edits, decisions: [], refused: { message: why } }, null, 2));
+      return 1;
+    }
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const built = new Map(b.records.map((r) => [recordPath(r), r]));
     const curatedDir = join(catalogDirOf(root), "curated");
     const written: string[] = [];
     const curated: string[] = [];
-    const left: { path: string; why: string }[] = [];
-    const genRel = posix(relative(root, join(catalogDirOf(root), "generated")));
-    for (const e of edits) {
-      const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
-      const derivedNow = built.get(rel);
-      let derived = derivedNow;
-      let decision: Record<string, unknown> | undefined;
-      if (e.how === "deleted") {
-        // A record this build no longer makes is suppressed by the id its file named, so it
-        // stays deleted should it return.
-        const id = derived?.id ?? (rel.split("/").pop() ?? "").replace(/\.ya?ml$/, "");
-        decision = { action: "suppress", target: id, value: null };
-      } else if (e.how === "added") {
-        // An assert of the whole record, its kind named: the build adds it while it makes no
-        // record of that id, and asserts its fields on the one it makes once it does.
-        const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
-        const p = deserializeRecord(text);
-        if (!p.ok || derived) {
-          left.push({
-            path: e.path,
-            why: derived
-              ? "the build makes a record of its id: change that record instead"
-              : "it doesn't read as a record",
-          });
-          continue;
-        }
-        const rec = p.record as unknown as Record<string, unknown>;
-        const value: Record<string, unknown> = { kind: rec.kind };
-        for (const k of Object.keys(rec).sort(cmpText))
-          if (!PROTECTED.has(k) && k !== "status") value[k] = rec[k];
-        decision = { action: "assert", target: String(rec.id), value };
-      } else {
-        const text = await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => "");
-        const p = deserializeRecord(text);
-        // A record this build no longer makes (its repo removed or archived since): the edit is
-        // read against the record as its slot last held it, and the assert waits, orphaned,
-        // until the record returns.
-        const fromSlot = (): CatalogRecord | undefined => {
-          if (!p.ok) return undefined;
-          const { kind, id } = p.record;
-          const held = [
-            ...[...inputs.slots.readers.values()].flatMap((x) =>
-              "slot" in x ? x.slot.records : [],
-            ),
-            ...(inputs.slots.legacy && "slot" in inputs.slots.legacy
-              ? inputs.slots.legacy.slot.records
-              : []),
-          ];
-          return held.find((r) => r.kind === kind && r.id === id);
-        };
-        derived = derivedNow ?? fromSlot();
-        if (!p.ok || !derived) {
-          left.push({
-            path: e.path,
-            why: "it doesn't read as a record, or the build no longer makes it",
-          });
-          continue;
-        }
-        const now = p.record as unknown as Record<string, unknown>;
-        const was = derived as unknown as Record<string, unknown>;
-        const value: Record<string, unknown> = {};
-        const bad: string[] = [];
-        for (const k of [...new Set([...Object.keys(now), ...Object.keys(was)])].sort(cmpText)) {
-          if (JSON.stringify(now[k]) === JSON.stringify(was[k])) continue;
-          if (PROTECTED.has(k)) bad.push(k);
-          else if (k in now) value[k] = now[k];
-        }
-        if (bad.length && !Object.keys(value).length) {
-          left.push({
-            path: e.path,
-            why: `it changes only ${bad.join(", ")}, which a curated decision can't set`,
-          });
-          continue;
-        }
-        if (!Object.keys(value).length) {
-          left.push({
-            path: e.path,
-            why: "its record says the same as the build's (a comment or the layout): discard it",
-          });
-          continue;
-        }
-        decision = { action: "assert", target: derived.id, value };
+    const left: { path: string; why: string; fields?: string[] }[] = [];
+    const confirmed = o.dropFields === dropping.length;
+    for (const p of plans) {
+      if (!p.decision) {
+        left.push({ path: p.path, why: p.why ?? "it can't be made curated" });
+        continue;
+      }
+      if (p.fields?.length && !confirmed) {
+        left.push({
+          path: p.path,
+          why: `it also changes ${p.fields.join(", ")}, which a curated decision can't set (the next build would put ${p.fields.length === 1 ? "it" : "them"} back): make it curated without ${p.fields.length === 1 ? "it" : "them"} with atticus catalog edits --curate --drop-fields ${dropping.length}`,
+          fields: p.fields,
+        });
+        continue;
       }
       const record = parseRecord({
         kind: "CuratedDecision",
-        id: slug(`cd-edit-${String(decision.action)}-${String(decision.target)}`),
+        id: slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
         schemaVersion: 2,
         status: "current",
         confidence: "asserted",
-        ...decision,
-        reason: `A hand edit to ${e.path}, made curated (atticus catalog edits --curate).`,
+        ...p.decision,
+        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
         by,
         at,
       });
       if (!record.ok) {
-        left.push({ path: e.path, why: record.issues.map((i) => i.message).join("; ") });
+        left.push({ path: p.path, why: record.issues.map((i) => i.message).join("; ") });
         continue;
       }
       const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
       await mkdir(dirname(full), { recursive: true });
       await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
       written.push(posix(relative(root, full)));
-      curated.push(e.path);
+      curated.push(p.path);
     }
+    if (o.dropFields !== undefined && !confirmed)
+      left.push({
+        path: "--drop-fields",
+        why: `${o.dropFields} doesn't name the ${dropping.length} listed`,
+      });
     // The next build replaces each edit made curated (its bytes kept in that build's undo copy);
     // nothing is built here, so the person reviews the decisions first.
     await writeCuratedEdits(root, undoDir, curated);
-    if (o.json) io.out(JSON.stringify({ edits, decisions: written, left }, null, 2));
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          {
+            edits,
+            decisions: written,
+            left,
+            ...(dropping.length ? { dropFields: dropping.length } : {}),
+            ...(confirmed && dropping.length ? { dropped: dropping.map((p) => pick(p)) } : {}),
+          },
+          null,
+          2,
+        ),
+      );
     else {
       for (const w of written)
         io.out(`Wrote ${w}: propose it in a pull request so every build keeps the edit.`);
+      if (confirmed)
+        for (const d of dropping)
+          io.out(
+            `${d.path}: made curated without ${d.fields!.join(", ")}, which the next build puts back as it makes ${d.fields!.length === 1 ? "it" : "them"}.`,
+          );
       for (const l of left) io.err(`${l.path}: not made curated: ${l.why}.`);
       if (written.length)
         io.out(
@@ -455,3 +604,5 @@ export async function catalogEdits(
     return left.length ? 1 : 0;
   });
 }
+
+const pick = (p: EditPlan) => ({ path: p.path, fields: p.fields ?? [] });

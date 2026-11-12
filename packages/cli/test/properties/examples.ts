@@ -183,7 +183,7 @@ export const EXAMPLES: Example[] = [
   },
   seq(
     "failure-neutrality",
-    "a reader failing, a repo not cloned, a refused verify --write, a cancelled scan and a scan that read nothing leave what they couldn't read as it was",
+    "a reader failing, a repo not cloned, a refused verify --write, a cancelled scan, a scan that read nothing and a rename whose slots don't read or whose write stops part way leave what they couldn't read as it was",
     [
       { t: "scan" },
       { t: "change-code", slot: 0, code: ledgerMore },
@@ -192,6 +192,9 @@ export const EXAMPLES: Example[] = [
       { t: "verify-write", slot: 0, ok: false },
       { t: "scan-cancelled" },
       { t: "scan-nothing" },
+      { t: "rename", slot: 0, fail: true },
+      { t: "crash", at: "mid-records", via: "rename", slot: 0 },
+      { t: "crash", at: "after-slots", via: "rename", slot: 1 },
     ],
     [
       has("ledger's GET /accounts", getAccounts),

@@ -238,6 +238,21 @@ export async function renameManifestRepo(
   repo: string,
   to: string,
 ): Promise<ManifestFile> {
+  const r = await renamedManifest(root, repo, to);
+  await writeFileIfUnchanged(r.file.path, r.text, r.next);
+  return r.file;
+}
+
+/**
+ * ADR 0195 (the rename computes before it writes): the manifest that lists a repo, with its
+ * text now and its text with the id moved (comments, order and line endings kept), checked as
+ * `renameManifestRepo` checks it, and nothing written. The caller writes `next` to `file.path`.
+ */
+export async function renamedManifest(
+  root: string,
+  repo: string,
+  to: string,
+): Promise<{ file: ManifestFile; text: string; next: string }> {
   for (const other of await manifestFiles(root)) {
     const t = await readFile(other.path, "utf8").catch(() => undefined);
     if (t === undefined) continue;
@@ -251,8 +266,17 @@ export async function renameManifestRepo(
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
   found.item.set("id", to);
-  await save(found.file.path, found.doc, found.text);
-  return found.file;
+  const check = RepoManifest.safeParse(found.doc.toJS());
+  if (!check.success)
+    throw new ManifestEditError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  const next = inEol(
+    found.doc.toString({ lineWidth: 0, flowCollectionPadding: true }),
+    eolOf(found.text),
+  );
+  return { file: found.file, text: found.text, next };
 }
 
 /**

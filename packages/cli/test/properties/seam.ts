@@ -149,15 +149,18 @@ export interface CatalogSystem {
    */
   verify(root: string, repo: string, o: { write: boolean } & Confirm & Faults): Promise<Outcome>;
   /**
-   * `atticus repo rename <from> <to>`: the new slot files first, a build from them through its
-   * guards, then the old files removed (ADR point 2). `failBuild` simulates new slot files that
-   * don't parse: guard `build-failed`, only the new files removed, nothing else changed.
+   * `atticus repo rename <from> <to>`: everything computed first (the new slot files, the
+   * manifest entry, the facts, questions and curated decisions under the new id), a build from
+   * them through its guards, then one write: the new files, the old ones removed (ADR point 2).
+   * `failBuild` simulates new slot files that don't parse: guard `build-failed`, nothing
+   * written. `crash` stops that write part way: every file it wrote is put back, so the metarepo
+   * is byte-identical to before the rename (`crashed: true`).
    */
   rename(
     root: string,
     from: string,
     to: string,
-    o: Confirm & { failBuild?: boolean },
+    o: Confirm & { failBuild?: boolean } & Faults,
   ): Promise<Outcome>;
   /** `atticus catalog build [--allow-removals n] [--discard-edits n]`, after a person changed an input. */
   build(root: string, o: Confirm & Faults): Promise<Outcome>;

@@ -41,6 +41,9 @@ import { captured, type LocalJob } from "./ui-api-steps.js";
 
 const REPO = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
 
+/** A promote job's code when the promote itself refused (the app says it as the promote's). */
+export const PROMOTE_REFUSED = 3;
+
 function parse<T extends z.ZodType>(schema: T, body: unknown): z.infer<T> {
   const r = schema.safeParse(body ?? {});
   if (!r.success)
@@ -67,6 +70,35 @@ async function headOf(root: string, repo: string): Promise<string | undefined> {
 /** The routes; `asJob` is ui-api.ts's local job (one at a time with Apply, Propose and Bring in). */
 export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
   const root = ctx.root;
+  // The review: every file event reloads the page, and each GET /api/build is a whole build in
+  // memory. One runs at a time; a request while it runs waits for the one queued after it (so
+  // it reads the files as they are once it asked), and every request in between shares it.
+  let running: Promise<Api.CatalogBuildViewT> | undefined;
+  let queued: Promise<Api.CatalogBuildViewT> | undefined;
+  const buildViewNow = (): Promise<Api.CatalogBuildViewT> => {
+    const once = async () => (await import("./build-report.js")).catalogBuildView(root);
+    if (!running) {
+      running = once().finally(() => {
+        running = queued;
+        queued = undefined;
+      });
+      return running;
+    }
+    if (!queued) {
+      const after = running.then(
+        () => undefined,
+        () => undefined,
+      );
+      queued = after.then(once);
+      const q = queued;
+      void q
+        .finally(() => {
+          if (running === q) running = undefined;
+        })
+        .catch(() => undefined);
+    }
+    return queued;
+  };
   const repoOf = (params: Record<string, string | undefined>) => {
     const repo = params.repo ?? "";
     if (!REPO.test(repo)) throw badRequest("repo is a repo id, as the manifests name it.");
@@ -95,9 +127,14 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         repo,
         one.items.filter((i) => i.state === "readers-only").map((i) => i.key),
       );
+      const { readersValueSha } = await import("./crosscheck-commands.js");
       const items = one.items.map((i) => {
         const p = i.state === "readers-only" ? promoted.get(i.key) : undefined;
-        return p ? { ...i, promoted: p } : i;
+        const sha =
+          i.state === "readers-only" || i.state === "disagree"
+            ? { readersSha256: readersValueSha(i.readers?.value) }
+            : {};
+        return { ...i, ...sha, ...(p ? { promoted: p } : {}) };
       });
       return {
         status: 200,
@@ -135,10 +172,15 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         );
       const { verifyCommand } = await import("./verify-commands.js");
       // The person's fact, then the verifier on it: one job, both commands' lines in the Console.
-      return asJob(`Promote on ${repo}: ${b.key}, then atticus verify ${repo}`, () =>
+      return asJob(`Promote on ${repo}`, () =>
         captured(async (io) => {
-          const code = await catalogCrossCheck(root, { repo, promote: b.key }, io);
-          if (code !== 0) return code;
+          const code = await catalogCrossCheck(
+            root,
+            { repo, promote: b.key, expect: b.sha256 },
+            io,
+          );
+          // The promote's own refusal is said as such (PROMOTE_REFUSED), not as verify's.
+          if (code !== 0) return PROMOTE_REFUSED;
           return verifyCommand(root, repo, { write: false, verbose: false, json: false }, io);
         }),
       );
@@ -147,26 +189,54 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       const repo = repoOf(params);
       const b = parse(Api.CrossCheckDismissRequest, body);
       const v = await readCrossCheck(root, { repo });
-      if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
-      const { catalogCrossCheck } = await import("./crosscheck-commands.js");
-      return asJob(
-        b.undo ? `List again on ${repo}: ${b.key}` : `Dismiss on ${repo}: ${b.key}`,
-        () =>
-          captured((io) =>
-            catalogCrossCheck(
-              root,
-              { repo, ...(b.undo ? { undismiss: b.key } : { dismiss: b.key }) },
-              io,
-            ),
+      const one = v.repos[0];
+      if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
+      const { catalogCrossCheck, readersValueSha } = await import("./crosscheck-commands.js");
+      // The key is checked before a job starts (the review): an item to dismiss, at the value
+      // the page showed, or a dismissal to take back.
+      const item = one.items.find((i) => i.key === b.key);
+      if (b.undo) {
+        if (!item?.dismissed) throw notFound(`${b.key} isn't dismissed on ${repo}.`);
+      } else {
+        if (!item || item.state === "agree" || item.state === "facts-only")
+          throw notFound(`${b.key} isn't an item the readers found or disagree on, on ${repo}.`);
+        if (b.sha256 === undefined)
+          throw badRequest("sha256 is the item's readersSha256, as the page showed it.");
+        if (readersValueSha(item.readers?.value) !== b.sha256)
+          throw conflict(
+            `The readers say another value for ${b.key} than the page showed. Nothing written: look at it again.`,
+          );
+      }
+      return asJob(b.undo ? `List again on ${repo}` : `Dismiss on ${repo}`, () =>
+        captured((io) =>
+          catalogCrossCheck(
+            root,
+            {
+              repo,
+              ...(b.undo ? { undismiss: b.key } : { dismiss: b.key, expect: b.sha256! }),
+            },
+            io,
           ),
+        ),
       );
     })
     .add("GET", "/api/build", async () => {
-      const { catalogBuildView } = await import("./build-report.js");
-      return { status: 200, body: Api.CatalogBuildView.parse(await catalogBuildView(root)) };
+      return { status: 200, body: Api.CatalogBuildView.parse(await buildViewNow()) };
     })
     .add("POST", "/api/build", async ({ body }) => {
       const b = parse(Api.CatalogBuildRequest, body);
+      // The review (S2): a confirm is of the list shown. Built again in memory and guarded
+      // (buildAndWrite with check), and run only when it lists what the page listed.
+      const counted = b.allowRemovals !== undefined || b.discardEdits !== undefined;
+      if (counted && b.plan === undefined)
+        throw badRequest("plan is GET /api/build's pending.plan for the list being confirmed.");
+      if (b.plan !== undefined) {
+        const { catalogBuildView } = await import("./build-report.js");
+        if ((await catalogBuildView(root)).pending.plan !== b.plan)
+          throw conflict(
+            "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
+          );
+      }
       const { catalogBuild } = await import("./catalog-build-commands.js");
       const flags = [
         ...(b.allowRemovals !== undefined ? [`--allow-removals ${b.allowRemovals}`] : []),
@@ -188,16 +258,19 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     .add("POST", "/api/build/edits/curate", async ({ body }) => {
       const b = parse(Api.CatalogEditsRequest, body);
       const { catalogBuildView } = await import("./build-report.js");
-      const now = (await catalogBuildView(root)).pending.refused;
+      const view = await catalogBuildView(root);
+      const now = view.pending.refused;
       const edits = now?.reasons.includes("hand-edits") ? (now.edits ?? []) : [];
-      if (edits.length !== b.count)
+      if (edits.length !== b.count || view.pending.plan !== b.plan)
         throw conflict(
-          `The page listed ${b.count} hand ${b.count === 1 ? "edit" : "edits"}; there ${edits.length === 1 ? "is" : "are"} ${edits.length} now. Nothing was made curated: look at the list again.`,
+          edits.length !== b.count
+            ? `The page listed ${b.count} hand ${b.count === 1 ? "edit" : "edits"}; there ${edits.length === 1 ? "is" : "are"} ${edits.length} now. Nothing was made curated: look at the list again.`
+            : "The hand edits aren't the ones the page listed any more. Nothing was made curated: look at the list again.",
         );
       const { catalogBuild, catalogEdits } = await import("./catalog-build-commands.js");
       // Keep the edits: each made a curated decision, then the build with them (which writes
       // what the edited files hold, so nothing is overwritten), in one job.
-      return asJob("atticus catalog edits --curate, then atticus catalog build", () =>
+      return asJob("Make the hand edits curated, then build", () =>
         captured(async (io) => {
           const code = await catalogEdits(root, { curate: true, by: ctx.user }, io);
           return code === 0 ? catalogBuild(root, {}, io) : code;
@@ -221,6 +294,10 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         throw conflict(
           `The page listed ${b.files} ${b.files === 1 ? "file" : "files"} to put back; taking back the ${b.n === 1 ? "latest build" : `${b.n} latest builds`} puts back ${v.plan.files.length} now. Nothing was undone: look at the list again.`,
         );
+      if (v.plan.hash !== b.plan)
+        throw conflict(
+          "The builds to take back or their files aren't the ones the page listed any more. Nothing was undone: look at the list again.",
+        );
       const { catalogUndo } = await import("./catalog-build-commands.js");
       return asJob(`atticus catalog undo ${b.n} --yes`, () =>
         captured((io) => catalogUndo(root, { n: b.n, yes: true }, io)),
@@ -240,6 +317,10 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       if (v.files.length !== b.count)
         throw conflict(
           `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to remove; there ${v.files.length === 1 ? "is" : "are"} ${v.files.length} now. Nothing was removed: look at the list again.`,
+        );
+      if (v.plan !== b.plan)
+        throw conflict(
+          "The files to remove aren't the ones the page listed any more. Nothing was removed: look at the list again.",
         );
       const { catalogPrune } = await import("./catalog-build-commands.js");
       return asJob("atticus catalog prune --yes", () =>

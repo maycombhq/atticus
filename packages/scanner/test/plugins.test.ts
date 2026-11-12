@@ -75,9 +75,9 @@ describe("scanner plugins in the scan (ADR 0080)", () => {
       full: false,
       why: "run-failed",
     });
-    expect(s.repos.find((r) => r.repo === "forge-anvil-notes")!.runs.map((r) => r.extractor)).toContain(
-      "plugin-forge-anvil-routes",
-    );
+    expect(
+      s.repos.find((r) => r.repo === "forge-anvil-notes")!.runs.map((r) => r.extractor),
+    ).toContain("plugin-forge-anvil-routes");
     expect(problems).toEqual([
       "forge-anvil-notes | plugin-forge-hogs-memory | stopped: it used more than its 32 MB memory limit",
       "forge-anvil-notes | plugin-forge-loops | stopped after 1000 ms, its time limit",

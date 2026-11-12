@@ -9,6 +9,9 @@ import { queryParam, setQueryParam } from "../know/common.js";
 import { ConfirmDialog, whyStopped } from "../setup/CatalogBuild.js";
 import "./crosscheck.css";
 
+/** The promote job's code when the promote itself refused (cli/src/ui-api-catalog.ts). */
+const PROMOTE_REFUSED = 3;
+
 /** Promote to assert: the preview of the person's fact, and the write then verify, as a job. */
 export interface PromoteSteps {
   preview: (repo: string, key: string) => Promise<Api.CrossCheckPromoteViewT>;
@@ -160,10 +163,10 @@ function PromotedNote({ repo, p }: { repo: string; p: NonNullable<Item["promoted
 }
 
 /** Dismiss, or List again, as the CLI command run as a local job; and Promote to assert. */
-function ItemAction(p: {
+export function ItemAction(p: {
   repo: string;
   item: Item;
-  run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  run: (repo: string, key: string, undo: boolean, sha256?: string) => Promise<{ lines: string[] }>;
   steps?: PromoteSteps | undefined;
   onDone: (note: string, job?: string) => void;
 }) {
@@ -192,7 +195,7 @@ function ItemAction(p: {
     setBusy(true);
     setError(undefined);
     try {
-      await p.run(p.repo, p.item.key, undo);
+      await p.run(p.repo, p.item.key, undo, undo ? undefined : p.item.readersSha256);
       p.onDone(undo ? X.undismissedNote(p.item.key) : X.dismissedNote(p.item.key));
     } catch (e) {
       setError(
@@ -254,6 +257,11 @@ function ItemAction(p: {
               // Verify rejecting the fact ends the job unsuccessfully: the item says why.
               if (!(e instanceof JobFailed)) throw e;
               setAsking(undefined);
+              // The promote itself refused (nothing written): said as the promote's, not verify's.
+              if (e.code === PROMOTE_REFUSED) {
+                setError(X.promoteRefused(e.lines.at(-1) ?? e.message));
+                return;
+              }
               // The last line is why verify stopped (the lines before are the promote's own, in the Console).
               setError(X.promoteVerifyStopped(e.lines.at(-1) ?? e.message));
               p.onDone(X.promotedNote(p.item.key));
@@ -271,7 +279,7 @@ function ItemAction(p: {
 function ItemRow(p: {
   repo: Repo;
   item: Item;
-  run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  run: (repo: string, key: string, undo: boolean, sha256?: string) => Promise<{ lines: string[] }>;
   steps?: PromoteSteps | undefined;
   onDone: (note: string) => void;
 }) {
@@ -344,7 +352,7 @@ export function RepoCrossCheckView(p: {
   of: Loaded<Repo> & { reload?: () => void };
   show: Show | undefined;
   onShow: (s: Show) => void;
-  run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  run: (repo: string, key: string, undo: boolean, sha256?: string) => Promise<{ lines: string[] }>;
   steps?: PromoteSteps | undefined;
   onChanged?: () => void;
 }) {
@@ -499,7 +507,7 @@ export function CrossCheckPage(p: {
   one: (Loaded<Repo> & { reload?: () => void }) | undefined;
   show: Show | undefined;
   onShow: (s: Show) => void;
-  run: (repo: string, key: string, undo: boolean) => Promise<{ lines: string[] }>;
+  run: (repo: string, key: string, undo: boolean, sha256?: string) => Promise<{ lines: string[] }>;
   steps?: PromoteSteps | undefined;
   job?: string | undefined;
 }) {
@@ -591,10 +599,10 @@ export function CrossCheck({ hash }: { hash: string }) {
   const picked = repo ?? first;
   const one = useApi<Repo>(picked ? `/api/crosscheck/${encodeURIComponent(picked)}` : undefined);
   useReloadOnFiles(list, one);
-  const run = (r: string, key: string, undo: boolean) =>
+  const run = (r: string, key: string, undo: boolean, sha256?: string) =>
     followJob(
       `/api/crosscheck/${encodeURIComponent(r)}/dismiss`,
-      undo ? { key, undo: true } : { key },
+      undo ? { key, undo: true } : { key, ...(sha256 ? { sha256 } : {}) },
       undefined,
       setJob,
     );

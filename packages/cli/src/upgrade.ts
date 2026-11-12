@@ -846,12 +846,13 @@ export async function upgradeCommand(
     slots = await planUpgradeToSlots(root);
     view = await upgradeSlotsView(root, slots);
   }
-  let slotsDone: number | undefined | "refused" | "shown" = undefined;
+  let slotsDone: number | undefined | "refused" | "shown" | "changed" = undefined;
   if (slots.pending) {
     const accepted = !slots.differs.length || o.acceptChanges === slots.differs.length;
     if (!o.yes || !accepted) slotsDone = o.yes ? "refused" : "shown";
     else {
       const { acquireLock, LockHeldError } = await import("@maycombhq/core");
+      await (await import("./catalog-build-commands.js")).afterListed();
       let lock;
       try {
         lock = await acquireLock(root, "scan", "atticus upgrade --yes");
@@ -863,13 +864,20 @@ export async function upgradeCommand(
         throw e;
       }
       try {
-        slotsDone =
-          (await applyUpgradeToSlots(
-            root,
-            slots,
-            slots.differs.length ? { acceptChanges: slots.differs.length } : {},
-          )) ?? 0;
-        changed.push(...slots.writes.map((w) => relative(root, w.path).split(sep).join("/")));
+        // Planned again under the lock (ADR 0195 point 2): it writes what it listed, or nothing.
+        const { upgradePlanHash } = await import("@maycombhq/scanner");
+        const again = await planUpgradeToSlots(root);
+        if (upgradePlanHash(root, again) !== upgradePlanHash(root, slots)) {
+          slotsDone = "changed";
+        } else {
+          slotsDone =
+            (await applyUpgradeToSlots(
+              root,
+              slots,
+              slots.differs.length ? { acceptChanges: slots.differs.length } : {},
+            )) ?? 0;
+          changed.push(...slots.writes.map((w) => relative(root, w.path).split(sep).join("/")));
+        }
       } finally {
         await lock.release();
       }
@@ -914,11 +922,15 @@ export async function upgradeCommand(
             ? `Nothing of it written: --accept-changes ${o.acceptChanges} doesn't name the ${slots.differs.length} listed.`
             : `Nothing of it written: the first build changes the catalog, so it waits for atticus upgrade --yes --accept-changes ${slots.differs.length}.`,
         );
+      else if (slotsDone === "changed")
+        io.err(
+          "Nothing of it written: what the step would write isn't what it listed any more (another command wrote meanwhile). Run atticus upgrade again to list it.",
+        );
       else
         io.out(
           "Done: the catalog is adopted into catalog/sources/ (atticus catalog undo takes it back).",
         );
     }
   }
-  return slotsDone === "refused" ? 1 : 0;
+  return slotsDone === "refused" || slotsDone === "changed" ? 1 : 0;
 }

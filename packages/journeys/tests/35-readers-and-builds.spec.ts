@@ -122,7 +122,7 @@ test("reads what the readers found beside the facts, and dismisses one", async (
   expect(catalogFiles(a().root)).toEqual(before);
   // Its command is in the Console, with what it printed (ADR 0187).
   await page.getByRole("button", { name: "Show in the Console" }).click();
-  const log = page.getByRole("log", { name: "Dismiss on forge-ledger: Component|ledger-api" });
+  const log = page.getByRole("log", { name: "Dismiss on forge-ledger" });
   await expect(log).toContainText("dismissed Component|ledger-api");
   await accessible(page, "the cross-check with the Console open");
 });
@@ -160,7 +160,7 @@ test("promotes what the readers found to the person's own fact, shown first", as
   await page.getByRole("button", { name: "Show in the Console" }).click();
   await expect(
     page.getByRole("log", {
-      name: `Promote on forge-ledger: ${key}, then atticus verify forge-ledger`,
+      name: "Promote on forge-ledger",
     }),
   ).toContainText("promoted");
 });

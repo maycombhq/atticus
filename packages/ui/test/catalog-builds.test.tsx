@@ -71,10 +71,15 @@ const EDITS: Api.BuildRefusalViewT = {
   discardEdits: 1,
   command: "atticus catalog edits --curate",
 };
-const view = (pending: Api.CatalogBuildViewT["pending"], last?: Api.CatalogBuildViewT["last"]) =>
+/** The plan a confirm sends back (GET /api/build's `pending.plan`): any 64 hex digits here. */
+const PLAN = "b".repeat(64);
+const view = (
+  pending: Omit<Api.CatalogBuildViewT["pending"], "plan">,
+  last?: Api.CatalogBuildViewT["last"],
+) =>
   ready<Api.CatalogBuildViewT>({
     sources: SOURCES,
-    pending,
+    pending: { plan: PLAN, ...pending },
     ...(last ? { last } : {}),
     orphaned: [],
     problems: [],
@@ -101,6 +106,7 @@ const UNDO: Api.CatalogUndoViewT = {
     n: 1,
     takesBack: [{ n: 1, command: "atticus catalog build --allow-removals 3" }],
     files: [{ path: "catalog/sources/build.json", to: "file" }],
+    hash: "c".repeat(64),
   },
 };
 const fail = () => Promise.reject(new Error("no write in a render"));
@@ -141,7 +147,7 @@ const page = (o: Partial<Parameters<typeof CatalogBuildsPage>[0]> = {}) =>
     <CatalogBuildsPage
       build={view({ upToDate: true, removals: [] })}
       undo={ready(UNDO)}
-      prune={ready({ files: [] })}
+      prune={ready({ files: [], plan: PLAN })}
       run={fail}
       plan={fail}
       {...o}
@@ -192,6 +198,7 @@ describe("Catalog builds, in every state", () => {
             why: "forge-reports-job is archived",
           },
         ],
+        plan: PLAN,
       }),
     });
     expect(out).toContain("catalog/sources/readers/forge-reports-job.json");
@@ -339,6 +346,7 @@ describe("the upgrade to source slots, shown first and confirmed with its count"
       build: ready<Api.CatalogBuildViewT>({
         sources: SOURCES,
         pending: {
+          plan: PLAN,
           upToDate: false,
           removals: [],
           refused: {
@@ -520,7 +528,10 @@ describe("a refused build: its list and its ways on, nothing written until confi
       />,
     );
     expect(out).toContain(esc(B.reason["unexplained-removals"]!(1)));
-    expect(out).toContain("GatewayRoute/gw-ledger-v1-orphan");
+    // The id is all there, and breaks at its separators only (the review: a narrow panel).
+    const shown = out.replace(/<wbr\/?>|<\/?span>/g, "");
+    expect(shown).toContain("GatewayRoute/gw-ledger-v1-orphan");
+    expect(out).toContain("<span>GatewayRoute/<wbr/></span><span>gw-<wbr/></span>");
     expect(out).not.toContain(">Review the");
   });
 

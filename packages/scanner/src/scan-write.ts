@@ -12,7 +12,9 @@ export async function scanIntoCatalog(
   o: ScanOptions & { command?: string; allowRemovals?: number; discardEdits?: number },
 ): Promise<{ scan: EstateScan; result?: BuildAndWrite; nothingRead: boolean }> {
   const scan = await scanEstate(o);
-  const nothingRead = scan.observations.length > 0 && !scan.observations.some((x) => x.full);
+  // ADR 0195 point 4 (the review): a scan that read no repo in full writes nothing, an estate with
+  // no repo to read included, as `atticus scan` refuses it.
+  const nothingRead = !scan.observations.some((x) => x.full);
   if (nothingRead) return { scan, nothingRead };
   const slots: SlotWrite[] = scan.observations.flatMap((x) =>
     x.full ? [{ path: readersSlotPath(o.root, x.repo), text: serializeReadersSlot(x.slot) }] : [],

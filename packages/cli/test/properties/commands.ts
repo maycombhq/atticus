@@ -36,7 +36,16 @@ import {
   type Model,
 } from "./model.js";
 import { sut, todaysWriters, type Confirm, type Guard, type Outcome } from "./system.js";
-import { move, records, sameTree, type Pending, type Rec, type Snap, type World } from "./world.js";
+import {
+  move,
+  records,
+  repoOf,
+  sameTree,
+  type Pending,
+  type Rec,
+  type Snap,
+  type World,
+} from "./world.js";
 
 /**
  * The commands of ADR 0195 point 10, as plain data (so a shrunk counterexample can be committed
@@ -82,8 +91,16 @@ export type Desc =
    */
   | { t: "undo"; n?: number; yes?: boolean; back?: boolean }
   | { t: "prune"; yes: boolean }
-  /** A crash part way through a scan's or a `verify --write`'s write, then a build that catches up. */
-  | { t: "crash"; at: "after-slots" | "mid-records"; via: "scan" | "verify"; slot: number }
+  /**
+   * A crash part way through a scan's or a `verify --write`'s write, then a build that catches up;
+   * or through a rename's write, which puts every file back (nothing changed, no build).
+   */
+  | {
+      t: "crash";
+      at: "after-slots" | "mid-records";
+      via: "scan" | "verify" | "rename";
+      slot: number;
+    }
   | { t: "upgrade"; yes: boolean }
   | { t: "again" };
 
@@ -136,7 +153,8 @@ export interface Acted {
     back: boolean;
     backOutcome?: Outcome;
   };
-  crash?: { first: Outcome; mid: Snap };
+  /** `whole`: the crash was a rename's, which must leave the metarepo as it was. */
+  crash?: { first: Outcome; mid: Snap; whole?: true };
   /** curate-edits: the drafting step, before its build. */
   pre?: Outcome;
   /** upgrade --yes: the metarepo right after it, before the build the harness runs then. */
@@ -239,11 +257,11 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
     // once the retirement is shown to be one the current sources allow.
     if (ok && built && m.legacyJoins.length) {
       const text = after.sources.get("legacy/joins.json");
-      let kept = new Set<string>(m.legacyJoins.map((j) => j.id));
+      let kept = new Set<string>(m.legacyJoins.map((j) => `${j.kind}/${j.id}`));
       if (text !== undefined)
         try {
-          const slot = JSON.parse(text) as { records?: { id: string }[] };
-          kept = new Set((slot.records ?? []).map((r) => r.id));
+          const slot = JSON.parse(text) as { records?: { kind: string; id: string }[] };
+          kept = new Set((slot.records ?? []).map((r) => `${r.kind}/${r.id}`));
         } catch {
           // a joins.json that doesn't parse retires nothing here; the slot checks say so
         }
@@ -252,7 +270,7 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
       if (wrong.length && ctx.enabled.has("links-are-live"))
         throw new InvariantError(
           "links-are-live",
-          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => j.id).join(", ")}`,
+          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => `${j.kind}/${j.id}`).join(", ")}`,
         );
     }
     const changed =
@@ -443,6 +461,42 @@ async function verify(
       const was = m.facts.get(r.slot);
       if (!was || was.commit !== facts.commit || was.id !== facts.id) m.changes.slots.add(r.slot);
       m.facts.set(r.slot, facts);
+    },
+  };
+}
+
+/** `atticus repo rename <id> <id>-core`; with `crash`, its write stops part way. */
+async function rename(
+  d: Desc & { t: "rename" },
+  m: Model,
+  w: World,
+  confirm: Confirm,
+  crash?: "after-slots" | "mid-records",
+): Promise<Acted | undefined> {
+  const r = live(m, d.slot);
+  if (!r || r.id.endsWith("-core")) return undefined;
+  const from = r.id;
+  const to = `${r.id}-core`;
+  // New slot files that don't parse need slot files to write: a repo never observed has none.
+  const fail = !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
+  const outcome = await sut().rename(w.root, from, to, {
+    ...confirm,
+    ...(d.fail ? { failBuild: true } : {}),
+    ...(crash ? { crash } : {}),
+  });
+  return {
+    outcome,
+    confirm,
+    expect: fail ? { kind: "refuse", guard: "build-failed" } : { kind: "succeed" },
+    rerun: d,
+    onSuccess: async () => {
+      if (fail) return;
+      // The person clones it again under its new id (atticus workspace sync, here a move).
+      if (existsSync(w.clone(from))) await move(w.clone(from), w.clone(to));
+      r.id = to;
+      for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
+        if (obs?.id === from) obs.id = to;
+      m.changes.slots.add(r.slot);
     },
   };
 }
@@ -705,7 +759,10 @@ export async function act(
         // A record a person adds by hand: a copy of an endpoint, on a path no repo serves.
         const id = `${rec.id}.by-hand`;
         const path = `/by-hand/${rec.id}`;
-        if (m.curated.some((x) => x.target === id)) return undefined;
+        // Added once already and not discarded (it stays a hand edit: an added record is never
+        // made a curated decision), or made curated before: nothing new to add.
+        if (m.curated.some((x) => x.target === id) || m.handEdits.some((e) => e.id === id))
+          return undefined;
         const doc = parse(await readFile(full(rel), "utf8")) as Record<string, unknown>;
         const p = parseRecord({ ...doc, id, pathOrTopic: path, normalizedPath: path });
         if (!p.ok) throw new Error(`harness: bad added record ${JSON.stringify(p.issues)}`);
@@ -742,19 +799,33 @@ export async function act(
 
     case "curate-edits": {
       if (!m.handEdits.length) return undefined;
+      // ADR 0195 addendum (CS2, the guards as built): "an added record can't be a curated
+      // decision (one changes or suppresses a record the build makes) and is said". The changed
+      // and deleted files are made curated; each added one stays a hand edit, so the command
+      // refuses (nothing built, catalog/generated and the slots as they were) until it is
+      // discarded.
+      const adds = m.handEdits.filter((e) => e.how === "add");
       const pre = await sut().curateEdits(w.root);
-      if (!pre.wrote) return { outcome: pre, pre, expect: { kind: "succeed" } };
-      for (const e of m.handEdits) {
+      const curate = (e: HandEdit) => {
         const common = { target: e.id, kind: e.kind, ...(e.key ? { key: e.key } : {}) };
         const dec: Decision =
           e.how === "delete"
             ? { action: "suppress", ...common, since: m.writes, from: "edits" }
-            : e.how === "change"
-              ? { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" }
-              : { action: "assert", ...common, added: true, since: m.writes, from: "edits" };
+            : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
         m.curated.push(dec);
         m.changes.curated.add(e.id);
+      };
+      if (adds.length) {
+        if (pre.refused)
+          for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+            curate(e);
+            m.curatedPending.push(e);
+          }
+        m.handEdits = pre.refused ? adds : m.handEdits;
+        return { outcome: pre, expect: { kind: "refuse" } };
       }
+      if (!pre.wrote) return { outcome: pre, pre, expect: { kind: "succeed" } };
+      for (const e of m.handEdits) curate(e);
       // Until a build writes them in, the files stay the person's (a refused build writes nothing).
       m.curatedPending.push(...m.handEdits);
       m.handEdits = [];
@@ -780,34 +851,8 @@ export async function act(
       };
     }
 
-    case "rename": {
-      const r = live(m, d.slot);
-      if (!r || r.id.endsWith("-core")) return undefined;
-      const from = r.id;
-      const to = `${r.id}-core`;
-      // New slot files that don't parse need slot files to write: a repo never observed has none.
-      const fail =
-        !!d.fail && [m.readers.get(r.slot), m.facts.get(r.slot)].some((o) => o?.id === from);
-      const outcome = await sut().rename(w.root, from, to, {
-        ...confirm,
-        ...(d.fail ? { failBuild: true } : {}),
-      });
-      return {
-        outcome,
-        confirm,
-        expect: fail ? { kind: "refuse", guard: "build-failed" } : { kind: "succeed" },
-        rerun: d,
-        onSuccess: async () => {
-          if (fail) return;
-          // The person clones it again under its new id (atticus workspace sync, here a move).
-          if (existsSync(w.clone(from))) await move(w.clone(from), w.clone(to));
-          r.id = to;
-          for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
-            if (obs?.id === from) obs.id = to;
-          m.changes.slots.add(r.slot);
-        },
-      };
-    }
+    case "rename":
+      return rename(d, m, w, confirm);
 
     case "build":
       return build(w, confirm);
@@ -893,6 +938,21 @@ export async function act(
     }
 
     case "crash": {
+      if (d.via === "rename") {
+        // ADR 0195 point 2: the rename computes everything first and writes it in one step; a
+        // write that stops part way puts every file back, so nothing changed and nothing is
+        // left for a build to catch up (the model is as it was: no update applies).
+        const first = await rename({ t: "rename", slot: d.slot }, m, w, confirm, d.at);
+        if (!first?.outcome) return undefined;
+        const o = first.outcome;
+        if (!o.crashed) return { ...first, crash: { first: o, mid: before } };
+        const { onSuccess: _never, ...rest } = first;
+        return {
+          ...rest,
+          expect: { kind: "neutral" },
+          crash: { first: o, mid: before, whole: true },
+        };
+      }
       const inner: Desc =
         d.via === "scan" ? { t: "scan" } : { t: "verify-write", slot: d.slot, ok: true };
       const first =
@@ -932,23 +992,33 @@ export async function act(
             m.facts.delete(r.slot);
             if (s) m.readers.set(r.slot, { ...s.obs, legacy: true });
           }
+          // Every record that goes to legacy/joins.json (the lossless invariant's rule): a
+          // cross-repo arrow, and any record with evidence from several repos or none.
           m.legacyJoins = [];
+          const slotOfRepo = new Map(m.repos.map((r) => [r.id, r.slot]));
           for (const rec of records(before.generated).values()) {
-            if (rec.kind !== "Interface") continue;
-            const a = m.slotOfEnd(String(rec.from));
-            const b = m.slotOfEnd(String(rec.to));
-            if (!a || !b || a.slot === b.slot) continue;
-            m.legacyJoins.push({
-              key: arrowKey(
-                a.base.component,
-                b.base.component,
-                rec.method ?? "EVENT",
-                String(rec.normalizedPath),
-              ),
-              id: rec.id,
-              from: a.slot,
-              to: b.slot,
-            });
+            const repos = [...repoOf(rec)];
+            const slots = repos.flatMap((x) => (slotOfRepo.has(x) ? [slotOfRepo.get(x)!] : []));
+            const a = rec.kind === "Interface" ? m.slotOfEnd(String(rec.from)) : undefined;
+            const b = rec.kind === "Interface" ? m.slotOfEnd(String(rec.to)) : undefined;
+            if (a && b && a.slot !== b.slot)
+              m.legacyJoins.push({
+                kind: rec.kind,
+                id: rec.id,
+                arrow: {
+                  key: arrowKey(
+                    a.base.component,
+                    b.base.component,
+                    rec.method ?? "EVENT",
+                    String(rec.normalizedPath),
+                  ),
+                  from: a.slot,
+                  to: b.slot,
+                },
+                repos: slots,
+              });
+            else if (repos.length !== 1)
+              m.legacyJoins.push({ kind: rec.kind, id: rec.id, repos: slots });
           }
           m.beta26 = false;
         },
@@ -1070,7 +1140,7 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
       fc.record({
         t: fc.constant("crash" as const),
         at: fc.constantFrom("after-slots" as const, "mid-records" as const),
-        via: fc.constantFrom("scan" as const, "verify" as const),
+        via: fc.constantFrom("scan" as const, "verify" as const, "rename" as const),
         slot,
       }),
     ),

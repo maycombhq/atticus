@@ -153,6 +153,7 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
       upToDate: r.upToDate === true,
       removals: r.guard.removals.map((x) => removalView(root, x)),
       ...(r.guard.refused ? { refused: refusalView(root, r.guard.refused) } : {}),
+      plan: pendingPlan(r.guard.refused?.removals ?? r.guard.removals, r.guard.refused?.edits),
     },
     ...(last ? { last } : {}),
     ...(r.guard.refused?.reasons.includes("not-upgraded") ? { upgrade: true as const } : {}),
@@ -162,6 +163,26 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
       message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
     })),
   };
+}
+
+/** A list's hash, for a confirm to send back (ADR 0195, the review: a confirm is of the list shown). */
+export function planHash(lines: readonly string[]): string {
+  return createHash("sha256")
+    .update([...lines].sort().join("\n"), "utf8")
+    .digest("hex");
+}
+
+/** The hash of what a refused build lists: each removal (path, reasons, words) and hand edit. */
+export function pendingPlan(
+  removals: readonly Removal[],
+  edits: readonly { path: string; how: string }[] = [],
+): string {
+  return planHash([
+    ...removals.map(
+      (x) => `removal\u0000${x.path}\u0000${x.reasons.join(",")}\u0000${x.explainedBy.join("; ")}`,
+    ),
+    ...edits.map((e) => `edit\u0000${e.path}\u0000${e.how}`),
+  ]);
 }
 
 /**
@@ -219,6 +240,10 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
         command: c.command,
       })),
       files: plan.files.map((f) => ({ path: f.path, to: f.to })),
+      hash: planHash([
+        ...plan.copies.map((c) => `copy\u0000${c.n}\u0000${c.command}\u0000${c.at}`),
+        ...plan.files.map((f) => `file\u0000${f.path}\u0000${f.to}\u0000${f.from}`),
+      ]),
     },
   };
 }
@@ -234,7 +259,8 @@ export async function catalogPruneView(root: string): Promise<Api.CatalogPruneVi
   await catalogPrune(root, { json: true }, { out: (l) => out.push(l), err: (l) => err.push(l) });
   try {
     const j = JSON.parse(out.join("\n")) as { files?: { path: string; why: string }[] };
-    return { files: j.files ?? [] };
+    const files = j.files ?? [];
+    return { files, plan: planHash(files.map((f) => `${f.path}\u0000${f.why}`)) };
   } catch {
     throw new Error(err.join("\n") || "atticus catalog prune didn't say what it would remove.");
   }

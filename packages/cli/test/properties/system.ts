@@ -75,6 +75,7 @@ export const todaysWriters: CatalogSystem = {
   async rename(root, from, to, o) {
     if (confirming(o)) return unsupported("atticus repo rename --allow-removals/--discard-edits");
     if (o.failBuild) return unsupported("a rename whose new slots fail to build");
+    if (o.crash) return unsupported("a crash part way through a write");
     const r = await run(["repo", "rename", from, to, "--root", root]);
     return { ...r, wrote: r.code === 0, refused: r.code !== 0 };
   },

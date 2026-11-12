@@ -6,6 +6,22 @@ import { atticusArgvOf, personOnlyWhy } from "../src/index.js";
  * started, both by the session's command check and by the CLI itself (one list).
  */
 const PERSON = [
+  // ADR 0195 (the review, B1): every destructive confirm is a person's, inside a session too.
+  "catalog build --allow-removals 3",
+  "catalog build --allow-removals=3",
+  "catalog build --discard-edits 1",
+  "catalog undo --yes",
+  "catalog undo 2 --yes",
+  "catalog prune --yes",
+  "catalog edits --curate",
+  "catalog edits --curate --drop-fields 1",
+  "upgrade --yes",
+  "upgrade --yes --accept-changes 4",
+  "scan --allow-removals 12",
+  "scan --discard-edits 2",
+  "verify forge-ledger --write --allow-removals 5",
+  "verify forge-ledger --write --discard-edits 1",
+  "repo rename forge-ledger forge-ledger-core --allow-removals 2",
   // ADR 0195 (CS3): a person dismisses what the readers found, after checking its line.
   "catalog crosscheck forge-ledger --dismiss key-1",
   "catalog crosscheck forge-ledger --undismiss=key-1",
@@ -71,6 +87,17 @@ const PERSON = [
   "questions undo b-20261108-101500-a1b2c3",
 ];
 const SESSION = [
+  // Listings and a build that removes or discards nothing are anyone's.
+  "catalog build",
+  "catalog build --check",
+  "catalog undo",
+  "catalog undo 2",
+  "catalog prune",
+  "catalog edits",
+  "upgrade",
+  "upgrade --check",
+  "scan",
+  "verify forge-ledger --write",
   "catalog crosscheck forge-ledger",
   "catalog crosscheck --json",
   // ADR 0181: reading what the AI decided is anyone's.
@@ -205,8 +232,13 @@ describe("a person's records under facts/", () => {
       "forge-billing.corrections.jsonl ",
       "forge-billing.corrections.jsonl::$DATA",
       "forge-billing.audit.yaml. .",
+      // ADR 0195 (the review, S1): a person's dismissals of what the readers found.
+      "forge-ledger.crosscheck.yaml",
+      "forge-ledger.crosscheck.yaml.",
+      "FORGE-LEDGER.CROSSCHECK.YAML",
     ])
       expect(isPersonsFactsFile(n), n).toBe(true);
+    expect(isPersonsFactsFile("forge-ledger.jsonl")).toBe(false);
     const root = await mkdtemp(join(tmpdir(), "po-"));
     await mkdir(join(root, "facts"));
     const paths = acpPathsOf(factsOnly(root, join(root, "facts")));

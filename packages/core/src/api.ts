@@ -1638,6 +1638,12 @@ export const CrossCheckItem = z.object({
     .optional(),
   dismissed: z.literal(true).optional(),
   /**
+   * The SHA-256 of the readers' value as shown (its JSON), for a readers-only or disagreeing
+   * item: a dismissal sends it back, so it dismisses the value the page showed (409 when the
+   * readers say another now). Only GET /api/crosscheck/{repo} says it.
+   */
+  readersSha256: z.string().optional(),
+  /**
    * A readers-only item a person promoted to assert: the `by: person` fact in the repo's facts
    * file and where it stands: `written` (not verified yet), `verified` (the verifier found it on
    * its line; `atticus verify <repo> --write` puts it in the catalog) or `rejected` (with why, in
@@ -1691,6 +1697,11 @@ export type CrossCheckViewT = z.infer<typeof CrossCheckView>;
 export const CrossCheckDismissRequest = z.strictObject({
   key: z.string().trim().min(1).max(500),
   undo: z.literal(true).optional(),
+  /** The item's `readersSha256` as the page showed it: required to dismiss (not to list again). */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 /**
  * 3.12.0 (ADR 0195 point 3): GET /api/crosscheck/{repo}/promote?key=, what promoting a
@@ -1851,6 +1862,12 @@ export const CatalogBuildView = z.object({
     upToDate: z.boolean(),
     removals: z.array(BuildRemoval),
     refused: BuildRefusalView.optional(),
+    /**
+     * A hash of what the lists say (each removal's path, reasons and words; each hand edit's path
+     * and how), which a confirm of them sends back (POST /api/build, POST
+     * /api/build/edits/curate): a list that changed meanwhile is a 409 and nothing runs.
+     */
+    plan: z.string(),
   }),
   last: BuildReportView.optional(),
   upgrade: z.literal(true).optional(),
@@ -1868,10 +1885,19 @@ export type CatalogBuildViewT = z.infer<typeof CatalogBuildView>;
 export const CatalogBuildRequest = z.strictObject({
   allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
   discardEdits: z.number().int().min(0).max(1_000_000).optional(),
+  /** GET /api/build's `pending.plan`: required with a count (the list it confirms). */
+  plan: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
-/** 3.12.0: make the hand edits listed curated decisions; `count` is how many were listed. */
+/**
+ * 3.12.0: make the hand edits listed curated decisions; `count` is how many were listed and
+ * `plan` GET /api/build's `pending.plan` for them.
+ */
 export const CatalogEditsRequest = z.strictObject({
   count: z.number().int().min(1).max(1_000_000),
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
 });
 /** 3.12.0: a build kept on this machine to undo (point 7), numbered as `atticus catalog undo` does. */
 export const UndoCopyView = z.object({
@@ -1893,6 +1919,8 @@ export const CatalogUndoView = z.object({
       n: z.number().int(),
       takesBack: z.array(z.object({ n: z.number().int(), command: z.string() })),
       files: z.array(z.object({ path: z.string(), to: z.enum(["file", "absent"]) })),
+      /** A hash of the undo copies it takes back (their folder numbers) and each file, sent back by the confirm. */
+      hash: z.string(),
     })
     .optional(),
   /** Why there is nothing to undo, in words. */
@@ -1901,17 +1929,23 @@ export const CatalogUndoView = z.object({
 export type CatalogUndoViewT = z.infer<typeof CatalogUndoView>;
 /** 3.12.0: take back the `n` latest builds; `files` is how many files the page listed. */
 export const CatalogUndoRequest = z.strictObject({
-  n: z.number().int().min(1),
+  n: z.number().int().min(1).max(5),
   files: z.number().int().min(0),
+  /** GET /api/build/undo's `plan.hash` for that `n`. */
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
 });
 /** 3.12.0: GET /api/build/prune: the slot files no build reads, each with why. */
 export const CatalogPruneView = z.object({
   files: z.array(z.object({ path: z.string(), why: z.string() })),
+  /** A hash of the files listed and why, sent back by the confirm. */
+  plan: z.string(),
 });
 export type CatalogPruneViewT = z.infer<typeof CatalogPruneView>;
 /** 3.12.0: remove exactly the files listed; `count` is how many the page listed. */
 export const CatalogPruneRequest = z.strictObject({
   count: z.number().int().min(1),
+  /** GET /api/build/prune's `plan`. */
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
 });
 /**
  * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,

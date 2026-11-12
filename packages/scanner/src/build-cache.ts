@@ -288,6 +288,8 @@ export async function buildKeyOf(o: {
   proposalsDir: string;
   orgPackDir: string;
   wikis: readonly { id: string; type: string; location: string }[];
+  /** Other files the passes read themselves (a repo's corrections, read again for its pairs). */
+  files?: readonly string[];
 }): Promise<string | undefined> {
   if (buildCacheHooks.off) return undefined;
   const folders: [string, string][] = [];
@@ -299,6 +301,8 @@ export async function buildKeyOf(o: {
       const dir = isAbsolute(w.location) ? w.location : resolve(o.orgPackDir, w.location);
       folders.push([`wiki ${w.id}`, await folderHash(dir)]);
     }
+  for (const f of [...(o.files ?? [])].sort(cmpText))
+    folders.push([f, sha(await readFile(f, "utf8").catch(() => "\u0000absent"))]);
   const rest: Record<string, unknown> = {};
   for (const k of Object.keys(o.inputs).sort(cmpText)) if (k !== "slots") rest[k] = o.inputs[k];
   try {
