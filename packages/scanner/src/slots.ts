@@ -46,7 +46,7 @@ export const BUILD_MANIFEST_VERSION = 1 as const;
  * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
  * by it (`build.json`'s `buildVersion`).
  */
-export const BUILD_VERSION = "2.0.0-beta.27.1";
+export const BUILD_VERSION = "2.0.0-beta.27.2";
 /** The version of `facts/<repo>.crosscheck.yaml`. */
 export const DISMISSALS_VERSION = 1 as const;
 

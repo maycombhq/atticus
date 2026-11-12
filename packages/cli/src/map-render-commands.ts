@@ -67,6 +67,7 @@ import {
   prototypeLeftOut,
   groupedTargetDrafts,
   isJoinHostQuestion,
+  isTokenHost,
   joinHostQuestionDrafts,
   staleJoinHostQuestions,
   readCatalog,
@@ -774,9 +775,20 @@ export async function writeFactsIntoCatalog(
     const lines = [...hosts.lines];
     // Q1: the calls that go the same way (the repo, the target named or host or base, the path
     // prefix) are asked once; a call a person's answer already names isn't asked again.
+    // Beta.27: a gateway's forwarding call to a token target URL (one only its `<URL>` line
+    // writes too) is asked in the join's words below (read the repo again), never on its own.
+    const tokenAsked = new Set(
+      (result.join?.asks ?? [])
+        .filter(
+          (a) =>
+            a.reason === "unknown-host" && a.call.repo === repo && !!a.host && isTokenHost(a.host),
+        )
+        .map((a) => a.call.fact),
+    );
     const asked = new Set(
       [...loose, ...ambiguous].filter(
         (id) =>
+          !tokenAsked.has(id) &&
           targets[id] === undefined &&
           !answered.some((q) => q.state === "answered" && q.id === targetId(facts, repo, id)),
       ),

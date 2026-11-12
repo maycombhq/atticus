@@ -1,0 +1,12 @@
+schemaVersion: 1
+platform: forge
+name: Forge's vendor proxy whose target URL a config.json token sets by its name (invented)
+systems:
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [] }
+  - id: northwind-pay
+    name: Northwind Pay
+    boundary: vendor
+    owner: team-payments
+    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]
+environments: [dv, qa, prod]

@@ -1,0 +1,3 @@
+forge:
+  gateway:
+    base-url: https://gw.forge.example

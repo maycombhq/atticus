@@ -1,0 +1,74 @@
+- kind: Interface
+  schemaVersion: 2
+  id: if-1e38001cf2beba99
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: checkout-api
+  to: northwind-pay-proxy
+  via: direct
+  method: GET
+  normalizedPath: /northwind-pay/1.0/payments/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-checkout
+      path: src/main/java/forge/checkout/NorthwindPayClient.java
+      line: 11
+      commit: 4444fff
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-checkout
+      path: src/main/resources/application.yml
+      line: 3
+      commit: 4444fff
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_pay_1-0
+      path: apiproxy/proxies/default.xml
+      line: 4
+      commit: 7777ccc
+      side: callee
+      by: assistant
+- kind: Interface
+  schemaVersion: 2
+  id: if-a3a124184c58a417
+  status: current
+  confidence: verified
+  flags:
+    - joined-by-host
+  from: checkout-api
+  to: northwind-pay-proxy
+  via: direct
+  method: GET
+  normalizedPath: /northwind-pay/1.0/refunds/{}
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence:
+    - source: code
+      repo: forge-checkout
+      path: src/main/java/forge/checkout/NorthwindPayClient.java
+      line: 15
+      commit: 4444fff
+      side: caller
+      by: assistant
+    - source: config
+      repo: forge-checkout
+      path: src/main/resources/application.yml
+      line: 3
+      commit: 4444fff
+      side: caller
+      by: assistant
+    - source: code
+      repo: northwind_pay_1-0
+      path: apiproxy/proxies/default.xml
+      line: 13
+      commit: 7777ccc
+      side: callee
+      by: assistant

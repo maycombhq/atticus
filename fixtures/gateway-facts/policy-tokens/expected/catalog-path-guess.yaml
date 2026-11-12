@@ -1,0 +1,60 @@
+- id: if-14f6cd9eba3207a6
+  from: northwind-pay-proxy
+  to: refunds-api
+  method: POST
+  normalizedPath: /refunds
+  confidence: inferred
+  flags:
+    - joined-by-path
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:10
+    - repo: forge-refunds
+      side: callee
+      at: src/main/java/forge/refunds/RefundsController.java:8
+- id: if-32a6bb6295373913
+  from: northwind-pay-proxy
+  to: refunds-api
+  method: GET
+  normalizedPath: /refunds/{}
+  confidence: inferred
+  flags:
+    - joined-by-path
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:13
+    - repo: forge-refunds
+      side: callee
+      at: src/main/java/forge/refunds/RefundsController.java:11
+- id: if-390f7c30e3f0e456
+  from: northwind-pay-proxy
+  to: payments-api
+  method: POST
+  normalizedPath: /payments
+  confidence: inferred
+  flags:
+    - joined-by-path
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:7
+    - repo: forge-payments
+      side: callee
+      at: src/main/java/forge/payments/PaymentsController.java:11
+- id: if-df03a8bb01fa4db4
+  from: northwind-pay-proxy
+  to: payments-api
+  method: GET
+  normalizedPath: /payments/{}
+  confidence: inferred
+  flags:
+    - joined-by-path
+  evidence:
+    - repo: northwind_pay_1-0
+      side: caller
+      at: apiproxy/proxies/default.xml:4
+    - repo: forge-payments
+      side: callee
+      at: src/main/java/forge/payments/PaymentsController.java:8

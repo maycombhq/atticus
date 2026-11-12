@@ -1,0 +1,22 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetPayment">
+      <Condition>(proxy.pathsuffix MatchesPath "/payments/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="CreatePayment">
+      <Condition>(proxy.pathsuffix MatchesPath "/payments") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="CreateRefund">
+      <Condition>(proxy.pathsuffix MatchesPath "/refunds") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="GetRefund">
+      <Condition>(proxy.pathsuffix MatchesPath "/refunds/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/northwind-pay/1.0</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="vendor">
+    <TargetEndpoint>TE-Vendor</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

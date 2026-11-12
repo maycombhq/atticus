@@ -533,6 +533,11 @@ export interface RetiredJoin {
   id: string;
   /** Fields where the derived record differs from the legacy copy. */
   fields: string[];
+  /**
+   * Beta.27: retired because its caller is read from facts now and the estate join doesn't make
+   * it (no derived record to differ from).
+   */
+  notJoined?: true;
 }
 
 export interface Build {
@@ -878,12 +883,36 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     ...legacyAll,
     ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
   ]);
+  // Beta.27 (a user's Map): an adopted arrow whose caller is read from facts, its facts slot
+  // written since the upgrade, is the facts' to draw. The estate join over the facts slots joins
+  // every call of that repo; an arrow out of it the join doesn't make is no longer so (a path
+  // guess the call's facts no longer give, a forwarding call a person said isn't a call), and
+  // leaves, whichever slot adopted it. Until the caller's slot changes, the first build after
+  // the upgrade still changes nothing.
+  const factsRepos = new Set(factRepos.map((x) => x.repo));
+  const sinceUpgrade = (repo: string) =>
+    !legacySlot || (used.get(repo) ?? []).some((x) => legacySlot.slot.inputs[x.path] !== x.sha256);
+  const callerReadNow = (r: CatalogRecord): boolean => {
+    if (r.kind !== "Interface") return false;
+    const from = (r as unknown as { from?: string }).from;
+    const callers = [
+      ...(from ? (ends.get(from) ?? []) : []),
+      ...(r.evidence as { repo?: string; side?: string }[]).flatMap((e) =>
+        e.side === "caller" && e.repo ? [e.repo] : [],
+      ),
+    ];
+    return callers.some((repo) => factsRepos.has(repo) && sinceUpgrade(repo));
+  };
   // A live repo's legacy records, as they are; an arrow of one to a repo removed or archived
   // leaves with that repo (point 6), as a legacy join does.
   // (The whole-catalog passes read the legacy records as context, so theirs come back through
   // them: one no current source derives is taken out.)
   for (const r of legacyRecords) {
     const key = `${r.kind}/${r.id}`;
+    if (callerReadNow(r)) {
+      if (!derivedKeys.has(key)) byKey.delete(key);
+      continue;
+    }
     if (!endsGone(r, ends, live).length) byKey.set(key, r);
     else if (!derivedKeys.has(key)) byKey.delete(key);
   }
@@ -912,6 +941,12 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       // Derived: a current input made it, not the legacy records the whole-catalog passes read.
       if (derived && !legacyCtx.has(key) && changedSince(derived)) {
         retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
+        continue;
+      }
+      // Beta.27: an arrow out of a repo read from facts now, which the estate join doesn't make.
+      if ((!derived || legacyCtx.has(key)) && callerReadNow(r)) {
+        retired.push({ kind: r.kind, id: r.id, fields: [], notJoined: true });
+        byKey.delete(key);
         continue;
       }
       keep.push(r);
@@ -2650,7 +2685,9 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
   }
   for (const x of r.build.retired)
     out.push(
-      `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
+      x.notJoined
+        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. Its caller is read from facts now, and they don't join it.`
+        : `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
     );
   for (const x of r.build.orphaned)
     out.push(

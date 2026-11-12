@@ -53,6 +53,45 @@ You don't need a model or a dialect for an Apigee gateway: `/atticus-map` (and e
 - **Auth.** The strongest check that runs before the target, in the flow, the PreFlow or a shared flow a FlowCallout calls: OAuthV2 or VerifyJWT is `oauth2`, VerifyAPIKey `api-key`, BasicAuthentication `basic`, cited on the `<Step>` that attaches it. SpikeArrest and Quota are rate-limit settings. The verifier opens the policy the citation names and refuses an auth it cannot set: a `VerifyAPIKey` never makes `oauth2`, and a `SpikeArrest` authenticates nobody.
 - **Scopes.** The scopes a route demands are read with it: an OAuthV2's `<Scope>` (a space-separated list is one scope each, all citing that line), a VerifyJWT or VerifyAccessToken scope claim, a scope a `Condition` asserts on the token's claims, or the scopes a shared flow it calls checks. Each is cited on the line that names it, each is checked like any other claim, and each ends up on the GatewayRoute. A route that demands none says so by leaving them out. A proxy's `<VirtualHost>` is recorded too, so a hop can be called internal or external without guessing.
 - **Where it goes.** Each route's forwarding call has the path the service receives: the base path dropped, or the path an AssignMessage or JavaScript policy sets when `target.copy.pathsuffix` is false. Its host comes from the TargetServer (`targetservers.json`) or KVM entry it names.
+- **A target URL set at deploy time.** A TargetEndpoint whose `<URL>` is a token (`@targetVendorUrl@`) is set per environment by the deploy's `config.json`. Two shapes are read, each a setting per environment: the Apigee config plugin's, an XPath token for one file,
+
+  ```json
+  {
+    "configurations": [
+      {
+        "name": "prod",
+        "targets": [
+          {
+            "name": "TE-Vendor.xml",
+            "tokens": [
+              {
+                "xpath": "/TargetEndpoint/HTTPTargetConnection/URL",
+                "value": "https://api.northwind-pay.example/api/v1"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+  and a token set by its name wherever the bundle writes it, in a configuration's `policies` (or `targets`, `proxies`) list:
+
+  ```json
+  {
+    "configurations": [
+      {
+        "name": "dv",
+        "policies": [
+          { "name": "@targetVendorUrl@", "value": "https://devapi.northwind-pay.example/api/v1" }
+        ]
+      }
+    ]
+  }
+  ```
+
+  The second is a `config` fact keyed by the token as written (`@targetVendorUrl@`; `targetVendorUrl` reads the same), its value the `"value"`, its env the configuration's name, cited on the `"value"` line with the `"name"` and configuration lines beside it; the verifier checks the token's name, value and configuration in the same object. The join then reads each environment's host, and a host your profile lists as a vendor system's alias (`aliases: [api.northwind-pay.example, devapi.northwind-pay.example]`) sends the calls to that system. A token nothing sets is never guessed: the proxy's forwarding calls join no service that happens to serve the same paths, and a question asks which repo or system answers on the token (one per path prefix the routes share), saying to read the repo again. A read before beta.27 could leave the token out of the calls' `host`, keeping it only on the cited `<URL>` line: the join reads it from there too. A route with no forwarding call (none read, or one a person said isn't a call) draws no arrow.
 
 Once the gateway, its callers and the services behind it are read and verified, `atticus join` links a UI back end's call to the service the route forwards to, at the rewritten path, `via: gateway` with the route's auth and its scopes.
 

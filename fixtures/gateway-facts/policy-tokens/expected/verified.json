@@ -1,0 +1,40 @@
+{
+  "forge-checkout": {
+    "accepted": [
+      "call.get.northwind-pay-payments-id",
+      "call.get.northwind-pay-refunds-id",
+      "config.gateway-base-url"
+    ],
+    "rejected": []
+  },
+  "forge-payments": {
+    "accepted": [
+      "entry.get.payments-id",
+      "entry.post.payments"
+    ],
+    "rejected": []
+  },
+  "forge-refunds": {
+    "accepted": [
+      "entry.get.refunds-id",
+      "entry.post.refunds"
+    ],
+    "rejected": []
+  },
+  "northwind_pay_1-0": {
+    "accepted": [
+      "call.get.payments-id",
+      "call.get.refunds-id",
+      "call.post.payments",
+      "call.post.refunds",
+      "config.target-vendor-url-dv",
+      "config.target-vendor-url-prod",
+      "config.target-vendor-url-qa",
+      "entry.get.northwind-pay-payments-id",
+      "entry.get.northwind-pay-refunds-id",
+      "entry.post.northwind-pay-payments",
+      "entry.post.northwind-pay-refunds"
+    ],
+    "rejected": []
+  }
+}

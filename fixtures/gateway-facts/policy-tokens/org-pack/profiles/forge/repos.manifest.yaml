@@ -1,0 +1,35 @@
+# Invented Forge repos (see fixtures/gateway-facts/policy-tokens/README.md): an Apigee proxy
+# bundle that is its own repo, fronting Northwind Pay (an invented vendor) through a target URL
+# token the deploy's config.json sets per environment by its name, two Spring Boot services
+# that serve the same paths as the vendor does, and a checkout service that calls the proxy.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: northwind_pay_1-0
+    url: https://git.forge.example/forge/northwind_pay_1-0.git
+    type: gateway
+    owner: team-platform
+    component: northwind-pay-proxy
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-payments
+    url: https://git.forge.example/forge/forge-payments.git
+    type: spring-boot
+    owner: team-payments
+    component: payments-api
+    system: payments
+    hosts: [payments.forge.internal]
+  - id: forge-refunds
+    url: https://git.forge.example/forge/forge-refunds.git
+    type: spring-boot
+    owner: team-payments
+    component: refunds-api
+    system: payments
+    hosts: [refunds.forge.internal]
+  - id: forge-checkout
+    url: https://git.forge.example/forge/forge-checkout.git
+    type: spring-boot
+    owner: team-payments
+    component: checkout-api
+    system: payments
+    hosts: [checkout.forge.internal]

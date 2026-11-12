@@ -186,9 +186,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // builds on (ADR 0192), and when a pom's system scope was said to be provided, a build's folders no
     // components and a root subprojects { } line each subproject's (review of beta.25), and when
     // a build's and a framework's `component` was said to be the one the manifest names, a module
-    // only when it lists modules (review of beta.25; not in the core: an 8000-token batch's room).
+    // only when it lists modules (review of beta.25; not in the core: an 8000-token batch's room),
+    // and when a config.json token set by its name was told how to record and a token target
+    // URL to stay in every forwarding call's host (beta.27, a user's proxy).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "b9b44089293abf163fff1d5838b1f5036bac247a27f65a8aed61ffc0dc022c5f",
+      "0c980bb1dfeb420b845a28198535c197cf3ede53204aa4488da0d911928defb0",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -425,6 +427,21 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     ])
       expect(rule, words).toContain(words);
     expect(batch(["gateway"])).toContain("never one that sets a header's value or a credential");
+  });
+
+  it("records a config.json token set by its name, and keeps a token target URL in every forwarding call's host (beta.27)", () => {
+    // A user's deploy set `@targetVendorUrl@` by name per configuration; the read recorded no
+    // setting for it and wrote the forwarding calls with no host, so the join guessed by path.
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      "goes in `host` as written, on every forwarding call that goes to it, wherever the call is cited",
+      '`configurations[].policies[]`, `targets[]` or `proxies[]` entries `{ "name": "@targetUrl@", "value": "https://…" }`',
+      '`key` the token as written (`@targetUrl@`), `value` its `"value"`, `env` the configuration\'s name, no `target`',
+      'cited on the `"value"` line with the `"name"` line and the configuration name\'s line in `cite.with`',
+      "it sets that token wherever the bundle writes it",
+    ])
+      expect(rule, words).toContain(words);
+    expect(batch(["gateway"])).toContain("`configurations[].policies[]`");
   });
 
   it("says how a route's scopes and its virtual host are read and cited (A-gateway2)", () => {

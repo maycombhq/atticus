@@ -28,6 +28,33 @@ test("Trust counts the repo once: the facts file's companions aren't repos", asy
   await accessible(page, "trust on an Atticus 2 metarepo");
 });
 
+test("Trust filters the repos and reads a trusted repo again from its section (beta.27)", async ({
+  page,
+}) => {
+  await open(page, app(), "trust");
+  const filter = page.getByRole("textbox", { name: "Filter the repos" });
+  await expect(filter).toBeVisible();
+  const section = page.getByRole("region", { name: "Read it again" });
+  // A trusted repo, fresh and fully covered, still offers a whole read again.
+  await expect(section).toHaveCount(1);
+  await expect(
+    section.getByText(/Reads forge-studio whole again with your assistant/),
+  ).toBeVisible();
+  await expect(section.getByRole("button").first()).toBeVisible();
+  // The filter keeps the sections whose repo matches, says when none does, and clears.
+  await filter.fill("studio");
+  await expect(page.getByRole("heading", { name: "forge-studio", level: 3 })).toBeVisible();
+  await expect(page.getByText("1 of 1 shown")).toBeVisible();
+  await filter.fill("forge-teller");
+  await expect(page.getByText("Nothing matches “forge-teller”.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "forge-studio", level: 3 })).toHaveCount(0);
+  await accessible(page, "trust filtered to nothing");
+  await page.getByRole("button", { name: "Clear the filter" }).click();
+  await expect(filter).toBeFocused();
+  await expect(page.getByRole("heading", { name: "forge-studio", level: 3 })).toBeVisible();
+  await accessible(page, "trust with the repos filter and Read it again");
+});
+
 test("Trust shows the canaries, the audit misread and canary pass-through rates, and how to run one (ADR 0196)", async ({
   page,
 }) => {

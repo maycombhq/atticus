@@ -60,7 +60,8 @@ part's estimate when it reports none).
 
 With copilot-acp allowed, Map › Trust has buttons that start the same run from the app (ADR 0173):
 **Read the stale repos with Copilot**, **Fill the gaps with Copilot**, **Read the repos not read yet
-with Copilot**, and on each repo **Read it again with Copilot** (whole, as `--force`). Each asks first:
+with Copilot**, and in each read repo's **Read it again** section **Read it again with Copilot** (whole,
+as `--force`; every read repo has it, a trusted one too). Each asks first:
 a dialog names what the run reads, the model from runtime.yaml and what a session may do, and nothing
 starts until you say yes. The app's server runs `atticus map --all`'s own code (no shell), one run at a
 time.
