@@ -1369,6 +1369,37 @@ export async function guardBuild(
         if (!xs.some((y) => y.path === x.path)) xs.push(x);
         slotNow.set(m[1]!, xs);
       }
+    // Each slot file as the last build read it.
+    const slotThen = new Set<string>();
+    for (const f of last.manifest.files)
+      for (const x of f.sources)
+        if (/sources\/(?:readers|facts)\//.test(x.path)) slotThen.add(`${x.path}\u0000${x.sha256}`);
+    /** The repos whose slot is new or changed since the last build. */
+    const slotChanged = (repo: string) =>
+      (slotNow.get(repo) ?? []).some((x) => !slotThen.has(`${x.path}\u0000${x.sha256}`));
+    // The arrows this build makes that the last didn't, by the components at their ends: a loose
+    // end such an arrow joins is explained by the slot of the repo at its other end, when that
+    // slot changed (a join with a repo read since), else by what else changed (an answer).
+    const compRepo = new Map<string, string>();
+    for (const x of b.records)
+      if (x.kind === "Component") {
+        const c = x as unknown as { id: string; repo?: string };
+        if (c.repo) compRepo.set(c.id, c.repo);
+      }
+    const newArrowsOf = new Map<string, string[]>();
+    for (const x of b.records) {
+      if (
+        x.kind !== "Interface" ||
+        last.manifest.files.some((f) => f.path.endsWith(`/${recordPath(x)}`))
+      )
+        continue;
+      const i = x as unknown as { from?: string; to?: string };
+      for (const [a, z] of [
+        [i.from, i.to],
+        [i.to, i.from],
+      ] as const)
+        if (a && z) newArrowsOf.set(a, [...(newArrowsOf.get(a) ?? []), z]);
+    }
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
     const liveNow = new Set(b.sources.map((s) => s.repo));
@@ -1402,6 +1433,17 @@ export async function guardBuild(
             why.add(sourceWords(x.path, b));
             kinds.add("slot");
           }
+      // A loose end a new arrow joins, with a repo whose slot changed since: that slot explains it.
+      if (estate && r?.kind === "Unresolved") {
+        const owner = String((r as unknown as { owner?: string }).owner ?? "");
+        for (const other of newArrowsOf.get(owner) ?? []) {
+          const repo = compRepo.get(other);
+          if (repo && slotChanged(repo)) {
+            why.add(`joined with ${repo}'s read`);
+            kinds.add("slot");
+          }
+        }
+      }
       // Only the estate's slots as a whole changed: a join with another repo no longer forms.
       if (estate && !why.size) {
         why.add("another repo's slot changed (a join with it)");
