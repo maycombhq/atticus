@@ -1,8 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  accessSync,
   appendFileSync,
   closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -265,10 +269,19 @@ const HANDLE = /^@[\w.-]+$/;
  */
 const LONG_RUN = /[0-9a-f]{16,}|[0-9A-F]{16,}|\d{9,}|\d{4}(?:[ -]?\d{4}){3}|\b\d{3}-\d{2}-\d{4}\b/;
 /**
+ * Beta.27 re-review: a work item's reference, by the trackers C1's ExternalRef names (a test
+ * holds the two together) and nothing else: `pin:1234`, `pass:1234` or `otp:123456` is no id.
+ */
+export const WORK_ITEM_SYSTEMS = ["ado", "jira"] as const;
+const WORK_ITEM_REF = new RegExp(
+  `^(?:${WORK_ITEM_SYSTEMS.join("|")}):(?:\\d{1,7}|[A-Z][A-Z0-9]{1,9}-\\d{1,7})$`,
+);
+/**
  * The ids a title knows by their whole form, whatever their digits: a date, a version, a task's
  * label (1.2), a question (q- and up to 12 hex), a run (Atticus's own two kinds), a change's or a
  * model's slug of words and small numbers (`fix-limits-2027-q1`, `sonnet-4-5`) and a work item's
- * reference (`ado:1234`). Each is still checked for a token's prefix first.
+ * reference (`ado:1234`, `jira:PAY-12`: WORK_ITEM_REF). Each is still checked for a token's
+ * prefix first.
  */
 const ID_FORMS: readonly RegExp[] = [
   /^\d{4}-\d{2}-\d{2}$/,
@@ -278,7 +291,7 @@ const ID_FORMS: readonly RegExp[] = [
   /^run-\d{14}-(?:\d{4}|[0-9a-f]{6})$/,
   TERMINAL_RUN_ID,
   /^[a-z]{1,24}(?:[-.](?:[a-z]{1,24}\d{0,3}|\d{1,4}))+$/,
-  /^[a-z]{2,8}:\d{1,7}$/,
+  WORK_ITEM_REF,
 ];
 /** `link:<repo>:<call>`: a link's id, each part an id-like word (idShaped). */
 const LINK_REF = /^link:([^:]+):([^:]+)$/;
@@ -370,58 +383,145 @@ export function runTitle(
       const v = Object.hasOwn(values, f) ? titleValue(f, values[f], redact) : undefined;
       return v === undefined ? `--${f}` : `--${f} ${v}`;
     });
+  // Beta.27 re-review: a flag the command line doesn't declare is given as `…` (its name may be
+  // a secret: `--correct-horse-battery-staple`), and shows as one `--…` after the others.
+  if (flags.includes("…")) names.push("--…");
   return { command, title: ["atticus", ...command, ...names].join(" ") };
 }
 
 /** Beside the records: the first run of beta.27 re-titled the runs kept before it. */
 export const RETITLED_MARK = ".retitled-beta27";
+/** A record bigger than this is no record beta.26 wrote: left as it is, never read. */
+export const RETITLE_MAX_BYTES = 1024 * 1024;
+/** The most records the migration reads: beta.26 kept RUN_LOG_KEEP. */
+const RETITLE_MAX_RECORDS = 1000;
+/** The folders whose mark couldn't be written: not tried again by this process. */
+const retitleTried = new Set<string>();
+
+/**
+ * A small regular file's text, never through a link (O_NOFOLLOW where there is one), never a
+ * FIFO or a device (opened without waiting, then checked by its own descriptor), never one
+ * bigger than `max`. Undefined otherwise.
+ */
+function readSmallFile(file: string, max: number): string | undefined {
+  const before = lstatSync(file, { throwIfNoEntry: false });
+  if (!before?.isFile() || before.size > max) return undefined;
+  const fd = openSync(
+    file,
+    fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > max) return undefined;
+    const buf = Buffer.alloc(st.size);
+    let at = 0;
+    while (at < buf.length) {
+      const n = readSync(fd, buf, at, buf.length - at, at);
+      if (n <= 0) break;
+      at += n;
+    }
+    return buf.subarray(0, at).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /**
  * Beta.27 review: beta.26 kept every word that looked like an id in a run's title and words, a
  * key typed after `secret set` among them. The first command of beta.27 at a metarepo writes each
- * record kept again with the title and words the new rules give (`retitle`, the command line's:
- * it knows each command's arguments), from its words and flag names, and nothing else of it (its
- * log, state and times stay); RETITLED_MARK says it was done. How many it wrote again. Never
- * throws: a record that can't be read or written is left as it is.
+ * record kept again with the title, words and flag names the new rules give (`retitle`, the
+ * command line's: it knows each command's arguments and options), and nothing else of it (its
+ * log, state and times stay); RETITLED_MARK says it was done. How many it wrote again or removed.
+ *
+ * Beta.27 re-review: a run of `secret` is removed, record and log (beta.26 printed a mistyped
+ * key back into its log). Only a regular file of at most RETITLE_MAX_BYTES is read (never a link,
+ * a FIFO or a folder), a record whose process is still running is left to it (and the mark
+ * waits, so the next command tries again; a run killed under beta.26 is titled again), a removal
+ * that fails is tried again the same way, and a record is written
+ * beside itself and put in place, never through a link. A folder that can't be written is left
+ * alone (nothing could change), and one whose mark can't be written isn't tried again by this
+ * process. Never throws: a record that can't be read or written is left as it is.
  */
 export function retitleTerminalRuns(
   root: string,
-  retitle: (r: { command: string[]; flags: string[] }) => { command: string[]; title: string },
+  retitle: (r: { command: string[]; flags: string[] }) => {
+    command: string[];
+    title: string;
+    flags?: string[];
+  },
 ): number {
   const dir = runningDirOf(root);
   const mark = join(dir, RETITLED_MARK);
+  if (retitleTried.has(dir)) return 0;
   let names: string[];
   try {
-    if (existsSync(mark)) return 0;
-    names = readdirSync(dir).filter(
-      (n) => n.endsWith(".json") && TERMINAL_RUN_ID.test(n.slice(0, -5)),
-    );
+    if (lstatSync(mark, { throwIfNoEntry: false })) return 0;
+    if (!lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()) return 0;
+    // A metarepo that can't be written (read-only): nothing here could change, now or later.
+    accessSync(dir, fsConstants.W_OK);
+    names = readdirSync(dir)
+      .filter((n) => n.endsWith(".json") && TERMINAL_RUN_ID.test(n.slice(0, -5)))
+      .sort()
+      .slice(-RETITLE_MAX_RECORDS);
   } catch {
-    // no runs kept: nothing to do, now or later
+    // no runs kept, or none that could be written: nothing to do
     return 0;
   }
   let changed = 0;
+  // A record left for later (its run is still alive, or its removal failed): no mark is written,
+  // so the next command tries again. A run that never ends is gone after goneRun's 7 days.
+  let later = false;
+  const here = hostHash();
+  const now = Date.now();
   for (const n of names) {
     const file = join(dir, n);
+    const id = n.slice(0, -5);
     try {
-      const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
-      if (!raw || typeof raw !== "object" || typeof raw.title !== "string") continue;
-      // An app's job has the app's own title, no command words to make one from.
-      if (raw.startedBy === "app") continue;
-      const words = Array.isArray(raw.command) ? raw.command.map(String) : [];
-      const flags = Array.isArray(raw.flags) ? raw.flags.map(String) : [];
-      const { command, title } = retitle({ command: words, flags });
-      if (title === raw.title && JSON.stringify(command) === JSON.stringify(raw.command)) continue;
-      writeJson(file, { ...raw, title, command });
+      const text = readSmallFile(file, RETITLE_MAX_BYTES);
+      if (text === undefined) continue;
+      const raw = JSON.parse(text) as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      if (raw.state === "running") {
+        // Beta.27 re-review 4: only a run whose process is still there is left to it; a run
+        // killed under beta.26 (Ctrl-C, a closed terminal) stays "running" for ever and is
+        // titled again like any other.
+        const r = readRecord(root, id);
+        if (r && !goneRun(r, here, pidAlive, now, root)) {
+          later = true;
+          continue;
+        }
+      }
+      const words = Array.isArray(raw.command) ? raw.command.map((w) => `${w}`) : [];
+      // A run of `secret` (beta.26 kept them): its record and its log go, whatever its title.
+      // The log first, then the record, so a failed removal leaves the record to try again with.
+      if (words[0] === "secret" || (words[0] === "legacy" && words[1] === "secret")) {
+        try {
+          rmSync(join(runLogsDirOf(root), `${id}.log`), { force: true });
+          rmSync(file, { force: true });
+          changed++;
+        } catch {
+          later = true;
+        }
+        continue;
+      }
+      if (typeof raw.title !== "string") continue;
+      const flags = Array.isArray(raw.flags) ? raw.flags.map((f) => `${f}`) : [];
+      const got = retitle({ command: words, flags });
+      const next: Record<string, unknown> = { ...raw, title: got.title, command: got.command };
+      if (got.flags) next.flags = got.flags;
+      if (JSON.stringify(next) === JSON.stringify(raw)) continue;
+      writeJson(file, next);
       changed++;
     } catch {
       // left as it is
     }
   }
+  if (later) return changed;
   try {
-    writeFileSync(mark, `${new Date().toISOString()}\n`, "utf8");
+    // Made new, never written through a link or over a file put there.
+    writeFileSync(mark, `${new Date().toISOString()}\n`, { encoding: "utf8", flag: "wx" });
   } catch {
-    // tried again next time
+    retitleTried.add(dir);
   }
   return changed;
 }
@@ -519,11 +619,15 @@ const writeJson = (file: string, v: unknown) => {
   const text = `${JSON.stringify(v, null, 2)}\n`;
   const tmp = `${file}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, text, "utf8");
+    // Made new (a link left at its name is removed, never written through).
+    rmSync(tmp, { force: true });
+    writeFileSync(tmp, text, { encoding: "utf8", flag: "wx" });
     renameSync(tmp, file);
   } catch {
-    // Windows may hold the file a moment while the app reads it: written in place instead.
+    // Windows may hold the file a moment while the app reads it: written in place instead,
+    // never through a link (beta.27 re-review).
     rmSync(tmp, { force: true });
+    if (lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) return;
     writeFileSync(file, text, "utf8");
   }
 };

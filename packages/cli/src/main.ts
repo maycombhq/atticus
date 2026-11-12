@@ -902,7 +902,15 @@ export async function main(
   const log = () =>
     isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
   // Beta.27 review: the runs beta.26 kept are titled again once, by the new rules (retitled).
-  if (isMetarepoRoot(root)) retitleTerminalRuns(root, retitled);
+  // Beta.27 re-review: by the command line's own process only (never a job the app's server runs
+  // in itself), and not when the run log is off.
+  if (o.record && process.env.ATTICUS_RUN_LOG !== "off" && isMetarepoRoot(root)) {
+    try {
+      retitleTerminalRuns(root, retitled);
+    } catch {
+      // never fails the command it runs before
+    }
+  }
   // ADR 0187: the command words and ids, its flag names (never their values), what it prints.
   const said = o.record ? recorderFor(argv, flags, root) : undefined;
   // Run in the app's server, inside a job, each line also goes to the job's Console entry.
@@ -1034,9 +1042,26 @@ export function titleWordsOf(argv: string[]): string[] {
   return hidden && out.at(-1) !== "…" ? [...out, "…"] : out;
 }
 
-/** A record's words as the new rules title them (beta.27 review: the runs beta.26 kept). */
-const retitled = (r: { command: string[]; flags: string[] }) =>
-  runTitle(titleWordsByHelp(r.command, helpSlots()), r.flags);
+/**
+ * A record's words and flag names as the new rules title them (beta.27 review: the runs beta.26
+ * kept); a flag the command line doesn't declare is `…` in its title and left out of its flags.
+ */
+const retitled = (r: { command: string[]; flags: string[] }) => {
+  const flags = declaredFlags(r.command, r.flags);
+  return {
+    ...runTitle(titleWordsByHelp(r.command, helpSlots()), flags),
+    flags: flags.filter((f) => f !== "…"),
+  };
+};
+
+/**
+ * Beta.27 re-review: each flag name as a title may show it: one the command line declares
+ * (OPTIONS, with the command's own), else `…` (a name typed is the person's: `--hunter2`).
+ */
+export function declaredFlags(argv: readonly string[], flags: readonly string[]): string[] {
+  const known = optionsFor(argv);
+  return flags.map((f) => (Object.hasOwn(known, f) ? f : "…"));
+}
 
 /**
  * ADR 0187: a long command's run files, when it is one (recordedCommand) at a metarepo; else
@@ -1067,7 +1092,10 @@ export function titleInputsOf(
   const shown = beforeTerminator(argv);
   return {
     positionals: titleWordsOf(argv),
-    flags: flags.filter((f) => shown.some((a) => a === `--${f}` || a.startsWith(`--${f}=`))),
+    flags: declaredFlags(
+      argv,
+      flags.filter((f) => shown.some((a) => a === `--${f}` || a.startsWith(`--${f}=`))),
+    ),
     values: optionValuesOf(shown),
   };
 }
