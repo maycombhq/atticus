@@ -27,6 +27,7 @@ import {
   readBuildManifest,
   takeUndoCopy,
   undoDirOf,
+  undoHandEdits,
   UPGRADE_UNDONE,
   writeCuratedEdits,
   type BuildAndWrite,
@@ -47,12 +48,26 @@ import type { Output } from "./commands.js";
 
 const posix = (p: string) => p.split(sep).join("/");
 
+/**
+ * A test hook (ADR 0195 point 2, the review's check-then-act): runs once after a command listed
+ * what it would change and before it takes the lock, as another command writing meanwhile would.
+ * Never set outside tests.
+ */
+export const listHooks: { afterList?: () => Promise<void> } = {};
+
+export async function afterListed(): Promise<void> {
+  const hook = listHooks.afterList;
+  listHooks.afterList = undefined;
+  await hook?.();
+}
+
 async function locked<T>(
   root: string,
   what: string,
   io: Output,
   run: () => Promise<T>,
 ): Promise<T | number> {
+  await afterListed();
   let lock: Awaited<ReturnType<typeof acquireLock>>;
   try {
     lock = await acquireLock(root, "scan", what);
@@ -182,6 +197,16 @@ export async function catalogUndo(
     return 0;
   }
   return locked(root, "atticus catalog undo", io, async () => {
+    // Planned again under the lock (ADR 0195 point 2): what it puts back is what it listed, or
+    // nothing when another command wrote meanwhile.
+    const again = await planUndo(undoDir, o.n);
+    if ("problem" in again || JSON.stringify(again) !== JSON.stringify(plan)) {
+      const why = changedMeanwhile("atticus catalog undo");
+      io.err(why);
+      if (o.json)
+        io.out(JSON.stringify({ refused: { reasons: ["changed"], message: why } }, null, 2));
+      return 1;
+    }
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
@@ -194,6 +219,26 @@ export async function catalogUndo(
           JSON.stringify({ refused: { reasons: ["hand-edits"], edits: g.refused.edits } }, null, 2),
         );
       return 1;
+    }
+    // A catalog with no build.json (an undo took back the upgrade) has no hand-edit guard of the
+    // build's: each file it would put back is checked against what the command it takes back
+    // left there (the review), so a hand edit made since is never overwritten.
+    if (g.refused?.reasons.includes("not-upgraded")) {
+      const edited = await undoHandEdits(root, plan);
+      if (edited.length) {
+        io.err(
+          `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
+        );
+        if (o.json)
+          io.out(
+            JSON.stringify(
+              { refused: { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) } },
+              null,
+              2,
+            ),
+          );
+        return 1;
+      }
     }
     const r = await applyUndo(
       root,
@@ -230,14 +275,14 @@ export async function catalogUndo(
   });
 }
 
-/** atticus catalog prune [--yes]: the slot files no build reads, listed, and removed only on confirmation. */
-export async function catalogPrune(
-  root: string,
-  o: { yes?: boolean; json?: boolean },
-  io: Output,
-): Promise<number> {
+/** What a command listed changed before it could take the lock: it writes nothing. */
+const changedMeanwhile = (command: string) =>
+  `Nothing written: what ${command} would change isn't what it listed any more (another command wrote meanwhile). Run it again to list it.`;
+
+/** The files `catalog prune` lists: the slot files no build reads, and the upgrade's copy. */
+export async function pruneList(root: string): Promise<{ path: string; why: string }[]> {
   const b = await buildCatalog(await loadBuildInputs(root));
-  const files = [
+  return [
     ...b.orphaned.flatMap((x) =>
       x.files.map((f) => ({
         path: f,
@@ -249,6 +294,15 @@ export async function catalogPrune(
       why: "the copy the upgrade kept of the catalog before it",
     })),
   ].sort((a, x) => cmpText(a.path, x.path));
+}
+
+/** atticus catalog prune [--yes]: the slot files no build reads, listed, and removed only on confirmation. */
+export async function catalogPrune(
+  root: string,
+  o: { yes?: boolean; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const files = await pruneList(root);
   if (!files.length) {
     if (o.json) io.out(JSON.stringify({ files: [], removed: [] }, null, 2));
     else io.out("Nothing to prune: every slot file is one a build reads.");
@@ -266,6 +320,20 @@ export async function catalogPrune(
     return 0;
   }
   return locked(root, "atticus catalog prune", io, async () => {
+    // Listed again under the lock: it removes exactly what it listed, or nothing.
+    if (JSON.stringify(await pruneList(root)) !== JSON.stringify(files)) {
+      const why = changedMeanwhile("atticus catalog prune");
+      io.err(why);
+      if (o.json)
+        io.out(
+          JSON.stringify(
+            { files, removed: [], refused: { reasons: ["changed"], message: why } },
+            null,
+            2,
+          ),
+        );
+      return 1;
+    }
     const undoDir = await undoDirOf(root);
     const touched = files.map((f) => ({ path: join(root, ...f.path.split("/")), text: null }));
     const undo = await takeUndoCopy(root, undoDir, "atticus catalog prune", touched);
@@ -317,7 +385,8 @@ async function planEdits(root: string, undoDir: string): Promise<EditPlan[]> {
   for (const e of edits) {
     const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
     const derivedNow = built.get(rel);
-    const plan = (x: Omit<EditPlan, "path" | "how">) => out.push({ path: e.path, how: e.how, ...x });
+    const plan = (x: Omit<EditPlan, "path" | "how">) =>
+      out.push({ path: e.path, how: e.how, ...x });
     if (e.how === "deleted") {
       // A record this build no longer makes is suppressed by the id its file named, so it
       // stays deleted should it return.
@@ -374,7 +443,9 @@ async function planEdits(root: string, undoDir: string): Promise<EditPlan[]> {
       continue;
     }
     if (!Object.keys(value).length) {
-      plan({ why: "its record says the same as the build's (a comment or the layout): discard it" });
+      plan({
+        why: "its record says the same as the build's (a comment or the layout): discard it",
+      });
       continue;
     }
     plan({
@@ -445,7 +516,8 @@ export async function catalogEdits(
       const why =
         "Nothing written: the hand edits changed while this ran (another command wrote meanwhile). Run atticus catalog edits again to list them.";
       io.err(why);
-      if (o.json) io.out(JSON.stringify({ edits, decisions: [], refused: { message: why } }, null, 2));
+      if (o.json)
+        io.out(JSON.stringify({ edits, decisions: [], refused: { message: why } }, null, 2));
       return 1;
     }
     const by = o.by ?? (await gitUser(root)).handle;

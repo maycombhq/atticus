@@ -19,8 +19,6 @@ import {
   linkEvidenceOf,
   loadOrgPack,
   mergeCatalog,
-  parseRecord,
-  SCHEMA_VERSION,
   listQuestions,
   questionsRelOf,
   readSharedMaps,
@@ -1503,8 +1501,7 @@ export async function guardBuild(
       // feature or a term traced through several repos, or an id two repos' records collided on
       // (evidence from more than one). Any other record comes from its own repo's slot, so this
       // explains nothing of it (the review: it explained every removal).
-      const joinDerived =
-        !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
+      const joinDerived = !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
       if (estate && !why.size && joinDerived) {
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
@@ -1668,7 +1665,7 @@ interface UndoEntry {
   commit: string | null;
   at: string;
   /** Each file the command touched, relative to the root, and whether it was there before. */
-  files: { path: string; before: "file" | "absent" }[];
+  files: { path: string; before: "file" | "absent"; after?: string | null }[];
   /**
    * The build inputs the command wrote with its slots (a rename's manifest, facts files,
    * questions and curated decisions), kept the same way. Only a failed write puts them back
@@ -1715,12 +1712,20 @@ export async function takeUndoCopy(
   extra: { nextManifest?: string; now?: Date } = {},
 ): Promise<number | undefined> {
   // The bytes as they are on disk (a Windows checkout's CRLF kept), compared as text.
-  const changes: { path: string; before: Buffer | null; input?: true }[] = [];
+  const changes: { path: string; before: Buffer | null; after: string | null; input?: true }[] = [];
   for (const t of touched) {
     const raw = await readFile(t.path).catch(() => undefined);
     const cur = raw?.toString("utf8").replace(/\r\n?/g, "\n");
-    if ((cur ?? null) === (t.text === null ? null : t.text.replace(/\r\n?/g, "\n"))) continue;
-    changes.push({ path: t.path, before: raw ?? null, ...(t.input ? { input: t.input } : {}) });
+    const next = t.text === null ? null : t.text.replace(/\r\n?/g, "\n");
+    if ((cur ?? null) === next) continue;
+    changes.push({
+      path: t.path,
+      before: raw ?? null,
+      // What the command leaves there (its LF-normalised hash), so an undo can tell a later
+      // hand edit from the command's own bytes.
+      after: next === null ? null : sha(next),
+      ...(t.input ? { input: t.input } : {}),
+    });
   }
   if (!changes.length) return undefined;
   const listed = (cs: typeof changes) =>
@@ -1728,6 +1733,7 @@ export async function takeUndoCopy(
       .map((c) => ({
         path: relOf(root, c.path),
         before: c.before === null ? ("absent" as const) : ("file" as const),
+        after: c.after,
       }))
       .sort((a, b) => cmpText(a.path, b.path));
   const list = await listUndo(undoDir);
@@ -1866,6 +1872,30 @@ export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { pro
     for (const f of c.files)
       if (!files.has(f.path)) files.set(f.path, { path: f.path, to: f.before, from: c.n });
   return { copies, files: [...files.values()].sort((a, b) => cmpText(a.path, b.path)) };
+}
+
+/**
+ * The files an undo would put back that were changed since the command it takes back wrote them
+ * (a hand edit, or a write no undo copy covers): each file's bytes now against what the newest
+ * copy touching it says it left. Copies from before this was recorded say nothing, and are
+ * trusted. `atticus catalog undo` refuses over them where the build's own hand-edit guard can't
+ * see (a catalog with no build.json: an undo that took back the upgrade).
+ */
+export async function undoHandEdits(root: string, plan: UndoPlan): Promise<string[]> {
+  const left = new Map<string, string | null>();
+  const seen = new Set<string>();
+  for (const c of plan.copies)
+    for (const f of c.files) {
+      if (seen.has(f.path)) continue;
+      seen.add(f.path);
+      if (f.after !== undefined) left.set(f.path, f.after);
+    }
+  const out: string[] = [];
+  for (const [path, after] of left) {
+    const now = await readText(join(root, ...path.split("/")));
+    if ((now === undefined ? null : sha(now)) !== after) out.push(path);
+  }
+  return out.sort(cmpText);
 }
 
 /** Restore what a plan lists, keeping what it replaces as a new undo copy (an undo can be undone). */
