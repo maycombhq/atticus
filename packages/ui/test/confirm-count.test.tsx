@@ -83,3 +83,30 @@ it("says why a confirmed step stopped, and stays open to try again", async () =>
   expect(text(m.tree)).toContain(B.failed("The page listed 1 file to remove; there are 2 now."));
   expect(all(m.tree).some((e) => e.props.role === "dialog")).toBe(true);
 });
+
+// The review (S4): an undo or a prune has no count to type, so Enter on the first focus must
+// never confirm it: the focus starts on Cancel; with a count, on the field to type it in.
+it("starts the focus on Cancel when there is no count to type, else on the count field", () => {
+  const first = (count?: number) => {
+    const m = mount(
+      ConfirmDialog as never,
+      {
+        title: B.pruneConfirmTitle(1),
+        intro: B.pruneConfirmIntro,
+        confirm: B.confirmPrune(1),
+        ...(count !== undefined ? { count } : {}),
+        onConfirm: async () => undefined,
+        onClose: () => undefined,
+        children: "the list",
+      } as never,
+    );
+    return all(m.tree).filter((e) => e.props["data-first-focus"]);
+  };
+  const none = first();
+  expect(none).toHaveLength(1);
+  expect(none[0]!.type).toBe("button");
+  expect(text(none[0])).toBe(B.cancel);
+  const counted = first(3);
+  expect(counted).toHaveLength(1);
+  expect(counted[0]!.type).toBe("input");
+});

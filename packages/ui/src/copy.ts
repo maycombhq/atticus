@@ -978,6 +978,7 @@ export const COPY = {
     promoteConfirm: "Write it, then verify",
     promotedNote: (key: string) => `Promoted ${key}; verify checked it.`,
     promoteVerifyStopped: (why: string) => `Your fact is written; verify stopped: ${why}`,
+    promoteRefused: (why: string) => `Nothing written: the promote refused: ${why}`,
     promoted: {
       written: "Your fact: not verified yet",
       verified: "Your fact: verified on its line",
@@ -1035,6 +1036,8 @@ export const COPY = {
     typeCount: (n: number) => `Type ${n} to confirm exactly these`,
     countHint: "A confirmation names the count it was shown, so it never covers more.",
     countWrong: (n: number) => `Type ${n}, the number listed.`,
+    editsChanged:
+      "The hand edits aren't the ones listed here any more. Nothing was made curated: scan again to list them.",
     confirmRemove: (n: number) => `Remove ${n} ${n === 1 ? "record" : "records"}`,
     cancel: "Cancel",
     editsTitle: "Hand edits",

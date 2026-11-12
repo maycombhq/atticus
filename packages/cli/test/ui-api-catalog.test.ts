@@ -135,11 +135,27 @@ describe("the readers' cross-check routes", () => {
 
   it("dismisses an item through the CLI command, as a Console entry, and takes it back", async () => {
     const before = await call("/api/crosscheck/forge-ledger");
-    const item = (before.body.items as { key: string; state: string }[]).find(
-      (i) => i.state === "readers-only",
-    )!;
+    const item = (
+      before.body.items as { key: string; state: string; readersSha256?: string }[]
+    ).find((i) => i.state === "readers-only")!;
+    expect(item.readersSha256).toMatch(/^[0-9a-f]{64}$/);
     const generated = await catalog();
-    const j = await job("/api/crosscheck/forge-ledger/dismiss", { key: item.key });
+    // The review: a dismissal is of the readers' value the page showed, checked before a job.
+    expect(
+      (await call("/api/crosscheck/forge-ledger/dismiss", "POST", { key: item.key })).status,
+    ).toBe(400);
+    expect(
+      (
+        await call("/api/crosscheck/forge-ledger/dismiss", "POST", {
+          key: item.key,
+          sha256: "0".repeat(64),
+        })
+      ).status,
+    ).toBe(409);
+    const j = await job("/api/crosscheck/forge-ledger/dismiss", {
+      key: item.key,
+      sha256: item.readersSha256,
+    });
     expect(j.state).toBe("done");
     expect(j.result!.lines.join(" ")).toMatch(/dismissed .* at the readers' value/);
     const file = await readFile(join(root, "facts/forge-ledger.crosscheck.yaml"), "utf8");
@@ -155,7 +171,7 @@ describe("the readers' cross-check routes", () => {
     // The Console lists the job with what it printed (ADR 0187).
     const activity = await call("/api/activity");
     const entry = (activity.body.entries as { id: string; title?: string }[]).find((e) =>
-      e.title?.startsWith(`Dismiss on forge-ledger: ${item.key}`),
+      e.title?.startsWith("Dismiss on forge-ledger"),
     );
     expect(entry).toBeDefined();
     const lines = await call(`/api/activity/${encodeURIComponent(entry!.id)}/lines`);
@@ -166,11 +182,19 @@ describe("the readers' cross-check routes", () => {
     expect((await call("/api/crosscheck/forge-ledger")).body.counts).toEqual(before.body.counts);
   });
 
-  it("refuses a key that isn't an item now, in words, writing nothing", async () => {
+  it("refuses a key that isn't an item now, in words, writing nothing and starting no job", async () => {
     const was = await readFile(join(root, "facts/forge-ledger.crosscheck.yaml"), "utf8");
-    const j = await job("/api/crosscheck/forge-ledger/dismiss", { key: "Endpoint|GET /nowhere" });
-    expect(j.state).toBe("failed");
-    expect(j.result!.lines.join(" ")).toMatch(/isn't an item the readers found/);
+    const r = await call("/api/crosscheck/forge-ledger/dismiss", "POST", {
+      key: "Endpoint|GET /nowhere",
+      sha256: "0".repeat(64),
+    });
+    expect(r.status).toBe(404);
+    expect(JSON.stringify(r.body)).toMatch(/isn't an item the readers found/);
+    const back = await call("/api/crosscheck/forge-ledger/dismiss", "POST", {
+      key: "Endpoint|GET /nowhere",
+      undo: true,
+    });
+    expect(back.status).toBe(404);
     expect(await readFile(join(root, "facts/forge-ledger.crosscheck.yaml"), "utf8")).toBe(was);
     expect((await call("/api/crosscheck/forge-ledger/dismiss", "POST", {})).status).toBe(400);
   });
@@ -235,8 +259,8 @@ describe("the readers' cross-check routes", () => {
     });
     const activity = await call("/api/activity");
     expect(
-      (activity.body.entries as { title?: string }[]).some((e) =>
-        e.title?.startsWith(`Promote on forge-ledger: ${key}, then atticus verify forge-ledger`),
+      (activity.body.entries as { title?: string }[]).some(
+        (e) => e.title === "Promote on forge-ledger",
       ),
     ).toBe(true);
     await rm(facts);
@@ -278,10 +302,16 @@ describe("the build's confirm steps", () => {
     ]);
     expect(r.body.pending.refused.discardEdits).toBe(1);
     const before = await catalog();
-    expect((await call("/api/build/edits/curate", "POST", { count: 2 })).status).toBe(409);
+    const plan = r.body.pending.plan as string;
+    expect(plan).toMatch(/^[0-9a-f]{64}$/);
+    expect((await call("/api/build/edits/curate", "POST", { count: 2, plan })).status).toBe(409);
+    expect(
+      (await call("/api/build/edits/curate", "POST", { count: 1, plan: "0".repeat(64) })).status,
+    ).toBe(409);
+    expect((await call("/api/build/edits/curate", "POST", { count: 1 })).status).toBe(400);
     expect(await catalog()).toEqual(before);
     const renamed = /^name: (.+-renamed)$/m.exec(await readFile(path, "utf8"))![1]!;
-    const j = await job("/api/build/edits/curate", { count: 1 });
+    const j = await job("/api/build/edits/curate", { count: 1, plan });
     expect(j.result!.lines.join(" ")).toMatch(/Wrote catalog\/curated\//);
     const after = (await call("/api/build")).body;
     expect(
@@ -326,11 +356,17 @@ describe("the build's confirm steps", () => {
       expect(x.explainedBy.join(" ")).toMatch(/slot changed/);
     }
     const before = await catalog();
-    const wrong = await job("/api/build", { allowRemovals: n + 1 });
+    const plan = r.body.pending.plan as string;
+    // The review: a confirm is of the list shown (409 before a job on another), and names it.
+    expect((await call("/api/build", "POST", { allowRemovals: n })).status).toBe(400);
+    expect(
+      (await call("/api/build", "POST", { allowRemovals: n, plan: "0".repeat(64) })).status,
+    ).toBe(409);
+    const wrong = await job("/api/build", { allowRemovals: n + 1, plan });
     expect(wrong.state).toBe("failed");
     expect(wrong.result!.lines.join(" ")).toMatch(new RegExp(`doesn't name the ${n} listed`));
     expect(await catalog()).toEqual(before);
-    const ok = await job("/api/build", { allowRemovals: n });
+    const ok = await job("/api/build", { allowRemovals: n, plan });
     expect(ok.state).toBe("done");
     const after = await call("/api/build");
     expect(after.body.pending.upToDate).toBe(true);
@@ -344,11 +380,30 @@ describe("the build's confirm steps", () => {
     const v = await call("/api/build/undo");
     expect(v.status).toBe(200);
     expect(v.body.copies.length).toBeGreaterThanOrEqual(3);
-    const plan = v.body.plan as { n: number; files: unknown[] };
+    const plan = v.body.plan as { n: number; files: unknown[]; hash: string };
     expect(plan.n).toBe(v.body.copies[0].n);
-    expect((await call("/api/build/undo", "POST", { n: plan.n, files: 0 })).status).toBe(409);
+    expect(plan.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      (await call("/api/build/undo", "POST", { n: plan.n, files: 0, plan: plan.hash })).status,
+    ).toBe(409);
+    expect(
+      (
+        await call("/api/build/undo", "POST", {
+          n: plan.n,
+          files: plan.files.length,
+          plan: "0".repeat(64),
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (await call("/api/build/undo", "POST", { n: 6, files: 1, plan: plan.hash })).status,
+    ).toBe(400);
     expect(await catalog()).toEqual(before);
-    const j = await job("/api/build/undo", { n: plan.n, files: plan.files.length });
+    const j = await job("/api/build/undo", {
+      n: plan.n,
+      files: plan.files.length,
+      plan: plan.hash,
+    });
     expect(j.state).toBe("done");
     expect(j.result!.lines.join(" ")).toMatch(/Put back/);
     // The large removal is taken back: its records are there again.
@@ -358,7 +413,7 @@ describe("the build's confirm steps", () => {
   });
 
   it("previews prune and removes exactly the files listed", async () => {
-    expect((await call("/api/build/prune")).body).toEqual({ files: [] });
+    expect((await call("/api/build/prune")).body.files).toEqual([]);
     const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
     const m = await readFile(manifest, "utf8");
     await writeFile(
@@ -372,9 +427,13 @@ describe("the build's confirm steps", () => {
         why: "forge-reports-job is archived",
       },
     ]);
-    expect((await call("/api/build/prune", "POST", { count: 2 })).status).toBe(409);
+    const plan = v.body.plan as string;
+    expect((await call("/api/build/prune", "POST", { count: 2, plan })).status).toBe(409);
+    expect(
+      (await call("/api/build/prune", "POST", { count: 1, plan: "0".repeat(64) })).status,
+    ).toBe(409);
     expect(existsSync(readersSlotPath(root, "forge-reports-job"))).toBe(true);
-    const j = await job("/api/build/prune", { count: 1 });
+    const j = await job("/api/build/prune", { count: 1, plan });
     expect(j.state).toBe("done");
     expect(existsSync(readersSlotPath(root, "forge-reports-job"))).toBe(false);
   });

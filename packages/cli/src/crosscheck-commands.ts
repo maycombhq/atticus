@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { headFromFiles, isAdopted, writeFileAtomic } from "@maycombhq/core";
@@ -86,10 +87,29 @@ export function checkoutLineOf(root: string, repo: string): LineOf {
 }
 
 /** `--promote <key>`: the person's fact, written into the live facts file (or why not). */
-async function promote(root: string, repo: string, key: string, io: Output): Promise<number> {
+/** The SHA-256 of a readers' value as shown (its JSON): what a dismissal of it confirms. */
+export const readersValueSha = (value: unknown) =>
+  createHash("sha256")
+    .update(JSON.stringify(value ?? null), "utf8")
+    .digest("hex");
+
+async function promote(
+  root: string,
+  repo: string,
+  key: string,
+  io: Output,
+  expect?: string,
+): Promise<number> {
   const plan = await planPromote(root, repo, key, { lineOf: checkoutLineOf(root, repo) });
   if (!plan.can) {
     io.err(`${repo}: ${key} can't be promoted: ${plan.why}. Nothing written.`);
+    return 1;
+  }
+  // The app's confirm: the fact written is the one the page previewed, or nothing.
+  if (expect !== undefined && plan.sha256 !== expect) {
+    io.err(
+      `${repo}: the fact promoting ${key} isn't the one previewed any more. Nothing written: look at it again.`,
+    );
     return 1;
   }
   const at = `${plan.cite!.file}:${plan.cite!.line}`;
@@ -115,7 +135,18 @@ async function promote(root: string, repo: string, key: string, io: Output): Pro
 
 export async function catalogCrossCheck(
   root: string,
-  o: { repo?: string; json?: boolean; dismiss?: string; undismiss?: string; promote?: string },
+  o: {
+    repo?: string;
+    json?: boolean;
+    dismiss?: string;
+    undismiss?: string;
+    promote?: string;
+    /**
+     * The app's confirm (the review): a promote's previewed fact hash, or a dismissal's readers
+     * value hash as shown (`readersValueSha`); anything else writes nothing.
+     */
+    expect?: string;
+  },
   io: Output,
 ): Promise<number> {
   const asked = [o.dismiss, o.undismiss, o.promote].filter((x) => x !== undefined).length;
@@ -127,7 +158,7 @@ export async function catalogCrossCheck(
     io.err("--dismiss, --undismiss and --promote take one key each, one at a time.");
     return 2;
   }
-  if (o.promote !== undefined) return promote(root, o.repo!, o.promote, io);
+  if (o.promote !== undefined) return promote(root, o.repo!, o.promote, io, o.expect);
   const view = await readCrossCheck(root, o.repo ? { repo: o.repo } : {});
   if (o.repo && !view.repos.length) {
     io.err(`${o.repo} isn't a repo the manifests list (a prototype isn't compared).`);
@@ -164,6 +195,12 @@ export async function catalogCrossCheck(
     if (!item) {
       io.err(
         `${r.repo}: ${key} isn't an item the readers found or disagree on now (atticus catalog crosscheck ${r.repo} lists them). Nothing written.`,
+      );
+      return 1;
+    }
+    if (o.expect !== undefined && readersValueSha(item.readers?.value) !== o.expect) {
+      io.err(
+        `${r.repo}: the readers say another value for ${key} than the page showed. Nothing written: look at it again.`,
       );
       return 1;
     }
