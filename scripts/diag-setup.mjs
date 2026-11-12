@@ -208,6 +208,8 @@ if (process.env.ATTICUS_DIAG === "1" && !G.__atticusDiagPatched) {
         if (ms > 1000) log(`FSSYNC slow ${ms.toFixed(0)}ms ${name}(${short(String(a[0]), 120)}) test="${D.test}" at ${where()}`);
       }
     };
+    // realpathSync.native and friends.
+    Object.assign(fs[name], orig);
   }
   syncBuiltinESMExports();
 
