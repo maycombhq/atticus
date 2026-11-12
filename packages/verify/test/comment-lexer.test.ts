@@ -488,3 +488,32 @@ describe("the sixth review of ADR 0196", () => {
     expect(isCommentLine(" * A ledger.", "src/portal/sum.ts")).toBe(true);
   });
 });
+
+describe("the seventh review of ADR 0196", () => {
+  it("reads a quote in a cut PHP `'` string's next line to that line's end", () => {
+    // PHP `'` strings are read to a line's end only; a `"` on the next line of one must not open a
+    // string that runs on and turns the live routes below into a block comment.
+    expectLines(
+      "src/Http/routes.php",
+      ["-", "<?php"],
+      ["-", "$s = 'a"],
+      ["-", "b \" c';"],
+      ["-", '$u = "/*";'],
+      ["-", "$app->get('/ledger', f());"],
+      ["-", "$app->get('/ledger/{id}', f());"],
+      ["-", '$v = "*/";'],
+    );
+    expectLines(
+      "src/Http/views.php",
+      ["-", "<?php"],
+      ["-", "$h = '<div class=\"northwind"],
+      ["-", " pay\">';"],
+      ["-", "$app->get('/pay', f());"],
+    );
+  });
+
+  it("keeps the BOM and no-break space escapes readable in the source", () => {
+    expect(isCommentLine("﻿// a note", "src/a.ts")).toBe(true);
+    expect(isCommentLine(" // a note", "src/a.ts")).toBe(true);
+  });
+});

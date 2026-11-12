@@ -124,7 +124,7 @@ function livePhpAnnotation(l: string): boolean {
   return LIVE_PHP_ANNOTATION.test(l);
 }
 /** A PHP heredoc's or nowdoc's opening after `<<<`: spaces, the label (quoted or not), the line's end. */
-const HEREDOC_OPEN = /[ \t]*(["']?)([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)\1[ \t\r]*$/y;
+const HEREDOC_OPEN = /[ \t]*(["']?)([A-Za-z_\x80-\uFFFF][A-Za-z0-9_\x80-\uFFFF]*)\1[ \t\r]*$/y;
 /** A character a PHP label may hold. */
 const isLabelChar = (c: string | undefined) =>
   c !== undefined && c !== "$" && (isWord(c) || c >= "\x80");
@@ -138,7 +138,7 @@ const REGEX_AFTER = "(,=:[!&|?{};+-*%~^";
 const BRACKETS = "{}(),";
 
 /** A space, a tab, a line end, a no-break space or a byte-order mark (`\s` in a regex, as the regex this replaces read). */
-const isSpace = (c: string) => c <= " " || c === "﻿" || c === " ";
+const isSpace = (c: string) => c <= " " || c === "\uFEFF" || c === "\u00A0";
 const isWord = (c: string) =>
   (c >= "a" && c <= "z") ||
   (c >= "A" && c <= "Z") ||
@@ -175,6 +175,10 @@ export function lexCommentLines(
   let base = 0; // where the line starts in the file
   let prevAt = -2; // where `prev` is in the file
   let pair = false; // `prev` and `prev2` are one token's two characters (`++`, `--`)
+  // PHP: a `'` string cut at the previous line's end (read to a line's end only): on the line
+  // after it, a `"` or a backtick is read to the line's end as well, not across lines, so a quote
+  // in the cut string's continuation (`'<div class="a` / `b">'`) can't flip the rest of the file.
+  let cutNext = false;
   const sawCode = (c: string, at: number) => {
     if (word && isWord(c) && isWord(prev)) word += c;
     else word = isWord(c) ? c : "";
@@ -200,6 +204,8 @@ export function lexCommentLines(
     let synthetic = false;
     let cont = false; // a string continued past the line's end by a `\`
     let regexOk = lx.js;
+    const lineBound = cutNext;
+    cutNext = false;
     if (alone && mode === "code" && DOC_STAR_START.test(l)) {
       // a doc block's line read alone, whose opening isn't there: read as one, for this line only
       mode = "block";
@@ -333,7 +339,7 @@ export function lexCommentLines(
             mode = "tpl";
             escapes = true;
             doubled = false;
-          } else if (lx.php) openString("`", { escapes: true, lines: true });
+          } else if (lx.php) openString("`", { escapes: true, lines: !lineBound });
           else if (lx.goRaw) openString("`", { escapes: false, lines: true });
           else if (lx.tickIdent) openString("`", { escapes: false, lines: false });
           else sawCode(c, base + i);
@@ -347,7 +353,7 @@ export function lexCommentLines(
           sawCode(c, base + i);
           i++;
         } else {
-          openString(c, { escapes: true, lines: lx.spanQuotes.includes(c) });
+          openString(c, { escapes: true, lines: lx.spanQuotes.includes(c) && !lineBound });
           i++;
         }
         continue;
@@ -396,7 +402,10 @@ export function lexCommentLines(
       i++;
     }
     // (`openString` sets the mode too, which the compiler's narrowing doesn't follow)
-    if ((mode as Mode) === "str" && !cont) mode = "code";
+    if ((mode as Mode) === "str" && !cont) {
+      if (lx.php && close === "'") cutNext = true;
+      mode = "code";
+    }
     if (synthetic && mode === "block") {
       mode = "code";
       depth = 0;
