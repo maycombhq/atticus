@@ -196,9 +196,14 @@ export const cs2Writers: CatalogSystem = {
       ...(o.yes ? ["--yes"] : []),
     ]);
     const report = reportOf(r.out) as { refused?: Refused };
-    const guard = report.refused?.reasons?.includes("hand-edits")
+    // An undo refuses over hand edits, as a build does; one refused as not upgraded is reported
+    // as such, so the oracle can fail it (an undo can itself be undone, ADR 0195 point 7).
+    const reasons = report.refused?.reasons ?? [];
+    const guard = reasons.includes("hand-edits")
       ? ("hand-edits" as const)
-      : undefined;
+      : reasons.includes("not-upgraded")
+        ? ("not-upgraded" as const)
+        : undefined;
     return {
       ...r,
       wrote: o.yes && r.code === 0,

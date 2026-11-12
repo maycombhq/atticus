@@ -50,6 +50,8 @@ export interface Decision {
   kind: string;
   /** An Endpoint target's `component method path`: how the model knows it is built. */
   key?: string;
+  /** An Interface target's cross-repo arrow, `from|to|method|path` (a hand deletion made curated). */
+  arrow?: string;
   /** An assert's fields; an alias's folded record ids. */
   value?: Record<string, unknown> | string[];
   /** The write count when it was added: its effect is checked after a later write. */
@@ -198,13 +200,19 @@ export class Model {
 
   /**
    * The legacy joins still in force (ADR point 6): an arrow while both its repos are read, any
-   * other record while every repo its evidence names is.
+   * other record while every repo its evidence names is, and neither while a curated suppress
+   * takes it out (point 6: it leaves "through the removal guard: one of its repos removed or
+   * archived, or a curated suppress"). A suppressed join stays in joins.json, not derived, and is
+   * in force again once the suppress goes.
    */
-  liveLegacy(): LegacyJoin[] {
-    return this.legacyJoins.filter((j) =>
-      j.arrow
-        ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
-        : j.repos.every((s) => this.isLive(s)),
+  liveLegacy(withSuppressed = false): LegacyJoin[] {
+    const gone = withSuppressed ? new Set<string>() : this.suppressed();
+    return this.legacyJoins.filter(
+      (j) =>
+        !gone.has(j.id) &&
+        (j.arrow
+          ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
+          : j.repos.every((s) => this.isLive(s))),
     );
   }
 
@@ -219,13 +227,27 @@ export class Model {
    * join only when the callee's source serves that method and path. An arrow from or to a
    * legacy readers slot, or to a repo with no source, is admitted but not required: the old
    * catalog's records hold no calls to re-derive it from.
+   *
+   * `derived`: the arrows the current, non-legacy sources derive by themselves, legacy readers
+   * slots and legacy joins aside: a call in a caller's facts or full read to a host a live repo
+   * lists (the arrow comes from the caller's evidence), and a topic a non-legacy source publishes
+   * that another non-legacy source listens to. The model keeps a legacy observation's calls and
+   * topics, but the build has none of them: a legacy slot holds the old catalog's records, whose
+   * cross-repo arrows went to joins.json. So an arrow from a legacy caller is admitted and never
+   * derived, whatever the callee's source. `required` is within `derived` (legacy joins aside).
    */
-  arrows(withLegacy = true): { admitted: Set<string>; required: Set<string> } {
+  arrows(withLegacy = true): {
+    admitted: Set<string>;
+    required: Set<string>;
+    derived: Set<string>;
+  } {
     const admitted = new Set<string>();
     const required = new Set<string>();
-    const add = (k: string, must: boolean) => {
+    const derived = new Set<string>();
+    const add = (k: string, must: boolean, fresh = must) => {
       admitted.add(k);
       if (must) required.add(k);
+      if (fresh) derived.add(k);
     };
     for (const c of this.live()) {
       const s = this.source(c.slot);
@@ -240,6 +262,7 @@ export class Model {
         add(
           arrowKey(c.base.component, e.base.component, call.method, call.path),
           s.from !== "legacy" && !!t && t.from !== "legacy" && serves,
+          s.from !== "legacy",
         );
       }
       for (const topic of s.obs.code.publishes)
@@ -253,18 +276,32 @@ export class Model {
             );
         }
     }
-    if (withLegacy) for (const j of this.liveLegacy()) if (j.arrow) add(j.arrow.key, true);
-    return { admitted, required };
+    if (withLegacy)
+      for (const j of this.liveLegacy()) {
+        if (!j.arrow) continue;
+        admitted.add(j.arrow.key);
+        required.add(j.arrow.key);
+      }
+    // A curated suppress of an arrow's Interface (a hand deletion made curated) takes it out:
+    // the build need not make it, derived or legacy (the overlay runs last).
+    for (const d of this.curated) if (d.action === "suppress" && d.arrow) required.delete(d.arrow);
+    return { admitted, required, derived };
   }
 
   /**
    * The legacy joins a written build retired (ADR 0195 point 6: once a slot or input the derived
    * record comes from has changed since the upgrade, the derived record takes the id and the
    * legacy copy leaves joins.json). `kept` is the ids joins.json still holds after the write.
-   * A join may leave only when the current sources can derive its arrow (a call or topic of a
-   * live caller to a live repo, legacy joins aside) and a repo at one end is read from a
-   * current, non-legacy source; otherwise it is returned as wrongly retired. The others leave
-   * the model: their arrow is a derived one from now on, and goes when its caller drops it.
+   * A join with an arrow may leave only when the current, non-legacy sources derive that arrow
+   * by themselves (`arrows(false).derived`: from the caller's fresh evidence, a call to a host a
+   * live repo lists, or a topic both ends' fresh sources publish and listen to), and the
+   * derived record took its id: it is in the catalog the build wrote (`written`), unless a
+   * person's decision suppresses or folds it. An arrow whose caller is still a legacy slot is
+   * never derived, though the model keeps that slot's calls: the build has only the old records,
+   * whose arrows are in joins.json, so a retirement then would let a later change to the callee
+   * "explain" the arrow away, which point 6 forbids (it leaves without being derived only
+   * through the removal guard). Any other retirement is returned as wrong. The others leave the
+   * model: their arrow is a derived one from now on, and goes when its caller or callee drops it.
    *
    * Any other legacy join (a feature, a term, an Interface whose evidence names two repos), the
    * same way, by the ADR's line (point 6): "Once a slot or input that the derived record comes
@@ -273,21 +310,34 @@ export class Model {
    * its evidence names: it may leave only once one of them is read from a current, non-legacy
    * source (its slot changed since the upgrade). A curated decision or an answer changes no
    * slot, so it retires nothing by itself. A record with no evidence names no repo: any repo
-   * read afresh may derive it. `kept` holds `<Kind>/<id>`.
+   * read afresh may derive it; it too must be in the catalog written, as its derived record.
+   * `kept` and `written` hold `<Kind>/<id>`.
    */
-  retire(kept: ReadonlySet<string>): LegacyJoin[] {
-    const derivable = this.arrows(false).admitted;
+  retire(kept: ReadonlySet<string>, written: ReadonlySet<string>): LegacyJoin[] {
+    const derivable = this.arrows(false).derived;
     const fresh = (slot: number) => {
       const s = this.source(slot);
       return !!s && s.from !== "legacy";
     };
+    // A person's suppress, or an alias folding it into another record, takes the derived record
+    // out after it took the id (the curated overlay runs last).
+    const decided = new Set([
+      ...this.suppressed(),
+      ...this.curated.flatMap((d) =>
+        d.action === "alias" && Array.isArray(d.value) ? d.value : [],
+      ),
+    ]);
     const wrong: LegacyJoin[] = [];
     const stay: LegacyJoin[] = [];
-    const live = new Set(this.liveLegacy());
+    // A suppressed join is judged as one in force: the build may derive it again meanwhile.
+    const live = new Set(this.liveLegacy(true));
     for (const j of this.legacyJoins) {
-      const may = j.arrow
-        ? derivable.has(j.arrow.key) && (fresh(j.arrow.from) || fresh(j.arrow.to))
-        : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh);
+      const took = written.has(`${j.kind}/${j.id}`) || decided.has(j.id);
+      const may =
+        took &&
+        (j.arrow
+          ? derivable.has(j.arrow.key)
+          : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh));
       if (kept.has(`${j.kind}/${j.id}`) || !live.has(j)) stay.push(j);
       else if (may) continue;
       else {

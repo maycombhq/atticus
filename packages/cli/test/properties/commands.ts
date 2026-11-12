@@ -38,6 +38,7 @@ import {
 import { sut, todaysWriters, type Confirm, type Guard, type Outcome } from "./system.js";
 import {
   move,
+  recId,
   records,
   repoOf,
   sameTree,
@@ -266,11 +267,12 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
           // a joins.json that doesn't parse retires nothing here; the slot checks say so
         }
       else kept = new Set();
-      const wrong = m.retire(kept);
+      const written = new Set([...records(after.generated).values()].map(recId));
+      const wrong = m.retire(kept, written);
       if (wrong.length && ctx.enabled.has("links-are-live"))
         throw new InvariantError(
           "links-are-live",
-          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => `${j.kind}/${j.id}`).join(", ")}`,
+          `after ${this.desc.t}, legacy joins left joins.json though the current, non-legacy sources don't derive them into the catalog written: ${wrong.map((j) => `${j.kind}/${j.id}${j.arrow ? ` (${j.arrow.key})` : ""}`).join(", ")}`,
         );
     }
     const changed =
@@ -295,12 +297,16 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
       const removals =
         o.removals ?? (c.allowRemovals !== undefined ? pendingBefore?.removals : undefined);
       const edits = o.edits ?? (c.discardEdits !== undefined ? pendingBefore?.edits : undefined);
+      // A removal listing carried over keeps its age: it was made when the earlier refusal listed
+      // it, and the commands acted since may have changed what the command removes (a confirmation
+      // of it is judged by its count, not by its records).
+      const carried = !o.removals && removals !== undefined && pendingBefore?.removals === removals;
       w.pending = {
         desc: acted.rerun,
         confirm: c,
         ...(removals ? { removals } : {}),
         ...(edits ? { edits } : {}),
-        at: w.steps,
+        at: carried && pendingBefore ? pendingBefore.at : w.steps,
       };
     } else if (
       ok &&
@@ -807,7 +813,12 @@ export async function act(
       const adds = m.handEdits.filter((e) => e.how === "add");
       const pre = await sut().curateEdits(w.root);
       const curate = (e: HandEdit) => {
-        const common = { target: e.id, kind: e.kind, ...(e.key ? { key: e.key } : {}) };
+        const common = {
+          target: e.id,
+          kind: e.kind,
+          ...(e.key ? { key: e.key } : {}),
+          ...(e.arrow ? { arrow: e.arrow } : {}),
+        };
         const dec: Decision =
           e.how === "delete"
             ? { action: "suppress", ...common, since: m.writes, from: "edits" }
@@ -842,11 +853,21 @@ export async function act(
       };
       const acted = await act(p.desc, ctx, w, before, c);
       if (!acted) return undefined;
+      // The listing outlives the commands acted since it (point 4: the refused command wrote
+      // nothing, and only its own confirmation applies it), but what the command removes now is
+      // worked out again when it runs: another command's write, or a commit its scan now reads,
+      // changes it. Right after the listing, its count is the count, and one more must refuse.
+      // Later, the count it was given is checked against the count it lists now: the same
+      // succeeds, and any other refuses again with the new listing ("any other count refuses
+      // again"), which the checks accept only when that listing's count is not the one given
+      // (`unjustified`), and a write only when it removed that many (large-removals-confirmed).
+      const fresh = p.at === w.steps;
       return {
         ...acted,
-        expect: d.wrong
-          ? { kind: "refuse", guard: "large-removals" }
-          : (acted.expect ?? { kind: "succeed" }),
+        expect:
+          d.wrong && fresh
+            ? { kind: "refuse", guard: "large-removals" }
+            : (acted.expect ?? { kind: "succeed" }),
         confirmOf: p,
       };
     }

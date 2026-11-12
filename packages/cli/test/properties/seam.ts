@@ -80,7 +80,9 @@ export type Guard =
   | "build-failed"
   /** The metarepo holds a catalog from before beta.27 (no catalog/sources/): every writer refuses
    *  with what to run until `atticus upgrade --yes` adopts it. After seed-beta26, or after an
-   *  undo that took back the upgrade (undo covers the upgrade's writes, ADR point 7). */
+   *  undo that took back the upgrade (undo covers the upgrade's writes, ADR point 7). Never the
+   *  upgrade itself, and never `catalog undo`: an undo can itself be undone (point 7), the one
+   *  that took back the upgrade included, so undoing it must not refuse as not upgraded. */
   | "not-upgraded";
 
 /** Why a written build removed a record (ADR point 4, "nothing removed unexplained"). */
