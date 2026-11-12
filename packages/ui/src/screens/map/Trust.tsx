@@ -16,7 +16,7 @@ import { DecidePaused, useDecisions } from "../../app/decisions.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
- * Beside it, the canaries and the silent error rate (ADR 0196, `GET /api/trust/canaries`).
+ * Beside it, the canaries and the sample audit's two numbers (ADR 0196, `GET /api/trust/canaries`).
  * Per repo: the facts it kept and rejected, how much of the code they cover and the files not
  * read yet, the facts' commit against the checkout's, whether the catalog is built from the
  * facts or the built-in readers, and the command to run next. It reads files only
@@ -552,12 +552,23 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
 
 const K = T.canary;
 
+/** One of the two numbers: its name, its share with its count, and its range. */
+function CanaryRate({ name, r }: { name: string; r: Api.CanaryRateViewT }) {
+  return (
+    <li>
+      <strong>{name}:</strong> {K.rate(r)}{" "}
+      <span className="work-say">{K.range(r.low, r.high)}</span>
+    </li>
+  );
+}
+
 /**
- * ADR 0196 (Z2): canaries and the silent error rate, beside the sample audit: the rate with its
- * range and its parts (real lines misread, from the sample audit; planted and found, and taken
- * out but still claimed, from the latest canary of each repo), a row per repo's latest canary,
- * the canaries planted here and waiting for a score, and the commands to run one. From
- * `GET /api/trust/canaries`, which reads files only; the app runs nothing.
+ * ADR 0196 (Z2): canaries beside the sample audit, and how often a claim graded as backed is
+ * wrong as two numbers side by side, named as `atticus canary report` names them: the audit
+ * misread rate and the canary pass-through rate, each with its range (never pooled); what the
+ * canaries cover; a row per repo's latest canary; the canaries planted here and waiting for a
+ * score; and the commands to run one. From `GET /api/trust/canaries`, which reads files only; the
+ * app runs nothing.
  */
 export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: () => void } }) {
   const how = (v: Api.CanaryViewT) => (
@@ -571,18 +582,14 @@ export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: (
     </div>
   );
   return (
-    <Panel
-      title={K.title}
-      span="1 / -1"
-      meta={of.state === "ready" ? K.silent(of.data.silent.silent) : undefined}
-    >
+    <Panel title={K.title} span="1 / -1">
       <p className="work-why" style={{ marginTop: 0 }}>
         {K.intro}
       </p>
       <View
         of={of}
         empty={(v) =>
-          !v.latest.length && !v.pending.length && !v.silent.misread.n && !v.problems.length
+          !v.latest.length && !v.pending.length && !v.rates.misread.n && !v.problems.length
         }
         emptyContent={
           of.state === "ready" ? (
@@ -596,20 +603,28 @@ export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: (
         }
       >
         {(v) => {
-          const s = v.silent;
+          const s = v.rates;
           return (
             <div className="stack" style={{ gap: 8 }}>
               <Problems list={v.problems} />
-              <p style={{ margin: 0 }}>
-                <strong>{K.silent(s.silent)}</strong>{" "}
-                <span className="work-say">{K.range(s.silent.low, s.silent.high)}</span>
-              </p>
               <ul className="trust-items" style={{ margin: 0 }}>
-                <li>{K.misread(s.misread, s.repos.audited)}</li>
-                <li>{K.recall(s.recall)}</li>
-                <li>{K.fabrication(s.fabrication, s.passed, s.caught)}</li>
+                <CanaryRate name={K.misread(s.repos.audited)} r={s.misread} />
+                <CanaryRate name={K.passed(s.repos.canaries)} r={s.passed} />
               </ul>
-              {s.silent.n < 30 && <p className="work-say">{K.small}</p>}
+              <p className="work-say" style={{ margin: 0 }}>
+                {s.covers.length
+                  ? K.covers(s.covers.map((c) => K.stack(c.stack, c.what)).join("; "))
+                  : K.coversNone}
+              </p>
+              {s.repos.canaries > 0 && (
+                <ul className="trust-items" style={{ margin: 0 }}>
+                  <li>{K.recall(s.recall)}</li>
+                  <li>{K.fabrication(s.fabrication, s.caught, s.elsewhere)}</li>
+                </ul>
+              )}
+              {((s.misread.n > 0 && s.misread.n < 30) || (s.passed.n > 0 && s.passed.n < 30)) && (
+                <p className="work-say">{K.small}</p>
+              )}
               {v.latest.length > 0 && (
                 <table className="run-table">
                   <caption className="sr">{K.caption}</caption>
@@ -617,6 +632,7 @@ export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: (
                     <tr>
                       <th scope="col">{K.col.repo}</th>
                       <th scope="col">{K.col.at}</th>
+                      <th scope="col">{K.col.covers}</th>
                       <th scope="col">{K.col.planted}</th>
                       <th scope="col">{K.col.removed}</th>
                       <th scope="col">{K.col.passed}</th>
@@ -630,10 +646,23 @@ export function CanaryPanel({ of }: { of: Loaded<Api.CanaryViewT> & { reload?: (
                           {r.repo}
                         </th>
                         <td>{r.at.slice(0, 10)}</td>
+                        <td>
+                          {r.covers.map((c) => K.stack(c.stack, c.what)).join("; ")}
+                          {r.skipped.length > 0 && (
+                            <>
+                              <br />
+                              <span className="work-say">{K.skipped(r.skipped.length)}</span>
+                            </>
+                          )}
+                        </td>
                         <td>{K.of(r.recall.k, r.recall.n)}</td>
                         <td>{K.of(r.fabrication.k, r.fabrication.n)}</td>
                         <td>
-                          {r.passed.k > 0 && <span aria-hidden="true">⚠ </span>}
+                          {r.passed.k > 0 && (
+                            <span role="img" aria-label={K.passedWarn} title={K.passedWarn}>
+                              ⚠{" "}
+                            </span>
+                          )}
                           {K.of(r.passed.k, r.passed.n)}
                         </td>
                         <td className="mono">{r.path}</td>
@@ -697,7 +726,7 @@ export function TrustPage({
   fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
   /** ADR 0181: GET /api/decisions, for the AI's precision row. */
   decide?: Loaded<Api.DecisionsViewT> & { reload?: () => void };
-  /** ADR 0196: GET /api/trust/canaries, for the silent error rate. */
+  /** ADR 0196: GET /api/trust/canaries, for the audit misread and canary pass-through rates. */
   canary?: Loaded<Api.CanaryViewT> & { reload?: () => void };
 }) {
   return (

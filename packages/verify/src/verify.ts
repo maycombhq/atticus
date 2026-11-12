@@ -1060,8 +1060,40 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             ? `${pl} is not written at ${p.file}:${p.line} (or the line either side); cite the line that writes it (its text is not repeated here: it may be a secret)`
             : `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
         };
-      partLines.push(...near(ls, p.line));
+      // Review of ADR 0196 (the canary's first finding): a part whose value only a comment
+      // beside it names (a commented-out old route) is no code, as a main cite's isn't; and a
+      // comment line is never one the claim is put together from.
+      const partNear = near(ls, p.line);
+      const naming = partNear.filter(
+        (l) =>
+          lineNamesClaim(l, routeOrWord(p.value)) ||
+          lineNamesClaim(l, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") }) ||
+          partsNamePath([l], p.value),
+      );
+      if (
+        claims &&
+        naming.length &&
+        !/(^|\/)_redirects$/.test(p.file) &&
+        naming.every(isCommentLine)
+      )
+        return {
+          code: "claim-in-comment",
+          message: quiet
+            ? `${pl} is written at ${p.file}:${p.line} (or the line either side) only in a comment; cite the code that does it`
+            : `${pl} says "${p.value}", which ${p.file}:${p.line} (or the line either side) writes only in a comment; cite the code that does it`,
+        };
+      partLines.push(
+        ...(/(^|\/)_redirects$/.test(p.file)
+          ? partNear
+          : partNear.filter((l) => !isCommentLine(l))),
+      );
     }
+    // With parts, the claim is put together from code: the cited file's comment lines are read
+    // as blank (review of ADR 0196), so a commented-out line beside the cite names nothing.
+    const codeLines =
+      parts.length && !/(^|\/)_redirects$/.test(cite.file)
+        ? lines.map((l) => (isCommentLine(l) ? "" : l))
+        : lines;
     // Names a framework derives from what the cited line or a part declares (A-derived).
     let derived: DerivedName[] | undefined;
     const derivedHere = () =>
@@ -1069,7 +1101,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         { file: cite.file, line: cite.line },
         ...parts.map((p) => ({ file: p.file, line: p.line })),
       ].flatMap((at) => derivedNamesAt(at.file, linesOf(at.file) ?? [], at.line, deriveEnv)));
-    const holds = (c: Claim) =>
+    const holdsOn = (lines: string[]) => (c: Claim) =>
       claimOnLines(lines, cite.line, c) ||
       // a framework that routes by file place (Razor Pages, WebForms, Next.js)
       (c.kind === "route" &&
@@ -1087,11 +1119,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
               )))) ||
       (o.derivedNames !== false && derivedHolds(c, derivedHere(), partLines, partsNamePath)) ||
       (alsoHolds !== undefined && alsoHolds(lines, cite.line));
-    if (claims && !claims.some(holds))
+    if (claims && !claims.some(holdsOn(codeLines))) {
+      if (codeLines !== lines && claims.some(holdsOn(lines)))
+        return {
+          code: "claim-in-comment",
+          message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side) and its parts write only in a comment; cite the code that does it`,
+        };
       return {
         code: "claim-not-on-line",
         message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length || !withHint ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
+    }
     // A claim written only in a comment (a commented-out example, a scaffold note) isn't code.
     // Beta.24 review: with parts, the cited line itself is the code the claim rests on, so a
     // cited line that is all comment is no code either.

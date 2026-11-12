@@ -5099,7 +5099,7 @@
     "/api/trust/canaries": {
       "get": {
         "operationId": "getTrustCanaries",
-        "summary": "Canaries and the silent error rate (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out), those planted here and not yet scored, and the silent error rate pooled with the sample audit's answers; files only, nothing run or written",
+        "summary": "Canaries (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out, what it covers), those planted here and not yet scored, and the audit misread rate and the canary pass-through rate side by side; files only, nothing run or written",
         "tags": [
           "workspace"
         ],
@@ -44844,6 +44844,56 @@
                     "type": "string"
                   }
                 },
+                "covers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stack": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "stack",
+                      "what"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "skipped": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stack": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stack",
+                      "what",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "unread": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
                 "planted": {
                   "type": "object",
                   "properties": {
@@ -44898,13 +44948,19 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "elsewhere": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
                     "n",
                     "absent",
                     "kept",
-                    "rejected"
+                    "rejected",
+                    "elsewhere"
                   ],
                   "additionalProperties": false
                 },
@@ -45039,6 +45095,9 @@
                 "by",
                 "seed",
                 "stacks",
+                "covers",
+                "skipped",
+                "unread",
                 "planted",
                 "removed",
                 "recall",
@@ -45071,10 +45130,10 @@
               "additionalProperties": false
             }
           },
-          "silent": {
+          "rates": {
             "type": "object",
             "properties": {
-              "silent": {
+              "misread": {
                 "type": "object",
                 "properties": {
                   "k": {
@@ -45115,7 +45174,7 @@
                 ],
                 "additionalProperties": false
               },
-              "misread": {
+              "passed": {
                 "type": "object",
                 "properties": {
                   "k": {
@@ -45238,48 +45297,12 @@
                 ],
                 "additionalProperties": false
               },
-              "passed": {
-                "type": "object",
-                "properties": {
-                  "k": {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  "n": {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  "rate": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  },
-                  "low": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  },
-                  "high": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "k",
-                  "n",
-                  "rate",
-                  "low",
-                  "high"
-                ],
-                "additionalProperties": false
-              },
               "caught": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "elsewhere": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
@@ -45303,16 +45326,39 @@
                   "canaries"
                 ],
                 "additionalProperties": false
+              },
+              "covers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stack": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "stack",
+                    "what"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
-              "silent",
               "misread",
+              "passed",
               "recall",
               "fabrication",
-              "passed",
               "caught",
-              "repos"
+              "elsewhere",
+              "repos",
+              "covers"
             ],
             "additionalProperties": false
           },
@@ -45360,7 +45406,7 @@
           "reportsDir",
           "latest",
           "pending",
-          "silent",
+          "rates",
           "commands",
           "problems"
         ],

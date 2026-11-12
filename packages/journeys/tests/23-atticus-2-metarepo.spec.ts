@@ -28,7 +28,7 @@ test("Trust counts the repo once: the facts file's companions aren't repos", asy
   await accessible(page, "trust on an Atticus 2 metarepo");
 });
 
-test("Trust shows the canaries and the silent error rate, and how to run one (ADR 0196)", async ({
+test("Trust shows the canaries, the audit misread and canary pass-through rates, and how to run one (ADR 0196)", async ({
   page,
 }) => {
   await open(page, app(), "trust");
@@ -52,8 +52,11 @@ test("Trust shows the canaries and the silent error rate, and how to run one (AD
       "stacks: [spring]",
       "read: { facts: 12, kept: 11, rejected: 1 }",
       "planted:",
-      '  - { id: plant:1, kind: entry, what: entry, stack: spring, file: api/src/main/java/forge/studio/SpruceUmberResource.java, line: 16, claim: "entry GET /spruce-umber/{id}", result: found, by: entry.get.spruce-umber }',
-      '  - { id: plant:2, kind: call, what: call, stack: spring, file: api/src/main/java/forge/studio/SpruceUmberResource.java, line: 18, claim: "call GET /nutmeg-raven/{id}", result: missed }',
+      // a planted item is only its kind, stack and result: no word, file or line of it
+      "  - { id: plant:1, kind: entry, what: entry, stack: spring, result: found }",
+      "  - { id: plant:2, kind: call, what: call, stack: spring, result: missed }",
+      "skipped:",
+      "  - { stack: spring, what: topic-in, reason: the build files declare no Kafka client (spring-kafka) }",
       "removed:",
       "  - { id: remove:x, fact: x, kind: call, file: api/src/main/java/forge/studio/A.java, line: 3, claim: call GET /a, value: /a, how: commented, result: rejected, by: x }",
       `recall: ${rate(1, 2)}`,
@@ -63,9 +66,11 @@ test("Trust shows the canaries and the silent error rate, and how to run one (AD
     ].join("\n"),
   );
   await page.reload();
-  await expect(
-    panel.getByText(/^Silent error rate: 0% \(0 of 1 claims graded as backed\)/).first(),
-  ).toBeVisible();
+  // Two numbers side by side, never pooled, named as `atticus canary report` names them.
+  await expect(panel.getByText(/^Canary pass-through rate \(.*; 1 repo\):/)).toBeVisible();
+  await expect(panel.getByText("0% (0 of 1)").first()).toBeVisible();
+  await expect(panel.getByText(/^Audit misread rate \(/)).toBeVisible();
+  await expect(panel.getByText(/^The canaries cover spring \(a route, a call\)\./)).toBeVisible();
   await expect(panel.getByRole("table", { name: "The latest canary of each repo" })).toContainText(
     "forge-studio",
   );

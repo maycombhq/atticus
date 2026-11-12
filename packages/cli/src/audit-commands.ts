@@ -571,11 +571,13 @@ async function estateAuditReport(root: string, o: AuditOptions, io: Output): Pro
   io.out("");
   io.out("The estate:");
   for (const l of precisionLines(estate)) io.out(l);
-  // ADR 0196: with a canary on file, the silent error rate the two give together.
-  const { canaryReports, silentLines, silentSummary } = await import("./canary-commands.js");
-  if ((await canaryReports(root)).reports.length) {
+  // ADR 0196: with a canary on file, the audit misread rate and the canary pass-through rate side
+  // by side; the audit's part is the estate's just counted, not counted again.
+  const { silentLines, silentSummary } = await import("./canary-commands.js");
+  const s = await silentSummary(root, { audit: { precision: estate, repos: out.length } });
+  if (s.latest.length) {
     io.out("");
-    for (const l of silentLines((await silentSummary(root)).rate)) io.out(l);
+    for (const l of silentLines(s.rate)) io.out(l);
   }
   return 0;
 }

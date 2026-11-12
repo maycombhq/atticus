@@ -525,9 +525,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
  * 3.12.0 (beta.27, canaries, ADR 0196): GET /api/trust/canaries (`CanaryView`): the latest canary
- *   report of each repo in reports/canaries/, the canaries planted on this machine and not yet
- *   scored, and the silent error rate pooled from them and the sample audit's answers, each part
- *   with its count and 95% interval. Files only. Additive only.
+ *   report of each repo in reports/canaries/ (what it covers and skipped), the canaries planted on
+ *   this machine and not yet scored, and how often a claim graded as backed is wrong as two
+ *   numbers side by side, never pooled (`rates`: the audit misread rate from the sample audit's
+ *   answers, the canary pass-through rate from the canaries), each with its count and 95%
+ *   interval. Files only. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -1661,6 +1663,12 @@ export const CanaryRepoView = z.object({
   seed: z.string(),
   commit: z.string().optional(),
   stacks: z.array(z.string()),
+  /** Each stack planted in, with the items planted there (`entry`, `call`, `topic-in`...). */
+  covers: z.array(z.object({ stack: z.string(), what: z.array(z.string()) })),
+  /** The items the templates have that the repo couldn't serve, so weren't planted, and why. */
+  skipped: z.array(z.object({ stack: z.string(), what: z.string(), reason: z.string() })),
+  /** Lines of the read's facts file that didn't read as facts, left out of the score. */
+  unread: z.number().int(),
   planted: z.object({
     n: z.number().int(),
     found: z.number().int(),
@@ -1672,31 +1680,37 @@ export const CanaryRepoView = z.object({
     absent: z.number().int(),
     kept: z.number().int(),
     rejected: z.number().int(),
+    /** Named by a fact cited neither on the line nor beside it: in neither rate's count. */
+    elsewhere: z.number().int(),
   }),
   recall: CanaryRateView,
-  /** Removed lines the read still claimed, kept by the verifier or not. */
+  /** Removed lines the read still claimed at their place, kept by the verifier or not. */
   fabrication: CanaryRateView,
   /** Removed lines claimed by a fact the verifier kept: graded as backed, and wrong. */
   passed: CanaryRateView,
 });
 /**
- * 3.12.0 (ADR 0196): canaries and the silent error rate for Map › Trust: the latest canary of
- * each repo, the canaries planted on this machine and not yet scored, and the silent error rate
- * (wrong claims graded as backed) pooled from them and the sample audit's answers, each part with
- * its count and interval. Files only: an audit's link answer is counted as given, as Trust does.
+ * 3.12.0 (ADR 0196): canaries for Map › Trust: the latest canary of each repo, the canaries
+ * planted on this machine and not yet scored, and how often a claim graded as backed is wrong as
+ * two numbers side by side (the audit misread rate and the canary pass-through rate), each with
+ * its count and interval, never pooled. Files only: an audit's link answer is counted as given,
+ * as Trust does.
  */
 export const CanaryView = z.object({
   reportsDir: z.string(),
   latest: z.array(CanaryRepoView),
   pending: z.array(z.object({ repo: z.string(), at: z.string(), seed: z.string() })),
-  silent: z.object({
-    silent: CanaryRateView,
+  rates: z.object({
+    /** The audit misread rate: backed claims of the sample answered wrong, of those answered. */
     misread: CanaryRateView,
+    /** The canary pass-through rate: lines taken out, claimed and kept, of those taken out. */
+    passed: CanaryRateView,
     recall: CanaryRateView,
     fabrication: CanaryRateView,
-    passed: CanaryRateView,
     caught: z.number().int(),
+    elsewhere: z.number().int(),
     repos: z.object({ audited: z.number().int(), canaries: z.number().int() }),
+    covers: z.array(z.object({ stack: z.string(), what: z.array(z.string()) })),
   }),
   commands: z.object({ plant: z.string(), score: z.string(), report: z.string() }),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
@@ -6540,7 +6554,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getTrustCanaries",
       summary:
-        "Canaries and the silent error rate (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out), those planted here and not yet scored, and the silent error rate pooled with the sample audit's answers; files only, nothing run or written",
+        "Canaries (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out, what it covers), those planted here and not yet scored, and the audit misread rate and the canary pass-through rate side by side; files only, nothing run or written",
       tag: "workspace",
       ok: { status: 200, schema: "CanaryView", description: "OK" },
     },

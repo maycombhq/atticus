@@ -9,49 +9,36 @@
       "what": "config",
       "stack": "node",
       "file": "src/api/spruce-umber.ts",
-      "line": 9,
+      "line": 1,
       "claim": "config BIRCH_REED_URL",
       "needle": "birch-reed-url"
     },
     {
       "id": "plant:2",
-      "kind": "entry",
-      "what": "entry",
-      "stack": "node",
-      "file": "src/api/spruce-umber.ts",
-      "line": 11,
-      "claim": "entry GET /spruce-umber/{id}",
-      "needle": "spruce-umber"
-    },
-    {
-      "id": "plant:3",
       "kind": "call",
       "what": "call",
       "stack": "node",
       "file": "src/api/spruce-umber.ts",
-      "line": 12,
+      "line": 4,
       "claim": "call GET /nutmeg-raven/{id}",
       "needle": "nutmeg-raven"
-    },
+    }
+  ],
+  "skipped": [
     {
-      "id": "plant:4",
-      "kind": "call",
-      "what": "topic-out",
       "stack": "node",
-      "file": "src/api/spruce-umber.ts",
-      "line": 13,
-      "claim": "call topic quill.dune.viewed",
-      "needle": "quill-dune-viewed"
+      "what": "entry",
+      "reason": "the build files declare no server (express): a browser app serves no route"
     },
     {
-      "id": "plant:5",
-      "kind": "entry",
+      "stack": "node",
       "what": "topic-in",
+      "reason": "the build files declare no Kafka client (kafkajs)"
+    },
+    {
       "stack": "node",
-      "file": "src/api/spruce-umber.ts",
-      "line": 17,
-      "claim": "entry topic saffron.lumen.updated",
-      "needle": "saffron-lumen-updated"
+      "what": "topic-out",
+      "reason": "the build files declare no Kafka client (kafkajs)"
     }
   ],
   "removed": [

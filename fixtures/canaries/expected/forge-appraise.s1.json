@@ -9,7 +9,7 @@
       "what": "config",
       "stack": "python",
       "file": "app/routers/appraisals.py",
-      "line": 20,
+      "line": 19,
       "claim": "config BIRCH_REED_URL",
       "needle": "birch-reed-url"
     },
@@ -19,7 +19,7 @@
       "what": "entry",
       "stack": "python",
       "file": "app/routers/appraisals.py",
-      "line": 24,
+      "line": 22,
       "claim": "entry GET /spruce-umber/{id}",
       "needle": "spruce-umber"
     },
@@ -29,29 +29,21 @@
       "what": "call",
       "stack": "python",
       "file": "app/routers/appraisals.py",
-      "line": 26,
+      "line": 24,
       "claim": "call GET /nutmeg-raven/{id}",
       "needle": "nutmeg-raven"
-    },
+    }
+  ],
+  "skipped": [
     {
-      "id": "plant:4",
-      "kind": "call",
-      "what": "topic-out",
       "stack": "python",
-      "file": "app/routers/appraisals.py",
-      "line": 27,
-      "claim": "call topic quill.dune.viewed",
-      "needle": "quill-dune-viewed"
-    },
-    {
-      "id": "plant:5",
-      "kind": "entry",
       "what": "topic-in",
+      "reason": "the build files declare no Kafka client (kafka-python)"
+    },
+    {
       "stack": "python",
-      "file": "app/routers/appraisals.py",
-      "line": 31,
-      "claim": "entry topic saffron.lumen.updated",
-      "needle": "saffron-lumen-updated"
+      "what": "topic-out",
+      "reason": "the build files declare no Kafka client (kafka-python)"
     }
   ],
   "removed": [

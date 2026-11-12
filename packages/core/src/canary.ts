@@ -12,8 +12,8 @@ import type { Fact } from "./schema/facts.js";
  * must find the planted and miss the removed. That gives recall, and a fabrication rate the
  * verifier can't see (a claim about a line that is there but commented out passes the check that
  * the value is on the line), on the organisation's own code, with nobody labelling anything.
- * Misreadings of real lines are the sample audit's (P3, ADR 0148); the two together give the
- * silent error rate: wrong claims graded as backed.
+ * Misreadings of real lines are the sample audit's (P3, ADR 0148); the two side by side say how
+ * often a claim graded as backed is wrong (the silent error rate, as two numbers, never pooled).
  *
  * Pure: the caller plants, reads and writes the files. Nothing here names a stack or framework;
  * the templates that plant are `@maycombhq/verify`'s.
@@ -26,6 +26,29 @@ import type { Fact } from "./schema/facts.js";
  */
 export const canaryReportsRelOf = (root: string): string =>
   isAdopted(root) ? ".atticus/reports/canaries" : "reports/canaries";
+
+/**
+ * A repo's name as a canary takes it (review of ADR 0196): letters, digits, `.`, `_` and `-`,
+ * starting with a letter or digit, and never `..`, so no name reaches outside the folder it
+ * names a file in.
+ */
+export const isCanaryRepoName = (repo: string): boolean =>
+  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..");
+
+/** The start of a run folder's name: `atticus-canary-<repo>-`, then the six characters mkdtemp adds. */
+export const canaryRunPrefix = (repo: string): string => `atticus-canary-${repo}-`;
+
+/** Whether a folder's base name is a run folder of this repo: `atticus-canary-<repo>-XXXXXX`. */
+export const isCanaryRunName = (name: string, repo: string): boolean =>
+  isCanaryRepoName(repo) &&
+  name.startsWith(canaryRunPrefix(repo)) &&
+  /^[A-Za-z0-9]{6}$/.test(name.slice(canaryRunPrefix(repo).length));
+
+/** The repo a run folder's base name is of, or undefined when it is no run folder's name. */
+export function canaryRunRepo(name: string): string | undefined {
+  const m = /^atticus-canary-(.+)-[A-Za-z0-9]{6}$/.exec(name);
+  return m && isCanaryRunName(name, m[1]!) ? m[1] : undefined;
+}
 
 /** What a planted item stands for: a route served, a call made, a topic, a config key. */
 export const CANARY_WHATS = ["entry", "call", "topic-in", "topic-out", "config"] as const;
@@ -73,22 +96,38 @@ export const CanaryRemoved = z.strictObject({
 });
 export type CanaryRemovedT = z.infer<typeof CanaryRemoved>;
 
-/** The answer key a plant keeps on this machine (never in the copy, never in the metarepo). */
-export const CanaryKey = z.strictObject({
-  schema: z.literal(1),
-  repo: z.string().min(1),
-  seed: z.string().min(1),
-  commit: z.string().optional(),
-  /** The run folder: the copy, the prompt and the facts file the assistant writes. */
-  run: z.string().min(1),
-  copy: z.string().min(1),
-  prompt: z.string().min(1),
-  facts: z.string().min(1),
-  stacks: z.array(z.string()),
-  planted: z.array(CanaryPlanted),
-  removed: z.array(CanaryRemoved),
-  at: z.string(),
+/** An item a stack's template has that wasn't planted, and why (the repo couldn't serve it). */
+export const CanarySkipped = z.strictObject({
+  stack: z.string().min(1),
+  what: z.enum(CANARY_WHATS),
+  reason: z.string().min(1),
 });
+export type CanarySkippedT = z.infer<typeof CanarySkipped>;
+
+/**
+ * The answer key a plant keeps on this machine (never in the copy, never in the metarepo). The
+ * run folder is kept by its base name only, `atticus-canary-<repo>-XXXXXX` (review of ADR 0196):
+ * its path is rebuilt under the system's temporary folder and checked before anything in it is
+ * read, written or deleted, so a key edited by hand can't point anywhere else.
+ */
+export const CanaryKey = z
+  .strictObject({
+    schema: z.literal(1),
+    repo: z.string().refine(isCanaryRepoName, "not a repo name"),
+    seed: z.string().min(1),
+    commit: z.string().optional(),
+    /** The run folder's base name: the copy (`<repo>/`), `prompt.md` and `facts.jsonl` are in it. */
+    run: z.string().min(1),
+    stacks: z.array(z.string()),
+    planted: z.array(CanaryPlanted),
+    removed: z.array(CanaryRemoved),
+    skipped: z.array(CanarySkipped).default([]),
+    at: z.string(),
+  })
+  .refine((k) => isCanaryRunName(k.run, k.repo), {
+    message: "run is not this repo's run folder name",
+    path: ["run"],
+  });
 export type CanaryKeyT = z.infer<typeof CanaryKey>;
 
 /** A share with its count and the Wilson interval at 95% (null with nothing to count). */
@@ -105,37 +144,48 @@ export const CanaryReport = z.strictObject({
   schema: z.literal(1),
   repo: z.string().min(1),
   commit: z.string().optional(),
+  /** The seed it was planted by: drawn at random unless one was given, so no read can guess it. */
   seed: z.string().min(1),
   /** When it was scored, and who scored it. */
   at: z.string(),
   by: z.string().min(1),
   stacks: z.array(z.string()),
-  /** The facts the read wrote, those the verifier kept and those it rejected. */
+  /** The facts the read wrote, those the verifier kept and rejected, and lines that didn't read. */
   read: z.strictObject({
     facts: z.number().int().nonnegative(),
     kept: z.number().int().nonnegative(),
     rejected: z.number().int().nonnegative(),
+    unread: z.number().int().nonnegative().default(0),
   }),
+  /**
+   * Each planted item by an opaque id, what it stood for, its stack and how the read did: never
+   * its words, file or line (review of ADR 0196), so a committed report teaches no read what a
+   * canary plants.
+   */
   planted: z.array(
-    CanaryPlanted.omit({ needle: true }).extend({
+    CanaryPlanted.pick({ id: true, kind: true, what: true, stack: true }).extend({
       /** found: a kept fact; rejected: only a fact the verifier refused; missed: none. */
       result: z.enum(["found", "rejected", "missed"]),
-      /** The reader's fact that found it. */
-      by: z.string().optional(),
     }),
   ),
+  /** The items the templates have that this repo couldn't serve, so weren't planted. */
+  skipped: z.array(CanarySkipped).default([]),
   removed: z.array(
     CanaryRemoved.omit({ needle: true }).extend({
-      /** absent: no fact claims it; kept: a kept fact still does (silent); rejected: one did, refused. */
-      result: z.enum(["absent", "kept", "rejected"]),
+      /**
+       * absent: no fact claims it; kept: a kept fact cites its line or one beside it, by its cite
+       * or a part (silent); rejected: one did, refused; elsewhere: a fact names its path or key
+       * but cites neither its line nor one beside it, so may be about another line (in no rate).
+       */
+      result: z.enum(["absent", "kept", "rejected", "elsewhere"]),
       by: z.string().optional(),
     }),
   ),
   /** Planted found by a kept fact, of planted. */
   recall: CanaryRate,
-  /** Removed the read still claimed, kept by the verifier or not: the reader's fabrication rate. */
+  /** Removed the read still claimed at its line, kept by the verifier or not: the reader's rate. */
   fabrication: CanaryRate,
-  /** Removed still claimed by a fact the verifier kept: graded as backed, and wrong (silent). */
+  /** Removed still claimed at its line by a fact the verifier kept: backed, and wrong (silent). */
   passed: CanaryRate,
 });
 export type CanaryReportT = z.infer<typeof CanaryReport>;
@@ -196,17 +246,24 @@ export function canaryNeedleOf(f: Fact): string {
 export const plantedBy = (p: Pick<CanaryPlantedT, "kind" | "needle">, f: Fact): boolean =>
   f.kind === p.kind && canaryClaimText(f).includes(p.needle);
 
+/** Whether a fact cites a file within one line of a line, by its cite or one of its `cite.with` parts. */
+const citesNear = (f: Fact, file: string, line: number): boolean =>
+  [f.cite, ...(f.cite.with ?? [])].some((c) => c.file === file && Math.abs(c.line - line) <= 1);
+
 /**
- * Whether a fact claims a removed one: its kind, and the same path or key cited anywhere, or
- * cited on the commented line or one either side (the verifier's own window) with the removed
- * fact's value in its claim.
+ * Whether a fact claims a removed one, and where: `near` when it is of its kind and cites the
+ * commented line or one either side (the verifier's own window), by its cite or a `cite.with`
+ * part, with the removed fact's path or key, or its value, in its claim; `elsewhere` when it has
+ * the same path or key but cites neither, so may well be about another line (review of ADR 0196:
+ * such a fact is never counted as passed).
  */
-export const removedBy = (r: CanaryRemovedT, f: Fact): boolean =>
-  f.kind === r.kind &&
-  (canaryNeedleOf(f) === r.needle ||
-    (f.cite.file === r.file &&
-      Math.abs(f.cite.line - r.line) <= 1 &&
-      canaryClaimText(f).includes(foldCanary(r.value))));
+export function removedBy(r: CanaryRemovedT, f: Fact): "near" | "elsewhere" | undefined {
+  if (f.kind !== r.kind) return undefined;
+  const same = canaryNeedleOf(f) === r.needle;
+  if (citesNear(f, r.file, r.line) && (same || canaryClaimText(f).includes(foldCanary(r.value))))
+    return "near";
+  return same ? "elsewhere" : undefined;
+}
 
 export function canaryRate(k: number, n: number): CanaryRateT {
   const ci = wilson(k, n);
@@ -221,34 +278,59 @@ export function canaryRate(k: number, n: number): CanaryRateT {
 
 /**
  * Score a read of the copy against the key: each planted item found by a kept fact, by a
- * rejected one only, or missed; each removed one absent, still claimed by a kept fact (a silent
- * fabrication), or claimed only by a rejected one (the verifier caught it). Recall and the
- * fabrication rate with their intervals.
+ * rejected one only, or missed; each removed one absent, still claimed at its line by a kept fact
+ * (a silent fabrication), claimed there only by a rejected one (the verifier caught it), or named
+ * only by a fact cited elsewhere. One fact answers for one item at most (review of ADR 0196): the
+ * items are matched in order, each to the first fact not yet taken. Recall and the fabrication
+ * rate with their intervals.
  */
 export function scoreCanary(
-  key: Pick<CanaryKeyT, "repo" | "commit" | "seed" | "stacks" | "planted" | "removed">,
-  read: { kept: readonly Fact[]; rejected: readonly Fact[] },
+  key: Pick<CanaryKeyT, "repo" | "commit" | "seed" | "stacks" | "planted" | "removed"> & {
+    skipped?: CanaryKeyT["skipped"];
+  },
+  read: { kept: readonly Fact[]; rejected: readonly Fact[]; unread?: number },
   o: { at: string; by: string },
 ): CanaryReportT {
-  const planted = key.planted.map(({ needle: _n, ...p }) => {
-    const k = key.planted.find((x) => x.id === p.id)!;
-    const kept = read.kept.find((f) => plantedBy(k, f));
-    const refused = kept ? undefined : read.rejected.find((f) => plantedBy(k, f));
+  const taken = new Set<Fact>();
+  const first = (list: readonly Fact[], ok: (f: Fact) => boolean) => {
+    const f = list.find((x) => !taken.has(x) && ok(x));
+    if (f) taken.add(f);
+    return f;
+  };
+  const planted = key.planted.map((p) => {
+    const kept = first(read.kept, (f) => plantedBy(p, f));
+    const refused = kept ? undefined : first(read.rejected, (f) => plantedBy(p, f));
     return {
-      ...p,
+      id: p.id,
+      kind: p.kind,
+      what: p.what,
+      stack: p.stack,
       result: kept ? ("found" as const) : refused ? ("rejected" as const) : ("missed" as const),
-      ...((kept ?? refused) ? { by: (kept ?? refused)!.id } : {}),
     };
   });
   const removed = key.removed.map((r) => {
-    const kept = read.kept.find((f) => removedBy(r, f));
-    const refused = kept ? undefined : read.rejected.find((f) => removedBy(r, f));
+    const near = (f: Fact) => removedBy(r, f) === "near";
+    const kept = first(read.kept, near);
+    const refused = kept ? undefined : first(read.rejected, near);
+    const other =
+      kept || refused
+        ? undefined
+        : first([...read.kept, ...read.rejected], (f) => removedBy(r, f) === "elsewhere");
+    const by = kept ?? refused ?? other;
     return {
       ...(({ needle: _n, ...rest }) => rest)(r),
-      result: kept ? ("kept" as const) : refused ? ("rejected" as const) : ("absent" as const),
-      ...((kept ?? refused) ? { by: (kept ?? refused)!.id } : {}),
+      result: kept
+        ? ("kept" as const)
+        : refused
+          ? ("rejected" as const)
+          : other
+            ? ("elsewhere" as const)
+            : ("absent" as const),
+      ...(by ? { by: by.id } : {}),
     };
   });
+  // A line a fact names only elsewhere isn't known to be claimed or not: in neither rate's count.
+  const counted = removed.filter((r) => r.result !== "elsewhere");
   return {
     schema: 1,
     repo: key.repo,
@@ -261,12 +343,17 @@ export function scoreCanary(
       facts: read.kept.length + read.rejected.length,
       kept: read.kept.length,
       rejected: read.rejected.length,
+      unread: read.unread ?? 0,
     },
     planted,
+    skipped: [...(key.skipped ?? [])],
     removed,
     recall: canaryRate(planted.filter((p) => p.result === "found").length, planted.length),
-    fabrication: canaryRate(removed.filter((r) => r.result !== "absent").length, removed.length),
-    passed: canaryRate(removed.filter((r) => r.result === "kept").length, removed.length),
+    fabrication: canaryRate(
+      counted.filter((r) => r.result === "kept" || r.result === "rejected").length,
+      counted.length,
+    ),
+    passed: canaryRate(counted.filter((r) => r.result === "kept").length, counted.length),
   };
 }
 
@@ -282,31 +369,53 @@ const GUESSED: ReadonlySet<string> = new Set([
 ]);
 const GUESSED_JOINS = { test: (how: string) => GUESSED.has(how) };
 
+/**
+ * How often a claim graded as backed is wrong (ADR 0196, as revised on review): two numbers side
+ * by side, each with its count and interval, never pooled into one. Their samples are of different
+ * things (real lines a person answered; lines Atticus took out), and a pooled figure let the
+ * canaries' found plants, right by construction, pad its denominator.
+ */
 export interface SilentErrorRate {
-  /** Wrong claims graded as backed, of the claims graded as backed that were measured. */
-  silent: CanaryRateT;
-  /** The sample audit's part: kept facts and backed links answered wrong, of those answered. */
+  /** The audit misread rate: kept facts and backed links answered wrong, of those answered. */
   misread: CanaryRateT;
-  /** The canaries' parts, summed over the latest run of each repo. */
+  /**
+   * The canary pass-through rate: lines taken out that the read still claimed at their place and
+   * the verifier kept, of the lines taken out (less those a fact names only elsewhere).
+   */
+  passed: CanaryRateT;
+  /** Planted items found, summed over the latest run of each repo. */
   recall: CanaryRateT;
   /** Removed lines the read still claimed, kept or not. */
   fabrication: CanaryRateT;
-  /** Removed lines the read claimed and the verifier kept: the canaries' silent errors. */
-  passed: CanaryRateT;
   /** Removed lines a reader claimed that the verifier refused: flagged, so no silent error. */
   caught: number;
+  /** Removed lines a fact named only elsewhere: in neither count. */
+  elsewhere: number;
   repos: { audited: number; canaries: number };
+  /** What the canaries' numbers cover: each stack planted in, with the items planted there. */
+  covers: { stack: string; what: CanaryWhat[] }[];
 }
 
 const answered = (t: AuditTally) => t.right + t.wrong;
 
+/** Each stack the reports planted in, with the items planted there, in a fixed order. */
+export function canaryCovers(
+  reports: readonly { planted: readonly { stack: string; what: CanaryWhat }[] }[],
+): { stack: string; what: CanaryWhat[] }[] {
+  const by = new Map<string, Set<CanaryWhat>>();
+  for (const r of reports)
+    for (const p of r.planted) by.set(p.stack, (by.get(p.stack) ?? new Set()).add(p.what));
+  return [...by.keys()]
+    .sort()
+    .map((stack) => ({ stack, what: CANARY_WHATS.filter((w) => by.get(stack)!.has(w)) }));
+}
+
 /**
- * The silent error rate (ADR 0196): of the claims graded as backed that were measured, the share
- * wrong. Two samples, pooled: the sample audit's answers on kept facts and on links joined by
- * something other than a guess (a misread real line, P3), and the canaries' kept facts about
- * planted and removed lines (a removed one claimed is a fabrication the verifier passed, Z2).
- * A guessed link, a planted item missed and a fabrication the verifier refused are not silent:
- * they are flagged or absent, the system working.
+ * The two numbers (ADR 0196): the audit misread rate, from the sample audit's answers on kept
+ * facts and on links joined by something other than a guess (a misread real line, P3); and the
+ * canary pass-through rate, from the latest canary of each repo (a removed line still claimed and
+ * kept is a fabrication the verifier passed, Z2). A guessed link, a planted item missed and a
+ * fabrication the verifier refused are not silent: they are flagged or absent, the system working.
  */
 export function silentErrorRate(
   audit: { precision: AuditPrecision; repos: number } | undefined,
@@ -320,29 +429,31 @@ export function silentErrorRate(
     wrong += p.facts.wrong + links.reduce((n, [, t]) => n + t.wrong, 0);
     backed += answered(p.facts) + links.reduce((n, [, t]) => n + answered(t), 0);
   }
-  const misread = canaryRate(wrong, backed);
   let found = 0;
   let planted = 0;
   let kept = 0;
   let claimed = 0;
   let removed = 0;
   let caught = 0;
+  let elsewhere = 0;
   for (const c of canaries) {
     found += c.recall.k;
     planted += c.recall.n;
     kept += c.passed.k;
     claimed += c.fabrication.k;
-    removed += c.removed.length;
+    removed += c.passed.n;
     caught += c.removed.filter((r) => r.result === "rejected").length;
+    elsewhere += c.removed.filter((r) => r.result === "elsewhere").length;
   }
   return {
-    silent: canaryRate(wrong + kept, backed + found + kept),
-    misread,
+    misread: canaryRate(wrong, backed),
+    passed: canaryRate(kept, removed),
     recall: canaryRate(found, planted),
     fabrication: canaryRate(claimed, removed),
-    passed: canaryRate(kept, removed),
     caught,
+    elsewhere,
     repos: { audited: audit?.repos ?? 0, canaries: canaries.length },
+    covers: canaryCovers(canaries),
   };
 }
 

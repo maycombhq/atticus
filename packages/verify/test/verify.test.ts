@@ -589,6 +589,90 @@ describe("what the revised reads found about the verifier (A4)", () => {
     ]);
     expect(r.accepted.map((f) => f.id)).toEqual(["d-good"]);
   });
+
+  // Review of ADR 0196 (the canary's first finding): a `cite.with` part whose value only a
+  // commented-out line beside it holds is no code either, and neither is a comment line beside
+  // the main cite that a route's parts would otherwise be found on.
+  describe("a cite.with part beside a commented-out old route", () => {
+    const src = memorySource({
+      "src/main/java/forge/portal/TransferClient.java": [
+        "package forge.portal;", // 1
+        "", // 2
+        "import org.springframework.web.bind.annotation.*;", // 3
+        "", // 4
+        '@FeignClient(name = "ledger", url = "${gateway.url}/ledger/v1")', // 5
+        "public interface TransferClient {", // 6
+        '  // @PostMapping("/transfers")', // 7
+        "  TransferResult createTransfer(@RequestBody TransferRequest request);", // 8
+        "", // 9
+        '  // @GetMapping("/allowances")', // 10
+        '  @GetMapping("/limits")', // 11
+        "  Limits limits();", // 12
+        "}", // 13
+        "",
+      ].join("\n"),
+    });
+    const call = (
+      id: string,
+      path: string,
+      line: number,
+      value: string,
+      parts: [number, string][],
+    ) =>
+      ({
+        ...base,
+        kind: "call",
+        id,
+        callType: "rest",
+        method: "POST",
+        path,
+        cite: {
+          file: "src/main/java/forge/portal/TransferClient.java",
+          line,
+          value,
+          with: parts.map(([l, v]) => ({
+            file: "src/main/java/forge/portal/TransferClient.java",
+            line: l,
+            value: v,
+          })),
+        },
+      }) as Fact;
+
+    it("rejects a part named only on the comment, and keeps the live route beside it", async () => {
+      const r = await verifyFacts({
+        source: src,
+        facts: [
+          call("c-old", "/ledger/v1/transfers", 8, "createTransfer", [
+            [5, "/ledger/v1"],
+            [8, "/transfers"],
+          ]),
+          call("c-old-allowances", "/ledger/v1/allowances", 12, "limits", [
+            [5, "/ledger/v1"],
+            [11, "/allowances"],
+          ]),
+          call("c-live", "/ledger/v1/limits", 12, "limits", [
+            [5, "/ledger/v1"],
+            [11, "/limits"],
+          ]),
+        ],
+      });
+      expect(r.rejected.map((x) => [x.fact.id, x.code])).toEqual([
+        ["c-old", "claim-in-comment"],
+        ["c-old-allowances", "claim-in-comment"],
+      ]);
+      expect(r.rejected[0]!.message).toMatch(/part 2 .*comment/);
+      expect(r.accepted.map((f) => f.id)).toEqual(["c-live"]);
+    });
+
+    it("finds no route part on a comment line beside the main cite", async () => {
+      // `transfers` is only on line 7, a comment beside the cited line 8: the parts name the rest
+      const r = await verifyFacts({
+        source: src,
+        facts: [call("c-near", "/ledger/v1/transfers", 8, "createTransfer", [[5, "/ledger/v1"]])],
+      });
+      expect(r.rejected.map((x) => x.code)).toEqual(["claim-in-comment"]);
+    });
+  });
 });
 
 describe("a route the file's place gives (held-out run)", () => {
