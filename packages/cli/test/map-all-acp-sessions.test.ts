@@ -256,6 +256,21 @@ describe("a part's two sessions: what stops the repo (review of fix/b27-copilot)
   }, 60_000);
 });
 
+describe("a session that runs out of room (re-review of fix/b27-copilot)", () => {
+  it("stops the repo when both sessions ran out of room (max_tokens) and neither added anything", async () => {
+    const { root } = ledgerEstate();
+    const s = sessions([
+      async () => ({ stopReason: "max_tokens" }),
+      async () => ({ stopReason: "max_tokens" }),
+      async () => undefined,
+    ]);
+    const r = await run(root, s.runner, 3);
+    expect(r.code, r.text).toBe(0);
+    expect(r.events.some((e) => e.type === "repo.stopped")).toBe(true);
+    expect(s.seen).toHaveLength(2);
+  }, 60_000);
+});
+
 describe("what verify rejected, told to the session it is of (review of fix/b27-copilot)", () => {
   it("tells the second session the first's rejections as the first's, and only its own after its verify", async () => {
     const { root, head } = ledgerEstate();
@@ -292,6 +307,30 @@ describe("what verify rejected, told to the session it is of (review of fix/b27-
     const second = rejectedOf(root).filter((x) => x.id === "e-post-entry");
     expect(second).toHaveLength(1);
     expect(told[1]).toEqual([undefined, rejectionWords(root, "forge-ledger", second, "now")]);
+  }, 60_000);
+
+  // Re-review: verify writes its lines deterministically, so the same bad fact written again by
+  // the second session is the same line the run put back: it must still be told.
+  it("tells the second session a fact it wrote again and verify rejected again", async () => {
+    const { root, head } = ledgerEstate();
+    const bad = `${factLine(head, 0).replace('"line":18,', '"line":3,')}\n`;
+    const told: (string | undefined)[] = [];
+    const s = sessions([
+      async () => {
+        writeFileSync(join(root, "facts", "forge-ledger.jsonl"), bad);
+        await verifyIn(root);
+      },
+      async (step) => {
+        writeFileSync(join(root, "facts", "forge-ledger.jsonl"), bad);
+        await new Promise((r) => setTimeout(r, 20));
+        await verifyIn(root);
+        told.push(await step.followUp!());
+      },
+    ]);
+    await run(root, s.runner, 2);
+    const again = rejectedOf(root).filter((x) => x.id === "e-get-account");
+    expect(again).toHaveLength(1);
+    expect(told[0]).toBe(rejectionWords(root, "forge-ledger", again, "now"));
   }, 60_000);
 
   it("never puts a line that isn't JSON into the prompt, only that there was one", async () => {

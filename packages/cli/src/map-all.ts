@@ -1045,7 +1045,9 @@ async function rejectionsOf(
     const at = await mtime(join(factsDirOf(root), `${repo}.rejected.jsonl`));
     if (all.join("\n") === since.key && at === since.at) return { lines: [], items: [], key: "" };
   }
-  const lines = since ? all.filter((l) => !since.lines.has(l)) : all;
+  // verify rewrites the whole file each time it runs: changed since the session started means
+  // every line is this session's verify's (a fact written again and rejected again included).
+  const lines = all;
   return { lines, items: lines.map(rejectionOf), key: lines.join("\n") };
 }
 
@@ -1280,8 +1282,6 @@ export async function mapAllCommand(
     else for (const l of planLines(plan)) io.out(l);
     return 0;
   }
-  // beta.27: the limit given is kept on this machine, to fill the app's dialog next time.
-  if (lim.from === "flag") await saveLastLimit(root, limit, clock.now());
   // beta.27: never start sessions that each end at once: the assistant files they read are
   // checked first, and written when only out of date (generated files, as atticus
   // assistant-files writes them); one a person edited refuses the run.
@@ -1315,6 +1315,9 @@ export async function mapAllCommand(
       );
     }
   }
+  // beta.27: the limit given is kept on this machine, to fill the app's dialog next time; only
+  // for a run that starts (re-review: not one the assistant files refused).
+  if (lim.from === "flag") await saveLastLimit(root, limit, clock.now());
   for (const l of planLines(plan)) io.out(l);
   const emit = (e: MapAllEvent) => {
     try {
@@ -2074,7 +2077,10 @@ export async function mapAllCommand(
       // Nothing added: no fact or reviewed line on file that wasn't there before the session.
       const added = written !== base;
       addedAny ||= added;
-      if (ended.how !== "ended") allEnded = false;
+      // Re-review of fix/b27-copilot: a session that ran out of room (max_tokens) or had a tool
+      // refused (cancelled) will fare no better on the next part, so it counts towards stopping
+      // the repo like one that ended its turn; only one Atticus cut or that failed doesn't.
+      if (ended.how === "cut" || ended.how === "failed") allEnded = false;
       // The rejected lines stay on file for the next session (and the Trust page) to fix from:
       // every session's of the part, as the run's verify leaves the file to its own.
       rejectedLines = [...new Set([...rejectedLines, ...moved.lines, ...(now?.lines ?? [])])];
