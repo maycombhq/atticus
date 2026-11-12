@@ -1433,6 +1433,17 @@ export async function guardBuild(
             why.add(sourceWords(x.path, b));
             kinds.add("slot");
           }
+      // An arrow whose end is a repo whose slot changed since (its evidence may name only the
+      // caller, for an arrow inferred from a host): that slot explains it.
+      if (estate && r?.kind === "Interface") {
+        const x = r as unknown as { from?: string; to?: string };
+        for (const end of [x.from, x.to])
+          for (const repo of (end ? oldEnds.get(end) : undefined) ?? [])
+            if (!repos.includes(repo) && slotChanged(repo)) {
+              why.add(`${repo}'s slot changed (the arrow's other end)`);
+              kinds.add("slot");
+            }
+      }
       // A loose end a new arrow joins, with a repo whose slot changed since: that slot explains it.
       if (estate && r?.kind === "Unresolved") {
         const owner = String((r as unknown as { owner?: string }).owner ?? "");
