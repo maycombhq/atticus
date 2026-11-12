@@ -1186,9 +1186,76 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     const ln = capture();
     expect(await canaryClean(h.root, R, opts(h), ln.io)).toBe(0);
     expect(ln.out).toEqual([
-      "Deleted 1 planted canary: 0 run folders and 1 key (1 wasn't a real folder (a link?), left as it was).",
+      "Deleted 1 planted canary: 0 run folders and 1 key (1 wasn't a real folder (a link or a file), left as it was).",
     ]);
     expect(await exists(target)).toBe(true);
+  });
+
+  // Sixth review of ADR 0196: a plant over a key that didn't read said "its run folder wasn't a
+  // real folder"; a kept key's words said "isn't there" of a folder that is there, or a link.
+  it("says what it found: a key that didn't read, a link above the reads folder, a reads folder not trusted", async () => {
+    const h = await metarepo();
+    const R = "forge-portal-bff";
+    await canaryPlant(h.root, R, opts(h), capture().io);
+    const first = runOf(h, await keyOf(h, R)).run;
+    await writeFile(keyFile(h, R), "{not json");
+    const p = capture();
+    expect(await canaryPlant(h.root, R, opts(h), p.io), p.err.join("\n")).toBe(0);
+    expect(p.out[0]).toBe(
+      `An earlier canary of ${R} wasn't scored: its key didn't read, and is deleted, with 1 run folder of ${R}'s this metarepo planted.`,
+    );
+    expect(await exists(first)).toBe(false);
+    // no run folder of its left: the key alone goes, and nothing is said of a folder
+    await rm(runOf(h, await keyOf(h, R)).run, { recursive: true, force: true });
+    await writeFile(keyFile(h, R), "{not json");
+    const q = capture();
+    expect(await canaryPlant(h.root, R, opts(h), q.io), q.err.join("\n")).toBe(0);
+    expect(q.out[0]).toBe(
+      `An earlier canary of ${R} wasn't scored: its key didn't read, and is deleted.`,
+    );
+
+    const setReads = async (reads: string | undefined) => {
+      const raw = JSON.parse(await readFile(keyFile(h, R), "utf8"));
+      if (reads === undefined) delete raw.reads;
+      else raw.reads = reads;
+      await writeFile(keyFile(h, R), JSON.stringify(raw));
+    };
+    const elsewhere = opts(h, { scratch: join(h.top, "elsewhere") });
+    const said = async () => {
+      const c = capture();
+      expect(await canaryCheck(h.root, R, elsewhere, c.io)).toBe(2);
+      return c.err.join("\n");
+    };
+    // the folder the reads folder was made in is a file: no "isn't there either"
+    const file = join(h.top, "a-file");
+    await writeFile(file, "");
+    await setReads(join(file, "atticus-reads"));
+    const notFolder = await said();
+    expect(notFolder).toContain(
+      `(${file} isn't a real folder (a link or a file is at its path): a drive not mounted`,
+    );
+    expect(notFolder).not.toContain("isn't there either");
+    if (process.platform !== "win32") {
+      // a link to nowhere, likewise
+      const dangling = join(h.top, "dangling");
+      await symlink(join(h.top, "nowhere"), dangling);
+      await setReads(join(dangling, "atticus-reads"));
+      expect(await said()).toContain(`(${dangling} isn't a real folder (a link or a file`);
+    }
+    // an earlier version's key, no reads folder: this temporary folder's absent, there but not
+    // trusted, or looked in
+    await setReads(undefined);
+    const away = join(h.top, "elsewhere", "atticus-reads");
+    expect(await said()).toContain(`and ${away} isn't there to look in:`);
+    await mkdir(away, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") {
+      await chmod(away, 0o777);
+      expect(await said()).toContain(
+        `and ${away} isn't a folder only you can write to (another user's, a link, or open to others), so it isn't looked in:`,
+      );
+      await chmod(away, 0o700);
+    }
+    expect(await said()).toContain(`and it isn't in ${await realpath(away)}:`);
   });
 
   it("clean --all sweeps this metarepo's run folders no key names, wherever its keys said", async () => {

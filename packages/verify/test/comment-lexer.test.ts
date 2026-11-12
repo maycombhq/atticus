@@ -292,3 +292,199 @@ describe("the lexer's cost (fifth review of ADR 0196)", () => {
     expect(tBig).toBeLessThan(Math.max(tSmall * 10, 200));
   });
 });
+
+// Sixth review of ADR 0196: a doc block's annotation read by hand (the regex backtracked cubically
+// on a long run of spaces), PHP heredocs and backticks, Rust raw strings and strings across lines,
+// a `/` after `}` or `++` read as a division, Dart raw strings, and a leading `*` outside a block.
+describe("the sixth review of ADR 0196", () => {
+  const spaces = " ".repeat(10_000);
+
+  it("reads a doc block's line of 10,000 spaces in PHP at once", () => {
+    const F = "src/Controller/LedgerController.php";
+    for (const ls of [
+      ["<?php", "/**", spaces, " */"],
+      ["<?php", "/**", `${spaces}x`, " */"],
+      ["<?php", "/**", `${spaces}*${spaces}*${spaces}`, " */"],
+      ["<?php", `/**${spaces}*${spaces}@Rout`, " */"],
+    ]) {
+      const t = performance.now();
+      const got = commentLinesOf(F, ls);
+      expect(performance.now() - t).toBeLessThan(50);
+      expect(got.slice(1)).toEqual(ls.slice(1).map(() => true));
+    }
+    // a line alone (no file around it): read as a doc block's line, and as fast
+    const t = performance.now();
+    expect(isCommentLine(`*${spaces}`, F)).toBe(true);
+    expect(isCommentLine(`${spaces}*${spaces}*${spaces}x`, F)).toBe(true);
+    expect(performance.now() - t).toBeLessThan(50);
+    // the annotation is still read after the spaces
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["C", "/**"],
+      ["-", `${spaces}*${spaces}@Route("/ledger")`],
+      ["-", `/**${spaces}@Route("/ledger/{id}")`],
+      ["C", " */"],
+    );
+  });
+
+  it("reads the comment markers of a long line in each other style in linear time", () => {
+    for (const [file, l] of [
+      ["src/ledger.ts", `${spaces}*${spaces}`],
+      ["config/ledger.yaml", `${spaces}#${spaces}`],
+      ["db/ledger.sql", `${spaces}/*${spaces}*/${spaces}/`],
+      ["config/ledger.xml", `${spaces}<!--${spaces}-->${spaces}`],
+      ["docs/ledger.txt", `${spaces}#${spaces}`],
+      ["config/ledger.ini", `${spaces};${spaces}`],
+    ] as const) {
+      const t = performance.now();
+      isCommentLine(l, file);
+      expect(performance.now() - t, file).toBeLessThan(50);
+    }
+  });
+
+  it("reads a PHP heredoc and nowdoc to their closing label, and backticks across lines", () => {
+    const F = "src/Controller/LedgerController.php";
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["-", "$x = <<<MD"],
+      ["-", "See [docs](/api/*) and don't"],
+      ["-", "MD;"],
+      ["-", "$app->get('/api/live', $h);"],
+    );
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["-", "$help = <<<'TXT'"],
+      ["-", "    globs: /* and # and //"],
+      ["-", "    TXTS is no end"],
+      ["-", "    TXT, $app->get('/api/live', $h));"],
+      ["-", "$app->get('/api/ready', $h);"],
+      ["C", "// a comment"],
+    );
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["-", '$sql = <<< "SQL"'],
+      ["-", "  SELECT a /*+ FIRST_ROWS"],
+      ["-", "  SQL;"],
+      ["-", "$app->get('/api/live', $h);"],
+    );
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["-", "$o = `ls /var/www/*`;"],
+      ["-", "$app->get('/api/live', $h);"],
+      ["-", "$p = `find /srv \\` -name '*'"],
+      ["-", "  | grep /*`;"],
+      ["-", "$app->get('/api/ready', $h);"],
+    );
+    // a `"` string spans lines in PHP
+    expectLines(
+      F,
+      ["-", "<?php"],
+      ["-", '$s = "first'],
+      ["-", "  /* not a comment"],
+      ["-", '  end";'],
+      ["-", "$app->get('/api/live', $h);"],
+    );
+  });
+
+  it("reads Rust raw strings, byte raw strings and strings across lines", () => {
+    expectLines(
+      "src/ledger.rs",
+      ["-", 'let j = r#"{"path": "/api/*"}"#;'],
+      ["-", '#[get("/api/live")]'],
+      ["-", 'let b = br##"a "# /* b"##; let c = r"/*";'],
+      ["-", '#[get("/api/ready")]'],
+      ["-", 'let m = r#"'],
+      ["-", '  {"glob": "/*"}'],
+      ["-", '"#;'],
+      ["-", "let r#type = 1; // a raw identifier"],
+      ["-", '#[get("/api/balances")]'],
+      ["C", "/* a comment */"],
+    );
+    expectLines(
+      "src/ledger.rs",
+      ["-", 'let s = "first'],
+      ["-", "  /* not a comment"],
+      ["-", '  end";'],
+      ["-", '#[get("/api/live")]'],
+      ["-", 'let t = "a \\'],
+      ["-", '  /* b";'],
+      ["-", '#[get("/api/ready")]'],
+      ["C", "// a comment"],
+    );
+  });
+
+  it("reads a `/` after `}` before `/>`, after `++` or `--`, and after `}` in JSX as a division", () => {
+    const jsx =
+      '<Routes><Route path="/" element={<Home/>}/><Route path="/users/*" element={<Users/>}/></Routes>';
+    for (const file of ["src/portal/App.jsx", "src/portal/App.tsx", "src/portal/app.js"])
+      expectLines(
+        file,
+        ["-", jsx],
+        ["-", 'app.get("/api/live", live);'],
+        ["-", 'app.get("/api/ready", ready);'],
+        ["C", "// a comment"],
+      );
+    expectLines(
+      "src/portal/App.tsx",
+      ["-", "const w = {a: 1}.a"],
+      ["-", "const h = {b: 2}/2; const p = '/api/*';"],
+      ["-", 'app.get("/api/live", live);'],
+      ["C", "// a comment"],
+    );
+    for (const file of ["src/portal/count.js", "src/portal/count.ts"])
+      expectLines(
+        file,
+        ["-", 'let x = i++ / 2; const p = "/api/*";'],
+        ["-", 'app.get("/api/live", live);'],
+        ["-", 'let y = j-- / 2; const q = "/api/*";'],
+        ["-", 'app.get("/api/ready", ready);'],
+        // still a regex after `}` in a script, and after `+` alone
+        ["-", "if (ok) { done() } /\\/*$/.test(s);"],
+        ["-", 'const z = a + /\\/*/.source; app.get("/api/balances", balances);'],
+        ["C", "// a comment"],
+      );
+  });
+
+  it("reads a Dart raw string with no escapes", () => {
+    expectLines(
+      "lib/ledger.dart",
+      ["-", "final a = r'C:\\ledger\\'; final b = '/*';"],
+      ["-", "router.get('/api/live', live);"],
+      ["-", 'final c = r"\\"; final d = "/*";'],
+      ["-", "router.get('/api/ready', ready);"],
+      ["-", "final e = r'''"],
+      ["-", "  \\'''; final f = '/*';"],
+      ["-", "router.get('/api/balances', balances);"],
+      ["C", "// a comment"],
+    );
+  });
+
+  it("reads a leading `*` as a doc block's only inside a block, in a file read whole", () => {
+    expectLines(
+      "src/portal/sum.ts",
+      ["-", "const total = a"],
+      ["-", '  * b; app.get("/api/live", live);'],
+      ["-", "class Ledger {"],
+      ["-", "  * gen () {"],
+      ["-", "    yield 1;"],
+      ["-", "  }"],
+      ["-", "}"],
+      ["C", "/**"],
+      ["C", " * A ledger."],
+      ["C", " */"],
+    );
+    expectLines(
+      "ledger.go",
+      ["-", "total := a"],
+      ["-", "  * b"],
+      ["-", 'http.HandleFunc("/api/live", live)'],
+    );
+    // a line alone, with no file around it, is still read as a doc block's line
+    expect(isCommentLine(" * A ledger.", "src/portal/sum.ts")).toBe(true);
+  });
+});

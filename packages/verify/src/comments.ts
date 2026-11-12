@@ -4,24 +4,35 @@
  * string (`"rm -rf build /*"`, `"SELECT a /*+ FIRST_ROWS"`) or after `;//`, and read the rest of
  * the file as comment, so a live route below it was refused. The lexer keeps its state across
  * lines: a line comment, a block comment (nested where the language nests them: Kotlin, Rust,
- * Swift, Scala, Dart), a string in `"` or `'` (to the line's end, or past it after a `\`), a
- * JavaScript or TypeScript template literal across lines with `${…}` inside it (braces counted, so
- * an object or a nested template in it is read), a Go raw string, a Java, Kotlin, Scala, Swift,
- * Dart, Groovy or C# triple-quoted string, a C# verbatim string, a JavaScript regex literal, a Rust
- * char (not a lifetime), and escapes. A line is comment when it has a comment on it and every other
- * character on it outside one is a space or one of `{ } ( ) ,` (a JSX comment, `{/* … *\/}`, and the
- * `{/*` and `*\/}` lines of one across lines). Linear in the file's length.
+ * Swift, Scala, Dart), a string in `"` or `'` (to the line's end, or past it after a `\`; a `"`
+ * string across lines in Rust and PHP), a JavaScript or TypeScript template literal across lines
+ * with `${…}` inside it (braces counted, so an object or a nested template in it is read), a Go
+ * raw string, a Java, Kotlin, Scala, Swift, Dart, Groovy or C# triple-quoted string, a C# verbatim
+ * string, a Rust raw string (`r#"…"#`, `br"…"`) and char (not a lifetime), a Dart raw string
+ * (`r'…'`, no escapes), a PHP heredoc or nowdoc (to the line its label starts, PHP 7.3's flexible
+ * closing) and backtick command (across lines), a JavaScript regex literal, and escapes. A line is
+ * comment when it has a comment on it and every other character on it outside one is a space or
+ * one of `{ } ( ) ,` (a JSX comment, `{/* … *\/}`, and the `{/*` and `*\/}` lines of one across
+ * lines). Linear in the file's length.
  *
- * Kept from the regex it replaces: a line that starts with a doc block's `*` (` * text`, ` *\/`)
- * outside any block the lexer saw is read as a doc block's line (its opening was missed), for that
- * line only. In PHP a doc block's line that carries an annotation the framework reads (Symfony's
- * `@Route(`, `@Method(`, FOSRest's `@Rest\Get(` and `@Get(`…, API Platform's `@ApiResource(`,
- * Doctrine's `@ORM\…`) is code: the annotation is live, as a PHP 8 attribute is.
+ * A `/` starts a regex literal after an operator, an opening bracket, `;` or a keyword
+ * (`return`…), and after `}` in a script, but not after `}` before `>` (JSX's `}/>`), after `++` or
+ * `--`, nor after any `}` in a `.jsx` or `.tsx` file (sixth review of ADR 0196).
  *
- * Not read: C++ raw strings (`R"(…)"`), Swift's `#"…"#`, PHP heredocs and `?>` (HTML after it is read
- * as PHP), Groovy's slashy strings, a string an interpolation nests inside another string's
- * interpolation outside JavaScript (Kotlin's `"${m["k"]}"`). Each of these can misread the lines
- * it spans and, when it holds an unclosed `/*`, those after it up to the next `*\/`.
+ * A line read alone (`isCommentLine`, no file around it) that starts with a doc block's `*`
+ * (` * text`, ` *\/`) is read as a doc block's line, as the regex it replaces read it; in a file
+ * read whole a leading `*` is a doc block's only inside a block comment the lexer saw (sixth review:
+ * `  * b; app.get(…)` continuing an expression is code). In PHP a doc block's line that carries an
+ * annotation the framework reads (Symfony's `@Route(`, `@Method(`, FOSRest's `@Rest\Get(` and
+ * `@Get(`…, API Platform's `@ApiResource(`, Doctrine's `@ORM\…`) is code: the annotation is live, as
+ * a PHP 8 attribute is.
+ *
+ * Not read: C++ raw strings (`R"(…)"`), Swift's `#"…"#`, C#'s raw strings of four quotes or more
+ * (`""""…""""`, read as a triple-quoted one, so a `"""` in one closes it), Scala's `raw"…\""` (its
+ * `\` read as an escape), PHP's `'…'` across lines (read to the line's end) and `?>` (HTML after it
+ * is read as PHP), Groovy's slashy strings, a string an interpolation nests inside another
+ * string's interpolation outside JavaScript (Kotlin's `"${m["k"]}"`). Each of these can misread
+ * the lines it spans and, when it holds an unclosed `/*`, those after it up to the next `*\/`.
  */
 
 /** What the lexer reads in a file, by its language. */
@@ -34,6 +45,8 @@ export interface CommentLexis {
   nest: boolean;
   /** Template literals with `${…}` and regex literals (JavaScript, TypeScript). */
   js: boolean;
+  /** JSX's own file (`.jsx`, `.tsx`): a `/` after `}` is never a regex's start. */
+  jsx: boolean;
   /** A backtick opens a raw string across lines (Go). */
   goRaw: boolean;
   /** A backtick quotes an identifier on its line (Kotlin, Scala, Swift). */
@@ -44,9 +57,13 @@ export interface CommentLexis {
   tripleEscapes: boolean;
   /** C#'s verbatim `@"…"`: across lines, `""` a quote, no escapes. */
   verbatim: boolean;
-  /** Rust: a `'` is a char only as `'x'` or `'\…'`, else a lifetime. */
+  /** Rust: a `'` is a char only as `'x'` or `'\…'`, else a lifetime; `r#"…"#` a raw string. */
   rustChar: boolean;
-  /** PHP: a doc block's line with a live annotation is code. */
+  /** Dart: `r'…'` and `r"…"` (and their triple forms) are raw, with no escapes. */
+  dartRaw: boolean;
+  /** The quotes whose strings run across lines (`"` in Rust and PHP). */
+  spanQuotes: string;
+  /** PHP: a doc block's line with a live annotation is code; heredocs and backticks are read. */
   php: boolean;
 }
 
@@ -63,26 +80,54 @@ export function commentLexisOf(file: string, php: boolean): CommentLexis {
     ...(php || !TRIPLE_DOUBLE.test(file) ? [] : ['"""']),
     ...(php || !TRIPLE_SINGLE.test(file) ? [] : ["'''"]),
   ];
+  const rust = !php && /\.rs$/i.test(file);
   return {
     slashSlash: !/\.css$/i.test(file),
     hash: php,
     nest: !php && NESTING.test(file),
     js: !php && JS.test(file),
+    jsx: !php && /\.[jt]sx$/i.test(file),
     goRaw: !php && /\.go$/i.test(file),
     tickIdent: !php && /\.(kt|kts|scala|sc|swift)$/i.test(file),
     triple,
     tripleEscapes: !RAW_TRIPLE.test(file),
     verbatim: !php && /\.(cs|csx)$/i.test(file),
-    rustChar: !php && /\.rs$/i.test(file),
+    rustChar: rust,
+    dartRaw: !php && /\.dart$/i.test(file),
+    spanQuotes: rust || php ? '"' : "",
     php,
   };
 }
 
 /** A doc block's leading `*` at a line's start, not a generator method (`*entries()`). */
 const DOC_STAR_START = /^\s*\*(?![A-Za-z_$[])/;
-/** A PHP doc block's line whose annotation the framework reads, as its first word. */
+/**
+ * A PHP doc block's annotation the framework reads, where the line's first word starts (sticky:
+ * the `\s`, `/**` and `*` before it are read by hand, `livePhpAnnotation`; sixth review of ADR
+ * 0196: `^\s*(?:\/\*\*)?\s*\*?\s*@…` backtracked cubically on a run of spaces).
+ */
 const LIVE_PHP_ANNOTATION =
-  /^\s*(?:\/\*\*)?\s*\*?\s*@(?:(?:Route|Method|Get|Post|Put|Patch|Delete|Head|Options|ApiResource)\s*\(|Rest\\\w+|ORM\\\w+)/;
+  /@(?:(?:Route|Method|Get|Post|Put|Patch|Delete|Head|Options|ApiResource)\s*\(|Rest\\\w+|ORM\\\w+)/y;
+/** A run of spaces, as `\s` reads them, from where it is set. */
+const SPACES = /\s*/y;
+const skipSpaces = (l: string, i: number) => {
+  SPACES.lastIndex = i;
+  SPACES.test(l);
+  return SPACES.lastIndex;
+};
+/** Whether a PHP doc block's line carries a live annotation as its first word (linear). */
+function livePhpAnnotation(l: string): boolean {
+  let i = skipSpaces(l, 0);
+  if (l.startsWith("/**", i)) i = skipSpaces(l, i + 3);
+  if (l[i] === "*") i = skipSpaces(l, i + 1);
+  LIVE_PHP_ANNOTATION.lastIndex = i;
+  return LIVE_PHP_ANNOTATION.test(l);
+}
+/** A PHP heredoc's or nowdoc's opening after `<<<`: spaces, the label (quoted or not), the line's end. */
+const HEREDOC_OPEN = /[ \t]*(["']?)([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)\1[ \t\r]*$/y;
+/** A character a PHP label may hold. */
+const isLabelChar = (c: string | undefined) =>
+  c !== undefined && c !== "$" && (isWord(c) || c >= "\x80");
 /** The words after which a `/` starts a regex literal, not a division. */
 const REGEX_AFTER_WORD = new Set(
   "return typeof instanceof in of new delete void throw case do else yield await".split(" "),
@@ -93,7 +138,7 @@ const REGEX_AFTER = "(,=:[!&|?{};+-*%~^";
 const BRACKETS = "{}(),";
 
 /** A space, a tab, a line end, a no-break space or a byte-order mark (`\s` in a regex, as the regex this replaces read). */
-const isSpace = (c: string) => c <= " " || c === "\uFEFF" || c === "\u00A0";
+const isSpace = (c: string) => c <= " " || c === "﻿" || c === " ";
 const isWord = (c: string) =>
   (c >= "a" && c <= "z") ||
   (c >= "A" && c <= "Z") ||
@@ -101,36 +146,52 @@ const isWord = (c: string) =>
   c === "_" ||
   c === "$";
 
-type Mode = "code" | "block" | "str" | "raw" | "tpl";
+type Mode = "code" | "block" | "str" | "raw" | "tpl" | "heredoc";
 
 /**
  * Which lines are all comment, in one pass. With `codeOut`, each line's text outside its comments
  * is put there too (its pieces joined by a space; a line all comment gives ""), for the
- * skipped-lines reader.
+ * skipped-lines reader. `alone`: the lines are read with no file around them (`isCommentLine`), so a
+ * line that starts with a doc block's `*` is read as one's.
  */
 export function lexCommentLines(
   lines: readonly string[],
   lx: CommentLexis,
   codeOut?: string[],
+  alone = false,
 ): boolean[] {
   const out = new Array<boolean>(lines.length);
   let mode: Mode = "code";
   let depth = 0; // a block comment's nesting
   let doc = false; // the block is a doc block, `/**`
-  let close = ""; // what ends the string
+  let close = ""; // what ends the string (a heredoc's label)
   let escapes = true; // whether `\` escapes in it
   let doubled = false; // C#'s verbatim: `""` is a quote
+  let tripled = false; // a triple-quoted string: it closes at the last of its run of quotes
   const frames: number[] = []; // the open braces of each template's `${…}`
   let prev = ""; // the last code character, for telling a regex from a division
   let prev2 = "";
   let word = ""; // the identifier that ends at `prev`
-  const sawCode = (c: string) => {
+  let base = 0; // where the line starts in the file
+  let prevAt = -2; // where `prev` is in the file
+  let pair = false; // `prev` and `prev2` are one token's two characters (`++`, `--`)
+  const sawCode = (c: string, at: number) => {
     if (word && isWord(c) && isWord(prev)) word += c;
     else word = isWord(c) ? c : "";
+    pair = c === prev && at === prevAt + 1;
     prev2 = prev;
     prev = c;
+    prevAt = at;
   };
-  for (let n = 0; n < lines.length; n++) {
+  /** A string opens, closed by `to`: to the line's end (`str`) or across lines (`raw`). */
+  const openString = (to: string, o: { escapes: boolean; lines: boolean; triple?: boolean }) => {
+    mode = o.lines ? "raw" : "str";
+    close = to;
+    escapes = o.escapes;
+    doubled = false;
+    tripled = o.triple === true;
+  };
+  for (let n = 0; n < lines.length; base += lines[n]!.length + 1, n++) {
     const l = lines[n]!;
     const len = l.length;
     let comment: boolean = mode === "block";
@@ -139,13 +200,24 @@ export function lexCommentLines(
     let synthetic = false;
     let cont = false; // a string continued past the line's end by a `\`
     let regexOk = lx.js;
-    if (mode === "code" && DOC_STAR_START.test(l)) {
-      // a doc block's line whose opening wasn't seen: read as one, for this line only
+    if (alone && mode === "code" && DOC_STAR_START.test(l)) {
+      // a doc block's line read alone, whose opening isn't there: read as one, for this line only
       mode = "block";
       depth = 1;
       doc = docLine = synthetic = comment = true;
     }
     let i = 0;
+    if (mode === "heredoc") {
+      // its closing label, where the line's spaces end, not followed by a label's character
+      const k = skipSpaces(l, 0);
+      if (l.startsWith(close, k) && !isLabelChar(l[k + close.length])) {
+        mode = "code";
+        prev = '"';
+        word = "";
+        i = k + close.length;
+      } else i = len;
+      code = l.trim() !== "";
+    }
     // where the line's text outside a comment starts (-1: in one), and where a line comment cuts it
     let seg = mode === "block" ? -1 : 0;
     let cut = len;
@@ -184,13 +256,13 @@ export function lexCommentLines(
             i += 2;
           } else i++;
         } else if (doubled && c === '"' && l[i + 1] === '"') i += 2;
-        else if (l.startsWith(close, i)) {
+        else if (c === close[0] && l.startsWith(close, i)) {
           mode = "code";
           prev = '"';
           word = "";
           i += close.length;
           // a triple-quoted string closes at the last of its run of quotes (`"$name""""`)
-          if (close.length === 3) while (l[i] === close[0]) i++;
+          if (tripled) while (l[i] === close[0]) i++;
         } else i++;
         continue;
       }
@@ -217,48 +289,75 @@ export function lexCommentLines(
         cut = i;
         break;
       }
+      // a prefix that makes the string after it raw, at an identifier's start
+      if ((lx.rustChar || lx.dartRaw) && !(i > 0 && isWord(l[i - 1]!))) {
+        if (lx.rustChar && (c === "r" || ((c === "b" || c === "c") && d === "r"))) {
+          // Rust's `r#"…"#`, `br"…"`, `cr"…"` (not a raw identifier, `r#type`)
+          let j = c === "r" ? i + 1 : i + 2;
+          const h = j;
+          while (l[j] === "#") j++;
+          if (l[j] === '"') {
+            code = true;
+            openString(`"${"#".repeat(j - h)}`, { escapes: false, lines: true });
+            i = j + 1;
+            continue;
+          }
+        } else if (lx.dartRaw && c === "r" && (d === "'" || d === '"')) {
+          // Dart's `r'…'`, `r"…"`, `r'''…'''`: no escapes
+          code = true;
+          const t = lx.triple.find((q) => l.startsWith(q, i + 1));
+          if (t) openString(t, { escapes: false, lines: true, triple: true });
+          else openString(d, { escapes: false, lines: false });
+          i += t ? 4 : 2;
+          continue;
+        }
+      }
+      if (lx.php && c === "<" && d === "<" && l[i + 2] === "<") {
+        HEREDOC_OPEN.lastIndex = i + 3;
+        const m = HEREDOC_OPEN.exec(l);
+        if (m) {
+          code = true;
+          mode = "heredoc";
+          close = m[2]!;
+          break;
+        }
+      }
       if (c === '"' || c === "'" || c === "`") {
         code = true;
         const t = lx.triple.find((q) => q[0] === c && l.startsWith(q, i));
         if (t) {
-          mode = "raw";
-          close = t;
-          escapes = lx.tripleEscapes;
-          doubled = false;
+          openString(t, { escapes: lx.tripleEscapes, lines: true, triple: true });
           i += 3;
         } else if (c === "`") {
           if (lx.js) {
             mode = "tpl";
             escapes = true;
             doubled = false;
-          } else if (lx.goRaw || lx.tickIdent) {
-            mode = lx.goRaw ? "raw" : "str";
-            close = "`";
-            escapes = false;
-            doubled = false;
-          } else sawCode(c);
+          } else if (lx.php) openString("`", { escapes: true, lines: true });
+          else if (lx.goRaw) openString("`", { escapes: false, lines: true });
+          else if (lx.tickIdent) openString("`", { escapes: false, lines: false });
+          else sawCode(c, base + i);
           i++;
         } else if (c === '"' && lx.verbatim && (prev === "@" || (prev === "$" && prev2 === "@"))) {
-          mode = "raw";
-          close = '"';
-          escapes = false;
+          openString('"', { escapes: false, lines: true });
           doubled = true;
           i++;
         } else if (c === "'" && lx.rustChar && d !== "\\" && l[i + 2] !== "'") {
           // a lifetime (`'a`), no quote
-          sawCode(c);
+          sawCode(c, base + i);
           i++;
         } else {
-          mode = "str";
-          close = c;
-          escapes = true;
-          doubled = false;
+          openString(c, { escapes: true, lines: lx.spanQuotes.includes(c) });
           i++;
         }
         continue;
       }
       if (c === "/" && regexOk) {
-        const after = REGEX_AFTER.includes(prev) || prev === "" || (prev === ">" && prev2 === "=");
+        const division =
+          (prev === "}" && (lx.jsx || d === ">")) || (pair && (prev === "+" || prev === "-"));
+        const after =
+          !division &&
+          (REGEX_AFTER.includes(prev) || prev === "" || (prev === ">" && prev2 === "="));
         if (after || (isWord(prev) && REGEX_AFTER_WORD.has(word))) {
           // a regex literal: to its closing `/` on this line, outside a class (`[…]`)
           let j = i + 1;
@@ -292,16 +391,17 @@ export function lexCommentLines(
       }
       if (!isSpace(c)) {
         if (!BRACKETS.includes(c)) code = true;
-        sawCode(c);
+        sawCode(c, base + i);
       }
       i++;
     }
-    if (mode === "str" && !cont) mode = "code";
+    // (`openString` sets the mode too, which the compiler's narrowing doesn't follow)
+    if ((mode as Mode) === "str" && !cont) mode = "code";
     if (synthetic && mode === "block") {
       mode = "code";
       depth = 0;
     }
-    const live = lx.php && docLine && LIVE_PHP_ANNOTATION.test(l);
+    const live = lx.php && docLine && livePhpAnnotation(l);
     out[n] = comment && !code && !live;
     if (codeOut)
       codeOut[n] = live ? l : out[n] ? "" : seg >= 0 ? text + l.slice(seg, cut) : text.trimEnd();

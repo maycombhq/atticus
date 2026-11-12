@@ -157,8 +157,16 @@ export const CANARY_WORDS = {
     `Note: ${repo}'s facts were read at ${facts}, and its checkout is at ${head}; the copy is of the checkout, so a line the facts cite may have moved. Read it again first (/atticus-map ${repo}) for a canary of what the facts say.`,
   dirty: (repo: string) =>
     `Note: ${repo}'s checkout has changes not committed; the copy holds them as they are.`,
-  replaced: (repo: string, how: "deleted" | "absent" | "left") =>
-    `An earlier canary of ${repo} wasn't scored: ${how === "deleted" ? "its copy is deleted" : how === "absent" ? "its run folder wasn't there any more, and its key is deleted" : "its run folder wasn't a real folder (a link?), so nothing in it was touched, and its key is deleted"}.`,
+  replaced: (repo: string, how: "deleted" | "absent" | "left" | "unread", runs = 0) =>
+    `An earlier canary of ${repo} wasn't scored: ${
+      how === "unread"
+        ? `its key didn't read, and is deleted${runs ? `, with ${runs} run ${runs === 1 ? "folder" : "folders"} of ${repo}'s this metarepo planted` : ""}`
+        : how === "deleted"
+          ? "its copy is deleted"
+          : how === "absent"
+            ? "its run folder wasn't there any more, and its key is deleted"
+            : "its run folder wasn't a real folder (a link or a file is at its path), so nothing in it was touched, and its key is deleted"
+    }.`,
   readsUntrusted: (repo: string, dir: string, key: string) =>
     `The run folder of ${repo}'s canary is in ${dir}, which isn't a folder only you can write to now (another user's, a link, or open to others): nothing in it is read or deleted, and the key is kept, at ${key}. ${untrustedWayOut(dir, key)}`,
   planted: (repo: string, seed: string) =>
@@ -203,13 +211,13 @@ export const CANARY_WORDS = {
   runGone: (repo: string, where: string, folder: boolean) =>
     `The run folder of ${repo}'s canary isn't there any more: ${folder ? `${where} is gone (a restart or the system's cleaning of the temporary folder takes it)` : `it isn't in ${where}`}. Its key is deleted. Plant it again: atticus canary plant ${repo}.${folder ? ` (A session that still sees that folder, such as a service with a /tmp of its own, deletes the run folder there with atticus canary clean --all.)` : ""}`,
   runNotReal: (repo: string, where: string) =>
-    `The run folder of ${repo}'s canary in ${where} isn't a real folder any more (a link?): nothing in it is read or deleted, and its key is deleted. Plant it again: atticus canary plant ${repo}.`,
+    `The run folder of ${repo}'s canary in ${where} isn't a real folder any more (a link or a file is at its path): nothing in it is read or deleted, and its key is deleted. Plant it again: atticus canary plant ${repo}.`,
   noCopy: (repo: string, deleted: boolean) =>
     `The copy in the run folder of ${repo}'s canary is gone (or isn't a real folder any more): ${deleted ? "the run folder and its key are deleted" : "nothing is checked"}. Plant it again: atticus canary plant ${repo}${deleted ? "" : " (it replaces this one)"}.`,
-  readsUnreachable: (repo: string, dir: string, key: string) =>
-    `The run folder of ${repo}'s canary is in ${dir}, which can't be reached now (${dirname(dir)} isn't there either: a drive not mounted, or another session's temporary folder), so it can't be told whether the run is still there: nothing is deleted, and the key is kept, at ${key}. Mount the drive (or run the command where that folder is) and run it again; if the folder is gone for good, delete the key: rm ${key}${process.platform === "win32" ? ` (del "${key}" in cmd)` : ""}.`,
-  runUnplaced: (repo: string, dir: string, key: string) =>
-    `The key of ${repo}'s canary, at ${key}, was written by an earlier version and doesn't say which temporary folder its run folder is in, and it isn't in ${dir}: nothing is deleted, and the key is kept. If it was planted with TMPDIR (TEMP on Windows) set otherwise, set it so again and run the command again; else delete the key: rm ${key}${process.platform === "win32" ? ` (del "${key}" in cmd)` : ""}.`,
+  readsUnreachable: (repo: string, dir: string, key: string, parent: "absent" | "notFolder") =>
+    `The run folder of ${repo}'s canary is in ${dir}, which can't be reached now (${dirname(dir)} ${parent === "absent" ? "isn't there either" : "isn't a real folder (a link or a file is at its path)"}: a drive not mounted, or another session's temporary folder), so it can't be told whether the run is still there: nothing is deleted, and the key is kept, at ${key}. Mount the drive (or run the command where that folder is) and run it again; if the folder is gone for good, delete the key: rm ${key}${process.platform === "win32" ? ` (del "${key}" in cmd)` : ""}.`,
+  runUnplaced: (repo: string, dir: string, key: string, here: "looked" | "absent" | "untrusted") =>
+    `The key of ${repo}'s canary, at ${key}, was written by an earlier version and doesn't say which temporary folder its run folder is in, and ${here === "looked" ? `it isn't in ${dir}` : here === "absent" ? `${dir} isn't there to look in` : `${dir} isn't a folder only you can write to (another user's, a link, or open to others), so it isn't looked in`}: nothing is deleted, and the key is kept. If it was planted with TMPDIR (TEMP on Windows) set otherwise, set it so again and run the command again; else delete the key: rm ${key}${process.platform === "win32" ? ` (del "${key}" in cmd)` : ""}.`,
   notHere: `This folder holds no read to check: run ${HERE_COMMAND} in the folder its prompt.md is in.`,
   otherRepo: (repo: string, here: string) => `This folder holds a read of ${here}, not of ${repo}.`,
   noRead: (repo: string, file: string) =>
@@ -240,7 +248,7 @@ export const CANARY_WORDS = {
         : []),
       ...(left > 0
         ? [
-            `${left} ${left === 1 ? "wasn't a real folder" : "weren't real folders"} (a link?), left as ${left === 1 ? "it was" : "they were"}`,
+            `${left} ${left === 1 ? "wasn't a real folder" : "weren't real folders"} (a link or a file), left as ${left === 1 ? "it was" : "they were"}`,
           ]
         : []),
     ];
@@ -345,8 +353,11 @@ const isGone = (p: string) =>
  * - `kept`: it can't be told, so the key is kept: the reads folder is there but can't be trusted
  *   (`untrusted`: a link, another user's, open to others, third review); it and the folder it was
  *   made in aren't there (`unreachable`: a drive not mounted, or another session's temporary
- *   folder; fifth review: that is no proof the run went); or the key names no reads folder, being
- *   an earlier version's, and the run isn't in this temporary folder's (`unplaced`, fifth review).
+ *   folder; fifth review: that is no proof the run went; `parent` says whether the folder it was
+ *   made in is absent or something not a real folder, sixth review); or the key names no reads
+ *   folder, being an earlier version's, and the run isn't in this temporary folder's (`unplaced`,
+ *   fifth review; `here` says whether that reads folder was looked in, is absent, or is there but
+ *   can't be trusted, sixth review).
  *
  * The reads folder is the real path the plant kept in the key (third review: another TMPDIR later
  * still finds it). When it isn't there, the run is looked for by its name in this temporary
@@ -356,7 +367,11 @@ type RunPlace =
   | { at: "found"; reads: string; dir: string }
   | { at: "gone"; where: string; folder: boolean }
   | { at: "notReal"; where: string }
-  | { at: "kept"; why: "untrusted" | "unreachable" | "unplaced"; where: string };
+  | KeptPlace;
+type KeptPlace =
+  | { at: "kept"; why: "untrusted"; where: string }
+  | { at: "kept"; why: "unreachable"; where: string; parent: "absent" | "notFolder" }
+  | { at: "kept"; why: "unplaced"; where: string; here: "looked" | "absent" | "untrusted" };
 
 async function locateRun(
   root: string,
@@ -374,9 +389,14 @@ async function locateRun(
   const here = await readsDir(o);
   if (key.reads === undefined) {
     const p = here ? await inReads(here) : undefined;
-    return p && p.at !== "gone"
-      ? p
-      : { at: "kept", why: "unplaced", where: here ?? join(scratchOf(o), CANARY_READS_DIR) };
+    if (p && p.at !== "gone") return p;
+    const where = here ?? join(scratchOf(o), CANARY_READS_DIR);
+    return {
+      at: "kept",
+      why: "unplaced",
+      where,
+      here: here ? "looked" : (await isGone(where)) ? "absent" : "untrusted",
+    };
   }
   const trusted = await trustReads(key.reads);
   if (trusted) return inReads(trusted);
@@ -386,22 +406,22 @@ async function locateRun(
     if (dir) return { at: "found", reads: here, dir };
   }
   // gone only where the folder it was made in is there to show it; else nothing is known
-  return (await isRealDir(dirname(key.reads)))
-    ? { at: "gone", where: key.reads, folder: true }
-    : { at: "kept", why: "unreachable", where: key.reads };
+  if (await isRealDir(dirname(key.reads))) return { at: "gone", where: key.reads, folder: true };
+  return {
+    at: "kept",
+    why: "unreachable",
+    where: key.reads,
+    parent: (await isGone(dirname(key.reads))) ? "absent" : "notFolder",
+  };
 }
 
 /** What to say about a key kept because where its run is can't be told. */
-const keptWords = (
-  repo: string,
-  place: { why: "untrusted" | "unreachable" | "unplaced"; where: string },
-  key: string,
-) =>
+const keptWords = (repo: string, place: KeptPlace, key: string) =>
   place.why === "untrusted"
     ? CANARY_WORDS.readsUntrusted(repo, place.where, key)
     : place.why === "unreachable"
-      ? CANARY_WORDS.readsUnreachable(repo, place.where, key)
-      : CANARY_WORDS.runUnplaced(repo, place.where, key);
+      ? CANARY_WORDS.readsUnreachable(repo, place.where, key, place.parent)
+      : CANARY_WORDS.runUnplaced(repo, place.where, key, place.here);
 
 /** What to say about a run folder that isn't there (or isn't a real folder), its key deleted. */
 const noRunWords = (repo: string, place: Extract<RunPlace, { at: "gone" | "notReal" }>) =>
@@ -519,7 +539,7 @@ async function discard(
 ): Promise<{
   runs: number;
   absent?: true;
-  kept?: { why: "untrusted" | "unreachable" | "unplaced"; where: string };
+  kept?: KeptPlace;
 }> {
   const id = metarepoIdOf(root, o.env);
   if (key) {
@@ -735,8 +755,11 @@ export async function canaryPlant(
       io.err(keptWords(repo, gone.kept, keyPath(root, repo, o.env)));
       return 2;
     }
+    // sixth review of ADR 0196: a key that didn't read is said so, not "wasn't a real folder"
     io.out(
-      CANARY_WORDS.replaced(repo, gone.runs > 0 ? "deleted" : gone.absent ? "absent" : "left"),
+      earlier === "bad"
+        ? CANARY_WORDS.replaced(repo, "unread", gone.runs)
+        : CANARY_WORDS.replaced(repo, gone.runs > 0 ? "deleted" : gone.absent ? "absent" : "left"),
     );
   }
 

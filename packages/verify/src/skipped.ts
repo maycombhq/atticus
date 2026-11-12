@@ -121,14 +121,15 @@ const headOf = (lines: readonly string[]) => {
  * `<!-- a --> <route …>`) is code. `file` is the path of the file the line is in, `lines` its lines
  * when known (a `.inc` file is PHP only when it holds `<?php`). In a C-family or PHP file the line
  * is read by the lexer (`lexCommentLines`) on its own, as `commentLinesOf` reads a file: its strings
- * are strings, and a JSX comment `{/* … *\/}` is comment.
+ * are strings, and a JSX comment `{/* … *\/}` is comment; read alone, a line that starts with a doc
+ * block's `*` is a doc block's line (in a file read whole, only inside a block comment).
  */
 export const isCommentLine = (l: string, file: string, lines?: readonly string[]) =>
   lineIsComment(l, file, commentStyleOf(file, lines && headOf(lines)));
 
 function lineIsComment(l: string, file: string, style: CommentStyle): boolean {
   if (style === "c" || style === "php")
-    return lexCommentLines([l], commentLexisOf(file, style === "php"))[0]!;
+    return lexCommentLines([l], commentLexisOf(file, style === "php"), undefined, true)[0]!;
   const marker =
     style !== "hash"
       ? COMMENT_OF[style]
