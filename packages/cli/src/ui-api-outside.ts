@@ -63,6 +63,18 @@ export const OUTSIDE_ADD_SPEC = (id: string): string[] => [
 export const OUTSIDE_ALIAS_CLASH = (name: string, host: string, repo: string): string =>
   `${host} is one of ${name}'s aliases in the profile, but ${repo} answers on it (repos.manifest.yaml lists it), so calls to it go to ${repo}, not to ${name}. If ${repo} is the gateway in front of ${name}, take ${host} out of ${name}'s aliases.`;
 
+/**
+ * Beta.27: a host the vendor's spec serves on (its `servers`) that repos.manifest.yaml lists under
+ * an estate repo's hosts: the calls to it are that repo's, which is most likely a mistake.
+ */
+export const OUTSIDE_SPEC_HOST_CLASH = (
+  name: string,
+  host: string,
+  repo: string,
+  spec: string,
+): string =>
+  `${host} is a server in ${name}'s spec (${spec}), but repos.manifest.yaml lists it under ${repo}'s hosts, so calls to it go to ${repo}, not to ${name}. If ${repo} doesn't answer on ${host}, take it out of ${repo}'s hosts in repos.manifest.yaml.`;
+
 export async function outsideView(root: string): Promise<View> {
   const quiet = { out: () => undefined, err: () => undefined };
   const { op, records, inputs } = await intakeContext(root, quiet);
@@ -136,8 +148,8 @@ export async function outsideView(root: string): Promise<View> {
   // Beta.27: a host alias of an outside system that an estate repo answers on (the gateway's own
   // host, added to a vendor's aliases): its calls are that repo's, said plainly on the page.
   const manifests = estateRepos(op);
-  const clashes = (aliases: readonly string[]) =>
-    hostAliases(aliases).flatMap((h) =>
+  const clashes = (hosts: readonly string[]) =>
+    hosts.flatMap((h) =>
       manifests
         .filter((m) =>
           [...(m.hosts ?? []), ...(m.modules ?? []).flatMap((x) => x.hosts ?? [])].some((p) =>
@@ -269,7 +281,16 @@ export async function outsideView(root: string): Promise<View> {
       )
       .map((q) => ({ id: q.id, repo: q.repo, question: q.question }))
       .sort((a, b) => cmp(a.id, b.id));
-    const notes = clashes(s.aliases).map((c) => OUTSIDE_ALIAS_CLASH(s.name, c.host, c.repo));
+    // The profile's host aliases, then the hosts its spec serves on that no alias names.
+    const aliasHosts = hostAliases(s.aliases);
+    const notes = [
+      ...clashes(aliasHosts).map((c) => OUTSIDE_ALIAS_CLASH(s.name, c.host, c.repo)),
+      ...(spec
+        ? clashes(spec.hosts.filter((h) => !aliasHosts.some((a) => hostMatches(a, h)))).map((c) =>
+            OUTSIDE_SPEC_HOST_CLASH(s.name, c.host, c.repo, spec.path),
+          )
+        : []),
+    ];
     return {
       id: s.id,
       name: s.name,

@@ -90,6 +90,12 @@ export interface VendorCallMatch {
   /** The path the gateway forwards to: the target URL's own path in front, when it has one. */
   path: string;
   /**
+   * The environment whose target URL gives `path` (its config fact's `env`), when the settings
+   * name one: of those whose path reaches the operation, the prod-like one, else the first by
+   * name (`preferredEnvironment`).
+   */
+  env?: string;
+  /**
    * Beta.27: the route forwards a wildcard (`/accounts/*`), so it reaches every operation under
    * it; this is one of them (the call has a match for each).
    */
@@ -109,6 +115,8 @@ export interface VendorCallGap {
   vendor: string;
   method?: string;
   path: string;
+  /** The environment whose target path `path` is (see `VendorCallMatch.env`). */
+  env?: string;
   message: string;
 }
 
@@ -120,6 +128,8 @@ export interface VendorCallAsk {
   question: string;
   /** The operations' Endpoint ids, sorted. */
   candidates: string[];
+  /** The environment whose target path the question is about (see `VendorCallMatch.env`). */
+  env?: string;
 }
 
 export interface VendorJoinResult {
@@ -156,6 +166,19 @@ function urlPathOf(s: string | undefined): string | undefined {
   const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(s.trim()) : null;
   const p = m?.[1]?.replace(/\/+$/, "");
   return p ? p : undefined;
+}
+
+const PROD_LIKE = /(^|[^a-z])(pd|prod|prd|production)([^a-z]|$)/i;
+
+/**
+ * The review of beta.27: the environment whose target URL a match, gap or drawn arrow takes its
+ * path from when the environments' settings differ: the first by name of the prod-like ones (a
+ * name with `pd`, `prod`, `prd` or `production` as a word of its own: `prod`, `us-prd`, `prod1`),
+ * else the first by name. Undefined when none is named.
+ */
+export function preferredEnvironment(envs: readonly string[]): string | undefined {
+  const named = [...new Set(envs.filter(Boolean))].sort(cmp);
+  return named.find((e) => PROD_LIKE.test(e)) ?? named[0];
 }
 
 /** A path with another in front, unless it already starts with it. */
@@ -376,87 +399,148 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
       if (!vendor || !how) continue;
       if (!forwarding && !takesDirect(vendor)) continue;
       const own = vendor;
-      /** The target URL's own paths (`/api/v1`), one per environment's setting, when it has any. */
-      const prefixes = [
-        ...new Set(
-          [
-            urlPathOf(call.host),
-            ...configs
-              .filter((c) => {
-                const h = hostOf(c.value)!;
-                return how !== "host" || vendorOfHost(h) === own;
-              })
-              .map((c) => urlPathOf(c.value)),
-          ].filter((p): p is string => !!p),
-        ),
-      ].sort();
+      /**
+       * The target URL's own paths (`/api/v1`), each with the environments whose setting gives it
+       * (the review of beta.27: dv's `/api/v1` and prod's `/api/v2` are matched each on its own).
+       * A setting with no path is a group with none; with no setting at all, one group with the
+       * call's own URL path, if any. The preferred environment's group comes first.
+       */
+      type Group = { path?: string; envs: string[]; tie?: Config; env?: string };
+      const groups = new Map<string, Group>();
+      const groupOf = (path: string | undefined) => {
+        const k = path ?? "";
+        const g = groups.get(k) ?? { ...(path ? { path } : {}), envs: [] };
+        groups.set(k, g);
+        return g;
+      };
+      const settings = configs.filter(
+        (c) => how !== "host" || vendorOfHost(hostOf(c.value)!) === own,
+      );
+      const ownPath = urlPathOf(call.host);
+      if (ownPath || !settings.length) groupOf(ownPath);
+      for (const c of settings) {
+        const g = groupOf(urlPathOf(c.value));
+        if (c.env) g.envs.push(c.env);
+      }
+      for (const g of groups.values()) {
+        const env = preferredEnvironment(g.envs);
+        if (env) g.env = env;
+        g.tie =
+          settings.find((c) => urlPathOf(c.value) === g.path && c.env === env) ??
+          settings.find((c) => urlPathOf(c.value) === g.path);
+      }
+      const first = preferredEnvironment([...groups.values()].flatMap((g) => g.envs));
+      const lead = (g: Group) => (first !== undefined && g.envs.includes(first) ? 0 : 1);
+      const ordered = [...groups.values()].sort(
+        (a, b) =>
+          lead(a) - lead(b) || Number(!a.env) - Number(!b.env) || cmp(a.path ?? "", b.path ?? ""),
+      );
+      const several = ordered.length > 1;
 
       // ---- which operation
       const name = vendor.names[0] ?? vendor.system;
       const method = call.method?.toUpperCase();
-      // The path the vendor receives: each environment's target path in front of the route's.
-      const sent = prefixes.length ? prefixes.map((p) => under(p, call.path)) : [call.path];
-      const what = [method, sent[0]].filter(Boolean).join(" ");
-      const shape = (op: JoinVendorOperation) => {
-        let bestFit: { literals: number; wildcard: boolean; path: string } | undefined;
-        for (const path of [...sent, ...(prefixes.length ? [call.path] : [])]) {
-          const a = segs(path);
-          if (!a) continue;
-          for (const served of op.fullPath ? [op.fullPath, op.path] : [op.path]) {
-            const b = segs(served);
-            const x = b ? fit(a, b) : undefined;
-            if (x && (!bestFit || x.literals > bestFit.literals)) bestFit = { ...x, path };
-          }
-        }
-        return bestFit;
-      };
-      const scored = vendor.operations.flatMap((op) => {
-        const s = shape(op);
-        return s ? [{ op, ...s }] : [];
-      });
-      const fitting = scored.filter((s) => sameMethod(method, s.op.method));
-      // A wildcard route reaches every operation it fits; any other call the best fit only.
-      const wild = fitting.some((s) => s.wildcard);
-      const best = Math.max(0, ...fitting.map((s) => s.literals));
-      const hits = fitting
-        .filter((s) => wild || s.literals === best)
-        .sort((a, b) => cmp(a.op.id, b.op.id));
       const base = {
         call: end(call),
         ...(route ? { route } : {}),
-        ...(tie ? { tie } : {}),
-        vendor: vendor.system,
       };
-      if (hits.length === 1 || (wild && hits.length > 1)) {
-        for (const h of hits)
-          matches.push({
+      /** The path the vendor receives in a group: its target path in front of the route's. */
+      const sentOf = (g: Group) =>
+        g.path ? under(g.path, call.path) : under(undefined, call.path);
+      const whatOf = (g: Group) => [method, sentOf(g)].filter(Boolean).join(" ");
+      /** A group's path with its environments, when the call has several: `/x in prod`. */
+      const inEnvs = (g: Group) =>
+        several && g.envs.length ? ` in ${[...new Set(g.envs)].sort(cmp).join(", ")}` : "";
+      const tieOf = (g: Group) => (tie && g.tie ? { tie: end(g.tie) } : tie ? { tie } : {});
+      const envOf = (g: Group) => (g.env ? { env: g.env } : {});
+      const results = ordered.map((g) => {
+        const sent = sentOf(g);
+        // A call with a target path is matched only with it, on the spec's full path (its server
+        // path in front); only a call with none falls back to the spec's path without it.
+        const shape = (op: JoinVendorOperation) => {
+          const a = segs(sent);
+          if (!a) return undefined;
+          let bestFit: { literals: number; wildcard: boolean } | undefined;
+          const served = g.path
+            ? [op.fullPath ?? op.path]
+            : op.fullPath
+              ? [op.fullPath, op.path]
+              : [op.path];
+          for (const path of served) {
+            const b = segs(path);
+            const x = b ? fit(a, b) : undefined;
+            if (x && (!bestFit || x.literals > bestFit.literals)) bestFit = x;
+          }
+          return bestFit;
+        };
+        const scored = vendor.operations.flatMap((op) => {
+          const x = shape(op);
+          return x ? [{ op, ...x }] : [];
+        });
+        const fitting = scored.filter((x) => sameMethod(method, x.op.method));
+        // A wildcard route reaches every operation it fits; any other call the best fit only.
+        const wild = fitting.some((x) => x.wildcard);
+        const best = Math.max(0, ...fitting.map((x) => x.literals));
+        const hits = fitting
+          .filter((x) => wild || x.literals === best)
+          .sort((a, b) => cmp(a.op.id, b.op.id));
+        return { g, sent, scored, wild, hits };
+      });
+      const reached = results.filter((x) => x.hits.length === 1 || (x.wild && x.hits.length > 1));
+      // Each operation once, with the path of the first group (the preferred) that reaches it.
+      const done = new Set<string>();
+      const found: VendorCallMatch[] = [];
+      for (const x of reached)
+        for (const h of x.hits) {
+          if (done.has(h.op.id)) continue;
+          done.add(h.op.id);
+          found.push({
             ...base,
+            ...tieOf(x.g),
+            vendor: vendor.system,
             how,
             operation: h.op.id,
             ...(method || h.op.method ? { method: (method ?? h.op.method).toUpperCase() } : {}),
-            path: sent.includes(h.path) ? h.path : sent[0]!,
-            ...(wild ? { wildcard: true as const } : {}),
+            path: x.sent,
+            ...envOf(x.g),
+            ...(x.wild ? { wildcard: true as const } : {}),
             ...(forwarding ? {} : { direct: true as const }),
           });
-      } else if (hits.length > 1) {
+        }
+      matches.push(...found.sort((a, b) => cmp(a.operation, b.operation)));
+      for (const x of results.filter((y) => !y.wild && y.hits.length > 1)) {
         const opName = (op: JoinVendorOperation) => `${op.method.toUpperCase()} ${op.path}`;
-        const names = hits.map((h) => opName(h.op)).sort();
+        const names = x.hits.map((h) => opName(h.op)).sort();
         asks.push({
-          call: end(call),
-          ...(route ? { route } : {}),
-          vendor: vendor.system,
-          question: `Which of ${name}'s operations does ${what}, which ${component(call)} forwards, reach: ${names.slice(0, -1).join(", ")} or ${names.at(-1)}?`,
-          candidates: hits.map((h) => h.op.id),
-        });
-      } else {
-        const others = [...new Set(scored.map((s) => s.op.method.toUpperCase()))].sort();
-        gaps.push({
           ...base,
-          ...(method ? { method } : {}),
-          path: sent[0]!,
-          message: `${component(call)} ${forwarding ? "forwards" : "calls"} ${what} ${forwarding ? "to" : "on"} ${name}, whose spec publishes no such operation${others.length ? ` (it publishes ${others.join(", ")} on that path)` : ""}`,
+          vendor: vendor.system,
+          question: `Which of ${name}'s operations does ${whatOf(x.g)}${inEnvs(x.g)}, which ${component(call)} forwards, reach: ${names.slice(0, -1).join(", ")} or ${names.at(-1)}?`,
+          candidates: x.hits.map((h) => h.op.id),
+          ...envOf(x.g),
         });
       }
+      const missed = results.filter((x) => !x.hits.length);
+      const gap = (x: (typeof results)[number], what: string) => {
+        const others = [...new Set(x.scored.map((y) => y.op.method.toUpperCase()))].sort();
+        gaps.push({
+          ...base,
+          ...tieOf(x.g),
+          vendor: vendor.system,
+          ...(method ? { method } : {}),
+          path: x.sent,
+          ...envOf(x.g),
+          message: `${component(call)} ${forwarding ? "forwards" : "calls"} ${what} ${forwarding ? "to" : "on"} ${name}, whose spec publishes no such operation${others.length ? ` (it publishes ${others.join(", ")} on that path)` : ""}`,
+        });
+      };
+      if (missed.length === results.length) {
+        // Reaching nothing in any environment: one gap, the preferred one's path, each other's said.
+        const [head, ...rest] = missed;
+        const also = rest.map((x) => `${x.sent}${inEnvs(x.g)}`);
+        gap(
+          head!,
+          `${whatOf(head!.g)}${inEnvs(head!.g)}${also.length ? ` (${also.join("; ")})` : ""}`,
+        );
+      } else for (const x of missed) gap(x, `${whatOf(x.g)}${inEnvs(x.g)}`);
     }
   }
   const byCall = (x: { call: FactEnd }, y: { call: FactEnd }) =>

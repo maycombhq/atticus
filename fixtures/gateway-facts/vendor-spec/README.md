@@ -20,4 +20,6 @@ What each forwarding call reaches, checked by hand (`expected/vendor-join.yaml`,
 
 `expected/outside-callers.yaml` is the vendor's callers on the Outside systems page (`packages/cli/test/vendor-spec-cli.test.ts`), after `atticus verify <repo> --write` of both repos: each call with the operations it reaches, the onboarding service behind the proxy's route.
 
+**The per-environment case** (`expected/vendor-join-per-env.yaml`, the review of beta.27). The tests rewrite the two settings (in `config.json` and the facts alike, same lines) so both environments use one host with different paths: `https://api.northwind-pay.example/api/v1` (`dv`) and `https://api.northwind-pay.example/api/v2` (`prod`). Each environment's path is matched on its own: every call reaches the same operation in both (the spec's `{version}` takes `v1` and `v2`), the match and the Map's arrow carry prod's path (`/api/v2/...`, the prod-like environment's), each match names `env: prod`, and the one gap says both paths: `GET /api/v2/bulkorders in prod (/api/v1/bulkorders in dv)`. With the spec publishing each version's balances as its own operation, the call reaches both, one per environment, never a question.
+
 Files here are byte-exact: facts cite their line numbers.

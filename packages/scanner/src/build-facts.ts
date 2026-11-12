@@ -12,6 +12,7 @@ import {
   normalizePath,
   parseRecord,
   placeholderIn,
+  preferredEnvironment,
   termGrantRecords,
   urlHostPort,
   type CatalogRecord,
@@ -230,14 +231,22 @@ function toOutsideHosts(
     const path = f.path.startsWith("/") ? f.path : `/${f.path}`;
     // The target URL's own path (`https://api.northwind-pay.example/api/v1`) stays in front of
     // the route's: the setting of the call's token whose host is this one says it.
+    // The review of beta.27: when the environments set this host with different paths (dv
+    // /api/v1, prod /api/v2), the arrow takes the prod-like environment's, else the first by name
+    // (core's preferredEnvironment, the rule the Outside systems page names), never the first
+    // fact's.
     const token = f.host?.trim();
-    const set = x.facts.find(
-      (c) =>
+    const sets = x.facts.filter(
+      (c): c is Extract<typeof c, { kind: "config" }> =>
         c.kind === "config" &&
         !!token &&
         (c.key === token || c.key === placeholderIn(token)?.name) &&
         urlHostPort(c.value ?? "")?.host === target,
     );
+    const env = preferredEnvironment(sets.flatMap((c) => (c.env ? [c.env] : [])));
+    const set =
+      sets.find((c) => env !== undefined && c.env === env) ??
+      [...sets].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
     const basePath = set?.kind === "config" ? urlPathIn(set.value) : undefined;
     const full =
       basePath && path !== basePath && !path.startsWith(`${basePath}/`)

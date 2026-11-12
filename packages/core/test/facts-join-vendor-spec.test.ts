@@ -6,6 +6,7 @@ import {
   joinFacts,
   joinVendorOperations,
   parseFacts,
+  preferredEnvironment,
   type Fact,
   type JoinRepo,
   type JoinVendor,
@@ -116,7 +117,9 @@ describe("the vendor path: the target URL's own path, then the route's", () => {
       path: "/api/v1/account_instruments",
       route: { fact: "entry.post.northwind-accounts-account-instruments" },
     });
-    expect(m.tie?.fact).toBe("config.target-vendor-url-dv");
+    // dv and prod both send /api/v1: the match names the prod-like one (and its setting).
+    expect(m.tie?.fact).toBe("config.target-vendor-url-prod");
+    expect(m.env).toBe("prod");
   });
 
   it("prefers a literal segment to a parameter where both fit, as OpenAPI does", () => {
@@ -177,6 +180,154 @@ describe("the vendor path: the target URL's own path, then the route's", () => {
     );
     const r = joinVendorOperations({ repos, vendors: [northwind()] });
     expect(opsOf(r, "call.get.accounts-balances")).toEqual(["northwind-pay.get-balances"]);
+  });
+});
+
+/**
+ * The per-environment case (`expected/vendor-join-per-env.yaml`): the deploy sets the target URL
+ * to one host for both environments, but a different path: `/api/v1` in dv, `/api/v2` in prod.
+ */
+const perEnv = (): JoinRepo[] =>
+  estate().map((x) =>
+    x.repo !== PROXY
+      ? x
+      : {
+          ...x,
+          facts: x.facts.map((f) =>
+            f.kind !== "config"
+              ? f
+              : ({
+                  ...f,
+                  value:
+                    f.env === "prod"
+                      ? "https://api.northwind-pay.example/api/v2"
+                      : "https://api.northwind-pay.example/api/v1",
+                } as Fact),
+          ),
+        },
+  );
+const perEnvJoin = (vendor = northwind()) =>
+  joinVendorOperations({ repos: perEnv(), vendors: [vendor] });
+
+describe("each environment's target path, matched on its own (review of beta.27)", () => {
+  it("gives the golden per-environment join", () => {
+    const got = plain(perEnvJoin());
+    expect(got).toEqual(golden("vendor-join-per-env.yaml", got));
+  });
+
+  it("never asks between the operation dv's path reaches and the one prod's path reaches", () => {
+    // The spec publishes each version's balances as its own operation.
+    const v = northwind();
+    const both = northwind({
+      operations: [
+        ...v.operations.filter((o) => o.id !== "northwind-pay.get-balances"),
+        ...["v1", "v2"].map((ver) => ({
+          id: `northwind-pay.get-balances-${ver}`,
+          method: "GET",
+          path: `/api/${ver}/accounts/balances`,
+          fullPath: `/api/${ver}/accounts/balances`,
+        })),
+      ],
+    });
+    const r = perEnvJoin(both);
+    expect(r.asks).toEqual([]);
+    expect(
+      r.matches
+        .filter((m) => m.call.fact === "call.get.accounts-balances")
+        .map((m) => [m.operation, m.path, m.env, m.tie?.fact]),
+    ).toEqual([
+      [
+        "northwind-pay.get-balances-v1",
+        "/api/v1/accounts/balances",
+        "dv",
+        "config.target-vendor-url-dv",
+      ],
+      [
+        "northwind-pay.get-balances-v2",
+        "/api/v2/accounts/balances",
+        "prod",
+        "config.target-vendor-url-prod",
+      ],
+    ]);
+  });
+
+  it("gives an operation both paths reach prod's path, and says so", () => {
+    const m = perEnvJoin().matches.filter((x) => x.call.fact === "call.post.account-instruments");
+    expect(m.map((x) => [x.operation, x.path, x.env])).toEqual([
+      ["northwind-pay.post-account-instruments", "/api/v2/account_instruments", "prod"],
+    ]);
+  });
+
+  it("says each environment's path in a gap", () => {
+    expect(perEnvJoin().gaps.map((g) => [g.call.fact, g.path, g.env, g.message])).toEqual([
+      [
+        "call.get.bulkorders",
+        "/api/v2/bulkorders",
+        "prod",
+        "northwind-accounts-proxy forwards GET /api/v2/bulkorders in prod (/api/v1/bulkorders in dv) to Northwind Pay, whose spec publishes no such operation",
+      ],
+    ]);
+  });
+
+  it("prefers a prod-like environment's name (pd, prod, prd), else the first by name", () => {
+    expect(preferredEnvironment(["dv", "prod"])).toBe("prod");
+    expect(preferredEnvironment(["dev", "test", "us-prd"])).toBe("us-prd");
+    expect(preferredEnvironment(["pd", "qa"])).toBe("pd");
+    expect(preferredEnvironment(["test", "dev"])).toBe("dev");
+    expect(preferredEnvironment([])).toBeUndefined();
+  });
+});
+
+describe("a wildcard route's call with a target path (review of beta.27)", () => {
+  it("matches only with the target path, never the route's bare path against the spec's", () => {
+    // The spec's server path is /api/v2; the target URL sends /api/v1: /accounts/* reaches
+    // /api/v1/accounts/..., which the spec doesn't publish, never /api/v2/accounts/x.
+    const v = northwind();
+    const v2 = northwind({
+      operations: v.operations.map((o) => ({
+        ...o,
+        path: o.path.replace(/^\/api\/(\{version\}|v1)/, ""),
+        fullPath: o.path.replace(/^\/api\/(\{version\}|v1)/, "/api/v2"),
+      })),
+    });
+    const r = vendorJoin(estate(), v2);
+    expect(r.matches.filter((m) => m.call.repo === PROXY)).toEqual([]);
+    expect(r.gaps.map((g) => [g.call.fact, g.path]).sort()).toEqual([
+      ["call.get.accounts", "/api/v1/accounts/*"],
+      ["call.get.accounts-balances", "/api/v1/accounts/balances"],
+      ["call.get.bulkorders", "/api/v1/bulkorders"],
+      ["call.get.cards-pin", "/api/v1/cards/*/pin"],
+      ["call.post.account-instruments", "/api/v1/account_instruments"],
+    ]);
+  });
+
+  it("still matches the spec's own path when the call has no target path", () => {
+    const v = northwind();
+    const v2 = northwind({
+      operations: v.operations.map((o) => ({
+        ...o,
+        path: o.path.replace(/^\/api\/(\{version\}|v1)/, ""),
+        fullPath: o.path.replace(/^\/api\/(\{version\}|v1)/, "/api/v2"),
+      })),
+    });
+    // The deploy's target URL with no path: the route's path is the vendor's.
+    const repos = estate().map((x) =>
+      x.repo !== PROXY
+        ? x
+        : {
+            ...x,
+            facts: x.facts.map((f) =>
+              f.kind === "config"
+                ? ({ ...f, value: f.value!.replace(/\/api\/v1$/, "") } as Fact)
+                : f,
+            ),
+          },
+    );
+    const r = joinVendorOperations({ repos, vendors: [v2] });
+    expect(opsOf(r, "call.get.accounts")).toEqual([
+      "northwind-pay.get-account",
+      "northwind-pay.get-balances",
+    ]);
   });
 });
 

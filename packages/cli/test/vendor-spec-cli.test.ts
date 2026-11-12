@@ -6,7 +6,11 @@ import { parse, stringify } from "yaml";
 import { type CatalogRecord } from "@maycombhq/core";
 import { buildEstate } from "@maycombhq/diagrams";
 import { readCatalog } from "@maycombhq/scanner";
-import { outsideView, OUTSIDE_ALIAS_CLASH } from "../src/ui-api-outside.js";
+import {
+  outsideView,
+  OUTSIDE_ALIAS_CLASH,
+  OUTSIDE_SPEC_HOST_CLASH,
+} from "../src/ui-api-outside.js";
 import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
@@ -136,6 +140,39 @@ describe(
       // The service's call is still the proxy's route's, not the vendor's.
       expect(nw.callers.filter((c) => c.repo === "forge-onboarding" && !c.through)).toEqual([]);
     }, 180_000);
+
+    it("says so plainly when a repo lists one of the hosts the vendor's spec serves on", async () => {
+      const r = metarepo();
+      // The spec serves on a sandbox host the profile's aliases don't name, and the manifest lists
+      // it under the onboarding service's hosts by mistake.
+      const s = join(r, "inputs", "inbox", "northwind-pay-openapi.yaml");
+      writeFileSync(
+        s,
+        readFileSync(s, "utf8").replace(
+          "  - url: https://api.northwind-pay.example\n",
+          "  - url: https://api.northwind-pay.example\n  - url: https://sandbox.northwind-pay.example\n",
+        ),
+      );
+      const m = join(r, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+      writeFileSync(
+        m,
+        readFileSync(m, "utf8").replace(
+          "hosts: [onboarding.forge.internal]",
+          "hosts: [onboarding.forge.internal, sandbox.northwind-pay.example]",
+        ),
+      );
+      for (const x of Object.keys(COMMIT)) await verify(r, x);
+      const nw = (await outsideView(r)).systems.find((s) => s.id === "northwind-pay")!;
+      expect(nw.notes).toEqual([
+        OUTSIDE_SPEC_HOST_CLASH(
+          "Northwind Pay",
+          "sandbox.northwind-pay.example",
+          "forge-onboarding",
+          "inputs/inbox/northwind-pay-openapi.yaml",
+        ),
+      ]);
+      expect(nw.notes![0]).toContain("take it out of forge-onboarding's hosts");
+    }, 180_000);
   },
 );
 
@@ -154,6 +191,43 @@ describe("the vendor on the Map (beta.27)", { timeout: 60_000 }, () => {
       ["northwind-pay", "POST", "/api/v1/account_instruments"],
     ]);
   });
+
+  it("draws the prod-like environment's path when the environments' target paths differ (the review of beta.27)", async () => {
+    // The per-environment case (README): one host for both, /api/v1 in dv and /api/v2 in prod.
+    const r = metarepo();
+    const files = [join(r, "workspace", PROXY, "config.json"), join(r, "facts", `${PROXY}.jsonl`)];
+    for (const f of files)
+      writeFileSync(
+        f,
+        readFileSync(f, "utf8")
+          .replaceAll(
+            "https://api.northwind-pay.example/api/v1",
+            "https://api.northwind-pay.example/api/v2",
+          )
+          .replaceAll(
+            "https://devapi.northwind-pay.example/api/v1",
+            "https://api.northwind-pay.example/api/v1",
+          ),
+      );
+    for (const x of Object.keys(COMMIT)) await verify(r, x);
+    const arrows = (await catalogOf(r))
+      .filter((x): x is Iface => x.kind === "Interface" && x.from === "northwind-accounts-proxy")
+      .map((i) => [i.to, i.method, i.normalizedPath])
+      .sort();
+    expect(arrows).toEqual([
+      ["northwind-pay", "GET", "/api/v2/accounts/*"],
+      ["northwind-pay", "GET", "/api/v2/accounts/balances"],
+      ["northwind-pay", "GET", "/api/v2/bulkorders"],
+      ["northwind-pay", "GET", "/api/v2/cards/*/pin"],
+      ["northwind-pay", "POST", "/api/v2/account_instruments"],
+    ]);
+    // The Outside page: each call reaches the same operation in both; only bulkorders, in each.
+    const nw = (await outsideView(r)).systems.find((s) => s.id === "northwind-pay")!;
+    expect(nw.unmatched.map((u) => u.message)).toEqual([
+      "northwind-accounts-proxy forwards GET /api/v2/bulkorders in prod (/api/v1/bulkorders in dv) to Northwind Pay, whose spec publishes no such operation",
+    ]);
+    expect(nw.ambiguous).toEqual([]);
+  }, 180_000);
 
   it("draws no arrow by a host alias two outside systems list (the review of beta.27)", async () => {
     const r = metarepo();
