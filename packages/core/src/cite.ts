@@ -446,21 +446,94 @@ export function partsBuildWord(
   return rest.length > 0 && rest.every((p) => lines.some((l) => lineNamesWord(l, p)));
 }
 
-export function partsNamePath(lines: readonly string[], path: string): boolean {
-  const parts = path
+/** A path's plain pieces: its segments (a dotted one's pieces), parameters left out. */
+const pathPieces = (path: string) =>
+  path
     .split(/[?#]/, 1)[0]!
     .split("/")
     .filter((s) => s && !PARAM.test(s))
     .flatMap((s) => s.split("."))
     .filter(Boolean);
+
+/** Whether a line names a piece at the start of a word or an identifier, or without its hyphens. */
+const linesNamePiece = (lines: readonly string[], p: string) =>
+  [p, p.replace(/-/g, "")].some((q) =>
+    lines.some((l) =>
+      new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(q)}`, "i").test(l),
+    ),
+  );
+
+export function partsNamePath(lines: readonly string[], path: string): boolean {
+  const parts = pathPieces(path);
   if (!parts.length)
     return lines.some((l) => lineNamesRoute(l, path)) || defaultActionAt(lines, path);
   // A slugified segment (`my-account`) is the name written without its hyphens (`MyAccount`).
-  return parts.every((p) =>
-    [p, p.replace(/-/g, "")].some((q) =>
-      lines.some((l) =>
-        new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(q)}`, "i").test(l),
-      ),
-    ),
+  return parts.every((p) => linesNamePiece(lines, p));
+}
+
+/**
+ * Whether a part's value or line, or a code line in the cite window, declares a conventional
+ * route, one whose action is its method's name (third and fourth reviews of ADR 0196): a template
+ * with an action token (`{controller}/{action}/{id}`, `{controller=Home}/{action=Index}/{id?}`,
+ * attribute routing's `[action]`, on the class or the method's own `[Route("[action]")]`), a call
+ * that sets the default template (`MapDefaultControllerRoute()`), or a DRF `@action(` that sets no
+ * `url_path=` (its path is the method's name). `[controller]` alone is not one: an attribute route
+ * names its action in its own attribute, not by the method.
+ *
+ * A text may hold several lines, a window joined with `\n` (fifth review): a DRF `@action(` is
+ * read to its closing parenthesis, so a `url_path=` on a line below it, inside the call, makes it
+ * none; one the window doesn't close is read as far as the window goes.
+ */
+export function declaresConventionalRoute(texts: readonly string[]): boolean {
+  return texts.some(
+    (t) => /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t) || drfActionNamed(t),
+  );
+}
+
+/** Whether a text holds a DRF `@action(…)` that sets no `url_path=` within its parentheses. */
+function drfActionNamed(t: string): boolean {
+  for (const m of t.matchAll(/@action\s*\(/g)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    for (; i < t.length && depth > 0; i++)
+      if (t[i] === "(") depth++;
+      else if (t[i] === ")") depth--;
+    if (!/\burl_path\s*=/.test(t.slice(m.index, i))) return true;
+  }
+  return false;
+}
+
+/** A comment line's text with its marker taken off (`// `, `/* `, `* `, `# `, `<!-- `, `-- `). */
+const commentText = (l: string) => l.replace(/^\s*(\/\/+|\/\*+|\*+|#+|<!--|--)/, "");
+
+/** Whether a line writes a path piece as a piece of a path or route string, not a bare identifier. */
+const writesPieceAsPath = (l: string, p: string) =>
+  // after a quote, a `/`, a `:`, a tag's `>` or an interpolation's `}` (`"/balances"`, `'users'`,
+  // `:users`, `<Path>v1</Path>`, `$"{base}users"`, `${base}users`), and ending there
+  new RegExp(`["'\`/:>}]${escape(p)}(?![A-Za-z0-9_-])`, "i").test(l);
+
+/**
+ * The piece of an HTTP route put together from parts that only a commented-out mapping writes
+ * (third review of ADR 0196), or undefined. A piece the parts' lines don't name, which a comment
+ * line in the cite window writes as a path (`// @GetMapping("/balances")`) while no code line there
+ * does, is named by that comment, not by the code: a method `balances()` under it, with the class's
+ * `/api` a part, names no `/api/balances`. Anywhere else an identifier names a piece as the path
+ * check always let it (a gRPC stub, a WCF call, a conventional route's action, a constant).
+ */
+export function pathPieceOnlyInComment(
+  rawNear: readonly string[],
+  /** Whether a line of the window (and its index in it) is all comment. */
+  isComment: (l: string, i: number) => boolean,
+  partLines: readonly string[],
+  path: string,
+): string | undefined {
+  const comments = rawNear.filter((l, i) => isComment(l, i)).map(commentText);
+  if (!comments.length) return undefined;
+  const code = rawNear.filter((l, i) => !isComment(l, i));
+  return pathPieces(path).find(
+    (p) =>
+      !linesNamePiece(partLines, p) &&
+      comments.some((l) => writesPieceAsPath(l, p)) &&
+      !code.some((l) => writesPieceAsPath(l, p)),
   );
 }

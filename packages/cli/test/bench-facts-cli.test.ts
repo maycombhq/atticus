@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,9 +7,29 @@ import { main } from "../src/main.js";
 
 /**
  * atticus bench facts (ADR 0124 §6): score an assistant's facts file against a bench reference
- * with the readers' matcher. No clone and no network: the facts file and the reference are all
- * it reads.
+ * with the readers' matcher. No network: the facts file, the reference and, where a test makes
+ * one, a local clone are all it reads.
  */
+
+/** git in a test's own clone, with an identity of its own and no hooks. */
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=Forge",
+      "-c",
+      "user.email=dev@forge.example",
+      "-c",
+      "core.hooksPath=.no-hooks",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
+    { cwd, stdio: ["ignore", "pipe", "pipe"] },
+  )
+    .toString()
+    .trim();
 
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
@@ -147,6 +168,101 @@ describe("atticus bench facts", () => {
     const json = JSON.parse(r.out.join("\n"));
     expect(json.repos.map((s: { repo: string }) => s.repo)).toEqual(["forge-ledger"]);
     expect(json.skipped).toEqual(["forge-ui: no reference yet"]);
+  });
+
+  // Third review of ADR 0196: with a clone, the facts are verified first, so the bench shows what
+  // the verifier loses; without one they are scored as they are, and it says so. Fourth review:
+  // only a clone at the pinned commit, else its lines aren't the ones the facts cite.
+  it("verifies the facts against the clone at the pinned commit before scoring, and says when it can't", async () => {
+    const b = await bench();
+    await mkdir(join(b.cache, "facts"), { recursive: true });
+    await writeFile(join(b.cache, "facts", "forge-ledger.jsonl"), b.facts);
+    const none = io();
+    const args = ["bench", "facts", "forge-ledger", "--bench", b.dir, "--cache", b.cache];
+    expect(await main(args, none.io), none.err.join("\n")).toBe(0);
+    expect(none.out).toContainEqual(
+      expect.stringMatching(
+        /^ {2}not verified: no clone at .*forge-ledger \(atticus bench fetch\); every fact is scored$/,
+      ),
+    );
+    const clone = join(b.cache, "forge-ledger");
+    const file = async (path: string, lines: string[]) => {
+      await mkdir(join(clone, path, ".."), { recursive: true });
+      await writeFile(join(clone, path), lines.join("\n") + "\n");
+    };
+    await file("src/EntryController.java", [
+      ...Array.from({ length: 19 }, (_, i) => (i === 0 ? "@RestController" : "")),
+      '  @PostMapping("/entries")',
+    ]);
+    await file("db/V2__create_entry.sql", [
+      "CREATE TABLE entry (",
+      "  id BIGINT,",
+      "  amount NUMERIC",
+      ");",
+    ]);
+    await file("src/EntryRequest.java", [
+      "",
+      "",
+      "",
+      "public class EntryRequest {",
+      "  BigDecimal amount;",
+      "}",
+    ]);
+    // the timeout fact cites a line that doesn't set it: rejected, so not scored as wrong
+    await file("src/main/resources/application.yml", [
+      "server:",
+      "  port: 8080",
+      "northwind:",
+      "  base-url: https://northwind.example.com",
+      "  retries: 3",
+    ]);
+    // a clone that is no git checkout, or at another commit: not verified, and it says why
+    const off = io();
+    expect(await main(args, off.io), off.err.join("\n")).toBe(0);
+    expect(off.out).toContainEqual(
+      expect.stringMatching(
+        /^ {2}not verified: the clone at .*forge-ledger is no git checkout, not the pinned 0123456789ab \(atticus bench fetch\); every fact is scored$/,
+      ),
+    );
+    git(clone, "init", "-q");
+    git(clone, "add", "-A");
+    git(clone, "commit", "-q", "-m", "forge-ledger");
+    const sha = git(clone, "rev-parse", "HEAD");
+    const other = io();
+    expect(await main([...args, "--json"], other.io), other.err.join("\n")).toBe(0);
+    expect(JSON.parse(other.out.join("\n")).repos[0].verify).toEqual({
+      verified: false,
+      why: "off-pin",
+      head: sha,
+    });
+    const otherText = io();
+    expect(await main(args, otherText.io)).toBe(0);
+    expect(otherText.out).toContainEqual(
+      `  not verified: the clone at ${clone} is at ${sha.slice(0, 12)}, not the pinned 0123456789ab (atticus bench fetch); every fact is scored`,
+    );
+    // pinned at the clone's commit: verified
+    for (const f of [join(b.dir, "repos.yaml"), join(b.dir, "references", "forge-ledger.yaml")])
+      await writeFile(f, (await readFile(f, "utf8")).replaceAll(COMMIT, sha));
+    await writeFile(
+      join(b.cache, "facts", "forge-ledger.jsonl"),
+      b.facts.replaceAll(`"commit":"${COMMIT.slice(0, 7)}"`, `"commit":"${sha.slice(0, 7)}"`),
+    );
+    const r = io();
+    expect(await main([...args, "--json"], r.io), r.err.join("\n")).toBe(0);
+    const s = JSON.parse(r.out.join("\n")).repos[0];
+    expect(s.verify).toEqual({
+      verified: true,
+      kept: 4,
+      rejected: 1,
+      codes: { "claim-not-on-line": 1 },
+    });
+    expect(s.kinds.config).toMatchObject({ found: 1, wrong: [] });
+    expect(s.facts).toMatchObject({ total: 4 });
+    const t = io();
+    expect(await main(args, t.io)).toBe(0);
+    expect(t.out).toContain(
+      "  verified against the clone: 4 kept, 1 rejected (1 claim-not-on-line); only the kept are scored",
+    );
   });
 
   it("refuses facts of another commit, unreadable facts, and --facts for several repos", async () => {

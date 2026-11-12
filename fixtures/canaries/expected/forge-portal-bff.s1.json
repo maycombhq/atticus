@@ -1,0 +1,93 @@
+{
+  "stacks": [
+    "spring"
+  ],
+  "planted": [
+    {
+      "id": "plant:1",
+      "kind": "entry",
+      "what": "entry",
+      "stack": "spring",
+      "file": "src/main/java/forge/portal/SpruceUmberResource.java",
+      "line": 16,
+      "claim": "entry GET /spruce-umber/{id}",
+      "needle": "spruce-umber"
+    },
+    {
+      "id": "plant:2",
+      "kind": "call",
+      "what": "call",
+      "stack": "spring",
+      "file": "src/main/java/forge/portal/SpruceUmberResource.java",
+      "line": 18,
+      "claim": "call GET /nutmeg-raven/{id}",
+      "needle": "nutmeg-raven"
+    },
+    {
+      "id": "plant:3",
+      "kind": "entry",
+      "what": "topic-in",
+      "stack": "spring",
+      "file": "src/main/java/forge/portal/SpruceUmberEvents.java",
+      "line": 15,
+      "claim": "entry topic saffron.lumen.updated",
+      "needle": "saffron-lumen-updated"
+    },
+    {
+      "id": "plant:4",
+      "kind": "call",
+      "what": "topic-out",
+      "stack": "spring",
+      "file": "src/main/java/forge/portal/SpruceUmberEvents.java",
+      "line": 17,
+      "claim": "call topic quill.dune.viewed",
+      "needle": "quill-dune-viewed"
+    },
+    {
+      "id": "plant:5",
+      "kind": "config",
+      "what": "config",
+      "stack": "spring",
+      "file": "src/main/resources/application.yml",
+      "line": 10,
+      "claim": "config birch.reed-url",
+      "needle": "birch-reed-url"
+    }
+  ],
+  "skipped": [],
+  "removed": [
+    {
+      "id": "remove:call.post.transfers",
+      "fact": "call.post.transfers",
+      "kind": "call",
+      "file": "src/main/java/forge/portal/LedgerClient.java",
+      "line": 11,
+      "claim": "call POST /ledger/v1/transfers",
+      "value": "/transfers",
+      "needle": "post ledger-v1-transfers",
+      "how": "commented"
+    },
+    {
+      "id": "remove:config.ledger-client-read-timeout",
+      "fact": "config.ledger-client-read-timeout",
+      "kind": "config",
+      "file": "src/main/resources/application.yml",
+      "line": 7,
+      "claim": "config ledger.client.read-timeout",
+      "value": "read-timeout",
+      "needle": "ledger-client-read-timeout",
+      "how": "commented"
+    },
+    {
+      "id": "remove:entry.get.api-balance-accountid",
+      "fact": "entry.get.api-balance-accountid",
+      "kind": "entry",
+      "file": "src/main/java/forge/portal/BalanceController.java",
+      "line": 12,
+      "claim": "entry GET /api/balance/{accountId}",
+      "value": "/balance/{accountId}",
+      "needle": "get api-balance-param",
+      "how": "commented"
+    }
+  ]
+}

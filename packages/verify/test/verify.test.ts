@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseFacts, type Fact } from "@maycombhq/core";
-import { dirSource, entriesNoFlowFollows, memorySource, verifyFacts } from "../src/index.js";
+import {
+  dirSource,
+  entriesNoFlowFollows,
+  isCommentLine,
+  memorySource,
+  verifyFacts,
+} from "../src/index.js";
 
 const fixtures = join(__dirname, "fixtures");
 const repo = join(fixtures, "repo");
@@ -588,6 +594,1240 @@ describe("what the revised reads found about the verifier (A4)", () => {
       ["e-comment", "claim-in-comment"],
     ]);
     expect(r.accepted.map((f) => f.id)).toEqual(["d-good"]);
+  });
+
+  // Review of ADR 0196 (the canary's first finding): a `cite.with` part whose value only a
+  // commented-out line beside it holds is no code either, and neither is a comment line beside
+  // the main cite that a route's parts would otherwise be found on.
+  describe("a cite.with part beside a commented-out old route", () => {
+    const src = memorySource({
+      "src/main/java/forge/portal/TransferClient.java": [
+        "package forge.portal;", // 1
+        "", // 2
+        "import org.springframework.web.bind.annotation.*;", // 3
+        "", // 4
+        '@FeignClient(name = "ledger", url = "${gateway.url}/ledger/v1")', // 5
+        "public interface TransferClient {", // 6
+        '  // @PostMapping("/transfers")', // 7
+        "  TransferResult createTransfer(@RequestBody TransferRequest request);", // 8
+        "", // 9
+        '  // @GetMapping("/allowances")', // 10
+        '  @GetMapping("/limits")', // 11
+        "  Limits limits();", // 12
+        "}", // 13
+        "",
+      ].join("\n"),
+    });
+    const call = (
+      id: string,
+      path: string,
+      line: number,
+      value: string,
+      parts: [number, string][],
+    ) =>
+      ({
+        ...base,
+        kind: "call",
+        id,
+        callType: "rest",
+        method: "POST",
+        path,
+        cite: {
+          file: "src/main/java/forge/portal/TransferClient.java",
+          line,
+          value,
+          with: parts.map(([l, v]) => ({
+            file: "src/main/java/forge/portal/TransferClient.java",
+            line: l,
+            value: v,
+          })),
+        },
+      }) as Fact;
+
+    it("rejects a part named only on the comment, and keeps the live route beside it", async () => {
+      const r = await verifyFacts({
+        source: src,
+        facts: [
+          call("c-old", "/ledger/v1/transfers", 8, "createTransfer", [
+            [5, "/ledger/v1"],
+            [8, "/transfers"],
+          ]),
+          call("c-old-allowances", "/ledger/v1/allowances", 12, "limits", [
+            [5, "/ledger/v1"],
+            [11, "/allowances"],
+          ]),
+          call("c-live", "/ledger/v1/limits", 12, "limits", [
+            [5, "/ledger/v1"],
+            [11, "/limits"],
+          ]),
+        ],
+      });
+      expect(r.rejected.map((x) => [x.fact.id, x.code])).toEqual([
+        ["c-old", "claim-in-comment"],
+        ["c-old-allowances", "claim-in-comment"],
+      ]);
+      expect(r.rejected[0]!.message).toMatch(/part 2 .*comment/);
+      expect(r.accepted.map((f) => f.id)).toEqual(["c-live"]);
+    });
+
+    it("finds no route part on a comment line beside the main cite", async () => {
+      // `transfers` is only on line 7, a comment beside the cited line 8: the parts name the rest
+      const r = await verifyFacts({
+        source: src,
+        facts: [call("c-near", "/ledger/v1/transfers", 8, "createTransfer", [[5, "/ledger/v1"]])],
+      });
+      expect(r.rejected.map((x) => x.code)).toEqual(["claim-in-comment"]);
+    });
+  });
+
+  // Second review of ADR 0196: with parts, what they don't name the cited lines write as a path,
+  // not as an identifier; an attribute (`#[Route]`, `#[get]`) is code, and so is a line after a
+  // block comment closed on it. Each case is the reviewer's probe, in Forge's names.
+  describe("parts, attributes and comment-like code (second review of ADR 0196)", () => {
+    const entry = (
+      id: string,
+      file: string,
+      path: string,
+      line: number,
+      value: string,
+      parts: [number, string][] = [],
+    ) =>
+      ({
+        ...base,
+        kind: "entry",
+        id,
+        entryType: "rest",
+        method: "GET",
+        path,
+        cite: {
+          file,
+          line,
+          value,
+          ...(parts.length ? { with: parts.map(([l, v]) => ({ file, line: l, value: v })) } : {}),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const java = {
+      "src/main/java/forge/portal/BalanceResource.java": [
+        "@RestController", // 1
+        '@RequestMapping("/api")', // 2
+        "class BalanceResource {", // 3
+        '  // @GetMapping("/balances")', // 4
+        "  public List<Balance> balances() { return null; }", // 5
+        "}",
+        "",
+      ].join("\n"),
+    };
+    const J = "src/main/java/forge/portal/BalanceResource.java";
+
+    it("refuses a method name under a commented-out mapping, with the class prefix a part", async () => {
+      expect(await one(java, entry("s1", J, "/api/balances", 5, "balances", [[2, "/api"]]))).toBe(
+        "claim-in-comment",
+      );
+      expect(await one(java, entry("s2", J, "/balances", 5, "balances"))).toBe("claim-in-comment");
+      expect(await one(java, entry("s3", J, "/balances", 4, "/balances"))).toBe("claim-in-comment");
+    });
+
+    it("keeps a live mapping beside it, and a route string after a block comment", async () => {
+      const live = {
+        [J]: java[J].replace('  // @GetMapping("/balances")', '  @GetMapping("/balances")'),
+      };
+      expect(await one(live, entry("l1", J, "/api/balances", 5, "balances", [[2, "/api"]]))).toBe(
+        "kept",
+      );
+      const js = {
+        "src/routes.js": [
+          "const express = require('express');",
+          "const router = express.Router();",
+          "/* istanbul ignore next */ router.get('/users', list);",
+          "app.use('/api', router);",
+        ].join("\n"),
+      };
+      expect(
+        await one(js, entry("j1", "src/routes.js", "/api/users", 3, "/users", [[4, "/api"]])),
+      ).toBe("kept");
+    });
+
+    it("reads a PHP 8 or Rust attribute as code, not a comment", async () => {
+      const php = {
+        "src/Controller/UserController.php": [
+          "<?php", // 1
+          "namespace Forge\\Controller;", // 2
+          "", // 3
+          "#[Route('/api')]", // 4
+          "class UserController extends AbstractController", // 5
+          "{", // 6
+          "    #[Route('/users', methods: ['GET'])]", // 7
+          "    public function list(): Response", // 8
+          "    {", // 9
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      };
+      const P = "src/Controller/UserController.php";
+      expect(await one(php, entry("p1", P, "/api/users", 7, "/users", [[4, "/api"]]))).toBe("kept");
+      // Symfony: the class-level prefix a part, the method's line cited
+      expect(await one(php, entry("p2", P, "/api/users", 8, "list", [[4, "/api"]]))).toBe("kept");
+      expect(await one(php, entry("p3", P, "/users", 7, "/users"))).toBe("kept");
+      const rs = {
+        "src/main.rs": [
+          "use actix_web::{get, web, App};",
+          "",
+          '#[get("/users")]',
+          'async fn users() -> impl Responder { "" }',
+          "",
+          "fn main() {",
+          '    App::new().service(web::scope("/api").service(users));',
+          "}",
+          "",
+        ].join("\n"),
+      };
+      expect(
+        await one(rs, entry("r1", "src/main.rs", "/api/users", 3, "/users", [[7, "/api"]])),
+      ).toBe("kept");
+      expect(
+        await one(rs, entry("r2", "src/main.rs", "/api/users", 4, "users", [[7, "/api"]])),
+      ).toBe("kept");
+      expect(isCommentLine("#[Route('/x')]", "src/A.php")).toBe(false);
+      expect(isCommentLine('  #[get("/x")]', "src/main.rs")).toBe(false);
+      expect(isCommentLine("/* a */ router.get('/x')", "src/a.js")).toBe(false);
+      expect(isCommentLine("/* a */ // b", "src/a.js")).toBe(true);
+      expect(isCommentLine("# a comment", "app/main.py")).toBe(true);
+      expect(isCommentLine("#!/bin/sh", "bin/run.sh")).toBe(false);
+      // third review: `#[` is an attribute only in PHP and Rust; elsewhere it opens a comment
+      expect(isCommentLine('#[app.get("/balances")]', "app/main.py")).toBe(true);
+      expect(isCommentLine("#[1] see the ledger notes", "config/routes.rb")).toBe(true);
+      expect(isCommentLine("#[draft] url: /balances", "config/app.yaml")).toBe(true);
+    });
+  });
+
+  // Third review of ADR 0196: the as-a-path rule lost correct facts on real repos (gRPC, WCF,
+  // conventional MVC routes, interpolation, .asmx, NSwag clients, DRF actions, constant paths).
+  // It now applies only to an HTTP route whose missing piece a commented-out mapping in the cite
+  // window writes as a path. Each shape below is the bench's, in invented Forge/Northwind names.
+  describe("route facts with parts across frameworks (third review of ADR 0196)", () => {
+    type P = [file: string, line: number, value: string];
+    const fact = (
+      id: string,
+      kind: "entry" | "call",
+      type: string,
+      path: string,
+      cite: P,
+      parts: P[],
+      method: string | undefined = "GET",
+    ) =>
+      ({
+        ...base,
+        kind,
+        id,
+        ...(kind === "entry" ? { entryType: type } : { callType: type }),
+        ...(method ? { method } : {}),
+        path,
+        cite: {
+          file: cite[0],
+          line: cite[1],
+          value: cite[2],
+          with: parts.map(([file, line, value]) => ({ file, line, value })),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const lines = (...ls: string[]) => [...ls, ""].join("\n");
+
+    const PROTO = "proto/ledger/v1/ledger.proto";
+    const proto = lines(
+      'syntax = "proto3";', // 1
+      "package ledger;", // 2
+      "", // 3
+      "service LedgerService {", // 4
+      "  // Called as /ledger.LedgerService/PostEntry by the portal.", // 5
+      "  rpc PostEntry(PostEntryRequest) returns (PostEntryReply) {}", // 6
+      "}", // 7
+    );
+
+    it("keeps a gRPC entry on its proto's rpc, with the package and the service as parts", async () => {
+      const f = fact(
+        "g1",
+        "entry",
+        "grpc",
+        "ledger.LedgerService/PostEntry",
+        [PROTO, 6, "PostEntry"],
+        [
+          [PROTO, 2, "ledger"],
+          [PROTO, 4, "LedgerService"],
+        ],
+        undefined,
+      );
+      expect(await one({ [PROTO]: proto }, f)).toBe("kept");
+    });
+
+    it("keeps gRPC calls on a Go stub and a C# override", async () => {
+      const go = {
+        [PROTO]: proto,
+        "internal/portal/ledger_client.go": lines(
+          "func (c Client) Post(ctx context.Context) error {", // 1
+          "\t_, err := c.ledger.PostEntry(ctx, &ledger.PostEntryRequest{})", // 2
+          "\treturn err", // 3
+          "}", // 4
+        ),
+      };
+      const parts: P[] = [
+        [PROTO, 2, "ledger"],
+        [PROTO, 4, "LedgerService"],
+      ];
+      expect(
+        await one(
+          go,
+          fact(
+            "g2",
+            "call",
+            "grpc",
+            "ledger.LedgerService/PostEntry",
+            ["internal/portal/ledger_client.go", 2, "PostEntry"],
+            parts,
+            undefined,
+          ),
+        ),
+      ).toBe("kept");
+      const cs = {
+        [PROTO]: proto,
+        "src/Ledger.Api/Grpc/LedgerService.cs": lines(
+          "public class LedgerService : Ledger.LedgerServiceBase", // 1
+          "{", // 2
+          "    // POST /ledger.LedgerService/PostEntry", // 3
+          "    public override async Task<PostEntryReply> PostEntry(PostEntryRequest request, ServerCallContext context)", // 4
+          "    {", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+      };
+      expect(
+        await one(
+          cs,
+          fact(
+            "g3",
+            "entry",
+            "grpc",
+            "ledger.LedgerService/PostEntry",
+            ["src/Ledger.Api/Grpc/LedgerService.cs", 4, "PostEntry"],
+            parts,
+            undefined,
+          ),
+        ),
+      ).toBe("kept");
+    });
+
+    it("keeps a WCF call through its service contract and endpoint", async () => {
+      const files = {
+        "src/Northwind.Desk/Controllers/LedgerController.cs": lines(
+          "public class LedgerController", // 1
+          "{", // 2
+          "    private readonly ILedgerService _service;", // 3
+          "", // 4
+          "", // 5
+          "    public void Load()", // 6
+          "    {", // 7
+          "        // SOAP: GetBalance", // 8
+          "        var balance = _service.GetBalance(DateTime.Now);", // 9
+          "    }", // 10
+          "}", // 11
+        ),
+        "src/Northwind.Desk/App.config": lines(
+          "<configuration>", // 1
+          '  <endpoint address="http://localhost:5100/LedgerService.svc" binding="basicHttpBinding" contract="ILedgerService" />', // 2
+          "</configuration>", // 3
+        ),
+      };
+      const f = fact(
+        "w1",
+        "call",
+        "soap",
+        "ILedgerService/GetBalance",
+        ["src/Northwind.Desk/Controllers/LedgerController.cs", 9, "GetBalance"],
+        [
+          ["src/Northwind.Desk/Controllers/LedgerController.cs", 3, "ILedgerService"],
+          ["src/Northwind.Desk/App.config", 2, "http://localhost:5100/LedgerService.svc"],
+        ],
+        undefined,
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    describe("ASP.NET MVC conventional routes, the scaffold's comments beside them", () => {
+      const C = "src/Northwind.Web/Controllers/StatementController.cs";
+      const controller = lines(
+        "using Microsoft.AspNetCore.Mvc;", // 1
+        "", // 2
+        "public class StatementController : Controller", // 3
+        "{", // 4
+        "", // 5
+        "    // GET: Statement/Create", // 6
+        "    public ActionResult Create()", // 7
+        "    {", // 8
+        "        return View();", // 9
+        "    }", // 10
+        "", // 11
+        "    // POST: Statement/Edit/5", // 12
+        "    [HttpPost]", // 13
+        "    public ActionResult Edit(StatementItem item)", // 14
+        "    {", // 15
+        "        return View(item);", // 16
+        "    }", // 17
+        "}", // 18
+      );
+      const forms: [string, string, string][] = [
+        [
+          "a template with defaults",
+          "src/Northwind.Web/Startup.cs",
+          '            endpoints.MapControllerRoute("default", "{controller=Statement}/{action=Index}/{id?}");',
+        ],
+        [
+          "MapControllerRoute with a pattern",
+          "src/Northwind.Web/Program.cs",
+          'app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");',
+        ],
+        [
+          "MapDefaultControllerRoute",
+          "src/Northwind.Web/Program.cs",
+          "app.MapDefaultControllerRoute();",
+        ],
+        [
+          "MVC 5's MapRoute",
+          "src/Northwind.Web/App_Start/RouteConfig.cs",
+          '            routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");',
+        ],
+      ];
+      for (const [name, file, text] of forms)
+        it(`keeps an action under its scaffold comment: ${name}`, async () => {
+          const files = { [C]: controller, [file]: lines("", text, "") };
+          const value = /\{controller[^"]*/.exec(text)?.[0] ?? /\w*Map\w+Route/.exec(text)![0];
+          const parts: P[] = [
+            [C, 3, "StatementController"],
+            [file, 2, value],
+          ];
+          expect(
+            await one(
+              files,
+              fact("m1", "entry", "rest", "/Statement/Create", [C, 7, "Create"], parts),
+            ),
+          ).toBe("kept");
+          expect(
+            await one(
+              files,
+              fact("m2", "entry", "rest", "/Statement/Edit", [C, 14, "Edit"], parts, "POST"),
+            ),
+          ).toBe("kept");
+        });
+    });
+
+    it("keeps a path a string interpolation puts after its base (C#, JS, Python, Kotlin)", async () => {
+      const shapes: [string, string][] = [
+        [
+          "src/Northwind.Web/Services/StatementService.cs",
+          '        var uri = $"{_baseUrl}statements";',
+        ],
+        ["src/portal/statements.js", "  const res = await fetch(`${baseUrl}statements`);"],
+        ["portal/statements.py", '    r = httpx.get(f"{BASE_URL}statements")'],
+        [
+          "src/main/kotlin/forge/Statements.kt",
+          '        val res = client.get("${baseUrl}statements")',
+        ],
+      ];
+      for (const [file, line] of shapes) {
+        // a doc comment above names the whole path: the code's interpolated string still writes it
+        const files = {
+          [file]: lines(`${file.endsWith(".py") ? "#" : "//"} GET /api/ledger/statements`, line),
+          "config/ledger.json": lines("{", '  "base": "api/ledger/"', "}"),
+        };
+        const f = fact(
+          `i-${file}`,
+          "call",
+          "rest",
+          "/api/ledger/statements",
+          [file, 2, "statements"],
+          [["config/ledger.json", 2, "api/ledger/"]],
+        );
+        expect([file, await one(files, f)]).toEqual([file, "kept"]);
+      }
+    });
+
+    it("keeps a WebForms .asmx web method", async () => {
+      const files = {
+        "src/Northwind.Forms/Ledger/Upload.asmx": lines(
+          '<%@ WebService Language="C#" CodeBehind="Upload.asmx.cs" Class="Northwind.Forms.Ledger.Upload" %>',
+        ),
+        "src/Northwind.Forms/Ledger/Upload.asmx.cs": lines(
+          "public class Upload : WebService", // 1
+          "{", // 2
+          "    [WebMethod]", // 3
+          "    public void UploadStatement()", // 4
+          "    {", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+      };
+      const f = fact(
+        "a1",
+        "entry",
+        "rest",
+        "/Ledger/Upload.asmx/UploadStatement",
+        ["src/Northwind.Forms/Ledger/Upload.asmx", 1, "Upload.asmx"],
+        [["src/Northwind.Forms/Ledger/Upload.asmx.cs", 4, "UploadStatement"]],
+        "POST",
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a call through a generated (NSwag) client, the group and its prefix as parts", async () => {
+      const files = {
+        "src/Web/ClientApp/src/ledger/statement.service.ts": lines(
+          "export class StatementService {", // 1
+          "  list() {", // 2
+          "    return this.statementsClient.list(true);", // 3
+          "  }", // 4
+          "}", // 5
+        ),
+        "src/Web/Endpoints/Statements.cs": lines(
+          "public class Statements : EndpointGroupBase", // 1
+          "{", // 2
+          "    public override void Map(WebApplication app)", // 3
+          "    {", // 4
+          "        app.MapGroup(this).MapGet(List);", // 5
+          "    }", // 6
+          "}", // 7
+        ),
+        "src/Web/Infrastructure/WebApplicationExtensions.cs": lines(
+          '        return app.MapGroup($"/api/{groupName}").WithGroupName(groupName);',
+        ),
+      };
+      const f = fact(
+        "n1",
+        "call",
+        "rest",
+        "/api/Statements/list",
+        ["src/Web/ClientApp/src/ledger/statement.service.ts", 3, "list"],
+        [
+          ["src/Web/Endpoints/Statements.cs", 1, "Statements"],
+          ["src/Web/Endpoints/Statements.cs", 5, "MapGet(List)"],
+          ["src/Web/Infrastructure/WebApplicationExtensions.cs", 1, "/api/{groupName}"],
+        ],
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a DRF @action named by its method, the router's prefix a part", async () => {
+      const files = {
+        "ledger/views.py": lines(
+          "class StatementViewSet(viewsets.ModelViewSet):", // 1
+          "    @action(detail=False, methods=['get'])", // 2
+          "    def recent_postings(self, request):", // 3
+          "        return Response([])", // 4
+        ),
+        "ledger/urls.py": lines(
+          "router = DefaultRouter()",
+          "router.register(r'statements', StatementViewSet)",
+        ),
+      };
+      const f = fact(
+        "d1",
+        "entry",
+        "rest",
+        "/statements/recent_postings",
+        ["ledger/views.py", 2, "@action"],
+        [["ledger/urls.py", 2, "statements"]],
+      );
+      expect(await one(files, f)).toBe("kept");
+    });
+
+    it("keeps a Spring mapping by a constant, with only the class's prefix a part", async () => {
+      const J = "src/main/java/forge/ledger/StatementResource.java";
+      const files = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class StatementResource {", // 3
+          "  @GetMapping(Paths.STATEMENTS)", // 4
+          "  public List<Statement> statements() { return null; }", // 5
+          "}", // 6
+        ),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "c1",
+            "entry",
+            "rest",
+            "/api/statements",
+            [J, 4, "Paths.STATEMENTS"],
+            [[J, 2, "/api"]],
+          ),
+        ),
+      ).toBe("kept");
+    });
+
+    it("still refuses a method under a commented-out mapping, in Spring, ASP.NET and FastAPI", async () => {
+      const J = "src/main/java/forge/portal/BalanceResource.java";
+      const java = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class BalanceResource {", // 3
+          '  // @GetMapping("/balances")', // 4
+          "  public List<Balance> balances() { return null; }", // 5
+          '  @GetMapping("/statements")', // 6
+          "  public List<Statement> statements() { return null; }", // 7
+          "}", // 8
+        ),
+      };
+      expect(
+        await one(
+          java,
+          fact("x1", "entry", "rest", "/api/balances", [J, 5, "balances"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("claim-in-comment");
+      // the live mapping beside it is kept
+      expect(
+        await one(
+          java,
+          fact("x2", "entry", "rest", "/api/statements", [J, 7, "statements"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      const C = "src/Northwind.Api/Controllers/LedgerController.cs";
+      const cs = {
+        [C]: lines(
+          '[Route("api/[controller]")]', // 1
+          "public class LedgerController : ControllerBase", // 2
+          "{", // 3
+          "", // 4
+          '    // [HttpGet("balances")]', // 5
+          "    public IActionResult Balances() => Ok();", // 6
+          "}", // 7
+        ),
+      };
+      // `[controller]` alone is no conventional route: the action is named by its attribute
+      expect(
+        await one(
+          cs,
+          fact(
+            "x3",
+            "entry",
+            "rest",
+            "/api/Ledger/balances",
+            [C, 6, "Balances"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      const files = {
+        "app/api/balances.py": lines(
+          "router = APIRouter()", // 1
+          "", // 2
+          "", // 3
+          '# @router.get("/balances")', // 4
+          "def balances():", // 5
+          "    return []", // 6
+        ),
+        "app/main.py": lines('app.include_router(router, prefix="/api/v1")'),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "x4",
+            "entry",
+            "rest",
+            "/api/v1/balances",
+            ["app/api/balances.py", 5, "balances"],
+            [["app/main.py", 1, "/api/v1"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      // and a call: a commented-out client line above a live helper of the same name
+      const T = "src/portal/ledger.ts";
+      const ts = {
+        [T]: lines(
+          "export const ledger = {", // 1
+          "  // balances: () => http.get(`${base}/balances`),", // 2
+          "  balances: () => cache.read(),", // 3
+          "};", // 4
+        ),
+        "src/portal/config.ts": lines('export const base = "/api";'),
+      };
+      expect(
+        await one(
+          ts,
+          fact(
+            "x5",
+            "call",
+            "rest",
+            "/api/balances",
+            [T, 3, "balances"],
+            [["src/portal/config.ts", 1, "/api"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+    });
+  });
+
+  // Fourth review of ADR 0196: comment markers per file type, a block comment's inner lines, and a
+  // conventional action named on the cite's own lines. Shapes from the bench, in Forge names.
+  describe("comments as each language writes them (fourth review of ADR 0196)", () => {
+    type P = [file: string, line: number, value: string];
+    const fact = (
+      id: string,
+      kind: "entry" | "call",
+      path: string,
+      cite: P,
+      parts: P[] = [],
+      method = "GET",
+    ) =>
+      ({
+        ...base,
+        kind,
+        id,
+        ...(kind === "entry" ? { entryType: "rest" } : { callType: "rest" }),
+        method,
+        path,
+        cite: {
+          file: cite[0],
+          line: cite[1],
+          value: cite[2],
+          ...(parts.length
+            ? { with: parts.map(([file, line, value]) => ({ file, line, value })) }
+            : {}),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const lines = (...ls: string[]) => [...ls, ""].join("\n");
+
+    it("reads each file type's own markers", () => {
+      const cases: [string, string, boolean][] = [
+        // hash-comment files: `#` only, so Python's keyword-only `*` and `*args` are code
+        ["    *, session: SessionDep, item_in: ItemCreate", "app/api/routes/items.py", false],
+        ["    *args, **kwargs", "app/util.py", false],
+        ["    # @router.get('/balances')", "app/api/routes/items.py", true],
+        ['#[app.get("/balances")]', "app/main.py", true],
+        ["#!/usr/bin/env python", "bin/run.py", false],
+        ["# a comment", "config/app.yaml", true],
+        ["// not a comment here", "config/app.yaml", false],
+        ["  # x", "Dockerfile", true],
+        ["# x", "Dockerfile.dev", true],
+        ["# x", "Makefile", true],
+        ["# x", "requirements-dev.txt", true],
+        ["; ledger url", "conf/ledger.ini", true],
+        ["! ledger url", "src/main/resources/application.properties", true],
+        // C-family: `//`, `/*`, a doc block's `*`; `#` never
+        ["  #base = '/api/ledger';", "src/portal/ledger.js", false],
+        ["  #count = 0;", "src/portal/ledger.ts", false],
+        ["#region Balances", "src/Ledger/BalanceController.cs", false],
+        ["#include <ledger.h>", "src/ledger.c", false],
+        ["#![allow(dead_code)]", "src/main.rs", false],
+        ['  #[get("/x")]', "src/main.rs", false],
+        ["  // @GetMapping('/x')", "src/A.java", true],
+        ["   * @param id the ledger", "src/A.java", true],
+        ["   */", "src/A.ts", true],
+        ["  *entries() {", "src/ledger.ts", false],
+        ["  *[Symbol.iterator]() {", "src/ledger.js", false],
+        ["/* a */ router.get('/x')", "src/a.js", false],
+        ["/* a */ // b", "src/a.js", true],
+        ["  // x", "Jenkinsfile", true],
+        // PHP: C's and `#`, not PHP 8's `#[`, in every PHP extension
+        ["# a comment", "src/A.php", true],
+        ["#[Route('/x')]", "src/A.php", false],
+        ["#[Route('/x')]", "includes/routes.inc", false],
+        ["#[Route('/x')]", "ledger.module", false],
+        ["#[Route('/x')]", "legacy/a.php5", false],
+        ["#[Route('/x')]", "tests/a.phpt", false],
+        ["#[Route('/x')]", "views/a.phtml", false],
+        // SQL and XML
+        ["-- a comment", "db/V1__init.sql", true],
+        ["--a comment", "db/V1__init.sql", true],
+        ["# not a comment", "db/V1__init.sql", false],
+        ["  <!-- <url>/x</url> -->", "pom.xml", true],
+        ["  <!-- a --> <route path='/x'/>", "web/routes.xml", false],
+        ["  // x", "pom.xml", false],
+        // anything else: every marker, as before
+        ["# Heading", "README.md", true],
+        ["// x", "main.tf", true],
+        ["# x", "main.tf", true],
+        ["  // fetch('/x')", "public/index.html", true],
+      ];
+      for (const [l, file, want] of cases)
+        expect([l, file, isCommentLine(l, file)]).toEqual([l, file, want]);
+    });
+
+    it("keeps a part on Python's keyword-only `*,` line and on a JavaScript `#private` field", async () => {
+      const PY = "app/api/routes/items.py";
+      const py = {
+        [PY]: lines(
+          'router = APIRouter(prefix="/items")', // 1
+          "", // 2
+          '@router.post("/")', // 3
+          "def create_item(", // 4
+          "    *, session: SessionDep, item_in: ItemCreate", // 5
+          ") -> Any:", // 6
+        ),
+      };
+      expect(
+        await one(
+          py,
+          fact(
+            "p1",
+            "entry",
+            "/items",
+            [PY, 3, "/"],
+            [
+              [PY, 1, "/items"],
+              [PY, 5, "item_in: ItemCreate"],
+            ],
+            "POST",
+          ),
+        ),
+      ).toBe("kept");
+      const JS = "src/portal/ledger.js";
+      const js = {
+        [JS]: lines(
+          "export class LedgerClient {", // 1
+          '  #base = "/api/ledger";', // 2
+          "  balances() {", // 3
+          "    return fetch(`${this.#base}/balances`);", // 4
+          "  }", // 5
+          "}", // 6
+        ),
+      };
+      expect(
+        await one(
+          js,
+          fact(
+            "j1",
+            "call",
+            "/api/ledger/balances",
+            [JS, 4, "/balances"],
+            [[JS, 2, "/api/ledger"]],
+          ),
+        ),
+      ).toBe("kept");
+      // a part only a real `#` comment names is still refused
+      const commented = {
+        [PY]: py[PY].replace(
+          'router = APIRouter(prefix="/items")',
+          '# router = APIRouter(prefix="/items")',
+        ),
+      };
+      expect(
+        await one(
+          commented,
+          fact("p2", "entry", "/items", [PY, 3, "/"], [[PY, 1, "/items"]], "POST"),
+        ),
+      ).toBe("claim-in-comment");
+    });
+
+    it("reads the lines inside a block comment as comment, in a C-family file", async () => {
+      const J = "src/main/java/forge/portal/BalanceResource.java";
+      const java = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class BalanceResource {", // 3
+          "  /* removed:", // 4
+          '     @GetMapping("/balances") */', // 5
+          "  public List<Balance> balances() { return null; }", // 6
+          '  @GetMapping("/statements")', // 7
+          "  public List<Statement> statements() { return null; }", // 8
+          "}", // 9
+        ),
+      };
+      expect(
+        await one(java, fact("b1", "entry", "/api/balances", [J, 6, "balances"], [[J, 2, "/api"]])),
+      ).toBe("claim-in-comment");
+      expect(await one(java, fact("b2", "entry", "/balances", [J, 5, "/balances"]))).toBe(
+        "claim-in-comment",
+      );
+      // the live mapping below the block, and code after a block's close, are kept
+      expect(
+        await one(
+          java,
+          fact("b3", "entry", "/api/statements", [J, 8, "statements"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      const closed = {
+        [J]: java[J].replace('     @GetMapping("/balances") */', '  */ @GetMapping("/balances")'),
+      };
+      expect(
+        await one(
+          closed,
+          fact("b4", "entry", "/api/balances", [J, 6, "balances"], [[J, 2, "/api"]]),
+        ),
+      ).toBe("kept");
+      // a `/*` after a line comment's `//`, or inside a path string, opens no block
+      const T = "src/portal/routes.ts";
+      const ts = {
+        [T]: lines(
+          "// matches /* and more", // 1
+          'router.get("/api/*", proxy);', // 2
+          'router.get("/statements", list);', // 3
+          'app.use("/v1", router);', // 4
+        ),
+      };
+      expect(
+        await one(
+          ts,
+          fact("t1", "entry", "/v1/statements", [T, 3, "/statements"], [[T, 4, "/v1"]]),
+        ),
+      ).toBe("kept");
+    });
+
+    it('keeps a DRF @action with no url_path and a method\'s own [Route("[action]")], whatever a comment beside them says', async () => {
+      const files = {
+        "ledger/views.py": lines(
+          "class StatementViewSet(viewsets.ModelViewSet):", // 1
+          "    # GET /statements/recent_postings/", // 2
+          "    @action(detail=False, methods=['get'])", // 3
+          "    def recent_postings(self, request):", // 4
+          "        return Response([])", // 5
+        ),
+        "ledger/urls.py": lines(
+          "router = DefaultRouter()",
+          "router.register(r'statements', StatementViewSet)",
+        ),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "d1",
+            "entry",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("kept");
+      // with url_path the path is that, not the method's name: a comment's path alone names nothing
+      const pathed = {
+        ...files,
+        "ledger/views.py": files["ledger/views.py"].replace(
+          "@action(detail=False, methods=['get'])",
+          "@action(detail=False, methods=['get'], url_path='recent')",
+        ),
+      };
+      expect(
+        await one(
+          pathed,
+          fact(
+            "d2",
+            "entry",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      const C = "src/Northwind.Api/Controllers/LedgerController.cs";
+      const cs = {
+        [C]: lines(
+          '[Route("api/[controller]")]', // 1
+          "public class LedgerController : ControllerBase", // 2
+          "{", // 3
+          "    // GET api/ledger/balances", // 4
+          '    [HttpGet, Route("[action]")]', // 5
+          "    public IActionResult Balances() => Ok();", // 6
+          "}", // 7
+        ),
+      };
+      expect(
+        await one(
+          cs,
+          fact(
+            "a1",
+            "entry",
+            "/api/Ledger/Balances",
+            [C, 5, "[action]"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("kept");
+      // a commented-out `[action]` is no conventional route
+      const off = {
+        [C]: cs[C].replace(
+          '    [HttpGet, Route("[action]")]',
+          '    // [HttpGet, Route("[action]")] GET api/ledger/balances',
+        ),
+      };
+      expect(
+        await one(
+          off,
+          fact(
+            "a2",
+            "entry",
+            "/api/Ledger/Balances",
+            [C, 6, "Balances"],
+            [[C, 1, "api/[controller]"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+    });
+  });
+
+  // Fifth review of ADR 0196: a `/*` in a string or after `;//` opened a block that swallowed the
+  // rest of the file, so a live route below it was refused as `claim-in-comment`. The reviewer's
+  // probes, in Forge's names: each live route is kept, each real block comment still refuses.
+  describe("a C-family file's comments read by a lexer (fifth review of ADR 0196)", () => {
+    type P = [file: string, line: number, value: string];
+    const fact = (id: string, path: string, cite: P, parts: P[] = [], kind = "entry") =>
+      ({
+        ...base,
+        kind,
+        id,
+        ...(kind === "entry" ? { entryType: "rest" } : { callType: "rest" }),
+        method: "GET",
+        path,
+        cite: {
+          file: cite[0],
+          line: cite[1],
+          value: cite[2],
+          ...(parts.length
+            ? { with: parts.map(([file, line, value]) => ({ file, line, value })) }
+            : {}),
+        },
+      }) as Fact;
+    const one = async (files: Record<string, string>, f: Fact) => {
+      const r = await verifyFacts({ source: memorySource(files), facts: [f] });
+      return r.rejected[0]?.code ?? "kept";
+    };
+    const lines = (...ls: string[]) => [...ls, ""].join("\n");
+
+    it("keeps a live route below a `/*` in a string", async () => {
+      const A = "src/portal/server.js";
+      const a = {
+        [A]: lines(
+          'const CLEAN = "rm -rf build /*";', // 1
+          "const app = express();", // 2
+          'app.get("/api/live", live);', // 3
+        ),
+      };
+      expect(await one(a, fact("s1", "/api/live", [A, 3, "/api/live"]))).toBe("kept");
+      const R = "src/portal/files.js";
+      const r = {
+        [R]: lines(
+          "const ROOT = '/files /*';", // 1
+          "const router = express.Router();", // 2
+          "router.get('/live', live);", // 3
+          "app.use('/api', router);", // 4
+        ),
+      };
+      expect(await one(r, fact("s2", "/api/live", [R, 3, "/live"], [[R, 4, "/api"]]))).toBe("kept");
+      const J = "src/main/java/forge/ledger/LiveResource.java";
+      const j = {
+        [J]: lines(
+          "@RestController", // 1
+          '@RequestMapping("/api")', // 2
+          "class LiveResource {", // 3
+          '  static final String Q = "SELECT a /*+ FIRST_ROWS";', // 4
+          '  @GetMapping("/live")', // 5
+          "  public String live() { return Q; }", // 6
+          "}", // 7
+        ),
+      };
+      expect(await one(j, fact("s3", "/api/live", [J, 5, "/live"], [[J, 2, "/api"]]))).toBe("kept");
+    });
+
+    it("keeps a live route below `;//` with a `/*` after it, a template literal and a Go raw string", async () => {
+      const T = "src/portal/server.ts";
+      const t = {
+        [T]: lines(
+          "foo();// legacy /* note", // 1
+          'app.get("/api/live", live);', // 2
+        ),
+      };
+      expect(await one(t, fact("l1", "/api/live", [T, 2, "/api/live"]))).toBe("kept");
+      const B = "src/portal/banner.ts";
+      const b = {
+        [B]: lines(
+          "const banner = `", // 1
+          "  build output /*", // 2
+          "`;", // 3
+          'app.get("/api/live", live);', // 4
+        ),
+      };
+      expect(await one(b, fact("l2", "/api/live", [B, 4, "/api/live"]))).toBe("kept");
+      const G = "cmd/forge/main.go";
+      const g = {
+        [G]: lines(
+          "const usage = `globs: /*`", // 1
+          "const help = `", // 2
+          "  more globs: /*", // 3
+          "`", // 4
+          "", // 5
+          "func main() {", // 6
+          '\thttp.HandleFunc("/api/live", live)', // 7
+          "}", // 8
+        ),
+      };
+      expect(await one(g, fact("l3", "/api/live", [G, 7, "/api/live"]))).toBe("kept");
+    });
+
+    it("still refuses a route only a real block comment writes, in the same files", async () => {
+      const A = "src/portal/server.js";
+      const a = {
+        [A]: lines(
+          'const CLEAN = "rm -rf build /*";', // 1
+          "/* removed:", // 2
+          '   app.get("/api/balances", balances) */', // 3
+          'app.get("/api/live", live);', // 4
+        ),
+      };
+      expect(await one(a, fact("r1", "/api/balances", [A, 3, "/api/balances"]))).toBe(
+        "claim-in-comment",
+      );
+      expect(await one(a, fact("r2", "/api/live", [A, 4, "/api/live"]))).toBe("kept");
+      const J = "src/main/java/forge/ledger/BalanceResource.java";
+      const j = {
+        [J]: lines(
+          '@RequestMapping("/api")', // 1
+          "class BalanceResource {", // 2
+          '  static final String Q = "SELECT a /*+ FIRST_ROWS";', // 3
+          "  /* removed:", // 4
+          '     @GetMapping("/balances") */', // 5
+          "  public List<Balance> balances() { return null; }", // 6
+          "}", // 7
+        ),
+      };
+      expect(await one(j, fact("r3", "/api/balances", [J, 6, "balances"], [[J, 1, "/api"]]))).toBe(
+        "claim-in-comment",
+      );
+    });
+
+    it("reads a JSX comment as comment, on one line or three", async () => {
+      const X = "src/portal/App.tsx";
+      const x = {
+        [X]: lines(
+          "<Routes>", // 1
+          '  {/* <Route path="/old" element={<Old />} /> */}', // 2
+          "  {/*", // 3
+          '  <Route path="/old-balances" element={<OldBalances />} />', // 4
+          "  */}", // 5
+          '  <Route path="/balances" element={<Balances />} />', // 6
+          "</Routes>", // 7
+        ),
+      };
+      expect(await one(x, fact("x1", "/old", [X, 2, "/old"]))).toBe("claim-in-comment");
+      expect(await one(x, fact("x2", "/old-balances", [X, 4, "/old-balances"]))).toBe(
+        "claim-in-comment",
+      );
+      expect(await one(x, fact("x3", "/balances", [X, 6, "/balances"]))).toBe("kept");
+    });
+
+    it("reads a nested block comment to its last close in Kotlin", async () => {
+      const K = "src/main/kotlin/forge/ledger/BalanceController.kt";
+      const k = {
+        [K]: lines(
+          '@RequestMapping("/api")', // 1
+          "class BalanceController {", // 2
+          "  /* removed: /* old */", // 3
+          '  @GetMapping("/balances") */', // 4
+          "  fun balances(): List<Balance> = listOf()", // 5
+          '  @GetMapping("/statements")', // 6
+          "  fun statements(): List<Statement> = listOf()", // 7
+          "}", // 8
+        ),
+      };
+      expect(await one(k, fact("k1", "/balances", [K, 4, "/balances"]))).toBe("claim-in-comment");
+      expect(await one(k, fact("k2", "/api/balances", [K, 5, "balances"], [[K, 1, "/api"]]))).toBe(
+        "claim-in-comment",
+      );
+      expect(
+        await one(k, fact("k3", "/api/statements", [K, 6, "/statements"], [[K, 1, "/api"]])),
+      ).toBe("kept");
+      // in Java, which doesn't nest them, the inner close ends the block: line 4 is code
+      const J = "src/main/java/forge/ledger/BalanceController.java";
+      expect(
+        await one(
+          { [J]: k[K] },
+          fact("k4", "/api/balances", [J, 4, "/balances"], [[J, 1, "/api"]]),
+        ),
+      ).toBe("kept");
+    });
+
+    it("keeps a Symfony route a docblock annotation declares", async () => {
+      const P = "src/Controller/BlogController.php";
+      const p = {
+        [P]: lines(
+          "<?php", // 1
+          "class BlogController extends AbstractController", // 2
+          "{", // 3
+          "    /**", // 4
+          '     * @Route("/blog", name="blog_list")', // 5
+          "     */", // 6
+          "    public function list(): Response", // 7
+          "    {", // 8
+          "    }", // 9
+          "    /**", // 10
+          '     * Was @Route("/blog/old"), now gone.', // 11
+          "     */", // 12
+          "}", // 13
+        ),
+      };
+      expect(await one(p, fact("p1", "/blog", [P, 5, "/blog"]))).toBe("kept");
+      expect(await one(p, fact("p2", "/blog/old", [P, 11, "/blog/old"]))).toBe("claim-in-comment");
+    });
+
+    it("reads a DRF @action's url_path on the next line: no conventional route", async () => {
+      const files = {
+        "ledger/views.py": lines(
+          "class StatementViewSet(viewsets.ModelViewSet):", // 1
+          "    # GET /statements/recent_postings/", // 2
+          "    @action(detail=True,", // 3
+          "            url_path='recent', methods=['get'])  # was recent_postings", // 4
+          "    def recent_postings(self, request, pk=None):", // 5
+          "        return Response([])", // 6
+        ),
+        "ledger/urls.py": lines(
+          "router = DefaultRouter()",
+          "router.register(r'statements', StatementViewSet)",
+        ),
+      };
+      expect(
+        await one(
+          files,
+          fact(
+            "d1",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("claim-in-comment");
+      // without url_path the method's name is its path, wrapped or not
+      const plain = {
+        ...files,
+        "ledger/views.py": files["ledger/views.py"].replace(
+          "            url_path='recent', methods=['get'])  # was recent_postings",
+          "            methods=['get'])  # was recent_postings",
+        ),
+      };
+      expect(
+        await one(
+          plain,
+          fact(
+            "d2",
+            "/statements/recent_postings",
+            ["ledger/views.py", 3, "@action"],
+            [["ledger/urls.py", 2, "statements"]],
+          ),
+        ),
+      ).toBe("kept");
+    });
   });
 });
 

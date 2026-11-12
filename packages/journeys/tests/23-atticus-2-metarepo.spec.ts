@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { accessible, ask, expect, forgeStudioJourney, open, test } from "../support/app.js";
 
@@ -24,6 +26,57 @@ test("Trust counts the repo once: the facts file's companions aren't repos", asy
   await expect(page.getByText(/doesn't read as facts/)).toHaveCount(0);
   await expect(page.getByText(/forge-studio\.(questions|reviewed)/i)).toHaveCount(0);
   await accessible(page, "trust on an Atticus 2 metarepo");
+});
+
+test("Trust shows the canaries, the audit misread and canary pass-through rates, and how to run one (ADR 0196)", async ({
+  page,
+}) => {
+  await open(page, app(), "trust");
+  const panel = page.getByRole("region", {
+    name: "Canaries and the audit: how often a backed claim is wrong",
+  });
+  // Nothing scored yet: the commands to run one.
+  await expect(panel.getByText(/No canary has been scored yet/)).toBeVisible();
+  await expect(panel.getByText("atticus canary plant <repo>")).toBeVisible();
+  // A report on file, as atticus canary score writes it.
+  const dir = join(app().root, "reports/canaries");
+  await mkdir(dir, { recursive: true });
+  const rate = (k: number, n: number) =>
+    `{ k: ${k}, n: ${n}, rate: ${Math.round((k / n) * 1000) / 1000}, low: 0.1, high: 0.9 }`;
+  await writeFile(
+    join(dir, "2026-11-11-forge-studio.yaml"),
+    [
+      "schema: 1",
+      "repo: forge-studio",
+      "seed: s1",
+      "at: 2026-11-11T10:00:00.000Z",
+      "by: priya",
+      "stacks: [spring]",
+      "read: { facts: 12, kept: 11, rejected: 1 }",
+      "planted:",
+      // a planted item is only its kind, stack and result: no word, file or line of it
+      "  - { id: plant:1, kind: entry, what: entry, stack: spring, result: found }",
+      "  - { id: plant:2, kind: call, what: call, stack: spring, result: missed }",
+      "skipped:",
+      "  - { stack: spring, what: topic-in, reason: the build files declare no Kafka client (spring-kafka) }",
+      "removed:",
+      "  - { id: remove:x, fact: x, kind: call, file: api/src/main/java/forge/studio/A.java, line: 3, claim: call GET /a, value: /a, how: commented, result: rejected, by: x }",
+      `recall: ${rate(1, 2)}`,
+      `fabrication: ${rate(1, 1)}`,
+      `passed: { k: 0, n: 1, rate: 0, low: 0, high: 0.793 }`,
+      "",
+    ].join("\n"),
+  );
+  await page.reload();
+  // Two numbers side by side, never pooled, named as `atticus canary report` names them.
+  await expect(panel.getByText(/^Canary pass-through rate \(.*; 1 repo\):/)).toBeVisible();
+  await expect(panel.getByText("0% (0 of 1)").first()).toBeVisible();
+  await expect(panel.getByText(/^Audit misread rate \(/)).toBeVisible();
+  await expect(panel.getByText(/^The canaries cover spring \(a route, a call\)\./)).toBeVisible();
+  await expect(panel.getByRole("table", { name: "The latest canary of each repo" })).toContainText(
+    "forge-studio",
+  );
+  await accessible(page, "trust with a canary on file");
 });
 
 test("Home says the assistant the probe measured, and the read, not a scan", async ({ page }) => {

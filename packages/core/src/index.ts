@@ -17,6 +17,7 @@ export * from "./link-evidence.js";
 export * from "./shared-maps.js";
 export * from "./contract-check.js";
 export * from "./audit.js";
+export * from "./canary.js";
 export * from "./stack-helpers.js";
 export * from "./cite.js";
 export * from "./catalog.js";

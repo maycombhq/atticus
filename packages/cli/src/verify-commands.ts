@@ -15,6 +15,7 @@ import {
   frameworksToLearn,
   repairFormSlips,
   verifyFacts,
+  type VerifyReport,
 } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -96,6 +97,79 @@ export interface VerifyCommandOptions {
  * report or the rejected file, so a long list never fills the terminal or one line.
  */
 export const SHOWN = 5;
+
+/** A list said as its first few lines and where the rest are, or (`all`) every line. */
+const listed = (lines: readonly string[], more: string, all = false): string[] =>
+  all || lines.length <= SHOWN
+    ? lines.map((l) => `  ${l}`)
+    : [
+        ...lines.slice(0, SHOWN).map((l) => `  ${l}`),
+        `  ... and ${lines.length - SHOWN} more ${more}`,
+      ];
+
+/**
+ * R1's notes for the reader's second pass, as `atticus verify` prints them: the lines of the
+ * files read that write a path, URL or topic no fact cites, reviewed globs holding some, and spec
+ * operations no entry covers. Shared with a canary's own check (second review of ADR 0196), so
+ * its read gets the same recall loop the map's does.
+ */
+export function skippedNoteLines(
+  report: Pick<VerifyReport, "skipped" | "reviewedHolds" | "specOpsUncovered">,
+  o: { verifyYaml: string; seeAll: string; all: boolean },
+): string[] {
+  const out: string[] = [];
+  const { verifyYaml, seeAll, all } = o;
+  const skippedLines = report.skipped;
+  if (skippedLines.length)
+    out.push(
+      `${skippedLines.length} ${skippedLines.length === 1 ? "line of the files read writes" : "lines of the files read write"} a path, URL or topic no fact cites (a note for the reader to check, not a rejection; under skipped in ${verifyYaml}; ${seeAll}):`,
+      ...listed(
+        skippedLines.map((x) => `${x.cite} ${x.kind} ${x.value}`),
+        `(${seeAll})`,
+        all,
+      ),
+    );
+  const holds = report.reviewedHolds;
+  if (holds.length)
+    out.push(
+      `${holds.length} reviewed ${holds.length === 1 ? "glob holds" : "globs hold"} lines that write a path, URL or topic (a note; under reviewedHolds in ${verifyYaml}): read them, then write their facts or say why there are none:`,
+      ...listed(
+        holds.map((h) => h.message),
+        `(reviewedHolds in ${verifyYaml})`,
+        all,
+      ),
+    );
+  const ops = report.specOpsUncovered;
+  if (ops.length)
+    out.push(
+      `${ops.length} ${ops.length === 1 ? "operation the repo's OpenAPI spec declares has" : "operations the repo's OpenAPI specs declare have"} no entry (a note, not a rejection; under specOpsUncovered in ${verifyYaml}; ${seeAll}):`,
+      ...listed(
+        ops.map((x) => x.message),
+        `(${seeAll})`,
+        all,
+      ),
+    );
+  return out;
+}
+
+/** C-estate's note, as `atticus verify` prints it: the listeners and routes no flow follows. */
+export function unfollowedNoteLines(
+  report: Pick<VerifyReport, "entriesNoFlowFollows">,
+  verifyYaml: string,
+): string[] {
+  const unfollowed = report.entriesNoFlowFollows;
+  if (!unfollowed.length) return [];
+  return [
+    `${unfollowed.length} ${unfollowed.length === 1 ? "entry" : "entries"} no flow follows (a note, not a rejection; listed under entriesNoFlowFollows in ${verifyYaml}): write a flow for each that does real work.`,
+    ...listed(
+      unfollowed.map(
+        (e) =>
+          `${e.entryType === "rest" && e.method ? e.method : e.entryType} ${e.path} (${e.id}, ${e.cite})`,
+      ),
+      `(entriesNoFlowFollows in ${verifyYaml})`,
+    ),
+  ];
+}
 
 /** The JSON objects of a questions file; a line that isn't JSON is a problem. */
 function questionLines(text: string): { lines: unknown[]; problems: QuestionProblem[] } {
@@ -514,42 +588,12 @@ export async function verifyCommand(
   }
   // R1: the lines the reader skipped, notes for its second pass; never a rejection, and nothing
   // kept or dropped because of them. --skipped prints every one.
-  const all = o.skipped === true;
-  const list = (lines: readonly string[], more: string) => {
-    if (all) for (const l of lines) io.out(`  ${l}`);
-    else show(lines, more);
-  };
-  const seeAll = `atticus verify ${repo} --skipped prints every one`;
-  const skippedLines = report.skipped;
-  if (skippedLines.length) {
-    io.out(
-      `${skippedLines.length} ${skippedLines.length === 1 ? "line of the files read writes" : "lines of the files read write"} a path, URL or topic no fact cites (a note for the reader to check, not a rejection; under skipped in ${verifyYaml}; ${seeAll}):`,
-    );
-    list(
-      skippedLines.map((x) => `${x.cite} ${x.kind} ${x.value}`),
-      `(${seeAll})`,
-    );
-  }
-  const holds = report.reviewedHolds;
-  if (holds.length) {
-    io.out(
-      `${holds.length} reviewed ${holds.length === 1 ? "glob holds" : "globs hold"} lines that write a path, URL or topic (a note; under reviewedHolds in ${verifyYaml}): read them, then write their facts or say why there are none:`,
-    );
-    list(
-      holds.map((h) => h.message),
-      `(reviewedHolds in ${verifyYaml})`,
-    );
-  }
-  const ops = report.specOpsUncovered;
-  if (ops.length) {
-    io.out(
-      `${ops.length} ${ops.length === 1 ? "operation the repo's OpenAPI spec declares has" : "operations the repo's OpenAPI specs declare have"} no entry (a note, not a rejection; under specOpsUncovered in ${verifyYaml}; ${seeAll}):`,
-    );
-    list(
-      ops.map((x) => x.message),
-      `(${seeAll})`,
-    );
-  }
+  for (const l of skippedNoteLines(report, {
+    verifyYaml,
+    seeAll: `atticus verify ${repo} --skipped prints every one`,
+    all: o.skipped === true,
+  }))
+    io.out(l);
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
   // A-uncited: the quote a file of that kind can't bear is left off the kept fact, and counted.
   if (report.quotesDropped)
@@ -570,19 +614,7 @@ export async function verifyCommand(
     );
   }
   // C-estate: a note, not a rejection, so the reader follows each listener and route with a flow.
-  const unfollowed = report.entriesNoFlowFollows;
-  if (unfollowed.length) {
-    io.out(
-      `${unfollowed.length} ${unfollowed.length === 1 ? "entry" : "entries"} no flow follows (a note, not a rejection; listed under entriesNoFlowFollows in ${verifyYaml}): write a flow for each that does real work.`,
-    );
-    show(
-      unfollowed.map(
-        (e) =>
-          `${e.entryType === "rest" && e.method ? e.method : e.entryType} ${e.path} (${e.id}, ${e.cite})`,
-      ),
-      `(entriesNoFlowFollows in ${verifyYaml})`,
-    );
-  }
+  for (const l of unfollowedNoteLines(report, verifyYaml)) io.out(l);
   // A-framework: what the repo is built on, a framework whose patterns nothing shows, and a
   // framework of the house nothing here can read. Notes and questions, never rejections.
   const fws = frameworkFacts(report.accepted);

@@ -1,0 +1,52 @@
+{
+  "stacks": [
+    "node"
+  ],
+  "planted": [
+    {
+      "id": "plant:1",
+      "kind": "call",
+      "what": "call",
+      "stack": "node",
+      "file": "src/api/spruce-umber.ts",
+      "line": 2,
+      "claim": "call GET /nutmeg-raven/{id}",
+      "needle": "nutmeg-raven"
+    }
+  ],
+  "skipped": [
+    {
+      "stack": "node",
+      "what": "config",
+      "reason": "a browser app (its package declares no server) has no process.env"
+    },
+    {
+      "stack": "node",
+      "what": "entry",
+      "reason": "its package declares no server (express): a browser app serves no route"
+    },
+    {
+      "stack": "node",
+      "what": "topic-in",
+      "reason": "its package declares no Kafka client (kafkajs)"
+    },
+    {
+      "stack": "node",
+      "what": "topic-out",
+      "reason": "its package declares no Kafka client (kafkajs)"
+    }
+  ],
+  "removed": [
+    {
+      "id": "remove:call.get.api-balance-accountid",
+      "fact": "call.get.api-balance-accountid",
+      "kind": "call",
+      "file": "src/api/balance.ts",
+      "line": 3,
+      "claim": "call GET /api/balance/{accountId}",
+      "value": "/api/balance/",
+      "needle": "get api-balance-param",
+      "how": "commented"
+    }
+  ]
+}

@@ -164,6 +164,12 @@ function shuffled<T extends { id: string }>(list: readonly T[], seed: string): T
 }
 
 /**
+ * The same shuffle for another draw (ADR 0196, the canaries' words and removals): by id, then the
+ * seeded generator, so the same list and seed give the same order on any machine.
+ */
+export const seededShuffle = shuffled;
+
+/**
  * A reproducible random sample: `size` facts and `size` links (all of them when there are
  * fewer), the same for the same candidates and seed whatever order they come in.
  */

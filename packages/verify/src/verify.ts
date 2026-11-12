@@ -12,6 +12,8 @@ import {
   lineNamesClaim,
   partsBuildWord,
   partsNamePath,
+  pathPieceOnlyInComment,
+  declaresConventionalRoute,
   isSecretPath,
   isBinaryText,
   isLfsPointer,
@@ -61,9 +63,9 @@ import { methodUnseenOf, type MethodUnseen } from "./method.js";
 import { insideRepo, tooBigToRead, type FileSource } from "./source.js";
 import {
   candidatesIn,
+  commentLinesOf,
   factsCover,
   indexFacts,
-  isCommentLine,
   notReadForSkipped,
   reviewedHoldsOf,
   skippedOf,
@@ -982,6 +984,29 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (linesCache.size > LINES_HELD) linesCache.delete(linesCache.keys().next().value!);
     return lines;
   };
+  /**
+   * Which of a file's lines are all comment (`commentLinesOf`: a C-family file's block comments
+   * too, fourth review of ADR 0196), and the lines with each of those read as blank, made once per
+   * lines held (a WeakMap on the array `linesOf` keeps, so it goes when the file leaves the window).
+   */
+  const commentCache = new WeakMap<string[], boolean[]>();
+  const commentFlagsOf = (file: string, lines: string[]) => {
+    let flags = commentCache.get(lines);
+    if (!flags) commentCache.set(lines, (flags = commentLinesOf(file, lines)));
+    return flags;
+  };
+  /** Whether line `n` (from 1) of a file is all comment. */
+  const commentAt = (file: string, lines: string[], n: number) =>
+    commentFlagsOf(file, lines)[n - 1] === true;
+  const codeCache = new WeakMap<string[], string[]>();
+  const codeLinesOf = (file: string, lines: string[]) => {
+    let code = codeCache.get(lines);
+    if (!code) {
+      const flags = commentFlagsOf(file, lines);
+      codeCache.set(lines, (code = lines.map((l, i) => (flags[i] ? "" : l))));
+    }
+    return code;
+  };
   const deriveEnv: DeriveEnv = { lines: linesOf, files: listed };
   /** One line of a file, as `sanitised` and `quietFact` read the lines a fact cites. */
   const lineAt = (file: string, n: number) => (n >= 1 ? linesOf(file)?.[n - 1] : undefined);
@@ -997,6 +1022,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     alsoHolds?: (lines: readonly string[], line: number) => boolean,
     /** Never quote a part, the quote or the line: they may be a secret (`quietFact`). */
     quiet = false,
+    /** The claim is an HTTP route (a rest entry or call): a commented-out mapping can't name it. */
+    httpRoute = false,
   ): Problem | undefined => {
     const where = `${cite.file}:${cite.line}`;
     if (!insideRepo(cite.file))
@@ -1025,6 +1052,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     const parts = cite.with ?? [];
     const near = (ls: string[], n: number) => ls.slice(Math.max(0, n - 2), n + 1);
     const partLines: string[] = [];
+    // each part's window, joined, for what a call wrapped over its lines declares (fifth review)
+    const partWindows: string[] = [];
     for (const [i, p] of parts.entries()) {
       const pl = `${label} part ${i + 1}`;
       if (!insideRepo(p.file))
@@ -1060,8 +1089,49 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             ? `${pl} is not written at ${p.file}:${p.line} (or the line either side); cite the line that writes it (its text is not repeated here: it may be a secret)`
             : `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
         };
-      partLines.push(...near(ls, p.line));
+      // Review of ADR 0196 (the canary's first finding): a part whose value only a comment
+      // beside it names (a commented-out old route) is no code, as a main cite's isn't; and a
+      // comment line is never one the claim is put together from.
+      const partNear = near(ls, p.line);
+      // the window's lines as the file reads them: a line in a block comment is a comment too
+      const from = Math.max(0, p.line - 2);
+      const isComment = partNear.map((_, i) => commentAt(p.file, ls, from + i + 1));
+      // which lines name the part, looked for only when a comment line is among them (else it
+      // can't be named in a comment only): no regex is built per fact for a part on plain code
+      const naming =
+        claims && isComment.some(Boolean)
+          ? partNear
+              .map((l, i) => ({ l, comment: isComment[i]! }))
+              .filter(
+                ({ l }) =>
+                  lineNamesClaim(l, routeOrWord(p.value)) ||
+                  lineNamesClaim(l, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") }) ||
+                  partsNamePath([l], p.value),
+              )
+          : [];
+      if (
+        claims &&
+        naming.length &&
+        !/(^|\/)_redirects$/.test(p.file) &&
+        naming.every((x) => x.comment)
+      )
+        return {
+          code: "claim-in-comment",
+          message: quiet
+            ? `${pl} is written at ${p.file}:${p.line} (or the line either side) only in a comment; cite the code that does it`
+            : `${pl} says "${p.value}", which ${p.file}:${p.line} (or the line either side) writes only in a comment; cite the code that does it`,
+        };
+      const kept = /(^|\/)_redirects$/.test(p.file)
+        ? partNear
+        : partNear.filter((_, i) => !isComment[i]);
+      partLines.push(...kept);
+      partWindows.push(kept.join("\n"));
     }
+    // With parts, the claim is put together from code: the cited file's comment lines are read
+    // as blank (review of ADR 0196), so a commented-out line beside the cite names nothing. The
+    // blanked copy is made once per file (second review: once per fact made a big file quadratic).
+    const codeLines =
+      parts.length && !/(^|\/)_redirects$/.test(cite.file) ? codeLinesOf(cite.file, lines) : lines;
     // Names a framework derives from what the cited line or a part declares (A-derived).
     let derived: DerivedName[] | undefined;
     const derivedHere = () =>
@@ -1069,14 +1139,39 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         { file: cite.file, line: cite.line },
         ...parts.map((p) => ({ file: p.file, line: p.line })),
       ].flatMap((at) => derivedNamesAt(at.file, linesOf(at.file) ?? [], at.line, deriveEnv)));
-    const holds = (c: Claim) =>
+    // A conventional route (`{controller}/{action}`, `MapDefaultControllerRoute()`) is named by
+    // its class and method: its action is the method's name (third review of ADR 0196).
+    // Fourth review: the cite window's code lines too (a DRF `@action(` with no `url_path=`, a
+    // method's own `[Route("[action]")]`), never its comments. Fifth review: each window joined,
+    // so an `@action(` wrapped over lines is read to its close (`url_path=` on the next line).
+    const conventional = declaresConventionalRoute([
+      ...parts.map((p) => p.value),
+      ...partWindows,
+      near(codeLines, cite.line).join("\n"),
+    ]);
+    // Third review of ADR 0196: an HTTP route's piece that the parts don't name and only a
+    // commented-out mapping in the cite window writes as a path is named by that comment, not by
+    // the code beside it (a method `balances()` under `// @GetMapping("/balances")`).
+    const onlyInComment = (c: Claim) =>
+      httpRoute &&
+      parts.length > 0 &&
+      c.kind === "route" &&
+      codeLines !== lines &&
+      !conventional &&
+      pathPieceOnlyInComment(
+        near(lines, cite.line),
+        (_, i) => commentAt(cite.file, lines, Math.max(0, cite.line - 2) + i + 1),
+        partLines,
+        c.value,
+      ) !== undefined;
+    const holdsOn = (lines: string[]) => (c: Claim) =>
       claimOnLines(lines, cite.line, c) ||
       // a framework that routes by file place (Razor Pages, WebForms, Next.js)
       (c.kind === "route" &&
         pageRouteMatches(cite.file, lines, (p) => linesOf(p) !== undefined, c.value)) ||
       (parts.length > 0 &&
         (c.kind === "route"
-          ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
+          ? partsNamePath([...near(lines, cite.line), ...partLines], c.value) && !onlyInComment(c)
           : partLines.some((l) => lineNamesClaim(l, c)) ||
             // a word put together from parts (`namespace:task`, a key a helper prefixes)
             (c.kind === "word" &&
@@ -1087,18 +1182,24 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
               )))) ||
       (o.derivedNames !== false && derivedHolds(c, derivedHere(), partLines, partsNamePath)) ||
       (alsoHolds !== undefined && alsoHolds(lines, cite.line));
-    if (claims && !claims.some(holds))
+    if (claims && !claims.some(holdsOn(codeLines))) {
+      if (codeLines !== lines && (claims.some(holdsOn(lines)) || claims.some(onlyInComment)))
+        return {
+          code: "claim-in-comment",
+          message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side) and its parts write only in a comment; cite the code that does it`,
+        };
       return {
         code: "claim-not-on-line",
         message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length || !withHint ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
+    }
     // A claim written only in a comment (a commented-out example, a scaffold note) isn't code.
     // Beta.24 review: with parts, the cited line itself is the code the claim rests on, so a
     // cited line that is all comment is no code either.
     if (
       claims &&
       parts.length &&
-      isCommentLine(lines[cite.line - 1] ?? "") &&
+      commentAt(cite.file, lines, cite.line) &&
       !/(^|\/)_redirects$/.test(cite.file)
     )
       return {
@@ -1106,11 +1207,16 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         message: `${label} cites ${where}, which is a comment; cite the code that does it`,
       };
     if (claims && !parts.length) {
-      const naming = [cite.line - 1, cite.line, cite.line + 1]
-        .map((n) => lines[n - 1])
-        .filter((l): l is string => l !== undefined && claims.some((c) => lineNamesClaim(l, c)));
+      const naming = [cite.line - 1, cite.line, cite.line + 1].filter((n) => {
+        const l = lines[n - 1];
+        return l !== undefined && claims.some((c) => lineNamesClaim(l, c));
+      });
       // Netlify's `_redirects` starts its rules with `/*`, which is no comment there
-      if (naming.length && !/(^|\/)_redirects$/.test(cite.file) && naming.every(isCommentLine))
+      if (
+        naming.length &&
+        !/(^|\/)_redirects$/.test(cite.file) &&
+        naming.every((n) => commentAt(cite.file, lines, n))
+      )
         return {
           code: "claim-in-comment",
           message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} writes only in a comment; cite the code that does it`,
@@ -1213,6 +1319,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 helperBuildsKey(PLACEHOLDER_KEY.exec(f.path.trim())![1]!, f.cite, linesOf))
           : undefined,
         quietFact(f, lineAt),
+        (f.kind === "entry" && f.entryType === "rest") ||
+          (f.kind === "call" && f.callType === "rest"),
       ),
     );
     // Beta.24 review: a config fact's value is what its line sets, and its key sits where the

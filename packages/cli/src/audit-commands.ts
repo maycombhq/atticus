@@ -519,24 +519,46 @@ async function auditReport(
   return 0;
 }
 
-async function estateAuditReport(root: string, o: AuditOptions, io: Output): Promise<number> {
-  const out: { repo: string; precision: AuditPrecision }[] = [];
+/**
+ * Every repo's sample audit and the estate's sum, as the report gives them (the answers that
+ * still stand); `bad` names an audit file that doesn't read. ADR 0196: the canaries' silent error
+ * rate takes the audit's part from here, so the two never count differently.
+ */
+export async function estateAuditPrecision(root: string): Promise<{
+  repos: { repo: string; precision: AuditPrecision }[];
+  estate?: AuditPrecision;
+  bad?: { file: string; issues: string[] };
+}> {
+  const repos: { repo: string; precision: AuditPrecision }[] = [];
   for (const repo of await factsRepos(root)) {
     const onFile = await readAudit(root, repo);
-    if (onFile.issues) {
-      io.err(AUDIT_WORDS.badFile(`${factsRelOf(root)}/${repo}.audit.yaml`));
-      for (const i of onFile.issues) io.err(`  ${i}`);
-      return 2;
-    }
+    if (onFile.issues)
+      return {
+        repos,
+        bad: { file: `${factsRelOf(root)}/${repo}.audit.yaml`, issues: onFile.issues },
+      };
     if (!onFile.file) continue;
     const facts = (await readFactsOf(root, repo)).facts ?? [];
-    out.push({ repo, precision: await precisionOf(root, repo, onFile.file, facts) });
+    repos.push({ repo, precision: await precisionOf(root, repo, onFile.file, facts) });
   }
-  if (!out.length) {
+  return repos.length
+    ? { repos, estate: sumAuditPrecision(repos.map((x) => x.precision)) }
+    : { repos };
+}
+
+async function estateAuditReport(root: string, o: AuditOptions, io: Output): Promise<number> {
+  const all = await estateAuditPrecision(root);
+  if (all.bad) {
+    io.err(AUDIT_WORDS.badFile(all.bad.file));
+    for (const i of all.bad.issues) io.err(`  ${i}`);
+    return 2;
+  }
+  const out = all.repos;
+  if (!out.length || !all.estate) {
     io.err(AUDIT_WORDS.noAudits);
     return 2;
   }
-  const estate = sumAuditPrecision(out.map((x) => x.precision));
+  const estate = all.estate;
   if (o.json) {
     io.out(JSON.stringify({ repos: out, estate }, null, 2));
     return 0;
@@ -549,5 +571,15 @@ async function estateAuditReport(root: string, o: AuditOptions, io: Output): Pro
   io.out("");
   io.out("The estate:");
   for (const l of precisionLines(estate)) io.out(l);
+  // ADR 0196: with a canary on file, the audit misread rate and the canary pass-through rate side
+  // by side; the audit's part is the estate's just counted, not counted again.
+  const { silentLines, silentSummary } = await import("./canary-commands.js");
+  const s = await silentSummary(root, { audit: { precision: estate, repos: out.length } });
+  if (s.latest.length) {
+    io.out("");
+    // counted as the join makes the links now, which Map › Trust and `canary report` don't run:
+    // said beside the rate (second review of ADR 0196)
+    for (const l of silentLines(s.rate, { joined: true })) io.out(l);
+  }
   return 0;
 }

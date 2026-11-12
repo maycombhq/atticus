@@ -495,6 +495,12 @@ export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
       // Local writes in the metarepo, previewed first, for Propose for review.
       .add("POST", "/api/trust/answer-boxes/ignore", ({ body }) => answerBoxRoute(ctx, body, false))
       .add("POST", "/api/trust/answer-boxes/rename", ({ body }) => answerBoxRoute(ctx, body, true))
+      // ADR 0196 (Z2): canaries and the silent error rate, from the files only.
+      .add("GET", "/api/trust/canaries", async () => {
+        const { canaryView } = await import("./canary-commands.js");
+        const body: Api.CanaryViewT = await canaryView(ctx.root);
+        return { status: 200, body };
+      })
       // ADR 0141 (P5): the estate's freshness. It runs read-only local git in the clones
       // (`git diff --name-status` between two commits they have); nothing fetched or written.
       .add("GET", "/api/trust/fresh", async () => {

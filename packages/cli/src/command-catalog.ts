@@ -112,6 +112,8 @@ const AREA_BY_WORD: Record<string, string> = {
   map: "repos",
   spec: "repos",
   estate: "repos",
+  // ADR 0196: canaries, beside the sample audit.
+  canary: "repos",
   "repo-type": "repos",
   // ADR 0176, 0177: reading rules, and skills and agents, set up for the organisation.
   rules: "repos",

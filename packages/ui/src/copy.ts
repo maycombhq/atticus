@@ -8,6 +8,19 @@
 const listWords = (xs: readonly string[]) =>
   xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)!}`;
 
+
+/** A share as a percentage, to one decimal place where it has one (ADR 0196's rates). */
+const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
+const pctOf = (r: { k: number; n: number }) => (r.n ? pct(r.k / r.n) : "-");
+/** What each item a canary plants stands for, as `atticus canary` says it. */
+const CANARY_WHAT: Record<string, string> = {
+  entry: "a route",
+  call: "a call",
+  "topic-in": "a topic listened to",
+  "topic-out": "a topic published",
+  config: "a config key",
+};
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -1187,6 +1200,56 @@ export const COPY = {
     unverifiedFix: "The verifier hasn't checked these on their lines yet:",
     moreFacts: (n: number, file: string) => `and ${n} more, in ${file}`,
     openCanvas: "Open the repo on the estate canvas",
+    /**
+     * ADR 0196 (Z2): canaries beside the sample audit, and how often a claim graded as backed is
+     * wrong, as two numbers side by side (never pooled), in the CLI's own words.
+     */
+    canary: {
+      title: "Canaries and the audit: how often a backed claim is wrong",
+      intro:
+        "How often a claim graded as backed is wrong, measured two ways on your own code, with nobody labelling anything. The sample audit: a person answers a random sample of kept facts and links, which shows real lines read wrongly. A canary: Atticus copies a repo to a scratch folder outside the metarepo, plants a few made-up entries, calls, topics and config keys the repo can serve, and comments out a few real lines; your assistant reads the copy as it reads any repo, and a line taken out that the read still claims and the verifier keeps is a silent error. The two are of different things, so they are shown side by side, never added up.",
+      empty:
+        "No canary has been scored yet. Run one on a few repos each release: plant it, open the run folder it names as your assistant's workspace, give it the prompt in a new chat, then score it. Nothing is written to the metarepo but its report.",
+      howTo: "In a terminal, in the metarepo:",
+      /** The same names `atticus canary report` gives them. */
+      misread: (repos: number) =>
+        `Audit misread rate (real lines read wrongly, of the sample audit's answers; ${repos} ${repos === 1 ? "repo" : "repos"})`,
+      passed: (repos: number) =>
+        `Canary pass-through rate (lines taken out, still claimed and kept by the verifier, of those taken out; ${repos} ${repos === 1 ? "repo" : "repos"})`,
+      rate: (r: { k: number; n: number }) =>
+        r.n ? `${pctOf(r)} (${r.k} of ${r.n})` : "not measured",
+      range: (low: number | null, high: number | null) =>
+        low === null || high === null ? "" : `95% between ${pct(low)} and ${pct(high)}`,
+      recall: (r: { k: number; n: number }) =>
+        r.n
+          ? `Planted and found: ${pctOf(r)}, ${r.k} of ${r.n}`
+          : "Planted and found: no canary yet",
+      fabrication: (r: { k: number; n: number }, caught: number, elsewhere: number) =>
+        r.n
+          ? `Taken out but still claimed: ${pctOf(r)}, ${r.k} of ${r.n}; the verifier caught ${caught}${elsewhere ? `, and ${elsewhere} named only elsewhere were counted in neither` : ""}`
+          : "Taken out but still claimed: no canary yet",
+      covers: (words: string) => `The canaries cover ${words}.`,
+      coversNone: "No canary yet: the pass-through rate covers no stack.",
+      small: "A small sample: read the range, not the number.",
+      caption: "The latest canary of each repo",
+      col: {
+        repo: "Repo",
+        at: "Scored",
+        covers: "Covers",
+        planted: "Planted found",
+        removed: "Taken out, claimed",
+        passed: "Kept by the verifier",
+        report: "Report",
+      },
+      /** One stack and its items: `spring (a route, a call)`. */
+      stack: (stack: string, what: readonly string[]) =>
+        `${stack} (${what.map((w) => CANARY_WHAT[w] ?? w).join(", ")})`,
+      skipped: (n: number) => `${n} not planted (the repo can't serve them)`,
+      of: (k: number, n: number) => `${k} of ${n}`,
+      passedWarn: "silent errors: claims kept by the verifier about lines that aren't there",
+      pending: (repo: string) => `${repo}: planted, waiting for its read and its score`,
+      scoreIt: (repo: string) => `atticus canary score ${repo}`,
+    },
     /** ADR 0141 (P5): which repos' clones have moved past their facts' commit, most stale first. */
     fresh: {
       title: "Freshness",

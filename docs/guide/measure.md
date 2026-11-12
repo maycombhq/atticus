@@ -91,3 +91,25 @@ atticus verify audit --report                  # every repo audited, and the est
 ```
 
 The report gives the share right of those answered right or wrong, how many that is, and a 95% interval. A sample of ten says little: 9 of 10 right is somewhere between 60% and 98%, so read the range, not the number, and draw more with another seed. A fact answered right shows as checked by the sample on the Map while it still cites the line you saw; Map › Trust shows each repo's audit.
+
+## Canaries: recall, fabrication and the silent error rate
+
+The audit measures real lines read wrongly. It can't see what a read misses, or a claim about something that isn't there. A canary does, on your own code and with nobody labelling anything (ADR 0196):
+
+```sh
+atticus canary plant forge-payments            # a run folder outside the metarepo: the copy and a prompt
+# open the run folder it names as your assistant's workspace, so it asks about no file outside it:
+#   code <run folder>                (Copilot in agent mode)
+#   cd <run folder> && claude        (Claude Code)
+# give it prompt.md in a new chat; it reads the copy and loops, in the run folder, on:
+atticus verify --here                          # the same as atticus canary check forge-payments
+# then, back in the metarepo:
+atticus canary score forge-payments            # writes reports/canaries/<date>-forge-payments.yaml
+atticus canary report                          # the latest canary of each repo, and the two numbers
+```
+
+In the copy, Atticus plants a few made-up entries, calls, topics and config keys (by template, for Spring, Node and Python code) and comments out a few real lines your verified facts cite. It plants only what the repo can serve: a library the build files of the module it plants in already declare (no Kafka topic without a Kafka client, no route or `process.env` in a browser app; Gradle version catalogs and `buildSrc` convention plugins count), a route only on an app or router the repo makes (a blueprint or router only when the app registers it), and Spring classes beside the `@SpringBootApplication` class; nothing it plants would crash if it ran. What it leaves out, and why, is in the plant's output, the report and Map › Trust. The copy holds no file of secrets or credentials (env files, registry, database, cloud and cluster credentials, keys and key stores, Terraform's variables and state, and their backups), no file whose start holds a private key or a token, and no link. The run folder is in `atticus-reads`, a folder of yours that no other user can write to, in the temporary folder; its name, the prompt and the check say nothing of a canary. The key remembers where that folder is, so the check and the score find the run even with another temporary folder set later; if the folder can't be trusted any more (opened to others, say), they touch nothing in it and keep the key, and say where the key file is and how to remove it; if it is gone (a reboot cleared the temporary folder), the run went with it, and the key is deleted so you can plant again; if the folder it was in is gone as well (a drive not mounted), nothing can be told, so the key is kept, and the message says where it is and how to remove it. The prompt is `/atticus-map`'s own protocol aimed at the copy, recall loop and all, so the canary measures the read you use.
+
+The read must find what was planted (recall) and leave out what was taken out (fabrication); a claim about a commented line that the verifier still kept is a silent error. The seed is drawn at random each time, so no read can work out what was planted; it is in the report, and `--seed` plants the same copy again. Atticus runs none of the code and calls no model: your assistant does the read. The copy, the prompt and the key are deleted when the canary is scored (or kept, when nothing in the facts file reads, for you to fix it), and the report is the only file written to the metarepo: commit it with the audit. It names each planted item by its kind, stack and result only, never its words or place, so a report on file teaches no later read what a canary plants.
+
+How often a claim graded as backed is wrong is given as **two numbers side by side**, each with its count and a 95% interval: the **audit misread rate** (the audit's answers on kept facts, and links not joined by a guess, answered wrong) and the **canary pass-through rate** (lines taken out that a read still claimed and the verifier kept, of the lines taken out). They measure different things, so they are never added up. A fact that names a removed path but cites another line is counted apart, in neither. Run canaries on a few repos of each stack per release, not on every read. Map › Trust shows both numbers, their ranges and what the canaries cover.

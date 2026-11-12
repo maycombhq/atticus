@@ -553,7 +553,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   no record; a send already under way answers 409; the upgrade view and the upgrade job's
  *   result name `upgraded`. Review of the fix: an owner question carries `asked` while its Send's
  *   manual step is open (one step per question), and that step marked done is a send on record.
- *   Additive only.
+ *   Canaries (ADR 0196): GET /api/trust/canaries (`CanaryView`): the latest canary report of each
+ *   repo in reports/canaries/ (what it covers and skipped), the canaries planted on this machine
+ *   and not yet scored, and how often a claim graded as backed is wrong as two numbers side by
+ *   side, never pooled (`rates`: the audit misread rate from the sample audit's answers, a link's
+ *   answer counted as given; the canary pass-through rate from the canaries), each with its count
+ *   and 95% interval. Files only. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -1685,6 +1690,80 @@ export const FreshView = z.object({
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
 export type FreshViewT = z.infer<typeof FreshView>;
+
+/** 3.12.0 (ADR 0196, Z2): a share with its count and its Wilson interval at 95%. */
+export const CanaryRateView = z.object({
+  k: z.number().int(),
+  n: z.number().int(),
+  rate: z.number().nullable(),
+  low: z.number().nullable(),
+  high: z.number().nullable(),
+});
+/** 3.12.0 (ADR 0196): the latest canary of one repo, from its report in reports/canaries/. */
+export const CanaryRepoView = z.object({
+  repo: z.string(),
+  /** The report's file, relative to the metarepo. */
+  path: z.string(),
+  at: z.string(),
+  by: z.string(),
+  seed: z.string(),
+  commit: z.string().optional(),
+  stacks: z.array(z.string()),
+  /** Each stack planted in, with the items planted there (`entry`, `call`, `topic-in`...). */
+  covers: z.array(z.object({ stack: z.string(), what: z.array(z.string()) })),
+  /** The items the templates have that the repo couldn't serve, so weren't planted, and why. */
+  skipped: z.array(z.object({ stack: z.string(), what: z.string(), reason: z.string() })),
+  /** Lines of the read's facts file that didn't read as facts, left out of the score. */
+  unread: z.number().int(),
+  planted: z.object({
+    n: z.number().int(),
+    found: z.number().int(),
+    rejected: z.number().int(),
+    missed: z.number().int(),
+  }),
+  removed: z.object({
+    n: z.number().int(),
+    absent: z.number().int(),
+    kept: z.number().int(),
+    rejected: z.number().int(),
+    /** Named by a fact cited neither on the line nor beside it: in neither rate's count. */
+    elsewhere: z.number().int(),
+  }),
+  recall: CanaryRateView,
+  /** Removed lines the read still claimed at their place, kept by the verifier or not. */
+  fabrication: CanaryRateView,
+  /** Removed lines claimed by a fact the verifier kept: graded as backed, and wrong. */
+  passed: CanaryRateView,
+});
+/**
+ * 3.12.0 (ADR 0196): canaries for Map › Trust: the latest canary of each repo, the canaries
+ * planted on this machine and not yet scored, and how often a claim graded as backed is wrong as
+ * two numbers side by side (the audit misread rate and the canary pass-through rate), each with
+ * its count and interval, never pooled. Files only: an audit's link answer is counted as given,
+ * as Trust does.
+ */
+export const CanaryView = z.object({
+  reportsDir: z.string(),
+  latest: z.array(CanaryRepoView),
+  pending: z.array(z.object({ repo: z.string(), at: z.string(), seed: z.string() })),
+  rates: z.object({
+    /** The audit misread rate: backed claims of the sample answered wrong, of those answered. */
+    misread: CanaryRateView,
+    /** The canary pass-through rate: lines taken out, claimed and kept, of those taken out. */
+    passed: CanaryRateView,
+    recall: CanaryRateView,
+    fabrication: CanaryRateView,
+    caught: z.number().int(),
+    elsewhere: z.number().int(),
+    repos: z.object({ audited: z.number().int(), canaries: z.number().int() }),
+    covers: z.array(z.object({ stack: z.string(), what: z.array(z.string()) })),
+  }),
+  commands: z.object({ plant: z.string(), score: z.string(), report: z.string() }),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type CanaryViewT = z.infer<typeof CanaryView>;
+export type CanaryRepoViewT = z.infer<typeof CanaryRepoView>;
+export type CanaryRateViewT = z.infer<typeof CanaryRateView>;
 export type FreshRepoT = z.infer<typeof FreshRepo>;
 export type TrustRepoT = z.infer<typeof TrustRepo>;
 
@@ -6614,6 +6693,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400],
     },
   },
+  "/api/trust/canaries": {
+    get: {
+      id: "getTrustCanaries",
+      summary:
+        "Canaries (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out, what it covers), those planted here and not yet scored, and the audit misread rate and the canary pass-through rate side by side; files only, nothing run or written",
+      tag: "workspace",
+      ok: { status: 200, schema: "CanaryView", description: "OK" },
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -8804,6 +8892,7 @@ export function openApiDocument(): Record<string, unknown> {
     TrustView,
     AnswerBoxResult,
     FreshView,
+    CanaryView,
     ChangeKnowledgeView,
     KnowledgeConflictView,
     SetChangeKnowledgeResult,

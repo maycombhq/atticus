@@ -5148,6 +5148,37 @@
         }
       }
     },
+    "/api/trust/canaries": {
+      "get": {
+        "operationId": "getTrustCanaries",
+        "summary": "Canaries (ADR 0196): the latest canary of each repo (recall on what was planted, fabrication on what was commented out, what it covers), those planted here and not yet scored, and the audit misread rate and the canary pass-through rate side by side; files only, nothing run or written",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanaryView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{repo}": {
       "get": {
         "operationId": "getRepoFacts",
@@ -6302,7 +6333,7 @@
     "/api/change-problems": {
       "get": {
         "operationId": "listChangeProblems",
-        "summary": "3.11.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
+        "summary": "3.12.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
         "tags": [
           "changes"
         ],
@@ -6599,7 +6630,7 @@
     "/api/owner-questions/{id}/send": {
       "post": {
         "operationId": "sendOwnerQuestion",
-        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.11.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
+        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.12.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
         "tags": [
           "questions"
         ],
@@ -38141,6 +38172,12 @@
                   "stopping": {
                     "type": "boolean"
                   },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "refused"
+                    ]
+                  },
                   "jobId": {
                     "type": "string"
                   },
@@ -38531,6 +38568,12 @@
                 },
                 "stopping": {
                   "type": "boolean"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "refused"
+                  ]
                 },
                 "jobId": {
                   "type": "string"
@@ -45090,6 +45133,609 @@
         "required": [
           "factsDir",
           "repos",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CanaryView": {
+        "type": "object",
+        "properties": {
+          "reportsDir": {
+            "type": "string"
+          },
+          "latest": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "seed": {
+                  "type": "string"
+                },
+                "commit": {
+                  "type": "string"
+                },
+                "stacks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "covers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stack": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "stack",
+                      "what"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "skipped": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stack": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stack",
+                      "what",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "unread": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "planted": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "found": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rejected": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "missed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "found",
+                    "rejected",
+                    "missed"
+                  ],
+                  "additionalProperties": false
+                },
+                "removed": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "absent": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "kept": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rejected": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "elsewhere": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "absent",
+                    "kept",
+                    "rejected",
+                    "elsewhere"
+                  ],
+                  "additionalProperties": false
+                },
+                "recall": {
+                  "type": "object",
+                  "properties": {
+                    "k": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rate": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "low": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "high": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "k",
+                    "n",
+                    "rate",
+                    "low",
+                    "high"
+                  ],
+                  "additionalProperties": false
+                },
+                "fabrication": {
+                  "type": "object",
+                  "properties": {
+                    "k": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rate": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "low": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "high": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "k",
+                    "n",
+                    "rate",
+                    "low",
+                    "high"
+                  ],
+                  "additionalProperties": false
+                },
+                "passed": {
+                  "type": "object",
+                  "properties": {
+                    "k": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "n": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rate": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "low": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "high": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "k",
+                    "n",
+                    "rate",
+                    "low",
+                    "high"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "repo",
+                "path",
+                "at",
+                "by",
+                "seed",
+                "stacks",
+                "covers",
+                "skipped",
+                "unread",
+                "planted",
+                "removed",
+                "recall",
+                "fabrication",
+                "passed"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "seed": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "at",
+                "seed"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "rates": {
+            "type": "object",
+            "properties": {
+              "misread": {
+                "type": "object",
+                "properties": {
+                  "k": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "rate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "k",
+                  "n",
+                  "rate",
+                  "low",
+                  "high"
+                ],
+                "additionalProperties": false
+              },
+              "passed": {
+                "type": "object",
+                "properties": {
+                  "k": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "rate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "k",
+                  "n",
+                  "rate",
+                  "low",
+                  "high"
+                ],
+                "additionalProperties": false
+              },
+              "recall": {
+                "type": "object",
+                "properties": {
+                  "k": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "rate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "k",
+                  "n",
+                  "rate",
+                  "low",
+                  "high"
+                ],
+                "additionalProperties": false
+              },
+              "fabrication": {
+                "type": "object",
+                "properties": {
+                  "k": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "rate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "k",
+                  "n",
+                  "rate",
+                  "low",
+                  "high"
+                ],
+                "additionalProperties": false
+              },
+              "caught": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "elsewhere": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "repos": {
+                "type": "object",
+                "properties": {
+                  "audited": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "canaries": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "audited",
+                  "canaries"
+                ],
+                "additionalProperties": false
+              },
+              "covers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stack": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "stack",
+                    "what"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "misread",
+              "passed",
+              "recall",
+              "fabrication",
+              "caught",
+              "elsewhere",
+              "repos",
+              "covers"
+            ],
+            "additionalProperties": false
+          },
+          "commands": {
+            "type": "object",
+            "properties": {
+              "plant": {
+                "type": "string"
+              },
+              "score": {
+                "type": "string"
+              },
+              "report": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "plant",
+              "score",
+              "report"
+            ],
+            "additionalProperties": false
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "reportsDir",
+          "latest",
+          "pending",
+          "rates",
+          "commands",
           "problems"
         ],
         "additionalProperties": false

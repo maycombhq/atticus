@@ -1,0 +1,62 @@
+{
+  "stacks": [
+    "python"
+  ],
+  "planted": [
+    {
+      "id": "plant:1",
+      "kind": "config",
+      "what": "config",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 19,
+      "claim": "config BIRCH_REED_URL",
+      "needle": "birch-reed-url"
+    },
+    {
+      "id": "plant:2",
+      "kind": "entry",
+      "what": "entry",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 22,
+      "claim": "entry GET /spruce-umber/{id}",
+      "needle": "spruce-umber"
+    },
+    {
+      "id": "plant:3",
+      "kind": "call",
+      "what": "call",
+      "stack": "python",
+      "file": "app/routers/appraisals.py",
+      "line": 24,
+      "claim": "call GET /nutmeg-raven/{id}",
+      "needle": "nutmeg-raven"
+    }
+  ],
+  "skipped": [
+    {
+      "stack": "python",
+      "what": "topic-in",
+      "reason": "the build files declare no Kafka client (kafka-python)"
+    },
+    {
+      "stack": "python",
+      "what": "topic-out",
+      "reason": "the build files declare no Kafka client (kafka-python)"
+    }
+  ],
+  "removed": [
+    {
+      "id": "remove:call.post.v2-assessments",
+      "fact": "call.post.v2-assessments",
+      "kind": "call",
+      "file": "app/clients/county_client.py",
+      "line": 8,
+      "claim": "call POST /v2/assessments",
+      "value": "/v2/assessments",
+      "needle": "post v2-assessments",
+      "how": "commented"
+    }
+  ]
+}

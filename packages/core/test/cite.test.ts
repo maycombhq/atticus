@@ -321,3 +321,126 @@ describe("a word put together from cite.with parts (ADR 0124 addendum A-derived)
     expect(partsBuildWord("schedule:triage_emails", [], task)).toBe(false);
   });
 });
+
+describe("an HTTP route's piece only a commented-out mapping writes (third review of ADR 0196)", () => {
+  const isComment = (l: string) => /^\s*(\/\/|#)/.test(l);
+  it("finds the piece a comment writes as a path and the code only as an identifier", async () => {
+    const { pathPieceOnlyInComment } = await import("../src/index.js");
+    const near = ['  // @GetMapping("/balances")', "  public List<Balance> balances() {}"];
+    expect(
+      pathPieceOnlyInComment(near, isComment, ['@RequestMapping("/api")'], "/api/balances"),
+    ).toBe("balances");
+    // a part's line names it: no comment is needed for it
+    expect(
+      pathPieceOnlyInComment(
+        near,
+        isComment,
+        ['@RequestMapping("/api/balances")'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // the code writes it as a path too: a quote, a slash, an interpolation's brace
+    for (const code of [
+      '  @GetMapping("/balances")',
+      '  var u = $"{baseUrl}balances";',
+      "  get(`${b}balances`)",
+    ])
+      expect(
+        pathPieceOnlyInComment(
+          ["  // GET /api/balances", code],
+          isComment,
+          ['"/api"'],
+          "/api/balances",
+        ),
+      ).toBeUndefined();
+    // no comment in the window: identifiers name pieces as the path check always let them
+    expect(
+      pathPieceOnlyInComment(
+        ["  public List<Balance> balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // a comment of prose that names the word, not as a path
+    expect(
+      pathPieceOnlyInComment(
+        ["  // the balances, newest first", "  balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+    // the comment's own marker is no path's slash
+    expect(
+      pathPieceOnlyInComment(
+        ["//balances()", "balances() {}"],
+        isComment,
+        ['"/api"'],
+        "/api/balances",
+      ),
+    ).toBeUndefined();
+  });
+  it("knows a conventional route by its action token or the default route, not by [controller]", async () => {
+    const { declaresConventionalRoute } = await import("../src/index.js");
+    for (const t of [
+      "{controller}/{action}/{id}",
+      "{controller=Home}/{action=Index}/{id?}",
+      'routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");',
+      'app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");',
+      "app.MapDefaultControllerRoute();",
+      "api/[controller]/[action]",
+    ])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, true]);
+    for (const t of ["api/[controller]", '[Route("api/ledger")]', "MapControllers()", "actions"])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, false]);
+  });
+  // Fourth review: a DRF action is named by its method unless it sets url_path; a method's own
+  // `[Route("[action]")]` is the action token on the cite.
+  it('knows a DRF @action with no url_path, and a method\'s [Route("[action]")]', async () => {
+    const { declaresConventionalRoute } = await import("../src/index.js");
+    for (const t of [
+      "    @action(detail=False, methods=['get'])",
+      "    @action(detail=True)",
+      '    [HttpGet, Route("[action]")]',
+    ])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, true]);
+    for (const t of [
+      "    @action(detail=False, url_path='recent')",
+      "    @action(detail=True, url_path = 'set-password')",
+      "    action(request)",
+    ])
+      expect([t, declaresConventionalRoute([t])]).toEqual([t, false]);
+  });
+  // Fifth review: a window is read joined, so an @action wrapped over lines is read whole: its
+  // url_path on the next line makes it no conventional route; a url_path after its close is
+  // another call's.
+  it("reads a DRF @action wrapped over the window's lines", async () => {
+    const { declaresConventionalRoute } = await import("../src/index.js");
+    const wrapped = ["    @action(detail=True,", "            url_path='recent')"];
+    expect(declaresConventionalRoute([wrapped.join("\n")])).toBe(false);
+    expect(
+      declaresConventionalRoute([
+        "    @action(\n        detail=False,\n        methods=['get'],\n    )",
+      ]),
+    ).toBe(true);
+    expect(
+      declaresConventionalRoute(["    @action(detail=True)\n    x = path(url_path='y')"]),
+    ).toBe(true);
+    // a call not closed in the window: what it shows has no url_path
+    expect(declaresConventionalRoute(["    @action(detail=True,"])).toBe(true);
+    // a second @action in the same window: either one with no url_path is conventional
+    expect(
+      declaresConventionalRoute(["@action(detail=True, url_path='a')\n@action(detail=False)"]),
+    ).toBe(true);
+  });
+  it("reads a window's comment lines by their place, not their text", async () => {
+    const { pathPieceOnlyInComment } = await import("../src/index.js");
+    // the second line is inside a block comment: only the place says so
+    const near = ['     @GetMapping("/balances") */', "  public List<Balance> balances() {}"];
+    expect(pathPieceOnlyInComment(near, (_, i) => i === 0, ['"/api"'], "/api/balances")).toBe(
+      "balances",
+    );
+    expect(pathPieceOnlyInComment(near, () => false, ['"/api"'], "/api/balances")).toBeUndefined();
+  });
+});

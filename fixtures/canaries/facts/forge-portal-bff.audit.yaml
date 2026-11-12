@@ -1,0 +1,109 @@
+schema: 1
+repo: forge-portal-bff
+draws:
+  - seed: forge-portal-bff@b0b0001
+    size: 10
+    commit: b0b0001
+    at: 2026-11-10T09:00:00.000Z
+items:
+  - id: fact:call.get.accounts-id-balance
+    kind: fact
+    of: call
+    claim: call GET /ledger/v1/accounts/{id}/balance
+    cites:
+      - src/main/java/forge/portal/LedgerClient.java:8
+    fact: call.get.accounts-id-balance
+    value: /accounts/{id}/balance
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:call.post.audit-events
+    kind: fact
+    of: call
+    claim: call POST /audit/events
+    cites:
+      - src/main/java/forge/portal/AuditPublisher.java:10
+    fact: call.post.audit-events
+    value: /audit/events
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:call.post.transfers
+    kind: fact
+    of: call
+    claim: call POST /ledger/v1/transfers
+    cites:
+      - src/main/java/forge/portal/LedgerClient.java:11
+    fact: call.post.transfers
+    value: /transfers
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:call.topic.payments-initiated
+    kind: fact
+    of: call
+    claim: call payments.initiated
+    cites:
+      - src/main/java/forge/portal/PaymentEvents.java:11
+    fact: call.topic.payments-initiated
+    value: payments.initiated
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:config.audit-url
+    kind: fact
+    of: config
+    claim: config audit.url = http://audit-svc.forge.internal
+    cites:
+      - src/main/resources/application.yml:4
+    fact: config.audit-url
+    value: url
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:config.gateway-url
+    kind: fact
+    of: config
+    claim: config gateway.url = https://gateway.forge.example
+    cites:
+      - src/main/resources/application.yml:2
+    fact: config.gateway-url
+    value: url
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:config.ledger-client-connect-timeout
+    kind: fact
+    of: config
+    claim: config ledger.client.connect-timeout = 500ms
+    cites:
+      - src/main/resources/application.yml:8
+    fact: config.ledger-client-connect-timeout
+    value: connect-timeout
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:config.ledger-client-read-timeout
+    kind: fact
+    of: config
+    claim: config ledger.client.read-timeout = 2000ms
+    cites:
+      - src/main/resources/application.yml:7
+    fact: config.ledger-client-read-timeout
+    value: read-timeout
+    answer: right
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
+  - id: fact:entry.get.api-balance-accountid
+    kind: fact
+    of: entry
+    claim: entry GET /api/balance/{accountId}
+    cites:
+      - src/main/java/forge/portal/BalanceController.java:12
+      - src/main/java/forge/portal/BalanceController.java:6
+    fact: entry.get.api-balance-accountid
+    value: /balance/{accountId}
+    answer: wrong
+    note: the controller is behind a feature switch that is off (invented, for the fixture)
+    by: priya
+    at: 2026-11-10T09:05:00.000Z
