@@ -457,7 +457,13 @@ export interface Build {
   retired: RetiredJoin[];
   /** joins.json as it is after this build (the retired entries out), when it changed. */
   legacyJoins?: string;
-  curated: { applied: string[]; suppressed: string[]; problems: CuratedProblem[] };
+  curated: {
+    applied: string[];
+    suppressed: string[];
+    /** The record ids a current alias decision folds into its target (a removal it explains). */
+    folded?: string[];
+    problems: CuratedProblem[];
+  };
   /** Curated decisions whose target isn't in the build: kept in catalog/curated, applied when it returns. */
   orphanedDecisions: string[];
   linkEvidence?: LinkEvidenceResult;
@@ -476,6 +482,39 @@ const byKindId = (a: CatalogRecord, b: CatalogRecord) =>
 
 const repoOfEvidence = (r: CatalogRecord): string[] =>
   [...new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort(cmpText);
+
+/** The repos of each component and system id the records name (an arrow's ends, by repo). */
+function endReposOf(records: Iterable<CatalogRecord>): Map<string, string[]> {
+  const out = new Map<string, Set<string>>();
+  const add = (id: unknown, repo: unknown) => {
+    if (typeof id !== "string" || typeof repo !== "string" || !repo) return;
+    const s = out.get(id) ?? new Set<string>();
+    s.add(repo);
+    out.set(id, s);
+  };
+  for (const r of records) {
+    if (r.kind !== "Component") continue;
+    const c = r as unknown as { id: string; repo?: string; system?: string };
+    add(c.id, c.repo);
+    add(c.system, c.repo);
+  }
+  return new Map([...out].map(([k, v]) => [k, [...v].sort(cmpText)]));
+}
+
+/**
+ * The repos at an arrow's ends whose every repo is gone (removed from the manifests or archived),
+ * by the ends' component or system ids: a legacy join with one of them leaves (point 6).
+ */
+function endsGone(r: CatalogRecord, ends: Map<string, string[]>, live: Set<string>): string[] {
+  if (r.kind !== "Interface") return [];
+  const x = r as unknown as { from?: string; to?: string };
+  const out: string[] = [];
+  for (const end of [x.from, x.to]) {
+    const rs = end ? ends.get(end) : undefined;
+    if (rs?.length && rs.every((repo) => !live.has(repo))) out.push(...rs);
+  }
+  return [...new Set(out)].sort(cmpText);
+}
 
 /** One repo's slot files on disk, relative to the root (for prune and the orphan report). */
 function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
@@ -721,6 +760,12 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     });
   const byKey = new Map(records.map((r) => [`${r.kind}/${r.id}`, r]));
   for (const r of legacyRecords) byKey.set(`${r.kind}/${r.id}`, r);
+  // Each component's and system's repos, from every slot on disk (an archived repo's too).
+  const ends = endReposOf([
+    ...code,
+    ...legacyAll,
+    ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
+  ]);
   if (legacySlot) {
     const changedSince = Object.entries(legacySlot.slot.inputs).some(([path, h]) => {
       const now = currentHashOf(path, i, used);
@@ -730,7 +775,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     for (const r of legacySlot.slot.records) {
       const key = `${r.kind}/${r.id}`;
       const derived = byKey.get(key);
-      const gone = repoOfEvidence(r).some((x) => !live.has(x));
+      const gone =
+        repoOfEvidence(r).some((x) => !live.has(x)) || endsGone(r, ends, live).length > 0;
       if (gone) {
         // One of its repos was removed or archived: it leaves, through the removal guard.
         keep.push(r);
@@ -751,7 +797,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       });
   }
   records = [...byKey.values()].filter(
-    (r) => !(legacySlot && isLegacyGone(r, legacySlot.slot, live)),
+    (r) => !(legacySlot && isLegacyGone(r, legacySlot.slot, live, ends)),
   );
 
   // ---- 6. the curated decisions, once, last
@@ -829,6 +875,17 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     curated: {
       applied: applied.applied,
       suppressed: applied.suppressed,
+      folded: [
+        ...new Set(
+          i.curated.records.flatMap((d) =>
+            d.kind === "CuratedDecision" && d.status === "current" && d.action === "alias"
+              ? (Array.isArray(d.value) ? d.value : [d.value]).filter(
+                  (v): v is string => typeof v === "string",
+                )
+              : [],
+          ),
+        ),
+      ].sort(cmpText),
       problems: applied.problems,
     },
     orphanedDecisions,
@@ -858,9 +915,14 @@ async function pairsFrom(
 }
 
 /** A legacy record whose repos the manifests no longer list (or list archived): it leaves. */
-function isLegacyGone(r: CatalogRecord, slot: LegacyJoinsSlotT, live: Set<string>): boolean {
+function isLegacyGone(
+  r: CatalogRecord,
+  slot: LegacyJoinsSlotT,
+  live: Set<string>,
+  ends: Map<string, string[]>,
+): boolean {
   if (!slot.records.some((x) => x.kind === r.kind && x.id === r.id)) return false;
-  return repoOfEvidence(r).some((x) => !live.has(x));
+  return repoOfEvidence(r).some((x) => !live.has(x)) || endsGone(r, ends, live).length > 0;
 }
 
 function differingFields(a: CatalogRecord, b: CatalogRecord): string[] {
@@ -1148,7 +1210,10 @@ export async function guardBuild(
   const interrupted = await interruptedManifest(o.undoDir, last.text);
   const alt = new Map<string, string>();
   for (const f of interrupted?.files ?? []) alt.set(strip(f.path), f.sha256);
-  const before = !last.manifest && onDisk.size > 0;
+  // A catalog with no build.json is one from before the slots, unless every file in it is what
+  // the first build, cut short, was writing (its undo copy's manifest): that build catches up.
+  const before =
+    !last.manifest && onDisk.size > 0 && ![...onDisk].every(([p, f]) => alt.get(p) === f.sha);
   if (!before) {
     for (const [p, f] of onDisk) {
       const want = b.files.get(p);
@@ -1206,6 +1271,9 @@ export async function guardBuild(
     const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
     for (const r of cat.records) oldRecords.set(recordPath(r), r);
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
+    // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
+    const oldEnds = endReposOf(oldRecords.values());
+    const liveNow = new Set(b.sources.map((s) => s.repo));
     for (const f of last.manifest.files) {
       const p = strip(f.path);
       if (b.files.has(p)) continue;
@@ -1230,9 +1298,16 @@ export async function guardBuild(
         why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }
-      for (const repo of repos)
+      for (const repo of new Set([...repos, ...(r ? endsGone(r, oldEnds, liveNow) : [])]))
         if (repoGone(repo)) {
           const archived = b.listed.includes(repo);
+          // A repo whose slots are kept (orphaned) was archived or taken out of the manifests; one
+          // whose slots went with it was renamed, its slots written under the new name.
+          if (!archived && !b.orphaned.some((o) => o.repo === repo)) {
+            why.add(`${repo}'s slot is gone (the repo was renamed)`);
+            kinds.add("slot");
+            continue;
+          }
           why.add(archived ? `${repo} is archived` : `${repo} isn't in the manifests any more`);
           kinds.add(archived ? "archived" : "manifest");
         }
@@ -1242,6 +1317,10 @@ export async function guardBuild(
       }
       if (b.curated.suppressed.includes(id)) {
         why.add("a curated suppress");
+        kinds.add("curated");
+      }
+      if (b.curated.folded?.includes(id)) {
+        why.add("a curated alias folds it into another record");
         kinds.add("curated");
       }
       const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];

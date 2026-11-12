@@ -1,0 +1,51 @@
+name: Catalog properties (nightly)
+
+# ADR 0195 point 10 (ticket CS4): the catalog's property tests with 2,000 sequences of up to 20
+# commands, every night, where `pnpm check` runs 100 of up to 10. The seed is the night's, so each
+# night searches new sequences; a failure prints its seed and the Replay line that runs it again
+# on any machine. Linux only: the CI check runs the 100 on Windows too. No secret is used, and
+# nothing reaches the network but the install (CLAUDE.md rule 5).
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "How many sequences"
+        type: string
+        default: "2000"
+      seed:
+        description: "A seed to replay (empty: a new one)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: properties-nightly
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  properties:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter=@maycombhq/cli...
+      - name: 2,000 sequences of up to 20 commands
+        run: pnpm --filter @maycombhq/cli test:properties:nightly
+        env:
+          ATTICUS_PROPERTIES_RUNS: ${{ inputs.runs || '2000' }}
+          ATTICUS_PROPERTIES_SEED: ${{ inputs.seed }}
+          ATTICUS_PROPERTIES_MAX_COMMANDS: "20"
+          ATTICUS_PROPERTIES_VERBOSE: "1"

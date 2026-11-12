@@ -30,6 +30,9 @@ import {
   factsSlotOf,
   factsSlotPaths,
   forgetCatalogs,
+  legacyJoinsPath,
+  parseLegacyJoins,
+  serializeLegacyJoins,
   forgetKeptReads,
   loadBuildInputs,
   readCatalog,
@@ -237,6 +240,41 @@ export async function repoRename(
     }
     const p = factsSlotPaths(root, to);
     slotWrites.push({ path: p.facts, text: facts }, { path: p.meta, text: meta });
+  }
+  // The legacy joins name the repo too (an arrow's evidence, its slot among the inputs): renamed
+  // with it, so a join stays until a repo at either end is removed or archived (point 6). The
+  // slots it rested on are recorded under their new paths with their new hashes: a rename is
+  // not a change of what they hold.
+  const ljPath = legacyJoinsPath(root);
+  const ljText = await readText(ljPath);
+  if (ljText !== undefined) {
+    const lj = parseLegacyJoins(ljText);
+    if (!lj.ok) {
+      const why = `catalog/sources/legacy/joins.json doesn't read (${lj.issues[0]?.message ?? "invalid"}); nothing was changed.`;
+      io.err(why);
+      refusedJson(["build-failed"], why);
+      return 1;
+    }
+    const relPath = (abs: string) => posix(relative(root, abs));
+    const moved = new Map<string, string>();
+    for (const w of slotWrites)
+      if (w.text !== null)
+        moved.set(relPath(w.path).replace(`/${to}.`, `/${from}.`), relPath(w.path));
+    const inputs: Record<string, string> = {};
+    for (const [k, h] of Object.entries(lj.slot.inputs)) {
+      const next = moved.get(k);
+      const w = next ? slotWrites.find((x) => relPath(x.path) === next) : undefined;
+      if (next && w?.text) inputs[next] = sha256Of(w.text);
+      else inputs[k] = h;
+    }
+    const records = lj.slot.records.map((r) => {
+      const n = renamed(r, from, to);
+      if (!n.changed) return r;
+      const p = parseRecord(n.value);
+      return p.ok ? p.record : r;
+    });
+    const next = serializeLegacyJoins({ ...lj.slot, records, inputs });
+    if (next !== ljText) slotWrites.push({ path: ljPath, text: next });
   }
   // The old slot files go last, once the new ones are written.
   if (rText !== undefined) slotWrites.push({ path: rOld, text: null });

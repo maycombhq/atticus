@@ -1,21 +1,29 @@
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { sut, type Outcome } from "./system.js";
-import type { Model } from "./model.js";
+import { sut } from "./system.js";
+import { arrowKey, endpointKey, type HandEdit, type Model } from "./model.js";
 import {
   changedPaths,
   readTree,
+  recId,
   records,
   repoOf,
   sameTree,
+  type Pending,
   type Rec,
   type Snap,
   type World,
 } from "./world.js";
-import type { Desc } from "./commands.js";
+import type { Acted, Ctx, Desc } from "./commands.js";
+import type { RemovalReason } from "./seam.js";
 
-/** The twelve invariants of ADR 0195 point 10, and the large-removal guard it also tests. */
+/**
+ * The twelve invariants of ADR 0195 point 10, the large-removal guard it also tests, and
+ * completeness: that a command the model expects to succeed does, and that the catalog it
+ * leaves holds what the model says a build makes. Without completeness a system that refuses
+ * everything, or writes nothing, keeps the other twelve.
+ */
 export const INVARIANTS = [
   "equivalence",
   "locality",
@@ -30,57 +38,33 @@ export const INVARIANTS = [
   "undo-restores",
   "hand-edits-never-silently-lost",
   "large-removals-confirmed",
+  "completeness",
 ] as const;
 export type Invariant = (typeof INVARIANTS)[number];
 
 /**
  * The invariants today's writers (beta.26) break: the baseline CS4 records. Each has its shrunk
- * counterexample in regressions/<invariant>.json, run as a known failure (`it.fails`); the
- * examples that fail today are listed in examples.ts. CS2 turns them green and takes them off; a
- * known failure that starts passing fails its test, so the list can't go stale.
+ * counterexample in regressions/<invariant>.json, which must fail with that invariant (the test
+ * says so when it starts passing); the examples that fail today are FAILS_TODAY in examples.ts.
+ * CS2 turns them green and takes them off both lists.
  */
-export const KNOWN_FAILURES: ReadonlySet<Invariant> = new Set<Invariant>([
-  // A scan with one repo not cloned writes nothing (beta.26's stop), so the others' reads are lost.
-  "equivalence",
-  // The same: a later scan brings in a repo read earlier, which no change of this command explains.
-  "locality",
-  // verify --write of two repos, in either order, gives different Component and System records.
-  "order-independence",
-  // A scan after verify --write joins the facts' loose end with another repo's readers.
-  "readers-never-destroy-facts",
-  // A rename rewrites record files without applying the curated decisions.
-  "curation-survives",
-  // verify --write joins with another repo's facts that verify checked but nothing wrote.
-  "links-are-live",
-  // The scan reads facts verify checked but didn't write, and its records replace the readers'.
-  "nothing-removed-unexplained",
-  // There are no slots: atticus upgrade adopts nothing.
-  "upgrade-is-lossless",
-  // There is no atticus catalog undo.
-  "undo-restores",
-  // The next scan rewrites a hand-edited file.
-  "hand-edits-never-silently-lost",
-  // verify --write replaces a repo's readers records with its facts' and confirms nothing.
-  "large-removals-confirmed",
-]);
+// CS2 (ADR 0195): every invariant holds against the build; the counterexamples stay as regressions.
+export const KNOWN_FAILURES: ReadonlySet<Invariant> = new Set<Invariant>([]);
 
 /** What one command did, for the checks. */
-export interface Step {
+export interface Step extends Acted {
   desc: Desc;
   m: Model;
   w: World;
   before: Snap;
   after: Snap;
-  outcome?: Outcome;
-  /** For a scan: the slots the ADR says it observed in full, and those it couldn't. */
-  observed?: number[];
-  unobserved?: number[];
   /** The hand edits not yet made curated or discarded when the command started. */
   editsBefore: string[];
-  /** For undo: the files after the first undo, before it was undone. */
-  afterUndo?: Snap;
-  /** For undo: the last write's before and after. */
-  lastWrite?: { before: Snap; after: Snap };
+  handEditsBefore: HandEdit[];
+  /** The model when the command started. */
+  modelBefore: Model;
+  /** The refusal waiting for a confirmation when the command started. */
+  pendingBefore: Pending | undefined;
 }
 
 export class InvariantError extends Error {
@@ -96,23 +80,48 @@ const fail = (inv: Invariant, message: string): never => {
   throw new InvariantError(inv, message);
 };
 
-/** Commands that run a writer, so may write the catalog. */
-const WRITERS = new Set<Desc["t"]>([
+const SCANS = new Set<Desc["t"]>([
   "scan",
   "scan-subset",
   "scan-not-cloned",
   "scan-reader-fails",
+  "scan-cancelled",
+  "scan-nothing",
+]);
+
+/** Commands that build when they succeed: their catalog is a build's. */
+const BUILDS = new Set<Desc["t"]>([
+  ...SCANS,
   "verify-write",
   "rename",
-  "again",
-  "confirm-removals",
+  "answer",
   "curate",
   "uncurate",
-  "answer",
   "archive",
   "remove",
+  "build",
+  "discard-edits",
+  "curate-edits",
+  "confirm-removals",
+  "crash",
+  "upgrade",
+  "again",
 ]);
-const SCANS = new Set<Desc["t"]>(["scan", "scan-subset", "scan-not-cloned", "scan-reader-fails"]);
+
+/** The command a step ran in the end: what `again`, a confirmation or a crash ran. */
+function base(s: Step): Desc {
+  if (s.desc.t === "again" && s.inner) return s.inner;
+  if ((s.desc.t === "confirm-removals" || s.desc.t === "discard-edits") && s.rerun) return s.rerun;
+  if (s.desc.t === "crash")
+    return s.desc.via === "scan"
+      ? { t: "scan" }
+      : { t: "verify-write", slot: s.desc.slot, ok: true };
+  return s.desc;
+}
+
+/** The step wrote a build: a command that builds, and it succeeded. */
+const builtOk = (s: Step) =>
+  !!s.outcome?.wrote && BUILDS.has(s.desc.t) && !(s.desc.t === "upgrade" && !s.desc.yes);
 
 /** Every id a slot has had: its current one and those it was observed under. */
 function idsOf(m: Model, slot: number): Set<string> {
@@ -138,6 +147,20 @@ function involves(m: Model, slots: Iterable<number>, r: Rec | undefined): boolea
     if (r.kind === "Interface" && (ends.includes(component) || ends.includes(system))) return true;
   }
   return false;
+}
+
+/** A cross-repo Interface's arrow, `from|to|method|path`, by the model's repos. */
+export function arrowOf(m: Model, r: Rec): string | undefined {
+  if (r.kind !== "Interface") return undefined;
+  const from = m.slotOfEnd(String(r.from));
+  const to = m.slotOfEnd(String(r.to));
+  if (!from || !to || from.slot === to.slot) return undefined;
+  return arrowKey(
+    from.base.component,
+    to.base.component,
+    r.method ?? "EVENT",
+    String(r.normalizedPath),
+  );
 }
 
 /**
@@ -170,10 +193,143 @@ const JOINED = new Set(["Unresolved", "Capability"]);
 const unchangedSince = (a: Map<string, string>, b: Map<string, string>, skip: string[]) =>
   changedPaths(a, b).filter((p) => !skip.includes(p));
 
+/** The records a step removed from the catalog, by `<Kind>/<id>`: hand-edited files aside. */
+function removedBy(s: Step): Map<string, Rec> {
+  const skip = new Set(s.editsBefore);
+  const after = new Set([...records(s.after.generated).values()].map(recId));
+  const out = new Map<string, Rec>();
+  for (const [p, r] of records(s.before.generated))
+    if (!skip.has(p) && !after.has(recId(r))) out.set(recId(r), r);
+  return out;
+}
+
+/**
+ * The records of files edited by hand that a step's build no longer makes: a refusal's list may
+ * count them among its removals, as they are, or leave them to the hand edits' list.
+ */
+function editedGone(s: Step): Set<string> {
+  const after = new Set([...records(s.after.generated).values()].map(recId));
+  return new Set(s.handEditsBefore.map((e) => `${e.kind}/${e.id}`).filter((id) => !after.has(id)));
+}
+
+/**
+ * ADR point 4's limits: more than 10% of a repo's records (those whose evidence names it), or
+ * more than 200 in one build. What is above them, in words.
+ */
+function largeOf(before: Snap, gone: Map<string, Rec>, skip: string[]): string[] {
+  const per = new Map<string, { had: number; gone: number }>();
+  for (const [p, rec] of records(before.generated)) {
+    if (skip.includes(p)) continue;
+    for (const repo of repoOf(rec)) {
+      const x = per.get(repo) ?? { had: 0, gone: 0 };
+      x.had++;
+      if (gone.has(recId(rec))) x.gone++;
+      per.set(repo, x);
+    }
+  }
+  const big = [...per].filter(([, x]) => x.gone > 0 && x.gone > x.had * 0.1);
+  return [
+    ...big.map(([r, x]) => `${x.gone} of ${r}'s ${x.had} records`),
+    ...(gone.size > 200 ? [`${gone.size} records in one build`] : []),
+  ];
+}
+
+const sorted = (xs: Iterable<string>) => [...xs].sort();
+const sameList = (a: Iterable<string>, b: Iterable<string>) =>
+  JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+const list = (xs: Iterable<string>, n = 6) => {
+  const a = sorted(xs);
+  return a.length
+    ? a.slice(0, n).join(", ") + (a.length > n ? ` and ${a.length - n} more` : "")
+    : "none";
+};
+
+/** Why a guard's refusal of this step is not one the model accounts for (undefined: it is). */
+function unjustified(s: Step): string | undefined {
+  const o = s.outcome!;
+  if (!o.refused) return "it didn't refuse";
+  if (o.guard === "hand-edits") {
+    if (!s.editsBefore.length) return "no file under catalog/generated/ was edited by hand";
+    if (s.confirm?.discardEdits === s.editsBefore.length)
+      return `it was given --discard-edits ${s.editsBefore.length}, the count of the hand edits`;
+    if (!sameList(o.edits ?? [], s.editsBefore))
+      return `it listed ${list(o.edits ?? [])} as hand edits, but they are ${list(s.editsBefore)}`;
+    return undefined;
+  }
+  if (o.guard === "large-removals") {
+    const r = o.removals;
+    if (!r || !r.count || r.count !== r.ids.length)
+      return `it listed ${r ? `a count of ${r.count} for ${r.ids.length} removals` : "no removals"}`;
+    if (s.confirm?.allowRemovals === r.count)
+      return `it was given --allow-removals ${r.count}, the count it listed`;
+    const had = new Set([...records(s.before.generated).values()].map(recId));
+    const absent = r.ids.filter((id) => !had.has(id));
+    if (absent.length)
+      return `it lists ${list(absent)} as removals, which the catalog doesn't hold`;
+    return undefined;
+  }
+  if (o.guard === "empty-catalog") {
+    // ADR point 4: no empty catalog over a full one. The model can't say what a build of no
+    // source holds (the org pack's systems, say), so it accepts the refusal whenever no repo the
+    // build reads has a source and the manifests still list one.
+    if (!s.before.generated.size) return "the catalog was empty already";
+    if (!s.m.repos.some((r) => r.listed)) return "the manifests list no repo";
+    const read = s.m.live().filter((r) => s.m.source(r.slot));
+    if (read.length)
+      return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has" : "have"} a source`;
+    return undefined;
+  }
+  return `the guard ${o.guard ?? "(none)"} isn't one the model can account for here`;
+}
+
+/** What the model says may explain a removed record, by the build report's reasons. */
+function explanations(s: Step, rec: Rec): Set<RemovalReason> {
+  const m = s.m;
+  const c = m.changes;
+  const out = new Set<RemovalReason>();
+  const reasonsOf = (slot: number): RemovalReason[] => {
+    const r = m.repos[slot]!;
+    // A repo removed or archived changes the manifest, an input too: a record of a join with it
+    // may be reported by any of the three.
+    return !r.listed
+      ? ["manifest", "slot", "input"]
+      : r.archived
+        ? ["archived", "slot", "input"]
+        : ["slot"];
+  };
+  for (const slot of c.slots)
+    if (involves(m, [slot], rec) || (JOINED.has(rec.kind) && involves(m, partners(m, slot), rec)))
+      for (const x of reasonsOf(slot)) out.add(x);
+  if (c.curated.has(rec.id)) out.add("curated");
+  if (c.answered.size) {
+    // Only what came from the answer: the loose ends naming the host, the arrows from its
+    // callers or to the repo answering on it, and those repos' loose ends and features.
+    const callers = m.repos
+      .filter((r) =>
+        [r.code, m.readers.get(r.slot)?.code, m.facts.get(r.slot)?.code].some((code) =>
+          code?.calls.some((x) => c.answered.has(x.host)),
+        ),
+      )
+      .map((r) => r.slot);
+    const callees = m.repos
+      .filter((r) => r.hosts.some((h) => c.answered.has(h)))
+      .map((r) => r.slot);
+    const ends = [...callers, ...callees];
+    if (
+      (rec.kind === "Unresolved" &&
+        [...c.answered].some((h) => String(rec.raw ?? "").includes(h))) ||
+      ((rec.kind === "Interface" || JOINED.has(rec.kind)) && involves(m, ends, rec))
+    )
+      out.add("input");
+  }
+  return out;
+}
+
 /** The checks run after each command, by invariant (equivalence and order run at the end). */
 export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   locality(s) {
-    if (!s.outcome?.wrote || !(SCANS.has(s.desc.t) || s.desc.t === "verify-write")) return;
+    const b0 = base(s);
+    if (!builtOk(s) || !(SCANS.has(b0.t) || b0.t === "verify-write")) return;
     // The first catalog written makes every record (the org pack's systems too): nothing to compare.
     if (!s.before.generated.size) return;
     const c = s.m.changes;
@@ -198,23 +354,51 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const g = changedPaths(s.before.generated, s.after.generated);
     const x = changedPaths(s.before.sources, s.after.sources);
     if (g.length || x.length)
-      fail("idempotence", `running the same writer again changed ${[...g, ...x].join(", ")}`);
+      fail(
+        "idempotence",
+        `running ${JSON.stringify(s.inner)} again changed ${list([...g.map((p) => `catalog/generated/${p}`), ...x.map((p) => `catalog/sources/${p}`)])}`,
+      );
   },
 
   "failure-neutrality"(s) {
-    const whole = () => {
+    if (!s.outcome) return;
+    const b0 = base(s);
+    const whole = (why: string) => {
       const g = changedPaths(s.before.generated, s.after.generated);
       const x = changedPaths(s.before.sources, s.after.sources);
       if (g.length || x.length)
         fail(
           "failure-neutrality",
-          `${s.desc.t} observed nothing, yet changed ${[...g.map((p) => `catalog/generated/${p}`), ...x.map((p) => `catalog/sources/${p}`)].join(", ")}`,
+          `${s.desc.t} ${why}, yet changed ${list([...g.map((p) => `catalog/generated/${p}`), ...x.map((p) => `catalog/sources/${p}`)])}`,
         );
     };
-    if (s.desc.t === "verify-write" && !s.desc.ok) return whole();
-    if (s.outcome?.refused) return whole();
-    if (SCANS.has(s.desc.t)) {
-      if (!s.observed?.length) return whole();
+    if (s.crash?.first.crashed) {
+      // Behind but whole (ADR point 2): each file the crash left is the bytes from before it or
+      // those the build that caught up wrote, and the undo copy was taken first.
+      const { mid } = s.crash;
+      for (const p of new Set([...s.before.generated.keys(), ...mid.generated.keys()])) {
+        const x = mid.generated.get(p);
+        if (x !== s.before.generated.get(p) && x !== s.after.generated.get(p))
+          fail(
+            "failure-neutrality",
+            `a crash part way through the write left catalog/generated/${p} neither as it was nor as the next build wrote it`,
+          );
+      }
+      const wrote =
+        !sameTree(s.before.generated, s.after.generated) ||
+        !sameTree(s.before.sources, mid.sources);
+      if (wrote && sameTree(s.before.undo, mid.undo))
+        fail(
+          "failure-neutrality",
+          "a crash part way through a write left no undo copy taken before it",
+        );
+      return;
+    }
+    if (s.outcome.refused) return whole("refused");
+    if (s.expect?.kind === "dry") return whole("was a dry run");
+    if (s.expect?.kind === "neutral") return whole(`observed nothing (${b0.t})`);
+    if (b0.t === "verify-write" && !b0.ok) return whole("had facts rejected");
+    if (SCANS.has(b0.t) && s.outcome.wrote) {
       for (const slot of s.unobserved ?? []) {
         const ids = idsOf(s.m, slot);
         const touched = changedPaths(s.before.sources, s.after.sources).filter((p) =>
@@ -230,7 +414,8 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   },
 
   "readers-never-destroy-facts"(s) {
-    if (!SCANS.has(s.desc.t)) return;
+    const b0 = base(s);
+    if (!SCANS.has(b0.t)) return;
     const facts = changedPaths(s.before.sources, s.after.sources).filter((p) =>
       p.startsWith("facts/"),
     );
@@ -259,137 +444,181 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   },
 
   "curation-survives"(s) {
-    if (!s.outcome?.wrote) return;
+    if (!builtOk(s) && !(s.desc.t === "undo" && s.outcome?.wrote)) return;
+    const v = s.m.built ?? s.m;
     const a = records(s.after.generated);
     const byId = new Map([...a.values()].map((r) => [r.id, r]));
-    for (const d of s.m.curated) {
-      if (s.m.writes <= d.since) continue;
-      if (![...s.after.curated.keys()].some((p) => p.endsWith(`${d.id}.yaml`)))
+    const edited = new Set(s.m.handEdits.map((e) => e.id));
+    for (const d of v.curated) {
+      if (s.m.writes <= d.since || edited.has(d.target)) continue;
+      const what = d.id ?? `the ${d.action} drafted from a hand edit of ${d.target}`;
+      if (d.id && ![...s.after.curated.keys()].some((p) => p.endsWith(`/${d.id}.yaml`)))
         fail("curation-survives", `the curated decision ${d.id} was dropped from catalog/curated`);
       const rec = byId.get(d.target);
-      if (d.action === "suppress" && s.m.built(d) && rec)
+      if (d.action === "suppress" && rec && (d.kind !== "Endpoint" || v.serves(d)))
+        fail("curation-survives", `${d.target} is suppressed by ${what}, yet ${s.desc.t} wrote it`);
+      if (d.action === "assert" && d.added && !rec)
         fail(
           "curation-survives",
-          `${d.target} is suppressed by ${d.id} and its repo still serves it, yet ${s.desc.t} wrote it`,
+          `${d.target}, added by hand and made curated, isn't in the catalog after ${s.desc.t}`,
         );
-      if (d.action === "assert" && rec && rec.auth !== "oauth2")
-        fail(
-          "curation-survives",
-          `${d.id} asserts auth: oauth2 on ${d.target}, yet after ${s.desc.t} it has ${String(rec.auth)}`,
-        );
+      if (d.action === "assert" && rec && d.value && !Array.isArray(d.value))
+        for (const [k, val] of Object.entries(d.value)) {
+          // Two asserts of one field (a person's and a hand edit's): one of them holds.
+          const asserted = v.curated
+            .filter(
+              (x) =>
+                x.action === "assert" &&
+                x.target === d.target &&
+                !!x.value &&
+                !Array.isArray(x.value) &&
+                k in x.value,
+            )
+            .map((x) => (x.value as Record<string, unknown>)[k]);
+          if (!asserted.includes(rec[k]))
+            fail(
+              "curation-survives",
+              `${what} asserts ${k}: ${String(val)} on ${d.target}, yet after ${s.desc.t} it has ${String(rec[k])}`,
+            );
+        }
+      if (d.action === "alias" && rec && Array.isArray(d.value))
+        for (const folded of d.value)
+          if (byId.has(folded))
+            fail(
+              "curation-survives",
+              `${what} folds ${folded} into ${d.target}, yet after ${s.desc.t} both are in the catalog`,
+            );
     }
   },
 
   "links-are-live"(s) {
-    if (!s.outcome?.wrote) return;
-    const allowed = s.m.allowedArrows();
+    if (!builtOk(s) && !(s.desc.t === "undo" && s.outcome?.wrote)) return;
+    const v = s.m.built ?? s.m;
+    const allowed = v.allowedArrows();
     for (const r of records(s.after.generated).values()) {
-      if (r.kind !== "Interface") continue;
-      const from = s.m.slotOfEnd(String(r.from));
-      const to = s.m.slotOfEnd(String(r.to));
-      if (!from || !to || from.slot === to.slot) continue;
-      const k = `${from.base.component}|${to.base.component}|${r.method ?? "EVENT"}|${String(r.normalizedPath)}`;
-      if (!allowed.has(k))
+      const k = arrowOf(v, r);
+      if (k && !allowed.has(k))
         fail(
           "links-are-live",
-          `after ${s.desc.t} the arrow ${r.id} (${k}) doesn't follow from the current observations: allowed ${[...allowed].join(", ") || "none"}`,
+          `after ${s.desc.t} the arrow ${r.id} (${k}) doesn't follow from the current observations: allowed ${list(allowed, 8)}`,
         );
     }
   },
 
   "nothing-removed-unexplained"(s) {
-    if (!s.outcome?.wrote) return;
-    const b = records(s.before.generated);
-    const c = s.m.changes;
-    const callersOfAnswered = s.m.repos
-      .filter((r) =>
-        [r.code, s.m.readers.get(r.slot)?.code, s.m.facts.get(r.slot)?.code].some((code) =>
-          code?.calls.some((x) => c.answered.has(x.host)),
-        ),
-      )
-      .map((r) => r.slot);
-    for (const [p, rec] of b) {
-      if (s.after.generated.has(p) || s.editsBefore.includes(p)) continue;
-      if (involves(s.m, c.slots, rec) || c.curated.has(rec.id)) continue;
-      const reach = [...c.slots].flatMap((x) => partners(s.m, x));
-      if (JOINED.has(rec.kind) && involves(s.m, reach, rec)) continue;
-      if (involves(s.m, callersOfAnswered, rec)) continue;
+    if (!builtOk(s)) return;
+    const o = s.outcome!;
+    const gone = removedBy(s);
+    const reported = new Map((o.removed ?? []).map((x) => [x.id, x.reason]));
+    for (const [id, rec] of gone) {
+      const why = explanations(s, rec);
+      if (!why.size)
+        fail(
+          "nothing-removed-unexplained",
+          `${s.desc.t} removed ${describe(id, rec)}, and no changed slot, input, manifest entry or curated decision explains it (changed: ${[...s.m.changes.slots].map((x) => s.m.repos[x]!.id).join(", ") || "none"})`,
+        );
+      const said = reported.get(id);
+      if (!said)
+        fail(
+          "nothing-removed-unexplained",
+          `${s.desc.t} removed ${describe(id, rec)} without listing it in its report (${o.removed ? `it listed ${list(reported.keys())}` : "it reports no removals"})`,
+        );
+      if (!why.has(said!))
+        fail(
+          "nothing-removed-unexplained",
+          `${s.desc.t} reports ${id} removed by "${said}", but what changed is ${[...why].join(" or ")}`,
+        );
+    }
+    const edited = new Set(s.handEditsBefore.map((e) => `${e.kind}/${e.id}`));
+    const made = [...reported.keys()].filter((id) => !gone.has(id) && !edited.has(id));
+    if (made.length)
       fail(
         "nothing-removed-unexplained",
-        `${s.desc.t} removed ${describe(p, rec)}, and no changed slot, input, manifest entry or curated decision explains it (changed: ${[...c.slots].map((x) => s.m.repos[x]!.id).join(", ") || "none"})`,
+        `${s.desc.t} reports removals it didn't make: ${list(made)}`,
       );
-    }
   },
 
   "large-removals-confirmed"(s) {
-    if (!s.outcome?.wrote || s.desc.t === "confirm-removals") return;
-    const b = records(s.before.generated);
-    const per = new Map<string, { had: number; gone: number }>();
-    let gone = 0;
-    for (const [p, rec] of b) {
-      const removed = !s.after.generated.has(p) && !s.editsBefore.includes(p);
-      if (removed) gone++;
-      for (const repo of repoOf(rec)) {
-        const x = per.get(repo) ?? { had: 0, gone: 0 };
-        x.had++;
-        if (removed) x.gone++;
-        per.set(repo, x);
-      }
-    }
-    const big = [...per].filter(([, x]) => x.gone > 0 && x.gone > x.had * 0.1);
-    if (big.length || gone > 200)
+    if (!builtOk(s)) return;
+    const gone = removedBy(s);
+    const big = largeOf(s.before, gone, s.editsBefore);
+    if (!big.length) return;
+    const n = s.confirm?.allowRemovals;
+    if (n === undefined)
       fail(
         "large-removals-confirmed",
-        `${s.desc.t} removed ${big.map(([r, x]) => `${x.gone} of ${r}'s ${x.had} records`).join(", ") || `${gone} records`} without the removals being confirmed`,
+        `${s.desc.t} removed ${big.join(", ")} without the removals being confirmed`,
+      );
+    const edited = editedGone(s);
+    if (n !== gone.size && n !== gone.size + edited.size)
+      fail(
+        "large-removals-confirmed",
+        `${s.desc.t} was confirmed with --allow-removals ${n}, yet removed ${gone.size} records${edited.size ? ` (and ${edited.size} edited by hand)` : ""}`,
+      );
+    const listed = new Set(s.confirmOf?.removals?.ids ?? []);
+    const unlisted = [...gone.keys()].filter((id) => !listed.has(id));
+    if (unlisted.length)
+      fail(
+        "large-removals-confirmed",
+        `${s.desc.t} removed ${list(unlisted)}, which the refusal it confirmed never listed`,
       );
   },
 
   "upgrade-is-lossless"(s) {
     if (s.desc.t !== "upgrade") return;
-    const fresh = s.before.sources.size === 0 && s.before.generated.size > 0;
     const same = (what: string, x: Map<string, string>, y: Map<string, string>) => {
       const d = changedPaths(x, y);
-      if (d.length) fail("upgrade-is-lossless", `${what} changed: ${d.slice(0, 5).join(", ")}`);
+      if (d.length) fail("upgrade-is-lossless", `${what} changed: ${list(d, 5)}`);
     };
-    if (!s.desc.yes || !fresh) {
-      same(
-        `a ${s.desc.yes ? "second upgrade" : "dry run"}: catalog/generated`,
-        s.before.generated,
-        s.after.generated,
-      );
-      same("catalog/sources", s.before.sources, s.after.sources);
-      same("facts", s.before.facts, s.after.facts);
-      same("catalog/curated", s.before.curated, s.after.curated);
+    if (!s.desc.yes || !s.modelBefore.beta26) {
+      const what = s.desc.yes ? "an upgrade of a metarepo with nothing to adopt" : "a dry run";
+      same(`${what}: catalog/generated`, s.before.generated, s.after.generated);
+      same(`${what}: catalog/sources`, s.before.sources, s.after.sources);
+      same(`${what}: facts`, s.before.facts, s.after.facts);
+      same(`${what}: catalog/curated`, s.before.curated, s.after.curated);
       return;
     }
-    const held = new Map<string, number>();
-    for (const [p, text] of s.after.sources) {
-      if (!/^(readers\/[^/]+\.json|legacy\/joins\.json)$/.test(p)) continue;
+    if (!s.upgrade) return;
+    const up = s.upgrade.after;
+    const held = new Map<string, string[]>();
+    for (const [p, text] of up.sources) {
+      if (!/^(?:readers\/[^/]+\.json|legacy\/joins\.json)$/.test(p)) continue;
       let slot: { status?: string; records?: { kind: string; id: string }[] };
       try {
         slot = JSON.parse(text) as typeof slot;
       } catch {
-        fail("upgrade-is-lossless", `catalog/sources/${p} isn't JSON`);
-        return;
+        return fail("upgrade-is-lossless", `catalog/sources/${p} isn't JSON`);
       }
       if (slot.status !== "legacy") continue;
-      for (const r of slot.records ?? [])
-        held.set(`${r.kind}/${r.id}`, (held.get(`${r.kind}/${r.id}`) ?? 0) + 1);
+      for (const r of slot.records ?? []) held.set(recId(r), [...(held.get(recId(r)) ?? []), p]);
     }
     for (const r of records(s.before.generated).values()) {
-      const n = held.get(`${r.kind}/${r.id}`) ?? 0;
-      if (n !== 1)
+      const at = held.get(recId(r)) ?? [];
+      if (at.length !== 1)
         fail(
           "upgrade-is-lossless",
-          `${r.kind}/${r.id} is in ${n} legacy slots after atticus upgrade --yes, not exactly one`,
+          `${recId(r)} is in ${at.length} legacy slots after atticus upgrade --yes, not exactly one`,
+        );
+      const repos = [...repoOf(r)];
+      const want = repos.length === 1 ? `readers/${repos[0]}.json` : "legacy/joins.json";
+      if (at[0] !== want)
+        fail(
+          "upgrade-is-lossless",
+          `${recId(r)}, with evidence from ${repos.join(", ") || "no repo"}, is in ${at[0]}, not ${want}`,
         );
     }
     const copy = new Map(
-      [...s.after.sources]
+      [...up.sources]
         .filter(([p]) => p.startsWith("legacy/generated-before-upgrade/"))
         .map(([p, t]) => [p.slice("legacy/generated-before-upgrade/".length), t]),
     );
     same("legacy/generated-before-upgrade/ against the catalog before", s.before.generated, copy);
+    same("atticus upgrade --yes: catalog/generated", s.before.generated, up.generated);
+    if (!s.upgrade.build?.wrote)
+      fail(
+        "upgrade-is-lossless",
+        `the first build after the upgrade didn't write: ${s.upgrade.build?.err.join(" ") ?? ""}`,
+      );
     same(
       "the first build after the upgrade: catalog/generated",
       s.before.generated,
@@ -398,31 +627,33 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   },
 
   "undo-restores"(s) {
-    if (s.desc.t !== "undo" || !s.lastWrite || !s.afterUndo) return;
+    // Checked whatever the outcome: an undo that refused or is missing restores nothing.
+    if (s.desc.t !== "undo" || !s.undo) return;
     for (const k of ["generated", "sources"] as const) {
-      const d = changedPaths(s.lastWrite.before[k], s.afterUndo[k]);
+      const d = changedPaths(s.undo.before[k], s.undo.afterUndo[k]);
       if (d.length)
         fail(
           "undo-restores",
-          `atticus catalog undo left catalog/${k} unlike before the last write: ${d.slice(0, 5).join(", ")}${s.outcome?.unsupported ? ` (${s.outcome.err[0]})` : ""}`,
+          `atticus catalog undo ${s.desc.n ?? ""} left catalog/${k} unlike before the writes it took back: ${list(d, 5)}`,
         );
-      const e = changedPaths(s.lastWrite.after[k], s.after[k]);
+      if (!s.undo.backOutcome?.wrote) continue;
+      const e = changedPaths(s.undo.after[k], s.after[k]);
       if (e.length)
         fail(
           "undo-restores",
-          `undoing the undo left catalog/${k} unlike after the write: ${e.slice(0, 5).join(", ")}`,
+          `undoing the undo left catalog/${k} unlike after the write: ${list(e, 5)}`,
         );
     }
   },
 
   "hand-edits-never-silently-lost"(s) {
-    if (!s.editsBefore.length) return;
-    if (s.desc.t === "discard-edits") {
-      if (!s.outcome?.wrote) return;
-      const kept = new Set(s.before.undo.values());
+    if (!s.editsBefore.length || !s.outcome) return;
+    if (s.confirm?.discardEdits === s.editsBefore.length && s.outcome.wrote) {
+      // A confirmed discard: each discarded file's bytes are in the undo copy first.
+      const kept = [...s.after.undo.values(), ...s.before.undo.values()];
       for (const p of s.editsBefore) {
         const text = s.before.generated.get(p);
-        if (text !== undefined && ![...s.after.undo.values()].includes(text) && !kept.has(text))
+        if (text !== undefined && !kept.some((k) => k === text || k.includes(text)))
           fail(
             "hand-edits-never-silently-lost",
             `the discarded edit of ${p} isn't in the undo copy`,
@@ -430,15 +661,160 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       }
       return;
     }
-    if (!WRITERS.has(s.desc.t) && s.desc.t !== "upgrade") return;
-    const d = changedPaths(s.before.generated, s.after.generated);
+    if (s.desc.t === "curate-edits" && s.pre?.wrote) return;
+    const d = [
+      ...changedPaths(s.before.generated, s.after.generated).map((p) => `catalog/generated/${p}`),
+      ...(s.desc.t === "prune"
+        ? []
+        : changedPaths(s.before.sources, s.after.sources).map((p) => `catalog/sources/${p}`)),
+    ];
     if (d.length)
       fail(
         "hand-edits-never-silently-lost",
-        `${s.editsBefore.join(", ")} ${s.editsBefore.length === 1 ? "was" : "were"} edited by hand, not made curated nor discarded, yet ${s.desc.t} wrote ${d.slice(0, 5).join(", ")}`,
+        `${s.editsBefore.join(", ")} ${s.editsBefore.length === 1 ? "was" : "were"} edited by hand, not made curated nor discarded, yet ${s.desc.t} wrote ${list(d, 5)}`,
       );
   },
+
+  completeness(s) {
+    const o = s.outcome;
+    const e = s.expect;
+    if (!o || !e) return;
+    const t = s.desc.t;
+    if (o.unsupported) fail("completeness", `${t}: ${o.err[0] ?? "unsupported"}`);
+    const said = () => (o.err.length ? ` (${o.err.slice(0, 2).join(" ")})` : "");
+    if (e.kind === "succeed" && !o.wrote) {
+      if (s.crash && !o.crashed && !o.refused)
+        fail("completeness", `${t} neither crashed where asked nor refused${said()}`);
+      const why = unjustified(s);
+      if (why)
+        fail(
+          "completeness",
+          `${t} didn't succeed: ${o.refused ? `refused${o.guard ? ` (${o.guard})` : ""}` : "nor refused"}, and ${why}${said()}`,
+        );
+    }
+    if (e.kind === "refuse") {
+      if (!o.refused)
+        fail(
+          "completeness",
+          `${t} should have refused${e.guard ? ` (${e.guard})` : ""}, yet ${o.wrote ? "succeeded" : "didn't say it refused"}`,
+        );
+      if (e.guard && o.guard !== e.guard) {
+        // Another guard may come first: hand edits, or a large removal, each as listed.
+        const first =
+          o.guard === "hand-edits" || (o.guard === "large-removals" && e.guard !== "nothing-read");
+        const why = first ? unjustified(s) : `it refused for ${o.guard ?? "no guard"}`;
+        if (why)
+          fail("completeness", `${t} should have refused for ${e.guard}, and ${why}${said()}`);
+      }
+    }
+    if (e.kind === "dry" && o.refused && (o.guard !== "hand-edits" || unjustified(s)))
+      fail("completeness", `${t}, a dry run, refused${said()}`);
+    if (s.pre && !s.pre.wrote)
+      fail("completeness", `atticus catalog edits --curate didn't write${said()}`);
+    if (s.undo?.back && o.wrote && !s.undo.backOutcome?.wrote)
+      fail(
+        "completeness",
+        `undoing the undo didn't write: ${s.undo.backOutcome?.err.join(" ") ?? ""}`,
+      );
+    if (t === "prune" && !(o.refused && !unjustified(s))) {
+      if (!o.pruned || !sameList(o.pruned, s.prunable ?? []))
+        fail(
+          "completeness",
+          `prune listed ${o.pruned ? list(o.pruned) : "nothing"}, not the orphaned and archived repos' slots and the upgrade's copy: ${list(s.prunable ?? [])}`,
+        );
+      if (o.wrote && s.desc.yes) {
+        const left = new Map([...s.before.sources].filter(([p]) => !s.prunable!.includes(p)));
+        const d = [
+          ...changedPaths(left, s.after.sources).map((p) => `catalog/sources/${p}`),
+          ...changedPaths(s.before.generated, s.after.generated).map(
+            (p) => `catalog/generated/${p}`,
+          ),
+        ];
+        if (d.length)
+          fail("completeness", `prune --yes changed more or less than it listed: ${list(d)}`);
+      }
+    }
+    // A confirmed large removal: what it removed was listed, and was above the limits.
+    const p = s.confirmOf;
+    if (o.wrote && p?.removals && s.confirm?.allowRemovals === p.removals.count) {
+      const gone = removedBy(s);
+      const fresh = p.at === s.w.steps - 1;
+      const edited = editedGone(s);
+      const listed = p.removals.ids.filter((id) => !edited.has(id));
+      if (fresh && !sameList(gone.keys(), listed))
+        fail(
+          "completeness",
+          `confirmed right after its listing, ${t} removed ${list(gone.keys())}, not what it listed: ${list(p.removals.ids)}`,
+        );
+      if (fresh && !edited.size && !largeOf(s.before, gone, s.editsBefore).length)
+        fail(
+          "completeness",
+          `${t} refused ${gone.size} removals as large, but they are under the limits`,
+        );
+    }
+    content(s);
+  },
 };
+
+/**
+ * The catalog holds what the model says a build makes, for what the model derives: one REST
+ * Endpoint per endpoint each repo's source serves (no more), each repo's own Component, and
+ * every cross-repo arrow that must exist (links-are-live checks none is extra). Files edited by
+ * hand are the person's, and are left out.
+ */
+function content(s: Step): void {
+  const v = s.m.built;
+  if (!v || s.m.beta26) return;
+  const edits = s.m.handEdits;
+  const skipPaths = new Set(edits.map((e) => e.path));
+  const skip = new Set(
+    edits.flatMap((e) => [e.id, ...(e.key ? [e.key] : []), ...(e.arrow ? [e.arrow] : [])]),
+  );
+  const recs = [...records(s.after.generated)].filter(([p]) => !skipPaths.has(p)).map(([, r]) => r);
+  const where = `after ${s.desc.t}${s.inner ? ` (${s.inner.t})` : ""}`;
+  const diff = (what: string, want: Set<string>, have: Set<string>, exact: boolean) => {
+    const missing = [...want].filter((k) => !have.has(k) && !skip.has(k));
+    const extra = exact ? [...have].filter((k) => !want.has(k)) : [];
+    if (missing.length || extra.length)
+      fail(
+        "completeness",
+        `${where} the catalog's ${what} aren't what the model says the build makes: ${[
+          ...(missing.length ? [`missing ${list(missing)}`] : []),
+          ...(extra.length ? [`not expected ${list(extra)}`] : []),
+        ].join("; ")}`,
+      );
+  };
+  diff(
+    "REST endpoints",
+    v.endpoints(),
+    new Set(
+      recs
+        .filter((r) => r.kind === "Endpoint" && r.endpointType === "rest")
+        .map((r) => endpointKey(String(r.component), String(r.method), String(r.pathOrTopic))),
+    ),
+    true,
+  );
+  // A repo's own Component, inferred only when another repo calls it: never one without a source.
+  const own = new Set(v.repos.map((r) => r.base.component));
+  const comps = v.components();
+  diff(
+    "repos' own components",
+    comps,
+    new Set(
+      recs
+        .filter((r) => r.kind === "Component" && own.has(r.id))
+        .filter((r) => r.confidence !== "inferred" || comps.has(r.id))
+        .map((r) => r.id),
+    ),
+    true,
+  );
+  diff(
+    "cross-repo arrows",
+    v.arrows().required,
+    new Set(recs.flatMap((r) => arrowOf(v, r) ?? [])),
+    false,
+  );
+}
 
 /** Run the per-command checks of the invariants asked for. */
 export function checkStep(s: Step, enabled: ReadonlySet<Invariant>): void {
@@ -446,18 +822,40 @@ export function checkStep(s: Step, enabled: ReadonlySet<Invariant>): void {
 }
 
 /**
- * The master oracle, at the end of a sequence: what is pending is settled (hand edits
- * discarded, removals confirmed, a build), then the catalog must be byte-identical to a full
- * build of a fresh metarepo given only the final slots and inputs.
+ * The end of a sequence: what is pending is settled (hand edits discarded with their count,
+ * removals confirmed with theirs, then a build), each through the commands so every check
+ * runs on it. Then the master oracle: the catalog must be byte-identical to a build without the
+ * build cache, and to a full build of a fresh metarepo given only the final slots and inputs.
  */
-export async function checkEquivalence(w: World): Promise<void> {
-  const m = w.model;
-  if (m.handEdits.length) {
-    const r = await sut().build(w.root, { discardEdits: m.handEdits.length });
-    if (r.wrote) m.handEdits = [];
+export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>): Promise<void> {
+  const { m, w } = ctx;
+  // A refusal listing removals is confirmed with its count (and whatever else it ran with); hand
+  // edits are discarded with theirs. Each confirmation may meet the next guard, so a few rounds.
+  for (let i = 0; i < 6; i++) {
+    const p = w.pending;
+    if (p?.removals && p.confirm.allowRemovals !== p.removals.count)
+      await run({ t: "confirm-removals" });
+    else if (m.handEdits.length) await run({ t: "discard-edits" });
+    else break;
   }
-  await sut().build(w.root, {});
+  if (!m.beta26) await run({ t: "build" });
+  if (!ctx.enabled.has("equivalence") || m.beta26) return;
+  // The empty-catalog guard has no confirmation (ADR point 4): a metarepo whose build would hold
+  // nothing keeps its catalog, which no fresh build gives. Completeness judged the refusal.
+  if (w.lastOutcome?.refused && w.lastOutcome.guard === "empty-catalog") return;
+  if (m.handEdits.length || w.pending)
+    fail(
+      "equivalence",
+      `the sequence couldn't be settled: ${m.handEdits.length ? `${m.handEdits.length} hand edits not discarded with their count` : `a refusal (${w.pending!.desc.t}) not confirmed with its count`}`,
+    );
   const here = await readTree(join(w.root, "catalog", "generated"));
+  // ADR point 9: the build cache is never needed for a correct result.
+  await rm(join(w.root, ".index", "build-cache"), { recursive: true, force: true });
+  const cold = await sut().build(w.root, {});
+  if (!cold.unsupported) {
+    const d = changedPaths(here, await readTree(join(w.root, "catalog", "generated")));
+    if (d.length) fail("equivalence", `a build without the build cache changed ${list(d)}`);
+  }
   const top = await mkdtemp(join(tmpdir(), "cs4-fresh-"));
   try {
     const fresh = join(top, "metarepo");

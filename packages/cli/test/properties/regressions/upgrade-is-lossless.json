@@ -26,7 +26,8 @@
   },
   "commands": [
     {
-      "t": "scan"
+      "t": "seed-beta26",
+      "verify": []
     },
     {
       "t": "upgrade",

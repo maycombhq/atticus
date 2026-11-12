@@ -90,7 +90,10 @@ export type RemovalReason =
   | "archived"
   /** A curated decision: a suppress, or an alias that folds it into another record. */
   | "curated"
-  /** A build input other than a slot that changed: here, an answer. */
+  /**
+   * A build input other than a slot that changed: here, an answer, or the manifests (a repo
+   * removed or archived changes them, so a record of a join with it may be reported so).
+   */
   | "input";
 
 export interface Outcome {

@@ -1458,7 +1458,7 @@
     },
     {
       "path": "catalog/generated/glossaryterm/term.payment.yaml",
-      "sha256": "d4b18ca991f7a21aadfd17d04fa8f101bca084fb4d8e5f60771580e6dd16cb1e",
+      "sha256": "1eccf3dc4a43a51ad0c38b4e82c08c028bdb442607e07b7ee52ece6acd114f19",
       "sources": [
         {
           "path": "catalog/curated",
@@ -1508,7 +1508,7 @@
     },
     {
       "path": "catalog/generated/glossaryterm/term.transfer.yaml",
-      "sha256": "2dbe3feba163c742d3da76a69960b5b7c0264797668f7aa5f42e3ce2e3692e5d",
+      "sha256": "71f948dec416491c3469fbdf5d62163a6c4acdec4f735038c716dd921d8df0b2",
       "sources": [
         {
           "path": "catalog/curated",

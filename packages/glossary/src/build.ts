@@ -99,6 +99,34 @@ function definitionSort(d: string): string | undefined {
   return undefined;
 }
 
+/** How many uses a term cites beyond each repo's first. */
+const USES_CITED = 5;
+
+/**
+ * The uses a code term cites (ADR 0195, CS2; CLAUDE.md rule 6, every fact keeps its provenance):
+ * the first use (by record id) in each repo that uses it, by repo id, so a term that exists
+ * partly because of a repo cites it; then further uses by record id, up to five in all. Uses
+ * with no repo (an input's record) count as further uses.
+ */
+export function usesCited<U extends { record: string; evidence: EvidenceT }>(
+  uses: readonly U[],
+): U[] {
+  const byRecord = [...uses].sort((a, b) =>
+    a.record < b.record ? -1 : a.record > b.record ? 1 : 0,
+  );
+  const first = new Map<string, U>();
+  for (const u of byRecord) {
+    const repo = u.evidence.repo;
+    if (repo && !first.has(repo)) first.set(repo, u);
+  }
+  const out = [...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, u]) => u);
+  for (const u of byRecord) {
+    if (out.length >= USES_CITED) break;
+    if (!out.includes(u)) out.push(u);
+  }
+  return out;
+}
+
 const ALIASES = (d: Decision) => (Array.isArray(d.value) ? d.value : [d.value]).map(String);
 
 export function buildGlossary(input: GlossaryInput): GlossaryBuild {
@@ -268,7 +296,7 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
 
     const evidence: EvidenceT[] = [
       ...ds.map((d) => ({ source: "document" as const, path: d.path, line: d.line })),
-      ...(c?.uses ?? []).slice(0, 5).map((u) => u.evidence),
+      ...usesCited(c?.uses ?? []).map((u) => u.evidence),
     ];
     if (!evidence.length && person) evidence.push({ source: "manual", by: person.by });
     if (!evidence.length) evidence.push({ source: "manual" });
