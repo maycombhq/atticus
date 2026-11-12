@@ -306,11 +306,16 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   const m = s.m;
   const c = m.changes;
   const out = new Set<RemovalReason>();
+  // A record whose evidence names an id no manifest lists rests on a repo gone from the manifests,
+  // its slot kept: the build says "manifest" (ADR 0195, CS2's removal reasons). An undone rename
+  // leaves one (point 7 puts back the slot under the old id, not the manifest entry).
+  const listedIds = new Set(m.repos.filter((r) => r.listed).map((r) => r.id));
+  const unlisted = [...repoOf(rec)].some((id) => !listedIds.has(id));
   const reasonsOf = (slot: number): RemovalReason[] => {
     const r = m.repos[slot]!;
     // A repo removed or archived changes the manifest, an input too: a record of a join with it
     // may be reported by any of the three.
-    return !r.listed
+    return !r.listed || unlisted
       ? ["manifest", "slot", "input"]
       : r.archived
         ? ["archived", "slot", "input"]
@@ -887,7 +892,8 @@ export function checkStep(s: Step, enabled: ReadonlySet<Invariant>): void {
 
 /**
  * The end of a sequence: what is pending is settled (hand edits discarded with their count,
- * removals confirmed with theirs, then a build), each through the commands so every check
+ * removals confirmed with theirs, then a build, and its own refusal confirmed the same way),
+ * each through the commands so every check
  * runs on it. Then the master oracle: the catalog must be byte-identical to a build without the
  * build cache, and to a full build of a fresh metarepo given only the final slots and inputs.
  */
@@ -898,14 +904,21 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
   // A confirmation that met the hand-edits guard keeps its count; once another command took the
   // edits (made them curated), the refused command still waits for that confirmation, run again
   // (seed 1344785347: a scan refused, confirmed into the hand-edits guard, the edit curated).
-  for (let i = 0; i < 6; i++) {
+  // The settling build is a command like any other: when it meets a guard itself, its refusal is
+  // confirmed the same way (seed 1351551411: a rename undone leaves its slot under the old id,
+  // which the manifests no longer list, so the build lists the repo's records as removals above
+  // the limit; ADR 0195 point 7 and the joint review: undo puts back the slots, not the inputs).
+  let built = m.beta26;
+  for (let i = 0; i < 8; i++) {
     const p = w.pending;
     if (p?.removals && (p.confirm.allowRemovals !== p.removals.count || !m.handEdits.length))
       await run({ t: "confirm-removals" });
     else if (m.handEdits.length) await run({ t: "discard-edits" });
-    else break;
+    else if (!built) {
+      built = true;
+      await run({ t: "build" });
+    } else break;
   }
-  if (!m.beta26) await run({ t: "build" });
   if (!ctx.enabled.has("equivalence") || m.beta26) return;
   // The empty-catalog guard has no confirmation (ADR point 4): a metarepo whose build would hold
   // nothing keeps its catalog, which no fresh build gives. Completeness judged the refusal.

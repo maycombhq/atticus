@@ -25,7 +25,8 @@ import {
  */
 const app = forgeSlotsJourney();
 
-const ENTRY = join("table", "ledger-db.entry.yaml");
+// "/"-separated on every OS, as catalogFiles keys the catalog's files (join takes it on Windows too).
+const ENTRY = "table/ledger-db.entry.yaml";
 
 test("a large removal is refused in the app, confirmed with its count, then undone", async ({
   page,
