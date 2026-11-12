@@ -77,7 +77,11 @@ export type Guard =
   | "hand-edits"
   /** A rename whose new slot files fail to parse or to build (`failBuild`): the new files are
    *  removed, the old ones kept. */
-  | "build-failed";
+  | "build-failed"
+  /** The metarepo holds a catalog from before beta.27 (no catalog/sources/): every writer refuses
+   *  with what to run until `atticus upgrade --yes` adopts it. After seed-beta26, or after an
+   *  undo that took back the upgrade (undo covers the upgrade's writes, ADR point 7). */
+  | "not-upgraded";
 
 /** Why a written build removed a record (ADR point 4, "nothing removed unexplained"). */
 export type RemovalReason =

@@ -685,7 +685,16 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     if (e.kind === "succeed" && !o.wrote) {
       if (s.crash && !o.crashed && !o.refused)
         fail("completeness", `${t} neither crashed where asked nor refused${said()}`);
-      const why = unjustified(s);
+      // A metarepo not upgraded (an undo took the upgrade back): every writer refuses until
+      // `atticus upgrade --yes` runs again. Only then, and never for the upgrade itself.
+      const notUpgraded =
+        o.refused && o.guard === "not-upgraded" && s.modelBefore.beta26 && t !== "upgrade";
+      if (o.guard === "not-upgraded" && !notUpgraded)
+        fail(
+          "completeness",
+          `${t} refused as not upgraded, but the metarepo ${s.modelBefore.beta26 ? "is being upgraded" : "is upgraded"}${said()}`,
+        );
+      const why = notUpgraded ? undefined : unjustified(s);
       if (why)
         fail(
           "completeness",
@@ -702,7 +711,15 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         // Another guard may come first: hand edits, or a large removal, each as listed.
         const first =
           o.guard === "hand-edits" || (o.guard === "large-removals" && e.guard !== "nothing-read");
-        const why = first ? unjustified(s) : `it refused for ${o.guard ?? "no guard"}`;
+        // Not upgraded comes before every other guard, and is right only then.
+        const why =
+          o.guard === "not-upgraded"
+            ? s.modelBefore.beta26 && t !== "upgrade"
+              ? undefined
+              : "the metarepo is upgraded"
+            : first
+              ? unjustified(s)
+              : `it refused for ${o.guard ?? "no guard"}`;
         if (why)
           fail("completeness", `${t} should have refused for ${e.guard}, and ${why}${said()}`);
       }
