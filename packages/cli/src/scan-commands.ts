@@ -78,7 +78,7 @@ function unreadMessage(u: UnreadRepo): string {
 export function scanRefusal(
   scan: Pick<EstateScan, "unread" | "observations">,
 ): ScanRefusal | undefined {
-  if (!scan.observations.length || scan.observations.some((o) => o.full)) return undefined;
+  if (scan.observations.some((o) => o.full)) return undefined;
   const unread = scan.unread;
   const lines = unread.map((u) => `${u.repo}: ${unreadMessage(u)}`);
   for (const o of scan.observations)
@@ -399,6 +399,8 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const slotWrites: SlotWrite[] = scan.observations.flatMap((x) =>
     x.full ? [{ path: readersSlotPath(root, x.repo), text: serializeReadersSlot(x.slot) }] : [],
   );
+  // What each repo's readers slot is before the write: written, unchanged, or its last good read.
+  const planned = await writeReadersSlots(root, scan.observations, { hold: "dry-run" });
   const built: BuildAndWrite | undefined = unreadAll
     ? undefined
     : await buildAndWrite(root, {
@@ -432,8 +434,6 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const diff = refused
     ? { added: [], removed: [], changed: [], evidenceOnly: [] }
     : diffCatalogs(before.records, scan.records);
-  // What each repo's readers slot is now: written, unchanged, or its last good read kept.
-  const planned = await writeReadersSlots(root, scan.observations, { hold: "dry-run" });
   const slots: ReadersSlotOutcome[] = planned.map((x) => {
     if (x.reason !== "dry-run") return x;
     const obs = scan.observations.find((y) => y.repo === x.repo);
@@ -488,6 +488,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
             id: x.id,
             repos: x.repos,
             explainedBy: x.explainedBy,
+            reasons: x.reasons,
           })),
           retired: scan.build.retired,
           ...(w?.undo !== undefined ? { undo: w.undo } : {}),
