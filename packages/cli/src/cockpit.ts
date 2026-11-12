@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   changesDirOf,
+  orgPackDirOf,
   listQuestions,
   nextOwnersOf,
   ownersOfRole,
@@ -10,9 +11,18 @@ import {
   type CustomRole,
   type QuestionRole,
 } from "@maycombhq/core";
-import { changeReport, changeStore, handoffName, type ChangeReport } from "@maycombhq/changes";
+import {
+  changeReport,
+  changeStore,
+  handoffName,
+  loadChangePolicy,
+  stageCompletion,
+  stageWorkDone,
+  type ChangeReport,
+  type StageCompletion,
+} from "@maycombhq/changes";
 import { readChangeRepos } from "@maycombhq/workspace";
-import { changeSteps, readNextState, type NextStep } from "./next-commands.js";
+import { changeSteps, readNextState, type NextState, type NextStep } from "./next-commands.js";
 
 /**
  * The change cockpit (WP7.1): one page per change with what a person needs to follow it. Its
@@ -27,8 +37,14 @@ export type StageName = (typeof STAGES)[number];
 
 export interface StageProgress {
   stage: StageName;
-  /** not-started when the stage has no loop file yet; else the loop's own state. */
+  /**
+   * not-started when the stage has no loop file yet; else the loop's own state. Beta.27 review:
+   * as the lifecycle reads it (stageCompletion): `person` when a person wrote the planning files
+   * the stage writes, `skipped` when the change passed the stage without it running.
+   */
   state: string;
+  /** With `person`: the files a person wrote, change-folder-relative. */
+  files?: string[];
   drafts: number;
   rounds: number;
   /** Questions it raised that nobody has answered yet. */
@@ -122,21 +138,106 @@ const RELEASE_GATE_STEPS = new Set(["release", "release-prs", "release-prs-merge
  * "Ready to raise "Plan ready"" over "Answer 1 question, then run the stories stage again".
  * While the next step is anything but the gate's own, the sentence says it isn't ready yet.
  * Beta.27 review: readiness is the report's `ready`, never a match on its sentence's words.
+ * "The step below" is At a glance's, which shows it under the sentence; every other page and
+ * `change status` (`where: "page"`) say the step's own words: "…yet: first, <why>".
  */
 export function glanceNextStep(
   report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
-  next: Pick<NextStep, "step"> | undefined,
+  next: (Pick<NextStep, "step"> & Partial<Pick<NextStep, "why">>) | undefined,
+  where: "glance" | "page" = "glance",
 ): string {
-  if (!report.ready || !report.phase) return report.nextStep;
-  if (!next || GATE_STEPS.has(next.step)) return report.nextStep;
-  if (report.phase === "release" && RELEASE_GATE_STEPS.has(next.step)) return report.nextStep;
-  return `Not ready to raise "${handoffName(report.type, report.phase)}" yet: the step below comes first.`;
+  if (!report.ready || !report.phase || glanceReady(report, next)) return report.nextStep;
+  const not = `Not ready to raise "${handoffName(report.type, report.phase)}" yet`;
+  const why = next?.why?.trim();
+  if (where === "page" && why) return `${not}: first, ${lowerFirst(why)}`;
+  return `${not}: the step below comes first.`;
 }
 
-async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
+/** A sentence's first word lower-cased to follow "first,"; an acronym (SNOW, PR) is kept. */
+const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0]!.toLowerCase() + s.slice(1) : s);
+
+/**
+ * Beta.27 review: the phase's hand-off can be raised now: nothing in its checks blocks (the
+ * report's `ready`) and no other step comes first (the change's next step is the gate's own).
+ */
+export function glanceReady(
+  report: Pick<ChangeReport, "ready" | "phase">,
+  next: Pick<NextStep, "step"> | undefined,
+): boolean {
+  if (!report.ready || !report.phase) return false;
+  if (!next || GATE_STEPS.has(next.step)) return true;
+  return report.phase === "release" && RELEASE_GATE_STEPS.has(next.step);
+}
+
+/**
+ * Beta.27 review: the one next-step sentence every page says of a change (At a glance, All
+ * changes, the brief's Gate, Across, Release), and whether its hand-off can be raised now. Pass
+ * `state` when saying it of many changes, so the metarepo is read once; `where: "page"` for any
+ * page but At a glance (and `change status`), which says the step itself, not "the step below".
+ */
+export async function changeNextStep(
+  root: string,
+  id: string,
+  report: Pick<ChangeReport, "nextStep" | "ready" | "type" | "phase">,
+  state?: NextState,
+  where: "glance" | "page" = "glance",
+): Promise<{
+  nextStep: string;
+  /**
+   * Beta.27 review, final round: on a page, the same sentence in the app's words (no command to
+   * type), when the step's reason made it say one.
+   */
+  nextStepApp?: string;
+  ready: boolean;
+  stepFirst: boolean;
+  next?: NextStep;
+}> {
+  const s = state ?? (await readNextState(root).catch(() => undefined));
+  const own = s?.changes.find((c) => c.id === id);
+  const next = own ? changeSteps(own)[0] : undefined;
+  const ready = glanceReady(report, next);
+  const nextStep = glanceNextStep(report, next, where);
+  const stepFirst = report.ready && !ready;
+  let nextStepApp: string | undefined;
+  if (where === "page" && stepFirst && next?.why) {
+    const { commandShapes, stepInAppWords } = await import("./step-app-words.js");
+    nextStepApp = glanceNextStep(
+      report,
+      { ...next, why: stepInAppWords(next.why, await commandShapes()) },
+      where,
+    );
+  }
+  return {
+    nextStep,
+    ...(nextStepApp ? { nextStepApp } : {}),
+    ready,
+    // Nothing in the gate's checks blocks, yet another step comes first.
+    stepFirst,
+    ...(next ? { next } : {}),
+  };
+}
+
+async function stageProgress(
+  dir: string,
+  stage: StageName,
+  open: Set<string>,
+  done: StageCompletion | undefined,
+) {
   const text = await readFile(join(dir, "stage", `${stage}.yaml`), "utf8").catch(() => undefined);
-  if (!text)
-    return { stage, state: "not-started", drafts: 0, rounds: 0, openQuestions: 0, asked: [] };
+  if (!text) {
+    // Beta.27 review: the lifecycle's own reading, so At a glance never says "to come" of a
+    // stage the change skipped, or of stories a person wrote.
+    const state = done && done.state !== "unknown" ? done.state : "not-started";
+    return {
+      stage,
+      state,
+      ...(done?.files?.length ? { files: done.files } : {}),
+      drafts: 0,
+      rounds: 0,
+      openQuestions: 0,
+      asked: [],
+    };
+  }
   const y = (parse(text) ?? {}) as {
     state?: unknown;
     iteration?: unknown;
@@ -168,8 +269,24 @@ export async function cockpit(
   // Every open question: a stage files the questions it raises under the repo they are about,
   // so the change's own are those filed under it plus those its stages raised.
   const open = new Set<string>(questions.map((q) => q.id));
+  const lifecycle = await changeStore(root)
+    .read(id)
+    .catch(() => undefined);
+  const { policy } = await loadChangePolicy(orgPackDirOf(root));
+  const completion = await stageCompletion(
+    { root, policy },
+    { id, ...(lifecycle ? { state: lifecycle.state } : {}) },
+  ).catch(() => [] as StageCompletion[]);
   const stages = [];
-  for (const s of STAGES) stages.push(await stageProgress(dir, s, open));
+  for (const s of STAGES)
+    stages.push(
+      await stageProgress(
+        dir,
+        s,
+        open,
+        completion.find((x) => x.stage === s),
+      ),
+    );
   const ofChange = new Set<string>([
     ...questions.filter((q) => q.repo === id).map((q) => q.id),
     ...stages.flatMap((s) => s.asked),
@@ -185,16 +302,13 @@ export async function cockpit(
     if (r) byRole[r] = (byRole[r] ?? 0) + 1;
   }
   // This change's own next step, whatever else waits elsewhere in the metarepo.
-  const state = (await readNextState(root)).changes.find((c) => c.id === id);
-  const next = state ? changeSteps(state)[0] : undefined;
+  const said = await changeNextStep(root, id, report, await readNextState(root));
+  const next = said.next;
   const repos = await readChangeRepos(root, id).catch(() => undefined);
-  const lifecycle = await changeStore(root)
-    .read(id)
-    .catch(() => undefined);
   const waitsOn = lifecycle
     ? waitsOnOf(
         lifecycle,
-        stages.find((s) => s.stage === "stories")?.state === "done",
+        stageWorkDone(stages.find((s) => s.stage === "stories")?.state ?? ""),
         await customRoles(root),
       )
     : undefined;
@@ -202,7 +316,7 @@ export async function cockpit(
     id,
     state: report.state,
     ...(next ? { next } : {}),
-    nextStep: glanceNextStep(report, next),
+    nextStep: said.nextStep,
     reasons: report.reasons,
     risk: { level: report.risk.level, score: report.risk.score },
     ...(report.progress ? { work: report.progress.summary } : {}),

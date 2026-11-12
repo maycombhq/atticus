@@ -18,6 +18,7 @@ import type { Reason } from "./errors.js";
 import type { Footprint } from "./footprint.js";
 import { isWritePattern, writeMatches, type StageStep } from "./policy.js";
 import { isFilled } from "./markdown.js";
+import { personWrittenPlanning, writesPlanning } from "./planning.js";
 import { changeFolder } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
 
@@ -149,7 +150,12 @@ export async function checkStage(
   const run = stageCommand(step, change.id);
   const reason = (message: string): Reason[] => [{ code: "stage-not-done", message }];
   const text = await readFile(join(dir, ...step.loop.split("/")), "utf8").catch(() => undefined);
-  if (text === undefined) return reason(`The ${step.stage} stage hasn't run yet: run ${run}.`);
+  if (text === undefined) {
+    // Beta.27 review: planning files a person wrote are the stage's work done by hand (the stage
+    // refuses to replace them unless forced); the gate's critic rounds still read them.
+    if (writesPlanning(step) && (await personWrittenPlanning(dir)).length) return [];
+    return reason(`The ${step.stage} stage hasn't run yet: run ${run}.`);
+  }
   let loop: { state?: unknown; run?: unknown; questions?: unknown } | null;
   try {
     loop = parse(text) as typeof loop;

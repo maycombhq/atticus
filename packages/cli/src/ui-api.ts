@@ -82,6 +82,8 @@ import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
 import { syncNextOf } from "./sync-next.js";
+import { changeNextStep } from "./cockpit.js";
+import { changeProblems, missingChangeWords } from "./change-problems.js";
 import {
   markCheckedByApp,
   startAutoDone,
@@ -174,6 +176,8 @@ export interface UiDeps {
   notify?: import("@maycombhq/adapters").Notifier;
   /** Tests (ADR 0191): a work tracker for the plan's work items. */
   workTracker?: import("@maycombhq/adapters").WorkTracker;
+  /** Tests (beta.27): the factories runtime.yaml's live adapters are made with. */
+  adapterFactories?: import("@maycombhq/adapters").AdapterFactories;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -191,6 +195,8 @@ interface Ran {
   code: number;
   out: string[];
   err: string[];
+  /** Beta.27 review, final round: more for the job's result (the upgrade's `upgraded`). */
+  extra?: Record<string, unknown>;
 }
 
 async function run(
@@ -212,6 +218,26 @@ async function run(
     },
   });
   return { code, out, err };
+}
+
+/**
+ * Beta.27 review: a scan's words in the app's terms: the page's Sync repos first, the command
+ * after it (the Console said "clone it with atticus workspace sync" where the page says Sync repos).
+ */
+export function scanAppWords(text: string): string {
+  return text
+    .replace(
+      /clone it again with atticus workspace sync/g,
+      "clone it again with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
+    )
+    .replace(
+      /clone it with atticus workspace sync/g,
+      "clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
+    )
+    .replace(
+      /Scan every repo \(atticus scan, after atticus workspace sync\)/g,
+      "Sync repos, then Check with the built-in readers again (in a terminal: atticus workspace sync, then atticus scan)",
+    );
 }
 
 /** A command's refusal or usage error as problem details, its own words as the detail. */
@@ -255,7 +281,8 @@ async function readChange(root: string, id: string): Promise<ChangeLifecycle> {
   try {
     return await changeStore(root).read(id);
   } catch {
-    throw notFound(`There is no change ${id}.`);
+    // Beta.27 review: a change.yaml that doesn't read says so; an id that isn't one, the nearest.
+    throw notFound(await missingChangeWords(root, id));
   }
 }
 
@@ -648,7 +675,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const lines = appLines(raw);
         const next = res.code === 0 ? undefined : syncNextOf(raw);
         return {
-          result: { code: res.code, lines, ...(next ? { next } : {}) },
+          result: { ...res.extra, code: res.code, lines, ...(next ? { next } : {}) },
           errors: res.code === 0 ? [] : lines,
         };
       },
@@ -814,8 +841,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // it changes; the changes are files to propose for review like any other.
       // beta.23: every migration's dry run reads every record and question; Home asks this on
       // each load, so the answer is kept until a change is heard (watched-memo.ts).
-      .add("GET", "/api/upgrade", async () =>
-        keptAnswer(root, "upgrade", async () => {
+      .add("GET", "/api/upgrade", async () => {
+        const r = await keptAnswer(root, "upgrade", async () => {
           const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
           const c = await upgradeCheck(root);
           // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
@@ -827,8 +854,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             pending: c.pending,
           };
           return { status: 200, body };
-        }),
-      )
+        });
+        // Beta.27 review: read each time (a file in .index, which no watcher hears): what the
+        // upgrade's Propose would carry besides its stamp; none, and the panel offers no Propose.
+        const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
+        const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
+        return { ...r, body: { ...r.body, upgraded } };
+      })
       .add("POST", "/api/upgrade", async () => {
         const { newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");
@@ -838,9 +870,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // but the stamp is older than this build, or missing.
         if (!c.pending.length && c.stamp && !newerThan(c.atticus, c.stamp.atticus))
           throw conflict(`Nothing to upgrade: up to date for Atticus ${c.atticus}.`);
-        return asJob("Upgrading the metarepo", () =>
-          run((io) => upgradeCommand(root, { by: user }, io)),
-        );
+        // Beta.27 review, final round: the job says what the run changed besides the stamp, so
+        // the panel never reads it from the GET before the run.
+        return asJob("Upgrading the metarepo", async () => {
+          const ran = await run((io) => upgradeCommand(root, { by: user }, io));
+          const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
+          const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
+          return { ...ran, extra: { upgraded } };
+        });
       })
       .add("GET", "/api/propose", async ({ query }) => {
         const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
@@ -970,9 +1007,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         });
         return { status: 200, body: await changeDetail(root, params.changeId!) };
       })
+      // Beta.27 review: the changes whose change.yaml doesn't read (GET /api/changes leaves them out).
+      .add("GET", "/api/change-problems", async () => ({
+        status: 200,
+        body: Api.ChangeProblems.parse(await changeProblems(root)),
+      }))
       .add("GET", "/api/changes/{changeId}/status", async ({ params }) => {
         await readChange(root, params.changeId!);
         const rep = await changeReport(root, params.changeId!);
+        // Beta.27 review: the sentence At a glance says, on every page (changeNextStep).
+        const said = await changeNextStep(root, params.changeId!, rep, undefined, "page");
         return {
           status: 200,
           body: {
@@ -980,7 +1024,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ...(rep.phase ? { phase: rep.phase } : {}),
             ...(rep.next ? { next: rep.next } : {}),
             ...(rep.progress ? { progress: rep.progress } : {}),
-            nextStep: rep.nextStep,
+            nextStep: said.nextStep,
+            ...(said.nextStepApp ? { nextStepApp: said.nextStepApp } : {}),
+            ...(said.stepFirst ? { stepFirst: true } : {}),
             risk: rep.risk,
             tests: rep.tests,
             ...(rep.handoff
@@ -1870,16 +1916,24 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 return {};
               }
             })();
-            // Beta.26: the report in words in the Console, never its JSON.
-            for (const l of scanSummaryLines(parsed)) printToCurrent(l);
+            // Beta.26: the report in words in the Console, never its JSON. Beta.27 review: in the
+            // app's words (Sync repos), the command after them.
+            for (const l of scanSummaryLines(parsed)) printToCurrent(scanAppWords(l));
             const problems = (parsed.problems as unknown[] | undefined)?.length ?? 0;
             // Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. The
             // job says which repos and why, and what to do, in words; the catalog is unchanged.
+            // Beta.27 review: a refusal is its own outcome (refused: nothing written), never a
+            // failed run: the job ends without errors and its result says `refused`, which the
+            // Console and Problems read (ActivityEntry `outcome`).
             const refusal = parsed.refused as ScanRefusal | undefined;
             if (refusal)
               return {
-                result: { stats: parsed.stats, problems, written: false, refused: refusal },
-                errors: refusal.message.split("\n"),
+                result: {
+                  stats: parsed.stats,
+                  problems,
+                  written: false,
+                  refused: { ...refusal, message: scanAppWords(refusal.message) },
+                },
               };
             ctx.events.publish({
               type: "index.rebuilt",

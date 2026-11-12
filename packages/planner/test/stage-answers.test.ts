@@ -149,6 +149,38 @@ const NO_CRITERIA = STORIES.replace(
 `,
 );
 
+describe("Draft the stories again over a person's files (beta.27 review)", () => {
+  it("refuses unless forced; forced on its first run, keeps a copy first and says where", async () => {
+    const root = await estateRoot();
+    await architected(root);
+    await writeFile(join(dir(root), "stories.md"), "# Our stories\n\nWritten by Pat.\n");
+    await writeFile(join(dir(root), "tasks.md"), "\uFEFF\n- [ ] 1.1 our own task\n");
+    await expect(
+      storiesStage(root, CHANGE, { runtime: assistant([STORIES]), now: NOW }),
+    ).rejects.toMatchObject({
+      code: "refused",
+      message: expect.stringContaining(
+        "already has planning files a person wrote: stories.md, tasks.md. Re-run with --force",
+      ),
+    });
+    const r = await storiesStage(root, CHANGE, {
+      runtime: assistant([STORIES]),
+      now: NOW,
+      force: true,
+    });
+    expect(r.state).toBe("done");
+    const kept = `${REL}/stage/stories-by-person/1/`;
+    expect(r.notes).toContain(
+      `stories.md, tasks.md were written by a person; a copy is in ${kept}, and the stage writes them again (--force).`,
+    );
+    const copy = join(dir(root), "stage/stories-by-person/1");
+    expect(await readFile(join(copy, "stories.md"), "utf8")).toBe(
+      "# Our stories\n\nWritten by Pat.\n",
+    );
+    expect(await readFile(join(copy, "tasks.md"), "utf8")).toBe("\uFEFF\n- [ ] 1.1 our own task\n");
+  });
+});
+
 describe("S5: an answer that isn't YAML", () => {
   it("goes back to the drafter once with its line and the quoting rule, without spending a draft", async () => {
     const root = await estateRoot();

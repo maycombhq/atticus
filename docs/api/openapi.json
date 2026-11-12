@@ -6299,6 +6299,37 @@
         }
       }
     },
+    "/api/change-problems": {
+      "get": {
+        "operationId": "listChangeProblems",
+        "summary": "3.11.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
+        "tags": [
+          "changes"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeProblems"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{repo}/apply": {
       "post": {
         "operationId": "applyFacts",
@@ -6446,7 +6477,8 @@
                       "initiatives",
                       "outcomes",
                       "work",
-                      "service-desk"
+                      "service-desk",
+                      "upgrade"
                     ]
                   },
                   "files": {
@@ -6567,7 +6599,7 @@
     "/api/owner-questions/{id}/send": {
       "post": {
         "operationId": "sendOwnerQuestion",
-        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.11.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
         "tags": [
           "questions"
         ],
@@ -6591,6 +6623,9 @@
                   "confirmation": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  },
+                  "again": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -6641,6 +6676,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -28343,7 +28388,8 @@
               "initiatives",
               "outcomes",
               "work",
-              "service-desk"
+              "service-desk",
+              "upgrade"
             ]
           },
           "files": {
@@ -28426,6 +28472,28 @@
           },
           "answer": {
             "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "asked": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "at"
+            ],
+            "additionalProperties": false
           },
           "routeTo": {
             "type": "string"
@@ -29832,7 +29900,8 @@
               "initiatives",
               "outcomes",
               "work",
-              "service-desk"
+              "service-desk",
+              "upgrade"
             ]
           },
           "files": {
@@ -36540,6 +36609,12 @@
                 "state": {
                   "type": "string"
                 },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "drafts": {
                   "type": "integer",
                   "minimum": -9007199254740991,
@@ -40068,6 +40143,12 @@
                 "files"
               ],
               "additionalProperties": false
+            }
+          },
+          "upgraded": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         },
@@ -49346,6 +49427,12 @@
               "type": "string"
             }
           },
+          "byPerson": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "reply": {
             "type": "object",
             "properties": {
@@ -49411,6 +49498,34 @@
           "thread"
         ],
         "additionalProperties": false
+      },
+      "ChangeProblems": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "file",
+            "message"
+          ],
+          "additionalProperties": false
+        }
       },
       "PlacementView": {
         "type": "object",

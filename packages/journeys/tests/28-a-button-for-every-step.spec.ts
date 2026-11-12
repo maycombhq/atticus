@@ -223,17 +223,33 @@ test.describe("drafting the stories again over a person's stories", () => {
     page,
   }) => {
     await open(page, app!, `stories?change=${CHANGE}`);
+    // Beta.27 review: stories a person wrote are the stage's work done by hand: Run next is the
+    // plan hand-off, never the stage that would refuse them, and the stage's conversation says
+    // who wrote them, with the way on and the way to have the stage write them instead.
     const next = page.locator("section.work-next");
-    await next.getByRole("button", { name: "Prepare it for your assistant" }).click();
-    await expect(next.getByRole("alert").first()).toContainText("a person wrote", {
-      timeout: 60_000,
+    await expect(next.getByRole("button", { name: "Raise hand-off" })).toBeVisible();
+    await expect(next.getByRole("button", { name: "Prepare it for your assistant" })).toHaveCount(
+      0,
+    );
+    const thread = page.getByRole("region", { name: "The stories stage, as one conversation" });
+    await expect(thread).toContainText("A person wrote stories.md and tasks.md outside the app");
+    await expect(
+      thread.getByRole("link", { name: "Go on from them on At a glance" }),
+    ).toBeVisible();
+    await expect(thread.getByRole("button", { name: "Start the stage" })).toHaveCount(0);
+    // Review of the fix: the button names the files it replaces, and asks once.
+    const again = thread.getByRole("button", {
+      name: "Draft the stories again, replacing stories.md and tasks.md…",
     });
-    await expect(next.getByRole("alert").first()).not.toContainText("--force");
-    const again = next.getByRole("button", { name: "Draft the stories again" });
     await expect(again).toBeVisible();
-    await accessible(page, "the stories refused over a person's stories");
+    await accessible(page, "the stories a person wrote, on the Stories page");
     await again.click();
-    await expect(next.getByRole("link", { name: "Open the prompt and Done" })).toBeVisible({
+    const ask = thread.getByRole("group", { name: /^This replaces stories\.md and tasks\.md/ });
+    await expect(ask).toContainText("stage/stories-by-person/");
+    await expect(ask.getByRole("button", { name: "Keep them" })).toBeVisible();
+    await accessible(page, "drafting the stories again, asked once");
+    await ask.getByRole("button", { name: "Draft the stories again", exact: true }).click();
+    await expect(thread.getByRole("link", { name: "Open the prompt and Done" })).toBeVisible({
       timeout: 60_000,
     });
   });

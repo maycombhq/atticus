@@ -298,7 +298,8 @@ export function TrustRow({ r }: { r: Repo }) {
           <>
             <dt>{T.asked}</dt>
             <dd>
-              {lists.asked.length}
+              {/* Beta.27 review: the list says its count ("3 questions open", or None); a count
+                  before it read "0None" and "33 questions open". */}
               <CountList n={lists.asked.length} what={T.what.asked!}>
                 {() => (
                   <>

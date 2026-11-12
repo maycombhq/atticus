@@ -1,4 +1,6 @@
-import type { Loaded } from "../../api/client.js";
+import { useId } from "react";
+import type { Api } from "@maycombhq/core";
+import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { NewChange } from "./NewChange.js";
 import { AppStep, appStep } from "../../app/app-step.js";
 import { RunStep } from "../../app/runstep.js";
@@ -7,6 +9,7 @@ import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
 import type { Slash, Step } from "./next.js";
 import { hasAction, StepAction } from "./step-action.js";
+import { BrokenChangesView, CHANGE_PROBLEMS_URL } from "./BrokenChanges.js";
 import "./work.css";
 
 const R = COPY.runNext;
@@ -247,14 +250,29 @@ export function PickAChange({ bare = false }: { bare?: boolean }) {
   );
 }
 
+/**
+ * The empty page's title. Beta.27 review: with a change whose change.yaml doesn't read, "No
+ * change yet" was wrong: there is one, and it doesn't read.
+ */
+export const noChangeTitle = (broken: number, title?: string): string =>
+  title ?? (broken > 0 ? COPY.work.noChangeReads : COPY.work.noChangeTitle);
+
+/** Review of the fix: the words under the title agree with it ("No change reads", or yet). */
+export const noChangeBody = (broken: number): string =>
+  broken > 0 ? COPY.work.noChangeReadsBody : COPY.work.noChangeYet;
+
 export function NoChangeYet({ title }: { title?: string }) {
   const W = COPY.work;
+  const broken = useApi<Api.ChangeProblemsT>(CHANGE_PROBLEMS_URL);
+  useReloadOnFiles(broken);
+  const id = useId();
   return (
-    <section className="panel" aria-labelledby="no-change" style={{ gridColumn: "1 / -1" }}>
-      <h2 id="no-change" className="h">
-        {title ?? W.noChangeTitle}
+    <section className="panel" aria-labelledby={id} style={{ gridColumn: "1 / -1" }}>
+      <h2 id={id} className="h">
+        {noChangeTitle(broken.state === "ready" ? broken.data.length : 0, title)}
       </h2>
-      <p className="work-why">{W.noChangeYet}</p>
+      <p className="work-why">{noChangeBody(broken.state === "ready" ? broken.data.length : 0)}</p>
+      <BrokenChangesView of={broken} />
       <NewChange />
       <details className="work-terminal">
         <summary>{R.orTerminal}</summary>

@@ -2,7 +2,8 @@ import { useState, type ReactNode } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
 import { changeOf } from "../../app/screens.js";
-import { Panel, View } from "../../app/ui.js";
+import { nextStepWords } from "../../app/app-words.js";
+import { GlanceLink, Panel, View } from "../../app/ui.js";
 import {
   ExportEvidence,
   NotesPanel,
@@ -76,6 +77,10 @@ interface ReleaseDetail {
     state: string;
     phase?: string;
     nextStep: string;
+    /** Beta.27 review: nothing blocks the gate, yet another step comes first. */
+    stepFirst?: boolean;
+    /** Beta.27 review, final round: `nextStep` in the app's words, from the server. */
+    nextStepApp?: string;
     risk: { level: string; score: number };
     blockers: Reason[];
     reasons: Reason[];
@@ -223,7 +228,13 @@ export function Detail({ id }: { id: string }) {
                   <span className="hud" style={{ marginRight: 8 }}>
                     {T.next}
                   </span>
-                  {r.status.nextStep}
+                  {nextStepWords(r.status.nextStep, r.status.stepFirst, r.status.nextStepApp)}
+                  {r.status.stepFirst && (
+                    <>
+                      {" "}
+                      <GlanceLink change={r.change.id} />
+                    </>
+                  )}
                 </p>
                 <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
                   <span className="chip dim">{T.type(r.change.type.toUpperCase())}</span>

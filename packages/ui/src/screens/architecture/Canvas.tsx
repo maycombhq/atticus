@@ -28,6 +28,7 @@ import {
 } from "../../app/layout/index.js";
 import { COPY } from "../../copy.js";
 import {
+  CANVAS_MAX_TOP,
   DiagramFrame,
   FIT_MAX,
   fitLegibly,
@@ -387,6 +388,8 @@ const nodeTypes = { box: BoxView };
  * picture bigger than that is panned (fitLegibly starts it at its top-left).
  */
 export const FIT_MIN_ZOOM = 0.9;
+/** Beta.27 review: how long the view stays still before the boxes out of view are announced. */
+export const ANNOUNCE_AFTER_MS = 700;
 const edgeTypes = { link: LinkView };
 
 /** The room round a fitted picture, as React Flow's fitView padding (a share of the view). */
@@ -403,8 +406,92 @@ export const fitPad = (view: Size): number =>
  * FIT_MIN_ZOOM; a bigger picture starts at its top-left), never zoomed in past actual size
  * (FIT_MAX: beta.27's first cut let a small estate fit at 300 %), with fitView's padding.
  */
-export function canvasFit(content: Rect, view: Size): Viewport {
-  return fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad: fitPad(view) });
+export function canvasFit(
+  content: Rect,
+  view: Size,
+  /**
+   * Beta.27 review: the boxes, so a picture too big for the view starts at its first box (the
+   * top-most, centred across when the picture is wider than the view), not at its bounds' empty
+   * corner: a big estate opened on an empty canvas, "0 of 67 boxes in view".
+   */
+  rects?: readonly (BoxRect & { group?: boolean })[],
+): Viewport {
+  const pad = fitPad(view);
+  const v = fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad });
+  const first = (rects ?? [])
+    .filter((r) => !r.group)
+    .reduce<BoxRect | undefined>(
+      (a, r) => (!a || r.y < a.y || (r.y === a.y && r.x < a.x) ? r : a),
+      undefined,
+    );
+  if (!first) return v;
+  const wide = content.w * v.k > view.width - pad * 2;
+  const tall = content.h * v.k > view.height - pad * 2;
+  // Across: the first box in the middle, never past the picture's own edges.
+  const across = (view.width - first.width * v.k) / 2 - first.x * v.k;
+  const most = pad - content.x * v.k;
+  const least = view.width - pad - (content.x + content.w) * v.k;
+  return {
+    k: v.k,
+    x: wide ? Math.min(most, Math.max(least, across)) : v.x,
+    y: tall ? pad - first.y * v.k : v.y,
+  };
+}
+
+/**
+ * Beta.27 review: Fit (the button, the 0 key) fits everything, however small: the legibility
+ * floor is for the picture a page opens on (canvasFit), not for the person asking to see it all.
+ */
+export function canvasFitAll(content: Rect, view: Size): Viewport {
+  return fitLegibly(content, view, { min: ZOOM.min, max: FIT_MAX, pad: fitPad(view) });
+}
+
+/** Where each box is on the canvas (a box inside a group is placed in it), groups marked. */
+export function contentRects(
+  nodes: readonly Pick<BoxNode, "id" | "position" | "width" | "height" | "parentId" | "data">[],
+): (BoxRect & { group: boolean })[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const at = (id: string, seen = 0): { x: number; y: number } => {
+    const n = byId.get(id);
+    if (!n) return { x: 0, y: 0 };
+    const up = n.parentId && seen < 32 ? at(n.parentId, seen + 1) : { x: 0, y: 0 };
+    return { x: up.x + n.position.x, y: up.y + n.position.y };
+  };
+  return nodes.map((n) => ({
+    ...at(n.id),
+    width: n.width ?? 0,
+    height: n.height ?? 0,
+    group: !!n.data.box.group,
+  }));
+}
+
+/** The rectangle round every box. */
+export function boundsOf(rects: readonly BoxRect[]): Rect | undefined {
+  if (!rects.length) return undefined;
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  const w = Math.max(...rects.map((r) => r.x + r.width)) - x;
+  const h = Math.max(...rects.map((r) => r.y + r.height)) - y;
+  return { x, y, w, h };
+}
+
+/**
+ * Beta.27 review: how many boxes (not groups) lie wholly outside the view, so the page says so
+ * ("1 of 67 boxes in view" read as an empty canvas).
+ */
+export function boxesOutside(
+  rects: readonly (BoxRect & { group?: boolean })[],
+  v: Viewport,
+  view: Size,
+): number {
+  const left = -v.x / v.k;
+  const top = -v.y / v.k;
+  const right = left + view.width / v.k;
+  const bottom = top + view.height / v.k;
+  return rects.filter(
+    (r) =>
+      !r.group && (r.x + r.width <= left || r.x >= right || r.y + r.height <= top || r.y >= bottom),
+  ).length;
 }
 
 /** The input the layout gets for a canvas graph. */
@@ -524,6 +611,8 @@ export function ArchitectureCanvas(p: {
   asideBeside?: boolean;
   /** Beta.26: changed to something, the details open again (a panel was asked for in them). */
   reveal?: string;
+  /** Beta.27 review: nothing is picked, so empty details start closed in a narrow frame. */
+  asideIdle?: boolean;
   /** Beta.26: laid over the picture itself (the legend, in a corner). */
   overlay?: ReactNode;
   /** Beta.26: where the picture's controls go outside full screen (the map's bar). */
@@ -557,34 +646,82 @@ export function ArchitectureCanvas(p: {
   const [full, setFull] = useFullScreen(p.initialFull);
   const [focusMode, setFocusMode] = useState(!!p.initialFocus);
   const [zoom, setZoom] = useState(1);
-  const height = useAvailableHeight(frame, p.height !== undefined ? { fixed: p.height } : {});
+  // Beta.27 review: a notice above the picture is counted (CANVAS_MAX_TOP), so its foot stays
+  // above the bottom panel; min 320 so a short window still fits it.
+  const height = useAvailableHeight(
+    frame,
+    p.height !== undefined ? { fixed: p.height } : { maxTop: CANVAS_MAX_TOP, min: 320 },
+  );
   // Beta.26 review: the picture fits the measured height (not the guess before it), and again
   // as that height changes, until the person pans or zooms it themselves.
   const moved = useRef(false);
   // Beta.27: every fit is a legible one (fitLegibly), in the canvas's own size.
   const stage = useRef<HTMLDivElement | null>(null);
-  const fitNow = (duration?: number) => {
+  // Beta.27 review: the boxes as laid out, not React Flow's store (a store not yet updated
+  // after a new layout fitted the old one: drilling into Portal cut its top box).
+  const nodesNow = useRef<BoxNode[]>(nodes);
+  nodesNow.current = nodes;
+  const [outside, setOutside] = useState(0);
+  const countOutside = (v?: { x: number; y: number; zoom: number }) => {
+    const el = stage.current;
+    const at = v ?? rf.current?.getViewport();
+    if (!el || !at || !el.clientWidth || !el.clientHeight) return;
+    const n = boxesOutside(
+      contentRects(nodesNow.current),
+      { x: at.x, y: at.y, k: at.zoom },
+      { width: el.clientWidth, height: el.clientHeight },
+    );
+    setOutside((o) => (o === n ? o : n));
+  };
+  // Beta.27 review: the count is said to a screen reader once the view settles (a fit, or the
+  // end of a pan), not at every step of a pan; the line on the page follows it as it moves.
+  const [announced, setAnnounced] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnnounced(outside), ANNOUNCE_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [outside]);
+  /** Fit the picture: legibly (a page opening on it), or `all` of it (Fit, the 0 key). */
+  const fitNow = (duration?: number, all = false) => {
     const i = rf.current;
     const el = stage.current;
-    const ids = i?.getNodes().map((n) => n.id) ?? [];
-    if (!i || !el || !ids.length || !el.clientWidth || !el.clientHeight) {
+    const rects = contentRects(nodesNow.current);
+    const b = boundsOf(rects);
+    if (!i || !el || !b || !el.clientWidth || !el.clientHeight) {
       void i?.fitView({
         padding: FIT_PADDING,
-        minZoom: FIT_MIN_ZOOM,
+        minZoom: all ? ZOOM.min : FIT_MIN_ZOOM,
         maxZoom: FIT_MAX,
         ...(duration ? { duration } : {}),
       });
       return;
     }
-    const b = i.getNodesBounds(ids);
-    const v = canvasFit(
-      { x: b.x, y: b.y, w: b.width, h: b.height },
-      { width: el.clientWidth, height: el.clientHeight },
-    );
+    const view = { width: el.clientWidth, height: el.clientHeight };
+    const v = all ? canvasFitAll(b, view) : canvasFit(b, view, rects);
     void i.setViewport({ x: v.x, y: v.y, zoom: v.k }, duration ? { duration } : undefined);
+    countOutside({ x: v.x, y: v.y, zoom: v.k });
   };
   const fitRef = useRef(fitNow);
   fitRef.current = fitNow;
+  /** A box is being dragged, or a pointer is down on the canvas (review of the fix). */
+  const dragging = useRef(false);
+  const pointerDown = useRef(false);
+  useEffect(
+    () => (typeof window === "undefined" ? undefined : releasePointerOn(window, pointerDown)),
+    [],
+  );
+  /** The view panned to a box, at the zoom it has (a box Tab reached out of view). */
+  const centerOn = (id: string) => {
+    const i = rf.current;
+    const n = i?.getInternalNode(id);
+    // Review of the fix: never an animated pan while a box is dragged.
+    if (!i || !n || dragging.current) return;
+    const { x, y } = n.internals.positionAbsolute;
+    moved.current = true;
+    void i.setCenter(x + (n.measured.width ?? 0) / 2, y + (n.measured.height ?? 0) / 2, {
+      zoom: i.getZoom(),
+      duration: 200,
+    });
+  };
   const fitter = useRef({ fitView: () => fitRef.current() });
   useFitOnResize(fitter, {
     height,
@@ -713,7 +850,7 @@ export function ArchitectureCanvas(p: {
         void i?.zoomTo(1, d);
         return;
       case "fit":
-        fitNow(d.duration);
+        fitNow(d.duration, true);
         return;
       case "fit-selection":
         if (p.selected) void i?.fitView({ nodes: [{ id: p.selected }], maxZoom: 1.2, ...d });
@@ -763,6 +900,7 @@ export function ArchitectureCanvas(p: {
       {...(p.aside ? { aside: p.aside } : {})}
       {...(p.asideBeside ? { asideBeside: true } : {})}
       {...(p.reveal ? { reveal: p.reveal } : {})}
+      {...(p.asideIdle ? { asideIdle: true } : {})}
       {...(p.toolbarIn ? { toolbarIn: p.toolbarIn } : {})}
       toolbar={
         <ViewerToolbar
@@ -782,6 +920,24 @@ export function ArchitectureCanvas(p: {
         className={`arch-canvas ${zoom < LABELS_FROM ? "far" : ""} ${lit ? "focusing" : ""}`}
         style={{ height: "100%", ...labelScale(zoom) }}
         aria-busy={state.state === "running"}
+        // Beta.27 review: a box Tab reaches out of view is panned to, never scrolled to. Review
+        // of the fix: only the keyboard's focus pans; a click or a drag focuses a box too, and
+        // the view never moves under the pointer.
+        // Beta.27 review, final round: the pointer comes up anywhere (released over the toolbar,
+        // outside the canvas or the window): `releasePointerOn(window)` hears it, and a key.
+        onPointerDownCapture={() => {
+          pointerDown.current = true;
+        }}
+        onFocusCapture={(e) => {
+          const el = stage.current;
+          if (!el) return;
+          const t = e.target as Element;
+          boxFocused(t, el, centerOn, {
+            keyboard: !pointerDown.current && !dragging.current && keyboardFocus(t),
+          });
+          // The browser may scroll the wrapper after the event: put it back on the next frame.
+          requestAnimationFrame(() => boxFocused(t, el, () => undefined));
+        }}
       >
         {state.state === "running" && !nodes.length ? (
           <div className="stack" aria-live="polite">
@@ -800,7 +956,10 @@ export function ArchitectureCanvas(p: {
               rf.current = i;
               setZoom(i.getZoom());
             }}
-            onMove={(_, v) => setZoom(v.zoom)}
+            onMove={(_, v) => {
+              setZoom(v.zoom);
+              countOutside(v);
+            }}
             // A move the person started (a wheel, a drag, a pinch) has its event; a fit has none.
             onMoveStart={(e) => {
               if (e) moved.current = true;
@@ -815,7 +974,11 @@ export function ArchitectureCanvas(p: {
             onNodeDoubleClick={(_, n) => {
               if (n.data.box.childCount > 0) p.onToggle(n.id);
             }}
+            onNodeDragStart={() => {
+              dragging.current = true;
+            }}
             onNodeDragStop={(_, n, dragged) => {
+              dragging.current = false;
               for (const d of dragged.length ? dragged : [n]) p.onMoved(d.id, d.position);
             }}
             nodesConnectable={!!p.onConnect}
@@ -852,10 +1015,90 @@ export function ArchitectureCanvas(p: {
             )}
           </ReactFlow>
         )}
+        {outside > 0 && nodes.length > 0 && state.state === "ready" && (
+          <div className="arch-outside viewer-own">
+            <span>
+              {WORDS.outside(outside, contentRects(nodes).filter((r) => !r.group).length)}
+            </span>{" "}
+            <button type="button" className="btn" onClick={() => act("fit")}>
+              {WORDS.fitAll}
+            </button>
+          </div>
+        )}
+        <span className="sr" role="status">
+          {announced > 0 && nodes.length > 0 && state.state === "ready"
+            ? WORDS.outside(announced, contentRects(nodes).filter((r) => !r.group).length)
+            : ""}
+        </span>
         {p.overlay}
       </div>
     </DiagramFrame>
   );
+}
+
+/**
+ * Beta.27 review, final round: a pointer down on the canvas is up again when it comes up anywhere
+ * (`pointerup` or `pointercancel` on the window: released over the toolbar or outside the canvas,
+ * the canvas's own handlers never hear it), or when a key is pressed (a person on the keyboard is
+ * not dragging), so Tab into a box out of view pans to it. Returns the way to stop listening.
+ */
+export function releasePointerOn(
+  target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
+  down: { current: boolean },
+): () => void {
+  // A modifier key pressed during a drag (Shift to select more, say) clears the flag too, and
+  // harmlessly: the drag itself is `dragging`, and the flag only stops a focus from panning.
+  const up = () => {
+    down.current = false;
+  };
+  const events = ["pointerup", "pointercancel", "keydown"] as const;
+  const capture = { capture: true };
+  for (const e of events) target.addEventListener(e, up, capture);
+  return () => {
+    for (const e of events) target.removeEventListener(e, up, capture);
+  };
+}
+
+/**
+ * Review of the fix (beta.27): whether focus came from the keyboard, as the browser says it
+ * (`:focus-visible`: a click focuses a box without it). A browser that can't say: not.
+ */
+export function keyboardFocus(el: Element): boolean {
+  try {
+    return typeof el.matches === "function" && el.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Beta.27 review: Tab to a box outside the view made the browser scroll React Flow's
+ * overflow-hidden wrapper to bring it in (React Flow 12.3 has no autoPanOnNodeFocus), so the
+ * boxes and the pane under them went out of step until a reload. The scroll between the box and
+ * the canvas is put back on any focus, and, when the box is out of view and the keyboard brought
+ * focus there (`keyboard`, as the canvas tells it: never a click or a drag), `center` pans the
+ * view to it. Whether it panned; nothing happens for focus on anything but a box.
+ */
+export function boxFocused(
+  target: Element,
+  stage: Element,
+  center: (id: string) => void,
+  o: { keyboard?: boolean } = {},
+): boolean {
+  const box = target.closest(".react-flow__node");
+  if (!box || !stage.contains(box)) return false;
+  for (let el = box.parentElement; el && el !== stage; el = el.parentElement) {
+    if (el.scrollTop) el.scrollTop = 0;
+    if (el.scrollLeft) el.scrollLeft = 0;
+  }
+  if (!o.keyboard) return false;
+  const r = box.getBoundingClientRect();
+  const v = stage.getBoundingClientRect();
+  const inView = r.left >= v.left && r.right <= v.right && r.top >= v.top && r.bottom <= v.bottom;
+  const id = box.getAttribute("data-id");
+  if (inView || !id) return false;
+  center(id);
+  return true;
 }
 
 /** A node dimmed unless focus mode keeps it lit (a group stays: it holds lit boxes). */

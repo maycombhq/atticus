@@ -6,7 +6,6 @@ import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { HomeChangeRow, HomeChangeWaits } from "../HomeRoles.js";
 import { NewChange } from "../work/NewChange.js";
-import { stageOf } from "../work/next.js";
 import "./home.css";
 
 /**
@@ -228,7 +227,7 @@ export function HomeChanges(p: {
   const row = (c: HomeChange) => {
     const props = {
       c: { ...c, blocked: !!c.openFindings?.blocking },
-      stage: W.stage[stageOf(c.state)],
+      stage: phaseWord(c.state),
       me: p.me,
     };
     // Whom it waits on is read for the person's own changes (its cockpit), as before.
@@ -239,6 +238,9 @@ export function HomeChanges(p: {
     );
   };
   const more = p.inFlight.length - Math.min(mine.length, TOP_CHANGES);
+  // Beta.27 review: the change the gates are drawn for is listed once, its row over its gates.
+  const rest = focus ? mine.filter((c) => c.id !== focus.id) : mine;
+  const shownRest = rest.slice(0, TOP_CHANGES - (focus && mine.includes(focus) ? 1 : 0));
   const foot = (
     <div className="hm-foot">
       <a href="#/changes">{H.seeAllChanges}</a>
@@ -261,16 +263,14 @@ export function HomeChanges(p: {
           <>
             {focus && (
               <div className="hm-focus">
-                <p className="hm-gate-change">
-                  <a href={`#/changes/${encodeURIComponent(focus.id)}`}>{focus.title}</a>
-                </p>
+                <ul className="hm-list">{row(focus)}</ul>
                 <GateStrip state={focus.state} label={H.gatesOf(focus.title)} />
               </div>
             )}
             {mine.length === 0 ? (
               <p className="hm-quiet-line">{COPY.roleWork.home.noneYours}</p>
             ) : (
-              <ul className="hm-list">{mine.slice(0, TOP_CHANGES).map(row)}</ul>
+              shownRest.length > 0 && <ul className="hm-list">{shownRest.map(row)}</ul>
             )}
             {foot}
           </>
@@ -291,6 +291,22 @@ const PHASE_LABEL: Record<string, string> = {
   qa: "QA",
   "release-ready": T.release,
 };
+
+/**
+ * Beta.27 review: one stage vocabulary on Home, the gates' (Define, Design, Plan, Build, QA,
+ * Release): a change's pill said "stories" while its pipeline said "Plan".
+ */
+export function phaseWord(state: string): string {
+  const s =
+    state === "draft" || state === "returned"
+      ? "define"
+      : state === "release"
+        ? "release-ready"
+        : state;
+  return PHASE_LABEL[s] ?? (state === "released" || state === "archived" ? W.stage.done : state);
+}
+/** The gates in order, for counting changes by where they are. */
+export const PHASE_ORDER = [...PHASES, "released"] as const;
 
 /** The change's gates in a row: each done, the current one, those to come. */
 export function GateStrip({ state, label }: { state: string; label?: string }) {

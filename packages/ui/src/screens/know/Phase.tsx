@@ -2,12 +2,12 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BriefForm } from "../BriefForm.js";
 import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
-import { inAppWords } from "../../app/app-words.js";
+import { inAppWords, nextStepWords } from "../../app/app-words.js";
 import { message } from "../run/shared.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { artifactFile } from "../../api/batch.js";
 import { confirmed } from "../../api/confirm.js";
-import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
+import { Bar, Donut, ExternalLink, GlanceLink, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
   artifactUrl,
@@ -120,7 +120,14 @@ export function GateHeader(p: {
               {s.handoff && isManualLink(s.handoff.pr.url) ? (
                 <ManualHandoff phase={s.handoff.phase} />
               ) : (
-                s.nextStep
+                nextStepWords(s.nextStep, s.stepFirst, s.nextStepApp)
+              )}
+              {/* Beta.27 review: the step that comes first, with its button, is on At a glance. */}
+              {s.stepFirst && (
+                <>
+                  {" "}
+                  <GlanceLink change={p.id} />
+                </>
               )}
             </p>
             {s.blockers.length > 0 && (
@@ -169,7 +176,13 @@ export function GateHeader(p: {
                   {aiOn ? T.runTheCritic : T.runTheRuleChecks}
                 </button>
               )}
-              <RaiseHandoff change={p.id} blockers={s.blockers.length} onDone={done} act={act} />
+              <RaiseHandoff
+                change={p.id}
+                blockers={s.blockers.length}
+                {...(s.stepFirst ? { first: nextStepWords(s.nextStep, true, s.nextStepApp) } : {})}
+                onDone={done}
+                act={act}
+              />
               <button
                 type="button"
                 className="btn"
@@ -208,19 +221,21 @@ export function RaiseHandoff(p: {
   blockers: number;
   /** Eighth UX walk: what blocks the gate isn't read yet, so it waits rather than flicker on. */
   held?: boolean;
+  /** Beta.27 review: another step comes first, in At a glance's words: held, and said. */
+  first?: string;
   onDone?: () => void;
   act?: ReturnType<typeof useAction>;
 }) {
   const own = useAction();
   const act = p.act ?? own;
   const why = useId();
-  const blocked = p.blockers > 0;
+  const blocked = p.blockers > 0 || !!p.first;
   const button = (
     <button
       type="button"
       className="btn primary"
       disabled={act.busy || blocked || p.held === true}
-      title={blocked ? T.blockedBy(p.blockers) : undefined}
+      title={blocked ? (p.blockers > 0 ? T.blockedBy(p.blockers) : p.first) : undefined}
       aria-describedby={blocked ? why : undefined}
       onClick={() =>
         void act.run(
@@ -249,7 +264,7 @@ export function RaiseHandoff(p: {
   // Eighth UX walk: held, it says why where it is seen, not only in a tooltip.
   const reason = blocked && (
     <span id={why} className="muted" style={{ fontSize: 12 }}>
-      {T.blockedBy(p.blockers)}
+      {p.blockers > 0 ? T.blockedBy(p.blockers) : p.first}
     </span>
   );
   if (p.act)

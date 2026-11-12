@@ -264,6 +264,8 @@ describe("the status line", () => {
     answers["/api/findings?state=open"] = [finding("f-1", "gap"), finding("f-2", "gap")];
     const m = mount(CC.CommandCenter as never, {} as never);
     const status = byClass(m.tree, "hm-status")[0]!;
-    expect(text(status)).toBe(T.nothingIsBlockedRight);
+    // Beta.27 review: and what waits on a person, when something does (here the two gaps).
+    expect(text(status)).toMatch(/^Nothing is blocked/);
+    expect(status.props.className).not.toMatch(/\bbad\b/);
   });
 });

@@ -795,9 +795,14 @@ code.mono {
   .list-row {
     flex-wrap: wrap;
   }
+  /* Beta.27 review: break-word, not anywhere: "anywhere" made a chip's narrowest width one
+     letter, so a table's status column wrapped "OPEN" as "OPE/N" at 420 px. A word is kept
+     whole unless it can't fit the column at all. */
   .chip {
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    /* A table's cells say word-break: break-word, which a chip would inherit. */
+    word-break: normal;
   }
   /* Long file paths and ids break anywhere rather than run off the side. */
   .mono,
@@ -1013,9 +1018,10 @@ a.btn {
 .arch-box.gappy {
   border-color: var(--amber);
 }
+/* Beta.27 review: a picked box is ringed solid inside its border; a focused one (Tab) gets the
+   dashed ring outside it, so the two never look alike, and both show together. */
 .arch-box.picked {
-  outline: 2px solid var(--accent-soft);
-  outline-offset: 2px;
+  box-shadow: inset 0 0 0 3px var(--accent-soft);
 }
 /* ADR 0180: a component type's shape; the badge and colour say the type too (WCAG 1.4.1). */
 .arch-box.shape-rounded {
@@ -1134,6 +1140,27 @@ a.btn {
 .arch-notice p {
   margin: 0;
 }
+/* Beta.27 review: boxes outside the view, said over the picture's foot (clear of the boxes a
+   fit starts at the top) with Fit, between the legend and the minimap. */
+.arch-outside {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(440px, calc(100% - 24px));
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+}
 
 /* The diagram viewer (F10): the picture takes the page's width and the height left below it;
    details lie over its right edge; full screen fills the window (or the IDE panel). */
@@ -1148,6 +1175,15 @@ a.btn {
 .viewer:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* Beta.27 review (WCAG 2.4.7, 1.4.11): a box reached by Tab shows where the focus is. React
+   Flow's own style takes the outline off a selectable node's focus; this puts a ring back, in
+   the accent (over 5:1 on the canvas in both themes), outside the box's own border. */
+.arch-canvas .react-flow .react-flow__node:focus-visible,
+.arch-canvas .react-flow .react-flow__node.selectable:focus-visible {
+  outline: 3px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: 8px;
 }
 .viewer-full {
   position: fixed;

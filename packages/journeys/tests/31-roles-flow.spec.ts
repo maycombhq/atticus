@@ -103,8 +103,9 @@ test("At a glance names whom the change waits on", async ({ page }) => {
   // Define: the product owner's.
   await open(page, app(), "cockpit?change=add-ledger-holds");
   await expect(page.getByText("Waits on: @priya (product owner)")).toBeVisible();
-  // The seeded change is in Plan, its stories not drafted: the business analyst's.
+  // The seeded change is in Plan with stories a person wrote (beta.27 review: the stories
+  // stage's work, done by hand): the plan hand-off is next, the tech lead's.
   await open(page, app(), "cockpit?change=add-transfer-limit");
-  await expect(page.getByText("Waits on: @bao (business analyst)")).toBeVisible();
+  await expect(page.getByText("Waits on: @tia (tech lead)")).toBeVisible();
   await accessible(page, "At a glance, waits on");
 });

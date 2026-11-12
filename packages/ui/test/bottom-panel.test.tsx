@@ -535,7 +535,8 @@ describe("Questions and Problems are read when first shown", () => {
     // Back on the Console, the questions stay read and counted.
     (tabs(m.tree)[0]!.props.onClick as () => void)();
     m.render();
-    expect(asked.slice(-4, -2)).toEqual([QUESTIONS_URL, OWNER_QUESTIONS_URL]);
+    // Beta.27 review: five reads a render now, the changes that don't read among them.
+    expect(asked.slice(-5, -3)).toEqual([QUESTIONS_URL, OWNER_QUESTIONS_URL]);
     const q = tabs(m.tree)[1]!;
     expect(text(q.props.children)).toBe(`${P.tab.questions}2${P.count(2)}`);
     const badge = all(q.props.children).find((e) => e.props.className === "bp-count")!;
@@ -546,7 +547,10 @@ describe("Questions and Problems are read when first shown", () => {
     const m = mount(BottomPanel, props(true));
     (tabs(m.tree)[2]!.props.onClick as () => void)();
     m.render();
-    expect(new Set(asked.filter(Boolean))).toEqual(new Set([FINDINGS_URL, TRUST_URL]));
+    // Beta.27 review: and the changes whose change.yaml doesn't read.
+    expect(new Set(asked.filter(Boolean))).toEqual(
+      new Set([FINDINGS_URL, TRUST_URL, "/api/change-problems"]),
+    );
     expect(text(tabs(m.tree)[2]!.props.children)).toBe(P.tab.problems);
     answers.set(FINDINGS_URL, { state: "ready", data: [] });
     answers.set(TRUST_URL, { state: "ready", data: { repos: [] } });

@@ -7,10 +7,13 @@ import {
   AgentDefinition,
   catalogDirOf,
   Finding,
+  loadOrgPack,
+  orgPackDirOf,
   recordReferences,
   toCanonicalYaml,
   type CatalogRecord,
 } from "@maycombhq/core";
+import { ownerQuestionStillAsked } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
 import { commandNamed } from "./commands.js";
 import { termNamed } from "./glossary.js";
@@ -112,6 +115,7 @@ const words = (r: Record<string, unknown>, keys: string[]) =>
 function recordLines(
   r: CatalogRecord,
   all: CatalogRecord[],
+  o: { closed?: boolean } = {},
 ): { lines: string[]; seeAlso: string[] } {
   const x = r as unknown as Record<string, unknown>;
   const lines: string[] = [];
@@ -174,7 +178,13 @@ function recordLines(
       if (r.blocks.length) lines.push(`Until then it blocks ${r.blocks.join(", ")}.`);
       break;
     case "OwnerQuestion":
-      lines.push(`${r.owner} was asked (${r.questionState}): ${r.question}`);
+      // Beta.27 review, final round: a gap's question whose gap is closed waits on no answer.
+      if (o.closed)
+        lines.push(
+          `${r.owner} was asked: ${r.question}`,
+          "The knowledge gap it asked about is closed now (the fact is in the catalog), so it waits on no answer.",
+        );
+      else lines.push(`${r.owner} was asked (${r.questionState}): ${r.question}`);
       break;
     case "Capability":
       lines.push(
@@ -266,7 +276,18 @@ export async function explain(
     const hits = records.filter((r) => r.id === s);
     if (hits.length) {
       const r = hits[0]!;
-      const { lines, seeAlso } = recordLines(r, records);
+      // Beta.27 review, final round: an unanswered gap's question the gaps no longer raise.
+      let closed = false;
+      if (r.kind === "OwnerQuestion" && r.questionState !== "answered") {
+        const orgPack = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+        if (orgPack)
+          closed = !ownerQuestionStillAsked({
+            records,
+            orgPack,
+            now: (o.now ?? new Date()).toISOString(),
+          })(r);
+      }
+      const { lines, seeAlso } = recordLines(r, records, { closed });
       out = {
         subject: s,
         kind: "record",

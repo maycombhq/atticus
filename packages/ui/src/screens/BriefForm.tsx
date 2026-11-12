@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, useApi } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
@@ -76,11 +76,31 @@ interface Artifact {
   sha256: string;
 }
 
+/**
+ * Beta.27 review: a brief being edited, kept while the person is on another page (Brief, Edit,
+ * type, Questions, Back showed the saved text, the draft only after Edit again). In memory only,
+ * for this page load, as the shell keeps a tab's fields; never written to storage.
+ */
+export const briefDrafts = new Map<string, Record<number, string>>();
+
 export function BriefForm({ change, onSaved }: { change: string; onSaved?: () => void }) {
   const id = useId();
   const a = useApi<Artifact>(artifactUrl(change, "brief"));
-  const [editing, setEditing] = useState(false);
-  const [texts, setTexts] = useState<Record<number, string>>({});
+  const kept = briefDrafts.get(change);
+  const [editing, setEditing] = useState(() => !!kept);
+  const [texts, setTexts] = useState<Record<number, string>>(() => kept ?? {});
+  const [restored] = useState(() => !!kept);
+  // What is typed is kept when the page is left with the editor open; Save and Cancel drop it.
+  const now = useRef({ editing, texts });
+  now.current = { editing, texts };
+  useEffect(
+    () => () => {
+      const { editing: open, texts: t } = now.current;
+      if (open && Object.keys(t).length) briefDrafts.set(change, t);
+      else briefDrafts.delete(change);
+    },
+    [change],
+  );
   const [changed, setChanged] = useState(false);
   const act = useAction();
   const editBtn = useRef<HTMLButtonElement>(null);
@@ -141,6 +161,7 @@ export function BriefForm({ change, onSaved }: { change: string; onSaved?: () =>
                   body: { content: renderBrief(doc, texts), baseSha256: d.sha256 },
                 })
                   .then(() => {
+                    briefDrafts.delete(change);
                     setEditing(false);
                     setTexts({});
                     a.reload();
@@ -159,6 +180,11 @@ export function BriefForm({ change, onSaved }: { change: string; onSaved?: () =>
               <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                 {B.intro}
               </p>
+              {restored && Object.keys(texts).length > 0 && (
+                <p role="status" className="work-say" style={{ margin: 0 }}>
+                  {B.draftKept}
+                </p>
+              )}
               {doc.sections.map((s, i) => (
                 <div key={s.heading} className="stack" style={{ gap: 4 }}>
                   <label htmlFor={`${id}-${i}`} className="hud" style={{ fontSize: 11 }}>
@@ -194,6 +220,7 @@ export function BriefForm({ change, onSaved }: { change: string; onSaved?: () =>
                   type="button"
                   className="btn"
                   onClick={() => {
+                    briefDrafts.delete(change);
                     setEditing(false);
                     setTexts({});
                   }}

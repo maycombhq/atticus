@@ -378,8 +378,14 @@ export function onboardingStep(
   trust?: Api.TrustViewT,
 ): Step {
   const repos = v.repos;
+  // Beta.27 review: a fresh metarepo's step is Set up › Repos' Add repos form, in the app; the
+  // command stays under Or in a terminal.
   if (repos.length === 0)
-    return { command: "atticus repos discover <folder>", why: W.why.discover };
+    return {
+      command: "atticus repos discover <folder>",
+      why: W.why.discover,
+      link: { href: "#/repos", label: W.addReposInApp },
+    };
   const notCloned = repos.filter((r) => !r.cloned);
   if (notCloned.length)
     return { command: "atticus workspace sync", why: W.why.sync(notCloned.length) };

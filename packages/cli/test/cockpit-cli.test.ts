@@ -62,7 +62,10 @@ describe("the change cockpit (WP7.1)", () => {
     expect(c.state).toBeTruthy();
     expect(c.nextStep).toBeTruthy();
     expect(c.stages.map((s) => s.stage)).toEqual(["feature", "architecture", "stories"]);
-    expect(c.stages.every((s) => s.state === "not-started" && s.drafts === 0)).toBe(true);
+    // Beta.27 review: a small change in plan never ran the stages before it: they read as
+    // skipped (never "to come"), and its own stage hasn't started.
+    expect(c.stages.map((s) => s.state)).toEqual(["skipped", "skipped", "not-started"]);
+    expect(c.stages.every((s) => s.drafts === 0)).toBe(true);
     // The next step atticus next gives for this change: the fast path, in the assistant.
     expect(c.next?.change).toBe(CHANGE);
     expect(c.next?.slash).toMatch(/^\/atticus-/);
@@ -95,6 +98,30 @@ describe("the change cockpit (WP7.1)", () => {
     } as never;
     expect(glanceNextStep(blocked, { step: "answer" })).toBe(
       'Finish the plan work, then raise "Plan ready".',
+    );
+  });
+
+  it('beta.27 review: away from At a glance, says the step\'s own words, not "the step below"', () => {
+    const type = { phases: ["define", "design", "plan", "build"] } as never;
+    const report = { nextStep: 'Ready to raise "Plan ready".', ready: true, type, phase: "plan" };
+    const answer = { step: "answer", why: "1 question is waiting for a person (see Questions)." };
+    expect(glanceNextStep(report as never, answer, "page")).toBe(
+      'Not ready to raise "Plan ready" yet: first, 1 question is waiting for a person (see Questions).',
+    );
+    // A sentence's first word is lower-cased after "first,", an acronym's isn't.
+    expect(
+      glanceNextStep(
+        report as never,
+        { step: "stories", why: "Run the stories stage again." },
+        "page",
+      ),
+    ).toBe('Not ready to raise "Plan ready" yet: first, run the stories stage again.');
+    expect(glanceNextStep(report as never, { step: "x", why: "SNOW fields wait." }, "page")).toBe(
+      'Not ready to raise "Plan ready" yet: first, SNOW fields wait.',
+    );
+    // At a glance, the step is shown below the sentence.
+    expect(glanceNextStep(report as never, answer)).toBe(
+      'Not ready to raise "Plan ready" yet: the step below comes first.',
     );
   });
 

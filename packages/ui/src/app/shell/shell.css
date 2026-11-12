@@ -377,10 +377,86 @@
 }
 .sh-tabs {
   flex: 1;
-  min-width: 0;
+  /* Beta.27 review: room for Home at least, however many tools the bar holds. */
+  min-width: 64px;
   display: flex;
   overflow-x: auto;
   scrollbar-width: thin;
+  /* Beta.27 review: the tab brought into view stops clear of Home, held at the left. */
+  scroll-padding-inline-start: 72px;
+}
+/* Home stays in view however far the strip scrolls; a tab cut at either edge shows no ×. */
+.sh-tab.sh-tab-home {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--nav);
+}
+.sh-tab.sh-tab-home[aria-selected="true"] {
+  background: var(--picked);
+}
+/* A tab cut at the strip's edge shows neither a piece of its name nor its ×: it is in "N more". */
+.sh-tab-cut > * {
+  visibility: hidden;
+}
+.sh-more {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.sh-more-btn {
+  flex: none;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sh-more-btn:hover,
+.sh-more-btn[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--hover);
+}
+.sh-more-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  max-width: min(320px, 90vw);
+  max-height: 60vh;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-dark);
+  box-shadow: var(--shadow);
+}
+.sh-more-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.sh-more-menu button:hover,
+.sh-more-menu button:focus-visible {
+  background: var(--hover);
 }
 .sh-tab {
   flex: none;
@@ -450,6 +526,10 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* Beta.27 review (WCAG 2.4.11): what Tab reaches is scrolled clear of the page's foot, where
+     the bottom panel's grip and head sit, never left under them (the AI page's text box). */
+  scroll-padding-top: 12px;
+  scroll-padding-bottom: 56px;
 }
 .sh-page {
   min-width: 0;

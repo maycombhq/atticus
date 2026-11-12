@@ -42,6 +42,9 @@ import {
   testPlanFor,
   writeFileAtomic,
   wroteThis,
+  keepPersonWritten,
+  isGenerated,
+  personWrittenPlanning,
   type ChangeContext,
 } from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
@@ -3711,7 +3714,7 @@ export async function writeStories(
   for (const f of await readdir(join(dir, "stories")).catch(() => [] as string[])) {
     if (keep.has(f) || !f.endsWith(".md")) continue;
     const text = await readFile(join(dir, "stories", f), "utf8");
-    if (!text.startsWith(GENERATED_MARK)) continue;
+    if (!isGenerated(text)) continue;
     const h = wrote.get(`stories/${f}`);
     if (h && ![...h].some((x) => wroteThis(`stories/${f}`, text, x))) {
       extras.notes?.push(
@@ -3731,10 +3734,7 @@ export async function writeStories(
   });
   // B-short: the task prompt files Atticus wrote before go; this run writes the current ones.
   for (const p of await readdir(join(dir, "tasks")).catch(() => [] as string[]))
-    if (
-      p.endsWith(".prompt.md") &&
-      (await readFile(join(dir, "tasks", p), "utf8")).startsWith(GENERATED_MARK)
-    )
+    if (p.endsWith(".prompt.md") && isGenerated(await readFile(join(dir, "tasks", p), "utf8")))
       await rm(join(dir, "tasks", p));
   // ADR 0006 addendum: the OpenSpec specs the stories make, and the proposal naming them.
   const spec = await openspecFiles(root, change, stories, a, extras.estate);
@@ -4190,18 +4190,19 @@ export async function storiesStage(
       `${change.id} has no target flows yet: run atticus change architecture ${change.id} first.`,
     );
   // Files a person wrote are kept unless forced.
-  if (!o.force) {
-    const own: string[] = [];
-    for (const f of ["stories.md", "tasks.md", "requests.md"]) {
-      const t = await readFile(join(dir, f), "utf8").catch(() => undefined);
-      if (t !== undefined && !t.startsWith(GENERATED_MARK)) own.push(f);
-    }
-    if (own.length)
-      throw new PlannerError(
-        "refused",
-        `${change.id} already has planning files a person wrote: ${own.join(", ")}. Re-run with --force to replace them.`,
-      );
-  }
+  // Beta.27 review: the one definition the plan gate, the next step and the app read too.
+  const own = await personWrittenPlanning(dir);
+  if (!o.force && own.length)
+    throw new PlannerError(
+      "refused",
+      `${change.id} already has planning files a person wrote: ${own.join(", ")}. Re-run with --force to replace them.`,
+    );
+  // Review of the fix: forced, a copy of each is kept first, whatever the loop's iteration (the
+  // loop keeps copies only of edits since its own last write), and said.
+  const keptOwn = o.force ? await keepPersonWritten(dir, rel, "stories", own) : undefined;
+  const ownNote = keptOwn
+    ? `${own.join(", ")} ${own.length === 1 ? "was" : "were"} written by a person; a copy is in ${keptOwn}, and the stage writes ${own.length === 1 ? "it" : "them"} again (--force).`
+    : undefined;
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
@@ -4645,6 +4646,7 @@ Rules:
   await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
   res.notes.push(...attached.notes, ...runNotes, ...writeNotes);
+  if (ownNote) res.notes.unshift(ownNote);
   // ADR 0156: a flow these stories add as new that a repo's open seed adds too collides at
   // archive; the remedy is to accept the seed, then run this stage again.
   if (res.answer)

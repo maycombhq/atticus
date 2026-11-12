@@ -524,17 +524,36 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
- * 3.12.0 (beta.27 review, the app's plumbing): GET /api/facts?repo=<id>&repo=<id> gives several
- *   repos' facts in one call (the Map asked once per repo, 65 calls on a large estate): `facts`
- *   by repo as GET /api/facts/{repo} gives each, and `problems` by repo for a name refused or
- *   not found. GET /api/changes/{changeId}/artifacts/{artifact}/files?file=<path>&file=<path>
- *   gives several files of a many-file artifact in one call (the Stories tab asked once per
- *   story). A job (GET /api/jobs/{jobId}) and a Console entry say `stopping` once Stop was asked
- *   and until the job ends. A Console entry `where: app` that is not this app's job is a job an
- *   earlier run of the app started (kept in the run log); `ended` there means it stopped when
- *   that app closed. GET /api/health gains `rootKey` (the root's real path as the file system
- *   gives it, compared exactly; only a Windows drive letter folded), which a page compares after
- *   a restart. Additive only.
+ * 3.12.0 (beta.27: every additive change of the release, in one version). The app's plumbing: GET
+ *   /api/facts?repo=<id>&repo=<id> gives several repos' facts in one call (the Map asked once per
+ *   repo, 65 calls on a large estate): `facts` by repo as GET /api/facts/{repo} gives each, and
+ *   `problems` by repo for a name refused or not found. GET
+ *   /api/changes/{changeId}/artifacts/{artifact}/files?file=<path>&file=<path> gives several
+ *   files of a many-file artifact in one call (the Stories tab asked once per story), with
+ *   `problems` by file. A job (GET /api/jobs/{jobId}) and a Console entry say `stopping` once
+ *   Stop was asked and until the job ends. A Console entry `where: app` that is not this app's
+ *   job is a job an earlier run of the app started (kept in the run log); `ended` there means it
+ *   stopped when that app closed. GET /api/health gains `rootKey` (the root's real path as the
+ *   file system gives it, compared exactly; only a Windows drive letter folded), which a page
+ *   compares after a restart.
+ *   The screens (beta.27 review): GET /api/changes/{id}/status says the change's one next step
+ *   in `nextStep` (as GET /api/release/{id} and the releases view do, a releases row with
+ *   `stepFirst` too) and `stepFirst` when nothing blocks the gate (the report's `ready`) yet
+ *   another step comes first: then At a glance says "the step below comes first" and the others
+ *   "…yet: first, <that step's why>". A cockpit stage may be `person` (planning files a person
+ *   wrote, named in `files`) or `skipped`; a stage thread names `byPerson`. GET
+ *   /api/change-problems lists the changes whose change.yaml doesn't read. An activity entry may
+ *   say `outcome: refused`. An owner question carries `ownerName` and `sentAt` (from its own
+ *   record's newest manual evidence, so every machine says Sent once the record is merged); POST
+ *   /api/owner-questions/{id}/send writes that record and takes `again` (409 for a second live
+ *   send without it); propose takes scope `upgrade`. Final round: the status, a release's status
+ *   and a releases row carry `nextStepApp` with `stepFirst`, the same sentence in the app's words
+ *   (no command to type); a send that became a manual step (manual notifications, or a live
+ *   notifier that couldn't start or reach the system) answers `state: step` with why and writes
+ *   no record; a send already under way answers 409; the upgrade view and the upgrade job's
+ *   result name `upgraded`. Review of the fix: an owner question carries `asked` while its Send's
+ *   manual step is open (one step per question), and that step marked done is a send on record.
+ *   Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -2485,10 +2504,31 @@ export const StageThreadView = z.object({
   waiting: z.object({ runId: z.string(), prompt: z.string() }).optional(),
   /** The step's words, for POST /api/runs/handoff (the next round's prompt). */
   step: z.array(z.string()),
+  /**
+   * 3.12.0 (beta.27 review): the planning files a person wrote, when the stage never ran and they
+   * stand for its work (state `done`); drafting again replaces them (`step` with --force).
+   */
+  byPerson: z.array(z.string()).optional(),
   /** Whether a reply is taken now, and if not, why. */
   reply: z.object({ open: z.boolean(), why: z.string().optional() }),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
+/**
+ * 3.12.0 (beta.27 review): the changes whose change.yaml doesn't read (cut short, a merge's
+ * conflict markers, a field that isn't valid). GET /api/changes leaves them out so one bad file
+ * never fails every page; this names them, with the file and the line where YAML says so.
+ */
+export const ChangeProblems = z.array(
+  z.object({
+    /** The change's folder name, its id. */
+    id: z.string(),
+    /** Metarepo-relative, with forward slashes. */
+    file: z.string(),
+    line: z.number().int().optional(),
+    message: z.string(),
+  }),
+);
+export type ChangeProblemsT = z.infer<typeof ChangeProblems>;
 export const StageThreadPost = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("reply"), text: z.string().trim().min(1).max(4000) }),
   z.strictObject({
@@ -3188,7 +3228,13 @@ export const ChangeCockpit = z.object({
   stages: z.array(
     z.object({
       stage: z.enum(["feature", "architecture", "stories"]),
+      /**
+       * The loop's state, or not-started. 3.12.0 (beta.27 review), as the plan gate reads it:
+       * `person` when a person wrote the planning files the stage writes (it never ran; `files`
+       * names them) and `skipped` when the change passed the stage without it running.
+       */
       state: z.string(),
+      files: z.array(z.string()).optional(),
       drafts: z.number().int(),
       rounds: z.number().int(),
       openQuestions: z.number().int(),
@@ -3243,6 +3289,11 @@ export const ProposeScope = z.enum([
   "work",
   /** 2.67.0 (UX review): the changes' snow.md, after filling a service-desk draft's fields. */
   "service-desk",
+  /**
+   * 3.12.0 (beta.27 review): exactly the paths `atticus upgrade` changed (kept with its run) and
+   * its stamp, .atticus/metarepo.yaml, for the upgrade panel's Propose; never other pending work.
+   */
+  "upgrade",
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
@@ -3341,6 +3392,20 @@ export const OwnerQuestionView = z.object({
   channel: z.string(),
   state: z.enum(["sent", "answered", "overdue"]),
   answer: z.string().optional(),
+  /** 3.12.0 (beta.27 review): the owner's display name (teams.yaml), for a team named there. */
+  ownerName: z.string().optional(),
+  /**
+   * 3.12.0 (beta.27 review): when it was asked or sent (a send is on file in the question's own
+   * record, catalog/curated/ownerquestion/<id>.yaml, for every machine), when that is. A gap's question with no `sentAt` wasn't sent, whatever `state` says (the
+   * record's own state starts at `sent`).
+   */
+  sentAt: z.string().optional(),
+  /**
+   * 3.12.0 (beta.27 review of the fix): its Send made a manual step that is still open (the step
+   * whose approval ref is `owner-ask:<id>`, in the metarepo for every machine): asked, waiting for
+   * a person to send it; the step and when it was made. Marked done, it is a send on record.
+   */
+  asked: z.object({ step: z.string(), at: z.string() }).optional(),
   routeTo: z.string().optional(),
   fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),
   records: z.array(z.string()),
@@ -4732,6 +4797,12 @@ export const UpgradeView = z.object({
   /** The Atticus that last upgraded it. */
   stamp: z.string().optional(),
   pending: z.array(z.object({ id: z.string(), summary: z.string(), files: z.array(z.string()) })),
+  /**
+   * 3.12.0 (beta.27 review): the paths the upgrades run here changed and nobody proposed or
+   * committed yet, besides the stamp. Final round: the panel reads them from the upgrade job's
+   * result, and offers Propose for the stamp alone too.
+   */
+  upgraded: z.array(z.string()).optional(),
 });
 // ------------------------------------------------------------------ set up from the app (ADR 0190)
 
@@ -5311,6 +5382,11 @@ export const ActivityEntry = z.object({
   stop: z.string().optional(),
   /** 3.12.0: Stop was asked and it is ending. */
   stopping: z.boolean().optional(),
+  /**
+   * 3.12.0 (beta.27 review): how a `done` entry ended when it isn't plain done: `refused`, it
+   * refused and wrote nothing (a scan's safety stop), neither done work nor a failure.
+   */
+  outcome: z.enum(["refused"]).optional(),
   jobId: z.string().optional(),
   copilotRunId: z.string().optional(),
   /** A command's run id (its files in .atticus/logs/). */
@@ -5477,7 +5553,15 @@ export type WorkItemSyncResultT = z.infer<typeof WorkItemSyncResult>;
  * person's confirmation (`owner-ask`, target the question's id). With manual notifications it is
  * a step for a person, as before.
  */
-export const SendOwnerAskRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export const SendOwnerAskRequest = z.strictObject({
+  confirmation: Confirmation.optional(),
+  /**
+   * 3.12.0 (beta.27 review): the person chose Send again: a question whose own record says it
+   * was sent (by anyone, from any machine) is sent through a live notifier only then (409
+   * otherwise).
+   */
+  again: z.boolean().optional(),
+});
 export const SentOwnerAsk = z.object({
   /** sent: through the adapter; step: a manual step for a person; not-sent: why in `why`. */
   state: z.enum(["sent", "step", "not-sent"]),
@@ -6687,6 +6771,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409, 422],
     },
   },
+  "/api/change-problems": {
+    get: {
+      id: "listChangeProblems",
+      summary:
+        "3.12.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
+      tag: "changes",
+      ok: { status: 200, schema: "ChangeProblems", description: "OK" },
+    },
+  },
   "/api/facts/{repo}/apply": {
     post: {
       id: "applyFacts",
@@ -6747,12 +6840,12 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "sendOwnerQuestion",
       summary:
-        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with no notifications set up it says to copy the text (`state: not-sent`). 3.12.0 (beta.27 review): a live send (`state: sent`) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first); a manual step (manual notifications, or a live notifier that couldn't start or fell back on the send) answers `state: step` with why and writes no record: the question says `asked` while the step is open, one step per question whoever sends it, and is sent on record once a person marks the step done. One whose record says sent is sent again through a live notifier only with `again` (409 Already sent without it); 409 Being sent while another send of it is under way",
       tag: "questions",
       params: [p("id")],
       body: SendOwnerAskRequest,
       ok: { status: 200, schema: "SentOwnerAsk", description: "Sent, or why not" },
-      errors: [400, 403, 404],
+      errors: [400, 403, 404, 409],
     },
   },
   "/api/owner-questions/{id}/answer": {
@@ -8727,6 +8820,7 @@ export function openApiDocument(): Record<string, unknown> {
     StageCommentResult,
     StageThreadView,
     StageThreadPostResult,
+    ChangeProblems,
     PlacementView,
     StageDraftsView,
     CorrectionResult,

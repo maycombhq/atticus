@@ -10,6 +10,7 @@ import { Api, Finding, parseRecord, recordPath, serializeRecord } from "@maycomb
 import { MockGitHost } from "@maycombhq/adapters";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
+import { uiActivityRoutes } from "../src/ui-api-activity.js";
 import { confirmFor } from "./confirm-helpers.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +73,8 @@ beforeAll(async () => {
     root,
     port: 0,
     user: "pat",
-    extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: gh, now: "2026-10-19T09:00:00Z" }),
+    extend: (r, ctx) =>
+      uiActivityRoutes(uiRoutes(r, ctx, { gitHost: gh, now: "2026-10-19T09:00:00Z" }), ctx),
   });
 });
 afterAll(() => srv?.close());
@@ -243,9 +245,12 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect(job.kind).toBe("scan");
     const read = Api.Job.parse((await call(`/api/jobs/${jobId}`)).body);
     expect(read.progress).toEqual({ done: 1, total: 1, message: "Scanned" });
-    // Beta.26 safety stop: no repo is cloned here, so the scan wrote nothing; the job ends with
-    // problems, its result names each repo and why, and its errors say what to do, in words.
-    expect(job.state).toBe("failed");
+    // Beta.26 safety stop: no repo is cloned here, so the scan wrote nothing; its result names
+    // each repo and why, and what to do, in words. Beta.27 review: a refusal is its own outcome,
+    // never a failed run: the job ends without errors (Problems lists no failed run) and the
+    // Console's entry says refused.
+    expect(job.state).toBe("done");
+    expect(read.errors).toEqual([]);
     const refused = (read.result as { refused: { repos: { repo: string; why: string }[] } })
       .refused;
     expect(read.result).toMatchObject({ written: false });
@@ -259,11 +264,19 @@ describe("the write side of the local API runs the CLI's own commands", () => {
       "forge-reports-job",
     ]);
     expect(refused.repos.every((x) => x.why === "not-cloned")).toBe(true);
-    expect(read.errors[0]).toMatch(/^Nothing written: catalog\/generated is as it was/);
-    expect(read.errors).toContain(
-      "  forge-ledger: not cloned here; clone it with atticus workspace sync",
+    const said = (read.result as { refused: { message: string } }).refused.message.split("\n");
+    expect(said[0]).toMatch(/^Nothing written: catalog\/generated is as it was/);
+    // In the app's words, the page's Sync repos first and the command after it.
+    expect(said).toContain(
+      "  forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
     );
-    expect(read.errors.join("\n")).not.toMatch(/^\s*[{}[\]"]/m);
+    expect(said.join("\n")).not.toMatch(/^\s*[{}[\]"]/m);
+    const entry = (
+      (await call("/api/activity")).body as {
+        entries: { id: string; state: string; outcome?: string }[];
+      }
+    ).entries.find((e) => e.id === jobId);
+    expect(entry).toMatchObject({ state: "done", outcome: "refused" });
     // The catalog is as it was, byte for byte.
     expect(await catalogFiles(root)).toEqual(catalogBefore);
     // Its Console lines read as words, never the command's JSON, the refusal among them.
@@ -271,7 +284,7 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect(lines.some((l) => /^\s*[{}[\]"]/.test(l))).toBe(false);
     expect(lines.join("\n")).toMatch(/Scanned 0 repos: \d+ records?/);
     expect(lines.join("\n")).toMatch(/Nothing written: catalog\/generated is as it was/);
-    expect(lines.join("\n")).toMatch(/forge-ledger: not cloned here/);
+    expect(lines.join("\n")).toMatch(/forge-ledger: not cloned here; clone it with Sync repos/);
     expect((await call("/api/jobs/job-999")).status).toBe(404);
   });
 

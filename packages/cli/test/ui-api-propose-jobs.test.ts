@@ -238,6 +238,8 @@ it("lists the pending upgrade steps and runs atticus upgrade as a local job", as
     }
     expect(job.state, job.result?.lines.join("\n")).toBe("done");
     expect(await readFile(rt, "utf8")).toMatch(/^schemaVersion: 4/m);
+    // Beta.27 review, final round: the job says what the run changed besides the stamp.
+    expect((job.result as { upgraded?: string[] }).upgraded).toContain("org-pack/runtime.yaml");
     expect((await get()).pending).toEqual([]);
     const again = await fetch(`${s.url}/api/upgrade`, { method: "POST", headers: h, body: "{}" });
     expect(again.status).toBe(409);

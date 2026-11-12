@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { COPY } from "../../copy.js";
 import { SideIcon, Tip } from "./icons.js";
 import { HOME_KEY, tabLabel, type TabsState } from "./tabs-model.js";
@@ -41,6 +41,133 @@ function revealTab(key: string): void {
 }
 
 /**
+ * Beta.27 review: which tabs the strip doesn't show whole. `tabs` are each tab's left edge and
+ * width in the strip's scrolled content, `view` the part shown (its scroll and width), and
+ * `pinned` the width Home takes at the left, held there. A tab wholly out of view is `hidden`
+ * (listed under "N more"); one partly in view is `cut` (listed too, its × not shown: never a bare ×).
+ */
+export function tabsOutOfView(
+  tabs: readonly { key: string; left: number; width: number }[],
+  view: { scroll: number; width: number },
+  pinned = 0,
+): { hidden: string[]; cut: string[] } {
+  const from = view.scroll + pinned;
+  const to = view.scroll + view.width;
+  const hidden: string[] = [];
+  const cut: string[] = [];
+  for (const t of tabs) {
+    // Home is held at the left: out of view only when the strip is narrower than it.
+    if (t.key === HOME_KEY) {
+      if (view.width < t.width - 1) hidden.push(t.key);
+      continue;
+    }
+    const right = t.left + t.width;
+    if (right <= from + 1 || t.left >= to - 1) hidden.push(t.key);
+    else if (t.left < from - 1 || right > to + 1) cut.push(t.key);
+  }
+  return { hidden, cut };
+}
+
+/**
+ * Beta.27 review: what a key does in the "N more" menu, from the item focused (`i`) of `n`: the
+ * item to focus (arrows wrap; Home and End go to the first and the last), `close` (Escape, focus
+ * back on the button), `leave` (Tab, focus goes on), or nothing.
+ */
+export function moreMenuKey(
+  key: string,
+  i: number,
+  n: number,
+): number | "close" | "leave" | undefined {
+  if (!n) return undefined;
+  if (key === "Escape") return "close";
+  if (key === "Tab") return "leave";
+  if (key === "Home") return 0;
+  if (key === "End") return n - 1;
+  if (key === "ArrowDown") return (i + 1) % n;
+  if (key === "ArrowUp") return (i - 1 + n) % n;
+  return undefined;
+}
+
+/** "N more": the tabs out of view, each shown on a click; Escape, a pick or a click away closes it. */
+function MoreTabs(p: { keys: readonly string[]; state: TabsState; onShow: (key: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLUListElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) menu.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [open]);
+  // Beta.27 review: a click or a tap anywhere else closes it, the focus left where it went.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  const tabs = p.state.tabs.filter((t) => p.keys.includes(t.key));
+  if (!tabs.length) return null;
+  const close = (back = true) => {
+    setOpen(false);
+    if (back) button.current?.focus();
+  };
+  return (
+    <div className="sh-more" ref={box}>
+      <button
+        ref={button}
+        type="button"
+        className="sh-more-btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={T.moreTabsLabel(tabs.length)}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {T.moreTabs(tabs.length)}
+      </button>
+      {open && (
+        <ul
+          ref={menu}
+          role="menu"
+          className="sh-more-menu"
+          aria-label={T.moreTabsLabel(tabs.length)}
+          onKeyDown={(e) => {
+            const items = [...(menu.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+            const i = items.indexOf(document.activeElement as HTMLElement);
+            const to = moreMenuKey(e.key, i, items.length);
+            if (to === undefined) return;
+            if (to === "leave") return close(false);
+            e.preventDefault();
+            if (to === "close") close();
+            else items[to]?.focus();
+          }}
+        >
+          {tabs.map((t) => {
+            const { label, title } = tabLabel(t);
+            return (
+              <li key={t.key} role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  title={title}
+                  onClick={() => {
+                    setOpen(false);
+                    p.onShow(t.key);
+                    requestAnimationFrame(() => document.getElementById(tabId(t.key))?.focus());
+                  }}
+                >
+                  {label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The tab strip (ADR 0194): a tab per open page, the one shown selected. A tablist: the arrow
  * keys, Home and End move between the tabs and Enter or Space shows one (the page loads only
  * then); Delete closes the focused tab (Home has no close); Ctrl+Shift+Left or Right moves it; a
@@ -65,6 +192,39 @@ export function TabStrip({
   const list = useRef<HTMLDivElement>(null);
   // Review (beta.26): many tabs scroll the strip sideways; the one shown is kept in view.
   useEffect(() => revealTab(state.active), [state.active]);
+  // Beta.27 review: the tabs out of view, listed under "N more"; a cut one shows no bare ×.
+  const [out, setOut] = useState<{ hidden: string[]; cut: string[] }>({ hidden: [], cut: [] });
+  const tabKeys = state.tabs.map((t) => t.key).join("\n");
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const tabs = [...el.querySelectorAll<HTMLElement>("[role=tab]")].map((b, i) => ({
+        key: state.tabs[i]?.key ?? "",
+        left: b.offsetLeft - el.offsetLeft,
+        width: b.offsetWidth,
+      }));
+      const home = tabs.find((t) => t.key === HOME_KEY);
+      const next = tabsOutOfView(
+        tabs,
+        { scroll: el.scrollLeft, width: el.clientWidth },
+        home?.width ?? 0,
+      );
+      setOut((o) =>
+        o.hidden.join() === next.hidden.join() && o.cut.join() === next.cut.join() ? o : next,
+      );
+      // The tab shown is kept in view as the strip's room changes ("N more" taking some).
+      if ([...next.hidden, ...next.cut].includes(state.active)) revealTab(state.active);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    el.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", measure);
+    };
+  }, [tabKeys, state.active]);
   /** The tab shown once `key` is closed: its right neighbour if it is shown, else the shown one. */
   const shownAfter = (key: string): string | undefined => {
     if (key !== state.active) return state.active;
@@ -136,7 +296,7 @@ export function TabStrip({
               id={tabId(t.key)}
               type="button"
               role="tab"
-              className="sh-tab"
+              className={`sh-tab${t.key === HOME_KEY ? " sh-tab-home" : ""}${out.cut.includes(t.key) ? " sh-tab-cut" : ""}`}
               aria-selected={on}
               aria-controls={on ? PANEL_ID : undefined}
               aria-describedby={closable ? "sh-tab-hint" : undefined}
@@ -170,6 +330,7 @@ export function TabStrip({
           );
         })}
       </div>
+      <MoreTabs keys={[...out.hidden, ...out.cut]} state={state} onShow={onShow} />
       <span id="sh-tab-hint" className="sr">
         {T.tabHint}
       </span>

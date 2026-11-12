@@ -198,7 +198,11 @@ describe("the Explorer's sections, from the data the app already reads", () => {
     expect(pageLabel("#/home")).toBe("Home");
     expect(pageLabel("#/changes/card-freeze-v2")).toBe("Change › card-freeze-v2");
     expect(pageLabel("#/stories?change=card-freeze-v2")).toBe("Change › Stories › card-freeze-v2");
-    expect(pageLabel("#/canvas?node=system%3Aledger")).toBe("Map › Estate canvas › system:ledger");
+    // Beta.27 review: a box by its name; its id less the kind while the estate isn't read.
+    expect(pageLabel("#/canvas?node=system%3Aledger")).toBe("Map › Estate canvas › ledger");
+    expect(pageLabel("#/canvas?node=system%3Aledger", () => "Ledger")).toBe(
+      "Map › Estate canvas › Ledger",
+    );
     expect(pinnedItems(["#/trust"])[0]).toMatchObject({ label: "Map › Trust", hash: "#/trust" });
   });
 

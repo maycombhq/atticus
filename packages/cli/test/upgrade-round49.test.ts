@@ -226,6 +226,11 @@ describe("POST /api/upgrade records this Atticus when no step is pending (round 
       expect(job.state, job.result?.lines.join("\n")).toBe("done");
       const stamp = parse(await readFile(join(root, STAMP_FILE), "utf8")) as { atticus: string };
       expect(stamp.atticus).toBe(VERSION);
+      // Beta.27 review, final round: the job's result says what waits to be proposed besides the
+      // stamp (the earlier upgrade's files here: this run changed only the stamp).
+      const upgraded = (job.result as { upgraded?: string[] }).upgraded;
+      expect(upgraded).toEqual(expect.arrayContaining(["org-pack/runtime.yaml"]));
+      expect(upgraded).not.toContain(STAMP_FILE);
       const again = await fetch(`${s.url}/api/upgrade`, { method: "POST", headers: h, body: "{}" });
       expect(again.status).toBe(409);
     } finally {

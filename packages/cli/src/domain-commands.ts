@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { orgPackDirOf } from "@maycombhq/core";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { domainProfile } from "@maycombhq/knowledge";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
@@ -40,10 +40,14 @@ export async function domainProfileCommand(
     .pop();
   let text: string;
   try {
-    text = domainProfile(records, system, {
-      ...(template ? { template } : {}),
-      ...(scannedAt ? { scannedAt } : {}),
-    });
+    // Beta.27 review, final round: a closed gap's question isn't listed as open.
+    const orgPack = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+    const base = { ...(template ? { template } : {}), ...(scannedAt ? { scannedAt } : {}) };
+    text = domainProfile(
+      records,
+      system,
+      orgPack ? { ...base, orgPack, now: new Date().toISOString() } : base,
+    );
   } catch (e) {
     io.err((e as Error).message);
     return 1;

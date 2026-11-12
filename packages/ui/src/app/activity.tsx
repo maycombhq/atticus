@@ -671,7 +671,7 @@ export function EntryMeta({ e }: { e: Entry }) {
       <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
       <span className="activity-title">{titleOf(e)}</span>
       <span className="activity-meta">
-        <span className={`activity-state ${e.state}`}>{stateWords(e)}</span>
+        <span className={`activity-state ${e.outcome ?? e.state}`}>{stateWords(e)}</span>
         {" · "}
         {T.from(T.where[e.where] ?? e.where)}
         {" · "}
@@ -726,7 +726,7 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <strong>{titleOf(shown)}</strong>
         <span className="work-say">
-          {stateWords(shown)}
+          {stateWords({ ...shown, stopping: isStopping(a, shown) })}
           {shown.exitCode !== undefined && shown.state !== "done"
             ? ` (${T.exitCode(shown.exitCode)})`
             : ""}

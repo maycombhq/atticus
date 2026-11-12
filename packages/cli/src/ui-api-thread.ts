@@ -2,7 +2,12 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { Api, ChangeArtifact, changesRelOf, runsRelOf } from "@maycombhq/core";
-import { artifactWritten, changeFolder, loadChangeContext } from "@maycombhq/changes";
+import {
+  artifactWritten,
+  changeFolder,
+  loadChangeContext,
+  personWrittenPlanning,
+} from "@maycombhq/changes";
 import {
   commentOnFinding,
   keepDroppedQuestion,
@@ -23,6 +28,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { checkedByApp } from "./handoff-autodone.js";
+import { missingChangeWords } from "./change-problems.js";
 import { allRuns, answerOf, item, type Stored } from "./runs-view.js";
 import { stageReviewView } from "./ui-api-stages.js";
 
@@ -280,6 +286,15 @@ export async function stageThreadView(
     state === "not-started" &&
     (await artifactWritten(root, change, "proposal").catch(() => false));
   if (writtenElsewhere) state = "done";
+  // Beta.27 review: stories a person wrote are the stage's work done by hand, as the plan gate and
+  // the next step read them (personWrittenPlanning, the stage's own refusal): never "hasn't
+  // started" with a Start the stage would refuse.
+  const byPerson =
+    stage === "stories" && state === "not-started" ? await personWrittenPlanning(dir) : [];
+  if (byPerson.length) {
+    state = "done";
+    replyWhy = `A person wrote ${change}'s planning files outside the app, so no assistant waits for a reply: draft the stories again to start one.`;
+  }
   const open = items.filter((i) => i.kind === "finding" && i.view.finding.state === "open").length;
   const questions = items.filter(
     (i) => i.kind === "question" && i.question.state === "open",
@@ -292,21 +307,23 @@ export async function stageThreadView(
     : undefined;
   const headline = writtenElsewhere
     ? `The proposal is written (${rel}/proposal.md): it was written outside the app, so this conversation has nothing in it.`
-    : state === "not-started"
-      ? `The ${stage} stage hasn't started for this change. Start it: Atticus writes the prompt for your assistant.`
-      : waiting
-        ? waitingWho === "critic"
-          ? "The critic's prompt below waits for your assistant. Paste it in; the app checks the answer as soon as the file is written."
-          : "The prompt below waits for your assistant. Paste it in; the app checks the answer as soon as the file is written."
-        : lastFailed
-          ? "Your assistant's last answer didn't pass its checks: the problems are below. Tell the assistant, or fix the file and the app checks it again."
-          : state === "questions"
-            ? `The stage waits on ${questions === 1 ? "the question" : `${questions} questions`} below.`
-            : state === "stopped"
-              ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
-              : state === "done"
-                ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
-                : "Ready for the next round: tell the assistant what to change, or start the round.";
+    : byPerson.length
+      ? `A person wrote ${byPerson.join(" and ").replace(/ and (?=.* and )/g, ", ")} outside the app, so the stories stage never ran and this conversation has nothing in it. The change goes on from them; to have the stage write them instead, draft the stories again (it replaces them).`
+      : state === "not-started"
+        ? `The ${stage} stage hasn't started for this change. Start it: Atticus writes the prompt for your assistant.`
+        : waiting
+          ? waitingWho === "critic"
+            ? "The critic's prompt below waits for your assistant. Paste it in; the app checks the answer as soon as the file is written."
+            : "The prompt below waits for your assistant. Paste it in; the app checks the answer as soon as the file is written."
+          : lastFailed
+            ? "Your assistant's last answer didn't pass its checks: the problems are below. Tell the assistant, or fix the file and the app checks it again."
+            : state === "questions"
+              ? `The stage waits on ${questions === 1 ? "the question" : `${questions} questions`} below.`
+              : state === "stopped"
+                ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
+                : state === "done"
+                  ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
+                  : "Ready for the next round: tell the assistant what to change, or start the round.";
   if (dropped)
     items.push({
       kind: "note",
@@ -321,6 +338,7 @@ export async function stageThreadView(
     items,
     ...(waiting ? { waiting } : {}),
     step: stageStep(stage, change),
+    ...(byPerson.length ? { byPerson } : {}),
     reply: { open: replyOpen, ...(replyWhy ? { why: replyWhy } : {}) },
     problems,
   };
@@ -342,7 +360,7 @@ export function uiThreadRoutes(
   const changeOf = async (v: string) => {
     if (!ID.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a change id.`);
     if (!(await stat(join(changeFolder(ctx.root, v), "change.yaml")).catch(() => undefined)))
-      throw notFound(`There is no change ${v}.`);
+      throw notFound(await missingChangeWords(ctx.root, v));
     return v;
   };
   const refused = (e: unknown): never => {

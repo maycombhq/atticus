@@ -3,6 +3,11 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
+
+/** "a", "a and b", "a, b and c". */
+const listWords = (xs: readonly string[]) =>
+  xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)!}`;
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -266,12 +271,41 @@ export const COPY = {
       empty: "No owner questions: the catalog has every fact its checks need.",
       emptyCatalog:
         "The catalog is empty, so nothing is asked yet. Read the repos first (Set up), and the owner questions appear here.",
+      // Beta.27 review: the team by name, the system and the channel in words, never their ids.
       ask: (owner: string, system: string, channel: string) =>
-        `Ask ${owner} · ${system} · by ${channel}`,
+        `For ${owner} · about ${system} · by ${channel}`,
+      channels: {
+        ado: "Azure DevOps",
+        teams: "Microsoft Teams",
+        email: "email",
+        Atticus: "Atticus",
+      } as Record<string, string>,
+      sentTo: (owner: string, channel: string, on?: string) =>
+        `Sent to ${owner} by ${channel}${on ? ` on ${on}` : ""}. Record their answer below when it comes.`,
+      overdueTo: (owner: string, channel: string, on?: string) =>
+        `Sent to ${owner} by ${channel}${on ? ` on ${on}` : ""}, and no answer yet: it is overdue.`,
+      sent: "SENT",
+      /**
+       * Beta.27 review, final round: Send made a step for the person (manual notifications, or a
+       * live one that couldn't reach the system): asked, but not sent until they send it.
+       */
+      asked: "ASKED",
+      askedStep: (owner: string) =>
+        `Asked: a step for ${owner}. It waits for you to send it (Home › Manual steps); record their answer here when it comes.`,
+      /** Review of the fix: a question the gaps raise that nobody has sent yet. */
+      notSent: "NOT SENT YET",
+      notSentTo: (owner: string, channel: string) =>
+        `Not sent to ${owner} yet. Send it by ${channel} below, or copy the question and ask them; then record their answer here.`,
+      /** Review of the fix: the owner of a system nobody owns (the line that says whose it is). */
+      nobody: "Nobody owns it",
+      /** Beta.27 review, round 2: who a question nobody owns goes to, by its routed role. */
+      toRole: (role: string) => `the ${role}`,
+      /** A team id no roles.yaml names, in words: team-ledger is "Ledger team". */
+      teamWords: (name: string) => `${name} team`,
+      overdue: "OVERDUE",
       routeTo: (role: string) => `Nobody owns it: it goes to the ${role}.`,
       needs: (fact: string) => `Needs: ${fact}`,
       fill: (file: string, field: string) => `The fact itself goes in org-pack/${file}: ${field}.`,
-      open: "OPEN",
       answered: "ANSWERED",
       answeredWas: (answer: string) => `Recorded answer: ${answer}`,
       answerLabel: "The owner's answer",
@@ -1738,6 +1772,7 @@ export const COPY = {
       "Every repo's map is trusted: its facts are verified and of the commit checked out.",
     notTrusted: "Not trusted yet",
     openTrust: "Open Map › Trust",
+    addReposInApp: "Add repos on Set up › Repos",
     inFlight: "Changes in flight",
     noChanges: "No change is in flight. Start one with New change.",
     stageCol: "Stage",
@@ -1798,8 +1833,14 @@ export const COPY = {
     syncSources: "Read the wikis:",
     // The stage screens
     pickChange: "Change",
-    noChangeYet: "No change yet. Start one with New change, or on the command line:",
+    noChangeYet:
+      "No change yet. Start one with New change; the command line is under Or in a terminal.",
     noChangeTitle: "No change yet",
+    /** Beta.27 review: no change reads, though one or more are there (their change.yaml doesn't). */
+    noChangeReads: "No change reads",
+    /** Review of the fix: the words under "No change reads". */
+    noChangeReadsBody:
+      "No change reads: each one's change.yaml below doesn't. Fix it where it says, or start another with New change; the command line is under Or in a terminal.",
     /** UX review: the stage's work is on these pages. */
     /** Eighth UX walk: one path to write stories, the stories stage's Prepare; Breakdown reads. */
     openBreakdown: "Open Breakdown",
@@ -1872,7 +1913,8 @@ export const COPY = {
       done: "done",
     },
     why: {
-      discover: "There are no repos to work on until a manifest lists them.",
+      discover:
+        "There are no repos to work on until a manifest lists them: add them on Set up › Repos.",
       sync: (n: number) => `${n} repo${n === 1 ? " isn't" : "s aren't"} cloned yet.`,
       /** ADR 0124: a repo read by the assistant and verified, by its state on Map › Trust. */
       read: {
@@ -1963,6 +2005,9 @@ export const COPY = {
     tabs: "Open pages",
     tabHint: "Delete closes this tab. Ctrl+Shift+Left or Right moves it.",
     closeTab: (label: string) => `Close ${label}`,
+    // Beta.27 review: the tabs the strip has no room for.
+    moreTabs: (n: number) => `${n} more`,
+    moreTabsLabel: (n: number) => `${n} more tab${n === 1 ? "" : "s"}`,
     tabTitle: (change: string, page: string) => `${change} · ${page}`,
     /** Activity bar badges, heard after the section's name (beta.27: the questions to answer). */
     openCount: (n: number) => `${n} to answer`,
@@ -2383,6 +2428,10 @@ export const COPY = {
     /** UX review: Raise hand-off waits until nothing blocks it, and says why. */
     blockedBy: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,
+    /** Beta.27 review: why Raise hand-off waits while another step comes first, in words. */
+    heldFirst: "Raise hand-off waits until the next step above is done.",
+    /** Beta.27 review: away from At a glance, the next step's own page. */
+    seeGlance: "See the step on At a glance",
     raiseHandOff: "Raise hand-off",
     syncAndMergeWhen: "Sync and merge when approved",
     runTheCriticYour: "Run the critic (your assistant)",
@@ -2560,6 +2609,8 @@ export const COPY = {
     sentTo: (channel: string | number) => `Sent to ${channel}.`,
     thingsNeedAttention: (v: string | number) => `${v} things need attention.`,
     nothingIsBlockedRight: "Nothing is blocked right now.",
+    nothingBlockedButWaiting: (n: number, what: string) =>
+      `Nothing is blocked; ${n} thing${n === 1 ? " waits" : "s wait"} for a person: ${what}.`,
     approvingIsThePull:
       "Approving is the pull request: each phase ends with a hand-off PR, and merging it approves the gate. Your Git host decides who may approve.",
     currentPhase: (v: string | number) => `${v}: current phase`,
@@ -2602,7 +2653,7 @@ export const COPY = {
       live: "Live from your metarepo",
       inFlight: "Changes in flight",
       inFlightNone: "None in flight",
-      inStage: (n: number, stage: string) => `${n} ${stage}`,
+      inStage: (n: number, stage: string) => `${n} at ${stage}`,
       corrections: "Corrections to apply",
       toPropose: (files: number) =>
         files ? `${files} file${files === 1 ? "" : "s"} to propose` : "Nothing to propose",
@@ -2621,7 +2672,18 @@ export const COPY = {
       changesMore: (n: number) => `${n} more in flight`,
       gatesOf: (title: string) => `Gate pipeline of ${title}`,
       glance: "At a glance",
-      waitOnYou: "Wait on you",
+      // Beta.27 review: what the tile counts (needs and manual steps), never "Wait on you 0"
+      // beside "Needs a person: 10 waiting".
+      waitOnYou: "Your needs and steps",
+      /** Beta.27 review: what waits on a person, by kind, in words. */
+      waitingKinds: {
+        triage: (n: number) => `${n} to sort out`,
+        question: (n: number) => `${n} question${n === 1 ? "" : "s"}`,
+        need: (n: number) => `${n} need${n === 1 ? "" : "s"}`,
+        step: (n: number) => `${n} manual step${n === 1 ? "" : "s"}`,
+        finding: (n: number) => `${n} finding${n === 1 ? "" : "s"}`,
+        knowledge: (n: number) => `${n} knowledge item${n === 1 ? "" : "s"} to check`,
+      } as Record<string, (n: number) => string>,
       waitOnYouSub: (needs: number, steps: number) =>
         `${needs} open need${needs === 1 ? "" : "s"} · ${steps} manual step${steps === 1 ? "" : "s"}`,
       needsMore: (n: number) => `${n} more group${n === 1 ? "" : "s"}`,
@@ -3930,10 +3992,17 @@ export const COPY = {
     sharedImport: (id: string) =>
       `atticus join shared import <their metarepo> --team <their team id> --system ${id} --name "<their team's name>"`,
   },
+  /** Beta.27 review: changes whose change.yaml doesn't read, listed rather than gone. */
+  brokenChanges: {
+    title: (n: number) => (n === 1 ? "1 change doesn't read" : `${n} changes don't read`),
+    fileLine: (file: string, line: number) => `${file}, line ${line}`,
+    fix: "Fix the file (a merge's conflict markers, a line cut short, a field that isn't valid) and the change comes back on every page.",
+    problems: "Changes that don't read",
+    problemMeta: (where: string, message: string) => `${where}: ${message}`,
+  },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
     title: "This change at a glance",
-    none: "No change yet: start one with atticus change new, and All changes lists it.",
     where: "Where it is",
     state: (state: string, risk: string) => `In ${state}, ${risk} risk.`,
     stages: { feature: "Placement", architecture: "Target flows", stories: "Stories" } as Record<
@@ -3945,7 +4014,13 @@ export const COPY = {
       architecture: "architecture",
       stories: "stories",
     } as Record<string, string>,
-    marks: { done: "done", current: "in progress", todo: "to come" } as Record<string, string>,
+    marks: {
+      done: "done",
+      current: "in progress",
+      todo: "to come",
+      person: "written by a person",
+      skipped: "skipped",
+    } as Record<string, string>,
     stage: (name: string, mark: string) => `${name}: ${mark}`,
     progress: (drafts: number, rounds: number, open: number) =>
       [
@@ -4158,6 +4233,12 @@ export const COPY = {
     run: "Run the upgrade",
     running: "Upgrading…",
     done: "Upgraded. Propose the changed files for review.",
+    /**
+     * Beta.27 review: the run changed nothing but the stamp. Final round: the stamp is proposed
+     * too (ADR 0051), so every machine's Atticus knows the metarepo was upgraded.
+     */
+    doneStampOnly:
+      "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): propose the stamp so everyone's Atticus sees this upgrade.",
     failed: "The upgrade stopped.",
     terminal: "Or in a terminal:",
   },
@@ -4521,8 +4602,10 @@ export const COPY = {
     /** Review of beta.24: put away what Apply to every repo's map said went wrong. */
     dismissErrors: "Dismiss these errors",
     onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
+    // Beta.27 review: a file edited by hand, outside the app, is listed too: "changed", never
+    // "you changed in the app".
     pending: (n: number) =>
-      `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
+      `${n} changed file${n === 1 ? "" : "s"} ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
     inReview: (where: string) => `already proposed (${where})`,
     bringIn: "Bring in what merged",
     bringingIn: "Bringing it in…",
@@ -5830,6 +5913,14 @@ export const COPY = {
     loading: "Reading the stage's thread…",
     start: "Start the stage",
     startNext: "Start the next round",
+    // Beta.27 review: stories a person wrote stand for the stage's work; the change goes on.
+    byPersonGoOn: "Go on from them on At a glance",
+    byPersonAgain: "Or have the stage write them instead (it replaces them):",
+    /** Review of the fix: the button names what it replaces, and asks once. */
+    byPersonReplace: (files: string[]) => `Draft the stories again, replacing ${listWords(files)}…`,
+    byPersonConfirm: (files: string[]) =>
+      `This replaces ${listWords(files)}, which a person wrote. A copy of ${files.length === 1 ? "it" : "each"} is kept first in the change's stage/stories-by-person/ folder, and the stage says where. Draft the stories again?`,
+    byPersonKeep: "Keep them",
     starting: "Writing the prompt…",
     prompt: "The prompt for your assistant",
     criticPrompt: "The critic's prompt for your assistant",
@@ -6642,6 +6733,17 @@ export const COPY = {
       button: (owner: string) => `Send to ${owner}`,
       sending: "Sending…",
       sent: (owner: string) => `Sent to ${owner}. Record their answer here when it comes.`,
+      again: (owner: string) => `Send to ${owner} again`,
+      // Beta.27 review, round 2: sent is on file in the question's own record, for everyone.
+      already: (owner: string) =>
+        `It was already sent to ${owner} (its record in the metarepo says so), so it wasn't sent twice. Send it again only if they need it once more.`,
+      // Review of the fix: the other 409, a send of it under way now.
+      beingSent: (owner: string) =>
+        `It is being sent to ${owner} now, from another tab or window, so it wasn't sent twice.`,
+      confirmAgain: (owner: string, on?: string) =>
+        `It was sent${on ? ` on ${on}` : ""}. Send it to ${owner} again?`,
+      yesAgain: "Yes, send it again",
+      cancel: "Cancel",
       step: "Notifications are manual here: sending it is a step for you on Home › Manual steps.",
       notSent: (why: string) => `Not sent: ${why}`,
     },
@@ -6651,6 +6753,8 @@ export const COPY = {
       intro:
         "What the change is for, in your words. Each box is one part of the brief; the hint under it says what goes there.",
       edit: "Edit the brief",
+      // Beta.27 review: the editor opens again with what was typed before the page was left.
+      draftKept: "Your unsaved draft, as you left it: Save the brief to keep it, or Cancel.",
       save: "Save the brief",
       saving: "Saving…",
       saved: "Saved the brief.",

@@ -141,7 +141,9 @@ export class ManualNotifier extends ManualBase implements Notifier {
       {
         slug: `message-${n.channel}`,
         action: "send-notification",
-        key: `notify|${n.channel}|${shortHash(`${n.title}\n${n.body}\n${n.link ?? ""}`)}`,
+        key: n.key
+          ? `notify|${n.key}`
+          : `notify|${n.channel}|${shortHash(`${n.title}\n${n.body}\n${n.link ?? ""}`)}`,
         title: `Send "${n.title}" to ${n.channel}`,
         where: `Messages: ${n.channel}`,
         inputs: { channel: n.channel },

@@ -1,5 +1,11 @@
 import { answerAsJob } from "./ui-api-activity.js";
-import { fileStepStore, manualAdapter, type Notifier, type WorkTracker } from "@maycombhq/adapters";
+import {
+  fileStepStore,
+  manualAdapter,
+  type AdapterFactories,
+  type Notifier,
+  type WorkTracker,
+} from "@maycombhq/adapters";
 import { changeFolder } from "@maycombhq/changes";
 import { Api, changesRelOf, loadOrgPack, orgPackDirOf, readTeams, RecordId } from "@maycombhq/core";
 import {
@@ -39,6 +45,8 @@ export interface RolesDeps {
   workTracker?: WorkTracker;
   /** Tests: a notifier (otherwise runtime.yaml's). */
   notify?: Notifier;
+  /** Tests: the adapter factories runtime.yaml's live adapters are made with. */
+  adapterFactories?: AdapterFactories;
   now?: () => Date;
 }
 
@@ -53,6 +61,8 @@ function changeIdOf(v: string): string {
 export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {}): Router {
   const root = ctx.root;
   const now = deps.now ?? (() => new Date());
+  // Beta.27 review, final round: the owner questions being sent now, held across the send.
+  const sending = new Set<string>();
   // ADR 0191: Ask answers from the organisation's knowledge too, beside the catalog.
   ctx.askKnowledge = async (q) => {
     const { knowledgeAnswerOf } = await import("./roles-work.js");
@@ -268,8 +278,13 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
         const list = await ownerQuestions(root, { now: now() });
         const q = list.questions.find((x) => x.id === params.id);
         if (!q) throw notFound(`There is no owner question ${params.id}.`);
-        const { notifierFor } = await import("./roles-work.js");
-        const n = await notifierFor(root, q.finding?.change, deps.notify);
+        const { fallbackWords, notifierFor } = await import("./roles-work.js");
+        const n = await notifierFor(
+          root,
+          q.finding?.change,
+          deps.notify,
+          deps.adapterFactories ? { factories: deps.adapterFactories } : {},
+        );
         const to = q.owner;
         if (!n.notify || n.kind === "none")
           return {
@@ -280,47 +295,95 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
               why: "No notifications are set up here (runtime.yaml adapters.notify): copy the question and ask the owner, then record what they said.",
             }),
           };
-        if (n.kind === "live")
-          requireConfirmation(ctx.confirmations, "owner-ask", q.id, b.data.confirmation);
-        const team = (await readTeams(root)).teams.find((t) => t.id === to);
-        const mentions = team
-          ? team.people.map((p) => p.replace(/^@/, ""))
-          : [to.replace(/^@/, "")];
-        const channel =
-          q.channel && q.channel !== "Atticus" ? q.channel : `@${to.replace(/^@/, "")}`;
-        try {
-          const sent = await n.notify.send(
-            {
-              channel,
-              title: `A question for ${team?.name ?? to}`,
-              body: `${q.question}\n\nWhat it is for: ${q.neededFact}\n\nAnswer it in Atticus (Questions › Owner questions), or reply to ${ctx.user}.`,
-              mentions,
-            },
-            { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: `owner-ask:${q.id}` },
+        const { ownerAskRef, recordedSendAt, recordOwnerSend } =
+          await import("./owner-questions.js");
+        // Beta.27 review, final round: one send of a question at a time, held across the send,
+        // so two tabs with a confirmation each can't both post it (no await between the check
+        // and the add).
+        if (sending.has(q.id))
+          throw new HttpError(
+            409,
+            "Being sent",
+            `${q.id} is being sent to ${to} now, from another tab or window: reload to see it sent.`,
           );
+        sending.add(q.id);
+        try {
+          // Beta.27 review, round 2: a question whose own record says sent (from this machine or
+          // another person's, merged) goes again through a live notifier only on Send again.
+          const was = q.finding ? undefined : await recordedSendAt(root, q.id);
+          if (n.kind === "live" && !q.finding && b.data.again !== true) {
+            if (was)
+              throw new HttpError(
+                409,
+                "Already sent",
+                `${q.id} was sent to ${to} at ${was} (catalog/curated/ownerquestion/${q.id}.yaml): choose Send again to send it once more.`,
+              );
+          }
+          if (n.kind === "live")
+            requireConfirmation(ctx.confirmations, "owner-ask", q.id, b.data.confirmation);
+          const team = (await readTeams(root)).teams.find((t) => t.id === to);
+          const mentions = team
+            ? team.people.map((p) => p.replace(/^@/, ""))
+            : [to.replace(/^@/, "")];
+          const channel =
+            q.channel && q.channel !== "Atticus" ? q.channel : `@${to.replace(/^@/, "")}`;
+          let sent: { id: string };
+          try {
+            sent = await n.notify.send(
+              {
+                channel,
+                title: `A question for ${team?.name ?? to}`,
+                body: `${q.question}\n\nWhat it is for: ${q.neededFact}\n\nAnswer it in Atticus (Questions › Owner questions), or reply to ${ctx.user}.`,
+                mentions,
+                // Beta.27 review of the fix: a manual step is the question's, once a send on
+                // record (whoever sends it, whatever "reply to" says); Send again after a send
+                // is a new one.
+                key: `${ownerAskRef(q.id)}${was ? `@${was}` : ""}`,
+              },
+              { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: ownerAskRef(q.id) },
+            );
+          } catch (e) {
+            if (e instanceof HttpError) throw e;
+            return {
+              status: 200,
+              body: Api.SentOwnerAsk.parse({
+                state: "not-sent",
+                to,
+                why: `The notify adapter refused: ${(e as Error).message}`,
+              }),
+            };
+          }
+          // Beta.27 review, final round: a manual notifier, or a live one that fell back to a
+          // manual step (it couldn't start, or on the send couldn't reach the system or had no
+          // credentials), made a step for the person: nothing was sent, so nothing says sent.
+          const fell = n.fallback ?? (n.fallbacks[0] ? fallbackWords(n.fallbacks[0]) : undefined);
+          if (n.kind === "manual" || fell)
+            return {
+              status: 200,
+              body: Api.SentOwnerAsk.parse({
+                state: "step",
+                to,
+                id: sent.id,
+                why: fell
+                  ? `Not sent: ${fell}, so sending it is a step for you (Home › Manual steps).`
+                  : "Notifications are manual here: sending it is a step for you (Home › Manual steps).",
+              }),
+            };
+          // Review of the fix, round 2: sent is on file in the question's own record, so every
+          // machine says Sent once it is merged.
+          const file = await recordOwnerSend(root, q.id, {
+            by: ctx.user.replace(/^@/, ""),
+            at: stamp(now()),
+            to,
+            now: now(),
+          }).catch(() => undefined);
+          if (file) ctx.events.publish({ type: "file.changed", path: file });
           return {
             status: 200,
-            body: Api.SentOwnerAsk.parse({
-              state: n.kind === "manual" ? "step" : "sent",
-              to,
-              id: sent.id,
-              ...(n.kind === "manual"
-                ? {
-                    why: "Notifications are manual here: sending it is a step for you (Home › Manual steps).",
-                  }
-                : {}),
-            }),
+            body: Api.SentOwnerAsk.parse({ state: "sent", to, id: sent.id }),
           };
-        } catch (e) {
-          if (e instanceof HttpError) throw e;
-          return {
-            status: 200,
-            body: Api.SentOwnerAsk.parse({
-              state: "not-sent",
-              to,
-              why: `The notify adapter refused: ${(e as Error).message}`,
-            }),
-          };
+        } finally {
+          sending.delete(q.id);
         }
       })
 

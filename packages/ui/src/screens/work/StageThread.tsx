@@ -10,6 +10,7 @@ import { CopyButton } from "../run/shared.js";
 import { Problems } from "./RunNext.js";
 import "./work.css";
 import { Explain } from "./cw.js";
+import { HandoffStep } from "../../app/runstep.js";
 
 /**
  * ADR 0189: a stage is one conversation. The stage's tab shows its thread inline, in order: the
@@ -503,6 +504,45 @@ function ReplyBox(p: {
   );
 }
 
+/**
+ * Review of the fix: Draft the stories again over files a person wrote names them, and asks
+ * once before the step that replaces them (a copy of each is kept first, and the stage says
+ * where). Keep them puts the first button back.
+ */
+export function ReplacePersonFiles(p: { files: string[]; args: string[]; asking?: boolean }) {
+  const [asking, setAsking] = useState(p.asking === true);
+  const ask = useRef<HTMLParagraphElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const was = useRef(asking);
+  const askId = useId();
+  useEffect(() => {
+    if (asking) ask.current?.focus();
+    else if (was.current) back.current?.focus();
+    was.current = asking;
+  }, [asking]);
+  if (!asking)
+    return (
+      <div>
+        <button ref={back} type="button" className="btn" onClick={() => setAsking(true)}>
+          {T.byPersonReplace(p.files)}
+        </button>
+      </div>
+    );
+  return (
+    <div className="stack" style={{ gap: 6 }} role="group" aria-labelledby={askId}>
+      <p id={askId} ref={ask} tabIndex={-1} style={{ margin: 0 }}>
+        {T.byPersonConfirm(p.files)}
+      </p>
+      <HandoffStep args={p.args} />
+      <div>
+        <button type="button" className="btn" onClick={() => setAsking(false)}>
+          {T.byPersonKeep}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** The thread from loaded data, so tests can render every state. */
 export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadHandlers) {
   const [about, setAbout] = useState<FindingItem | undefined>();
@@ -529,6 +569,19 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
               <p role="status" aria-live="polite" className="thread-headline" style={{ margin: 0 }}>
                 {v.headline}
               </p>
+              {v.byPerson && v.byPerson.length > 0 && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <p style={{ margin: 0 }}>
+                    <a href={`#/cockpit?change=${encodeURIComponent(v.change)}`}>
+                      {T.byPersonGoOn}
+                    </a>
+                  </p>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {T.byPersonAgain}
+                  </p>
+                  <ReplacePersonFiles files={v.byPerson} args={[...v.step, "--force"]} />
+                </div>
+              )}
               {!v.waiting && v.state !== "done" && (
                 <div className="cw-thread-start">
                   <button

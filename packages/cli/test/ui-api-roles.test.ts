@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
-import { MockNotifier } from "@maycombhq/adapters";
+import { AdapterError, fileStepStore, MockNotifier, type Notifier } from "@maycombhq/adapters";
 import {
   Api,
   parseRecord,
@@ -324,6 +324,233 @@ describe("an owner question, sent", () => {
     );
     expect(sent.state).toBe("sent");
     expect(notifier.sent.at(-1)?.body).toContain(q.question);
+    // Beta.27 review of the fix: a gap's question nobody sent has no sentAt; once sent, it has.
+    const gap = list.questions.find((x) => !x.finding && x.state !== "answered")!;
+    expect(gap.sentAt).toBeUndefined();
+    const c2 = await confirmFor(srv, "owner-ask", gap.id);
+    expect(
+      (await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c2 })).body,
+    ).toMatchObject({ state: "sent" });
+    const again = Api.OwnerQuestionList.parse((await call("/api/owner-questions")).body);
+    expect(again.questions.find((x) => x.id === gap.id)?.sentAt).toBe(NOW);
+    // Round 2: the send is in the question's own record, shared with everyone who has the
+    // metarepo: without this machine's note it still says sent, and when.
+    const file = join(root, `catalog/curated/ownerquestion/${gap.id}.yaml`);
+    const rec = parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    expect(rec).toMatchObject({ questionState: "sent" });
+    expect((rec.evidence as unknown[])[0]).toEqual({
+      source: "manual",
+      by: "pat",
+      scannedAt: NOW,
+    });
+    await rm(join(root, ".index/owner-asks.json"), { force: true });
+    const shared = Api.OwnerQuestionList.parse((await call("/api/owner-questions")).body);
+    expect(shared.questions.find((x) => x.id === gap.id)?.sentAt).toBe(NOW);
+    // A second live send is refused (nothing posted), unless the person chose Send again.
+    const posted = notifier.sent.length;
+    const c3 = await confirmFor(srv, "owner-ask", gap.id);
+    const twice = await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c3 });
+    expect(twice.status).toBe(409);
+    expect(String(twice.body.detail)).toMatch(/Send again/);
+    expect(notifier.sent.length).toBe(posted);
+    const c4 = await confirmFor(srv, "owner-ask", gap.id);
+    expect(
+      (
+        await call(`/api/owner-questions/${gap.id}/send`, "POST", {
+          confirmation: c4,
+          again: true,
+        })
+      ).body,
+    ).toMatchObject({ state: "sent" });
+    expect(notifier.sent.length).toBe(posted + 1);
+    // Send again still takes the person's confirmation.
+    expect(
+      (await call(`/api/owner-questions/${gap.id}/send`, "POST", { again: true })).status,
+    ).toBe(403);
+  });
+});
+
+describe("an owner question whose live send became a manual step (beta.27 final round)", () => {
+  // A live notifier (slack, made by a test factory) that can't reach the system, or can't start:
+  // the manual fallback makes a step for the person, and nothing says sent.
+  async function serverWith(make: () => Notifier, notify = "{ type: slack }") {
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-ui-roles-fallback-"));
+    await cp(root, r2, { recursive: true });
+    await rm(join(r2, "catalog/curated"), { recursive: true, force: true });
+    await rm(join(r2, ".index"), { recursive: true, force: true });
+    await writeFile(
+      join(r2, "org-pack/runtime.yaml"),
+      `schemaVersion: 1\nassistants: { allowed: [copilot, claude-code], default: copilot }\nadapters:\n  workTracker: { type: manual }\n  notify: ${notify}\n`,
+    );
+    const s = await startServer({
+      root: r2,
+      port: 0,
+      user: "pat",
+      watch: false,
+      extend: (r, ctx) =>
+        extendUiRoutes(r, ctx, { now: NOW, adapterFactories: { notify: { slack: make } } }),
+    });
+    return { r2, s };
+  }
+  async function post(s: RunningServer, path: string, body: unknown) {
+    const r = await fetch(s.url + path, {
+      method: "POST",
+      headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+  }
+  async function openGap(s: RunningServer) {
+    const r = await fetch(s.url + "/api/owner-questions", {
+      headers: { "X-Atticus-Token": s.token },
+    });
+    const list = Api.OwnerQuestionList.parse(await r.json());
+    return list.questions.find((x) => !x.finding && x.state !== "answered")!;
+  }
+
+  it("a send the adapter can't reach is a step with the reason, and no record says sent", async () => {
+    const { r2, s } = await serverWith(() => ({
+      send: async () => {
+        throw new AdapterError("slack", "unavailable", "the Northwind chat service is down");
+      },
+    }));
+    try {
+      const gap = await openGap(s);
+      const confirmation = await confirmFor(s, "owner-ask", gap.id);
+      const r = await post(s, `/api/owner-questions/${gap.id}/send`, { confirmation });
+      expect(r.status).toBe(200);
+      const a = Api.SentOwnerAsk.parse(r.body);
+      expect(a.state).toBe("step");
+      expect(a.why).toMatch(/unavailable/);
+      expect(a.why).toMatch(/Northwind chat service is down/);
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect(existsSync(join(r2, ".index/owner-asks.json"))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+      // The step is there for the person, with why it is manual.
+      const steps = await fileStepStore(r2).list();
+      expect(steps.some((x) => /unavailable/.test(x.reason ?? ""))).toBe(true);
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a notifier that can't start is a step with the reason, and no record says sent", async () => {
+    const { r2, s } = await serverWith(() => {
+      throw new AdapterError("slack", "unauthorized", "no token for the Northwind chat service");
+    });
+    try {
+      const gap = await openGap(s);
+      // A step for the person takes no confirmation (nothing goes out), as manual does.
+      const r = await post(s, `/api/owner-questions/${gap.id}/send`, {});
+      expect(r.status).toBe(200);
+      const a = Api.SentOwnerAsk.parse(r.body);
+      expect(a.state).toBe("step");
+      expect(a.why).toMatch(/couldn't start \(unauthorized/);
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a manual notifier makes a step, never a send on record", async () => {
+    const { r2, s } = await serverWith(() => new MockNotifier(), "{ type: manual }");
+    try {
+      const gap = await openGap(s);
+      const a = Api.SentOwnerAsk.parse(
+        (await post(s, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(a.state).toBe("step");
+      expect(existsSync(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`))).toBe(false);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a step says asked after a reload and to another person, is one step for both, and once done is a send on record", async () => {
+    const { r2, s } = await serverWith(() => new MockNotifier(), "{ type: manual }");
+    const bao = await startServer({
+      root: r2,
+      port: 0,
+      user: "bao",
+      watch: false,
+      extend: (r, ctx) => extendUiRoutes(r, ctx, { now: NOW }),
+    });
+    try {
+      const gap = await openGap(s);
+      const a = Api.SentOwnerAsk.parse(
+        (await post(s, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(a.state).toBe("step");
+      const step = a.id!.replace(/^manual:/, "");
+      // On file: a reload, and another person's server, read the open step as asked.
+      expect((await openGap(s)).asked).toMatchObject({ step });
+      expect((await openGap(bao)).asked).toMatchObject({ step });
+      // The other person's Send is the same step (keyed on the question, not on "reply to …").
+      const b = Api.SentOwnerAsk.parse(
+        (await post(bao, `/api/owner-questions/${gap.id}/send`, {})).body,
+      );
+      expect(b).toMatchObject({ state: "step", id: a.id });
+      expect((await fileStepStore(r2).list({ action: "send-notification" })).length).toBe(1);
+      expect((await openGap(s)).sentAt).toBeUndefined();
+      // A person marks it done (Home › Manual steps): the question's own record says sent.
+      const done = await post(s, `/api/todo/${step}/done`, {});
+      expect(done.status).toBe(200);
+      const after = await openGap(bao);
+      expect(after.sentAt).toBeDefined();
+      expect(after.asked).toBeUndefined();
+      const rec = parse(
+        await readFile(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`), "utf8"),
+      ) as { evidence: { source: string; by?: string }[] };
+      expect(rec.evidence[0]).toMatchObject({ source: "manual", by: "pat" });
+      // Send again makes a new step: the one before is done.
+      const again = Api.SentOwnerAsk.parse(
+        (await post(bao, `/api/owner-questions/${gap.id}/send`, { again: true })).body,
+      );
+      expect(again.state).toBe("step");
+      expect(again.id).not.toBe(a.id);
+    } finally {
+      await bao.close();
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("two sends at once: the second is refused while the first is held", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((res) => (release = res));
+    let entered!: () => void;
+    const reached = new Promise<void>((res) => (entered = res));
+    const posted: string[] = [];
+    const { r2, s } = await serverWith(() => ({
+      send: async (n) => {
+        entered();
+        await held;
+        posted.push(n.channel);
+        return { id: `n-${posted.length}` };
+      },
+    }));
+    try {
+      const gap = await openGap(s);
+      const c1 = await confirmFor(s, "owner-ask", gap.id);
+      const c2 = await confirmFor(s, "owner-ask", gap.id);
+      const first = post(s, `/api/owner-questions/${gap.id}/send`, { confirmation: c1 });
+      // The first is at the notifier (held there) when the second comes in.
+      await reached;
+      const second = await post(s, `/api/owner-questions/${gap.id}/send`, { confirmation: c2 });
+      expect(second.status).toBe(409);
+      release();
+      expect((await first).body).toMatchObject({ state: "sent" });
+      expect(posted.length).toBe(1);
+    } finally {
+      release();
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
   });
 });
 
@@ -442,5 +669,42 @@ describe("a hand-off tells the next role", () => {
     );
     expect(told).toHaveLength(1);
     expect(m.sent).toEqual([expect.objectContaining({ channel: "@Ari", mentions: ["Ari"] })]);
+
+    // Review of the fix: a live notifier that falls back on the send made a step: nobody was
+    // told, and it says so with why.
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-ui-roles-told-"));
+    try {
+      await cp(root, r2, { recursive: true });
+      await writeFile(
+        join(r2, "org-pack/runtime.yaml"),
+        "schemaVersion: 1\nassistants: { allowed: [copilot, claude-code], default: copilot }\nadapters:\n  workTracker: { type: manual }\n  notify: { type: slack }\n",
+      );
+      const down = await notifyHandoffReviewers(
+        r2,
+        c,
+        h,
+        { by: "pat", at: NOW, ref: h.branch },
+        undefined,
+        {
+          factories: {
+            notify: {
+              slack: () => ({
+                send: async () => {
+                  throw new AdapterError("slack", "unavailable", "the Northwind chat is down");
+                },
+              }),
+            },
+          },
+        },
+      );
+      expect(down).toEqual([
+        expect.stringMatching(
+          /^Telling @ari \(architect\) is a step for you \(Home › Manual steps\): the notify adapter couldn't send it \(unavailable: .*Northwind chat is down/,
+        ),
+      ]);
+      expect(down[0]).not.toMatch(/^Told/);
+    } finally {
+      await rm(r2, { recursive: true, force: true });
+    }
   });
 });

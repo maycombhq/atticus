@@ -1,4 +1,11 @@
-import { fileStepStore, manualAdapter, type Approval, type Notifier } from "@maycombhq/adapters";
+import {
+  fileStepStore,
+  manualAdapter,
+  type AdapterFactories,
+  type Approval,
+  type FallbackEvent,
+  type Notifier,
+} from "@maycombhq/adapters";
 import { changeFolder, changeStore } from "@maycombhq/changes";
 import {
   handleKey,
@@ -111,16 +118,31 @@ export async function ownerSuggestions(
   return { change: c.id, suggestions: out, ...(note ? { note } : {}) };
 }
 
-/** How notifications go here: none set, a step for a person (manual), or the adapter. */
+/**
+ * How notifications go here: none set, a step for a person (manual), or the adapter. Beta.27
+ * review, final round: a live notifier that can't be reached or has no credentials falls back to
+ * a manual step (ADR 0032). One that couldn't start is said as manual, with `fallback` the reason;
+ * one that falls back on a call puts the event in `fallbacks` as it happens, so a caller never
+ * says "sent" for what became a step.
+ */
 export async function notifierFor(
   root: string,
   change: string | undefined,
   given?: Notifier,
-): Promise<{ kind: "none" | "manual" | "live"; notify?: Notifier }> {
-  if (given) return { kind: "live", notify: given };
+  o: { factories?: AdapterFactories } = {},
+): Promise<{
+  kind: "none" | "manual" | "live";
+  notify?: Notifier;
+  /** Why a live notifier is a manual step instead (it couldn't start). */
+  fallback?: string;
+  /** The notifier's fallbacks to a manual step on a call, as they happen. */
+  fallbacks: FallbackEvent[];
+}> {
+  const fallbacks: FallbackEvent[] = [];
+  if (given) return { kind: "live", notify: given, fallbacks };
   const op = await loadOrgPack(orgPackDirOf(root));
   const cfg = op.runtime.adapters.notify;
-  if (!cfg) return { kind: "none" };
+  if (!cfg) return { kind: "none", fallbacks };
   if (cfg.type === "manual") {
     const notify = manualAdapter(
       "notify",
@@ -132,14 +154,33 @@ export async function notifierFor(
       },
       cfg.settings ?? {},
     ) as Notifier;
-    return { kind: "manual", notify };
+    return { kind: "manual", notify, fallbacks };
   }
   try {
-    const notify = (await metarepoAdapters(root, change ? { change } : {})).notify;
-    return notify ? { kind: "live", notify } : { kind: "none" };
+    const notify = (
+      await metarepoAdapters(root, {
+        ...(change ? { change } : {}),
+        ...(o.factories ? { factories: o.factories } : {}),
+        onFallback: (e) => {
+          if (e.kind === "notify") fallbacks.push(e);
+        },
+      })
+    ).notify;
+    if (!notify) return { kind: "none", fallbacks };
+    const started = fallbacks.find((e) => e.method === "connect");
+    if (started) {
+      fallbacks.length = 0;
+      return { kind: "manual", notify, fallback: fallbackWords(started), fallbacks };
+    }
+    return { kind: "live", notify, fallbacks };
   } catch {
-    return { kind: "none" };
+    return { kind: "none", fallbacks };
   }
+}
+
+/** A notifier's fallback to a manual step, in words: what failed, its code and what it said. */
+export function fallbackWords(e: FallbackEvent): string {
+  return `the notify adapter ${e.method === "connect" ? "couldn't start" : "couldn't send it"} (${e.code}: ${e.message})`;
 }
 
 /**
@@ -154,6 +195,7 @@ export async function notifyHandoffReviewers(
   h: ChangeHandoff,
   approval: Approval,
   given?: Notifier,
+  o: { factories?: AdapterFactories } = {},
 ): Promise<string[]> {
   const { customRoles } = await import("./change-roles.js");
   const next = nextOwnersOf(h.phase, c.owners, await customRoles(root));
@@ -161,12 +203,13 @@ export async function notifyHandoffReviewers(
   const reviewing = new Set(h.reviewers.map(handleKey));
   const people = (next?.people ?? []).filter((p) => reviewing.has(handleKey(p))).map(handle);
   if (!next || !people.length) return [];
-  const n = await notifierFor(root, c.id, given);
+  const n = await notifierFor(root, c.id, given, o);
   if (!n.notify) return [];
   const role = next.role.replace(/-/g, " ");
   const said: string[] = [];
   for (const p of people) {
     try {
+      const before = n.fallbacks.length;
       const r = await n.notify.send(
         {
           channel: `@${p}`,
@@ -177,10 +220,17 @@ export async function notifyHandoffReviewers(
         },
         approval,
       );
+      // Review of the fix: a live notifier that couldn't start, or fell back on this send, made
+      // a step for the person: nobody was told.
+      const fell =
+        n.fallback ??
+        (n.fallbacks.length > before ? fallbackWords(n.fallbacks.at(-1)!) : undefined);
       said.push(
-        n.kind === "manual"
-          ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): notifications are manual here.`
-          : `Told @${p} (${role}) that it waits on their review (${r.id}).`,
+        fell
+          ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): ${fell}.`
+          : n.kind === "manual"
+            ? `Telling @${p} (${role}) is a step for you (Home › Manual steps): notifications are manual here.`
+            : `Told @${p} (${role}) that it waits on their review (${r.id}).`,
       );
     } catch (e) {
       said.push(`Couldn't tell @${p} (${role}): ${(e as Error).message}`);

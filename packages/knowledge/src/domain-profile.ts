@@ -1,4 +1,5 @@
-import type { CatalogRecord } from "@maycombhq/core";
+import type { CatalogRecord, OrgPack } from "@maycombhq/core";
+import { ownerQuestionStillAsked } from "./gaps.js";
 
 /**
  * A domain profile (ADR 0071): one system as a document people read and keep, filled from
@@ -97,9 +98,26 @@ const TYPE: Record<string, string> = {
 export function domainProfile(
   records: CatalogRecord[],
   system: string,
-  o: { template?: string; scannedAt?: string },
+  o: { template?: string; scannedAt?: string } & (
+    | { orgPack?: undefined; now?: string }
+    | {
+        /**
+         * Beta.27 review, final round: the org pack, so a gap's question is listed only while the
+         * knowledge gaps still raise it (or once it is answered); without it every one is listed.
+         */
+        orgPack: OrgPack;
+        /**
+         * The clock for the gaps' freshness (ISO date-time). Review of the fix: required with the
+         * org pack, so the gaps are read as of the caller's day, never the machine's.
+         */
+        now: string;
+      }
+  ),
 ): string {
   const all = [...(records as Rec[])].sort((a, b) => cmp(a.id, b.id));
+  const stillAsked = o.orgPack
+    ? ownerQuestionStillAsked({ records, orgPack: o.orgPack, now: o.now })
+    : undefined;
   const byId = new Map(all.map((r) => [r.id, r]));
   const of = (kind: string) => all.filter((r) => r.kind === kind);
   const sys = byId.get(system);
@@ -274,6 +292,7 @@ export function domainProfile(
     ),
     ...of("OwnerQuestion")
       .filter((q) => s(q.system) === system)
+      .filter((q) => !stillAsked || stillAsked(q) || q.questionState === "answered")
       .map((q) => `- ${s(q.question)} (${s(q.owner) ?? "owner"}, ${s(q.questionState) ?? "open"})`),
     ...[
       ...new Set(

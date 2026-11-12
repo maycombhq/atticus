@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, callAsJob, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
+import { nextStepWords } from "../app/app-words.js";
 import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
-import { escapeCloses, ExternalLink, Panel, View } from "../app/ui.js";
+import { escapeCloses, ExternalLink, GlanceLink, Panel, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
 import { ChangeInputs } from "./ChangeInputs.js";
@@ -16,6 +17,7 @@ import { lensesWaiting, type CriticRan } from "./work/critic-ran.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
+import { BrokenChanges } from "./work/BrokenChanges.js";
 import "./work/cw.css";
 
 const T = COPY.changes;
@@ -64,6 +66,14 @@ export interface Status {
   phase?: string;
   next?: string;
   nextStep: string;
+  /**
+   * Beta.27 review (API 3.12.0): nothing in the gate's checks blocks, yet another step comes
+   * first. `nextStep` then names that step's reason (At a glance says "the step below" instead),
+   * which the page says in the app's words (`nextStepWords`).
+   */
+  stepFirst?: boolean;
+  /** Beta.27 review, final round: `nextStep` in the app's words, from the server. */
+  nextStepApp?: string;
   risk: { level: string; score: number };
   /** The open hand-off PR: merging it approves the gate (ADR 0073). */
   handoff?: { pr: { number: number; url: string }; state: string; phase: string };
@@ -180,6 +190,7 @@ export function ChangeList({
           window.location.hash = `#/changes/${id}`;
         }}
       />
+      <BrokenChanges />
       <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
         {(all) => {
           const states = [...new Set(all.map((c) => c.state))];
@@ -612,6 +623,7 @@ function Detail({ id }: { id: string }) {
   const critic = useAction();
   const runAct = useAction();
   const findingSaid = useSaid();
+  const heldId = useId();
   const reloadAll = () => {
     detail.reload();
     status.reload();
@@ -644,7 +656,14 @@ function Detail({ id }: { id: string }) {
                         {s.handoff && isManualLink(s.handoff.pr.url) ? (
                           <ManualHandoff phase={s.handoff.phase} />
                         ) : (
-                          s.nextStep
+                          nextStepWords(s.nextStep, s.stepFirst, s.nextStepApp)
+                        )}
+                        {/* Beta.27 review: the step that comes first, with its button, is there. */}
+                        {s.stepFirst && (
+                          <>
+                            {" "}
+                            <GlanceLink change={id} />
+                          </>
                         )}
                       </span>
                     </p>
@@ -667,12 +686,18 @@ function Detail({ id }: { id: string }) {
                         ))}
                       </ul>
                     )}
+                    {/* Beta.27 review: why Raise hand-off waits, in words on the page, not a title. */}
+                    {(s.blockers.length > 0 || s.stepFirst) && (
+                      <p id={heldId} className="cw-held">
+                        {s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : T.heldFirst}
+                      </p>
+                    )}
                     <div className="cw-actions">
                       <button
                         type="button"
                         className="btn primary"
-                        disabled={handoff.busy || s.blockers.length > 0}
-                        title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
+                        disabled={handoff.busy || s.blockers.length > 0 || !!s.stepFirst}
+                        aria-describedby={s.blockers.length > 0 || s.stepFirst ? heldId : undefined}
                         onClick={() =>
                           void handoff.run(
                             async () =>

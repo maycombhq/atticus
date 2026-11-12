@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useApi, useReloadOnFiles } from "../api/client.js";
-import { ExternalLink, Panel, View } from "../app/ui.js";
+import { nextStepWords } from "../app/app-words.js";
+import { ExternalLink, GlanceLink, Panel, View } from "../app/ui.js";
 import { FilterBox, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { Table } from "./know/common.js";
 import { NeedsAcross } from "./knowledge/NeedsAcross.js";
@@ -49,6 +50,28 @@ const changeCell = (r: AcrossRow) => (
 const chip = (text: string, kind = "") => (
   <span className={`chip ${kind}`}>{text.toUpperCase()}</span>
 );
+
+/**
+ * Beta.27 review: a release row's next step; the step that comes first is on At a glance, and its
+ * reason is said in the app's words (`nextStepWords`).
+ */
+export function nextCell(r: AcrossRow) {
+  return (
+    <>
+      {nextStepWords(
+        s(r.nextStep),
+        r.stepFirst === true,
+        typeof r.nextStepApp === "string" ? r.nextStepApp : undefined,
+      )}
+      {r.stepFirst === true && (
+        <>
+          {" "}
+          <GlanceLink change={r.change} />
+        </>
+      )}
+    </>
+  );
+}
 
 /**
  * A release row's hand-off: its PR's link and state. Seventh UX walk: a manual Git host's PR
@@ -120,7 +143,7 @@ const COLS: Record<RowsId, Col[]> = {
     { label: T.change, cell: changeCell, width: "18%" },
     { label: T.state, cell: (r) => chip(r.changeState, r.atRelease ? "done" : "") },
     { label: T.risk, cell: (r) => s(r.risk) },
-    { label: T.next, cell: (r) => s(r.nextStep) },
+    { label: T.next, cell: (r) => nextCell(r) },
     {
       label: T.handOff,
       cell: (r) =>

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -37,6 +37,7 @@ export const PROPOSE_SCOPES = [
   "outcomes",
   "work",
   "service-desk",
+  "upgrade",
 ] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
@@ -51,6 +52,7 @@ const TITLES: Record<ProposeScope, string> = {
   outcomes: "Outcomes measured after release",
   work: "Changes made in the Atticus app",
   "service-desk": "Service-desk request fields",
+  upgrade: "Upgrade this metarepo",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
@@ -130,7 +132,60 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
     // or archived (a pathspec's * crosses folders); nothing else of the change.
     case "outcomes":
       return [`${changesRelOf(root)}/*/review/outcomes.yaml`];
+    // Beta.27 review: exactly what `atticus upgrade` changed, path by path (every step's files,
+    // kept with the run in upgraded.json), and its stamp, for the upgrade panel's Propose; never
+    // the app's other pending work. Literal pathspecs: a path is a path, never a glob.
+    case "upgrade":
+      return [...new Set([...upgradedPaths(root), UPGRADE_STAMP])].map((p) => `:(literal)${p}`);
   }
+}
+
+/** The stamp `atticus upgrade` writes (upgrade.ts's STAMP_FILE, "/"-separated). */
+export const UPGRADE_STAMP = ".atticus/metarepo.yaml";
+
+/**
+ * Beta.27 review: what `atticus upgrade` changed, path by path: the files every step returned,
+ * the files under a folder a step named that it rewrote or removed, and the stamp. Kept on this
+ * machine (in .index, which Git ignores) so the upgrade panel's Propose, later, carries exactly
+ * those. A run adds to what an earlier one left unproposed; proposing them takes them off.
+ */
+export const upgradedFile = (root: string) => join(stateDirOf(root), ".index", "upgraded.json");
+
+/**
+ * Review of the fix (beta.27): a kept path is metarepo-relative, never absolute (`/x`, `C:x`,
+ * `\\server\x`) nor climbing out (a `..` segment anywhere): one that is never reaches Git, and a
+ * bad entry is skipped, never the panel's failure.
+ */
+export function relativeInside(f: unknown): f is string {
+  if (typeof f !== "string" || !f || f.includes("\0")) return false;
+  if (/^[/\\]/.test(f) || /^[A-Za-z]:/.test(f)) return false;
+  return !f.split(/[/\\]/).some((s) => s === "..");
+}
+
+/** The paths kept by the upgrades not yet proposed, metarepo-relative and "/"-separated. */
+export function upgradedPaths(root: string): string[] {
+  try {
+    const j = JSON.parse(readFileSync(upgradedFile(root), "utf8")) as { files?: unknown } | null;
+    return j && Array.isArray(j.files)
+      ? j.files.filter(relativeInside).map((f) => f.split("\\").join("/"))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps an upgrade run's paths beside those an earlier run left; `drop` takes proposed ones off. */
+export async function recordUpgraded(
+  root: string,
+  o: { add?: string[]; drop?: string[] },
+): Promise<void> {
+  const drop = new Set(o.drop ?? []);
+  const files = [...new Set([...upgradedPaths(root), ...(o.add ?? []).filter(relativeInside)])]
+    .map((f) => f.split("\\").join("/"))
+    .filter((f) => !drop.has(f))
+    .sort();
+  await mkdir(dirname(upgradedFile(root)), { recursive: true });
+  await writeFile(upgradedFile(root), JSON.stringify({ files }, null, 2) + "\n", "utf8");
 }
 
 export interface ProposePlan {
@@ -193,6 +248,16 @@ export async function proposePlan(
     // Review of beta.23: a write's lock left by a crash (`<file>.lock`, `<file>.lock.<id>.stale`)
     // is this machine's, never a file to propose.
     else if (!LOCK_FILE.test(e.slice(3))) files.push({ path: e.slice(3), status });
+  }
+  // Review of the fix (beta.27): a path the upgrade changed that Git no longer lists (the person
+  // committed or reverted it) is no longer the upgrade's: it is taken off what it keeps, so a
+  // later edit of that file (Settings writing runtime.yaml, say) is never offered as the upgrade.
+  if (scope === "upgrade") {
+    const listed = files.flatMap((f) => [f.path, ...(f.from ? [f.from] : [])]);
+    const gone = upgradedPaths(root).filter(
+      (p) => !listed.some((l) => l === p || l.startsWith(`${p.replace(/\/$/, "")}/`)),
+    );
+    if (gone.length) await recordUpgraded(root, { drop: gone }).catch(() => undefined);
   }
   const was = await readProposed(root);
   // beta.23: one git call per proposal branch and one for every file's content, not two per
@@ -353,6 +418,8 @@ export async function proposeForReview(
   } catch {
     // Only a hint for the next list: the PR is open either way.
   }
+  // Beta.27 review: what an upgrade changed and is now proposed is no longer waiting on one.
+  if (o.scope === "upgrade") await recordUpgraded(root, { drop: files }).catch(() => undefined);
   // A manual Git host records a step: the person opens the PR and records its link (ADR 0032).
   io.out(
     pr.url.startsWith("manual:")

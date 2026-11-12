@@ -124,7 +124,7 @@ describe("no page lost in the IDE layout", () => {
     expect(SCREEN_COMPONENTS[s.id], s.id).toBeDefined();
     expect(html).not.toContain(COPY.notBuilt.thisScreenIsBeing);
     // The tab shown is this page's.
-    expect(html).toMatch(/role="tab" class="sh-tab" aria-selected="true"/);
+    expect(html).toMatch(/role="tab" class="sh-tab[^"]*" aria-selected="true"/);
   });
 });
 

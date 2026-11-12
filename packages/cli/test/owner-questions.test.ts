@@ -13,6 +13,10 @@ import {
   ownerQuestionCommand,
   ownerQuestions,
   OwnerQuestionError,
+  recordedSendAt,
+  recordOwnerAsk,
+  recordOwnerSend,
+  sentOnRecord,
 } from "../src/owner-questions.js";
 import { scopeDirs } from "../src/propose.js";
 import { uiQuestionRoutes } from "../src/ui-api-questions.js";
@@ -70,6 +74,61 @@ describe("owner questions", () => {
       file: FILE,
     });
     expect(q.neededFact).toMatch(/ObservabilityAsset/);
+  });
+
+  it("says a question was sent only once a send is on file (beta.27 review of the fix)", async () => {
+    const root = await forgeRoot();
+    const before = (await ownerQuestions(root)).questions.find((q) => q.id === REPORTS)!;
+    expect(before.sentAt).toBeUndefined();
+    await recordOwnerAsk(root, REPORTS, { at: "2026-11-09T22:30:00Z", to: before.owner });
+    const after = (await ownerQuestions(root)).questions.find((q) => q.id === REPORTS)!;
+    expect(after.sentAt).toBe("2026-11-09T22:30:00Z");
+    // The others still aren't.
+    expect((await ownerQuestions(root)).questions.filter((q) => q.sentAt)).toHaveLength(1);
+  });
+
+  it("keeps a send in the question's own record, which a second machine reads (round 2)", async () => {
+    // Two machines with one metarepo: each has its own state (.index), the record is shared.
+    const a = await forgeRoot();
+    const b = await forgeRoot();
+    const before = (await ownerQuestions(a)).questions.find((q) => q.id === REPORTS)!;
+    const file = await recordOwnerSend(a, REPORTS, {
+      by: "pat",
+      at: "2026-11-09T22:30:00Z",
+      to: before.owner,
+      now: NOW,
+    });
+    expect(file).toBe(FILE);
+    const p = parseRecord(parse(await readFile(join(a, FILE), "utf8")));
+    expect(p.ok).toBe(true);
+    const rec = p.ok ? (p.record as Record<string, unknown>) : {};
+    expect(rec).toMatchObject({ kind: "OwnerQuestion", id: REPORTS, questionState: "sent" });
+    expect((rec.evidence as unknown[])[0]).toEqual({
+      source: "manual",
+      by: "pat",
+      scannedAt: "2026-11-09T22:30:00Z",
+    });
+    expect(p.ok && sentOnRecord(p.record)).toBe("2026-11-09T22:30:00Z");
+    // The second machine has no note of its own: not sent, until the record is merged.
+    expect((await ownerQuestions(b)).questions.find((q) => q.id === REPORTS)!.sentAt).toBe(
+      undefined,
+    );
+    await mkdir(dirname(join(b, FILE)), { recursive: true });
+    await cp(join(a, FILE), join(b, FILE));
+    const seen = (await ownerQuestions(b)).questions.find((q) => q.id === REPORTS)!;
+    expect(seen).toMatchObject({ state: "sent", sentAt: "2026-11-09T22:30:00Z" });
+    expect(await recordedSendAt(b, REPORTS)).toBe("2026-11-09T22:30:00Z");
+    // A send again from the second machine goes first, and the first send stays on file.
+    await recordOwnerSend(b, REPORTS, { by: "lee", at: "2026-11-11T08:00:00Z", to: "x", now: NOW });
+    const again = parseRecord(parse(await readFile(join(b, FILE), "utf8")));
+    const ev = (again.ok ? again.record.evidence : []).filter((e) => e.source === "manual");
+    expect(ev.map((e) => e.by)).toEqual(["lee", "pat"]);
+    expect(await recordedSendAt(b, REPORTS)).toBe("2026-11-11T08:00:00Z");
+    // An answer is no send: an answered question has no send on record.
+    await answerOwnerQuestion(b, REPORTS, "An alert", { by: "pat", now: NOW });
+    expect(await recordedSendAt(b, REPORTS)).toBeUndefined();
+    // Owner answers' Propose carries it.
+    expect(scopeDirs(b, "owner-answers")).toEqual(["catalog/curated/ownerquestion"]);
   });
 
   it("records the answer as a curated record, which the questions read back", async () => {

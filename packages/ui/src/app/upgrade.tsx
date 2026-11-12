@@ -3,7 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
-import { followJob, workChanged } from "./propose.js";
+import { followJob, Propose, workChanged } from "./propose.js";
 
 /**
  * Ninth UX walk: Home offers the upgrade this metarepo waits on (runtime.yaml at an older schema,
@@ -17,7 +17,15 @@ const COMMAND = "atticus upgrade";
 export type UpgradeRun =
   | { state: "idle" }
   | { state: "running" }
-  | { state: "done"; lines: string[] }
+  | {
+      state: "done";
+      lines: string[];
+      /**
+       * Beta.27 review, final round: what the run changed besides the stamp, from the job's
+       * result (never the GET from before the run); left out, not known.
+       */
+      upgraded?: string[];
+    }
   | { state: "failed"; lines: string[] };
 
 /** The offer from its state (tests render each). Nothing when nothing waits. */
@@ -34,8 +42,15 @@ export function UpgradeOfferView(p: {
       </div>
     );
   if (!view.pending.length && run.state !== "done") return null;
+  // Beta.27 review, final round: only the stamp changed, as the run's own result says it.
+  const stampOnly = run.state === "done" && run.upgraded !== undefined && !run.upgraded.length;
   return (
-    <section className="state" aria-labelledby="home-upgrade" style={{ display: "grid", gap: 6 }}>
+    // Beta.27 review: the panel's words read left to right; .state centres an empty page's line.
+    <section
+      className="state upgrade-panel"
+      aria-labelledby="home-upgrade"
+      style={{ display: "grid", gap: 6, textAlign: "start" }}
+    >
       <h2 id="home-upgrade" className="hud" style={{ margin: 0, fontSize: 11 }}>
         {U.title}
       </h2>
@@ -69,7 +84,9 @@ export function UpgradeOfferView(p: {
       )}
       {(run.state === "done" || run.state === "failed") && (
         <div role={run.state === "done" ? "status" : "alert"}>
-          <p style={{ margin: 0 }}>{run.state === "done" ? U.done : U.failed}</p>
+          <p style={{ margin: 0 }}>
+            {run.state === "failed" ? U.failed : stampOnly ? U.doneStampOnly : U.done}
+          </p>
           {run.lines.length > 0 && (
             <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
               {run.lines.join("\n")}
@@ -77,6 +94,10 @@ export function UpgradeOfferView(p: {
           )}
         </div>
       )}
+      {/* Beta.27 review: "Propose the changed files for review" with the button that does it.
+          Final round: the stamp alone too (scope upgrade carries it, ADR 0051), so everyone's
+          Atticus sees the upgrade. */}
+      {run.state === "done" && <Propose scope="upgrade" onDone={workChanged} />}
     </section>
   );
 }
@@ -114,7 +135,14 @@ export function UpgradeOffer({
         setRun({ state: "running" });
         followJob("/api/upgrade", {}).then(
           (r) => {
-            setRun({ state: "done", lines: r.lines });
+            const upgraded = r.result?.upgraded;
+            setRun({
+              state: "done",
+              lines: r.lines,
+              ...(Array.isArray(upgraded)
+                ? { upgraded: upgraded.filter((x): x is string => typeof x === "string") }
+                : {}),
+            });
             u.reload();
             // Home's list of files to propose reads them again.
             workChanged();

@@ -41,7 +41,8 @@ type Scope =
   | "initiatives"
   | "outcomes"
   | "work"
-  | "service-desk";
+  | "service-desk"
+  | "upgrade";
 export interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string; proposed?: string }[];

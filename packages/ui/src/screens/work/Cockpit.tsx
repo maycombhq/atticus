@@ -8,7 +8,7 @@ import { isManualLink, ManualPr, TaskRunState, taskNext } from "../know/task-pr.
 import type { Task } from "../Changes.js";
 import { kindOfStep, type ChangeRow } from "./next.js";
 import { inAppWords } from "../../app/app-words.js";
-import { Command, PickAChange } from "./RunNext.js";
+import { Command, NoChangeYet, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 import { hasAction, StepAction } from "./step-action.js";
 import { StageThreadPanel } from "./StageThread.js";
@@ -30,9 +30,17 @@ const hrefOf = (id: string, change: string) => {
   return s ? tabHref(s, change) : `#/${id}`;
 };
 
-/** Which step of the stage path a stage is: done, the current one, or still to come. */
-export function stageMark(s: Cockpit["stages"][number]): "done" | "current" | "todo" {
+/**
+ * Which step of the stage path a stage is: done, the current one, or still to come. Beta.27
+ * review: or done by a person (planning files a person wrote, the stage never ran), or skipped
+ * (the change passed it without it running), as the plan gate reads them.
+ */
+export function stageMark(
+  s: Cockpit["stages"][number],
+): "done" | "current" | "todo" | "person" | "skipped" {
   if (s.state === "done") return "done";
+  if (s.state === "person") return "person";
+  if (s.state === "skipped") return "skipped";
   if (s.state === "not-started") return "todo";
   return "current";
 }
@@ -210,7 +218,7 @@ export function CockpitView(p: {
               return (
                 <li key={s.stage}>
                   <a
-                    className={`chip ${mark === "done" ? "done" : mark === "current" ? "warn" : "dim"}`}
+                    className={`chip ${mark === "done" || mark === "person" ? "done" : mark === "current" ? "warn" : "dim"}`}
                     href={hrefOf(C.stageScreen[s.stage]!, c.id)}
                     aria-current={mark === "current" ? "step" : undefined}
                   >
@@ -517,7 +525,7 @@ export function ChangeCockpit({ hash }: { hash: string }) {
         ) : undefined
       }
     >
-      <View of={list} empty={(l) => l.length === 0} emptyText={C.none}>
+      <View of={list} empty={(l) => l.length === 0} emptyContent={<NoChangeYet />}>
         {(l) => <CockpitPicked list={l} current={current} c={c} />}
       </View>
     </Panel>

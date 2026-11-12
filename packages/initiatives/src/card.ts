@@ -6,7 +6,14 @@ import {
   type Notification,
   type StepStore,
 } from "@maycombhq/adapters";
-import type { CatalogRecord, ManualStep } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  orgPackDirOf,
+  type CatalogRecord,
+  type ManualStep,
+  type OrgPack,
+} from "@maycombhq/core";
+import { ownerQuestionStillAsked } from "@maycombhq/knowledge";
 import { addWorkingDays, dayOf, parseLeadTime } from "./dates.js";
 import { systemOf } from "./plan.js";
 import {
@@ -44,10 +51,24 @@ function table(header: string[], rows: string[][]): string[] {
   ];
 }
 
-export interface CardContext {
+export type CardContext = {
   /** Lines under the title: who is asked, by whom, by when. */
   header?: string[];
-}
+} & (
+  | { orgPack?: undefined; now?: string }
+  | {
+      /**
+       * Beta.27 review, final round: the org pack, so a gap's question is an open question only
+       * while the knowledge gaps still raise it; without it every unanswered one is listed.
+       */
+      orgPack: OrgPack;
+      /**
+       * The clock for the gaps' freshness (ISO date-time). Review of the fix: required with
+       * the org pack, so the gaps are read as of the card's day, never the machine's.
+       */
+      now: string;
+    }
+);
 
 /** The system card for some systems, as Markdown, from the catalog only. */
 export function systemCard(view: CatalogView, systems: string[], o: CardContext = {}): string {
@@ -171,9 +192,12 @@ export function systemCard(view: CatalogView, systems: string[], o: CardContext 
     ),
     "",
   );
+  const stillAsked = o.orgPack
+    ? ownerQuestionStillAsked({ records: view.records, orgPack: o.orgPack, now: o.now })
+    : () => true;
   const questions = view
     .all("OwnerQuestion")
-    .filter((q) => ids.has(q.system) && q.questionState !== "answered")
+    .filter((q) => ids.has(q.system) && q.questionState !== "answered" && stillAsked(q))
     .sort((a, b) => cmp(a.id, b.id));
   L.push("## Open questions", "");
   if (questions.length)
@@ -239,13 +263,17 @@ export async function requestFromTeam(
   const due = addWorkingDays(today, days);
   const slug = partyId.replace(/^party\./, "");
   const cardRel = `initiatives/${initiativeId}/requests/${slug}.md`;
-  const card = systemCard(view, systems, {
-    header: [
-      `For: ${initiative.title} (initiative ${initiative.id})`,
-      `Asked of: ${party.name} (${party.id}), by ${by} on ${today}`,
-      `Reply by: ${due}`,
-    ],
-  });
+  const orgPack = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const header = [
+    `For: ${initiative.title} (initiative ${initiative.id})`,
+    `Asked of: ${party.name} (${party.id}), by ${by} on ${today}`,
+    `Reply by: ${due}`,
+  ];
+  const card = systemCard(
+    view,
+    systems,
+    orgPack ? { header, orgPack, now: nowIso(now) } : { header },
+  );
   const cardFile = join(initiativeDir(root, initiativeId), "requests", `${slug}.md`);
   await mkdir(dirname(cardFile), { recursive: true });
   await writeFile(cardFile, card, "utf8");

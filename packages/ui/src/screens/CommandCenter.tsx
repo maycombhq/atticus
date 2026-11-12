@@ -44,14 +44,21 @@ import {
   type StepQuestionsAnswer,
 } from "../app/question-counts.js";
 import { Propose } from "../app/propose.js";
-import { stageOf, type OnboardingData } from "./work/next.js";
+import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 import { Command } from "./work/RunNext.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
 import { UpgradeOffer } from "../app/upgrade.js";
 import { TileGroup, toneOf, type Tile } from "./home/HomeTiles.js";
-import { HomeChanges, HomePanel, NeedsTop, TOP } from "./home/HomePanels.js";
+import {
+  HomeChanges,
+  HomePanel,
+  NeedsTop,
+  PHASE_ORDER,
+  phaseWord,
+  TOP,
+} from "./home/HomePanels.js";
 
 /** ADR 0181: when the sample audit paused AI deciding, Home says why, with Map › Trust's link. */
 export function HomeDecidePaused() {
@@ -451,12 +458,26 @@ export function openFold(
 export function homeStatus(
   listState: "loading" | "error" | "ready",
   blocking: number,
+  /** Beta.27 review: what waits on a person (Needs a person's items), said when nothing blocks. */
+  waiting: readonly { kind: string }[] = [],
 ): { text: string; bad: boolean } {
   if (listState === "error") return { text: COPY.app.ccCantRead, bad: false };
   if (listState === "loading") return { text: COPY.app.ccReading, bad: false };
-  return blocking > 0
-    ? { text: T.thingsNeedAttention(blocking), bad: true }
+  if (blocking > 0) return { text: T.thingsNeedAttention(blocking), bad: true };
+  const waits = waiting.filter((x) => x.kind !== "phase");
+  return waits.length
+    ? { text: T.nothingBlockedButWaiting(waits.length, waitingWords(waits)), bad: false }
     : { text: T.nothingIsBlockedRight, bad: false };
+}
+
+/** What waits, by kind, the most first: "7 to sort out, 3 questions". */
+export function waitingWords(items: readonly { kind: string }[]): string {
+  const n = new Map<string, number>();
+  for (const x of items) n.set(x.kind, (n.get(x.kind) ?? 0) + 1);
+  return [...n.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, c]) => H.waitingKinds[k]?.(c) ?? `${c} ${k}`)
+    .join(", ");
 }
 
 /** The top few of a count by name, the most first: "96 Interface · 30 Table · 12 System". */
@@ -1029,7 +1050,7 @@ export function CommandCenter() {
   const problems =
     (onboarding.state === "ready" ? onboarding.data.problems.length : 0) +
     (trust.state === "ready" ? trust.data.problems.length : 0);
-  const status = homeStatus(listState, blocking.length);
+  const status = homeStatus(listState, blocking.length, inbox);
   const wait = waitingTiles({
     ...homeQs,
     needs: needs.state === "ready" ? allNeeds.filter((n) => n.status === "open").length : undefined,
@@ -1299,14 +1320,16 @@ function loadOf(l: Loaded<unknown>): Pick<Tile, "state" | "error"> {
   return l.state === "error" ? { state: "error", error: l.error } : { state: l.state };
 }
 
-/** The changes in flight by stage, in the stages' order: "2 feature · 1 tasks". */
+/**
+ * The changes in flight by where they are, in the gates' order and words: "2 at Define · 1 at
+ * Build" (beta.27 review: "1 stories" read as a count of stories, in another vocabulary).
+ */
 export function byStage(changes: readonly { state: string }[]): string {
-  const order = ["feature", "architecture", "stories", "tasks", "release", "done"] as const;
   const n = new Map<string, number>();
-  for (const c of changes) n.set(stageOf(c.state), (n.get(stageOf(c.state)) ?? 0) + 1);
-  return order
-    .filter((s) => n.has(s))
-    .map((s) => H.inStage(n.get(s)!, COPY.work.stage[s]))
+  for (const c of changes) n.set(phaseWord(c.state), (n.get(phaseWord(c.state)) ?? 0) + 1);
+  const order = [...new Set(PHASE_ORDER.map((p) => phaseWord(p)))];
+  return [...order.filter((w) => n.has(w)), ...[...n.keys()].filter((w) => !order.includes(w))]
+    .map((w) => H.inStage(n.get(w)!, w))
     .join(" · ");
 }
 
