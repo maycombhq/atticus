@@ -95,12 +95,6 @@ export interface Notification {
   link?: string;
   /** People to mention, by handle. */
   mentions?: string[];
-  /**
-   * Review of the fix (beta.27): what the message is, when its sender names it (an owner
-   * question's `owner-ask:<id>`): a manual notifier makes one step per key, whoever sends it and
-   * whatever its body says, instead of one per title and body. A live notifier ignores it.
-   */
-  key?: string;
 }
 
 export interface Notifier {

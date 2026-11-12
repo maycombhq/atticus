@@ -146,8 +146,8 @@ export function SendOwnerQuestion({
     } catch (err) {
       if (err instanceof ApiError && err.problem.status === 409) {
         // Review of the fix: "Being sent" (a send under way elsewhere) is no send on file yet,
-        // so it offers no Send again; "Already sent" does.
-        const busyNow = err.problem.title === "Being sent";
+        // so it offers no Send again; "Already sent" does. Told apart by the problem's code.
+        const busyNow = err.problem.code === "being-sent";
         if (!busyNow) setAlready(true);
         setNote({ ok: false, text: busyNow ? S.beingSent(owner) : S.already(owner) });
         // Beta.27 review, final round: the card reads the send on file, so it doesn't say "Not

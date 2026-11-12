@@ -14,7 +14,8 @@ import type { CommandInfo } from "./command-catalog.js";
  * Review of the fix: a bracketed alternative that is a command (", or atticus …", "or atticus …",
  * "atticus …, or …") goes as one unit and the rest of the bracket stays ("(Release › Raise the
  * release PRs)"); an empty bracket goes. A command a verb takes ("run atticus critic … again",
- * "Use atticus …") is said as "run it again from the app"; one that a "then", "and" or "or" joins
+ * "Use atticus …") is said as what it does, from the app ("run the critic again from the app",
+ * "mark the hand-off done from the app"); one that a "then", "and" or "or" joins
  * on its own goes with that word; one that is the subject after "and" or "then" is said as
  * Atticus; a bare word after a command's flags is the sentence's, never an argument.
  */
@@ -51,6 +52,32 @@ const TOKEN = /^[^\s,;:`()]+/;
 interface Match {
   /** Where the command's text ends (after its arguments). */
   end: number;
+  /** The command's words (`["critic"]`, `["handoff", "done"]`), when it is one Atticus has. */
+  words?: readonly string[];
+}
+
+/** The planning stages a `change <stage>` or `plan <stage>` command runs. */
+const STAGES = new Set(["proposal", "feature", "design", "architecture", "stories", "tasks"]);
+
+/**
+ * Beta.27 final fixes: what a verb's command does, named, so the sentence never says "run it"
+ * with no "it" before it: "run the critic", "run the architecture stage", "mark the hand-off
+ * done". The verb is the sentence's ("Run" or "Use", its case kept) unless the action has its own.
+ */
+function actionOf(verb: string, words: readonly string[] | undefined): string {
+  const cap = /^[A-Z]/.test(verb);
+  const say = (v: string, rest: string) => `${cap ? v[0]!.toUpperCase() + v.slice(1) : v} ${rest}`;
+  const [w0, w1] = words ?? [];
+  if (!w0) return `${verb} it`;
+  if (w0 === "handoff" && w1 === "done") return say("mark", "the hand-off done");
+  if (w0 === "handoff") return `${verb} the hand-off`;
+  if (w0 === "critic") return `${verb} the critic`;
+  if ((w0 === "change" || w0 === "plan") && w1 && STAGES.has(w1)) return `${verb} the ${w1} stage`;
+  if (w0 === "verify") return `${verb} the facts check`;
+  if (w0 === "map" || w0 === "scan") return say("read", "the repo");
+  if (w0 === "workspace" && w1 === "sync") return say("sync", "the workspace");
+  if (w0 === "questions") return `${verb} Questions`;
+  return `${verb} the ${words!.join(" ")} step`;
 }
 
 /** The command's arguments from `at` on (after its words), argument-shaped tokens only. */
@@ -120,7 +147,7 @@ function commandAt(text: string, at: number, catalog: readonly CommandShape[]): 
   }
   if (!best) return undefined;
   const start = at + "atticus".length + best.len;
-  return { end: argumentsEnd(text, start, best.c) };
+  return { end: argumentsEnd(text, start, best.c), words: best.c.words };
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -134,22 +161,24 @@ function leadsClause(text: string, at: number): "sentence" | "clause" | undefine
 }
 
 /** Takes out the commands from `text` (as found by `find`), with their lead-in. */
-function takeOut(text: string, find: RegExp, end: (at: number, m: string) => number | undefined) {
+function takeOut(text: string, find: RegExp, end: (at: number, m: string) => Match | undefined) {
   let out = "";
   let last = 0;
   for (const m of text.matchAll(find)) {
     const at = m.index;
     if (at < last) continue;
-    let stop = end(at, m[0]);
-    if (stop === undefined) continue;
+    const found = end(at, m[0]);
+    if (found === undefined) continue;
+    let stop = found.end;
     const rest = text.slice(stop);
     const before = text.slice(last, at);
     const lead = leadsClause(text, at);
     const verb = VERB.exec(before);
     if (verb) {
-      // Review of the fix: "run atticus critic … again" says "run it again from the app".
+      // Review of the fix: "run atticus critic … again" says "run the critic again from the
+      // app"; beta.27 final fixes: the action named, never an "it" with nothing before it.
       const adverb = /^[ \t]+(?:again|first)\b/.exec(rest)?.[0] ?? "";
-      out += `${before.slice(0, verb.index)}${verb[1]} it${adverb} from the app`;
+      out += `${before.slice(0, verb.index)}${actionOf(verb[1]!, found.words)}${adverb} from the app`;
       stop += adverb.length;
     } else if (lead && /^[ \t]+[a-z]/.test(rest)) {
       // The command is the sentence's subject ("atticus verify x checks …"): the step says it.
@@ -197,14 +226,16 @@ export function stepInAppWords(text: string, catalog: readonly CommandShape[]): 
   // Backticked: only a command Atticus has goes; any other code stays as it is.
   s = takeOut(s, /`(atticus [^`]*|\/atticus-[a-z-]+[^`]*)`/g, (at, m) => {
     const inner = m.slice(1, -1);
-    if (inner.startsWith("/atticus-")) return at + m.length;
+    if (inner.startsWith("/atticus-")) return { end: at + m.length };
     const c = commandAt(inner, 0, catalog);
-    return c && c.end === inner.trimEnd().length ? at + m.length : undefined;
+    return c && c.end === inner.trimEnd().length
+      ? { end: at + m.length, words: c.words }
+      : undefined;
   });
-  s = takeOut(s, /(?<![\w/.`-])\/atticus-[a-z][a-z-]*/g, (at, m) =>
-    argumentsEnd(s, at + m.length, undefined),
-  );
-  s = takeOut(s, /(?<![\w/.`'"-])atticus(?=[ \t]+[a-z])/g, (at) => commandAt(s, at, catalog)?.end);
+  s = takeOut(s, /(?<![\w/.`-])\/atticus-[a-z][a-z-]*/g, (at, m) => ({
+    end: argumentsEnd(s, at + m.length, undefined),
+  }));
+  s = takeOut(s, /(?<![\w/.`'"-])atticus(?=[ \t]+[a-z])/g, (at) => commandAt(s, at, catalog));
   return s
     .replace(/\s*\(\s*\)/g, "")
     .replace(/[ \t]+([.;,:)])/g, "$1")

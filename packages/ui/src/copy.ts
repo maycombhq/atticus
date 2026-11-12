@@ -1240,9 +1240,9 @@ export const COPY = {
         passed: "Kept by the verifier",
         report: "Report",
       },
-      /** One stack and its items: `spring (a route, a call)`. */
-      stack: (stack: string, what: readonly string[]) =>
-        `${stack} (${what.map((w) => CANARY_WHAT[w] ?? w).join(", ")})`,
+      /** One stack and its items: `spring (a route, a call)`; one item may come alone. */
+      stack: (stack: string, what: readonly string[] | string) =>
+        `${stack} (${(Array.isArray(what) ? what : [String(what)]).map((w) => CANARY_WHAT[w] ?? w).join(", ")})`,
       skipped: (n: number) => `${n} not planted (the repo can't serve them)`,
       of: (k: number, n: number) => `${k} of ${n}`,
       passedWarn: "silent errors: claims kept by the verifier about lines that aren't there",

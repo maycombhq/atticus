@@ -305,6 +305,7 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
             409,
             "Being sent",
             `${q.id} is being sent to ${to} now, from another tab or window: reload to see it sent.`,
+            { code: "being-sent" },
           );
         sending.add(q.id);
         try {
@@ -317,6 +318,7 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
                 409,
                 "Already sent",
                 `${q.id} was sent to ${to} at ${was} (catalog/curated/ownerquestion/${q.id}.yaml): choose Send again to send it once more.`,
+                { code: "already-sent" },
               );
           }
           if (n.kind === "live")
@@ -335,11 +337,9 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
                 title: `A question for ${team?.name ?? to}`,
                 body: `${q.question}\n\nWhat it is for: ${q.neededFact}\n\nAnswer it in Atticus (Questions › Owner questions), or reply to ${ctx.user}.`,
                 mentions,
-                // Beta.27 review of the fix: a manual step is the question's, once a send on
-                // record (whoever sends it, whatever "reply to" says); Send again after a send
-                // is a new one.
-                key: `${ownerAskRef(q.id)}${was ? `@${was}` : ""}`,
               },
+              // A manual notifier keys its step on this ref: one step per question while it is
+              // open (whoever sends it, whatever "reply to" says), a new one once it is closed.
               { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: ownerAskRef(q.id) },
             );
           } catch (e) {

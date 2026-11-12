@@ -552,8 +552,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   notifier that couldn't start or reach the system) answers `state: step` with why and writes
  *   no record; a send already under way answers 409; the upgrade view and the upgrade job's
  *   result name `upgraded`. Review of the fix: an owner question carries `asked` while its Send's
- *   manual step is open (one step per question), and that step marked done is a send on record.
- *   Canaries (ADR 0196): GET /api/trust/canaries (`CanaryView`): the latest canary report of each
+ *   manual step is open (one step per question), and that step marked done is a send on record;
+ *   a send's 409 says which in the problem's `code` (`being-sent`, `already-sent`); a Send after
+ *   the step was done or skipped makes a new step. Canaries (ADR 0196): GET /api/trust/canaries (`CanaryView`): the latest canary report of each
  *   repo in reports/canaries/ (what it covers and skipped), the canaries planted on this machine
  *   and not yet scored, and how often a claim graded as backed is wrong as two numbers side by
  *   side, never pooled (`rates`: the audit misread rate from the sample audit's answers, a link's
@@ -589,6 +590,11 @@ export const Problem = z.object({
    * (each in the metarepo, or in `repo`'s working copy), so the app reads them again.
    */
   written: z.array(z.object({ repo: z.string().optional(), file: z.string() })).optional(),
+  /**
+   * 3.12.0 (beta.27): which refusal it is, where one status has more than one the app tells
+   * apart (an owner question's send: 409 `being-sent` or `already-sent`).
+   */
+  code: z.string().optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);

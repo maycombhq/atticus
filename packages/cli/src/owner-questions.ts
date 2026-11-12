@@ -237,11 +237,17 @@ export async function recordStepSend(
   const ref = s.approval?.ref;
   if (s.state !== "done" || s.action !== "send-notification" || !s.recorded) return undefined;
   if (!ref?.startsWith(ownerAskRef(""))) return undefined;
+  const id = ref.slice(ownerAskRef("").length);
   const channel = s.inputs?.["channel"];
-  return recordOwnerSend(root, ref.slice(ownerAskRef("").length), {
+  // Beta.27 final fixes: to whom, as a live send records it (the question's owner, a team's id),
+  // not the channel the step was sent on; the channel only when the question isn't found.
+  const owner = (
+    await ownerQuestions(root, now ? { now } : {}).catch(() => undefined)
+  )?.questions.find((q) => q.id === id)?.owner;
+  return recordOwnerSend(root, id, {
     by: s.recorded.by,
     at: s.recorded.at,
-    to: typeof channel === "string" ? channel : "",
+    to: owner ?? (typeof channel === "string" ? channel : ""),
     ...(now ? { now } : {}),
   });
 }

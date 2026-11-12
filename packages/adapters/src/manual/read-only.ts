@@ -12,6 +12,9 @@ import type {
 import { ManualBase, provisionalId, type ManualOptions } from "./base.js";
 import { shortHash } from "./steps.js";
 
+/** The approval ref an owner question's send carries (the CLI's `ownerAskRef`). */
+const OWNER_ASK = "owner-ask:";
+
 /** A folder setting, relative to the metarepo root. */
 function folder(opts: ManualOptions, value: string | undefined, fallback: string): string {
   const v = value ?? fallback;
@@ -141,9 +144,7 @@ export class ManualNotifier extends ManualBase implements Notifier {
       {
         slug: `message-${n.channel}`,
         action: "send-notification",
-        key: n.key
-          ? `notify|${n.key}`
-          : `notify|${n.channel}|${shortHash(`${n.title}\n${n.body}\n${n.link ?? ""}`)}`,
+        key: await this.keyOf(n, a.ref),
         title: `Send "${n.title}" to ${n.channel}`,
         where: `Messages: ${n.channel}`,
         inputs: { channel: n.channel },
@@ -159,5 +160,22 @@ export class ManualNotifier extends ManualBase implements Notifier {
       a,
     );
     return { id: provisionalId(step.id) };
+  }
+
+  /**
+   * One step per message, by channel, title and body; for an owner question (the approval's ref
+   * is `owner-ask:<id>`), one per question, whoever sends it and whatever its "reply to" says.
+   * Beta.27 final fixes: a question's step is reused only while it is open; once done or skipped,
+   * asking again is a new step, keyed after the closed one (`…@<closed step id>`).
+   */
+  private async keyOf(n: Notification, ref: string): Promise<string> {
+    if (!ref.startsWith(OWNER_ASK))
+      return `notify|${n.channel}|${shortHash(`${n.title}\n${n.body}\n${n.link ?? ""}`)}`;
+    let key = `notify|${ref}`;
+    for (;;) {
+      const found = await this.opts.store.byKey(key);
+      if (!found || found.state === "open") return key;
+      key = `${key}@${found.id}`;
+    }
   }
 }

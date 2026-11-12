@@ -21,6 +21,8 @@ export interface Problem {
   next?: { step: "sync"; repos: string[] };
   /** API 3.11.0: a batch write's files written all the same (a 500 names them; most none). */
   written?: { repo: string; file: string }[];
+  /** API 3.12.0: which refusal of its status it is (a send's 409: being-sent, already-sent). */
+  code?: string;
 }
 
 export class ApiError extends Error {

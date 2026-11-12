@@ -102,13 +102,51 @@ describe("a step's reason in the app's words", async () => {
       say(
         "Critic round 2 on the design gate didn't finish: run atticus critic add-transfer-limit --gate design again.",
       ),
-    ).toBe("Critic round 2 on the design gate didn't finish: run it again from the app.");
-    expect(say("Run atticus verify forge-ledger first.")).toBe("Run it first from the app.");
+    ).toBe("Critic round 2 on the design gate didn't finish: run the critic again from the app.");
+    expect(say("Run atticus verify forge-ledger first.")).toBe(
+      "Run the facts check first from the app.",
+    );
     expect(say("Use atticus questions answer q-1a2b to answer it.")).toBe(
-      "Use it from the app to answer it.",
+      "Use Questions from the app to answer it.",
     );
     expect(say("your assistant reads it, and atticus verify forge-ledger checks them.")).toBe(
       "your assistant reads it, and Atticus checks them.",
+    );
+  });
+
+  // Beta.27 final fixes: a verb's command is named for what it does, never "it" with no "it".
+  it("names the action a verb took, where the sentence has no it", () => {
+    expect(
+      say(
+        "The design gate is not decided: 2 AI lenses are with your assistant. Run atticus handoff done <run> for each, then look at the findings again.",
+      ),
+    ).toBe(
+      "The design gate is not decided: 2 AI lenses are with your assistant. Mark the hand-off done from the app for each, then look at the findings again.",
+    );
+    expect(
+      say(
+        "The architecture stage is with your assistant (run r-9): finish the hand-off, then run atticus change architecture add-transfer-limit again.",
+      ),
+    ).toBe(
+      "The architecture stage is with your assistant (run r-9): finish the hand-off, then run the architecture stage again from the app.",
+    );
+    expect(
+      say(
+        "The security lens on the design gate (round 1) didn't review (timed out): run atticus critic add-transfer-limit --gate design again.",
+      ),
+    ).toBe(
+      "The security lens on the design gate (round 1) didn't review (timed out): run the critic again from the app.",
+    );
+    expect(
+      say(
+        "The design gate is mandatory on this platform and the critic hasn't reviewed it yet: run atticus critic add-transfer-limit --gate design.",
+      ),
+    ).toBe(
+      "The design gate is mandatory on this platform and the critic hasn't reviewed it yet: run the critic from the app.",
+    );
+    expect(say("Run atticus workspace sync first.")).toBe("Sync the workspace first from the app.");
+    expect(say("then run atticus plan stories add-transfer-limit again.")).toBe(
+      "then run the stories stage again from the app.",
     );
   });
 

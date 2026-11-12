@@ -351,6 +351,7 @@ describe("an owner question, sent", () => {
     const c3 = await confirmFor(srv, "owner-ask", gap.id);
     const twice = await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c3 });
     expect(twice.status).toBe(409);
+    expect(twice.body.code).toBe("already-sent");
     expect(String(twice.body.detail)).toMatch(/Send again/);
     expect(notifier.sent.length).toBe(posted);
     const c4 = await confirmFor(srv, "owner-ask", gap.id);
@@ -503,6 +504,12 @@ describe("an owner question whose live send became a manual step (beta.27 final 
       const after = await openGap(bao);
       expect(after.sentAt).toBeDefined();
       expect(after.asked).toBeUndefined();
+      // Recorded as a live send records it: to the team's id, not the step's "@" channel.
+      const asks = JSON.parse(await readFile(join(r2, ".index/owner-asks.json"), "utf8")) as Record<
+        string,
+        { to?: string }
+      >;
+      expect(asks[gap.id]?.to).toBe(gap.owner);
       const rec = parse(
         await readFile(join(r2, `catalog/curated/ownerquestion/${gap.id}.yaml`), "utf8"),
       ) as { evidence: { source: string; by?: string }[] };
@@ -515,6 +522,70 @@ describe("an owner question whose live send became a manual step (beta.27 final 
       expect(again.id).not.toBe(a.id);
     } finally {
       await bao.close();
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
+  it("a skipped step is asked again as a new open step, and so is a critic gap's done one", async () => {
+    // Beta.27 final fixes: the step is reused only while it is open.
+    const { r2, s } = await serverWith(() => new MockNotifier(), "{ type: manual }");
+    try {
+      const gap = await openGap(s);
+      const send = async (id: string) =>
+        Api.SentOwnerAsk.parse((await post(s, `/api/owner-questions/${id}/send`, {})).body);
+      const a = await send(gap.id);
+      expect(a.state).toBe("step");
+      const first = a.id!.replace(/^manual:/, "");
+      const skipped = await post(s, `/api/todo/${first}/done`, {
+        skip: true,
+        note: "asked at the stand-up",
+      });
+      expect(skipped.status).toBe(200);
+      expect((await openGap(s)).asked).toBeUndefined();
+      // Send again: a new open step, and the question says asked again.
+      const b = await send(gap.id);
+      expect(b.state).toBe("step");
+      expect(b.id).not.toBe(a.id);
+      const second = b.id!.replace(/^manual:/, "");
+      expect((await fileStepStore(r2).get(second))?.state).toBe("open");
+      expect((await openGap(s)).asked).toMatchObject({ step: second });
+      // While it is open, another Send is the same step.
+      expect(await send(gap.id)).toMatchObject({ state: "step", id: b.id });
+
+      // A critic knowledge gap a person asked of its owner (its send keeps no `was`).
+      await writeQuestion(r2, {
+        ...questionFromDraft(
+          QuestionDraft.parse({
+            question: "Which queue does the portal read transfer events from?",
+            evidence: [`openspec/changes/${CHANGE}/design.md:1`],
+          }),
+          {
+            step: "critic-ask",
+            repo: CHANGE,
+            command: "atticus finding x ask",
+            rerun: `atticus critic ${CHANGE}`,
+            at: NOW,
+          },
+        ),
+        askedOf: "team-portal",
+        finding: { change: CHANGE, gate: "design", round: 1, id: "f-2" },
+      });
+      const r = await fetch(s.url + "/api/owner-questions", {
+        headers: { "X-Atticus-Token": s.token },
+      });
+      const list = Api.OwnerQuestionList.parse(await r.json());
+      const fq = list.questions.find((x) => /Which queue/.test(x.question))!;
+      expect(fq.finding).toBeDefined();
+      const c = await send(fq.id);
+      expect(c.state).toBe("step");
+      const done = await post(s, `/api/todo/${c.id!.replace(/^manual:/, "")}/done`, {});
+      expect(done.status).toBe(200);
+      const d = await send(fq.id);
+      expect(d.state).toBe("step");
+      expect(d.id).not.toBe(c.id);
+      expect((await fileStepStore(r2).get(d.id!.replace(/^manual:/, "")))?.state).toBe("open");
+    } finally {
       await s.close();
       await rm(r2, { recursive: true, force: true });
     }
@@ -543,6 +614,7 @@ describe("an owner question whose live send became a manual step (beta.27 final 
       await reached;
       const second = await post(s, `/api/owner-questions/${gap.id}/send`, { confirmation: c2 });
       expect(second.status).toBe(409);
+      expect(second.body.code).toBe("being-sent");
       release();
       expect((await first).body).toMatchObject({ state: "sent" });
       expect(posted.length).toBe(1);

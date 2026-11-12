@@ -415,16 +415,38 @@ describe("manual notifications and wiki", () => {
         { ...A(), scope: "standing" },
       ),
     ).toEqual({ id: "manual:message-forge-ledger" });
-    // Review of the fix (beta.27): a message with its own key is one step whatever its body
-    // says (another person's "reply to …"), and a new key is a new step.
-    const ask = (body: string, key: string) =>
-      n.send({ channel: "@team-ledger", title: "A question", body, key }, A());
-    const first = await ask("Which limit? Reply to @ana.", "owner-ask:q-1");
-    expect(await ask("Which limit? Reply to @bao.", "owner-ask:q-1")).toEqual(first);
-    expect(
-      await ask("Which limit? Reply to @bao.", "owner-ask:q-1@2026-10-21T09:00:00Z"),
-    ).not.toEqual(first);
+    // Review of the fix (beta.27): an owner question's send (approval ref `owner-ask:<id>`) is
+    // one step per question whatever its body says (another person's "reply to …"); another
+    // question is another step.
+    const ask = (body: string, ref = "owner-ask:q-1") =>
+      n.send({ channel: "@team-ledger", title: "A question", body }, A("pat", undefined, ref));
+    const first = await ask("Which limit? Reply to @ana.");
+    expect(await ask("Which limit? Reply to @bao.")).toEqual(first);
+    expect(await ask("Which limit? Reply to @bao.", "owner-ask:q-2")).not.toEqual(first);
     expect((await store.list({ action: "send-notification" })).length).toBe(3);
+    // Beta.27 final fixes: reused only while open. Skipped, asking again is a new open step, keyed
+    // after the closed one; that one done, the next is new again.
+    const step = (r: { id: string }) => r.id.replace(/^manual:/, "");
+    await recordStep(store, step(first), {
+      by: "pat",
+      at: now(),
+      values: {},
+      skip: true,
+      note: "asked in person",
+    });
+    const second = await ask("Which limit? Reply to @ana.");
+    expect(second).not.toEqual(first);
+    const s2 = await store.get(step(second));
+    expect(s2).toMatchObject({ state: "open", key: `notify|owner-ask:q-1@${step(first)}` });
+    expect(await ask("Which limit? Reply to @bao.")).toEqual(second);
+    await recordStep(store, step(second), { by: "pat", at: now(), values: {} });
+    const third = await ask("Which limit? Reply to @ana.");
+    expect([first, second]).not.toContainEqual(third);
+    expect((await store.get(step(third)))?.state).toBe("open");
+    // A message that isn't a question's is still one step per channel, title and body.
+    const remind = () =>
+      n.send({ channel: "#forge-ledger", title: "Reminder", body: "Review the plan." }, A());
+    expect(await remind()).toEqual(await remind());
 
     const root = await mkdtemp(join(tmpdir(), "atticus-wiki-"));
     await mkdir(join(root, "inputs/wiki/how-to"), { recursive: true });

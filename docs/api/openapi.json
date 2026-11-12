@@ -26806,6 +26806,9 @@
               ],
               "additionalProperties": false
             }
+          },
+          "code": {
+            "type": "string"
           }
         },
         "required": [

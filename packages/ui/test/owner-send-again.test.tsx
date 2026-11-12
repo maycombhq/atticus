@@ -28,6 +28,7 @@ vi.mock("../src/api/client.js", async () => {
         throw new real.ApiError({
           type: "about:blank",
           title: "Already sent",
+          code: "already-sent",
           status: 409,
           detail: "q.x was sent: choose Send again to send it once more.",
         });
