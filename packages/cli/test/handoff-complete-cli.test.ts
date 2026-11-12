@@ -1,3 +1,4 @@
+import { adoptSeeded } from "./seed-slots.js";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,7 +12,6 @@ import { featureSuggestNames } from "../src/feature-commands.js";
 import { planStories, templatesDraft } from "../src/plan-commands.js";
 import { glossaryScan } from "../src/quality-commands.js";
 import { completionOf, handoffDone } from "../src/workspace-commands.js";
-import { seedForgeSlots } from "./seed-forge.js";
 
 /**
  * `feature suggest-names` and `templates draft` started in hand-off mode wait on the
@@ -48,6 +48,8 @@ async function forgeRoot(o: { changeOrgPack?: boolean } = {}): Promise<string> {
     await writeFile(f, serializeRecord(p.record));
   }
   await cp(join(FORGE, "inputs"), join(root, "inputs"), { recursive: true });
+  // ADR 0195 (CS2): the seeded catalog adopted into slots and built.
+  await adoptSeeded(root);
   return root;
 }
 
@@ -158,11 +160,6 @@ describe("atticus handoff done finishes other commands' hand-off runs", () => {
 
   it("saves the glossary definer's definitions as proposals, as the model path does", async () => {
     const root = await forgeRoot();
-    // ADR 0195 point 2: the glossary scan writes its inputs and builds, so it runs over a
-    // build's catalog (the Forge golden slots, which build to expected/scan.yaml), not record
-    // files written by hand, which a build refuses as a catalog from before the slots.
-    await rm(join(root, "catalog", "generated"), { recursive: true, force: true });
-    await seedForgeSlots(root);
     const runtime = new HandoffRuntime({ root, validate, now: () => new Date(NOW) });
     const a = io();
     expect(await glossaryScan(root, {}, a.io, { runtime, now: () => new Date(NOW) })).toBe(0);

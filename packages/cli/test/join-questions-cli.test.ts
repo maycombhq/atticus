@@ -16,8 +16,8 @@ import {
 } from "@maycombhq/core";
 import { projectFactsIntoCatalog } from "../src/map-render-commands.js";
 import { questionsFiles } from "../src/question-commands.js";
-import { verifyCommand } from "../src/verify-commands.js";
-import { confirmed } from "./seed-slots.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Beta.24 review: the estate join's questions (a host nothing resolves, several entries that
@@ -66,23 +66,10 @@ function metarepo(): string {
 
 async function verify(root: string, repo: string): Promise<string[]> {
   const out: string[] = [];
-  // ADR 0195 point 4 and the owner's third answer: an answer or a profile's host that joins a
-  // call explains the Unresolved record it removes; above 10% of a repo's records (one of five
-  // here) the write waits for the count it lists, confirmed as a person would.
-  const code = await confirmed(
-    (io, allowRemovals) =>
-      verifyCommand(
-        root,
-        repo,
-        {
-          commit: COMMIT[repo]!,
-          dir: join(root, "workspace", repo),
-          write: true,
-          now: () => AT,
-          ...(allowRemovals !== undefined ? { allowRemovals } : {}),
-        },
-        io,
-      ),
+  const code = await verifyCommand(
+    root,
+    repo,
+    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true, now: () => AT },
     { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
   );
   expect(code, out.join("\n")).toBe(0);

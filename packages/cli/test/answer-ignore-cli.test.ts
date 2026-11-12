@@ -18,8 +18,8 @@ import {
   type Question,
 } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
-import { verifyCommand } from "../src/verify-commands.js";
-import { confirmed } from "./seed-slots.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * Beta.24 review, end to end: a person answered a join question with words meaning "ignore this",
@@ -64,23 +64,10 @@ function metarepo(): string {
 
 async function verify(root: string, repo: string): Promise<void> {
   const out: string[] = [];
-  // ADR 0195 point 4 and the owner's third answer: an answer that moves a call off the
-  // Unresolved list explains the records it removes, and a removal of more than 10% of a repo's
-  // records waits for its count: confirmed here as a person would, with the count listed.
-  const code = await confirmed(
-    (io, allowRemovals) =>
-      verifyCommand(
-        root,
-        repo,
-        {
-          commit: COMMIT[repo]!,
-          dir: join(root, "workspace", repo),
-          write: true,
-          now: () => AT,
-          ...(allowRemovals !== undefined ? { allowRemovals } : {}),
-        },
-        io,
-      ),
+  const code = await verifyCommand(
+    root,
+    repo,
+    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true, now: () => AT },
     { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
   );
   expect(code, out.join("\n")).toBe(0);

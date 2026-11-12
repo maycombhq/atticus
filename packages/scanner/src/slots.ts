@@ -296,7 +296,9 @@ export function parseReadersSlot(text: string, repo?: string): SlotParse<Readers
           message: `cites ${other.repo}, not the slot's repo ${s.data.repo}`,
         });
     });
-  return issues.length ? { ok: false, issues } : { ok: true, slot: { ...s.data, records: r.records } };
+  return issues.length
+    ? { ok: false, issues }
+    : { ok: true, slot: { ...s.data, records: r.records } };
 }
 
 /** A repo's readers slot as stored, checked against its file name and its records' evidence. */

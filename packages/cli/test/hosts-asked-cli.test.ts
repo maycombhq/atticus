@@ -1,3 +1,4 @@
+import { confirmed } from "./seed-slots.js";
 import { execFileSync } from "node:child_process";
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,7 +18,6 @@ import {
 import { readCatalog } from "@maycombhq/scanner";
 import { questionsFiles } from "../src/question-commands.js";
 import { scanCommand } from "../src/scan-commands.js";
-import { confirmed } from "./seed-slots.js";
 
 const ESTATE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/estate");
 
@@ -43,18 +43,6 @@ function git(cwd: string, ...args: string[]) {
 }
 
 /** The two-repo estate with its owners part, cloned in workspace/, and its manifest. */
-/** A scan that confirms the large removals it lists, with their count (ADR 0195 point 4). */
-const rescan = (root: string, out: ReturnType<typeof io>["io"]) =>
-  confirmed(
-    (x, allowRemovals) =>
-      scanCommand(
-        root,
-        { noDrift: true, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
-        x,
-      ),
-    out,
-  );
-
 async function metarepo() {
   const root = await mkdtemp(join(tmpdir(), "atticus-hosts-cli-"));
   await cp(join(ESTATE, "org-pack"), join(root, "org-pack"), { recursive: true });
@@ -79,6 +67,15 @@ const interfaces = async (root: string) =>
 
 // App-only audit: the app's scan is a cross-check; it asks about the calls of repos the assistant
 // has read, and of the others only when the person asks.
+// ADR 0195 (CS2): a scan after an answer joins what were loose ends, removals the build lists
+// for a person to confirm with their count; the rescan here confirms them, as they would.
+const rescan = (root: string, out: Parameters<typeof scanCommand>[2]) =>
+  confirmed(
+    (x, n) =>
+      scanCommand(root, { noDrift: true, ...(n !== undefined ? { allowRemovals: n } : {}) }, x),
+    out,
+  );
+
 describe("a scan that asks only for the repos the assistant has read", () => {
   it("asks nothing for calls from a repo outside askFrom, and asks for one inside it", async () => {
     const root = await metarepo();
@@ -122,9 +119,6 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(a.out.at(-1)).toBe("Next: atticus scan");
 
     const s2 = io();
-    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
-    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
-    // records, so the rescan waits for their count: confirmed as a person would.
     expect(await rescan(root, s2.io)).toBe(0);
     expect(s2.out.some((l) => l.includes("localhost:9966"))).toBe(false);
     expect(await interfaces(root)).toEqual(
@@ -152,9 +146,6 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
       ),
     );
     const s2 = io();
-    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
-    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
-    // records, so the rescan waits for their count: confirmed as a person would.
     expect(await rescan(root, s2.io)).toBe(0);
     const after = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after.map((x) => [x.id, x.state])).toEqual([[q!.id, "retired"]]);
@@ -177,9 +168,6 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(old.options.map((o) => o.label)).toEqual(["forge-customers", HOSTS_NONE]);
     await writeQuestion(root, old);
     const s2 = io();
-    // ADR 0195 point 4: the joined calls leave the Unresolved list, explained by the input that
-    // changed (the answer, or the manifest's hosts), and they are more than 10% of the repo's
-    // records, so the rescan waits for their count: confirmed as a person would.
     expect(await rescan(root, s2.io)).toBe(0);
     const [after] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
     expect(after!.id).toBe(q!.id);
@@ -202,7 +190,7 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     });
     const before = await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8");
     const s3 = io();
-    expect(await scanCommand(root, { noDrift: true }, s3.io)).toBe(0);
+    expect(await rescan(root, s3.io)).toBe(0);
     expect(await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8")).toBe(before);
     expect(s3.out.some((l) => l.startsWith("Re-asked"))).toBe(false);
   }, 300_000);

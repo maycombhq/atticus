@@ -7,9 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiFactsRoutes } from "../src/ui-api-facts.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
 import { prCommand } from "../src/verify-preview.js";
-import { confirmed } from "./seed-slots.js";
 
 /**
  * Corrections without git commands (plan item C4, ADR 0149): after a correction the app writes,
@@ -55,15 +55,15 @@ async function snapshot(dir: string, base = dir, out = new Map<string, string>()
 
 /**
  * The files a write changed, Atticus's own local state left out (the catalog's read cache under
- * `.atticus/`, and since ADR 0195 point 7 the build's undo copies under `.index/build-undo/`,
- * both git-ignored and never committed): the preview's add step names the rest.
+ * `.atticus/` and, since ADR 0195, the build's undo copies under `.index/`, never committed):
+ * the preview's add step names the rest.
  */
 const changedFiles = (before: Map<string, string>, after: Map<string, string>) =>
   [...new Set([...before.keys(), ...after.keys()])].filter(
     (k) =>
       before.get(k) !== after.get(k) &&
       !k.split("/").includes(".atticus") &&
-      !k.startsWith(".index/"),
+      !k.split("/").includes(".index"),
   );
 
 beforeAll(async () => {
@@ -72,22 +72,9 @@ beforeAll(async () => {
   await cp(join(FIX, "facts"), join(root, "facts"), { recursive: true });
   for (const r of await readdir(join(FIX, "repos")))
     await cp(join(FIX, "repos", r), join(root, "workspace", r), { recursive: true });
-  // The catalog as the estate has it: every repo written once. ADR 0195 point 2: the build joins
-  // the facts slots only, which only a repo's own verify --write writes, so forge-notifications
-  // (which forge-payments calls) is written too (beta.26's join read its live facts file).
-  for (const r of ["forge-accounts", "forge-cards", "forge-notifications", "forge-payments"])
-    expect(
-      await confirmed(
-        (io, allowRemovals) =>
-          verifyCommand(
-            root,
-            r,
-            { write: true, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
-            io,
-          ),
-        quiet,
-      ),
-    ).toBe(0);
+  // The catalog as the estate has it: every repo written once.
+  for (const r of ["forge-accounts", "forge-cards", "forge-payments"])
+    expect(await verifyCommand(root, r, { write: true }, quiet)).toBe(0);
   srv = await startServer({
     root,
     port: 0,
@@ -214,21 +201,7 @@ describe(
       expect(p.links!.unmade).toEqual([]);
 
       // The write itself: every file it changes is one the add step names (or under a folder it names).
-      // ADR 0195 point 4: the corrected call's link to forge-accounts (and the feature it made)
-      // leave the catalog, 2 of forge-accounts's 13 records: a large removal, explained by the
-      // correction, which waits for its count. Confirmed as a person would.
-      expect(
-        await confirmed(
-          (io, allowRemovals) =>
-            verifyCommand(
-              root,
-              "forge-payments",
-              { write: true, ...(allowRemovals !== undefined ? { allowRemovals } : {}) },
-              io,
-            ),
-          quiet,
-        ),
-      ).toBe(0);
+      expect(await verifyCommand(root, "forge-payments", { write: true }, quiet)).toBe(0);
       const after = await snapshot(root);
       const changed = changedFiles(before, after);
       const add = v.steps[2]!.command!.replace(/^git add /, "").split(" ");
@@ -243,12 +216,7 @@ describe(
       expect(p.catalog!.files).toEqual(catalog);
     });
 
-    // WAITS FOR CS2: the preview lists the dropped fact, but its links come out empty (no link
-    // added, removed or unmade) while the catalog still has payments-api's POST /notifications
-    // Interface: the preview's build doesn't put the corrected facts in place of the repo's
-    // facts snapshot. Turns green when previewWrite builds with the facts the write would
-    // snapshot (packages/cli/src/verify-preview.ts).
-    it.fails("says a fact marked wrong is dropped", async () => {
+    it("says a fact marked wrong is dropped", async () => {
       expect(
         (
           await call("POST", "/api/facts/forge-payments/corrections", {
@@ -265,13 +233,13 @@ describe(
       expect(v.preview!.facts.dropped).toEqual([
         expect.objectContaining({ id: "call.post.notifications", why: "wrong" }),
       ]);
-      // ADR 0195 point 10, "links are live": no derived arrow outlives its caller. beta.26's
-      // incremental write kept the Interface, held by the callee's side, as a link unmade; the
-      // build makes the estate's links from the facts slots alone, so the link is removed.
-      expect(v.preview!.links!.removed).toEqual([
-        expect.objectContaining({ from: "payments-api", method: "POST", path: "/notifications" }),
-      ]);
+      // ADR 0195 (CS2): forge-notifications has no slot here (no scan, no verify --write), so the
+      // build never joined the call: it was a loose end, and marking it wrong changes that loose
+      // end and unmakes no link (beta.26 kept a link the callee's side held from an earlier write).
       expect(v.preview!.links!.unmade).toEqual([]);
+      expect(v.preview!.catalog!.files).toEqual([
+        "catalog/generated/unresolved/unresolved.call-post-notifications.yaml",
+      ]);
     });
 
     it("still gives the commands when there is no checkout, and 404 for a repo with no facts", async () => {

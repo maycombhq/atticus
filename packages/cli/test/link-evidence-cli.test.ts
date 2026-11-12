@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { denyHash, intakeTraffic } from "../src/link-evidence-files.js";
-import { verifyCommand } from "../src/verify-commands.js";
+// ADR 0195 (CS2): --write confirms the removals a build lists, as a person would.
+import { snapshotFactsFiles, verifyConfirmed as verifyCommand } from "./seed-slots.js";
 
 /**
  * ADR 0151 from the command line: `atticus intake traffic` keeps an invented gateway export as
@@ -29,6 +30,7 @@ function metarepo() {
   const root = mkdtempSync(join(tmpdir(), "atticus-link-evidence-"));
   cpSync(join(GW, "org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(GW, "facts"), join(root, "facts"), { recursive: true });
+  snapshotFactsFiles(root, [REPO]);
   cpSync(join(GW, "repos", REPO), join(root, "workspace", REPO), { recursive: true });
   cpSync(join(LE, REPO), join(root, "workspace", REPO), { recursive: true });
   return root;
@@ -40,29 +42,6 @@ const verify = (root: string, c = capture()) =>
     { commit: "8888bbb", dir: join(root, "workspace", REPO), write: true },
     c.io,
   );
-
-/**
- * ADR 0195 point 2: the build joins every repo's facts slot at once, and only `verify <repo>
- * --write` writes a repo's slot (the snapshot of its facts), so the repos the portal calls
- * through the gateway are verified first, as a team's estate has them: a live facts file alone is
- * no part of the catalog (beta.26's verify joined every live file).
- */
-async function verifyOthers(root: string): Promise<void> {
-  for (const [repo, commit] of [
-    ["forge-accounts", "9999ccc"],
-    ["forge-gateway", "7777aaa"],
-  ] as const) {
-    cpSync(join(GW, "repos", repo), join(root, "workspace", repo), { recursive: true });
-    const c = capture();
-    const code = await verifyCommand(
-      root,
-      repo,
-      { commit, dir: join(root, "workspace", repo), write: true },
-      c.io,
-    );
-    expect(code, [...c.out, ...c.err].join("\n")).toBe(0);
-  }
-}
 
 /** Every file under a folder, as text. */
 const textUnder = (dir: string): string =>
@@ -139,7 +118,6 @@ describe("atticus verify --write with contract files and traffic", () => {
       { source: "apigee", from: "2026-09-01", to: "2026-09-30" },
       capture().io,
     );
-    await verifyOthers(root);
     const c = capture();
     expect(await verify(root, c)).toBe(0);
     expect(parse(readFileSync(join(root, "facts", `${REPO}.contracts.yaml`), "utf8"))).toEqual(

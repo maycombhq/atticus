@@ -4,6 +4,7 @@ import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
   buildAndWrite,
+  writeRefusedReport,
   buildLines,
   diffCatalogs,
   diffIsEmpty,
@@ -370,6 +371,8 @@ export async function scanCommand(
           ...(o.repos ? { repos: o.repos } : {}),
           ...(o.full ? { full: true } : {}),
           ...(o.json ? { json: true } : {}),
+          ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+          ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
         },
         io,
       );
@@ -382,7 +385,7 @@ export async function scanCommand(
 
 async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Promise<number> {
   const out = join(catalogDirOf(root), "generated");
-  const before = await readCatalog(out, { cacheRoot: root });
+  const before = await readCatalog(out, { cacheRoot: root, fresh: true });
   const started = Date.now();
   const scan = await scanEstate({
     root,
@@ -394,6 +397,13 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const command = `atticus scan${o.repos?.length ? ` --repos ${o.repos.join(",")}` : ""}`;
   // ADR 0195 point 4: a scan that read no repo in full writes nothing (no slot, no build).
   const unreadAll = scanRefusal(scan);
+  // CS3: the refusal is the latest build's report too, for the app to show.
+  if (unreadAll && !o.dryRun)
+    await writeRefusedReport(root, command, {
+      reasons: ["nothing-read"],
+      message: unreadAll.message,
+      unread: unreadAll.repos.map((r) => ({ repo: r.repo, why: r.message })),
+    });
   // ADR 0195 (CS2): the readers slot of each repo read in full, then the build, its guards, and
   // only then the write. Every other repo keeps its last good read.
   const slotWrites: SlotWrite[] = scan.observations.flatMap((x) =>

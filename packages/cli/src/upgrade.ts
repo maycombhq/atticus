@@ -714,20 +714,12 @@ export async function upgradeCommand(
   version = VERSION,
 ): Promise<number> {
   const c = await upgradeCheck(root, version);
-  const { planUpgradeToSlots, applyUpgradeToSlots } = await import("@maycombhq/scanner");
-  const slots = await planUpgradeToSlots(root);
-  const slotsJson = () =>
-    slots.pending
-      ? {
-          slots: {
-            pending: true,
-            records: slots.records,
-            write: slots.slots,
-            verifiable: slots.verifiable,
-            firstBuildChanges: slots.differs,
-          },
-        }
-      : {};
+  const { planUpgradeToSlots, applyUpgradeToSlots, upgradeSlotsView } =
+    await import("@maycombhq/scanner");
+  let slots = await planUpgradeToSlots(root);
+  // CS3: every file --yes writes, with its hash, the same list the app's upgrade screen shows.
+  let view = await upgradeSlotsView(root, slots);
+  const slotsJson = () => (slots.pending ? { slots: view } : {});
   const slotsLines = (): string[] => [
     `Adopt the catalog into source slots (ADR 0195): ${slots.records} records, nothing lost:`,
     ...slots.slots.map(
@@ -842,6 +834,11 @@ export async function upgradeCommand(
     changed.push(STORE_MARKER);
   }
   // ADR 0195 point 6: the catalog adopted into source slots, shown first, applied with --yes.
+  // Planned again once the other steps ran: they may change an input the slots record.
+  if (c.pending.length && slots.pending) {
+    slots = await planUpgradeToSlots(root);
+    view = await upgradeSlotsView(root, slots);
+  }
   let slotsDone: number | undefined | "refused" | "shown" = undefined;
   if (slots.pending) {
     if (!o.yes || slots.differs.length) slotsDone = o.yes ? "refused" : "shown";

@@ -1,3 +1,4 @@
+import { adoptSeeded } from "./seed-slots.js";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,9 +12,9 @@ import {
   raiseQuestions,
   recordPath,
   RepoManifest,
+  serializeRecord,
 } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { seedReadersSlots } from "./seed-slots.js";
 import { repoAdd } from "../src/repo-commands.js";
 import { cloneUrlKey, nearRepos, repoIdKey } from "../src/repo-ids.js";
 import { repoRename } from "../src/repo-rename.js";
@@ -214,11 +215,11 @@ describe("atticus repo rename <old> <new> (F5)", () => {
       type: "service",
     });
     if (!p.ok) throw new Error(JSON.stringify(p.issues));
-    // ADR 0195 point 2: a rename writes the repo's slots under the new id and builds, so the
-    // catalog it renames is a build's: the record seeded as forge-customers's readers slot, and
-    // built (a record file written by hand is a catalog from before the slots, which a build
-    // refuses until it is upgraded).
-    await seedReadersSlots(root, [p.record]);
+    const file = join(root, "catalog", "generated", recordPath(p.record));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, serializeRecord(p.record));
+    // ADR 0195 (CS2): the seeded catalog adopted, as atticus upgrade --yes adopts one.
+    await adoptSeeded(root);
     return root;
   }
 
