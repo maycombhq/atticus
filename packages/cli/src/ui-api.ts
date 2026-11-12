@@ -82,6 +82,8 @@ import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
 import { syncNextOf } from "./sync-next.js";
+import { changeNextStep } from "./cockpit.js";
+import { changeProblems, missingChangeWords } from "./change-problems.js";
 import {
   markCheckedByApp,
   startAutoDone,
@@ -214,6 +216,26 @@ async function run(
   return { code, out, err };
 }
 
+/**
+ * Beta.27 review: a scan's words in the app's terms: the page's Sync repos first, the command
+ * after it (the Console said "clone it with atticus workspace sync" where the page says Sync repos).
+ */
+export function scanAppWords(text: string): string {
+  return text
+    .replace(
+      /clone it again with atticus workspace sync/g,
+      "clone it again with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
+    )
+    .replace(
+      /clone it with atticus workspace sync/g,
+      "clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
+    )
+    .replace(
+      /Scan every repo \(atticus scan, after atticus workspace sync\)/g,
+      "Sync repos, then Check with the built-in readers again (in a terminal: atticus workspace sync, then atticus scan)",
+    );
+}
+
 /** A command's refusal or usage error as problem details, its own words as the detail. */
 function refused(r: Ran): HttpError {
   const detail = (r.err.length ? r.err : r.out).join("\n") || "The command refused.";
@@ -255,7 +277,8 @@ async function readChange(root: string, id: string): Promise<ChangeLifecycle> {
   try {
     return await changeStore(root).read(id);
   } catch {
-    throw notFound(`There is no change ${id}.`);
+    // Beta.27 review: a change.yaml that doesn't read says so; an id that isn't one, the nearest.
+    throw notFound(await missingChangeWords(root, id));
   }
 }
 
@@ -966,9 +989,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         });
         return { status: 200, body: await changeDetail(root, params.changeId!) };
       })
+      // Beta.27 review: the changes whose change.yaml doesn't read (GET /api/changes leaves them out).
+      .add("GET", "/api/change-problems", async () => ({
+        status: 200,
+        body: Api.ChangeProblems.parse(await changeProblems(root)),
+      }))
       .add("GET", "/api/changes/{changeId}/status", async ({ params }) => {
         await readChange(root, params.changeId!);
         const rep = await changeReport(root, params.changeId!);
+        // Beta.27 review: the sentence At a glance says, on every page (changeNextStep).
+        const said = await changeNextStep(root, params.changeId!, rep);
         return {
           status: 200,
           body: {
@@ -976,7 +1006,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ...(rep.phase ? { phase: rep.phase } : {}),
             ...(rep.next ? { next: rep.next } : {}),
             ...(rep.progress ? { progress: rep.progress } : {}),
-            nextStep: rep.nextStep,
+            nextStep: said.nextStep,
+            ...(said.stepFirst ? { stepFirst: true } : {}),
             risk: rep.risk,
             tests: rep.tests,
             ...(rep.handoff
@@ -1798,16 +1829,24 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 return {};
               }
             })();
-            // Beta.26: the report in words in the Console, never its JSON.
-            for (const l of scanSummaryLines(parsed)) printToCurrent(l);
+            // Beta.26: the report in words in the Console, never its JSON. Beta.27 review: in the
+            // app's words (Sync repos), the command after them.
+            for (const l of scanSummaryLines(parsed)) printToCurrent(scanAppWords(l));
             const problems = (parsed.problems as unknown[] | undefined)?.length ?? 0;
             // Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. The
             // job says which repos and why, and what to do, in words; the catalog is unchanged.
+            // Beta.27 review: a refusal is its own outcome (refused: nothing written), never a
+            // failed run: the job ends without errors and its result says `refused`, which the
+            // Console and Problems read (ActivityEntry `outcome`).
             const refusal = parsed.refused as ScanRefusal | undefined;
             if (refusal)
               return {
-                result: { stats: parsed.stats, problems, written: false, refused: refusal },
-                errors: refusal.message.split("\n"),
+                result: {
+                  stats: parsed.stats,
+                  problems,
+                  written: false,
+                  refused: { ...refusal, message: scanAppWords(refusal.message) },
+                },
               };
             ctx.events.publish({
               type: "index.rebuilt",

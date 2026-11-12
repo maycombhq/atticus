@@ -7,6 +7,7 @@ import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
 import type { Slash, Step } from "./next.js";
 import { hasAction, StepAction } from "./step-action.js";
+import { BrokenChanges } from "./BrokenChanges.js";
 import "./work.css";
 
 const R = COPY.runNext;
@@ -255,6 +256,7 @@ export function NoChangeYet({ title }: { title?: string }) {
         {title ?? W.noChangeTitle}
       </h2>
       <p className="work-why">{W.noChangeYet}</p>
+      <BrokenChanges />
       <NewChange />
       <details className="work-terminal">
         <summary>{R.orTerminal}</summary>

@@ -42,6 +42,7 @@ import {
   testPlanFor,
   writeFileAtomic,
   wroteThis,
+  personWrittenPlanning,
   type ChangeContext,
 } from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
@@ -4190,12 +4191,9 @@ export async function storiesStage(
       `${change.id} has no target flows yet: run atticus change architecture ${change.id} first.`,
     );
   // Files a person wrote are kept unless forced.
+  // Beta.27 review: the one definition the plan gate, the next step and the app read too.
   if (!o.force) {
-    const own: string[] = [];
-    for (const f of ["stories.md", "tasks.md", "requests.md"]) {
-      const t = await readFile(join(dir, f), "utf8").catch(() => undefined);
-      if (t !== undefined && !t.startsWith(GENERATED_MARK)) own.push(f);
-    }
+    const own = await personWrittenPlanning(dir);
     if (own.length)
       throw new PlannerError(
         "refused",

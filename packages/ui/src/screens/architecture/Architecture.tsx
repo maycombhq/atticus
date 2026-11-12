@@ -1019,6 +1019,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   }
                   asideBeside
                   reveal={reveal}
+                  asideIdle={!reveal && !selected}
                   toolbarIn={viewSlot}
                   overlay={
                     // ADR 0181: the links drawn, from code, by a person and by AI, and how each

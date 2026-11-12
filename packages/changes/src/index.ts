@@ -10,6 +10,7 @@ export * from "./footprint.js";
 export * from "./risk.js";
 export * from "./lifecycle.js";
 export * from "./progress.js";
+export * from "./planning.js";
 export * from "./approvals.js";
 export * from "./assess.js";
 export * from "./new-change.js";

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Finding, parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
 import { writeFinding } from "@maycombhq/naysayer";
+import { GENERATED_MARK } from "@maycombhq/changes";
 import { main } from "../src/main.js";
 import {
   changeSteps,
@@ -289,10 +290,12 @@ settings:
       join(root, "openspec/changes/add-transfer-limit"),
       { recursive: true },
     );
+    // Beta.27 review: Forge's stories.md and tasks.md are a person's, which the stories stage
+    // refuses to replace: the plan hand-off is next, never the stage.
     expect(commands((await json(root)).steps)).toEqual([
       // ADR 0128: no repo says what it is yet, so a person is asked for one line.
       ['atticus repo describe forge-notes --description "what it is"', null],
-      ["atticus plan stories add-transfer-limit", "/atticus-stories add-transfer-limit"],
+      ["atticus change handoff add-transfer-limit --approve", null],
     ]);
   });
 
@@ -305,6 +308,11 @@ settings:
       join(root, "openspec/changes/add-transfer-limit"),
       { recursive: true },
     );
+    // Beta.27 review: the stage writes the planning files only where no person wrote them.
+    for (const f of ["stories.md", "tasks.md"]) {
+      const p = join(root, "openspec/changes/add-transfer-limit", f);
+      await writeFile(p, `${GENERATED_MARK} stories. -->\n${await readFile(p, "utf8")}`);
+    }
     const j = await json(root);
     expect(j.steps.at(-1)).toMatchObject({
       step: "stories",
@@ -313,6 +321,24 @@ settings:
       change: "add-transfer-limit",
     });
     expect(j.steps.some((s) => s.step === "new-change")).toBe(false);
+  });
+
+  it("beta.27 review: with stories a person wrote, raises the plan hand-off, never the stage that refuses them", async () => {
+    const root = await metarepo({ clone: true });
+    await component(root, "forge-notes");
+    await component(root, "forge-notes-ui");
+    await cp(
+      join(FIXTURES, "forge-change/openspec/changes/add-transfer-limit"),
+      join(root, "openspec/changes/add-transfer-limit"),
+      { recursive: true },
+    );
+    const j = await json(root);
+    expect(j.steps.at(-1)).toMatchObject({
+      step: "handoff",
+      command: "atticus change handoff add-transfer-limit --approve",
+      change: "add-transfer-limit",
+    });
+    expect(j.steps.some((s) => s.step === "stories")).toBe(false);
   });
 });
 

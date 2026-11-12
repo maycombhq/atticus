@@ -265,20 +265,32 @@ export function questionItems(
 }
 
 /** A page's name for the pinned list: its section, its page, and the change or box it is of. */
-export function pageLabel(hash: string): string {
+export function pageLabel(hash: string, labelOf?: (id: string) => string | undefined): string {
   const s = screenOf(hash);
   const section = sectionLabel(s.section);
   const change = changeOf(hash);
   const q = new URLSearchParams(hash.split("?")[1] ?? "");
-  const about = change ?? q.get("node") ?? undefined;
+  // Beta.27 review: a box by its name ("Portal"), never its id ("system:portal"); its id less
+  // the kind while the estate isn't read.
+  const node = q.get("node") ?? undefined;
+  const about = change ?? (node ? (labelOf?.(node) ?? node.replace(/^[a-z-]+:/, "")) : undefined);
   const page = s.id === "changes" && change ? [] : [s.label];
   const parts = [section, ...page.filter((p) => p !== section), ...(about ? [about] : [])];
   return E.pageLabel(...parts);
 }
 
-export function pinnedItems(hashes: readonly string[]): ExItem[] {
-  return hashes.map((h) => ({ id: `pinned/${h}`, label: pageLabel(h), hash: h, pin: h }));
+export function pinnedItems(
+  hashes: readonly string[],
+  labelOf?: (id: string) => string | undefined,
+): ExItem[] {
+  return hashes.map((h) => ({ id: `pinned/${h}`, label: pageLabel(h, labelOf), hash: h, pin: h }));
 }
+
+/** The estate's boxes' names by id, for a pinned page's label. */
+export const estateLabels =
+  (view: { children: readonly Pick<EstateNode, "id" | "label">[] } | undefined) =>
+  (id: string): string | undefined =>
+    view?.children.find((n) => n.id === id)?.label;
 
 /**
  * What the filter keeps: every item whose words match (its name, full name, stage or kind), with

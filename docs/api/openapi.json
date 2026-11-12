@@ -6247,6 +6247,37 @@
         }
       }
     },
+    "/api/change-problems": {
+      "get": {
+        "operationId": "listChangeProblems",
+        "summary": "3.11.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
+        "tags": [
+          "changes"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeProblems"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{repo}/apply": {
       "post": {
         "operationId": "applyFacts",
@@ -6394,7 +6425,8 @@
                       "initiatives",
                       "outcomes",
                       "work",
-                      "service-desk"
+                      "service-desk",
+                      "upgrade"
                     ]
                   },
                   "files": {
@@ -28197,7 +28229,8 @@
               "initiatives",
               "outcomes",
               "work",
-              "service-desk"
+              "service-desk",
+              "upgrade"
             ]
           },
           "files": {
@@ -28279,6 +28312,12 @@
             ]
           },
           "answer": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "sentAt": {
             "type": "string"
           },
           "routeTo": {
@@ -29686,7 +29725,8 @@
               "initiatives",
               "outcomes",
               "work",
-              "service-desk"
+              "service-desk",
+              "upgrade"
             ]
           },
           "files": {
@@ -36314,6 +36354,12 @@
                 "state": {
                   "type": "string"
                 },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "drafts": {
                   "type": "integer",
                   "minimum": -9007199254740991,
@@ -37834,6 +37880,12 @@
                   "stop": {
                     "type": "string"
                   },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "refused"
+                    ]
+                  },
                   "jobId": {
                     "type": "string"
                   },
@@ -38221,6 +38273,12 @@
                 },
                 "stop": {
                   "type": "string"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "refused"
+                  ]
                 },
                 "jobId": {
                   "type": "string"
@@ -49065,6 +49123,12 @@
               "type": "string"
             }
           },
+          "byPerson": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "reply": {
             "type": "object",
             "properties": {
@@ -49130,6 +49194,34 @@
           "thread"
         ],
         "additionalProperties": false
+      },
+      "ChangeProblems": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "file",
+            "message"
+          ],
+          "additionalProperties": false
+        }
       },
       "PlacementView": {
         "type": "object",

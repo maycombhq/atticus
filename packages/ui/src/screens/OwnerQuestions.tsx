@@ -25,6 +25,26 @@ export function questionsKind(hash: string): QuestionsKind {
   return new URLSearchParams(query).get("kind") === "owner" ? "owner" : "steps";
 }
 
+/** The kind the address asks for (`?kind=steps` or `?kind=owner`), or none. */
+export function askedKind(hash: string): QuestionsKind | undefined {
+  const k = new URLSearchParams(hash.split("?")[1] ?? "").get("kind");
+  return k === "owner" || k === "steps" ? k : undefined;
+}
+
+/**
+ * Beta.27 review: the kind the page opens on when the address names none: the one that has
+ * questions. With no steps' question and 3 owner questions, every way in (the status bar, the
+ * activity bar, the Explorer, the bottom panel) opened "From the steps (0)".
+ */
+export function openingKind(
+  asked: QuestionsKind | undefined,
+  steps: number | undefined,
+  owner: number | undefined,
+): QuestionsKind {
+  if (asked) return asked;
+  return steps === 0 && (owner ?? 0) > 0 ? "owner" : "steps";
+}
+
 /**
  * Home's Questions to answer: the open questions on file and the open owner questions, the two
  * kinds the Questions page shows; the link opens the owner questions when only they wait.
@@ -72,7 +92,16 @@ export function OwnerQuestionList(p: {
  * reach; where notifications are set up, Send posts the question to its owner, on the person's
  * confirmation (it is a message, ADR 0186). Manual notifications make it a step for the person.
  */
-export function SendOwnerQuestion({ id, owner }: { id: string; owner: string }) {
+export function SendOwnerQuestion({
+  id,
+  owner,
+  again = false,
+}: {
+  id: string;
+  owner: string;
+  /** Beta.27 review: already sent: sending again is the secondary choice. */
+  again?: boolean;
+}) {
   const S = COPY.roleWork.send;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string }>();
@@ -104,7 +133,7 @@ export function SendOwnerQuestion({ id, owner }: { id: string; owner: string }) 
   return (
     <div className="qs-group-btns">
       <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
-        {busy ? S.sending : S.button(owner)}
+        {busy ? S.sending : again ? S.again(owner) : S.button(owner)}
       </button>
       {note && (
         <span
@@ -119,8 +148,14 @@ export function SendOwnerQuestion({ id, owner }: { id: string; owner: string }) 
   );
 }
 
+/** A date as the page says it (2026-11-09), from a timestamp. */
+const dayOf = (at?: string) => (at && /^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : undefined);
+
 export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: () => void }) {
   const q = p.q;
+  // Beta.27 review: the team's name and the channel in words, and the state the API says.
+  const who = q.ownerName ?? q.owner;
+  const by = O.channels[q.channel] ?? q.channel;
   const id = useId();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
@@ -156,15 +191,24 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
         <h3 id={`${id}-q`} className="qs-q">
           {q.question}
         </h3>
-        <span className={`chip ${shown.state === "answered" ? "done" : "warn"}`}>
-          {shown.state === "answered" ? O.answered : O.open}
+        <span
+          className={`chip ${shown.state === "answered" ? "done" : shown.state === "overdue" ? "blocking" : "warn"}`}
+        >
+          {shown.state === "answered" ? O.answered : shown.state === "overdue" ? O.overdue : O.sent}
         </span>
       </div>
       <p className="qs-meta">
         <span>
-          {O.ask(q.owner, q.system, q.channel)} · <code className="mono">{q.id}</code>
+          {O.ask(who, q.system, by)} · <code className="mono">{q.id}</code>
         </span>
       </p>
+      {shown.state !== "answered" && (
+        <span className="qs-card-line">
+          {shown.state === "overdue"
+            ? O.overdueTo(who, by, dayOf(q.sentAt))
+            : O.sentTo(who, by, dayOf(q.sentAt))}
+        </span>
+      )}
       {q.routeTo && <span className="qs-card-line">{O.routeTo(q.routeTo)}</span>}
       {q.finding && (
         <span className="qs-card-line">
@@ -183,7 +227,7 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
         </p>
       )}
       {/* ADR 0191: sent to its owner through the notifications Atticus is set up with. */}
-      {shown.state !== "answered" && <SendOwnerQuestion id={q.id} owner={q.owner} />}
+      {shown.state !== "answered" && <SendOwnerQuestion id={q.id} owner={who} again />}
       <form className="qs-form" onSubmit={(e) => void submit(e)}>
         <label htmlFor={`${id}-a`} className="qs-field-label">
           {shown.answer ? O.answerAgain : O.answerLabel}

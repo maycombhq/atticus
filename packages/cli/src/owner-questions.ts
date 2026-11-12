@@ -11,6 +11,7 @@ import {
   loadOrgPack,
   QuestionError,
   questionsRelOf,
+  readTeams,
   type Question,
   orgPackDirOf,
   orgPackRelOf,
@@ -51,6 +52,10 @@ export interface OwnerQuestionItem {
   channel: string;
   state: "sent" | "answered" | "overdue";
   answer?: string;
+  /** Beta.27 review: the owner's display name (teams.yaml), when the owner is a team named there. */
+  ownerName?: string;
+  /** Beta.27 review: when it was asked, when that is on file (a question a person's Ask raised). */
+  sentAt?: string;
   /** The role that takes it when nobody owns the system. */
   routeTo?: string;
   /** The org-pack files and fields that hold the fact, when a person writes it there. */
@@ -138,6 +143,7 @@ async function askedGapItems(root: string): Promise<OwnerQuestionItem[]> {
       neededFact: await gapSummary(root, q.finding),
       channel: "Atticus",
       state: q.state === "answered" ? "answered" : "sent",
+      ...(q.askedBy?.at ? { sentAt: q.askedBy.at } : {}),
       ...(q.answer?.text ? { answer: q.answer.text } : {}),
       records: [],
       file: `${questionsRelOf(root)}/${q.id}.yaml`,
@@ -155,7 +161,14 @@ export async function ownerQuestions(
   const found = await gaps(root, o.now ?? new Date());
   const asked = await askedGapItems(root);
   if (!found && !asked.length) return { empty: true, open: 0, questions: [] };
-  const questions = [...asked, ...(found ?? []).map((g) => itemOf(root, g))];
+  // Beta.27 review: a team by its name ("Ledger team"), never only its id ("team-ledger").
+  const teams = (
+    await readTeams(root).catch(() => ({ teams: [] as { id: string; name: string }[] }))
+  ).teams;
+  const questions = [...asked, ...(found ?? []).map((g) => itemOf(root, g))].map((q) => {
+    const name = teams.find((t) => t.id === q.owner)?.name;
+    return name && name !== q.owner ? { ...q, ownerName: name } : q;
+  });
   return {
     empty: false,
     open: questions.filter((q) => q.state !== "answered").length,

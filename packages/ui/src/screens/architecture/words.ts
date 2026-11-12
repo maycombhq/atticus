@@ -42,6 +42,10 @@ export const WORDS = {
   insideGaps: (what: string) => `every part inside is missing: ${what}`,
   insideLinks: (n: number) => `${n} link${n === 1 ? "" : "s"} inside`,
   edgeCount: (n: number, type: string) => `${n} × ${type}`,
+  // Beta.27 review: boxes the view leaves out, said, with the way to see them all.
+  outside: (n: number, all: number) =>
+    `${n} of ${all} box${all === 1 ? "" : "es"} ${n === 1 ? "is" : "are"} outside the view`,
+  fitAll: "Fit to see all",
   legible: {
     nodes: (n: number) => `This picture has ${n} boxes, more than about 60 can be read at once.`,
     crossings: "Too many links cross in this picture to follow them.",

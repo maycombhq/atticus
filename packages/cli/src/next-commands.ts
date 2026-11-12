@@ -33,6 +33,7 @@ import {
   loadChangePolicy,
   releasePrReasons,
   stageCompletion,
+  stageWorkDone,
   type ChangeContext,
 } from "@maycombhq/changes";
 import type { ChangeLifecycle } from "@maycombhq/core";
@@ -489,8 +490,10 @@ export async function readNextState(root: string): Promise<NextState> {
         .filter((x) => x.change === c.id)
         .map(({ seed, repo, capability, flow }) => ({ seed, repo, capability, flow }));
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
+      // Beta.27 review: planning files a person wrote are the stories stage's work done (the
+      // stage would refuse to replace them), so the step after it is offered, as the gate reads it.
       const stagesDone = (await stageCompletion({ root, policy }, c))
-        .filter((s) => s.state === "done")
+        .filter((s) => stageWorkDone(s.state))
         .map((s) => s.stage);
       const needs = await readNeeds(root, c.id);
       const open = needs?.needs.filter((n) => n.status === "open") ?? [];

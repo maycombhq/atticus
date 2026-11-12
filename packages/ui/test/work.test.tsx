@@ -182,7 +182,8 @@ describe("what to run next (plan 4.5)", () => {
   });
 
   it("has the dashboard finish onboarding first, then follow a change, then start one", () => {
-    expect(dashboardStep(view([]), 0, []).link?.href).toBe("#/onboarding");
+    // Beta.27 review: a fresh metarepo's step is the app's Add repos form (Set up › Repos).
+    expect(dashboardStep(view([]), 0, []).link?.href).toBe("#/repos");
     const c = dashboardStep(done, 0, [change("old", "released"), change("add-limit", "plan")]);
     expect(c.command).toBe("atticus plan stories add-limit");
     expect(c.link?.href).toBe("#/stories?change=add-limit");

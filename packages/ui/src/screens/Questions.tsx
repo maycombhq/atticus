@@ -16,7 +16,7 @@ import { useAvailableHeight } from "../app/viewer.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
-import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
+import { askedKind, openingKind, OwnerQuestionList, type QuestionsKind } from "./OwnerQuestions.js";
 import { queryParam } from "./know/common.js";
 import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 import { AiChip, AiMark, isAiBy, readyView, SplitCounts, useDecisions } from "../app/decisions.js";
@@ -1686,8 +1686,14 @@ export function Questions({ hash }: { hash: string }) {
   // ADR 0181 part 4: the server narrows to the change (?change=) by the same rule and more
   // (its stages' questions, those resting on it); the client narrowing stays for an older server.
   const list = scope.change ? fetched : scopeToChange(fetched, forChange);
-  const [kind, setKind] = useState<QuestionsKind>(questionsKind(hash));
-  useEffect(() => setKind(questionsKind(hash)), [hash]);
+  // Beta.27 review: the kind picked, else the address's, else the one that has questions.
+  const [chosenKind, setKind] = useState<QuestionsKind | undefined>(askedKind(hash));
+  useEffect(() => setKind(askedKind(hash)), [hash]);
+  const kind = openingKind(
+    chosenKind,
+    list.state === "ready" ? countsOf(list.data).open : undefined,
+    owner.state === "ready" ? owner.data.open : undefined,
+  );
   // Beta.27: the questions to answer, both kinds, counted as Home, the badge and the status bar
   // count them (whatever this page's filters show): the counts under it are the steps' only.
   // Beta.27 review: from the page's own read when it counts the estate's open questions (every

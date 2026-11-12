@@ -37,6 +37,7 @@ export const PROPOSE_SCOPES = [
   "outcomes",
   "work",
   "service-desk",
+  "upgrade",
 ] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
@@ -51,6 +52,7 @@ const TITLES: Record<ProposeScope, string> = {
   outcomes: "Outcomes measured after release",
   work: "Changes made in the Atticus app",
   "service-desk": "Service-desk request fields",
+  upgrade: "Upgrade this metarepo",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
@@ -130,6 +132,10 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
     // or archived (a pathspec's * crosses folders); nothing else of the change.
     case "outcomes":
       return [`${changesRelOf(root)}/*/review/outcomes.yaml`];
+    // Beta.27 review: what `atticus upgrade` changed (the org pack's files, the facts and the
+    // catalog a step brings up to date) and its stamp, for the upgrade panel's Propose.
+    case "upgrade":
+      return [...scopeDirs(root, "work"), ".atticus/metarepo.yaml"];
   }
 }
 

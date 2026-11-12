@@ -16,6 +16,7 @@ import { lensesWaiting, type CriticRan } from "./work/critic-ran.js";
 import { Note, Said, useAction, useSaid } from "./know/common.js";
 import { isManualLink, ManualHandoff, PushAgain } from "./know/task-pr.js";
 import { ChangeOwners } from "./change-owners.js";
+import { BrokenChanges } from "./work/BrokenChanges.js";
 import "./work/cw.css";
 
 const T = COPY.changes;
@@ -64,6 +65,11 @@ export interface Status {
   phase?: string;
   next?: string;
   nextStep: string;
+  /**
+   * Beta.27 review (API 3.11.0): nothing in the gate's checks blocks, yet another step comes
+   * first, as At a glance says it (`nextStep` is At a glance's sentence too).
+   */
+  stepFirst?: boolean;
   risk: { level: string; score: number };
   /** The open hand-off PR: merging it approves the gate (ADR 0073). */
   handoff?: { pr: { number: number; url: string }; state: string; phase: string };
@@ -180,6 +186,7 @@ export function ChangeList({
           window.location.hash = `#/changes/${id}`;
         }}
       />
+      <BrokenChanges />
       <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
         {(all) => {
           const states = [...new Set(all.map((c) => c.state))];
@@ -671,8 +678,14 @@ function Detail({ id }: { id: string }) {
                       <button
                         type="button"
                         className="btn primary"
-                        disabled={handoff.busy || s.blockers.length > 0}
-                        title={s.blockers.length > 0 ? T.blockedBy(s.blockers.length) : undefined}
+                        disabled={handoff.busy || s.blockers.length > 0 || !!s.stepFirst}
+                        title={
+                          s.blockers.length > 0
+                            ? T.blockedBy(s.blockers.length)
+                            : s.stepFirst
+                              ? s.nextStep
+                              : undefined
+                        }
                         onClick={() =>
                           void handoff.run(
                             async () =>

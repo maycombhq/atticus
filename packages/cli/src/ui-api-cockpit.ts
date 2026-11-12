@@ -35,8 +35,10 @@ export function uiCockpitRoutes(r: Router, ctx: ServerContext): Router {
           () => checkoutsStamp(ctx.root),
         );
       } catch (e) {
-        if (e instanceof Error && e.name === "ChangeFileError")
-          throw notFound(`There is no change ${params.changeId}.`);
+        if (e instanceof Error && e.name === "ChangeFileError") {
+          const { missingChangeWords } = await import("./change-problems.js");
+          throw notFound(await missingChangeWords(ctx.root, id));
+        }
         throw e;
       }
     })

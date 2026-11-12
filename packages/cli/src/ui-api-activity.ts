@@ -292,6 +292,8 @@ export function uiActivityRoutes(
       from: lines?.from ?? 0,
       ...(j.state === "running" ? { stop: `/api/jobs/${encodeURIComponent(j.id)}/cancel` } : {}),
       ...(meta.handoffRun ? { runId: meta.handoffRun } : {}),
+      // Beta.27 review: a job that ended by refusing (a scan's safety stop) wrote nothing.
+      ...(j.state === "done" && j.result?.refused ? { outcome: "refused" as const } : {}),
     };
   };
 

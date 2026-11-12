@@ -31,6 +31,7 @@ import {
   PIN_BUTTON_ID,
   pageLabel,
   pinnedItems,
+  estateLabels,
   questionItems,
   SECTION_IDS,
   systemItems,
@@ -453,7 +454,7 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
         questions.state === "ready"
           ? questionItems(questions.data, owner.state === "ready" ? owner.data : undefined)
           : [],
-      pinned: pinnedItems(pins),
+      pinned: pinnedItems(pins, estateLabels(estate.state === "ready" ? estate.data : undefined)),
     }),
     [changes, estate, questions, owner, pins, manifest],
   );

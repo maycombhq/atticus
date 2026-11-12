@@ -299,9 +299,20 @@ export const MAX_TOP = 160;
 export const KEYS_LINE = 16;
 /** The margin under the keys line. */
 const UNDER_KEYS = 8;
-export function availableHeight(windowHeight: number, top: number, min = 420): number {
-  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, MAX_TOP) - KEYS_LINE - UNDER_KEYS));
+export function availableHeight(
+  windowHeight: number,
+  top: number,
+  min = 420,
+  maxTop = MAX_TOP,
+): number {
+  return Math.max(min, Math.floor(windowHeight - clamp(top, 0, maxTop) - KEYS_LINE - UNDER_KEYS));
 }
+/**
+ * Beta.27 review: how far down the map's canvas may start and still be counted, so a notice
+ * above it (">~60 boxes") takes its room from the picture instead of pushing the picture's foot,
+ * its legend and minimap, under the bottom panel.
+ */
+export const CANVAS_MAX_TOP = 400;
 /**
  * The picture's height with the keys line under it: what the line takes past its one line
  * (KEYS_LINE, a narrow frame wrapping it) is the picture's.
@@ -319,8 +330,9 @@ export function availableHeightIn(
   view: { top: number; bottom: number },
   top: number,
   min = 420,
+  maxTop = MAX_TOP,
 ): number {
-  return availableHeight(view.bottom - view.top, top - view.top, min);
+  return availableHeight(view.bottom - view.top, top - view.top, min, maxTop);
 }
 
 /** The nearest ancestor that scrolls its content, if any; else the window does. */
@@ -340,9 +352,10 @@ function scrollerOf(el: HTMLElement): HTMLElement | undefined {
  */
 export function useAvailableHeight(
   ref: RefObject<HTMLElement | null>,
-  o: { min?: number; fixed?: number } = {},
+  o: { min?: number; fixed?: number; maxTop?: number } = {},
 ): number {
   const min = o.min ?? 420;
+  const maxTop = o.maxTop ?? MAX_TOP;
   const [h, setH] = useState(o.fixed ?? Math.max(min, 560));
   useEffect(() => {
     if (o.fixed !== undefined || typeof window === "undefined") return;
@@ -355,7 +368,7 @@ export function useAvailableHeight(
         top: Math.max(0, area?.top ?? 0),
         bottom: Math.min(window.innerHeight, area?.bottom ?? window.innerHeight),
       };
-      setH(availableHeightIn(view, el.getBoundingClientRect().top, min));
+      setH(availableHeightIn(view, el.getBoundingClientRect().top, min, maxTop));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -373,7 +386,7 @@ export function useAvailableHeight(
       window.removeEventListener("resize", measure);
       ro?.disconnect();
     };
-  }, [ref, min, o.fixed]);
+  }, [ref, min, maxTop, o.fixed]);
   return o.fixed ?? h;
 }
 
@@ -550,6 +563,11 @@ export function DiagramFrame(p: {
   /** Changed to something, the details open again: a panel was asked for in them. */
   reveal?: string;
   /**
+   * Beta.27 review: nothing is picked, so the details hold only "Pick a box": in a narrow frame
+   * (an editor's panel), where they lie over the picture, they start closed.
+   */
+  asideIdle?: boolean;
+  /**
    * Beta.26: where the toolbar goes when not in full screen (the page's own bar, so the picture's
    * controls share one row with the page's); in full screen it is in the frame.
    */
@@ -557,7 +575,7 @@ export function DiagramFrame(p: {
   onKeyAction: (a: ViewerAction) => void;
   className?: string;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => !(p.asideIdle && narrowWindow()));
   const asideId = useId();
   const own = useRef<HTMLDivElement | null>(null);
   const ref = p.frameRef ?? own;
@@ -723,6 +741,17 @@ export function DiagramFrame(p: {
     </div>
   );
 }
+
+/**
+ * Beta.27 review: under this width the details lie over the picture rather than beside it
+ * (viewer.css's media query), so empty ones start closed.
+ */
+export const NARROW_FRAME = 1000;
+export const narrowWindow = (): boolean =>
+  typeof window !== "undefined" &&
+  (typeof window.matchMedia === "function"
+    ? window.matchMedia(`(max-width: ${NARROW_FRAME}px)`).matches
+    : window.innerWidth <= NARROW_FRAME);
 
 /** A viewport kept in state with the actions the toolbar and keys ask for, on a plain picture. */
 export function useViewport(content: Rect, view: Size) {

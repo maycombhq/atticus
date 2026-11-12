@@ -524,6 +524,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
+ * 3.11.0 (beta.27 review of the screens): GET /api/changes/{id}/status says At a glance's
+ *   sentence in `nextStep` (as GET /api/release/{id} and the releases view do) and `stepFirst`
+ *   when nothing blocks the gate yet another step comes first; a cockpit stage may be `person`
+ *   (planning files a person wrote, named in `files`) or `skipped`; a stage thread names
+ *   `byPerson`. GET /api/change-problems lists the changes whose change.yaml doesn't read. An
+ *   activity entry may say `outcome: refused`. An owner question carries `ownerName` and
+ *   `sentAt`; propose takes scope `upgrade`. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -2445,10 +2452,31 @@ export const StageThreadView = z.object({
   waiting: z.object({ runId: z.string(), prompt: z.string() }).optional(),
   /** The step's words, for POST /api/runs/handoff (the next round's prompt). */
   step: z.array(z.string()),
+  /**
+   * 3.11.0 (beta.27 review): the planning files a person wrote, when the stage never ran and they
+   * stand for its work (state `done`); drafting again replaces them (`step` with --force).
+   */
+  byPerson: z.array(z.string()).optional(),
   /** Whether a reply is taken now, and if not, why. */
   reply: z.object({ open: z.boolean(), why: z.string().optional() }),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
+/**
+ * 3.11.0 (beta.27 review): the changes whose change.yaml doesn't read (cut short, a merge's
+ * conflict markers, a field that isn't valid). GET /api/changes leaves them out so one bad file
+ * never fails every page; this names them, with the file and the line where YAML says so.
+ */
+export const ChangeProblems = z.array(
+  z.object({
+    /** The change's folder name, its id. */
+    id: z.string(),
+    /** Metarepo-relative, with forward slashes. */
+    file: z.string(),
+    line: z.number().int().optional(),
+    message: z.string(),
+  }),
+);
+export type ChangeProblemsT = z.infer<typeof ChangeProblems>;
 export const StageThreadPost = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("reply"), text: z.string().trim().min(1).max(4000) }),
   z.strictObject({
@@ -3141,7 +3169,13 @@ export const ChangeCockpit = z.object({
   stages: z.array(
     z.object({
       stage: z.enum(["feature", "architecture", "stories"]),
+      /**
+       * The loop's state, or not-started. 3.11.0 (beta.27 review), as the plan gate reads it:
+       * `person` when a person wrote the planning files the stage writes (it never ran; `files`
+       * names them) and `skipped` when the change passed the stage without it running.
+       */
       state: z.string(),
+      files: z.array(z.string()).optional(),
       drafts: z.number().int(),
       rounds: z.number().int(),
       openQuestions: z.number().int(),
@@ -3196,6 +3230,11 @@ export const ProposeScope = z.enum([
   "work",
   /** 2.67.0 (UX review): the changes' snow.md, after filling a service-desk draft's fields. */
   "service-desk",
+  /**
+   * 3.11.0 (beta.27 review): what `atticus upgrade` changed and its stamp,
+   * .atticus/metarepo.yaml, for the upgrade panel's Propose.
+   */
+  "upgrade",
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
@@ -3294,6 +3333,10 @@ export const OwnerQuestionView = z.object({
   channel: z.string(),
   state: z.enum(["sent", "answered", "overdue"]),
   answer: z.string().optional(),
+  /** 3.11.0 (beta.27 review): the owner's display name (teams.yaml), for a team named there. */
+  ownerName: z.string().optional(),
+  /** 3.11.0 (beta.27 review): when it was asked, when that is on file. */
+  sentAt: z.string().optional(),
   routeTo: z.string().optional(),
   fill: z.array(z.object({ file: z.string(), field: z.string(), what: z.string() })).optional(),
   records: z.array(z.string()),
@@ -5262,6 +5305,11 @@ export const ActivityEntry = z.object({
   rev: z.string().optional(),
   /** The route that stops it (POST), when the app can; a command stops in its terminal. */
   stop: z.string().optional(),
+  /**
+   * 3.11.0 (beta.27 review): how a `done` entry ended when it isn't plain done: `refused`, it
+   * refused and wrote nothing (a scan's safety stop), neither done work nor a failure.
+   */
+  outcome: z.enum(["refused"]).optional(),
   jobId: z.string().optional(),
   copilotRunId: z.string().optional(),
   /** A command's run id (its files in .atticus/logs/). */
@@ -6625,6 +6673,15 @@ const OPS: Record<string, Record<string, Op>> = {
       body: NewChangeRequest,
       ok: { status: 201, schema: "ChangeDetail", description: "Created" },
       errors: [400, 409, 422],
+    },
+  },
+  "/api/change-problems": {
+    get: {
+      id: "listChangeProblems",
+      summary:
+        "3.11.0 (beta.27 review): the changes whose change.yaml doesn't read, with the file, the line and why; GET /api/changes leaves them out",
+      tag: "changes",
+      ok: { status: 200, schema: "ChangeProblems", description: "OK" },
     },
   },
   "/api/facts/{repo}/apply": {
@@ -8646,6 +8703,7 @@ export function openApiDocument(): Record<string, unknown> {
     StageCommentResult,
     StageThreadView,
     StageThreadPostResult,
+    ChangeProblems,
     PlacementView,
     StageDraftsView,
     CorrectionResult,

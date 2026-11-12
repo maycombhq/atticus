@@ -145,8 +145,9 @@ describe("Waiting on you, as tiles", () => {
 
 describe("the estate's tiles", () => {
   it("counts the changes in flight by stage", () => {
+    // Beta.27 review: in the gates' words, as the pipeline says them ("2 at Define").
     expect(byStage([{ state: "define" }, { state: "build" }, { state: "returned" }])).toBe(
-      `${H.inStage(2, COPY.work.stage.feature)} · ${H.inStage(1, COPY.work.stage.tasks)}`,
+      `${H.inStage(2, T.define)} · ${H.inStage(1, T.build)}`,
     );
   });
 
@@ -278,7 +279,9 @@ describe("the changes panel", () => {
     expect(out).toContain(`<a href="#/changes">${H.seeAllChanges}</a>`);
     expect(out).toContain(esc(H.changesMore(3)));
     expect(out).toContain(`<a href="#/canvas">${H.mapSub}</a>`);
-    expect(out).toContain(COPY.work.stage.tasks);
+    // Beta.27 review: the change's pill in the gates' words, and the change shown once.
+    expect(out).toContain(`>${T.build}</span>`);
+    expect(count(out, /href="#\/changes\/add-limit-0"/g)).toBe(1);
     expect(out).toContain(esc(T.blocked));
   });
 

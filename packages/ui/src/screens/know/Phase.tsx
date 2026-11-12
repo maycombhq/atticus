@@ -168,7 +168,13 @@ export function GateHeader(p: {
                   {aiOn ? T.runTheCritic : T.runTheRuleChecks}
                 </button>
               )}
-              <RaiseHandoff change={p.id} blockers={s.blockers.length} onDone={done} act={act} />
+              <RaiseHandoff
+                change={p.id}
+                blockers={s.blockers.length}
+                {...(s.stepFirst ? { first: s.nextStep } : {})}
+                onDone={done}
+                act={act}
+              />
               <button
                 type="button"
                 className="btn"
@@ -207,19 +213,21 @@ export function RaiseHandoff(p: {
   blockers: number;
   /** Eighth UX walk: what blocks the gate isn't read yet, so it waits rather than flicker on. */
   held?: boolean;
+  /** Beta.27 review: another step comes first, in At a glance's words: held, and said. */
+  first?: string;
   onDone?: () => void;
   act?: ReturnType<typeof useAction>;
 }) {
   const own = useAction();
   const act = p.act ?? own;
   const why = useId();
-  const blocked = p.blockers > 0;
+  const blocked = p.blockers > 0 || !!p.first;
   const button = (
     <button
       type="button"
       className="btn primary"
       disabled={act.busy || blocked || p.held === true}
-      title={blocked ? T.blockedBy(p.blockers) : undefined}
+      title={blocked ? (p.blockers > 0 ? T.blockedBy(p.blockers) : p.first) : undefined}
       aria-describedby={blocked ? why : undefined}
       onClick={() =>
         void act.run(
@@ -248,7 +256,7 @@ export function RaiseHandoff(p: {
   // Eighth UX walk: held, it says why where it is seen, not only in a tooltip.
   const reason = blocked && (
     <span id={why} className="muted" style={{ fontSize: 12 }}>
-      {T.blockedBy(p.blockers)}
+      {p.blockers > 0 ? T.blockedBy(p.blockers) : p.first}
     </span>
   );
   if (p.act)

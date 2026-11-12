@@ -62,7 +62,10 @@ describe("the change cockpit (WP7.1)", () => {
     expect(c.state).toBeTruthy();
     expect(c.nextStep).toBeTruthy();
     expect(c.stages.map((s) => s.stage)).toEqual(["feature", "architecture", "stories"]);
-    expect(c.stages.every((s) => s.state === "not-started" && s.drafts === 0)).toBe(true);
+    // Beta.27 review: a small change in plan never ran the stages before it: they read as
+    // skipped (never "to come"), and its own stage hasn't started.
+    expect(c.stages.map((s) => s.state)).toEqual(["skipped", "skipped", "not-started"]);
+    expect(c.stages.every((s) => s.drafts === 0)).toBe(true);
     // The next step atticus next gives for this change: the fast path, in the assistant.
     expect(c.next?.change).toBe(CHANGE);
     expect(c.next?.slash).toMatch(/^\/atticus-/);

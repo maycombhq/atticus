@@ -10,6 +10,7 @@ import { CopyButton } from "../run/shared.js";
 import { Problems } from "./RunNext.js";
 import "./work.css";
 import { Explain } from "./cw.js";
+import { HandoffStep } from "../../app/runstep.js";
 
 /**
  * ADR 0189: a stage is one conversation. The stage's tab shows its thread inline, in order: the
@@ -529,6 +530,19 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
               <p role="status" aria-live="polite" className="thread-headline" style={{ margin: 0 }}>
                 {v.headline}
               </p>
+              {v.byPerson && v.byPerson.length > 0 && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <p style={{ margin: 0 }}>
+                    <a href={`#/cockpit?change=${encodeURIComponent(v.change)}`}>
+                      {T.byPersonGoOn}
+                    </a>
+                  </p>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {T.byPersonAgain}
+                  </p>
+                  <HandoffStep args={[...v.step, "--force"]} />
+                </div>
+              )}
               {!v.waiting && v.state !== "done" && (
                 <div className="cw-thread-start">
                   <button

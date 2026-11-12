@@ -28,6 +28,7 @@ import {
 } from "../../app/layout/index.js";
 import { COPY } from "../../copy.js";
 import {
+  CANVAS_MAX_TOP,
   DiagramFrame,
   FIT_MAX,
   fitLegibly,
@@ -407,6 +408,62 @@ export function canvasFit(content: Rect, view: Size): Viewport {
   return fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad: fitPad(view) });
 }
 
+/**
+ * Beta.27 review: Fit (the button, the 0 key) fits everything, however small: the legibility
+ * floor is for the picture a page opens on (canvasFit), not for the person asking to see it all.
+ */
+export function canvasFitAll(content: Rect, view: Size): Viewport {
+  return fitLegibly(content, view, { min: ZOOM.min, max: FIT_MAX, pad: fitPad(view) });
+}
+
+/** Where each box is on the canvas (a box inside a group is placed in it), groups marked. */
+export function contentRects(
+  nodes: readonly Pick<BoxNode, "id" | "position" | "width" | "height" | "parentId" | "data">[],
+): (BoxRect & { group: boolean })[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const at = (id: string, seen = 0): { x: number; y: number } => {
+    const n = byId.get(id);
+    if (!n) return { x: 0, y: 0 };
+    const up = n.parentId && seen < 32 ? at(n.parentId, seen + 1) : { x: 0, y: 0 };
+    return { x: up.x + n.position.x, y: up.y + n.position.y };
+  };
+  return nodes.map((n) => ({
+    ...at(n.id),
+    width: n.width ?? 0,
+    height: n.height ?? 0,
+    group: !!n.data.box.group,
+  }));
+}
+
+/** The rectangle round every box. */
+export function boundsOf(rects: readonly BoxRect[]): Rect | undefined {
+  if (!rects.length) return undefined;
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  const w = Math.max(...rects.map((r) => r.x + r.width)) - x;
+  const h = Math.max(...rects.map((r) => r.y + r.height)) - y;
+  return { x, y, w, h };
+}
+
+/**
+ * Beta.27 review: how many boxes (not groups) lie wholly outside the view, so the page says so
+ * ("1 of 67 boxes in view" read as an empty canvas).
+ */
+export function boxesOutside(
+  rects: readonly (BoxRect & { group?: boolean })[],
+  v: Viewport,
+  view: Size,
+): number {
+  const left = -v.x / v.k;
+  const top = -v.y / v.k;
+  const right = left + view.width / v.k;
+  const bottom = top + view.height / v.k;
+  return rects.filter(
+    (r) =>
+      !r.group && (r.x + r.width <= left || r.x >= right || r.y + r.height <= top || r.y >= bottom),
+  ).length;
+}
+
 /** The input the layout gets for a canvas graph. */
 export function layoutInput(g: CanvasGraph) {
   return {
@@ -524,6 +581,8 @@ export function ArchitectureCanvas(p: {
   asideBeside?: boolean;
   /** Beta.26: changed to something, the details open again (a panel was asked for in them). */
   reveal?: string;
+  /** Beta.27 review: nothing is picked, so empty details start closed in a narrow frame. */
+  asideIdle?: boolean;
   /** Beta.26: laid over the picture itself (the legend, in a corner). */
   overlay?: ReactNode;
   /** Beta.26: where the picture's controls go outside full screen (the map's bar). */
@@ -557,31 +616,51 @@ export function ArchitectureCanvas(p: {
   const [full, setFull] = useFullScreen(p.initialFull);
   const [focusMode, setFocusMode] = useState(!!p.initialFocus);
   const [zoom, setZoom] = useState(1);
-  const height = useAvailableHeight(frame, p.height !== undefined ? { fixed: p.height } : {});
+  // Beta.27 review: a notice above the picture is counted (CANVAS_MAX_TOP), so its foot stays
+  // above the bottom panel; min 320 so a short window still fits it.
+  const height = useAvailableHeight(
+    frame,
+    p.height !== undefined ? { fixed: p.height } : { maxTop: CANVAS_MAX_TOP, min: 320 },
+  );
   // Beta.26 review: the picture fits the measured height (not the guess before it), and again
   // as that height changes, until the person pans or zooms it themselves.
   const moved = useRef(false);
   // Beta.27: every fit is a legible one (fitLegibly), in the canvas's own size.
   const stage = useRef<HTMLDivElement | null>(null);
-  const fitNow = (duration?: number) => {
+  // Beta.27 review: the boxes as laid out, not React Flow's store (a store not yet updated
+  // after a new layout fitted the old one: drilling into Portal cut its top box).
+  const nodesNow = useRef<BoxNode[]>(nodes);
+  nodesNow.current = nodes;
+  const [outside, setOutside] = useState(0);
+  const countOutside = (v?: { x: number; y: number; zoom: number }) => {
+    const el = stage.current;
+    const at = v ?? rf.current?.getViewport();
+    if (!el || !at || !el.clientWidth || !el.clientHeight) return;
+    const n = boxesOutside(
+      contentRects(nodesNow.current),
+      { x: at.x, y: at.y, k: at.zoom },
+      { width: el.clientWidth, height: el.clientHeight },
+    );
+    setOutside((o) => (o === n ? o : n));
+  };
+  /** Fit the picture: legibly (a page opening on it), or `all` of it (Fit, the 0 key). */
+  const fitNow = (duration?: number, all = false) => {
     const i = rf.current;
     const el = stage.current;
-    const ids = i?.getNodes().map((n) => n.id) ?? [];
-    if (!i || !el || !ids.length || !el.clientWidth || !el.clientHeight) {
+    const b = boundsOf(contentRects(nodesNow.current));
+    if (!i || !el || !b || !el.clientWidth || !el.clientHeight) {
       void i?.fitView({
         padding: FIT_PADDING,
-        minZoom: FIT_MIN_ZOOM,
+        minZoom: all ? ZOOM.min : FIT_MIN_ZOOM,
         maxZoom: FIT_MAX,
         ...(duration ? { duration } : {}),
       });
       return;
     }
-    const b = i.getNodesBounds(ids);
-    const v = canvasFit(
-      { x: b.x, y: b.y, w: b.width, h: b.height },
-      { width: el.clientWidth, height: el.clientHeight },
-    );
+    const view = { width: el.clientWidth, height: el.clientHeight };
+    const v = all ? canvasFitAll(b, view) : canvasFit(b, view);
     void i.setViewport({ x: v.x, y: v.y, zoom: v.k }, duration ? { duration } : undefined);
+    countOutside({ x: v.x, y: v.y, zoom: v.k });
   };
   const fitRef = useRef(fitNow);
   fitRef.current = fitNow;
@@ -713,7 +792,7 @@ export function ArchitectureCanvas(p: {
         void i?.zoomTo(1, d);
         return;
       case "fit":
-        fitNow(d.duration);
+        fitNow(d.duration, true);
         return;
       case "fit-selection":
         if (p.selected) void i?.fitView({ nodes: [{ id: p.selected }], maxZoom: 1.2, ...d });
@@ -763,6 +842,7 @@ export function ArchitectureCanvas(p: {
       {...(p.aside ? { aside: p.aside } : {})}
       {...(p.asideBeside ? { asideBeside: true } : {})}
       {...(p.reveal ? { reveal: p.reveal } : {})}
+      {...(p.asideIdle ? { asideIdle: true } : {})}
       {...(p.toolbarIn ? { toolbarIn: p.toolbarIn } : {})}
       toolbar={
         <ViewerToolbar
@@ -800,7 +880,10 @@ export function ArchitectureCanvas(p: {
               rf.current = i;
               setZoom(i.getZoom());
             }}
-            onMove={(_, v) => setZoom(v.zoom)}
+            onMove={(_, v) => {
+              setZoom(v.zoom);
+              countOutside(v);
+            }}
             // A move the person started (a wheel, a drag, a pinch) has its event; a fit has none.
             onMoveStart={(e) => {
               if (e) moved.current = true;
@@ -851,6 +934,16 @@ export function ArchitectureCanvas(p: {
               <MiniMap pannable zoomable ariaLabel={COPY.viewer.minimap} />
             )}
           </ReactFlow>
+        )}
+        {outside > 0 && nodes.length > 0 && state.state === "ready" && (
+          <div className="arch-outside viewer-own" role="status">
+            <span>
+              {WORDS.outside(outside, contentRects(nodes).filter((r) => !r.group).length)}
+            </span>{" "}
+            <button type="button" className="btn" onClick={() => act("fit")}>
+              {WORDS.fitAll}
+            </button>
+          </div>
         )}
         {p.overlay}
       </div>

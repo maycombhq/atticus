@@ -59,6 +59,8 @@ import {
 import type { Output } from "./commands.js";
 import { changeArchive, syncAfterManualStep } from "./change-commands.js";
 import { criticStats } from "./critic-commands.js";
+import { changeNextStep } from "./cockpit.js";
+import { missingChangeWords } from "./change-problems.js";
 import { defencesScan, evalRun } from "./eval-commands.js";
 import { learnCheck, learnStart, sandboxCreate } from "./learn-commands.js";
 import { snowDraft, snowSubmit } from "./plan-commands.js";
@@ -155,7 +157,7 @@ async function readChange(root: string, id: string): Promise<ChangeLifecycle> {
   try {
     return await changeStore(root).read(id);
   } catch {
-    throw notFound(`There is no change ${id}.`);
+    throw notFound(await missingChangeWords(root, id));
   }
 }
 
@@ -722,7 +724,11 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               state: rep.state,
               ...(rep.phase ? { phase: rep.phase } : {}),
               ...(rep.next ? { next: rep.next } : {}),
-              nextStep: rep.nextStep,
+              // Beta.27 review: the sentence At a glance says (changeNextStep).
+              ...(await changeNextStep(root, id, rep).then((s) => ({
+                nextStep: s.nextStep,
+                ...(s.stepFirst ? { stepFirst: true } : {}),
+              }))),
               risk: rep.risk,
               blockers: rep.blockers,
               reasons: rep.reasons,

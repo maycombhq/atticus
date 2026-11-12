@@ -3,7 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
-import { followJob, workChanged } from "./propose.js";
+import { followJob, Propose, workChanged } from "./propose.js";
 
 /**
  * Ninth UX walk: Home offers the upgrade this metarepo waits on (runtime.yaml at an older schema,
@@ -35,7 +35,12 @@ export function UpgradeOfferView(p: {
     );
   if (!view.pending.length && run.state !== "done") return null;
   return (
-    <section className="state" aria-labelledby="home-upgrade" style={{ display: "grid", gap: 6 }}>
+    // Beta.27 review: the panel's words read left to right; .state centres an empty page's line.
+    <section
+      className="state upgrade-panel"
+      aria-labelledby="home-upgrade"
+      style={{ display: "grid", gap: 6, textAlign: "start" }}
+    >
       <h2 id="home-upgrade" className="hud" style={{ margin: 0, fontSize: 11 }}>
         {U.title}
       </h2>
@@ -77,6 +82,8 @@ export function UpgradeOfferView(p: {
           )}
         </div>
       )}
+      {/* Beta.27 review: "Propose the changed files for review" with the button that does it. */}
+      {run.state === "done" && <Propose scope="upgrade" onDone={workChanged} />}
     </section>
   );
 }

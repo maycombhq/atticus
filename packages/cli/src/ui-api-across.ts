@@ -21,6 +21,8 @@ import { readChangeTasks, readStory } from "@maycombhq/speckit";
 import { traceMatrix } from "@maycombhq/testgen";
 import { badRequest, notFound, strParam, type Router, type ServerContext } from "@maycombhq/server";
 import { catalogRecords } from "./site-commands.js";
+import { changeNextStep } from "./cockpit.js";
+import { readNextState, type NextState } from "./next-commands.js";
 
 /**
  * Views across every open change (ADR 0048): findings, tasks, stories, tests, service requests
@@ -78,6 +80,9 @@ export async function acrossRows(root: string, view: AcrossView): Promise<Across
           .list({ system: "service-desk" })
           .catch(() => [])
       : [];
+  // Beta.27 review: the metarepo's next steps, read once for every change's sentence.
+  let stateP: Promise<NextState | undefined> | undefined;
+  const nextState = () => (stateP ??= readNextState(root).catch(() => undefined));
   for (const c of changes) {
     const base = { change: c.id, changeTitle: c.title, changeState: c.state };
     const dir = changeFolder(root, c.id);
@@ -164,7 +169,8 @@ export async function acrossRows(root: string, view: AcrossView): Promise<Across
           atRelease: AT_RELEASE.has(c.state),
           ...(rep.phase ? { phase: rep.phase } : {}),
           ...(rep.next ? { next: rep.next } : {}),
-          nextStep: rep.nextStep,
+          // Beta.27 review: the sentence At a glance says (changeNextStep), the metarepo read once.
+          nextStep: (await changeNextStep(root, c.id, rep, await nextState())).nextStep,
           risk: rep.risk.level,
           blockers: rep.blockers.length,
           ...(h ? { handoff: { phase: h.phase, pr: h.pr.url, state: h.state } } : {}),

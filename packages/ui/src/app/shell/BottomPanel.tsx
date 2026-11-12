@@ -11,6 +11,11 @@ import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { inboxOf, type InboxData, type InboxItem } from "../inbox.js";
 import {
+  brokenWhere,
+  CHANGE_PROBLEMS_URL,
+  type ChangeProblem,
+} from "../../screens/work/BrokenChanges.js";
+import {
   openStepQuestions,
   OWNER_QUESTIONS_PATH,
   questionsToAnswerOf,
@@ -201,6 +206,8 @@ export interface Problems {
   failed: Entry[];
   blocking: InboxItem[];
   rejected: { repo: string; count: number; command?: string }[];
+  /** Beta.27 review: changes whose change.yaml doesn't read (they are on no other list). */
+  broken: ChangeProblem[];
 }
 
 /**
@@ -212,6 +219,7 @@ export function problemsOf(o: {
   entries: readonly Entry[];
   findings?: readonly PanelFinding[];
   trust?: Pick<Api.TrustViewT, "repos">;
+  broken?: readonly ChangeProblem[];
 }): Problems {
   const failed = o.entries.filter((e) => e.state === "failed");
   const blocking = o.findings
@@ -230,10 +238,11 @@ export function problemsOf(o: {
       count: r.verify.report?.rejected ?? r.lists?.rejected.length ?? 0,
       ...(r.next ? { command: r.next.command } : {}),
     }));
-  return { failed, blocking, rejected };
+  return { failed, blocking, rejected, broken: [...(o.broken ?? [])] };
 }
 
-const problemCount = (p: Problems) => p.failed.length + p.blocking.length + p.rejected.length;
+const problemCount = (p: Problems) =>
+  p.failed.length + p.blocking.length + p.rejected.length + p.broken.length;
 
 const focusId = (id: string) => {
   try {
@@ -335,7 +344,7 @@ export function ProblemsList(p: {
   onRetry(): void;
 }) {
   const R = P.problems;
-  const { failed, blocking, rejected } = p.problems;
+  const { failed, blocking, rejected, broken } = p.problems;
   const loading = p.findings.state === "loading" || p.trust.state === "loading";
   const errors = [
     ...(p.findings.state === "error" ? [R.findingsFailed(errorOf(p.findings))] : []),
@@ -362,6 +371,28 @@ export function ProblemsList(p: {
         </div>
       )}
       {!loading && !errors.length && !any && <p className="bp-empty">{R.empty}</p>}
+      {broken.length > 0 && (
+        <section className="bp-group" aria-labelledby="bp-problems-broken">
+          <h3 id="bp-problems-broken" className="bp-group-head">
+            {COPY.brokenChanges.problems}
+          </h3>
+          <ul className="bp-list">
+            {broken.map((b) => (
+              <li key={b.id} className="bp-row bad">
+                <span className="bp-row-main">
+                  <span className="bp-row-title">{b.id}</span>
+                  <span className="bp-row-meta" title={b.message}>
+                    {COPY.brokenChanges.problemMeta(brokenWhere(b), b.message)}
+                  </span>
+                </span>
+                <a className="btn bp-row-act" href="#/changes" aria-label={R.openLabel(b.id)}>
+                  {R.open}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {failed.length > 0 && (
         <section className="bp-group" aria-labelledby="bp-problems-failed">
           <h3 id="bp-problems-failed" className="bp-group-head">
@@ -559,7 +590,10 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
   );
   const findings = useApi<PanelFinding[]>(shownNow("problems") ? FINDINGS_URL : undefined);
   const trust = useApi<Api.TrustViewT>(shownNow("problems") ? TRUST_URL : undefined);
-  useReloadOnFiles(questions, owner, findings, trust);
+  const broken = useApi<Api.ChangeProblemsT>(
+    shownNow("problems") ? CHANGE_PROBLEMS_URL : undefined,
+  );
+  useReloadOnFiles(questions, owner, findings, trust, broken);
 
   // The Console's open is the panel's: the panel reads the shown run's lines only while open,
   // and Show in the Console (from anywhere) opens the panel on the Console.
@@ -682,6 +716,7 @@ export function BottomPanel(props: { open: boolean; onToggle: () => void }): JSX
     entries: a?.entries ?? [],
     ...(findings.state === "ready" ? { findings: findings.data } : {}),
     ...(trust.state === "ready" ? { trust: trust.data } : {}),
+    ...(broken.state === "ready" ? { broken: broken.data } : {}),
   });
   const toAnswer = panelQuestionCount(questions, owner);
   const stepsOnly = panelCountIsStepsOnly(questions, owner);

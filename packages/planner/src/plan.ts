@@ -1,6 +1,6 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { writeFileAtomic } from "@maycombhq/changes";
+import { personWritten, writeFileAtomic } from "@maycombhq/changes";
 import type { RunSummary } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
 import { loadPlanContext, type PlanContext } from "./context.js";
@@ -37,23 +37,10 @@ export interface PlanStoriesResult {
   promptSha256?: string;
 }
 
-async function exists(path: string): Promise<boolean> {
-  return readFile(path).then(
-    () => true,
-    () => false,
-  );
-}
-
 /** Refuse to overwrite planning files a person wrote, unless forced. */
 async function guard(ctx: PlanContext, rels: string[], force?: boolean): Promise<void> {
   if (force) return;
-  const own: string[] = [];
-  for (const rel of rels) {
-    const p = join(ctx.dir, rel);
-    if (!(await exists(p))) continue;
-    const text = await readFile(p, "utf8");
-    if (!text.startsWith(GENERATED_MARK)) own.push(rel);
-  }
+  const own = await personWritten(ctx.dir, rels);
   if (own.length)
     throw new PlannerError(
       "refused",
