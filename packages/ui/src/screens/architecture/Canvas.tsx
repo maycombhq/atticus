@@ -404,8 +404,36 @@ export const fitPad = (view: Size): number =>
  * FIT_MIN_ZOOM; a bigger picture starts at its top-left), never zoomed in past actual size
  * (FIT_MAX: beta.27's first cut let a small estate fit at 300 %), with fitView's padding.
  */
-export function canvasFit(content: Rect, view: Size): Viewport {
-  return fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad: fitPad(view) });
+export function canvasFit(
+  content: Rect,
+  view: Size,
+  /**
+   * Beta.27 review: the boxes, so a picture too big for the view starts at its first box (the
+   * top-most, centred across when the picture is wider than the view), not at its bounds' empty
+   * corner: a big estate opened on an empty canvas, "0 of 67 boxes in view".
+   */
+  rects?: readonly (BoxRect & { group?: boolean })[],
+): Viewport {
+  const pad = fitPad(view);
+  const v = fitLegibly(content, view, { min: FIT_MIN_ZOOM, max: FIT_MAX, pad });
+  const first = (rects ?? [])
+    .filter((r) => !r.group)
+    .reduce<BoxRect | undefined>(
+      (a, r) => (!a || r.y < a.y || (r.y === a.y && r.x < a.x) ? r : a),
+      undefined,
+    );
+  if (!first) return v;
+  const wide = content.w * v.k > view.width - pad * 2;
+  const tall = content.h * v.k > view.height - pad * 2;
+  // Across: the first box in the middle, never past the picture's own edges.
+  const across = (view.width - first.width * v.k) / 2 - first.x * v.k;
+  const most = pad - content.x * v.k;
+  const least = view.width - pad - (content.x + content.w) * v.k;
+  return {
+    k: v.k,
+    x: wide ? Math.min(most, Math.max(least, across)) : v.x,
+    y: tall ? pad - first.y * v.k : v.y,
+  };
 }
 
 /**
@@ -647,7 +675,8 @@ export function ArchitectureCanvas(p: {
   const fitNow = (duration?: number, all = false) => {
     const i = rf.current;
     const el = stage.current;
-    const b = boundsOf(contentRects(nodesNow.current));
+    const rects = contentRects(nodesNow.current);
+    const b = boundsOf(rects);
     if (!i || !el || !b || !el.clientWidth || !el.clientHeight) {
       void i?.fitView({
         padding: FIT_PADDING,
@@ -658,7 +687,7 @@ export function ArchitectureCanvas(p: {
       return;
     }
     const view = { width: el.clientWidth, height: el.clientHeight };
-    const v = all ? canvasFitAll(b, view) : canvasFit(b, view);
+    const v = all ? canvasFitAll(b, view) : canvasFit(b, view, rects);
     void i.setViewport({ x: v.x, y: v.y, zoom: v.k }, duration ? { duration } : undefined);
     countOutside({ x: v.x, y: v.y, zoom: v.k });
   };

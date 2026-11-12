@@ -112,6 +112,23 @@ describe("5 and 6: the map's canvas", () => {
     expect(boxesOutside([{ x: 3900, y: 2900, width: 100, height: 100 }], all, view)).toBe(0);
   });
 
+  it("opens a picture too big for the view on its first box, not its bounds' empty corner", () => {
+    const content = { x: 0, y: 0, w: 4000, h: 3000 };
+    const view = { width: 1000, height: 600 };
+    const rects = [
+      { x: 0, y: 0, width: 4000, height: 3000, group: true },
+      { x: 2000, y: 100, width: 100, height: 50 },
+      { x: 1500, y: 900, width: 100, height: 50 },
+    ];
+    const corner = canvasFit(content, view);
+    expect(boxesOutside(rects, corner, view)).toBe(2);
+    const v = canvasFit(content, view, rects);
+    expect(v.k).toBe(FIT_MIN_ZOOM);
+    expect(boxesOutside(rects.slice(1, 2), v, view)).toBe(0);
+    // The first box in the middle across.
+    expect(v.x + (2000 + 50) * v.k).toBeCloseTo(view.width / 2);
+  });
+
   it("places a box inside a group where it is, and says how many boxes the view leaves out", () => {
     const box = (id: string, x: number, y: number, parentId?: string, group = false) => ({
       id,
