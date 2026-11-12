@@ -301,6 +301,11 @@ describe("19: the tab strip in a narrow panel", () => {
       cut: ["trust", "scans"],
     });
     expect(COPY.ide.moreTabs(3)).toBe("3 more");
+    // A strip narrower than Home lists Home too.
+    expect(tabsOutOfView(tabs.slice(0, 2), { scroll: 0, width: 50 }, 70).hidden).toEqual([
+      "home",
+      "changes",
+    ]);
   });
 });
 
@@ -355,6 +360,8 @@ describe("22 and 23: narrow and keyboard layout", () => {
     );
     expect(chip).toMatch(/overflow-wrap: break-word/);
     expect(chip).not.toMatch(/anywhere/);
+    // A table cell's word-break: break-word would break it all the same.
+    expect(chip).toMatch(/word-break: normal/);
     const shell = css("../src/app/shell/shell.css");
     const main = shell.slice(
       shell.indexOf(".sh-main {"),

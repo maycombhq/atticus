@@ -377,7 +377,8 @@
 }
 .sh-tabs {
   flex: 1;
-  min-width: 0;
+  /* Beta.27 review: room for Home at least, however many tools the bar holds. */
+  min-width: 64px;
   display: flex;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -394,7 +395,8 @@
 .sh-tab.sh-tab-home[aria-selected="true"] {
   background: var(--picked);
 }
-.sh-tab-cut .sh-tab-x {
+/* A tab cut at the strip's edge shows neither a piece of its name nor its ×: it is in "N more". */
+.sh-tab-cut > * {
   visibility: hidden;
 }
 .sh-more {

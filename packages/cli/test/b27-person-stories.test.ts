@@ -80,6 +80,9 @@ describe("stories a person wrote (beta.27 review, blocker)", () => {
       expect(c.stages[2]!.files).toEqual(["stories.md", "tasks.md"]);
       expect(c.next?.step).not.toBe("stories");
       expect(c.next?.step).toBe("handoff");
+      expect(c.next?.why).toMatch(
+        /^add-transfer-limit's stories\.md and tasks\.md are written by a person \(the stories stage never ran\)/,
+      );
       expect(c.nextStep).not.toMatch(/^Not ready/);
       // The plan's own role takes over once the stories are written.
       expect(c.waitsOn?.role).toBe("team-lead");
@@ -95,6 +98,7 @@ describe("stories a person wrote (beta.27 review, blocker)", () => {
       expect(v.byPerson).toEqual(["stories.md", "tasks.md"]);
       expect(v.headline).toMatch(/^A person wrote stories\.md and tasks\.md outside the app/);
       expect(v.step).toEqual(["plan", "stories", ID]);
+      expect(v.reply.why).toMatch(/no assistant waits for a reply/);
     },
     T,
   );
@@ -165,6 +169,59 @@ describe("one next step on every page (beta.27 review)", () => {
         expect(glance).toMatch(/^Not ready to raise "Plan ready" yet/);
         expect(status.nextStep).toBe(glance);
         expect(status.stepFirst).toBe(true);
+      } finally {
+        await s.close();
+      }
+    },
+    T,
+  );
+});
+
+describe("a change whose change.yaml doesn't read (beta.27 review)", () => {
+  it(
+    "is listed with its file, line and why, and its pages and a near id say so",
+    async () => {
+      const other = await forgeRoot();
+      const file = join(other, "openspec/changes", ID, "change.yaml");
+      const text = await readFile(file, "utf8");
+      await writeFile(file, text.replace("title:", "<<<<<<< HEAD\ntitle:"));
+      const { changeProblems, missingChangeWords, nearIds } =
+        await import("../src/change-problems.js");
+      const problems = await changeProblems(other);
+      expect(problems).toEqual([
+        {
+          id: ID,
+          file: `openspec/changes/${ID}/change.yaml`,
+          line: 3,
+          message: expect.stringMatching(/^invalid YAML: .* at line 3, column 1$/),
+        },
+      ]);
+      expect(await missingChangeWords(other, ID)).toMatch(
+        new RegExp(
+          `^${ID}'s change\\.yaml doesn't read \\(openspec/changes/${ID}/change\\.yaml, line 3\\): invalid YAML: .*\\. Fix the file and the change comes back\\.$`,
+        ),
+      );
+      expect(await missingChangeWords(root, "add-transfer-limt")).toBe(
+        `There is no change add-transfer-limt. Did you mean ${ID}?`,
+      );
+      expect(await missingChangeWords(root, "nothing-like-it")).toBe(
+        "There is no change nothing-like-it.",
+      );
+      expect(nearIds("ledger", ["ledger-v2", "portal"])).toEqual(["ledger-v2"]);
+      const s = await startServer({
+        root: other,
+        port: 0,
+        user: "bao",
+        watch: false,
+        extend: (r, ctx) => uiCockpitRoutes(uiRoutes(r, ctx), ctx),
+      });
+      try {
+        const get = async (p: string) =>
+          fetch(s.url + p, { headers: { "X-Atticus-Token": s.token } });
+        expect(await (await get("/api/change-problems")).json()).toEqual(problems);
+        const glance = await get(`/api/changes/${ID}/cockpit`);
+        expect(glance.status).toBe(404);
+        expect(((await glance.json()) as { detail: string }).detail).toMatch(/doesn't read/);
       } finally {
         await s.close();
       }

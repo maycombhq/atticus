@@ -44,7 +44,7 @@ function revealTab(key: string): void {
  * Beta.27 review: which tabs the strip doesn't show whole. `tabs` are each tab's left edge and
  * width in the strip's scrolled content, `view` the part shown (its scroll and width), and
  * `pinned` the width Home takes at the left, held there. A tab wholly out of view is `hidden`
- * (listed under "N more"); one partly in view is `cut` (its × isn't shown, never a bare ×).
+ * (listed under "N more"); one partly in view is `cut` (listed too, its × not shown: never a bare ×).
  */
 export function tabsOutOfView(
   tabs: readonly { key: string; left: number; width: number }[],
@@ -56,7 +56,11 @@ export function tabsOutOfView(
   const hidden: string[] = [];
   const cut: string[] = [];
   for (const t of tabs) {
-    if (t.key === HOME_KEY) continue;
+    // Home is held at the left: out of view only when the strip is narrower than it.
+    if (t.key === HOME_KEY) {
+      if (view.width < t.width - 1) hidden.push(t.key);
+      continue;
+    }
     const right = t.left + t.width;
     if (right <= from + 1 || t.left >= to - 1) hidden.push(t.key);
     else if (t.left < from - 1 || right > to + 1) cut.push(t.key);
@@ -181,6 +185,8 @@ export function TabStrip({
       setOut((o) =>
         o.hidden.join() === next.hidden.join() && o.cut.join() === next.cut.join() ? o : next,
       );
+      // The tab shown is kept in view as the strip's room changes ("N more" taking some).
+      if ([...next.hidden, ...next.cut].includes(state.active)) revealTab(state.active);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -296,7 +302,7 @@ export function TabStrip({
           );
         })}
       </div>
-      <MoreTabs keys={out.hidden} state={state} onShow={onShow} />
+      <MoreTabs keys={[...out.hidden, ...out.cut]} state={state} onShow={onShow} />
       <span id="sh-tab-hint" className="sr">
         {T.tabHint}
       </span>

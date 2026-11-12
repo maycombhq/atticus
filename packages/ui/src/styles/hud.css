@@ -801,6 +801,8 @@ code.mono {
   .chip {
     white-space: normal;
     overflow-wrap: break-word;
+    /* A table's cells say word-break: break-word, which a chip would inherit. */
+    word-break: normal;
   }
   /* Long file paths and ids break anywhere rather than run off the side. */
   .mono,
@@ -1137,10 +1139,11 @@ a.btn {
 .arch-notice p {
   margin: 0;
 }
-/* Beta.27 review: boxes outside the view, said over the picture's top edge with Fit. */
+/* Beta.27 review: boxes outside the view, said over the picture's foot (clear of the boxes a
+   fit starts at the top) with Fit, between the legend and the minimap. */
 .arch-outside {
   position: absolute;
-  top: 8px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -1149,7 +1152,7 @@ a.btn {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  max-width: calc(100% - 24px);
+  max-width: min(440px, calc(100% - 24px));
   padding: 4px 6px 4px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;

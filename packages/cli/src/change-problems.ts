@@ -20,10 +20,14 @@ export async function changeProblems(root: string): Promise<Api.ChangeProblemsT>
   return problems.map((p) => {
     const file = relative(root, p.file).split(sep).join("/");
     const id = file.split("/").at(-2) ?? file;
-    // The path is said once, as `file`: the message starts with it.
-    const message = p.message.startsWith(`${p.file}: `)
-      ? p.message.slice(p.file.length + 2)
-      : p.message;
+    // The path is said once, as `file`: the message starts with it. YAML's excerpt of the lines
+    // round the error goes: its first line says what and where.
+    const message = (
+      p.message.startsWith(`${p.file}: `) ? p.message.slice(p.file.length + 2) : p.message
+    )
+      .split("\n")[0]!
+      .replace(/:\s*$/, "")
+      .trim();
     const line = lineOf(message);
     return { id, file, ...(line ? { line } : {}), message };
   });
@@ -66,7 +70,7 @@ export async function missingChangeWords(root: string, id: string): Promise<stri
   if (RecordId.safeParse(id).success) {
     const broken = (await changeProblems(root).catch(() => [])).find((p) => p.id === id);
     if (broken)
-      return `${id}'s change.yaml doesn't read (${broken.file}${broken.line ? `, line ${broken.line}` : ""}): ${broken.message} Fix the file and the change comes back.`;
+      return `${id}'s change.yaml doesn't read (${broken.file}${broken.line ? `, line ${broken.line}` : ""}): ${broken.message.replace(/[^.!?]$/, "$&.")} Fix the file and the change comes back.`;
   }
   const ids = await readdir(changesDirOf(root), { withFileTypes: true })
     .then((es) => es.filter((e) => e.isDirectory() && e.name !== "archive").map((e) => e.name))

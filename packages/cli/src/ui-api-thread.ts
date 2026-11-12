@@ -291,7 +291,10 @@ export async function stageThreadView(
   // started" with a Start the stage would refuse.
   const byPerson =
     stage === "stories" && state === "not-started" ? await personWrittenPlanning(dir) : [];
-  if (byPerson.length) state = "done";
+  if (byPerson.length) {
+    state = "done";
+    replyWhy = `A person wrote ${change}'s planning files outside the app, so no assistant waits for a reply: draft the stories again to start one.`;
+  }
   const open = items.filter((i) => i.kind === "finding" && i.view.finding.state === "open").length;
   const questions = items.filter(
     (i) => i.kind === "question" && i.question.state === "open",

@@ -209,6 +209,11 @@ export interface NextState {
     /** Fifth UX walk: its proposal or specs aren't written yet (the draft is the next step). */
     undrafted?: boolean;
     /**
+     * Beta.27 review: the stage whose work a person did by hand (its planning files, never run),
+     * with the files, so its step says so rather than "the stage is done".
+     */
+    byPerson?: { stage: string; files: string[] };
+    /**
      * Eighth UX walk: at build or QA, its open blocking findings (and knowledge gaps) on the gates
      * that stop the state's hand-off, as the gate counts them: they are resolved before it is raised.
      */
@@ -492,9 +497,9 @@ export async function readNextState(root: string): Promise<NextState> {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
       // Beta.27 review: planning files a person wrote are the stories stage's work done (the
       // stage would refuse to replace them), so the step after it is offered, as the gate reads it.
-      const stagesDone = (await stageCompletion({ root, policy }, c))
-        .filter((s) => stageWorkDone(s.state))
-        .map((s) => s.stage);
+      const completion = await stageCompletion({ root, policy }, c);
+      const stagesDone = completion.filter((s) => stageWorkDone(s.state)).map((s) => s.stage);
+      const byPerson = completion.find((s) => s.state === "person");
       const needs = await readNeeds(root, c.id);
       const open = needs?.needs.filter((n) => n.status === "open") ?? [];
       unverifiedNeeds += open.filter((n) => {
@@ -549,6 +554,7 @@ export async function readNextState(root: string): Promise<NextState> {
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(missing.draft ? { undrafted: true } : {}),
+        ...(byPerson ? { byPerson: { stage: byPerson.stage, files: byPerson.files ?? [] } } : {}),
         ...(blocking ? { blocking } : {}),
         ...(gate.length ? { gate } : {}),
         ...(c.state === "released" ? await releasedOf(root, c.id) : {}),
@@ -1142,7 +1148,11 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
         step: "handoff",
         command: `atticus change handoff ${id} --approve`,
         where: METAREPO,
-        why: `${id}'s ${stage} stage is done${later.length ? ` (and ${later.join(" and ")} ran ahead)` : ""}, but the change is still in ${c.state}: a person raises its ${gate} hand-off PR, and merging it approves the ${gate} gate and moves it on (ADR 0073).`,
+        why: `${
+          c.byPerson?.stage === stage
+            ? `${id}'s ${c.byPerson.files.join(" and ")} ${c.byPerson.files.length === 1 ? "is" : "are"} written by a person (the ${stage} stage never ran)`
+            : `${id}'s ${stage} stage is done`
+        }${later.length ? ` (and ${later.join(" and ")} ran ahead)` : ""}, but the change is still in ${c.state}: a person raises its ${gate} hand-off PR, and merging it approves the ${gate} gate and moves it on (ADR 0073).`,
         change: id,
         person: true,
       },
