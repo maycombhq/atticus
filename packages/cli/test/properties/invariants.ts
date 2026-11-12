@@ -288,14 +288,17 @@ function unjustified(s: Step): string | undefined {
     return undefined;
   }
   if (o.guard === "empty-catalog") {
-    // ADR point 4: no empty catalog over a full one. The model can't say what a build of no
-    // source holds (the org pack's systems, say), so it accepts the refusal whenever no repo the
-    // build reads has a source and the manifests still list one.
+    // ADR point 4: no empty catalog over a full one. The guard counts records from code; the
+    // model can't say what a build holds besides them (the org pack's systems, say), so it
+    // accepts the refusal whenever no repo the build reads has a source that makes a record and
+    // the manifests still list one. A facts file with no fact makes none (`makesRecords`): with
+    // the ledger's empty facts its only source, archiving payments leaves no record from code,
+    // and the guard is right to refuse (seed 1754877814).
     if (!s.before.generated.size) return "the catalog was empty already";
     if (!s.m.repos.some((r) => r.listed)) return "the manifests list no repo";
-    const read = s.m.live().filter((r) => s.m.source(r.slot));
+    const read = s.m.live().filter((r) => s.m.makesRecords(r.slot));
     if (read.length)
-      return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has" : "have"} a source`;
+      return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has a source that makes" : "have sources that make"} records`;
     return undefined;
   }
   return `the guard ${o.guard ?? "(none)"} isn't one the model can account for here`;
@@ -908,9 +911,14 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
   // confirmed the same way (seed 1351551411: a rename undone leaves its slot under the old id,
   // which the manifests no longer list, so the build lists the repo's records as removals above
   // the limit; ADR 0195 point 7 and the joint review: undo puts back the slots, not the inputs).
+  // A refused command that no longer runs has nothing left to confirm: a refusal writes nothing
+  // (point 4), and its repo has since been archived or removed, so the person can't run it again
+  // and its listing is moot (seed 1754877814: verify --write of payments refused for a removal,
+  // then payments archived). The build of the rest settles.
   let built = m.beta26;
   for (let i = 0; i < 8; i++) {
     const p = w.pending;
+    const steps = w.steps;
     if (p?.removals && (p.confirm.allowRemovals !== p.removals.count || !m.handEdits.length))
       await run({ t: "confirm-removals" });
     else if (m.handEdits.length) await run({ t: "discard-edits" });
@@ -918,6 +926,7 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
       built = true;
       await run({ t: "build" });
     } else break;
+    if (p && w.steps === steps && w.pending === p) w.pending = undefined;
   }
   if (!ctx.enabled.has("equivalence") || m.beta26) return;
   // The empty-catalog guard has no confirmation (ADR point 4): a metarepo whose build would hold

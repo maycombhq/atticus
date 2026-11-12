@@ -36,6 +36,8 @@ export const TWO: Estate = {
   ],
 };
 
+/** A repo whose code serves, calls, publishes and listens to nothing. */
+const empty: Code = { endpoints: [], calls: [], publishes: [], consumes: [] };
 /** forge-payments without its call to the ledger and without its topic. */
 const paymentsAlone: Code = { ...paymentsCode, calls: [], publishes: [] };
 /** forge-payments also calling a host no repo lists (a loose end until someone answers). */
@@ -628,5 +630,56 @@ export const EXAMPLES: Example[] = [
     "after a rename undone, the confirmed build's removals of the ledger's records may be said as the manifest's: their evidence names an id no manifest lists, its slot kept (seed 1351551411)",
     [{ t: "scan" }, { t: "rename", slot: 0 }, { t: "undo", n: 0, yes: true, back: false }],
     [lacks("the ledger's GET /accounts, whose slot no listed repo has", getAccounts)],
+  ),
+  seq(
+    "completeness",
+    "archiving payments when the ledger's only source is a facts file with no fact is refused as an empty catalog, and the catalog is kept (seed 1754877814)",
+    // ADR 0195 point 4: no empty catalog over a full one, unless the manifests list no repo. The
+    // ledger is listed and read, but its verified facts hold no fact, so they make no record:
+    // with payments archived the build has no record from code, and it refuses.
+    [
+      { t: "change-code", slot: 1, code: { ...empty, publishes: [payments.topic] } },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "archive", slot: 1 },
+    ],
+    [
+      has("payments' own Component, kept by the refusal", (recs) =>
+        recs.find((r) => r.kind === "Component" && r.id === payments.component),
+      ),
+    ],
+    {
+      repos: [
+        { base: ledger, code: empty },
+        { base: payments, code: empty },
+      ],
+    },
+  ),
+  seq(
+    "equivalence",
+    "a verify --write refused for a removal, its repo then archived, settles without its confirmation: the refused command no longer runs (seed 1754877814)",
+    // ADR 0195 point 4: a refused command writes nothing, and its listing waits for its own
+    // confirmation. Archiving forge-payments leaves it unread, so `verify --write` of it is no
+    // longer one to confirm: its listing is moot, and the build of the rest settles.
+    [
+      { t: "change-code", slot: 1, code: { ...empty, publishes: [payments.topic] } },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "archive", slot: 1 },
+    ],
+    [
+      has("the ledger's loose end for forge.payments.changed, no repo publishing it", (recs) =>
+        recs.find((r) => r.kind === "Unresolved"),
+      ),
+      lacks("payments' own Component", (recs) =>
+        recs.find((r) => r.kind === "Component" && r.id === payments.component),
+      ),
+    ],
+    {
+      repos: [
+        { base: ledger, code: { ...empty, consumes: [payments.topic] } },
+        { base: payments, code: empty },
+      ],
+    },
   ),
 ];
