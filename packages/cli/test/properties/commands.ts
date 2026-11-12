@@ -25,7 +25,7 @@ import {
   type Sketch,
 } from "./estate.js";
 import { fault } from "./fault.js";
-import { arrowOf, checkStep, type Invariant, type Step } from "./invariants.js";
+import { arrowOf, checkStep, InvariantError, type Invariant, type Step } from "./invariants.js";
 import {
   arrowKey,
   endpointKey,
@@ -235,6 +235,26 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
       ...acted,
     };
     checkStep(step, ctx.enabled);
+    // A written build may retire legacy joins it derived again (point 6): the model follows,
+    // once the retirement is shown to be one the current sources allow.
+    if (ok && built && m.legacyJoins.length) {
+      const text = after.sources.get("legacy/joins.json");
+      let kept = new Set<string>(m.legacyJoins.map((j) => j.id));
+      if (text !== undefined)
+        try {
+          const slot = JSON.parse(text) as { records?: { id: string }[] };
+          kept = new Set((slot.records ?? []).map((r) => r.id));
+        } catch {
+          // a joins.json that doesn't parse retires nothing here; the slot checks say so
+        }
+      else kept = new Set();
+      const wrong = m.retire(kept);
+      if (wrong.length && ctx.enabled.has("links-are-live"))
+        throw new InvariantError(
+          "links-are-live",
+          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => j.id).join(", ")}`,
+        );
+    }
     const changed =
       !sameTree(before.generated, after.generated) || !sameTree(before.sources, after.sources);
     if (ok) {
