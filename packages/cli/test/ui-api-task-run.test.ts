@@ -43,7 +43,9 @@ describe("GET /api/changes/{id}/runs with a task run", () => {
       branch: `task/${CHANGE}/1.3`,
       worktree: `workspace/.worktrees/${CHANGE}/.tasks/1.3/forge-ledger`,
     });
-  }, 120_000);
+    // Seconds anywhere (3-4 s on Windows), but a loaded Windows runner (Node 24, beta.27 full
+    // matrix) once stalled it past 120 s with no failure in it; the cap leaves room for that.
+  }, 300_000);
 });
 
 describe("POST /api/runs/{runId}/done on a task run", () => {

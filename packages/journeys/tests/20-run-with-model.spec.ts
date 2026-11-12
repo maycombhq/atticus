@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   accessible,
@@ -45,6 +45,10 @@ test.beforeAll(async () => {
       "",
     ].join("\n"),
   );
+  // Beta.27 review: stories a person wrote are the stories stage's work done by hand, so Run next
+  // would be the plan hand-off (journey 28). Without them the stage is the step this page runs.
+  for (const f of ["stories.md", "tasks.md"])
+    await rm(join(root, "openspec/changes/add-transfer-limit", f), { force: true });
   app = await startApp(root);
 });
 test.afterAll(async () => {

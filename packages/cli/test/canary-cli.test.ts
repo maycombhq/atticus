@@ -97,7 +97,9 @@ const manifestEntry = (id: string, type: string) =>
   ].join("\n");
 
 async function metarepo(): Promise<Here> {
-  const top = await mkdtemp(join(tmpdir(), "atticus-canary-test-"));
+  // By its real path, as the run folders are named (realpath): on Windows the temporary folder
+  // can be a short 8.3 name (C:\Users\RUNNER~1), which the real path spells out.
+  const top = await realpath(await mkdtemp(join(tmpdir(), "atticus-canary-test-")));
   made.push(top);
   const root = join(top, "metarepo");
   await cp(join(FIX, "forge/metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
@@ -822,7 +824,7 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     const kdir = join(metarepoStateDir(h.root, h.env), "canaries");
     await mkdir(kdir, { recursive: true });
     const climb = relative(kdir, join(v, "package"));
-    expect(climb).toMatch(/^\.\.\//);
+    expect(climb).toMatch(/^\.\.[\\/]/);
     expect(await canaryRepoProblem(h.root, climb, h.env)).toMatch(/isn't a repo's name/);
     expect(await canaryRepoProblem(h.root, "forge-nowhere", h.env)).toBe(
       "forge-nowhere is no repo of this metarepo: it is in no manifest, and it has no facts here.",

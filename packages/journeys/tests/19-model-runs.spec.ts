@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runsDirOf } from "@maycombhq/core";
 import {
@@ -108,6 +108,10 @@ const a = () => {
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   const root = await forgeMetarepo();
+  // Beta.27 review: stories a person wrote are the stories stage's work done by hand, so Run next
+  // would be the plan hand-off (journey 28). Without them the stage is the step this page runs.
+  for (const f of ["stories.md", "tasks.md"])
+    await rm(join(root, "openspec/changes/add-transfer-limit", f), { force: true });
   const scan = { change: "knowledge-scan", agent: "knowledge-reader", output: "items.yaml" };
   ids.push(
     await seed(root, {

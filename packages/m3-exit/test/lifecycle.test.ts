@@ -219,9 +219,18 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       const c = await run("critic", CHANGE, "--gate", "define");
       expect(c.code).toBe(2);
       expect(c.err).toEqual(["There is no gate define. Gates: design, plan, build, release."]);
+      // Beta.27 review of the screens: change status says the one next step every page says
+      // (changeNextStep). Nothing in the hand-off's checks blocks (stepFirst is only set when the
+      // report is ready), but the Forge stage path offers the feature stage first (atticus next).
+      const feature =
+        "add-transfer-limit is at the feature stage: your assistant places it on the estate's flows and features, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).";
       expect((await run("change", "status", CHANGE)).out).toContain(
-        'Next: Ready to raise "Send to architecture".',
+        `Next: Not ready to raise "Send to architecture" yet: first, ${feature}`,
       );
+      const json = JSON.parse((await run("change", "status", CHANGE, "--json")).out.join("\n"));
+      expect(json).toMatchObject({ phase: "define", stepFirst: true });
+      // Only the hand-off PR itself is missing: the change is ready to hand off.
+      expect(json.reasons.map((r: { code: string }) => r.code)).toEqual(["no-handoff"]);
     },
     T,
   );

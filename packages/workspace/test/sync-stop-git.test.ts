@@ -654,6 +654,9 @@ describe("a folder and a file swapped by the fetched commit (real git)", () => {
           { "README.md": null, "readme.md": "# Ledger\n\nNew.\n" },
         );
         realGit(dest, "config", "core.ignorecase", "true");
+        // The commit's own bytes are checked below: Git for Windows (and CI runners) set
+        // core.autocrlf, which would check the file out with CRLF line ends.
+        realGit(dest, "config", "core.autocrlf", "false");
         await killedWith(dest, old, next, { "README.md": null, "readme.md": "# Led" }, index);
         const [res] = await createWorkspace(root).sync([r]);
         expect(res!.action).toBe("updated");

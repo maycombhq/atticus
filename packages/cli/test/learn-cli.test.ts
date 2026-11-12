@@ -22,7 +22,9 @@ import {
 import { main } from "../src/main.js";
 import type { Output } from "../src/commands.js";
 
-const T = 180_000;
+// A lesson runs in seconds (under 10 s on Windows), but a loaded Windows runner (Node 24, beta.27
+// full matrix) once stalled one past 180 s with no failure in it; the cap leaves room for that.
+const T = 300_000;
 const NOW = new Date("2026-12-14T09:00:00Z");
 const REPO = "forge/forge-metarepo";
 
