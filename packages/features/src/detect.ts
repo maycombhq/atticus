@@ -430,6 +430,23 @@ function pinsFrom(decisions: Decision[]): Map<string, string> {
 
 const evKey = (e: EvidenceT) => JSON.stringify(Object.entries(e).sort());
 
+/**
+ * A feature's evidence: its entry points', then the first evidence (by record id) of each other
+ * repo its records come from, by repo id. A feature traced through several repos cites each, so
+ * it changes only when one of them does (ADR 0195, CS2; CLAUDE.md rule 6).
+ */
+function withEachRepo(
+  own: EvidenceT[],
+  records: readonly (CatalogRecord | undefined)[],
+): EvidenceT[] {
+  const have = new Set(own.flatMap((e) => (e.repo ? [e.repo] : [])));
+  const first = new Map<string, EvidenceT>();
+  for (const r of records)
+    for (const e of r?.evidence ?? [])
+      if (e.repo && !have.has(e.repo) && !first.has(e.repo)) first.set(e.repo, e);
+  return [...own, ...[...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, e]) => e)];
+}
+
 function dedupeEvidence(list: EvidenceT[]): EvidenceT[] {
   const seen = new Set<string>();
   return list.filter((e) => {
@@ -488,6 +505,7 @@ export function detectFeaturesWithReport(
       });
     }
   }
+  const byId = new Map(records.map((r) => [r.id, r]));
   const list = [...entries.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
   tracer.useEntries(list);
   const flows = new Map(list.map((e) => [e.id, tracer.trace(e)]));
@@ -596,7 +614,10 @@ export function detectFeaturesWithReport(
         tags: p ? [...p.tags] : [],
         externalRefs: [],
         namedBy: p ? "ai" : "detected",
-        evidence: dedupeEvidence(f.members.flatMap((m) => entries.get(m)!.evidence)),
+        evidence: withEachRepo(
+          dedupeEvidence(f.members.flatMap((m) => entries.get(m)!.evidence)),
+          sorted(f.records).map((r) => byId.get(r)),
+        ),
       }),
     );
   }

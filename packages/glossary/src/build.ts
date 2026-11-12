@@ -108,21 +108,24 @@ const USES_CITED = 5;
  * partly because of a repo cites it; then further uses by record id, up to five in all. Uses
  * with no repo (an input's record) count as further uses.
  */
-export function usesCited<U extends { record: string; evidence: EvidenceT }>(
+export function usesCited<U extends { record: string; evidence: EvidenceT; all?: EvidenceT[] }>(
   uses: readonly U[],
-): U[] {
+): EvidenceT[] {
   const byRecord = [...uses].sort((a, b) =>
     a.record < b.record ? -1 : a.record > b.record ? 1 : 0,
   );
-  const first = new Map<string, U>();
-  for (const u of byRecord) {
-    const repo = u.evidence.repo;
-    if (repo && !first.has(repo)) first.set(repo, u);
-  }
-  const out = [...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, u]) => u);
+  // Each repo's first use, and the evidence of it that names the repo (a join names several).
+  const first = new Map<string, EvidenceT>();
+  for (const u of byRecord)
+    for (const e of u.all ?? [u.evidence]) if (e.repo && !first.has(e.repo)) first.set(e.repo, e);
+  const out = [...first].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, e]) => e);
+  const key = (e: EvidenceT) => JSON.stringify(e);
+  const cited = new Set(out.map(key));
   for (const u of byRecord) {
     if (out.length >= USES_CITED) break;
-    if (!out.includes(u)) out.push(u);
+    if (cited.has(key(u.evidence))) continue;
+    cited.add(key(u.evidence));
+    out.push(u.evidence);
   }
   return out;
 }
@@ -296,7 +299,7 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
 
     const evidence: EvidenceT[] = [
       ...ds.map((d) => ({ source: "document" as const, path: d.path, line: d.line })),
-      ...usesCited(c?.uses ?? []).map((u) => u.evidence),
+      ...usesCited(c?.uses ?? []),
     ];
     if (!evidence.length && person) evidence.push({ source: "manual", by: person.by });
     if (!evidence.length) evidence.push({ source: "manual" });

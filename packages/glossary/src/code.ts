@@ -21,6 +21,8 @@ export interface CodeUse {
   kind: string;
   name: string;
   evidence: EvidenceT;
+  /** All of the record's evidence (a join's names each repo it joins). */
+  all?: EvidenceT[];
 }
 
 export interface CodeTerm {
@@ -43,6 +45,7 @@ interface Named {
   type?: string;
   isField: boolean;
   evidence: EvidenceT;
+  all: EvidenceT[];
 }
 
 const firstEvidence = (r: CatalogRecord): EvidenceT => r.evidence[0]!;
@@ -61,6 +64,7 @@ function named(records: readonly CatalogRecord[]): Named[] {
         words: businessWords(e.pathOrTopic),
         isField: false,
         evidence: firstEvidence(e),
+        all: e.evidence,
       });
     } else if (r.kind === "Interface") {
       const i = r as RecordOf<"Interface">;
@@ -72,6 +76,7 @@ function named(records: readonly CatalogRecord[]): Named[] {
         words: businessWords(i.normalizedPath),
         isField: false,
         evidence: firstEvidence(i),
+        all: i.evidence,
       });
     } else if (r.kind === "Table") {
       const t = r as RecordOf<"Table">;
@@ -86,6 +91,7 @@ function named(records: readonly CatalogRecord[]): Named[] {
         ...(single ? { single } : {}),
         isField: false,
         evidence: firstEvidence(t),
+        all: t.evidence,
       });
     } else if (r.kind === "Column") {
       const c = r as RecordOf<"Column">;
@@ -101,6 +107,7 @@ function named(records: readonly CatalogRecord[]): Named[] {
         type: c.type,
         isField: true,
         evidence: firstEvidence(c),
+        all: c.evidence,
       });
     } else if (r.kind === "Schema") {
       const s = r as RecordOf<"Schema">;
@@ -117,6 +124,7 @@ function named(records: readonly CatalogRecord[]): Named[] {
           ...(f.type ? { type: f.type } : {}),
           isField: true,
           evidence: firstEvidence(s),
+          all: s.evidence,
         });
       }
     }
@@ -160,7 +168,13 @@ export function codeTerms(
       if (!usesWord && !isWhole) continue;
       const t = get(key);
       if (!t.uses.some((u) => u.record === n.record))
-        t.uses.push({ record: n.record, kind: n.kind, name: n.name, evidence: n.evidence });
+        t.uses.push({
+          record: n.record,
+          kind: n.kind,
+          name: n.name,
+          evidence: n.evidence,
+          all: n.all,
+        });
       if (n.isField && isWhole && !t.fields.includes(n.record)) {
         t.fields.push(n.record);
         if (n.type) t.types[n.record] = n.type;
@@ -179,7 +193,13 @@ export function codeTerms(
       if (n.type) t.types[n.record] = n.type;
     }
     if (!t.uses.some((u) => u.record === n.record))
-      t.uses.push({ record: n.record, kind: n.kind, name: n.name, evidence: n.evidence });
+      t.uses.push({
+        record: n.record,
+        kind: n.kind,
+        name: n.name,
+        evidence: n.evidence,
+        all: n.all,
+      });
   }
   for (const t of out.values()) {
     t.uses.sort((a, b) => (a.record < b.record ? -1 : a.record > b.record ? 1 : 0));

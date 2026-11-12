@@ -66,6 +66,7 @@ terms:
     evidence:
       - inputs/wiki/ledger-glossary.md:12
       - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1
+      - forge-reports-job/src/main/java/forge/reports/DailyEntriesJob.java:14
   - id: term.holder-name
     term: Holder name
     definition: The name of the person who owns the account, as on their ID.

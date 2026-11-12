@@ -31,7 +31,9 @@ terms:
     definition: "Not defined yet. Found in code: ledger-db.entry."
     fields: []
     flags: [undefined]
-    evidence: [forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1]
+    evidence:
+      - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1
+      - forge-reports-job/src/main/java/forge/reports/DailyEntriesJob.java:14
   - id: term.holder-name
     term: Holder name
     definition: "Not defined yet. Found in code: ledger-db.account.holder-name."

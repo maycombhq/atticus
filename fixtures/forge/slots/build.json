@@ -50,7 +50,7 @@
     },
     {
       "path": "catalog/generated/capability/feature.account-balance.yaml",
-      "sha256": "75d37a386e5198aa18a304f2709ebf27eccd9305aa723977439ec4b7cbcd5741",
+      "sha256": "81a2ee1785ef9d77303e8c78fb0f8e40c8ab8f708913191d2031f4f5dbc008fe",
       "sources": [
         {
           "path": "catalog/curated",
@@ -65,12 +65,20 @@
           "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
         },
         {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
           "path": "catalog/sources/readers/forge-ledger.json",
           "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
         },
         {
           "path": "catalog/sources/readers/forge-portal-bff.json",
           "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-ui.json",
+          "sha256": "01d70769a00066a700a81699730428e968aa520264611df8a8e4fb1d18cec132"
         },
         {
           "path": "evidence/traffic",
@@ -100,7 +108,7 @@
     },
     {
       "path": "catalog/generated/capability/feature.daily-entries-report.yaml",
-      "sha256": "9f497d8a732558548d0cc40c2054f6fd1580d23b7b04bb06cb5640f228d1cedf",
+      "sha256": "44e0d4875471521e571073ee894119c6851626cbc5108c6aab8a36d8b6b12b74",
       "sources": [
         {
           "path": "catalog/curated",
@@ -113,6 +121,10 @@
         {
           "path": "catalog/sources",
           "sha256": "a8f6b1a1bf5924e4a5890e2c39ac76d2a15b0462f2ceaa785f2e78f395217d47"
+        },
+        {
+          "path": "catalog/sources/readers/forge-ledger.json",
+          "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
         },
         {
           "path": "catalog/sources/readers/forge-reports-job.json",
@@ -146,7 +158,7 @@
     },
     {
       "path": "catalog/generated/capability/feature.payments.yaml",
-      "sha256": "9f45699c114107a11132c57c14cafc0b60cc7207324e29fbc58770a1464ebf53",
+      "sha256": "dd6647a6aabf3d22971b6b6393dcd00cad9d46a3ec2b1eaf3d9f3ace5fd617eb",
       "sources": [
         {
           "path": "catalog/curated",
@@ -171,6 +183,10 @@
         {
           "path": "catalog/sources/readers/forge-portal-bff.json",
           "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
         },
         {
           "path": "evidence/traffic",
@@ -200,7 +216,7 @@
     },
     {
       "path": "catalog/generated/capability/feature.transfers.yaml",
-      "sha256": "c68e8dc62bb25108e90fa03fa07136c7e617b2eaed4f30eec6df2b4bc3c5f324",
+      "sha256": "7b516cf6b6f406bb6e5428444849e2f9506590f066b57b2ad783c81368086d6e",
       "sources": [
         {
           "path": "catalog/curated",
@@ -219,8 +235,16 @@
           "sha256": "c32734fc387c186907be8de132adac4d04933dc640f14b8a4d04960d76b5ac9e"
         },
         {
+          "path": "catalog/sources/readers/forge-gateway.json",
+          "sha256": "01bab8aaf2d01a71b93a80a0cbce177362c8b6cd15dfe951a0bf01b2f1c95597"
+        },
+        {
           "path": "catalog/sources/readers/forge-ledger.json",
           "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-portal-bff.json",
+          "sha256": "c3894f48cb95b2c9eb78f731108166a1e23d6874765d288ce1dc2e8b15180400"
         },
         {
           "path": "catalog/sources/readers/forge-reports-job.json",
@@ -1366,7 +1390,7 @@
     },
     {
       "path": "catalog/generated/glossaryterm/term.entry.yaml",
-      "sha256": "57033b168b79a692ae74d637bea254acddb64362255944383e6bfa4f37765092",
+      "sha256": "dd69ef5a473fcb8f13d534b668b7c5e33c70ca93c37cfe5ff0d355c2c66536f9",
       "sources": [
         {
           "path": "catalog/curated",
@@ -1383,6 +1407,10 @@
         {
           "path": "catalog/sources/readers/forge-ledger.json",
           "sha256": "6abbba5ec17194e9fab63dd41b98ac76332210dc9c4078c1fac47ab178d3ee21"
+        },
+        {
+          "path": "catalog/sources/readers/forge-reports-job.json",
+          "sha256": "3d58f27160bb0b031f2baea9d962fbbfe53b153fa5790163c86c7707feb6cf9a"
         },
         {
           "path": "evidence/traffic",
