@@ -135,12 +135,13 @@ describe("the local server (ADR 0015)", () => {
     );
   });
 
-  it("health names the root as one key: its real path, case-folded where case is ignored", async () => {
+  it("health names the root as one key: its real path, exactly, only a drive letter folded", async () => {
     const { rootKeyOf } = await import("../src/routes.js");
     const r = await call("/api/health");
     const real = realpathSync.native(root);
-    const folded = process.platform === "win32" || process.platform === "darwin";
-    expect((r.body as { rootKey?: string }).rootKey).toBe(folded ? real.toLowerCase() : real);
+    const key =
+      process.platform === "win32" ? real.replace(/^[a-z]:/, (d) => d.toUpperCase()) : real;
+    expect((r.body as { rootKey?: string }).rootKey).toBe(key);
     // Reached through a link, it is the same key.
     const dir = await mkdtemp(join(tmpdir(), "atticus-root-key-"));
     try {
@@ -150,8 +151,20 @@ describe("the local server (ADR 0015)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-    expect(rootKeyOf("/Work/Forge-Metarepo-Gone", "win32")).toBe("/work/forge-metarepo-gone");
-    expect(rootKeyOf("/Work/Forge-Metarepo-Gone", "linux")).toBe("/Work/Forge-Metarepo-Gone");
+    // Round 2: never case-folded (a volume with case may hold both), on any system; on Windows
+    // the drive letter alone is one drive however it is written.
+    for (const platform of ["win32", "darwin", "linux"] as const)
+      expect(rootKeyOf("/Work/Forge-Metarepo-Gone", platform)).toBe("/Work/Forge-Metarepo-Gone");
+    expect(rootKeyOf("c:\\Work\\Forge-Metarepo-Gone", "win32")).toBe(
+      "C:\\Work\\Forge-Metarepo-Gone",
+    );
+    expect(rootKeyOf("C:\\Work\\Forge-Metarepo-Gone", "win32")).toBe(
+      "C:\\Work\\Forge-Metarepo-Gone",
+    );
+    expect(rootKeyOf("c:\\Work\\Forge-Metarepo-Gone", "linux")).toBe(
+      "c:\\Work\\Forge-Metarepo-Gone",
+    );
+    expect(rootKeyOf("C:\\Work\\Forge", "win32")).not.toBe(rootKeyOf("C:\\work\\forge", "win32"));
   });
 
   it("answers every call without the right token with 401 problem details", async () => {

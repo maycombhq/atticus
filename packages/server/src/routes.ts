@@ -194,9 +194,12 @@ function summary(c: ChangeLifecycle, findings: Finding[], fast = false) {
 }
 
 /**
- * Beta.27 re-review: the root as one key (health's `rootKey`): its real path, case-folded where
- * the file system ignores case, so a page tells this metarepo from another after a restart
- * however the folder was written (`C:\Work` and `c:\work`, a link, an 8.3 name).
+ * Beta.27 re-review: the root as one key (health's `rootKey`): its real path, so a page tells
+ * this metarepo from another after a restart however the folder was written (a link, an 8.3
+ * name, `c:\work` for `C:\Work`). Beta.27 re-review (round 2): the real path as the file system
+ * gives it, compared exactly (the system's own real path already has the folder's own case, and
+ * a volume that has case may hold `Work` and `work` both), with only a Windows drive letter
+ * folded (`c:` and `C:` are one drive).
  */
 export function rootKeyOf(root: string, platform: NodeJS.Platform = process.platform): string {
   let p = root;
@@ -205,7 +208,9 @@ export function rootKeyOf(root: string, platform: NodeJS.Platform = process.plat
   } catch {
     // gone or unreadable: as given
   }
-  return platform === "win32" || platform === "darwin" ? p.toLowerCase() : p;
+  return platform === "win32"
+    ? p.replace(/^([A-Za-z]):/, (_, d: string) => `${d.toUpperCase()}:`)
+    : p;
 }
 
 export function apiRoutes(r: Router, ctx: Context): Router {

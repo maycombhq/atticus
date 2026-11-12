@@ -1,4 +1,4 @@
-import { printToCurrent, withPrinter, withSignal } from "@maycombhq/core";
+import { maskSecretShapes, printToCurrent, withPrinter, withSignal } from "@maycombhq/core";
 
 /**
  * Long work (scans, syncs, reconciles, intake) runs as a job (ADR 0015): the call returns 202 with
@@ -201,7 +201,11 @@ export class JobManager {
     const p = this.printed.get(job.id);
     if (!p) return;
     this.recorded(job.id, (r) => r.line(String(text)));
-    const lines = String(text).split(/\r?\n/);
+    // Beta.27 re-review (round 2): masked as the run log's record is (a token by its shape), so
+    // the Console shows live what the record keeps.
+    const lines = String(text)
+      .split(/\r?\n/)
+      .map((l) => maskSecretShapes(l));
     const at = p.from + p.lines.length;
     p.lines.push(...lines);
     if (p.lines.length > JOB_LINES) {

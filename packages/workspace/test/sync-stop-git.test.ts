@@ -1,8 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ManifestRepo } from "@maycombhq/core";
 import {
@@ -44,36 +54,61 @@ afterEach(async () => {
   for (const d of made.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
-async function setUp() {
+/** Files of a commit: a text is written (whatever was at that path first goes), null deletes. */
+type Tree = Record<string, string | null>;
+
+async function setUp(
+  first: Tree = { "pom.xml": "<project/>\n", "src/Ledger.java": "class Ledger {}\n" },
+  second: Tree = {
+    "src/Ledger.java": "class Ledger { int limit; }\n",
+    "src/Limits.java": "class Limits {}\n",
+  },
+) {
   const dir = await mkdtemp(join(tmpdir(), "atticus-sync-stop-git-"));
   made.push(dir);
   const root = join(dir, "metarepo");
   await mkdir(root);
   realGit(root, "init", "-q");
   const work = join(dir, "src", "forge-ledger");
-  await mkdir(join(work, "src"), { recursive: true });
+  await mkdir(work, { recursive: true });
   realGit(work, "init", "-q", "-b", "main");
-  const commit = async (files: Record<string, string>) => {
-    for (const [p, t] of Object.entries(files)) await writeFile(join(work, p), t);
+  const commit = async (files: Tree) => {
+    for (const [p, t] of Object.entries(files)) {
+      await rm(join(work, p), { recursive: true, force: true });
+      if (t === null) continue;
+      await mkdir(dirname(join(work, p)), { recursive: true });
+      await writeFile(join(work, p), t);
+    }
     realGit(work, "add", "-A");
     realGit(work, "commit", "-q", "-m", "update");
   };
-  await commit({ "pom.xml": "<project/>\n", "src/Ledger.java": "class Ledger {}\n" });
+  await commit(first);
   const url = join(dir, "remotes", "forge-ledger.git");
   realGit(dir, "clone", "-q", "--bare", work, url);
   realGit(work, "remote", "add", "origin", url);
   const r = ManifestRepo.parse({ id: "forge-ledger", url, type: "service", owner: "team" });
-  const [first] = await createWorkspace(root).sync([r]);
-  expect(first!.action).toBe("cloned");
+  const [cloned] = await createWorkspace(root).sync([r]);
+  expect(cloned!.action).toBe("cloned");
   const dest = baseClonePath(root, "forge-ledger");
   const old = realGit(dest, "rev-parse", "HEAD");
-  await commit({
-    "src/Ledger.java": "class Ledger { int limit; }\n",
-    "src/Limits.java": "class Limits {}\n",
-  });
+  await commit(second);
   realGit(work, "push", "-q", "origin", "main");
   const next = realGit(work, "rev-parse", "HEAD");
-  return { root, r, dest, old, next };
+  return { root, r, dest, old, next, work, commit };
+}
+
+/** The copies a put-back kept of a person's versions, as `<path>` → its text. */
+async function keptCopies(dest: string): Promise<Record<string, string>> {
+  const top = join(dest, ".git", "atticus-put-back");
+  const out: Record<string, string> = {};
+  if (!existsSync(top)) return out;
+  for (const at of await readdir(top))
+    for (const e of await readdir(join(top, at), { recursive: true, withFileTypes: true }))
+      if (e.isFile()) {
+        const full = join(e.parentPath, e.name);
+        out[relative(join(top, at), full).split(sep).join("/")] = await readFile(full, "utf8");
+      }
+  return out;
 }
 
 /** Real git, but its checkout is killed half-way: some files written, git's lock left. */
@@ -319,8 +354,9 @@ describe("a checkout genuinely stopped half-way is still put back (real git)", (
       await killedInCheckout(dest, old, next);
       realGit(dest, "read-tree", next);
       const [res] = await createWorkspace(root).sync([r]);
-      expect(res!.reason).toBeUndefined();
       expect(res!.action).toBe("updated");
+      // The half-written files are kept as copies (neither commit's), and said.
+      expect(res!.kept?.map((k) => k.path).sort()).toEqual(["src/Ledger.java", "src/Limits.java"]);
       expect(res!.sha).toBe(next);
       expect(realGit(dest, "status", "--porcelain")).toBe("");
       expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(false);
@@ -397,4 +433,321 @@ describe("a mark a sync didn't write is refused (real git)", () => {
       },
       T,
     );
+});
+
+/**
+ * Beta.27 re-review (plumbing, round 2): the paths the fetched commit writes were put back
+ * whatever they held, so after a hard kill an edit of a person's to a file the fetched commit
+ * changes was overwritten silently, and a file they made and `git add`ed where it adds one was
+ * removed. A staged version that is neither commit's is refused, nothing changed; a working file
+ * that is neither commit's is copied to .git/atticus-put-back/<at>/<path> before it is put back,
+ * and the copy is named, and never deleted by Atticus.
+ */
+describe("a person's version of a path the fetched commit writes (real git)", () => {
+  it(
+    "an edit of theirs to a file the fetched commit changes: kept as a copy, named, and the clone put back",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      await killedInCheckout(dest, old, next);
+      // Git wrote the new file whole; the person then edited the one it was writing.
+      await writeFile(join(dest, "src", "Limits.java"), "class Limits {}\n");
+      await writeFile(join(dest, "src", "Ledger.java"), "class Ledger { /* mine */ }\n");
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("updated");
+      expect(res!.sha).toBe(next);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+      const copies = await keptCopies(dest);
+      // Only what is neither commit's is copied: Limits.java was the fetched commit's own.
+      expect(copies).toEqual({ "src/Ledger.java": "class Ledger { /* mine */ }\n" });
+      expect(res!.kept).toHaveLength(1);
+      expect(res!.kept![0]!.path).toBe("src/Ledger.java");
+      expect(res!.kept![0]!.copy).toContain(join(dest, ".git", "atticus-put-back"));
+      expect(res!.reason).toContain(
+        `your version of src/Ledger.java was kept at ${res!.kept![0]!.copy}`,
+      );
+      expect(await readFile(res!.kept![0]!.copy, "utf8")).toBe("class Ledger { /* mine */ }\n");
+      // A later sync never takes the copy away.
+      const [again] = await createWorkspace(root).sync([r]);
+      expect(again!.action).toBe("updated");
+      expect(await keptCopies(dest)).toEqual(copies);
+    },
+    T,
+  );
+
+  it(
+    "a file of theirs made and staged where the fetched commit adds one: refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      await killedInCheckout(dest, old, next);
+      await writeFile(join(dest, "src", "Limits.java"), "class Limits { /* mine */ }\n");
+      realGit(dest, "add", "--", "src/Limits.java");
+      const staged = realGit(dest, "ls-files", "-s", "--", "src/Limits.java");
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/Nothing was changed/);
+      expect(res!.reason).toContain(SYNC_CHECKOUT_MARK);
+      expect(res!.reason).toContain("src/Limits.java");
+      expect(res!.reason).toMatch(/staged/);
+      expect(res!.reason).toMatch(/restore --staged/);
+      expect(await readFile(join(dest, "src", "Limits.java"), "utf8")).toBe(
+        "class Limits { /* mine */ }\n",
+      );
+      expect(realGit(dest, "ls-files", "-s", "--", "src/Limits.java")).toBe(staged);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+      expect(await keptCopies(dest)).toEqual({});
+    },
+    T,
+  );
+
+  it(
+    "an edit of theirs staged to a file the fetched commit changes: refused, nothing changed",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      await killedInCheckout(dest, old, next);
+      await writeFile(join(dest, "src", "Ledger.java"), "class Ledger { /* mine */ }\n");
+      realGit(dest, "add", "--", "src/Ledger.java");
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/Nothing was changed/);
+      expect(res!.reason).toContain("src/Ledger.java");
+      expect(await readFile(join(dest, "src", "Ledger.java"), "utf8")).toBe(
+        "class Ledger { /* mine */ }\n",
+      );
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      // Unstaged as the reason says (the file kept), the next sync puts the clone back.
+      realGit(dest, "restore", "--staged", "--", "src/Ledger.java");
+      const [again] = await createWorkspace(root).sync([r]);
+      expect(again!.action).toBe("updated");
+      expect(await keptCopies(dest)).toEqual({
+        "src/Ledger.java": "class Ledger { /* mine */ }\n",
+        "src/Limits.java": "class Lim",
+      });
+    },
+    T,
+  );
+
+  it(
+    "a checkout genuinely killed half-way still puts back, the half-written files kept as copies",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      const { stop, inCheckout, done } = startStopped(root, dest, r);
+      await inCheckout;
+      stop.abort();
+      const [res] = await done;
+      expect(res!.action).toBe("stopped");
+      expect(res!.reason).toMatch(/back as it was/);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(old);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(false);
+      expect(await keptCopies(dest)).toEqual({
+        "src/Ledger.java": "class Ledger { int lim",
+        "src/Limits.java": "class Lim",
+      });
+      expect(res!.reason).toMatch(/your version of src\/Ledger\.java was kept at /);
+      expect(res!.kept?.map((k) => k.path).sort()).toEqual(["src/Ledger.java", "src/Limits.java"]);
+      const [again] = await createWorkspace(root).sync([r]);
+      expect(again!.action).toBe("updated");
+      expect(again!.sha).toBe(next);
+    },
+    T,
+  );
+});
+
+/** What a checkout killed part-way leaves: these files written (index too, if asked), the mark. */
+async function killedWith(dest: string, old: string, next: string, files: Tree, index = false) {
+  realGit(dest, "fetch", "-q", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main");
+  for (const [p, t] of Object.entries(files)) {
+    await rm(join(dest, p), { recursive: true, force: true });
+    if (t === null) continue;
+    await mkdir(dirname(join(dest, p)), { recursive: true });
+    await writeFile(join(dest, p), t);
+  }
+  if (index) realGit(dest, "read-tree", next);
+  await writeFile(
+    join(dest, ".git", SYNC_CHECKOUT_MARK),
+    JSON.stringify({ head: old, target: next, branch: "main" }),
+  );
+}
+
+/**
+ * Beta.27 re-review (plumbing, round 2): a folder the fetched commit made a file (or a file it
+ * made a folder) stuck the put-back: `rm --cached conf` met conf/app.yml still in the index
+ * ("not removing recursively"). What the fetched commit added is taken out first, by its exact
+ * index entry, and only then is what it changed put back.
+ */
+describe("a folder and a file swapped by the fetched commit (real git)", () => {
+  const cases: [string, Tree, Tree, Tree][] = [
+    [
+      "a folder that became a file",
+      { "pom.xml": "<project/>\n", "conf/app.yml": "port: 1\n" },
+      { conf: "port=1\n" },
+      { conf: "port=" },
+    ],
+    [
+      "a file that became a folder",
+      { "pom.xml": "<project/>\n", conf: "port=1\n" },
+      { conf: null, "conf/app.yml": "port: 1\n" },
+      { conf: null, "conf/app.yml": "por" },
+    ],
+  ];
+  for (const [what, first, second, killed] of cases)
+    for (const index of [false, true])
+      it(
+        `${what}, killed ${index ? "after" : "before"} git wrote its index`,
+        async () => {
+          const { root, r, dest, old, next } = await setUp(first, second);
+          await killedWith(dest, old, next, killed, index);
+          const [res] = await createWorkspace(root).sync([r]);
+          expect(res!.action).toBe("updated");
+          expect(res!.sha).toBe(next);
+          expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+          expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(false);
+        },
+        T,
+      );
+
+  // Linux's file system has case, so core.ignorecase=true is git told otherwise: what can be
+  // shown here is that the put-back still ends clean on the commit fetched.
+  for (const index of [false, true])
+    it(
+      `a case-only rename with core.ignorecase, killed ${index ? "after" : "before"} git wrote its index`,
+      async () => {
+        const { root, r, dest, old, next } = await setUp(
+          { "README.md": "# Ledger\n" },
+          { "README.md": null, "readme.md": "# Ledger\n\nNew.\n" },
+        );
+        realGit(dest, "config", "core.ignorecase", "true");
+        await killedWith(dest, old, next, { "README.md": null, "readme.md": "# Led" }, index);
+        const [res] = await createWorkspace(root).sync([r]);
+        expect(res!.action).toBe("updated");
+        // The half-written readme.md, hidden from status by core.ignorecase, is kept too.
+        expect(res!.kept?.map((k) => k.path)).toEqual(["readme.md"]);
+        expect(await keptCopies(dest)).toEqual({ "readme.md": "# Led" });
+        expect(res!.sha).toBe(next);
+        expect(realGit(dest, "status", "--porcelain", "--untracked-files=all")).toBe("");
+        expect(realGit(dest, "ls-files")).toBe("readme.md");
+        expect(await readFile(join(dest, "readme.md"), "utf8")).toBe("# Ledger\n\nNew.\n");
+      },
+      T,
+    );
+});
+
+/**
+ * Beta.27 re-review (plumbing, round 2): origin/<branch> fetched again since (checkoutBranch
+ * fetches it, so does a person's own git fetch) read a sync's mark as not one. The commit it
+ * fetched is honoured while the clone has it and it is in origin/<branch>'s history or reflog.
+ */
+describe("a mark whose fetched commit origin has moved past since (real git)", () => {
+  it(
+    "fetched again after more was pushed: honoured",
+    async () => {
+      const { root, r, dest, old, next, work, commit } = await setUp();
+      await killedInCheckout(dest, old, next);
+      await commit({ "src/Later.java": "class Later {}\n" });
+      realGit(work, "push", "-q", "origin", "main");
+      const latest = realGit(work, "rev-parse", "HEAD");
+      realGit(dest, "fetch", "-q", "origin");
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("updated");
+      expect(res!.sha).toBe(latest);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+    },
+    T,
+  );
+
+  it(
+    "fetched again after a force-push (the commit only in origin's reflog): honoured",
+    async () => {
+      const { root, r, dest, old, next, work, commit } = await setUp();
+      await killedInCheckout(dest, old, next);
+      realGit(work, "reset", "-q", "--hard", old);
+      await commit({ "src/Other.java": "class Other {}\n" });
+      realGit(work, "push", "-q", "--force", "origin", "main");
+      const rewritten = realGit(work, "rev-parse", "HEAD");
+      realGit(dest, "fetch", "-q", "origin");
+      expect(realGit(dest, "rev-parse", "refs/remotes/origin/main")).toBe(rewritten);
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("updated");
+      expect(res!.sha).toBe(rewritten);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+    },
+    T,
+  );
+
+  it(
+    "a commit the clone has that origin's branch never had: refused",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      await killedInCheckout(dest, old, next);
+      const tree = realGit(dest, "rev-parse", `${next}^{tree}`);
+      const stray = realGit(dest, "commit-tree", tree, "-p", old, "-m", "stray");
+      await writeFile(
+        join(dest, ".git", SYNC_CHECKOUT_MARK),
+        JSON.stringify({ head: old, target: stray, branch: "main" }),
+      );
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/isn't one a sync writes/);
+      await untouched(dest, old);
+    },
+    T,
+  );
+});
+
+describe("a stop's words say what happened (real git)", () => {
+  it(
+    "stopped after the checkout was done and its mark gone: it says the clone was updated",
+    async () => {
+      const { root, r, dest, next } = await setUp();
+      const real = createGit();
+      const stop = new AbortController();
+      let checkedOut = false;
+      let markThere: boolean | undefined;
+      const git: GitRunner = async (args, cwd, o) => {
+        if (args[0] === "checkout" && o?.signal) checkedOut = true;
+        if (checkedOut && o?.signal && args[0] === "rev-parse" && args[1] === "HEAD") {
+          markThere = existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK));
+          stop.abort();
+          throw new GitStoppedError(args);
+        }
+        return real(args, cwd, o);
+      };
+      const [res] = await createWorkspace(root, git, { signal: stop.signal }).sync([r]);
+      expect(markThere).toBe(false);
+      expect(res!.action).toBe("stopped");
+      expect(res!.reason).toMatch(/was updated/);
+      expect(res!.reason).not.toMatch(/as it was before/);
+      expect(res!.sha).toBe(next);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(next);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+    },
+    T,
+  );
+
+  it(
+    "the branch at the fetched commit, no reflog to show the sync moved it: refused, in words that claim nothing",
+    async () => {
+      const { root, r, dest, old, next } = await setUp();
+      await killedInCheckout(dest, old, next);
+      realGit(dest, "config", "core.logAllRefUpdates", "false");
+      await rm(join(dest, ".git", "logs"), { recursive: true, force: true });
+      realGit(dest, "checkout", "-q", "--force", "-B", "main", "refs/remotes/origin/main");
+      const [res] = await createWorkspace(root).sync([r]);
+      expect(res!.action).toBe("failed");
+      expect(res!.reason).toMatch(/Nothing was changed/);
+      expect(res!.reason).toMatch(/this clone's history can't show the sync left it/);
+      expect(res!.reason).not.toMatch(/To keep it/);
+      expect(res!.reason).toContain(`update-ref refs/heads/main ${old} ${next}`);
+      expect(realGit(dest, "rev-parse", "HEAD")).toBe(next);
+      expect(existsSync(join(dest, ".git", SYNC_CHECKOUT_MARK))).toBe(true);
+      // Done as it says, the next sync puts the clone back and updates it.
+      realGit(dest, "update-ref", "refs/heads/main", old, next);
+      const [again] = await createWorkspace(root).sync([r]);
+      expect(again!.action).toBe("updated");
+      expect(again!.sha).toBe(next);
+      expect(realGit(dest, "status", "--porcelain")).toBe("");
+    },
+    T,
+  );
 });

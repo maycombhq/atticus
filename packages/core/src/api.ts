@@ -532,8 +532,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   story). A job (GET /api/jobs/{jobId}) and a Console entry say `stopping` once Stop was asked
  *   and until the job ends. A Console entry `where: app` that is not this app's job is a job an
  *   earlier run of the app started (kept in the run log); `ended` there means it stopped when
- *   that app closed. GET /api/health gains `rootKey` (the root's real path, case-folded on Windows
- *   and macOS), which a page compares after a restart. Additive only.
+ *   that app closed. GET /api/health gains `rootKey` (the root's real path as the file system
+ *   gives it, compared exactly; only a Windows drive letter folded), which a page compares after
+ *   a restart. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -3062,8 +3063,9 @@ export const Health = z.object({
   root: z.string(),
   /**
    * 3.12.0 (beta.27 re-review): the root as one key, to tell the metarepo a page started with
-   * from another after a restart: its real path (links and 8.3 names resolved), case-folded on
-   * Windows and macOS. Compare this, never `root`.
+   * from another after a restart: its real path as the file system gives it (links and 8.3
+   * names resolved, the folders' own case), never case-folded but for a Windows drive letter
+   * (upper case). Compare this exactly, never `root`.
    */
   rootKey: z.string().optional(),
   openspec: z.string().optional(),

@@ -188,7 +188,8 @@ describe("a page left open across a restart of atticus ui", () => {
       const s = restartable({
         token: "t1",
         root: "C:\\Work\\Forge-Metarepo",
-        rootKey: "c:\\work\\forge-metarepo",
+        // The server's real path of it, whichever way the folder was written.
+        rootKey: "C:\\Work\\Forge-Metarepo",
       });
       vi.stubGlobal("fetch", s.fetch);
       const c = await import("../src/api/client.js");
