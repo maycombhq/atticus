@@ -1,0 +1,34 @@
+schemaVersion: 5
+kind: Interface
+id: if-f5c8b4b06d75284f
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: portal-bff.get-balance
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: frontend@1.2.0
+    line: 3
+    path: src/api/balance.ts
+    repo: forge-portal-ui
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 12
+    path: src/main/java/forge/portal/BalanceController.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+from: portal-ui
+method: GET
+normalizedPath: /api/balance/{}
+pattern:
+  code: S.DIR.BFF
+  source: inferred
+sync: sync
+to: portal-bff
+via: direct

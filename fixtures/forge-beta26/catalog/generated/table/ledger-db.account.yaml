@@ -1,0 +1,21 @@
+schemaVersion: 5
+kind: Table
+id: ledger-db.account
+status: current
+confidence: verified
+dataStore: ledger-db
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 1
+    path: src/main/resources/db/migration/V1__create_account.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+name: account
+ownerComponent: ledger-api
+readers:
+  - ledger-api
+tableKind: table
+writers:
+  - ledger-api

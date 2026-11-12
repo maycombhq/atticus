@@ -1,0 +1,16 @@
+schemaVersion: 5
+kind: Component
+id: portal-bff
+status: current
+confidence: verified
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: component@1.3.0
+    path: pom.xml
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    source: config
+repo: forge-portal-bff
+runtime: kubernetes
+system: portal
+type: spring-boot

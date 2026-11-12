@@ -1,0 +1,13 @@
+schemaVersion: 5
+kind: System
+id: northwind-pay
+status: current
+confidence: inferred
+accessGroup: everyone
+boundary: vendor
+evidence:
+  - path: org-pack/profiles/forge/profile.yaml
+    source: config
+name: Northwind Pay
+repos: []
+tags: []

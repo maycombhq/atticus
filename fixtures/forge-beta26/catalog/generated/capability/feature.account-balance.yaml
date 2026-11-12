@@ -1,0 +1,47 @@
+schemaVersion: 5
+kind: Capability
+id: feature.account-balance
+status: current
+confidence: inferred
+entryPoints:
+  - portal-bff.get-balance
+  - ledger-api.get-balance
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 12
+    path: src/main/java/forge/portal/BalanceController.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 8
+    path: src/main/java/forge/ledger/LedgerEndpoints.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: openapi@1.0.1
+    line: 6
+    path: api/ledger-openapi.yaml
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: spec
+externalRefs: []
+name: Account balance
+namedBy: detected
+records:
+  - if-75b5e8d8aa780837
+  - if-f5c8b4b06d75284f
+  - ledger-api
+  - ledger-api.get-balance
+  - ledger-db.account
+  - portal-bff
+  - portal-bff.get-balance
+  - portal-ui
+tags: []

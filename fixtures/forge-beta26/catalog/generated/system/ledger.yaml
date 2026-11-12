@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: System
+id: ledger
+status: current
+confidence: verified
+accessGroup: everyone
+boundary: product
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: component@1.3.0
+    path: forge.yaml
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: config
+name: Ledger
+owner: team-ledger
+repos:
+  - forge-ledger
+tags: []

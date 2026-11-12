@@ -44,9 +44,10 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   const log = consoleBox.getByRole("log");
   await expect(log).not.toHaveText("Nothing printed yet.", { timeout: 60_000 });
   await expect(scan).toContainText(/failed/, { timeout: 60_000 });
-  // Beta.26 safety stop, kept as a guard (ADR 0195 point 4): no repo is cloned on this metarepo,
-  // so the scan read none in full and wrote nothing, no slot either, and its lines and the page
-  // say which repos and what to do; the catalog is as it was. (CS2: the line names the slots.)
+  // No repo is cloned on this metarepo, so the scan wrote nothing, and its lines and the page say
+  // which repos and what to do; the catalog is as it was. ADR 0195 point 4: beta.26's stop stays
+  // only as the guard for a scan that read nothing, which writes no slot and runs no build, and
+  // says so ("every slot and catalog/generated", where beta.26 said "catalog/generated").
   await expect(log).toContainText(
     "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
   );

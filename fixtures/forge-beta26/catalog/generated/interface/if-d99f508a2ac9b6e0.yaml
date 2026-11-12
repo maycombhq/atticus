@@ -1,0 +1,45 @@
+schemaVersion: 5
+kind: Interface
+id: if-d99f508a2ac9b6e0
+status: current
+confidence: verified
+auth: oauth2
+conflicts: []
+direction: outbound
+endpoint: ledger-api.post-transfer
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 11
+    path: src/main/java/forge/portal/LedgerClient.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: apigee@1.0.0
+    line: 9
+    path: proxies/ledger-v1/apiproxy/proxies/default.xml
+    repo: forge-gateway
+    scannedAt: 2026-10-18T09:00:00Z
+    side: gateway
+    source: gateway
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 11
+    path: src/main/java/forge/ledger/LedgerEndpoints.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+from: portal-bff
+method: POST
+normalizedPath: /transfers
+pattern:
+  code: S.GW.SOR
+  source: inferred
+route: gw-ledger-v1
+sync: sync
+to: ledger-api
+via: gateway

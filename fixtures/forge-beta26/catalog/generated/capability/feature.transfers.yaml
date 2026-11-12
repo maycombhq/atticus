@@ -1,0 +1,64 @@
+schemaVersion: 5
+kind: Capability
+id: feature.transfers
+status: current
+confidence: inferred
+entryPoints:
+  - ledger-api.post-transfer
+  - if-f1cd1f189eaa4b7b
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 11
+    path: src/main/java/forge/ledger/LedgerEndpoints.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: openapi@1.0.1
+    line: 14
+    path: api/ledger-openapi.yaml
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: spec
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 9
+    path: src/main/java/forge/ledger/LedgerEvents.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: topics@1.0.0
+    line: 1
+    path: topics/transfers.completed.yaml
+    repo: forge-events
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: event-config
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 17
+    path: src/main/java/forge/reports/DailyEntriesJob.java
+    repo: forge-reports-job
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+externalRefs: []
+name: Transfers
+namedBy: detected
+records:
+  - if-d99f508a2ac9b6e0
+  - if-f1cd1f189eaa4b7b
+  - ledger-api
+  - ledger-api.post-transfer
+  - ledger-db.entry
+  - portal-bff
+  - reports-job
+  - topic.transfers-completed
+tags: []

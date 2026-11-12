@@ -1,0 +1,45 @@
+schemaVersion: 5
+kind: Capability
+id: feature.payments
+status: current
+confidence: inferred
+entryPoints:
+  - if-32d38aecd11b86b1
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: spring@1.2.0
+    line: 11
+    path: src/main/java/forge/portal/PaymentEvents.java
+    repo: forge-portal-bff
+    scannedAt: 2026-10-18T09:00:00Z
+    side: caller
+    source: code
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: topics@1.0.0
+    line: 1
+    path: topics/payments.initiated.yaml
+    repo: forge-events
+    scannedAt: 2026-10-18T09:00:00Z
+    side: definition
+    source: event-config
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    dialect: forge@0.1.0
+    extractor: dialect-forge@0.1.0
+    line: 6
+    path: src/main/java/forge/ledger/LedgerEvents.java
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    side: callee
+    source: code
+externalRefs: []
+name: Payments
+namedBy: detected
+records:
+  - if-32d38aecd11b86b1
+  - if-e7344c9455608119
+  - ledger-api
+  - ledger-db.entry
+  - northwind-pay
+  - portal-bff
+  - topic.payments-initiated
+tags: []

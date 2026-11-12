@@ -1,0 +1,18 @@
+schemaVersion: 5
+kind: Column
+id: ledger-db.account.account-number
+status: current
+confidence: verified
+evidence:
+  - commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    extractor: migrations@1.4.0
+    line: 3
+    path: src/main/resources/db/migration/V1__create_account.sql
+    repo: forge-ledger
+    scannedAt: 2026-10-18T09:00:00Z
+    source: migration
+glossaryTerm: term.account-number
+name: account_number
+nullable: false
+table: ledger-db.account
+type: varchar(34)
