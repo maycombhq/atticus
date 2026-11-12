@@ -726,6 +726,8 @@ export async function act(
         m.curated.push(dec);
         m.changes.curated.add(e.id);
       }
+      // Until a build writes them in, the files stay the person's (a refused build writes nothing).
+      m.curatedPending.push(...m.handEdits);
       m.handEdits = [];
       return { ...(await build(w, confirm)), pre };
     }

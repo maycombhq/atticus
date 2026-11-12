@@ -113,6 +113,12 @@ export class Model {
   answers = new Map<string, number | "none">();
   /** Generated files edited by hand and not yet made curated or discarded. */
   handEdits: HandEdit[] = [];
+  /**
+   * Hand edits made curated whose build hasn't written yet (it was refused, by the large-removal
+   * guard say): the files are still the person's on disk, and the curated decision waits for a
+   * build. ADR 0195 point 4: a refusal writes nothing. Cleared by the next write.
+   */
+  curatedPending: HandEdit[] = [];
   /** Successful writes so far. */
   writes = 0;
   changes: Changes = noChanges();
@@ -310,6 +316,7 @@ export class Model {
   /** A write succeeded (and was counted): what changed before it explained it, and is cleared. */
   wrote(): void {
     this.changes = noChanges();
+    this.curatedPending = [];
   }
 
   /**
