@@ -10,6 +10,7 @@ import {
   rm,
   rmdir,
   symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -552,7 +553,35 @@ export function createWorkspace(
         entries.set(keyOf(p), both);
       }
       const inDiff = (p: string) => added.has(p) || inBoth.has(p);
-      const status = async () =>
+      // Beta.27 re-review (round 3): where one commit has a submodule and the other a file, a
+      // folder there with anything in it (git doesn't look inside a submodule's folder) would
+      // go with the file put back. Looked at before git status: git 2.50.1 and later refuse a
+      // status whose index has a submodule where the disk has a link ("expected submodule path
+      // 'sub' not to be a symbolic link"), so a person's link there is refused as one first.
+      /** Links git's own stopped checkout left where one commit has a submodule. */
+      const ownLinks: string[] = [];
+      for (const p of swapped) {
+        // never looked into through a link (a link on its way is refused as one)
+        if (await throughLink(dest, dirname(p)))
+          return keep(
+            `a folder on the way to ${p} is a link, where one commit has a submodule and the other a file`,
+          );
+        const st = await lstat(join(dest, p)).catch(() => undefined);
+        // Beta.27 re-review 5: a link in one commit, a submodule in the other: a link whose text
+        // is the blob of the commit whose mode for it is a link's (120000) is git's own, left by
+        // the stopped checkout, and is put back like any file (never followed); any other link
+        // there is a person's, one whose text is a file's bytes too (re-review 6).
+        if (st?.isSymbolicLink()) {
+          const to = await readlink(join(dest, p));
+          if (!(await gitsOwnLink(dest, to, entries.get(keyOf(p)) ?? [])))
+            return keep(`${p} is a link, where one commit has a submodule and the other a file`);
+          ownLinks.push(p);
+        } else if (st?.isDirectory() && (await readdir(join(dest, p))).length > 0)
+          return keep(
+            `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
+          );
+      }
+      const status = async (skip: readonly string[] = []) =>
         statusEntries(
           (
             await git(
@@ -563,12 +592,15 @@ export function createWorkspace(
                 "--no-renames",
                 "--untracked-files=all",
                 "--ignore-submodules=none",
+                // each path as written, from the clone's top (a link of git's own, put back below)
+                ...(skip.length ? ["--", ...skip.map((p) => `:(top,exclude,literal)${p}`)] : []),
               ],
               dest,
             )
           ).stdout,
         );
-      const theirs = (await status()).filter(([, p]) => !inDiff(p));
+      // The links of git's own are the checkout's (in the diff) whatever status says of them.
+      const theirs = (await status(ownLinks)).filter(([, p]) => !inDiff(p));
       if (theirs.length > 0)
         return keep(`what that checkout didn't write is changed: ${sayPaths(theirs)}`);
       // Beta.27 re-review (round 2): git's checkout stages nothing at those paths but either
@@ -587,35 +619,18 @@ export function createWorkspace(
         return no(
           `what that checkout didn't write is staged: ${sayPaths([...staged].map((p) => ["A ", p]))}. Nothing was changed. To keep it, move it out of ${dest} (base clones are read-only) and unstage it there (git -C ${dest} restore --staged -- <path>), then sync again; or delete ${mark} to keep the clone as it is`,
         );
-      // Beta.27 re-review (round 3): where one commit has a submodule and the other a file, a
-      // folder there with anything in it (git doesn't look inside a submodule's folder) would
-      // go with the file put back.
-      for (const p of swapped) {
-        // never looked into through a link (a link on its way is refused as one)
-        if (await throughLink(dest, dirname(p)))
-          return keep(
-            `a folder on the way to ${p} is a link, where one commit has a submodule and the other a file`,
-          );
-        const st = await lstat(join(dest, p)).catch(() => undefined);
-        // Beta.27 re-review 5: a link in one commit, a submodule in the other: a link whose text
-        // is the blob of the commit whose mode for it is a link's (120000) is git's own, left by
-        // the stopped checkout, and is put back like any file (never followed); any other link
-        // there is a person's, one whose text is a file's bytes too (re-review 6).
-        if (st?.isSymbolicLink()) {
-          const to = await readlink(join(dest, p));
-          if (!(await gitsOwnLink(dest, to, entries.get(keyOf(p)) ?? [])))
-            return keep(`${p} is a link, where one commit has a submodule and the other a file`);
-        } else if (st?.isDirectory() && (await readdir(join(dest, p))).length > 0)
-          return keep(
-            `${p} is a folder with files in it, where one commit has a submodule and the other a file`,
-          );
-      }
       if (!(await dropKilledLock(dest, atStop)))
         return no(
           `git's lock ${join(dest, ".git", "index.lock")} is there: if no git is running in ${dest}, delete it; the next sync puts the clone back (its mark ${mark} stays until then)`,
         );
       if (tip !== head)
         await git(["update-ref", "-m", "atticus: a stopped sync put back", ref, head, tip], dest);
+      // A link of git's own where one commit has a submodule goes first (the link itself, never
+      // what it points to), so status can look at the path: it is written again below from the
+      // commit the clone was on, whichever of the two it has there.
+      for (const p of ownLinks)
+        if ((await lstat(join(dest, p)).catch(() => undefined))?.isSymbolicLink())
+          await unlink(join(dest, p));
       // Only what differs now, path by path (a path outside a sparse checkout isn't there).
       const now = (await status()).map(([, p]) => p);
       // Where git is told case is ignored but the file system has it (a clone moved from a Mac),
