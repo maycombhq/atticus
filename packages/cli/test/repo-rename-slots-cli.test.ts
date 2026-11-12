@@ -220,4 +220,47 @@ describe("atticus repo rename computes first, then writes everything in one step
     },
     T,
   );
+
+  // ADR 0195 point 7: undo puts back the catalog, build.json and the slots under the old id, not
+  // the manifest and the other inputs (by design), so the next build would list the repo's
+  // records as removals until the repo is renamed back. The undo says so, from the command its
+  // copy records.
+  it(
+    "undo of a rename's build says it undoes the build, not the rename, and how to rename back",
+    async () => {
+      const root = await upgraded();
+      const r = await atticus(root, "repo", "rename", "forge-ledger", "forge-ledger-core");
+      expect(r.code, r.all()).toBe(0);
+      const undoDir = await undoDirOf(root);
+      expect((await listUndo(undoDir))[0]!.command).toBe(
+        "atticus repo rename forge-ledger forge-ledger-core",
+      );
+      const note =
+        "This undoes the rename's build, not the rename: the manifest still names forge-ledger-core. Rename back with atticus repo rename forge-ledger-core forge-ledger to read the old slot again.";
+      const rename = { from: "forge-ledger", to: "forge-ledger-core", message: note };
+
+      // the list before --yes says it, in words and in --json
+      const list = await atticus(root, "catalog", "undo");
+      expect(list.code, list.all()).toBe(0);
+      expect(list.out).toContain(note);
+      const listJson = await atticus(root, "catalog", "undo", "--json");
+      expect(JSON.parse(listJson.out.join("\n")).renames).toEqual([rename]);
+
+      // and the undo itself
+      const undo = await atticus(root, "catalog", "undo", "--yes", "--json");
+      expect(undo.code, undo.all()).toBe(0);
+      expect(JSON.parse(undo.out.join("\n")).renames).toEqual([rename]);
+      // the manifest still names the new id: the rename itself is not undone
+      const manifest = readFileSync(
+        join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml"),
+        "utf8",
+      );
+      expect(manifest).toContain("id: forge-ledger-core\r\n");
+
+      // an undo of a build that was no rename's says nothing of one
+      const plain = await atticus(root, "catalog", "undo", "--json");
+      expect(JSON.parse(plain.out.join("\n")).renames).toEqual([]);
+    },
+    T,
+  );
 });

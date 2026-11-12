@@ -1,4 +1,10 @@
-import { parseRecord, type CatalogRecord, type EvidenceT, type RecordOf } from "@maycombhq/core";
+import {
+  byDecisionTime,
+  parseRecord,
+  type CatalogRecord,
+  type EvidenceT,
+  type RecordOf,
+} from "@maycombhq/core";
 import { namingHint, type KnowledgePage, type NamingHint } from "@maycombhq/knowledge";
 import { codeTerms, fieldNames, type CodeTerm } from "./code.js";
 import type { DefinitionProposal } from "./proposals.js";
@@ -134,7 +140,9 @@ const ALIASES = (d: Decision) => (Array.isArray(d.value) ? d.value : [d.value]).
 
 export function buildGlossary(input: GlossaryInput): GlossaryBuild {
   const problems: string[] = [];
-  const decisions = (input.decisions ?? []).filter(isDecision);
+  // Applied oldest first by the instant `at` names, then id (core's byDecisionTime, as
+  // applyCurated orders them), so a later decision wins whatever order they come in.
+  const decisions = (input.decisions ?? []).filter(isDecision).sort(byDecisionTime);
   const records = input.records.filter((r) => r.kind !== "GlossaryTerm");
   const byId = new Map(records.map((r) => [r.id, r]));
 

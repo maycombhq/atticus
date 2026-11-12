@@ -590,6 +590,28 @@ describe("the seventh review of ADR 0196", () => {
     );
   });
 
+  // PHP's open tag is case-insensitive: `<?PHP` (and `<?Php`) opens PHP as `<?php` does, so a
+  // comment after it is a comment and an apostrophe before it is HTML, not a string.
+  it("opens PHP at an upper-case `<?PHP` too", () => {
+    expectLines(
+      "src/Http/pay.php",
+      ["-", "<p>Northwind's pay page</p>"],
+      ["-", "<?PHP"],
+      ["C", "// $app->get('/old', f());"],
+      ["-", "$app->get('/pay', f());"],
+      ["C", "# $app->get('/older', f());"],
+    );
+    expectLines(
+      "src/Http/pay.php",
+      ["-", "<p>Don't panic</p>"],
+      ["-", "<?Php $app->get('/ok', f()); ?>"],
+      ["-", "<p>It's paid</p>"],
+      ["-", "<?PHP"],
+      ["C", "/* $app->get('/gone', f()); */"],
+      ["-", "$app->get('/new', f());"],
+    );
+  });
+
   // Its review: any `<?` opened PHP, `<?xml` and a `"<?"` in a script too, so a quote after it
   // opened a string across lines and a real comment below read as live code.
   it("opens PHP at a short `<?` only when a space or the line's end follows it", () => {

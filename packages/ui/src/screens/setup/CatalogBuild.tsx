@@ -487,26 +487,69 @@ export function UndoPanel(p: {
         </p>
       )}
       {asking && (
-        <ConfirmDialog
-          title={B.undoPlanTitle(asking.n)}
-          intro={B.undoPlanIntro(asking.takesBack.map((t) => `${t.n} (${t.command})`).join(", "))}
-          confirm={B.confirmUndo(asking.files.length)}
+        <UndoConfirm
+          plan={asking}
           onConfirm={async () => {
             await p.onUndo(asking.n, asking.files.length, asking.hash);
             setAsking(undefined);
           }}
           onClose={() => setAsking(undefined)}
-        >
-          <ul className="cb-list mono" aria-label={B.undoPlanCaption}>
-            {asking.files.map((f) => (
-              <li key={f.path}>
-                {f.to === "absent" ? B.remove : B.restore} {f.path}
-              </li>
-            ))}
-          </ul>
-        </ConfirmDialog>
+        />
       )}
     </Panel>
+  );
+}
+
+/**
+ * The renames of the builds an undo takes back (newest first) as one net rename per repo, oldest
+ * to newest: a → b then b → c is a → c, and a → b then b → a is none (as the CLI's netRenames).
+ */
+export function netRenames(commandsNewestFirst: readonly string[]): { from: string; to: string }[] {
+  const chain: { from: string; to: string }[] = [];
+  for (const command of [...commandsNewestFirst].reverse()) {
+    const m = /^atticus repo rename (\S+) (\S+)(?: |$)/.exec(command);
+    if (!m) continue;
+    const from = m[1]!;
+    const to = m[2]!;
+    const was = chain.find((r) => r.to === from);
+    if (was) was.to = to;
+    else chain.push({ from, to });
+  }
+  return chain.filter((r) => r.from !== r.to);
+}
+
+/**
+ * The undo's confirm: the builds it takes back and every file it puts back. A rename's build
+ * (its copy's command, `atticus repo rename <old> <new>`) is undone, not the rename: the
+ * manifest still names the new id (ADR 0195 point 7), so the confirm says how to rename back.
+ */
+export function UndoConfirm(p: {
+  plan: NonNullable<Api.CatalogUndoViewT["plan"]>;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const renames = netRenames(p.plan.takesBack.map((t) => t.command));
+  return (
+    <ConfirmDialog
+      title={B.undoPlanTitle(p.plan.n)}
+      intro={B.undoPlanIntro(p.plan.takesBack.map((t) => `${t.n} (${t.command})`).join(", "))}
+      confirm={B.confirmUndo(p.plan.files.length)}
+      onConfirm={p.onConfirm}
+      onClose={p.onClose}
+    >
+      {renames.map((r) => (
+        <p key={`${r.from}>${r.to}`} className="work-why" role="note">
+          {B.undoRename(r.from, r.to)}
+        </p>
+      ))}
+      <ul className="cb-list mono" aria-label={B.undoPlanCaption}>
+        {p.plan.files.map((f) => (
+          <li key={f.path}>
+            {f.to === "absent" ? B.remove : B.restore} {f.path}
+          </li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   );
 }
 

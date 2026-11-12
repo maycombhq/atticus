@@ -26,6 +26,7 @@ import {
 import {
   CANARY_READS_DIR,
   CanaryKey,
+  isWindowsDeviceName,
   auditItemHolds,
   canaryCovers,
   auditPrecision,
@@ -139,7 +140,9 @@ export const CANARY_WORDS = {
   usage:
     "Usage: atticus canary plant <repo> [--seed s] [--size n], atticus canary check [<repo>] [--facts file] [--skipped], atticus canary score <repo> [--facts file] [--json], atticus canary report [--json], or atticus canary clean <repo> | --all",
   notName: (repo: string) =>
-    `"${repo}" isn't a repo's name (letters, digits, dot, dash and underscore, starting with a letter or digit).`,
+    isWindowsDeviceName(repo)
+      ? `"${repo}" is a Windows device name (con, nul, com1…), which a canary never takes, on any system: its run folder and report are named after the repo.`
+      : `"${repo}" isn't a repo's name (letters, digits, dot, dash and underscore, starting with a letter or digit).`,
   unknownRepo: (repo: string) =>
     `${repo} is no repo of this metarepo: it is in no manifest, and it has no facts here.`,
   noCheckout: (repo: string) =>

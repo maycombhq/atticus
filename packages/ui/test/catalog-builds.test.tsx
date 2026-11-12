@@ -7,6 +7,7 @@ import {
   ConfirmDialog,
   RefusalView,
   RemovalsTable,
+  UndoConfirm,
   UpgradeChangesList,
   UpgradePanel,
   whyWords,
@@ -192,6 +193,28 @@ describe("Catalog builds, in every state", () => {
       out.indexOf("atticus catalog edits --curate"),
     );
     for (const n of [3, 2, 1]) expect(out).toContain(`aria-label="${esc(B.undoToOf(n))}"`);
+  });
+
+  // ADR 0195 point 7: undo puts back the catalog, build.json and the slots under the old id, not
+  // the manifest, so the undo of a rename's build says it doesn't undo the rename.
+  it("the undo confirm of a rename's build says the manifest still names the new id", () => {
+    const plan = (command: string): NonNullable<Api.CatalogUndoViewT["plan"]> => ({
+      n: 1,
+      takesBack: [{ n: 1, command }],
+      files: [{ path: "catalog/sources/build.json", to: "file" }],
+      hash: "d".repeat(64),
+    });
+    const confirm = (command: string) =>
+      html(<UndoConfirm plan={plan(command)} onConfirm={fail} onClose={() => undefined} />);
+    const out = confirm("atticus repo rename forge-ledger forge-ledger-core");
+    expect(out).toContain('role="dialog"');
+    expect(out).toContain(esc(B.undoRename("forge-ledger", "forge-ledger-core")));
+    expect(B.undoRename("forge-ledger", "forge-ledger-core")).toBe(
+      "This undoes the rename's build, not the rename: the manifest still names forge-ledger-core. Rename back with atticus repo rename forge-ledger-core forge-ledger to read the old slot again.",
+    );
+    expect(out).toContain("catalog/sources/build.json");
+    const plain = confirm("atticus catalog build --allow-removals 3");
+    expect(plain).not.toContain(esc("the manifest still names"));
   });
 
   it("lists the slot files to prune, each with why, behind Remove these", () => {

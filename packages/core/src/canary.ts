@@ -27,13 +27,18 @@ import type { Fact } from "./schema/facts.js";
 export const canaryReportsRelOf = (root: string): string =>
   isAdopted(root) ? ".atticus/reports/canaries" : "reports/canaries";
 
+/** Windows' device names (`con`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`…), which name a device, not a file, in any
+ * case and with any extension (`nul.txt` too). */
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i;
+
 /**
  * A repo's name as a canary takes it (review of ADR 0196): letters, digits, `.`, `_` and `-`,
  * starting with a letter or digit, and never `..`, so no name reaches outside the folder it
- * names a file in.
+ * names a file in; and no Windows device name (`con`, `nul.txt`), as the run folder holds the
+ * copy as `<repo>/` and a report is named after the repo.
  */
 export const isCanaryRepoName = (repo: string): boolean =>
-  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..");
+  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo) && !repo.includes("..") && !WINDOWS_DEVICE.test(repo);
 
 /**
  * The folder every run folder is made in, right in the system's temporary folder: made 0700 and
@@ -550,3 +555,6 @@ export function latestCanaries(reports: readonly CanaryReportT[]): CanaryReportT
   }
   return [...by.values()].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
 }
+
+/** Whether a name is one of Windows' device names, which no canary takes on any system. */
+export const isWindowsDeviceName = (name: string): boolean => WINDOWS_DEVICE.test(name);

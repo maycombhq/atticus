@@ -143,6 +143,31 @@ describe("people name, tag, merge, split and link features", () => {
     ).toThrow(FeatureError);
   });
 
+  it("a later membership assert wins by the instant its `at` names, not its text", () => {
+    // 23:00+05:30 is 17:30Z, before 18:00Z, though its text sorts after it: the 18:00Z split is
+    // the later decision, so the entry point is its feature's, in either input order (as
+    // applyCurated orders them, by core's byDecisionTime).
+    const balance = detectFeatures(forgeRecords()).find((f) => f.id === "feature.account-balance")!;
+    const [early] = featureSplitDecisions(balance, ["ledger-api.get-balance"], {
+      into: "feature.ledger-balance",
+      by: "a.owner",
+      at: "2026-11-12T23:00:00+05:30",
+    });
+    const [late] = featureSplitDecisions(balance, ["ledger-api.get-balance"], {
+      into: "feature.ledger-reads",
+      by: "a.owner",
+      at: "2026-11-12T18:00:00Z",
+    });
+    for (const decisions of [
+      [early!, late!],
+      [late!, early!],
+    ]) {
+      const fs = detectFeatures(forgeRecords(), { decisions });
+      const owner = fs.filter((f) => f.entryPoints.includes("ledger-api.get-balance"));
+      expect(owner.map((f) => f.id)).toEqual(["feature.ledger-reads"]);
+    }
+  });
+
   it("names the split-off feature from what moved when no id is given", () => {
     const balance = detectFeatures(forgeRecords()).find((f) => f.id === "feature.account-balance")!;
     const [d] = featureSplitDecisions(balance, ["portal-bff.get-balance"], {

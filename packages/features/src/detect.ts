@@ -1,4 +1,10 @@
-import { parseRecord, type CatalogRecord, type EvidenceT, type RecordOf } from "@maycombhq/core";
+import {
+  byDecisionTime,
+  parseRecord,
+  type CatalogRecord,
+  type EvidenceT,
+  type RecordOf,
+} from "@maycombhq/core";
 import { FlowGraph, type CapabilityRec, type Iface, type TableUse } from "./graph.js";
 import {
   classOf,
@@ -666,10 +672,11 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 type Decision = RecordOf<"CuratedDecision">;
 
 function currentDecisions(decisions: readonly CatalogRecord[]): Decision[] {
+  // Oldest first by the instant `at` names (an offset is allowed), then id: as applyCurated.
   return decisions
     .filter((d): d is Decision => d.kind === "CuratedDecision" && d.status === "current")
     .filter((d) => d.target.startsWith("feature."))
-    .sort((a, b) => (a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? -1 : 1));
+    .sort(byDecisionTime);
 }
 
 /** Entry points pinned to a feature by membership asserts; later decisions win. */
