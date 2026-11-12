@@ -17,7 +17,7 @@ import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
 import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
 import { SyncFirst } from "./sync-first.js";
-import { RefusalView } from "../screens/setup/CatalogBuild.js";
+import { curateListedEdits, RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
 
@@ -31,6 +31,9 @@ export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
   if (!r || !Array.isArray(r.reasons)) return undefined;
   return r.reasons.some((x) => x === "large-removals" || x === "hand-edits") ? r : undefined;
 }
+
+/** The plan a refusal's confirm sends back with its count (the list it showed), when it has one. */
+const planOf = (r: Api.BuildRefusalViewT) => (r.plan ? { plan: r.plan } : {});
 
 /** Eighth UX walk: the app's work changed files that wait to be proposed; Home reads them again. */
 const WORK_CHANGED = "atticus:work-changed";
@@ -86,7 +89,12 @@ export function ApplyAndPropose(p: {
   // confirmed here with its counts, as a scan's is on Scans.
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
   /** Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed. */
-  const applyWith = async (counts: { allowRemovals?: number; discardEdits?: number }) => {
+  const applyWith = async (counts: {
+    allowRemovals?: number;
+    discardEdits?: number;
+    /** The review of beta.27: the plan of the list the refusal showed, sent with its count. */
+    plan?: string;
+  }) => {
     setNext(undefined);
     try {
       const r = await followJob(
@@ -155,9 +163,25 @@ export function ApplyAndPropose(p: {
               refused={refused}
               confirmLabel={P.confirmApply}
               onAllowRemovals={(n) =>
-                apply.run(() => applyWith({ allowRemovals: n }), P.applied(p.repo!))
+                apply.run(
+                  () => applyWith({ allowRemovals: n, ...planOf(refused) }),
+                  P.applied(p.repo!),
+                )
               }
-              onDiscard={(n) => apply.run(() => applyWith({ discardEdits: n }), P.applied(p.repo!))}
+              // ADR 0195 point 4: Make it curated is the supported way for a hand edit, as on
+              // Catalog builds; then Apply again builds with the edits kept.
+              onCurate={async (n) => {
+                await curateListedEdits(refused, n, P.editsChanged);
+                setRefused(undefined);
+                setApplied([P.curatedApplyAgain(p.repo!)]);
+                workChanged();
+              }}
+              onDiscard={(n) =>
+                apply.run(
+                  () => applyWith({ discardEdits: n, ...planOf(refused) }),
+                  P.applied(p.repo!),
+                )
+              }
             />
           )}
         </div>

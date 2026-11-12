@@ -246,6 +246,25 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
 }
 
 /**
+ * Make it curated (point 4, the supported way) from a refusal shown elsewhere (a scan's, an
+ * Apply's): the hand edits as GET /api/build lists them now, confirmed by its plan, made curated
+ * and built in one job, as Catalog builds does. Throws, writing nothing, when they aren't the
+ * edits the refusal listed any more.
+ */
+export async function curateListedEdits(
+  refused: Refusal,
+  n: number,
+  /** What to say when the edits changed (a scan's: scan again; an Apply's: Apply again). */
+  changed: string = B.editsChanged,
+): Promise<void> {
+  const now = await api<Api.CatalogBuildViewT>("/api/build");
+  const listed = (r: Refusal | undefined) =>
+    (r?.edits ?? []).map((e) => `${e.how} ${e.path}`).join("\n");
+  if (listed(now.pending.refused) !== listed(refused)) throw new Error(changed);
+  await followJob("/api/build/edits/curate", { count: n, plan: now.pending.plan });
+}
+
+/**
  * A refused build and its ways on (point 4): the reasons in words, then for large removals the
  * list and a confirm with the count, for hand edits Make them curated and Discard with the count;
  * an unexplained removal can't be confirmed (it is a bug, and the list is its report).

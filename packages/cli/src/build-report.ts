@@ -109,6 +109,7 @@ export function refusalView(
     ...(r.discardEdits !== undefined ? { discardEdits: r.discardEdits } : {}),
     ...(r.unread ? { unread: r.unread } : {}),
     command: next,
+    plan: refusalPlanOf(r),
   };
 }
 
@@ -181,6 +182,22 @@ export function planHash(lines: readonly string[]): string {
 export function buildPlanOf(g: BuildAndWrite["guard"]): string {
   return pendingPlan(g.refused?.removals ?? g.removals, g.refused?.edits);
 }
+
+/**
+ * The plan of what a refusal lists (its `plan`, which a confirm of it sends back: POST
+ * /api/facts/{repo}/apply, POST /api/scan): `buildPlanOf` of the guard that refused, so it is
+ * GET /api/build's `pending.plan` when that is the refusal.
+ */
+export function refusalPlanOf(r: Pick<BuildRefusal, "removals" | "edits">): string {
+  return pendingPlan(r.removals ?? [], r.edits);
+}
+
+/**
+ * A confirm whose list changed meanwhile (the review: a confirm is of the list shown): what the
+ * command says when the list it works out under the lock isn't the one the page listed.
+ */
+export const pageChanged = (what: string) =>
+  `Nothing written: ${what} isn't what the page listed any more (another command wrote meanwhile). Look at the list again.`;
 
 /** The hash of what a refused build lists: each removal (path, reasons, words) and hand edit. */
 export function pendingPlan(

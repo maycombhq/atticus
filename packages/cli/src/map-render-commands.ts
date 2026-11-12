@@ -95,6 +95,7 @@ import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
 import { termsWrite } from "./term-lines.js";
 import { checkoutOf } from "./facts-files.js";
+import { buildPlanOf, pageChanged } from "./build-report.js";
 import {
   linkEvidenceAbout,
   linkEvidenceLines,
@@ -603,6 +604,11 @@ export async function writeFactsIntoCatalog(
     discardEdits?: number;
     /** Told the refused build, when a guard refused it (the app's and --json's report). */
     onRefused?: (r: BuildAndWrite) => void;
+    /**
+     * The app's confirm (no flag takes it): the plan of the refusal the counts confirm, worked
+     * out again under the lock; another list writes nothing (the review of beta.27).
+     */
+    plan?: string;
   },
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
@@ -679,10 +685,16 @@ export async function writeFactsIntoCatalog(
       slots: snap,
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+      ...(o.plan !== undefined
+        ? { expect: (listed: BuildAndWrite["guard"]) => buildPlanOf(listed) === o.plan }
+        : {}),
     });
-    if (built.guard.refused) {
-      for (const l of buildLines(root, built)) io.err(l);
-      o.onRefused?.(built);
+    // The app's confirm of a list that changed meanwhile: nothing written, and what the build
+    // lists now (its own plan with it) for the page to show.
+    if (built.changed) io.err(pageChanged("what the build would remove or discard"));
+    if (built.guard.refused || built.changed) {
+      if (built.guard.refused) for (const l of buildLines(root, built)) io.err(l);
+      if (built.guard.refused) o.onRefused?.(built);
       return undefined;
     }
     // ADR 0151, 0164: the contract companion and this repo's specs, kept beside its facts.

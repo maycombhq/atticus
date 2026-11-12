@@ -40,7 +40,11 @@ vi.mock("../src/api/client.js", async () => ({
     // the removals; the same Apply with their count confirms them.
     if (path === "/api/facts/forge-small/apply")
       return {
-        jobId: (o?.body as { allowRemovals?: number }).allowRemovals === 2 ? "job-7" : "job-6",
+        jobId:
+          (o?.body as { allowRemovals?: number; plan?: string }).allowRemovals === 2 &&
+          (o?.body as { plan?: string }).plan === "a".repeat(64)
+            ? "job-7"
+            : "job-6",
       };
     if (path === "/api/jobs/job-6")
       return {
@@ -72,9 +76,48 @@ vi.mock("../src/api/client.js", async () => ({
             ],
             allowRemovals: 2,
             command: "atticus verify forge-small --write --allow-removals 2",
+            plan: "a".repeat(64),
           },
         },
       };
+    // ADR 0195 point 4: an Apply whose build met a hand edit; Make it curated is offered, as on
+    // Catalog builds (the hand edits as GET /api/build lists them, confirmed by its plan).
+    if (path === "/api/facts/forge-edited/apply") return { jobId: "job-8" };
+    if (path === "/api/jobs/job-8")
+      return {
+        state: "done",
+        errors: [],
+        result: {
+          code: 1,
+          lines: ["Nothing written: catalog/generated and every slot are as they were."],
+          refused: {
+            reasons: ["hand-edits"],
+            message: "1 file under catalog/generated was changed by hand since the last build.",
+            edits: [{ path: "catalog/generated/table/ledger-db.account.yaml", how: "changed" }],
+            discardEdits: 1,
+            command: "atticus catalog edits --curate",
+            plan: "b".repeat(64),
+          },
+        },
+      };
+    if (path === "/api/build")
+      return {
+        pending: {
+          upToDate: false,
+          removals: [],
+          refused: {
+            reasons: ["hand-edits"],
+            message: "1 file under catalog/generated was changed by hand since the last build.",
+            edits: [{ path: "catalog/generated/table/ledger-db.account.yaml", how: "changed" }],
+            discardEdits: 1,
+            command: "atticus catalog edits --curate",
+          },
+          plan: "c".repeat(64),
+        },
+      };
+    if (path === "/api/build/edits/curate") return { jobId: "job-9" };
+    if (path === "/api/jobs/job-9")
+      return { state: "done", errors: [], result: { code: 0, lines: ["Wrote catalog/curated/"] } };
     if (path === "/api/jobs/job-7")
       return { state: "done", errors: [], result: { code: 0, lines: ["forge-small: applied"] } };
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
@@ -269,8 +312,63 @@ it("an Apply whose build waits for a confirm lists the removals, and confirms th
   m.render();
   expect(calls.filter((c) => c.path === "/api/facts/forge-small/apply")).toEqual([
     { path: "/api/facts/forge-small/apply", body: {} },
-    { path: "/api/facts/forge-small/apply", body: { allowRemovals: 2 } },
+    // The review of beta.27: with the plan of the list it showed, so another list writes nothing.
+    { path: "/api/facts/forge-small/apply", body: { allowRemovals: 2, plan: "a".repeat(64) } },
   ]);
   expect(all(m.tree).find((e) => e.type === RefusalView)).toBeUndefined();
   expect(text(m.tree)).toContain("forge-small: applied");
+});
+
+it("an Apply whose build met a hand edit offers Make it curated, as Catalog builds does, and Discard with the plan", async () => {
+  const { RefusalView } = await import("../src/screens/setup/CatalogBuild.js");
+  const m = mount(
+    ApplyAndPropose as never,
+    { scope: "corrections", repo: "forge-edited" } as never,
+  );
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-edited"),
+  )!;
+  calls.length = 0;
+  (btn.props.onClick as () => void)();
+  await vi.waitFor(() => {
+    m.render();
+    expect(all(m.tree).find((e) => e.type === RefusalView)).toBeDefined();
+  });
+  const view = all(m.tree).find((e) => e.type === RefusalView)!;
+  // ADR 0195 point 4: Make it curated is the supported way, so a hand edit isn't only Discard.
+  expect(view.props.onCurate).toBeTypeOf("function");
+  expect(view.props.onDiscard).toBeTypeOf("function");
+  await (view.props.onCurate as (n: number) => Promise<void>)(1);
+  m.render();
+  expect(calls.slice(2)).toEqual([
+    { path: "/api/build" },
+    { path: "/api/build/edits/curate", body: { count: 1, plan: "c".repeat(64) } },
+    { path: "/api/jobs/job-9" },
+  ]);
+  // The refusal it acted on is gone, and the page says to Apply again.
+  expect(all(m.tree).find((e) => e.type === RefusalView)).toBeUndefined();
+  expect(text(m.tree)).toContain(P.curatedApplyAgain("forge-edited"));
+});
+
+it("Discard on an Apply's refusal sends the refusal's plan with the count", async () => {
+  const { RefusalView } = await import("../src/screens/setup/CatalogBuild.js");
+  const m = mount(
+    ApplyAndPropose as never,
+    { scope: "corrections", repo: "forge-edited" } as never,
+  );
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-edited"),
+  )!;
+  calls.length = 0;
+  (btn.props.onClick as () => void)();
+  await vi.waitFor(() => {
+    m.render();
+    expect(all(m.tree).find((e) => e.type === RefusalView)).toBeDefined();
+  });
+  const view = all(m.tree).find((e) => e.type === RefusalView)!;
+  await (view.props.onDiscard as (n: number) => Promise<void>)(1).catch(() => undefined);
+  expect(calls.filter((c) => c.path === "/api/facts/forge-edited/apply")).toEqual([
+    { path: "/api/facts/forge-edited/apply", body: {} },
+    { path: "/api/facts/forge-edited/apply", body: { discardEdits: 1, plan: "b".repeat(64) } },
+  ]);
 });

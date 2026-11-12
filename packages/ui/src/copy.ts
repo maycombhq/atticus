@@ -4980,6 +4980,11 @@ export const COPY = {
     applyWaits: (repo: string) =>
       `Nothing applied to ${repo}'s map yet: its build waits for you to confirm what it lists.`,
     confirmApply: (n: number) => `Apply, removing ${n} ${n === 1 ? "record" : "records"}`,
+    /** ADR 0195 point 4: Apply's hand edits made curated; the facts wait for Apply again. */
+    editsChanged:
+      "The hand edits aren't the ones listed here any more. Nothing was made curated: Apply again to list them.",
+    curatedApplyAgain: (repo: string) =>
+      `The hand edits are curated decisions now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
     toHome: "Propose it from Home",
     applyFirst:
       "Apply the answers and corrections first, so the map in the pull request matches them:",

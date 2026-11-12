@@ -653,6 +653,28 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
    */
   /** What each local job does, in words, for the refusal of a second one (round 41). */
   const localWhat = new Map<string, string>();
+  /**
+   * A confirm's counts come with the plan of the refusal they confirm (the review of beta.27, as
+   * POST /api/build): 400 without it, 409 unless the latest build on this machine is that
+   * command's refusal with that plan (another build since, a terminal's included, lists anew).
+   */
+  const refusalStillListed = async (
+    b: { allowRemovals?: number; discardEdits?: number; plan?: string },
+    ofCommand: (command: string) => boolean,
+  ) => {
+    const counted = b.allowRemovals !== undefined || b.discardEdits !== undefined;
+    if (counted && b.plan === undefined)
+      throw badRequest(
+        "plan is the refusal's plan (its job's result's refused.plan) for the list being confirmed.",
+      );
+    if (b.plan === undefined) return;
+    const { lastBuildOf } = await import("./build-report.js");
+    const last = await lastBuildOf(root);
+    if (last?.outcome !== "refused" || !ofCommand(last.command) || last.refused?.plan !== b.plan)
+      throw conflict(
+        "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
+      );
+  };
   const asJob = (what: string, work: () => Promise<Ran>) => {
     // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
     // while Apply writes facts or Propose commits them. The refusal names the one that runs.
@@ -837,6 +859,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (!FACTS_REPO.test(repo)) throw badRequest(`${JSON.stringify(repo)} isn't a repo name.`);
         if (!(await loadRepos(root)).some((x) => x.id === repo))
           throw notFound(`There is no repo ${repo} in this workspace.`);
+        // The review of beta.27: a confirm is of the list shown, as POST /api/build's. The
+        // refusal's plan comes with its counts, and is the latest build's own (no writer since);
+        // verify --write works it out again under the lock before it writes.
+        await refusalStillListed(b, (c) => c === `atticus verify ${repo} --write`);
         return asJob(`Applying to ${repo}`, async () => {
           const { lastBuildOf } = await import("./build-report.js");
           const before = JSON.stringify((await lastBuildOf(root)) ?? null);
@@ -850,6 +876,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 json: false,
                 ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
                 ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+                ...(b.plan !== undefined ? { plan: b.plan } : {}),
               },
               io,
             ),
@@ -1901,9 +1928,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         );
         return { status: 200, body: f };
       })
-      .add("POST", "/api/scan", ({ body }) => {
+      .add("POST", "/api/scan", async ({ body }) => {
         const b = parseBody(Api.ScanRequest, body);
         if (jobs.runningOf("scan")) throw conflict("A scan is already running.");
+        // The review of beta.27: a scan's confirm is of the refusal it showed (its plan), as
+        // Apply's; the scan works the list out again under its lock before it writes.
+        await refusalStillListed(b, (c) => c === "atticus scan" || c.startsWith("atticus scan "));
         const scanTitle = b.repos?.length ? `Scan ${b.repos.join(", ")}` : "Scan";
         const job = jobs.start(
           "scan",
@@ -1933,6 +1963,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                     // ADR 0195 (CS3): the confirm step's counts, as the refusal listed them.
                     ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
                     ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+                    ...(b.plan !== undefined ? { plan: b.plan } : {}),
                   },
                   io,
                 ),

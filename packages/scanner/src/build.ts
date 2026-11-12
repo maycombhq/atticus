@@ -2281,6 +2281,11 @@ export interface BuildAndWrite {
   write?: WriteResult;
   /** With `check`: whether catalog/generated is what the slots build. */
   upToDate?: boolean;
+  /**
+   * With `expect`: what this build lists (its guard without the counts) isn't the list the
+   * confirm was of, so nothing was written; `guard` is what it lists now.
+   */
+  changed?: true;
 }
 
 /**
@@ -2306,6 +2311,14 @@ export async function buildAndWrite(
     inputsDir?: string | null;
     federated?: { id: string; dir: string }[];
     now?: Date;
+    /**
+     * The app's confirm of a list (the review of beta.27: a confirm is of the list shown): told
+     * this build's guard without the counts, which is what a refusal of it lists, and false when
+     * that isn't the list the page showed. Then nothing is written (a refusal's report of what it
+     * lists now is, so the page can show it) and the result says `changed`. The caller holds the
+     * lock, so no writer comes between this check and the write.
+     */
+    expect?: (listed: GuardResult) => boolean;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
@@ -2344,6 +2357,32 @@ export async function buildAndWrite(
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
   });
+  // The confirm's list worked out again here, under the caller's lock: the guard as a refusal
+  // would list it (no counts), compared with what the page showed.
+  if (o.expect && !o.check) {
+    const counted = o.allowRemovals !== undefined || o.discardEdits !== undefined;
+    const listed = counted
+      ? await guardBuild(build, {
+          undoDir,
+          command: o.command,
+          onDisk,
+          manifests,
+          ...(o.target ? { target: o.target } : {}),
+        })
+      : guard;
+    if (!o.expect(listed)) {
+      if (listed.refused) {
+        const report = await buildReportOf(root, build, listed, {
+          onDisk,
+          command: o.command,
+          target: o.target ?? baselineTarget(root),
+          ...(o.now ? { now: o.now } : {}),
+        });
+        await writeBuildReport(undoDir, report);
+      }
+      return { build, guard: listed, changed: true };
+    }
+  }
   if (o.check) {
     const same =
       onDisk.size === build.files.size &&

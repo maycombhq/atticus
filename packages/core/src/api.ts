@@ -582,7 +582,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   POST /api/scan takes `allowRemovals` and `discardEdits`, and its job's result gives each
  *   repo's `sources` (read in full, or kept its last good read and why). So does Apply (POST
  *   /api/facts/{repo}/apply, `verify <repo> --write`): its job's result carries the build's
- *   `refused` (BuildRefusalView) when the build refused. Additive only.
+ *   `refused` (BuildRefusalView) when the build refused. A refusal carries its `plan`, which
+ *   both send back with a count: what was listed is what is written. Additive only.
  */
 export const API_VERSION = "3.12.0";
 export const DEFAULT_PORT = 4321;
@@ -1864,6 +1865,13 @@ export const BuildRefusalView = z.object({
   unread: z.array(z.object({ repo: z.string(), why: z.string() })).optional(),
   /** What goes on in a terminal (the build, the hand edits' curate, or the upgrade). */
   command: z.string(),
+  /**
+   * The hash of what the lists say (each removal's path, reasons and words; each hand edit's
+   * path and how), as GET /api/build's `pending.plan` hashes them: a confirm of this refusal
+   * sends it back (POST /api/facts/{repo}/apply, POST /api/scan), and a list that changed
+   * meanwhile writes nothing.
+   */
+  plan: z.string().optional(),
 });
 export type BuildRefusalViewT = z.infer<typeof BuildRefusalView>;
 /** 3.12.0: a record file a build added or changed, as its report lists it. */
@@ -3626,11 +3634,18 @@ export const Health = z.object({
 /**
  * 3.12.0 (ADR 0195 point 4): Apply (`atticus verify <repo> --write`) confirms a refused build
  * with the counts it listed (`--allow-removals`, `--discard-edits`); any other count refuses
- * again. Its job's result carries the build's `refused` (BuildRefusalView) when it refused.
+ * again. Its job's result carries the build's `refused` (BuildRefusalView, with its `plan`)
+ * when it refused. `plan` is required with a count: the refusal's own, compared with the latest
+ * build's report before a job starts (409) and with what the build lists under the lock (the
+ * job writes nothing when that isn't it).
  */
 export const FactsApplyRequest = z.strictObject({
   allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
   discardEdits: z.number().int().min(0).max(1_000_000).optional(),
+  plan: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 
 export const ScanRequest = z.strictObject({
@@ -3652,6 +3667,14 @@ export const ScanRequest = z.strictObject({
   allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
   /** 3.12.0: discards the hand edits a refused build listed, with their count (`--discard-edits`). */
   discardEdits: z.number().int().min(0).max(1_000_000).optional(),
+  /**
+   * 3.12.0: the `plan` of the refusal a count confirms (its job's result's `refused.plan`),
+   * required with a count, as Apply's is.
+   */
+  plan: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 
 /** ADR 0123: each repo's branches, as the Repos screen shows them. */
