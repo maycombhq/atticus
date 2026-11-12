@@ -154,7 +154,7 @@ describe("Draft the stories again over a person's files (beta.27 review)", () =>
     const root = await estateRoot();
     await architected(root);
     await writeFile(join(dir(root), "stories.md"), "# Our stories\n\nWritten by Pat.\n");
-    await writeFile(join(dir(root), "tasks.md"), "﻿\n- [ ] 1.1 our own task\n");
+    await writeFile(join(dir(root), "tasks.md"), "\uFEFF\n- [ ] 1.1 our own task\n");
     await expect(
       storiesStage(root, CHANGE, { runtime: assistant([STORIES]), now: NOW }),
     ).rejects.toMatchObject({
@@ -177,7 +177,7 @@ describe("Draft the stories again over a person's files (beta.27 review)", () =>
     expect(await readFile(join(copy, "stories.md"), "utf8")).toBe(
       "# Our stories\n\nWritten by Pat.\n",
     );
-    expect(await readFile(join(copy, "tasks.md"), "utf8")).toBe("﻿\n- [ ] 1.1 our own task\n");
+    expect(await readFile(join(copy, "tasks.md"), "utf8")).toBe("\uFEFF\n- [ ] 1.1 our own task\n");
   });
 });
 

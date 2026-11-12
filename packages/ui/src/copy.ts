@@ -1806,6 +1806,8 @@ export const COPY = {
     noChangeYet:
       "No change yet. Start one with New change; the command line is under Or in a terminal.",
     noChangeTitle: "No change yet",
+    /** Beta.27 review: no change reads, though one or more are there (their change.yaml doesn't). */
+    noChangeReads: "No change reads",
     /** UX review: the stage's work is on these pages. */
     /** Eighth UX walk: one path to write stories, the stories stage's Prepare; Breakdown reads. */
     openBreakdown: "Open Breakdown",

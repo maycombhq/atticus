@@ -376,6 +376,13 @@ export function ExplorerView(p: ExplorerViewProps): JSX.Element {
 
 type Status = Pick<SectionModel, "state" | "error">;
 /** A read's state as a section's: not asked yet is loading (it is asked as soon as it is open). */
+/**
+ * Beta.27 review: a metarepo whose manifest names no repo has no estate to ask for (it answers
+ * 422, the catalog empty): the Systems section is empty without asking. Unknown yet, it asks.
+ */
+export const manifestEmpty = (m: ManifestReposAnswer | undefined): boolean =>
+  m !== undefined && Array.isArray(m.repos) && m.repos.length === 0;
+
 function statusOf(l: Lazy<unknown>, notYetIsEmpty = false): Status {
   if (l.state === "ready") return { state: "ready" };
   if (l.state === "error")
@@ -413,15 +420,6 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
   const defer = (id: SectionId) => !touched.has(id) && !filtering;
 
   const changes = useLazyApi<ChangeRow[]>(CHANGES_PATH, want("changes"), defer("changes"));
-  const estate = useLazyApi<{ children: EstateNode[] }>(
-    ESTATE_PATH,
-    want("systems"),
-    defer("systems"),
-  );
-  const questions = useLazyApi<
-    { questions: { repo: string; state?: string }[] } & StepQuestionsAnswer
-  >(QUESTIONS_PATH, want("questions"), defer("questions"));
-  const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
   // Beta.27 review: the manifest's repos (Map › Trust's read, the status bar's too), so the
   // header and the tree count repos as the status bar does.
   const manifest = useKnownAnswer<ManifestReposAnswer>(
@@ -429,6 +427,16 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
     want("systems"),
     manifestMayHaveChanged,
   );
+  const noRepos = manifestEmpty(manifest);
+  const estate = useLazyApi<{ children: EstateNode[] }>(
+    ESTATE_PATH,
+    want("systems") && !noRepos,
+    defer("systems"),
+  );
+  const questions = useLazyApi<
+    { questions: { repo: string; state?: string }[] } & StepQuestionsAnswer
+  >(QUESTIONS_PATH, want("questions"), defer("questions"));
+  const owner = useLazyApi<{ open: number }>(OWNER_PATH, want("questions"), defer("questions"));
   const repoCounts = repoCountsOf(manifest, estate.state === "ready" ? estate.data : undefined);
   const pins = usePins();
 
@@ -471,7 +479,7 @@ export function Explorer(props: { current: string; onOpen: (hash: string) => voi
 
   const status: Record<SectionId, Status> = {
     changes: statusOf(changes),
-    systems: statusOf(estate, true),
+    systems: noRepos ? { state: "ready" } : statusOf(estate, true),
     questions:
       // The owner questions are a row of their own: the section waits on them, never fails by them.
       questions.state === "ready" && (owner.state === "idle" || owner.state === "loading")

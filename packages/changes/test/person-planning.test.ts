@@ -50,7 +50,7 @@ describe("planning files a person wrote", () => {
   it("a byte-order mark or blank lines before the mark (Windows) still read as Atticus's", async () => {
     const { dir } = await estate();
     const was = await readFile(join(dir, "stories.md"), "utf8");
-    await writeFile(join(dir, "stories.md"), `﻿${GENERATED_MARK} stories. -->\n${was}`);
+    await writeFile(join(dir, "stories.md"), `\uFEFF${GENERATED_MARK} stories. -->\n${was}`);
     await writeFile(join(dir, "tasks.md"), `\r\n  \n${GENERATED_MARK} tasks. -->\n${was}`);
     expect(await personWrittenPlanning(dir)).toEqual([]);
     // The mark anywhere but first is still a person's file.

@@ -19,7 +19,7 @@ export const PLANNING_FILES = ["stories.md", "tasks.md", "requests.md"] as const
  * Windows saving the file) don't make it a person's.
  */
 export const isGenerated = (text: string): boolean =>
-  text.replace(/^﻿/, "").trimStart().startsWith(GENERATED_MARK);
+  text.replace(/^\uFEFF/, "").trimStart().startsWith(GENERATED_MARK);
 
 /** Of `rels` (relative to the change folder `dir`), those that exist without the generated mark. */
 export async function personWritten(dir: string, rels: readonly string[]): Promise<string[]> {

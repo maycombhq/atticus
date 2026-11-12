@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { changesDirOf, RecordId, type Api } from "@maycombhq/core";
 import { changeFolder, changeStore } from "@maycombhq/changes";
@@ -14,23 +14,48 @@ const lineOf = (message: string): number | undefined => {
   return m ? Number(m[1]) : undefined;
 };
 
+/**
+ * Beta.27 review: YAML's "Unresolved alias …: <name>" echoes the file's own text (an alias's name
+ * can be anything a person typed); it is said as an unknown alias, with the line it is on.
+ */
+const UNRESOLVED = /^Unresolved alias\b[^:]*:\s*(.+)$/;
+async function aliasWords(
+  file: string,
+  message: string,
+): Promise<{ message: string; line?: number } | undefined> {
+  const name = UNRESOLVED.exec(message)?.[1]?.trim();
+  if (!name) return undefined;
+  const text = await readFile(file, "utf8").catch(() => "");
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const at = new RegExp(`(^|[\\s\\[{,:-])\\*${esc}(?=$|[\\s\\]},])`);
+  const i = text.split(/\r?\n/).findIndex((l) => at.test(l));
+  return {
+    message: `An alias (*) names an anchor (&) this file doesn't set${i >= 0 ? ` at line ${i + 1}` : ""}`,
+    ...(i >= 0 ? { line: i + 1 } : {}),
+  };
+}
+
 /** The changes whose change.yaml doesn't read, by id. */
 export async function changeProblems(root: string): Promise<Api.ChangeProblemsT> {
   const { problems } = await changeStore(root).listWithProblems();
-  return problems.map((p) => {
-    const file = relative(root, p.file).split(sep).join("/");
-    const id = file.split("/").at(-2) ?? file;
-    // The path is said once, as `file`: the message starts with it. YAML's excerpt of the lines
-    // round the error goes: its first line says what and where.
-    const message = (
-      p.message.startsWith(`${p.file}: `) ? p.message.slice(p.file.length + 2) : p.message
-    )
-      .split("\n")[0]!
-      .replace(/:\s*$/, "")
-      .trim();
-    const line = lineOf(message);
-    return { id, file, ...(line ? { line } : {}), message };
-  });
+  return Promise.all(
+    problems.map(async (p) => {
+      const file = relative(root, p.file).split(sep).join("/");
+      const id = file.split("/").at(-2) ?? file;
+      // The path is said once, as `file`: the message starts with it. YAML's excerpt of the lines
+      // round the error goes: its first line says what and where.
+      const said = (
+        p.message.startsWith(`${p.file}: `) ? p.message.slice(p.file.length + 2) : p.message
+      )
+        .split("\n")[0]!
+        .replace(/:\s*$/, "")
+        .trim();
+      const alias = await aliasWords(p.file, said.replace(/^invalid YAML:\s*/, ""));
+      const message = alias ? said.replace(/Unresolved alias.*$/, alias.message) : said;
+      const line = alias?.line ?? lineOf(message);
+      return { id, file, ...(line ? { line } : {}), message };
+    }),
+  );
 }
 
 /** Edit distance, for the ids nearest one that isn't a change. */

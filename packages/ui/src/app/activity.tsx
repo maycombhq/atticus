@@ -274,7 +274,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       const entry = e.entry as Entry;
       const was = entriesNow.current.find((x) => x.id === entry.id);
       if (was && was.state === "running" && entry.state !== "running")
-        announce(T.changed(titleOf(entry), stateWords(entry)), true);
+        announce(
+          T.changed(
+            titleOf(entry),
+            stateWords(entry.state, entry.where, undefined, entry.jobId, entry.outcome),
+          ),
+          true,
+        );
       setListed((old) => upsert(old, entry));
       setState("ready");
     } else if (e.type === "activity.lines") {
@@ -634,10 +640,20 @@ export function LogView(p: {
 
 /**
  * Beta.27 review: how an entry ended, in words: "refused: nothing written" for one that refused
- * (its `outcome`), else its state's word.
+ * (its `outcome`) first, else its state's word. Where it runs, whether Stop was asked and its job
+ * are taken, so one signature serves every page (fix/b27-plumbing words an app run's end and a
+ * stop with them); this branch says plain states.
  */
-export const stateWords = (e: Pick<Entry, "state" | "outcome">): string =>
-  e.outcome === "refused" ? T.refused : (T.states[e.state] ?? e.state);
+export function stateWords(
+  state: Entry["state"],
+  where?: Entry["where"],
+  stopping?: boolean,
+  jobId?: string,
+  outcome?: Entry["outcome"],
+): string {
+  if (outcome === "refused") return T.refused;
+  return T.states[state] ?? state;
+}
 
 /** An entry's kind, its name and its state, where it started and when: a list's row. */
 export function EntryMeta({ e }: { e: Entry }) {
@@ -646,7 +662,9 @@ export function EntryMeta({ e }: { e: Entry }) {
       <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
       <span className="activity-title">{titleOf(e)}</span>
       <span className="activity-meta">
-        <span className={`activity-state ${e.outcome ?? e.state}`}>{stateWords(e)}</span>
+        <span className={`activity-state ${e.outcome ?? e.state}`}>
+          {stateWords(e.state, e.where, undefined, e.jobId, e.outcome)}
+        </span>
         {" · "}
         {T.from(T.where[e.where] ?? e.where)}
         {" · "}
@@ -701,7 +719,13 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <strong>{titleOf(shown)}</strong>
         <span className="work-say">
-          {stateWords(shown)}
+          {stateWords(
+            shown.state,
+            shown.where,
+            a.stopping === shown.id,
+            shown.jobId,
+            shown.outcome,
+          )}
           {shown.exitCode !== undefined && shown.state !== "done"
             ? ` (${T.exitCode(shown.exitCode)})`
             : ""}

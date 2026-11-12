@@ -68,13 +68,43 @@ export function tabsOutOfView(
   return { hidden, cut };
 }
 
-/** "N more": the tabs out of view, each shown on a click; Escape or a pick closes it. */
+/**
+ * Beta.27 review: what a key does in the "N more" menu, from the item focused (`i`) of `n`: the
+ * item to focus (arrows wrap; Home and End go to the first and the last), `close` (Escape, focus
+ * back on the button), `leave` (Tab, focus goes on), or nothing.
+ */
+export function moreMenuKey(
+  key: string,
+  i: number,
+  n: number,
+): number | "close" | "leave" | undefined {
+  if (!n) return undefined;
+  if (key === "Escape") return "close";
+  if (key === "Tab") return "leave";
+  if (key === "Home") return 0;
+  if (key === "End") return n - 1;
+  if (key === "ArrowDown") return (i + 1) % n;
+  if (key === "ArrowUp") return (i - 1 + n) % n;
+  return undefined;
+}
+
+/** "N more": the tabs out of view, each shown on a click; Escape, a pick or a click away closes it. */
 function MoreTabs(p: { keys: readonly string[]; state: TabsState; onShow: (key: string) => void }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLUListElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (open) menu.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [open]);
+  // Beta.27 review: a click or a tap anywhere else closes it, the focus left where it went.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
   }, [open]);
   const tabs = p.state.tabs.filter((t) => p.keys.includes(t.key));
   if (!tabs.length) return null;
@@ -83,7 +113,7 @@ function MoreTabs(p: { keys: readonly string[]; state: TabsState; onShow: (key: 
     if (back) button.current?.focus();
   };
   return (
-    <div className="sh-more">
+    <div className="sh-more" ref={box}>
       <button
         ref={button}
         type="button"
@@ -104,14 +134,12 @@ function MoreTabs(p: { keys: readonly string[]; state: TabsState; onShow: (key: 
           onKeyDown={(e) => {
             const items = [...(menu.current?.querySelectorAll<HTMLElement>("button") ?? [])];
             const i = items.indexOf(document.activeElement as HTMLElement);
-            if (e.key === "Escape") {
-              e.preventDefault();
-              close();
-            } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              const n = items.length;
-              items[(i + (e.key === "ArrowDown" ? 1 : n - 1)) % n]?.focus();
-            } else if (e.key === "Tab") close(false);
+            const to = moreMenuKey(e.key, i, items.length);
+            if (to === undefined) return;
+            if (to === "leave") return close(false);
+            e.preventDefault();
+            if (to === "close") close();
+            else items[to]?.focus();
           }}
         >
           {tabs.map((t) => {

@@ -245,6 +245,25 @@ describe("a change whose change.yaml doesn't read (beta.27 review)", () => {
     },
     T,
   );
+
+  it(
+    "says an unknown alias without its name, with the line it is on (review of the fix)",
+    async () => {
+      const other = await forgeRoot();
+      const file = join(other, "openspec/changes", ID, "change.yaml");
+      const text = await readFile(file, "utf8");
+      await writeFile(file, text.replace(/^title: .*$/m, "title: *northwind-secret-anchor"));
+      const line = text.split("\n").findIndex((l) => l.startsWith("title:")) + 1;
+      const { changeProblems } = await import("../src/change-problems.js");
+      const [p] = await changeProblems(other);
+      expect(p).toMatchObject({ id: ID, line });
+      expect(p!.message).toContain(
+        `An alias (*) names an anchor (&) this file doesn't set at line ${line}`,
+      );
+      expect(p!.message).not.toContain("northwind-secret-anchor");
+    },
+    T,
+  );
 });
 
 describe("the upgrade panel's Propose (beta.27 review)", () => {

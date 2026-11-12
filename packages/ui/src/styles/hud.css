@@ -1018,9 +1018,10 @@ a.btn {
 .arch-box.gappy {
   border-color: var(--amber);
 }
+/* Beta.27 review: a picked box is ringed solid inside its border; a focused one (Tab) gets the
+   dashed ring outside it, so the two never look alike, and both show together. */
 .arch-box.picked {
-  outline: 2px solid var(--accent-soft);
-  outline-offset: 2px;
+  box-shadow: inset 0 0 0 3px var(--accent-soft);
 }
 /* ADR 0180: a component type's shape; the badge and colour say the type too (WCAG 1.4.1). */
 .arch-box.shape-rounded {
@@ -1180,7 +1181,7 @@ a.btn {
    the accent (over 5:1 on the canvas in both themes), outside the box's own border. */
 .arch-canvas .react-flow .react-flow__node:focus-visible,
 .arch-canvas .react-flow .react-flow__node.selectable:focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px dashed var(--accent);
   outline-offset: 3px;
   border-radius: 8px;
 }

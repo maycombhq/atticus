@@ -388,6 +388,8 @@ const nodeTypes = { box: BoxView };
  * picture bigger than that is panned (fitLegibly starts it at its top-left).
  */
 export const FIT_MIN_ZOOM = 0.9;
+/** Beta.27 review: how long the view stays still before the boxes out of view are announced. */
+export const ANNOUNCE_AFTER_MS = 700;
 const edgeTypes = { link: LinkView };
 
 /** The room round a fitted picture, as React Flow's fitView padding (a share of the view). */
@@ -671,6 +673,13 @@ export function ArchitectureCanvas(p: {
     );
     setOutside((o) => (o === n ? o : n));
   };
+  // Beta.27 review: the count is said to a screen reader once the view settles (a fit, or the
+  // end of a pan), not at every step of a pan; the line on the page follows it as it moves.
+  const [announced, setAnnounced] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnnounced(outside), ANNOUNCE_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [outside]);
   /** Fit the picture: legibly (a page opening on it), or `all` of it (Fit, the 0 key). */
   const fitNow = (duration?: number, all = false) => {
     const i = rf.current;
@@ -693,6 +702,18 @@ export function ArchitectureCanvas(p: {
   };
   const fitRef = useRef(fitNow);
   fitRef.current = fitNow;
+  /** The view panned to a box, at the zoom it has (a box Tab reached out of view). */
+  const centerOn = (id: string) => {
+    const i = rf.current;
+    const n = i?.getInternalNode(id);
+    if (!i || !n) return;
+    const { x, y } = n.internals.positionAbsolute;
+    moved.current = true;
+    void i.setCenter(x + (n.measured.width ?? 0) / 2, y + (n.measured.height ?? 0) / 2, {
+      zoom: i.getZoom(),
+      duration: 200,
+    });
+  };
   const fitter = useRef({ fitView: () => fitRef.current() });
   useFitOnResize(fitter, {
     height,
@@ -891,6 +912,15 @@ export function ArchitectureCanvas(p: {
         className={`arch-canvas ${zoom < LABELS_FROM ? "far" : ""} ${lit ? "focusing" : ""}`}
         style={{ height: "100%", ...labelScale(zoom) }}
         aria-busy={state.state === "running"}
+        // Beta.27 review: a box Tab reaches out of view is panned to, never scrolled to.
+        onFocusCapture={(e) => {
+          const el = stage.current;
+          if (!el) return;
+          const t = e.target as Element;
+          boxFocused(t, el, centerOn);
+          // The browser may scroll the wrapper after the event: put it back on the next frame.
+          requestAnimationFrame(() => boxFocused(t, el, () => undefined));
+        }}
       >
         {state.state === "running" && !nodes.length ? (
           <div className="stack" aria-live="polite">
@@ -965,7 +995,7 @@ export function ArchitectureCanvas(p: {
           </ReactFlow>
         )}
         {outside > 0 && nodes.length > 0 && state.state === "ready" && (
-          <div className="arch-outside viewer-own" role="status">
+          <div className="arch-outside viewer-own">
             <span>
               {WORDS.outside(outside, contentRects(nodes).filter((r) => !r.group).length)}
             </span>{" "}
@@ -974,10 +1004,38 @@ export function ArchitectureCanvas(p: {
             </button>
           </div>
         )}
+        <span className="sr" role="status">
+          {announced > 0 && nodes.length > 0 && state.state === "ready"
+            ? WORDS.outside(announced, contentRects(nodes).filter((r) => !r.group).length)
+            : ""}
+        </span>
         {p.overlay}
       </div>
     </DiagramFrame>
   );
+}
+
+/**
+ * Beta.27 review: Tab to a box outside the view made the browser scroll React Flow's
+ * overflow-hidden wrapper to bring it in (React Flow 12.3 has no autoPanOnNodeFocus), so the
+ * boxes and the pane under them went out of step until a reload. The scroll between the box and
+ * the canvas is put back, and, when the box is out of view, `center` pans the view to it.
+ * Whether it panned; nothing happens for focus on anything but a box.
+ */
+export function boxFocused(target: Element, stage: Element, center: (id: string) => void): boolean {
+  const box = target.closest(".react-flow__node");
+  if (!box || !stage.contains(box)) return false;
+  for (let el = box.parentElement; el && el !== stage; el = el.parentElement) {
+    if (el.scrollTop) el.scrollTop = 0;
+    if (el.scrollLeft) el.scrollLeft = 0;
+  }
+  const r = box.getBoundingClientRect();
+  const v = stage.getBoundingClientRect();
+  const inView = r.left >= v.left && r.right <= v.right && r.top >= v.top && r.bottom <= v.bottom;
+  const id = box.getAttribute("data-id");
+  if (inView || !id) return false;
+  center(id);
+  return true;
 }
 
 /** A node dimmed unless focus mode keeps it lit (a group stays: it holds lit boxes). */

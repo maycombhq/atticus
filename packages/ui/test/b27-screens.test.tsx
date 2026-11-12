@@ -10,6 +10,8 @@ import {
   canvasFit,
   canvasFitAll,
   contentRects,
+  ANNOUNCE_AFTER_MS,
+  boxFocused,
   FIT_MIN_ZOOM,
 } from "../src/screens/architecture/Canvas.js";
 import { WORDS } from "../src/screens/architecture/words.js";
@@ -24,9 +26,11 @@ import {
   OwnerQuestionCard,
   ownerWords,
 } from "../src/screens/OwnerQuestions.js";
-import { tabsOutOfView } from "../src/app/shell/TabStrip.js";
+import { moreMenuKey, tabsOutOfView } from "../src/app/shell/TabStrip.js";
+import { manifestEmpty } from "../src/app/shell/Explorer.js";
 import { UpgradeOfferView } from "../src/app/upgrade.js";
 import { onboardingStep } from "../src/screens/work/next.js";
+import { noChangeTitle } from "../src/screens/work/RunNext.js";
 import { byStage, homeStatus, waitingWords } from "../src/screens/CommandCenter.js";
 import { phaseWord } from "../src/screens/home/HomePanels.js";
 import { BrokenChangesView } from "../src/screens/work/BrokenChanges.js";
@@ -234,7 +238,61 @@ describe("8: a box reached by the keyboard shows its focus", () => {
     const at = hud.indexOf(".arch-canvas .react-flow .react-flow__node:focus-visible");
     expect(at).toBeGreaterThan(0);
     const rule = hud.slice(at, hud.indexOf("}", at));
-    expect(rule).toMatch(/outline: 3px solid var\(--accent\)/);
+    expect(rule).toMatch(/outline: 3px dashed var\(--accent\)/);
+    // Review of the fix: a picked box looks otherwise: a solid ring inside its border, no outline.
+    const p = hud.indexOf(".arch-box.picked {");
+    const picked = hud.slice(p, hud.indexOf("}", p));
+    expect(picked).toMatch(/box-shadow: inset 0 0 0 3px var\(--accent-soft\)/);
+    expect(picked).not.toMatch(/outline/);
+  });
+
+  it("puts React Flow's scrolled wrapper back and pans to a box Tab reached out of view", () => {
+    const el = (o: Record<string, unknown>) => o as unknown as Element;
+    const wrapper = { scrollTop: 140, scrollLeft: 30, parentElement: null as unknown };
+    const view = { left: 0, top: 0, right: 600, bottom: 400 };
+    const stageEl = el({
+      contains: () => true,
+      getBoundingClientRect: () => view,
+      parentElement: null,
+    });
+    wrapper.parentElement = stageEl;
+    const node = (r: { left: number; top: number; right: number; bottom: number }) =>
+      el({
+        closest: (s: string) => (s === ".react-flow__node" ? node(r) : null),
+        parentElement: wrapper,
+        getBoundingClientRect: () => r,
+        getAttribute: (a: string) => (a === "data-id" ? "ledger-api" : null),
+      });
+    const centred: string[] = [];
+    // Out of view (below): the wrapper's scroll is undone and the view pans to it.
+    expect(
+      boxFocused(node({ left: 10, top: 500, right: 120, bottom: 540 }), stageEl, (id) =>
+        centred.push(id),
+      ),
+    ).toBe(true);
+    expect([wrapper.scrollTop, wrapper.scrollLeft]).toEqual([0, 0]);
+    expect(centred).toEqual(["ledger-api"]);
+    // In view: nothing moves.
+    expect(
+      boxFocused(node({ left: 10, top: 10, right: 120, bottom: 50 }), stageEl, (id) =>
+        centred.push(id),
+      ),
+    ).toBe(false);
+    expect(centred).toEqual(["ledger-api"]);
+    // Not a box (a button in the tools): left alone.
+    const button = el({ closest: () => null });
+    expect(boxFocused(button, stageEl, () => centred.push("x"))).toBe(false);
+  });
+
+  it("announces the boxes out of view once the view settles, not at every step of a pan", () => {
+    const src = readFileSync(
+      new URL("../src/screens/architecture/Canvas.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(src).not.toMatch(/className="arch-outside viewer-own" role="status"/);
+    expect(src).toMatch(/setTimeout\(\(\) => setAnnounced\(outside\), ANNOUNCE_AFTER_MS\)/);
+    expect(src).toMatch(/<span className="sr" role="status">/);
+    expect(ANNOUNCE_AFTER_MS).toBeGreaterThanOrEqual(500);
   });
 });
 
@@ -281,7 +339,10 @@ describe("12: a change whose change.yaml doesn't read", () => {
   ];
   it("is listed as broken, with its file, line and why", () => {
     const out = renderToStaticMarkup(<BrokenChangesView of={ready(broken)} />);
-    expect(out).toContain('role="alert"');
+    // Review of the fix: a labelled region, never an alert on every load, and no fixed id.
+    expect(out).not.toContain('role="alert"');
+    expect(out).toMatch(/<section class="cw-broken" aria-labelledby="([^"]+)"><h3 id="\1"/);
+    expect(out).not.toContain("cw-broken-head");
     expect(out).toContain(esc(COPY.brokenChanges.title(1)));
     expect(out).toContain(esc(COPY.brokenChanges.fileLine(broken[0]!.file, 3)));
     expect(out).toContain(esc(broken[0]!.message));
@@ -294,6 +355,10 @@ describe("12: a change whose change.yaml doesn't read", () => {
   it("the empty At a glance points at New change in the app", () => {
     expect(COPY.work.noChangeYet).toMatch(/New change/);
     expect("none" in C).toBe(false);
+    // Review of the fix: with a broken change and none that reads, not "No change yet".
+    expect(noChangeTitle(0)).toBe(COPY.work.noChangeTitle);
+    expect(noChangeTitle(1)).toBe("No change reads");
+    expect(noChangeTitle(1, "Pick one")).toBe("Pick one");
   });
 });
 
@@ -309,8 +374,8 @@ describe("13: Questions opens on the kind that has questions", () => {
 
 describe("14: a scan that refused", () => {
   it("reads as refused, nothing written, never failed", () => {
-    expect(stateWords({ state: "done", outcome: "refused" })).toBe(COPY.activity.refused);
-    expect(stateWords({ state: "failed" })).toBe(COPY.activity.states.failed);
+    expect(stateWords("done", "app", undefined, undefined, "refused")).toBe(COPY.activity.refused);
+    expect(stateWords("failed", "app")).toBe(COPY.activity.states.failed);
     expect(problemsOf({ entries: [] }).failed).toEqual([]);
   });
 });
@@ -365,6 +430,27 @@ describe("19: the tab strip in a narrow panel", () => {
       "home",
       "changes",
     ]);
+  });
+
+  it("its N more menu goes Home and End, wraps, and closes on Escape or a click away", () => {
+    expect(moreMenuKey("Home", 2, 4)).toBe(0);
+    expect(moreMenuKey("End", 0, 4)).toBe(3);
+    expect(moreMenuKey("ArrowDown", 3, 4)).toBe(0);
+    expect(moreMenuKey("ArrowUp", 0, 4)).toBe(3);
+    expect(moreMenuKey("Escape", 1, 4)).toBe("close");
+    expect(moreMenuKey("Tab", 1, 4)).toBe("leave");
+    expect(moreMenuKey("a", 1, 4)).toBeUndefined();
+    const src = readFileSync(new URL("../src/app/shell/TabStrip.tsx", import.meta.url), "utf8");
+    expect(src).toMatch(/document\.addEventListener\("pointerdown", away\)/);
+  });
+});
+
+describe("6c: an empty metarepo's Explorer", () => {
+  it("doesn't ask for the estate when the manifest names no repo", () => {
+    expect(manifestEmpty({ repos: [] })).toBe(true);
+    expect(manifestEmpty({ repos: [{ repo: "forge-ledger" }] })).toBe(false);
+    // Not known yet: it asks.
+    expect(manifestEmpty(undefined)).toBe(false);
   });
 });
 
