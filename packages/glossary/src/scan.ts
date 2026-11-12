@@ -198,8 +198,10 @@ export async function scanGlossary(
     runtime?: AiRuntime;
     now?: Date;
     /**
-     * ADR 0195: false leaves catalog/generated alone (the build writes the terms, from the
-     * proposals and decisions this wrote); `written` and `removed` then say what the build would.
+     * ADR 0195: catalog/generated is the build's, so by default this leaves it alone (the build
+     * writes the terms, from the proposals and decisions this wrote); `written` and `removed` say
+     * what the build would. `true` patches the files in place, as before beta.27, for a caller
+     * outside a metarepo's build (none in Atticus itself; the review: false by default).
      */
     writeTerms?: boolean;
   } = {},
@@ -225,14 +227,14 @@ export async function scanGlossary(
   for (const f of (await readdir(termDir).catch(() => [] as string[])).sort()) {
     const rel = `glossaryterm/${f}`;
     if (!want.has(rel)) {
-      if (o.writeTerms !== false) await rm(join(termDir, f), { force: true });
+      if (o.writeTerms === true) await rm(join(termDir, f), { force: true });
       removed.push(rel);
     }
   }
   const before = new Map(g.base.map((r) => [`${r.kind}/${r.id}`, r]));
   const put = async (rel: string, text: string) => {
     written.push(rel);
-    if (o.writeTerms === false) return;
+    if (o.writeTerms !== true) return;
     const full = join(generated, ...rel.split("/"));
     await mkdir(dirname(full), { recursive: true });
     await writeFile(full, text, "utf8");
@@ -282,6 +284,6 @@ export async function completeGlossaryDefinitions(
     ...(run.state ? { run: toRunSummary(run as Run) } : {}),
     promptSha256: run.request.pack.manifest.promptSha256,
   };
-  const scanned = await scanGlossary(root, o.writeTerms === false ? { writeTerms: false } : {});
+  const scanned = await scanGlossary(root, o.writeTerms === true ? { writeTerms: true } : {});
   return { ...scanned, propose };
 }
