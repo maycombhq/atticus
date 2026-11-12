@@ -1,0 +1,25 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="AddInstrument">
+      <Condition>(proxy.pathsuffix MatchesPath "/account_instruments") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="Balances">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/balances") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="Account">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="CardPin">
+      <Condition>(proxy.pathsuffix MatchesPath "/cards/*/pin") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="BulkOrders">
+      <Condition>(proxy.pathsuffix MatchesPath "/bulkorders") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/northwind-accounts/1.0</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="vendor">
+    <TargetEndpoint>northwind-pay-target</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

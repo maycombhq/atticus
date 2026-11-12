@@ -121,6 +121,33 @@ describe("the outside systems' pages (O4)", () => {
       expect(out).toMatch(new RegExp(`<h2 id="[^"]+" class="h">${esc(h)}</h2>`));
   });
 
+  it("lists every operation a wildcard route reaches, and says a configuration problem plainly (beta.27)", () => {
+    const note =
+      "gw.forge.example is one of Northwind Pay's aliases in the profile, but northwind_accounts_1-0 answers on it";
+    const s = Api.OutsideSystemView.parse({
+      ...NW,
+      callers: [
+        {
+          repo: "northwind_accounts_1-0",
+          at: "apiproxy/proxies/default.xml:10",
+          method: "GET",
+          path: "/accounts/*",
+          operation: "northwind-pay.get-account",
+          operations: ["northwind-pay.get-account", "northwind-pay.get-balance"],
+          seen: ["spec"],
+        },
+      ],
+      notes: [note],
+    });
+    const out = html(<OutsideSystemPanels system={s} />);
+    expect(out).toContain(esc(O.reachesMany(2)));
+    expect(out).toContain("northwind-pay.get-balance");
+    expect(out).toMatch(new RegExp(`<h2 id="[^"]+" class="h">${esc(O.configNotes)}</h2>`));
+    expect(out).toContain(esc(note));
+    // No note, no panel.
+    expect(html(<OutsideSystemPanels system={NW} />)).not.toContain(esc(O.configNotes));
+  });
+
   it("says how to add a spec to a system with none, and when nothing calls it", () => {
     const out = html(<OutsideSystemPanels system={AUDIT} />);
     expect(out).toContain(esc(O.noSpec));

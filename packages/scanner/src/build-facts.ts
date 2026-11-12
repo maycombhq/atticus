@@ -3,6 +3,7 @@ import {
   declaredCallsOf,
   factIdPart,
   helperOn,
+  hostMatches,
   joinCallers,
   joinConventions,
   joinFacts,
@@ -10,7 +11,9 @@ import {
   NO_TARGET,
   normalizePath,
   parseRecord,
+  placeholderIn,
   termGrantRecords,
+  urlHostPort,
   type CatalogRecord,
   type Fact,
   type FactJoinMiss,
@@ -29,10 +32,11 @@ import {
   factsRecords,
   joinAbout,
   joinReposOf,
+  outsideProfileSystems,
   outsideSystems,
   remapIds,
 } from "./facts-catalog.js";
-import { isPrototypeRepo } from "./merge-input.js";
+import { estateRepos, isPrototypeRepo } from "./merge-input.js";
 
 /**
  * The repos read from their facts in one build (ADR 0195 point 2): every current facts slot
@@ -167,6 +171,13 @@ export function withFactsEstateJoins(
 /** A host as an outside system's alias may be written: labels and dots, a port maybe. */
 const HOST_ALIAS = /^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/i;
 
+/** A URL's own path (`https://host/api/v1` gives `/api/v1`), its trailing slash off. */
+const urlPathIn = (url: string | undefined): string | undefined => {
+  const m = url ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(url.trim()) : null;
+  const p = m?.[1]?.replace(/\/+$/, "");
+  return p ? p : undefined;
+};
+
 /**
  * The review of beta.27: a call whose own host is still a token (a gateway's forwarding call to
  * `@targetVendorUrl@`, or one whose lines alone write it) that the join leaves to an outside
@@ -174,21 +185,41 @@ const HOST_ALIAS = /^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/i;
  * host, so the merge draws it to the system as it draws a call that names the host itself. It
  * was left a loose end with the token for its host, and the Map drew no arrow. A target that
  * isn't a listed alias (a host only the call's settings give, a name a person answered) is left
- * as it was: the merge would take an unlisted host's first label for a component.
+ * as it was: the merge would take an unlisted host's first label for a component. Its review:
+ * only an alias exactly one outside system lists, and never a host an estate repo or module
+ * declares (the merge would draw it to that repo, or guess a component by its label); and the
+ * target URL's own path (`/api/v1`, from the token's setting for that host) stays in front of the
+ * route's, so the arrow says the path the vendor receives.
  */
 function toOutsideHosts(
   records: readonly CatalogRecord[],
   op: OrgPack,
   p: FactsEstateProjection,
 ): CatalogRecord[] {
-  const aliases = new Set(
-    outsideSystems(op)
-      .filter((n) => HOST_ALIAS.test(n))
-      .map((n) => n.toLowerCase()),
-  );
+  // Each host alias, with the outside systems that list it: only one that names exactly one is
+  // that system's, and never a host an estate repo or one of its modules answers on (the merge
+  // would then draw the call to that repo, or take the host's first label for a component).
+  const owners = new Map<string, Set<string>>();
+  for (const s of outsideProfileSystems(op))
+    for (const n of [s.name, ...s.aliases])
+      if (HOST_ALIAS.test(n)) {
+        const k = n.toLowerCase();
+        owners.set(k, (owners.get(k) ?? new Set()).add(s.id));
+      }
+  const estateHosts = estateRepos(op).flatMap((r) => [
+    ...(r.hosts ?? []),
+    ...(r.modules ?? []).flatMap((m) => m.hosts ?? []),
+  ]);
+  const declared = (host: string) => {
+    const hp = /^(.*):(\d+)$/.exec(host);
+    return estateHosts.some((pat) =>
+      hostMatches(pat, hp ? hp[1]! : host, hp ? Number(hp[2]) : undefined),
+    );
+  };
   const raw = new Map<string, string>();
   for (const o of p.whole.outside ?? []) {
-    if (!aliases.has(o.target.toLowerCase())) continue;
+    const target = o.target.toLowerCase();
+    if (owners.get(target)?.size !== 1 || declared(target)) continue;
     const x = p.per.get(o.call.repo);
     const f = x?.facts.find((y) => y.id === o.call.fact);
     if (!x || f?.kind !== "call" || !["rest", "soap"].includes(f.callType)) continue;
@@ -197,7 +228,22 @@ function toOutsideHosts(
     const u = [...x.looseFact].find(([, fact]) => fact === f.id)?.[0];
     if (!u) continue;
     const path = f.path.startsWith("/") ? f.path : `/${f.path}`;
-    raw.set(u, `${f.method?.toUpperCase() ?? "ANY"} https://${o.target}${path}`);
+    // The target URL's own path (`https://api.northwind-pay.example/api/v1`) stays in front of
+    // the route's: the setting of the call's token whose host is this one says it.
+    const token = f.host?.trim();
+    const set = x.facts.find(
+      (c) =>
+        c.kind === "config" &&
+        !!token &&
+        (c.key === token || c.key === placeholderIn(token)?.name) &&
+        urlHostPort(c.value ?? "")?.host === target,
+    );
+    const basePath = set?.kind === "config" ? urlPathIn(set.value) : undefined;
+    const full =
+      basePath && path !== basePath && !path.startsWith(`${basePath}/`)
+        ? `${basePath}${path === "/" ? "" : path}`
+        : path;
+    raw.set(u, `${f.method?.toUpperCase() ?? "ANY"} https://${o.target}${full}`);
   }
   if (!raw.size) return [...records];
   return records.map((r) =>

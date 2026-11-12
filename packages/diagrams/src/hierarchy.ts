@@ -601,26 +601,34 @@ export function buildEstate(records: CatalogRecord[], o: BuildEstateOptions = {}
   const partNode = (ref: string) =>
     components.has(ref) ? `component:${ref}` : systems.has(ref) ? `system:${ref}` : unknown(ref);
 
+  // Beta.27 (a user's Map): a system no repo of the estate belongs to (a vendor's, another team's)
+  // has no code to read, so a component in it is never missing a repo or seen at one end only.
+  const withRepo = new Set(repoSystem.values());
+  const outsideSystem = (id: string) => {
+    const s = systemRecords.get(id);
+    if (s?.boundary === "vendor" && !withRepo.has(id)) return true;
+    return systems.has(id) && !withRepo.has(id) && !(s?.repos.length ?? 0);
+  };
   for (const c of components.values()) {
     const gaps: string[] = [];
     let parent: string;
+    const outsideOne = !c.repo && outsideSystem(c.system);
     if (c.repo) parent = repoNode(c.repo);
     else {
-      gaps.push("no-repo");
+      if (!outsideOne) gaps.push("no-repo");
       parent = systems.has(c.system) ? `system:${c.system}` : "estate";
     }
     if (!systems.has(c.system)) gaps.push("no-system");
-    add(
-      fromRecord(
-        c,
-        `component:${c.id}`,
-        "component",
-        c.id,
-        parent,
-        { type: c.type, runtime: c.runtime, repo: c.repo, path: c.path },
-        gaps,
-      ),
+    const node = fromRecord(
+      c,
+      `component:${c.id}`,
+      "component",
+      c.id,
+      parent,
+      { type: c.type, runtime: c.runtime, repo: c.repo, path: c.path },
+      gaps,
     );
+    add(outsideOne ? { ...node, gaps: node.gaps.filter((g) => g !== "inferred") } : node);
   }
 
   const endpointNode = new Map<string, string>();

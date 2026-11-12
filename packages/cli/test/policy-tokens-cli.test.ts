@@ -172,10 +172,10 @@ const GUESSED = [
  * lists as its alias is drawn to that system on the Map, as a call written with the host is.
  */
 const VENDOR_ARROW: Record<string, string[]> = {
-  "call.get.payments-id": ["northwind-pay", "GET", "/payments/{}"],
-  "call.get.refunds-id": ["northwind-pay", "GET", "/refunds/{}"],
-  "call.post.payments": ["northwind-pay", "POST", "/payments"],
-  "call.post.refunds": ["northwind-pay", "POST", "/refunds"],
+  "call.get.payments-id": ["northwind-pay", "GET", "/api/v1/payments/{}"],
+  "call.get.refunds-id": ["northwind-pay", "GET", "/api/v1/refunds/{}"],
+  "call.post.payments": ["northwind-pay", "POST", "/api/v1/payments"],
+  "call.post.refunds": ["northwind-pay", "POST", "/api/v1/refunds"],
 };
 const toVendor = (...ids: string[]) => ids.map((id) => VENDOR_ARROW[id]!).sort();
 const ALL_TO_VENDOR = toVendor(...Object.keys(VENDOR_ARROW));

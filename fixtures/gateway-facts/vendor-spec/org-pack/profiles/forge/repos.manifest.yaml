@@ -1,0 +1,21 @@
+# Invented Forge repos (see fixtures/gateway-facts/vendor-spec/README.md): an Apigee proxy
+# bundle that is its own repo, fronting Northwind Pay (an invented vendor) through a target URL
+# token the deploy's config.json sets per environment, and an onboarding service that calls the
+# proxy's base path on the gateway's host.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: northwind_accounts_1-0
+    url: https://git.forge.example/forge/northwind_accounts_1-0.git
+    type: gateway
+    owner: team-platform
+    component: northwind-accounts-proxy
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-onboarding
+    url: https://git.forge.example/forge/forge-onboarding.git
+    type: spring-boot
+    owner: team-onboarding
+    component: onboarding-api
+    system: onboarding
+    hosts: [onboarding.forge.internal]

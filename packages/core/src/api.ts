@@ -524,7 +524,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   A rename to the box's own name, or to another box, is refused (400); a box whose system holds a
  *   YAML anchor other lines use, 422. An Ignore's `reason` is at most 300 characters from every
  *   caller. Additive only.
- * 3.12.0 (beta.27: every additive change of the release, in one version). The app's plumbing: GET
+ * 3.12.0 (beta.27: every additive change of the release, in one version). GET /api/outside: a
+ *   caller's `operations` (every operation a wildcard route reaches) and a system's `notes` (an
+ *   alias that is an estate repo's host, said plainly). The app's plumbing: GET
  *   /api/facts?repo=<id>&repo=<id> gives several repos' facts in one call (the Map asked once per
  *   repo, 65 calls on a large estate): `facts` by repo as GET /api/facts/{repo} gives each, and
  *   `problems` by repo for a name refused or not found. GET
@@ -2703,6 +2705,11 @@ export const OutsideCallView = z.object({
   interface: z.string().optional(),
   /** The spec operation it reaches (its Endpoint id), when it matches one. */
   operation: z.string().optional(),
+  /**
+   * 3.12.0 (beta.27): every operation it reaches, sorted, when it is more than one: a gateway
+   * route that forwards a wildcard (`/accounts/*`) reaches every operation under it.
+   */
+  operations: z.array(z.string()).optional(),
   /** Through a gateway's forwarding call (the route and the gateway's call), when it is. */
   through: z.object({ repo: z.string(), at: z.string() }).optional(),
   /** 2.44.0 (ADR 0160): the entry of another team's shared map that answers it. */
@@ -2741,6 +2748,11 @@ export const OutsideSystemView = z.object({
   ambiguous: z.array(OutsideCallView.extend({ candidates: z.array(z.string()) })),
   /** Open questions about it: naming it, or citing a line one of its calls is on. */
   questions: z.array(z.object({ id: z.string(), repo: z.string(), question: z.string() })),
+  /**
+   * 3.12.0 (beta.27): what in the configuration is at odds with it, in plain words (an alias in
+   * the profile that is a host an estate repo answers on, whose calls go to that repo instead).
+   */
+  notes: z.array(z.string()).optional(),
   /** With no spec: how to add one. */
   addSpec: z.array(z.string()).optional(),
   /**

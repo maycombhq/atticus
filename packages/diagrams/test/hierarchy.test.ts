@@ -167,9 +167,39 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
   });
 
   it("marks a gap where the catalog is missing a part: a component with no repo", () => {
-    const v = nodeView(buildEstate(forge()), "system:audit", { lens: "architecture" });
-    expect(ids(v.children)).toEqual(["component:audit-svc"]);
-    expect(v.children[0]!.gaps).toEqual(expect.arrayContaining(["inferred", "no-repo"]));
+    const extra = {
+      kind: "Component",
+      id: "portal-cache",
+      confidence: "inferred",
+      system: "portal",
+      type: "service",
+      evidence: ev,
+    };
+    const v = nodeView(buildEstate(forge([extra])), "system:portal", { lens: "architecture" });
+    const cache = v.children.find((c) => c.id === "component:portal-cache")!;
+    expect(cache.gaps).toEqual(expect.arrayContaining(["inferred", "no-repo"]));
+  });
+
+  it("never says a part of a system no repo belongs to has no repo or was seen at one end (beta.27)", () => {
+    // Another team's system and a vendor: the estate has no code of theirs to read.
+    const vendorPart = {
+      kind: "Component",
+      id: "northwind-pay-target",
+      confidence: "inferred",
+      system: "northwind-pay",
+      type: "service",
+      evidence: ev,
+    };
+    const est = buildEstate(forge([vendorPart]));
+    for (const sys of ["system:audit", "system:northwind-pay"]) {
+      const v = nodeView(est, sys, { lens: "architecture" });
+      const parts = v.children.filter((c) => c.kind === "component");
+      expect(parts.length, sys).toBeGreaterThan(0);
+      for (const c of parts) {
+        expect(c.gaps, c.id).not.toContain("no-repo");
+        expect(c.gaps, c.id).not.toContain("inferred");
+      }
+    }
   });
 
   it("refuses a node it doesn't have", () => {

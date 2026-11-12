@@ -365,6 +365,14 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   const componentsOfSystem = (sys: string) =>
     [...components.values()].filter((c) => c.system === sys).map((c) => c.id);
 
+  /** The systems an estate repo belongs to (the manifests'), and those of components read from code. */
+  const estateSystems = new Set([
+    ...input.repos.flatMap((r) => (r.system ? [r.system] : [])),
+    ...[...components.values()].flatMap((c) => (c.repo && c.system ? [String(c.system)] : [])),
+  ]);
+  /** A vendor no estate repo belongs to: one box, whatever its calls call it. */
+  const vendorBox = (id: string) =>
+    systemsById.get(id)?.boundary === "vendor" && !estateSystems.has(id);
   /** Find the component a host name or name refers to; create an inferred one when a system claims it. */
   const resolveComponent = (name: string, ev: Evidence): string | undefined => {
     if (components.has(name)) return name;
@@ -377,9 +385,19 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       if (s.aliases.some((a) => a.toLowerCase() === name)) {
         const inSys = componentsOfSystem(s.id);
         if (inSys.length === 1) return inSys[0];
+        if (inSys.length === 0 && vendorBox(s.id)) return s.id;
       }
     }
     const sys = systemOf(name);
+    // Beta.27 (a user's Map): a vendor no estate repo belongs to is
+    // never split into inferred components by the names its calls give it (a host's label, the
+    // name a person paired calls to, a proxy's TargetEndpoint): with no component of its own
+    // declared, the system is the box every call lands on; with one, that one.
+    if (sys && vendorBox(sys)) {
+      const inSys = componentsOfSystem(sys);
+      if (inSys.length === 0) return sys;
+      if (inSys.length === 1) return inSys[0];
+    }
     if (sys) {
       const c: Rec = {
         schemaVersion: 1,
@@ -585,10 +603,27 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   }
 
   // Interfaces a dialect emitted directly: attach the callee end if the target is known.
-  for (const d of dialectInterfaces) {
+  for (const raw of dialectInterfaces) {
+    // Beta.27: a name that lands on an outside system (no component of its own) is drawn to it.
+    const target = resolveComponent(String(raw.to), raw.evidence[0]!);
+    const d =
+      target &&
+      target !== raw.to &&
+      !components.has(String(raw.to)) &&
+      vendorBox(systemOf(target) ?? target)
+        ? {
+            ...raw,
+            to: target,
+            id: interfaceId(
+              String(raw.from),
+              target,
+              raw.method as string | undefined,
+              String(raw.normalizedPath),
+            ),
+          }
+        : raw;
     const ep = findEndpoint(String(d.to), d.method as string | undefined, String(d.normalizedPath));
     const callee = calleeEvidence(ep);
-    resolveComponent(String(d.to), d.evidence[0]!);
     addInterface({
       ...d,
       ...(ep ? { endpoint: ep.id } : {}),

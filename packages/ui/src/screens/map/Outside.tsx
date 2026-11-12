@@ -79,6 +79,15 @@ export function OutsideSystemPanels({ system: s }: { system: System }) {
           {s.aliases.length ? ` · ${O.aliases(s.aliases.join(", "))}` : ""}
         </p>
       </Panel>
+      {s.notes && s.notes.length > 0 && (
+        <Panel title={O.configNotes} span="1 / -1" labelledBy={`${id}-notes`}>
+          <ul className="ev-list" style={{ margin: 0 }}>
+            {s.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </Panel>
+      )}
       <Panel title={O.callers} span="1 / -1" labelledBy={`${id}-callers`}>
         {s.callers.length ? (
           <table className="run-table">
@@ -109,7 +118,21 @@ export function OutsideSystemPanels({ system: s }: { system: System }) {
                     <code className="mono">{c.at}</code>
                   </td>
                   <td>
-                    {c.operation ? <code className="mono">{c.operation}</code> : O.noOperation}
+                    {c.operations && c.operations.length > 1 ? (
+                      <>
+                        {O.reachesMany(c.operations.length)}{" "}
+                        {c.operations.map((op, i) => (
+                          <span key={op}>
+                            {i ? ", " : ""}
+                            <code className="mono">{op}</code>
+                          </span>
+                        ))}
+                      </>
+                    ) : c.operation ? (
+                      <code className="mono">{c.operation}</code>
+                    ) : (
+                      O.noOperation
+                    )}
                   </td>
                   <td>{c.seen.map((x) => O.seen[x] ?? x).join(", ")}</td>
                 </tr>

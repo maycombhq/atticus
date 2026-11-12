@@ -50765,6 +50765,12 @@
                       "operation": {
                         "type": "string"
                       },
+                      "operations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "through": {
                         "type": "object",
                         "properties": {
@@ -50907,6 +50913,12 @@
                       "operation": {
                         "type": "string"
                       },
+                      "operations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "through": {
                         "type": "object",
                         "properties": {
@@ -51001,6 +51013,12 @@
                       "operation": {
                         "type": "string"
                       },
+                      "operations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "through": {
                         "type": "object",
                         "properties": {
@@ -51078,6 +51096,12 @@
                       "question"
                     ],
                     "additionalProperties": false
+                  }
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
                   }
                 },
                 "addSpec": {
@@ -51184,6 +51208,12 @@
                           },
                           "operation": {
                             "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           },
                           "through": {
                             "type": "object",

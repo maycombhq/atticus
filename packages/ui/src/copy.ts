@@ -4355,6 +4355,10 @@ export const COPY = {
       shared: "their shared map",
     } as Record<string, string>,
     noOperation: "—",
+    // Beta.27: a gateway route that forwards a wildcard reaches every operation under it.
+    reachesMany: (n: number) => `${n} operations, through a wildcard route:`,
+    // Beta.27: what in the configuration is at odds with this system, said plainly.
+    configNotes: "Check its configuration",
     operations: "Its operations",
     specFrom: (path: string, title: string | undefined, version: string | undefined) =>
       `From ${path}${title ? `, ${title}` : ""}${version ? ` ${version}` : ""}`,

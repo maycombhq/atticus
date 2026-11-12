@@ -702,3 +702,63 @@ describe("mergeCatalog: ids past C1's 120 characters", () => {
     expect(merged(records).records.map((x) => x.id)).toEqual(r.records.map((x) => x.id));
   });
 });
+
+describe("mergeCatalog: a system no estate repo belongs to is one box (beta.27)", () => {
+  // A user's Map: inside a vendor, three component boxes, one named like the host's label, one
+  // the name a person paired calls to, one the proxy's TargetEndpoint name, each flagged.
+  const vendorSystems = [
+    { id: "portal", name: "Portal", boundary: "product" as const, aliases: [] },
+    { id: "northwind-pay", name: "Northwind Pay", boundary: "vendor" as const, aliases: [] },
+  ];
+  const repos = [
+    {
+      id: "forge-portal",
+      type: "spring-boot",
+      system: "portal",
+      component: "portal-api",
+      hosts: [],
+    },
+  ];
+  const to = (target: string, path: string) => hop("portal-api", target, "direct", path);
+  const componentIds = (m: ReturnType<typeof mergeCatalog>) =>
+    m.records
+      .filter((r) => r.kind === "Component")
+      .map((r) => r.id)
+      .sort();
+
+  it("lands calls named by a label, a pairing or a TargetEndpoint on the vendor system itself", () => {
+    const m = mergeCatalog({
+      records: [
+        component("portal-api", "portal"),
+        to("northwind-pay-devapi", "/a"),
+        to("northwind-pay-api", "/b"),
+        to("northwind-pay-target", "/c"),
+      ],
+      repos,
+      systems: vendorSystems,
+    });
+    expect(componentIds(m)).toEqual(["portal-api"]);
+  });
+
+  it("lands them on the vendor's one declared component when it has one", () => {
+    const declared = {
+      ...component("northwind-pay-gateway", "northwind-pay"),
+      repo: undefined,
+    } as unknown as CatalogRecord;
+    const m = mergeCatalog({
+      records: [component("portal-api", "portal"), declared, to("northwind-pay-target", "/c")],
+      repos,
+      systems: vendorSystems,
+    });
+    expect(componentIds(m)).toEqual(["northwind-pay-gateway", "portal-api"]);
+  });
+
+  it("still infers a component of an estate system from its name", () => {
+    const m = mergeCatalog({
+      records: [component("portal-api", "portal"), hop("portal-api", "portal-search", "direct")],
+      repos,
+      systems: vendorSystems,
+    });
+    expect(componentIds(m)).toContain("portal-search");
+  });
+});
