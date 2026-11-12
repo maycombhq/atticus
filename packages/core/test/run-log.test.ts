@@ -965,6 +965,25 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
   });
 
+  it("waits on a cut record by how near its time is to now, either way: never on one dated 2099", async () => {
+    const root = await fresh();
+    const dir = runningDirOf(root);
+    const cut = record("20261101-100100-4242-cd34", ["map", "forge-ledger", key]);
+    keep(root, [cut]);
+    const file = join(dir, `${cut.runId}.json`);
+    writeFileSync(file, "");
+    // An hour ahead (a clock a little fast, a share's skew): as near as an hour ago, so waited on.
+    const soon = new Date(Date.now() + 60 * 60 * 1000);
+    utimesSync(file, soon, soon);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(join(dir, RETITLED_MARK))).toBe(false);
+    // Dated 2099: no run is writing it, and waiting on it would hold the mark for ever.
+    const far = new Date("2099-01-01T00:00:00Z");
+    utimesSync(file, far, far);
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(join(dir, RETITLED_MARK))).toBe(true);
+  });
+
   it("tries a `secret` run's removal again when it failed, and writes no mark until it is gone", async () => {
     const root = await fresh();
     const set = record("20261101-100000-4242-ab12", ["secret", "set", "ATTICUS_MODEL_KEY", key]);

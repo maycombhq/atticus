@@ -496,7 +496,7 @@ function readSmallFile(file: string, max: number): string | undefined {
  * a FIFO or a folder), a record whose process is still running is left to it (and the mark
  * waits, so the next command tries again; a run killed under beta.26 is titled again), a removal
  * that fails is tried again the same way, so is a record that can't be read or parsed while it
- * was written in the last 7 days (half-written in place by a live run), and a record is written
+ * was written within 7 days of now, either way (half-written in place by a live run), and a record is written
  * beside itself and put in place, never through a link. A folder that can't be written is left
  * alone (nothing could change), and one whose mark can't be written isn't tried again by this
  * process. Never throws: a record that can't be read or written is left as it is.
@@ -537,10 +537,19 @@ export function retitleTerminalRuns(
   // half-written: the mark waits for it. Only a small regular file written in goneRun's 7 days
   // is waited on (a link, a FIFO, a folder or a big file is no record beta.26 wrote, and one no
   // run has written for longer is no run's), so the next command tries again, for 7 days at most.
+  // Re-review 6: "in the 7 days" either way from now. A time ahead of now (a clock a little fast,
+  // a share's skew) is as near as one behind and waited on, but only up to 7 days ahead: one
+  // dated 2099 would otherwise hold the mark for ever, and a time ahead still waits 14 days at
+  // most. (Reading every time ahead as old instead would leave a record a live run is writing
+  // on a machine whose clock is fast unwaited, the case this wait is for.)
   const settling = (file: string) => {
     try {
       const st = lstatSync(file, { throwIfNoEntry: false });
-      return !!st?.isFile() && st.size <= RETITLE_MAX_BYTES && now - st.mtimeMs <= RETITLE_WAIT_MS;
+      return (
+        !!st?.isFile() &&
+        st.size <= RETITLE_MAX_BYTES &&
+        Math.abs(now - st.mtimeMs) <= RETITLE_WAIT_MS
+      );
     } catch {
       return false;
     }
