@@ -781,4 +781,18 @@ export const EXAMPLES: Example[] = [
       ],
     },
   ),
+  seq(
+    "nothing-removed-unexplained",
+    "an archive refused, then a rename of the other end cut short after its slots: the records of their join may be said removed as archived (seed 1361807166)",
+    // CS2's removal reasons: "manifest or archived when a repo it involves is gone". The join's
+    // records (the arrow, the feature) involve the archived ledger and payments, whose evidence
+    // id no manifest lists while its rename is cut short: either reason is the build's to give.
+    [
+      { t: "scan" },
+      { t: "archive", slot: 0 },
+      { t: "crash", at: "after-slots", via: "rename", slot: 1 },
+      { t: "verify-live", slot: 0 },
+    ],
+    [lacks("the ledger's GET /accounts", getAccounts)],
+  ),
 ];

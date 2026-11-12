@@ -317,12 +317,14 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   const reasonsOf = (slot: number): RemovalReason[] => {
     const r = m.repos[slot]!;
     // A repo removed or archived changes the manifest, an input too: a record of a join with it
-    // may be reported by any of the three.
-    return !r.listed || unlisted
-      ? ["manifest", "slot", "input"]
-      : r.archived
-        ? ["archived", "slot", "input"]
-        : ["slot"];
+    // may be reported by any of the three. A record of a join between an archived repo and one
+    // whose id no manifest lists (a rename cut short after its slots) involves both: either may
+    // be said (seed 1361807166, its second run).
+    const gone: RemovalReason[] = [
+      ...(!r.listed || unlisted ? (["manifest"] as const) : []),
+      ...(r.listed && r.archived ? (["archived"] as const) : []),
+    ];
+    return gone.length ? [...gone, "slot", "input"] : ["slot"];
   };
   for (const slot of c.slots)
     if (involves(m, [slot], rec) || (JOINED.has(rec.kind) && involves(m, partners(m, slot), rec)))
