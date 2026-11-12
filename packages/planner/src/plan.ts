@@ -1,12 +1,12 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { keepPersonWritten, personWritten, writeFileAtomic } from "@maycombhq/changes";
+import { isGenerated, keepPersonWritten, personWritten, writeFileAtomic } from "@maycombhq/changes";
 import type { RunSummary } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
 import { loadPlanContext, type PlanContext } from "./context.js";
 import { PlannerError } from "./errors.js";
 import { fallbackProse, writeProse, type StoryProse } from "./prose.js";
-import { GENERATED_MARK, renderIndex, renderStory, renderTasks } from "./render.js";
+import { renderIndex, renderStory, renderTasks } from "./render.js";
 import { buildSkeleton, type PlanSkeleton, type TaskPlan } from "./skeleton.js";
 import { draftFor, renderSnow, snowNeeds, type SnowDraft, type SnowNeed } from "./snow.js";
 
@@ -152,7 +152,7 @@ export async function planStories(
   for (const f of await readdir(join(ctx.dir, "stories")).catch(() => [] as string[])) {
     if (keep.has(f) || !f.endsWith(".md")) continue;
     const p = join(ctx.dir, "stories", f);
-    if ((await readFile(p, "utf8")).startsWith(GENERATED_MARK) || o.force) await rm(p);
+    if (isGenerated(await readFile(p, "utf8")) || o.force) await rm(p);
   }
   for (const s of skeleton.stories)
     await writeFileAtomic(

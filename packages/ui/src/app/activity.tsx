@@ -26,7 +26,11 @@ import { CopilotRunTabs, matching, RunStrip, TAB_LINES, useCopilotRuns } from ".
 
 const T = COPY.activity;
 
-type Entry = Api.ActivityEntryT;
+/**
+ * An activity entry. Merge prep (beta.27): fix/b27-plumbing's API 3.12.0 has the server say
+ * `stopping` once Stop was asked; until it lands here the field is left out, never sent.
+ */
+type Entry = Api.ActivityEntryT & { stopping?: boolean };
 export interface Lines {
   from: number;
   lines: string[];
@@ -68,6 +72,26 @@ export interface ActivityCtx {
 
 export const ActivityContext = createContext<ActivityCtx | undefined>(undefined);
 export const useActivity = () => useContext(ActivityContext);
+
+/**
+ * Beta.27 review: an entry's state in words: a job the app ran before it restarted, running when
+ * it closed, says so; one Stop was asked of says it is stopping until it ends; one that refused
+ * (its `outcome`, a scan's safety stop) says "refused: nothing written". Every field but `state`
+ * may be left out (the screens' rows give `state` and `outcome` only).
+ */
+export function stateWords(
+  e: Pick<Entry, "state"> &
+    Partial<Pick<Entry, "where" | "stopping" | "jobId">> & { outcome?: string | undefined },
+): string {
+  if (e.outcome === "refused") return T.refused;
+  if (e.state === "ended" && e.where === "app") return T.appClosedState;
+  if (e.state === "running" && e.stopping) return T.stoppingState;
+  return T.states[e.state] ?? e.state;
+}
+
+/** Whether Stop was asked of an entry: this page asked just now, or the server says so. */
+export const isStopping = (a: Pick<ActivityCtx, "stopping">, e: Entry): boolean =>
+  a.stopping === e.id || (e.state === "running" && e.stopping === true);
 
 /** The name of an entry: its own words, else its kind's. */
 export const titleOf = (e: Entry): string => e.title ?? T.kinds[e.kind] ?? e.kind;
@@ -274,13 +298,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       const entry = e.entry as Entry;
       const was = entriesNow.current.find((x) => x.id === entry.id);
       if (was && was.state === "running" && entry.state !== "running")
-        announce(
-          T.changed(
-            titleOf(entry),
-            stateWords(entry.state, entry.where, undefined, entry.jobId, entry.outcome),
-          ),
-          true,
-        );
+        announce(T.changed(titleOf(entry), stateWords(entry)), true);
       setListed((old) => upsert(old, entry));
       setState("ready");
     } else if (e.type === "activity.lines") {
@@ -519,9 +537,9 @@ export function ActivityStrip() {
                 type="button"
                 className="btn danger"
                 onClick={() => void a.stop(first)}
-                disabled={a.stopping === first.id}
+                disabled={isStopping(a, first)}
               >
-                {a.stopping === first.id ? T.stopping : T.stop}
+                {isStopping(a, first) ? T.stopping : T.stop}
               </button>
             ) : first.kind === "command" ? (
               <span className="work-say">{T.stopTerminal}</span>
@@ -638,23 +656,6 @@ export function LogView(p: {
   );
 }
 
-/**
- * Beta.27 review: how an entry ended, in words: "refused: nothing written" for one that refused
- * (its `outcome`) first, else its state's word. Where it runs, whether Stop was asked and its job
- * are taken, so one signature serves every page (fix/b27-plumbing words an app run's end and a
- * stop with them); this branch says plain states.
- */
-export function stateWords(
-  state: Entry["state"],
-  where?: Entry["where"],
-  stopping?: boolean,
-  jobId?: string,
-  outcome?: Entry["outcome"],
-): string {
-  if (outcome === "refused") return T.refused;
-  return T.states[state] ?? state;
-}
-
 /** An entry's kind, its name and its state, where it started and when: a list's row. */
 export function EntryMeta({ e }: { e: Entry }) {
   return (
@@ -662,9 +663,7 @@ export function EntryMeta({ e }: { e: Entry }) {
       <span className="activity-kind">{T.kinds[e.kind] ?? e.kind}</span>
       <span className="activity-title">{titleOf(e)}</span>
       <span className="activity-meta">
-        <span className={`activity-state ${e.outcome ?? e.state}`}>
-          {stateWords(e.state, e.where, undefined, e.jobId, e.outcome)}
-        </span>
+        <span className={`activity-state ${e.outcome ?? e.state}`}>{stateWords(e)}</span>
         {" · "}
         {T.from(T.where[e.where] ?? e.where)}
         {" · "}
@@ -719,13 +718,7 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <strong>{titleOf(shown)}</strong>
         <span className="work-say">
-          {stateWords(
-            shown.state,
-            shown.where,
-            a.stopping === shown.id,
-            shown.jobId,
-            shown.outcome,
-          )}
+          {stateWords({ ...shown, stopping: isStopping(a, shown) })}
           {shown.exitCode !== undefined && shown.state !== "done"
             ? ` (${T.exitCode(shown.exitCode)})`
             : ""}
@@ -740,9 +733,9 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
             type="button"
             className="btn danger"
             onClick={() => void a.stop(shown)}
-            disabled={a.stopping === shown.id}
+            disabled={isStopping(a, shown)}
           >
-            {a.stopping === shown.id ? T.stopping : T.stop}
+            {isStopping(a, shown) ? T.stopping : T.stop}
           </button>
         )}
         {shown.state === "running" && shown.kind === "command" && (

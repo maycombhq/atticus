@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BriefForm } from "../BriefForm.js";
 import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
-import { inAppWords } from "../../app/app-words.js";
+import { inAppWords, nextStepWords } from "../../app/app-words.js";
 import { message } from "../run/shared.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
@@ -119,7 +119,7 @@ export function GateHeader(p: {
               {s.handoff && isManualLink(s.handoff.pr.url) ? (
                 <ManualHandoff phase={s.handoff.phase} />
               ) : (
-                s.nextStep
+                nextStepWords(s.nextStep, s.stepFirst)
               )}
               {/* Beta.27 review: the step that comes first, with its button, is on At a glance. */}
               {s.stepFirst && (
@@ -178,7 +178,7 @@ export function GateHeader(p: {
               <RaiseHandoff
                 change={p.id}
                 blockers={s.blockers.length}
-                {...(s.stepFirst ? { first: s.nextStep } : {})}
+                {...(s.stepFirst ? { first: nextStepWords(s.nextStep, true) } : {})}
                 onDone={done}
                 act={act}
               />

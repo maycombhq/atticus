@@ -268,8 +268,10 @@ export const COPY = {
       notSent: "NOT SENT YET",
       notSentTo: (owner: string, channel: string) =>
         `Not sent to ${owner} yet. Send it by ${channel} below, or copy the question and ask them; then record their answer here.`,
-      /** Review of the fix: the owner of a system nobody owns. */
+      /** Review of the fix: the owner of a system nobody owns (the line that says whose it is). */
       nobody: "Nobody owns it",
+      /** Beta.27 review, round 2: who a question nobody owns goes to, by its routed role. */
+      toRole: (role: string) => `the ${role}`,
       /** A team id no roles.yaml names, in words: team-ledger is "Ledger team". */
       teamWords: (name: string) => `${name} team`,
       overdue: "OVERDUE",
@@ -1808,6 +1810,9 @@ export const COPY = {
     noChangeTitle: "No change yet",
     /** Beta.27 review: no change reads, though one or more are there (their change.yaml doesn't). */
     noChangeReads: "No change reads",
+    /** Review of the fix: the words under "No change reads". */
+    noChangeReadsBody:
+      "No change reads: each one's change.yaml below doesn't. Fix it where it says, or start another with New change; the command line is under Or in a terminal.",
     /** UX review: the stage's work is on these pages. */
     /** Eighth UX walk: one path to write stories, the stories stage's Prepare; Breakdown reads. */
     openBreakdown: "Open Breakdown",
@@ -4191,6 +4196,9 @@ export const COPY = {
     run: "Run the upgrade",
     running: "Upgrading…",
     done: "Upgraded. Propose the changed files for review.",
+    /** Beta.27 review: the run changed nothing to propose but the stamp. */
+    doneStampOnly:
+      "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): nothing else waits to be proposed.",
     failed: "The upgrade stopped.",
     terminal: "Or in a terminal:",
   },
@@ -5173,6 +5181,12 @@ export const COPY = {
     } as Record<string, string>,
     // Beta.27 review: a run that refused (a scan's safety stop) neither did its work nor failed.
     refused: "refused: nothing written",
+    /** Beta.27 review: a job of an earlier run of the app, running when that app closed. */
+    appClosedState: "stopped when the app closed",
+    appClosed:
+      "The app closed (or restarted) while this ran, so it stopped there. Its lines up to then are below; start it again from where you started it.",
+    /** Beta.27 review: Stop was asked and the job is ending. */
+    stoppingState: "stopping…",
     from: (where: string) => `from ${where}`,
     at: (time: string) => `at ${time}`,
     exitCode: (code: number) => `exit code ${code}`,
@@ -6678,6 +6692,13 @@ export const COPY = {
       sending: "Sending…",
       sent: (owner: string) => `Sent to ${owner}. Record their answer here when it comes.`,
       again: (owner: string) => `Send to ${owner} again`,
+      // Beta.27 review, round 2: sent is on file in the question's own record, for everyone.
+      already: (owner: string) =>
+        `It was already sent to ${owner} (its record in the metarepo says so), so it wasn't sent twice. Send it again only if they need it once more.`,
+      confirmAgain: (owner: string, on?: string) =>
+        `It was sent${on ? ` on ${on}` : ""}. Send it to ${owner} again?`,
+      yesAgain: "Yes, send it again",
+      cancel: "Cancel",
       step: "Notifications are manual here: sending it is a step for you on Home › Manual steps.",
       notSent: (why: string) => `Not sent: ${why}`,
     },

@@ -277,6 +277,18 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
               why: "No notifications are set up here (runtime.yaml adapters.notify): copy the question and ask the owner, then record what they said.",
             }),
           };
+        const { recordedSendAt, recordOwnerSend } = await import("./owner-questions.js");
+        // Beta.27 review, round 2: a question whose own record says sent (from this machine or
+        // another person's, merged) goes again through a live notifier only on Send again.
+        if (n.kind === "live" && !q.finding && b.data.again !== true) {
+          const was = await recordedSendAt(root, q.id);
+          if (was)
+            throw new HttpError(
+              409,
+              "Already sent",
+              `${q.id} was sent to ${to} at ${was} (catalog/curated/ownerquestion/${q.id}.yaml): choose Send again to send it once more.`,
+            );
+        }
         if (n.kind === "live")
           requireConfirmation(ctx.confirmations, "owner-ask", q.id, b.data.confirmation);
         const team = (await readTeams(root)).teams.find((t) => t.id === to);
@@ -295,11 +307,15 @@ export function uiRolesRoutes(r: Router, ctx: ServerContext, deps: RolesDeps = {
             },
             { by: ctx.user.replace(/^@/, ""), at: stamp(now()), ref: `owner-ask:${q.id}` },
           );
-          // Review of the fix: sent is on file, so the card says Sent (and when) from now on.
-          if (n.kind !== "manual") {
-            const { recordOwnerAsk } = await import("./owner-questions.js");
-            await recordOwnerAsk(root, q.id, { at: stamp(now()), to }).catch(() => undefined);
-          }
+          // Review of the fix, round 2: sent (or a step for the person) is on file in the
+          // question's own record, so every machine says Sent once it is merged.
+          const file = await recordOwnerSend(root, q.id, {
+            by: ctx.user.replace(/^@/, ""),
+            at: stamp(now()),
+            to,
+            now: now(),
+          }).catch(() => undefined);
+          if (file) ctx.events.publish({ type: "file.changed", path: file });
           return {
             status: 200,
             body: Api.SentOwnerAsk.parse({

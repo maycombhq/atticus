@@ -6547,7 +6547,7 @@
     "/api/owner-questions/{id}/send": {
       "post": {
         "operationId": "sendOwnerQuestion",
-        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+        "summary": "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text. 3.11.0 (beta.27 review): a send (or a step) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first), and one whose record says sent is sent again through a live notifier only with `again` (409 otherwise)",
         "tags": [
           "questions"
         ],
@@ -6571,6 +6571,9 @@
                   "confirmation": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                  },
+                  "again": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -6621,6 +6624,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39891,6 +39904,12 @@
                 "files"
               ],
               "additionalProperties": false
+            }
+          },
+          "upgraded": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         },

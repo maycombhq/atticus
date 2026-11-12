@@ -332,7 +332,41 @@ describe("an owner question, sent", () => {
       (await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c2 })).body,
     ).toMatchObject({ state: "sent" });
     const again = Api.OwnerQuestionList.parse((await call("/api/owner-questions")).body);
-    expect(again.questions.find((x) => x.id === gap.id)?.sentAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(again.questions.find((x) => x.id === gap.id)?.sentAt).toBe(NOW);
+    // Round 2: the send is in the question's own record, shared with everyone who has the
+    // metarepo: without this machine's note it still says sent, and when.
+    const file = join(root, `catalog/curated/ownerquestion/${gap.id}.yaml`);
+    const rec = parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    expect(rec).toMatchObject({ questionState: "sent" });
+    expect((rec.evidence as unknown[])[0]).toEqual({
+      source: "manual",
+      by: "pat",
+      scannedAt: NOW,
+    });
+    await rm(join(root, ".index/owner-asks.json"), { force: true });
+    const shared = Api.OwnerQuestionList.parse((await call("/api/owner-questions")).body);
+    expect(shared.questions.find((x) => x.id === gap.id)?.sentAt).toBe(NOW);
+    // A second live send is refused (nothing posted), unless the person chose Send again.
+    const posted = notifier.sent.length;
+    const c3 = await confirmFor(srv, "owner-ask", gap.id);
+    const twice = await call(`/api/owner-questions/${gap.id}/send`, "POST", { confirmation: c3 });
+    expect(twice.status).toBe(409);
+    expect(String(twice.body.detail)).toMatch(/Send again/);
+    expect(notifier.sent.length).toBe(posted);
+    const c4 = await confirmFor(srv, "owner-ask", gap.id);
+    expect(
+      (
+        await call(`/api/owner-questions/${gap.id}/send`, "POST", {
+          confirmation: c4,
+          again: true,
+        })
+      ).body,
+    ).toMatchObject({ state: "sent" });
+    expect(notifier.sent.length).toBe(posted + 1);
+    // Send again still takes the person's confirmation.
+    expect(
+      (await call(`/api/owner-questions/${gap.id}/send`, "POST", { again: true })).status,
+    ).toBe(403);
   });
 });
 

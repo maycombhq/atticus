@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { confirmed } from "../../api/confirm.js";
 import { changeOf } from "../../app/screens.js";
+import { nextStepWords } from "../../app/app-words.js";
 import { GlanceLink, Panel, View } from "../../app/ui.js";
 import {
   ExportEvidence,
@@ -225,7 +226,7 @@ export function Detail({ id }: { id: string }) {
                   <span className="hud" style={{ marginRight: 8 }}>
                     {T.next}
                   </span>
-                  {r.status.nextStep}
+                  {nextStepWords(r.status.nextStep, r.status.stepFirst)}
                   {r.status.stepFirst && (
                     <>
                       {" "}

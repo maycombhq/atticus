@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useApi, useReloadOnFiles } from "../api/client.js";
+import { nextStepWords } from "../app/app-words.js";
 import { ExternalLink, GlanceLink, Panel, View } from "../app/ui.js";
 import { FilterBox, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { Table } from "./know/common.js";
@@ -51,14 +52,13 @@ const chip = (text: string, kind = "") => (
 );
 
 /**
- * A release row's hand-off: its PR's link and state. Seventh UX walk: a manual Git host's PR
- * isn't open until a person opens it, so it links to where that step waits, never manual://.
+ * Beta.27 review: a release row's next step; the step that comes first is on At a glance, and its
+ * reason is said in the app's words (`nextStepWords`).
  */
-/** Beta.27 review: a release row's next step; the step that comes first is on At a glance. */
 export function nextCell(r: AcrossRow) {
   return (
     <>
-      {s(r.nextStep)}
+      {nextStepWords(s(r.nextStep), r.stepFirst === true)}
       {r.stepFirst === true && (
         <>
           {" "}
@@ -69,6 +69,10 @@ export function nextCell(r: AcrossRow) {
   );
 }
 
+/**
+ * A release row's hand-off: its PR's link and state. Seventh UX walk: a manual Git host's PR
+ * isn't open until a person opens it, so it links to where that step waits, never manual://.
+ */
 export function handoffCell(h: { phase: string; pr: string; state: string } | undefined) {
   if (!h) return <span className="muted">{T.noneOpen}</span>;
   if (h.state === "open" && isManualLink(h.pr))

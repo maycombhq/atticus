@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -41,6 +41,7 @@ import {
   phaseGates,
   stageCommand,
   editSha,
+  keepPersonWritten,
   writeFileAtomic,
   wroteThis,
   type ChangeContext,
@@ -1935,7 +1936,11 @@ async function editedFiles(dir: string, loop: StageLoop, source: string): Promis
   return out;
 }
 
-/** Copy a person's edited files before anything is written: stage/<stage>-by-person/<n>/. */
+/**
+ * Copy a person's edited files before anything is written: stage/<stage>-by-person/<n>/. Review
+ * of the fix (beta.27): numbered as a forced draft's copies are (`keepPersonWritten`), at least
+ * the loop's iteration, so one never writes over the other's.
+ */
 async function keepFiles(
   dir: string,
   rel: string,
@@ -1943,14 +1948,10 @@ async function keepFiles(
   n: number,
   files: string[],
 ): Promise<string> {
-  const to = `stage/${stage}-by-person/${n}`;
-  for (const f of files) {
-    const from = join(dir, ...f.split("/"));
-    const dest = join(dir, ...to.split("/"), ...f.split("/"));
-    await mkdir(join(dest, ".."), { recursive: true });
-    await copyFile(from, dest).catch(() => undefined);
-  }
-  return `${rel}/${to}/`;
+  return (
+    (await keepPersonWritten(dir, rel, stage, files, { atLeast: n })) ??
+    `${rel}/stage/${stage}-by-person/${n}/`
+  );
 }
 
 /** A person's edited files as one text, each under its own path, for the next draft to start from. */

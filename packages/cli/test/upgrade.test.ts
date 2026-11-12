@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,14 @@ import { starterReviewText } from "@maycombhq/naysayer";
 import { GENERATED_MARK } from "@maycombhq/changes";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { doctorChecks } from "../src/doctor.js";
-import { proposePlan, scopeDirs } from "../src/propose.js";
-import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
+import {
+  proposePlan,
+  recordUpgraded,
+  relativeInside,
+  scopeDirs,
+  upgradedPaths,
+} from "../src/propose.js";
+import { contentOf, upgradeCheck, upgradeCommand } from "../src/upgrade.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 
@@ -679,5 +685,84 @@ describe("the upgrade panel's Propose (beta.27 review)", () => {
 
   it("is the stamp alone before any upgrade ran here", () => {
     expect(scopeDirs("/m", "upgrade")).toEqual([":(literal).atticus/metarepo.yaml"]);
+  });
+
+  it("forgets a path once it is committed, so a later edit isn't offered as the upgrade (review of the fix)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-upgrade-prune-"));
+    await mkdir(join(root, "org-pack"), { recursive: true });
+    await writeFile(join(root, "org-pack/runtime.yaml"), "schemaVersion: 1\n");
+    await writeFile(join(root, "org-pack/notes.md"), "notes\n");
+    git(root, "init", "-q", "-b", "main");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "before");
+    // The upgrade rewrote runtime.yaml and the notes, and kept both.
+    await writeFile(join(root, "org-pack/runtime.yaml"), "schemaVersion: 2\n");
+    await writeFile(join(root, "org-pack/notes.md"), "notes, upgraded\n");
+    await recordUpgraded(root, { add: ["org-pack/runtime.yaml", "org-pack/notes.md"] });
+    expect((await proposePlan(root, "upgrade")).files.map((f) => f.path)).toEqual([
+      "org-pack/notes.md",
+      "org-pack/runtime.yaml",
+    ]);
+    // The person commits runtime.yaml themselves and puts the notes back as they were.
+    git(root, "add", "org-pack/runtime.yaml");
+    git(root, "commit", "-q", "-m", "the upgrade's runtime.yaml");
+    git(root, "checkout", "--", "org-pack/notes.md");
+    expect((await proposePlan(root, "upgrade")).files).toEqual([]);
+    expect(upgradedPaths(root)).toEqual([]);
+    // Later, Settings writes runtime.yaml: the person's edit, never offered under Upgrade.
+    await writeFile(join(root, "org-pack/runtime.yaml"), "schemaVersion: 2\nadapters: {}\n");
+    expect((await proposePlan(root, "upgrade")).files).toEqual([]);
+    expect(scopeDirs(root, "upgrade")).toEqual([":(literal).atticus/metarepo.yaml"]);
+  });
+
+  it("skips a kept path that is absolute or climbs out, and the panel still answers (review of the fix)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-upgrade-bad-"));
+    await mkdir(join(root, ".index"), { recursive: true });
+    await writeFile(
+      join(root, ".index/upgraded.json"),
+      JSON.stringify({
+        files: [
+          "/etc/hosts",
+          "C:/Windows/win.ini",
+          "c:relative",
+          "\\\\server\\share\\x",
+          "\\rooted",
+          "../outside",
+          "org-pack/../../outside",
+          "org-pack\\..\\x",
+          "..",
+          5,
+          null,
+          "",
+          "org-pack/runtime.yaml",
+          "org-pack\\notes.md",
+        ],
+      }),
+    );
+    expect(upgradedPaths(root)).toEqual(["org-pack/runtime.yaml", "org-pack/notes.md"]);
+    expect(relativeInside("a/..b/c")).toBe(true);
+    await writeFile(join(root, ".index/upgraded.json"), "null");
+    expect(upgradedPaths(root)).toEqual([]);
+    await writeFile(join(root, ".index/upgraded.json"), '{"files": "org-pack"}');
+    expect(upgradedPaths(root)).toEqual([]);
+    // What a run changed is read without following a link (review of the fix): a link to a
+    // folder above can't loop, and one out of the metarepo is never read.
+    await mkdir(join(root, "org-pack/sub"), { recursive: true });
+    await writeFile(join(root, "org-pack/sub/a.yaml"), "a: 1\n");
+    const outside = await mkdtemp(join(tmpdir(), "atticus-upgrade-outside-"));
+    await writeFile(join(outside, "secret.txt"), "not the metarepo's\n");
+    let linked = true;
+    try {
+      await symlink(join(root, "org-pack"), join(root, "org-pack/sub/up"), "junction");
+      await symlink(join(outside, "secret.txt"), join(root, "org-pack/sub/out.txt"));
+    } catch {
+      linked = false; // Windows without the right to make links: nothing to test.
+    }
+    const seen = await contentOf(root, ["org-pack/sub"]);
+    expect([...seen.keys()]).toEqual(["org-pack/sub/a.yaml"]);
+    if (linked) expect(await contentOf(root, ["org-pack/sub/out.txt"])).toEqual(new Map());
+    // A bad path from a run is never kept either.
+    await recordUpgraded(root, { add: ["/etc/hosts", "../x", "org-pack/a.yaml"] });
+    expect(upgradedPaths(root)).toEqual(["org-pack/a.yaml"]);
   });
 });

@@ -34,6 +34,8 @@ export function UpgradeOfferView(p: {
       </div>
     );
   if (!view.pending.length && run.state !== "done") return null;
+  // Beta.27 review: what the upgrade keeps to propose besides its stamp (an older server: some).
+  const proposable = (view.upgraded?.length ?? 1) > 0;
   return (
     // Beta.27 review: the panel's words read left to right; .state centres an empty page's line.
     <section
@@ -74,7 +76,9 @@ export function UpgradeOfferView(p: {
       )}
       {(run.state === "done" || run.state === "failed") && (
         <div role={run.state === "done" ? "status" : "alert"}>
-          <p style={{ margin: 0 }}>{run.state === "done" ? U.done : U.failed}</p>
+          <p style={{ margin: 0 }}>
+            {run.state === "failed" ? U.failed : proposable ? U.done : U.doneStampOnly}
+          </p>
           {run.lines.length > 0 && (
             <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
               {run.lines.join("\n")}
@@ -82,8 +86,9 @@ export function UpgradeOfferView(p: {
           )}
         </div>
       )}
-      {/* Beta.27 review: "Propose the changed files for review" with the button that does it. */}
-      {run.state === "done" && <Propose scope="upgrade" onDone={workChanged} />}
+      {/* Beta.27 review: "Propose the changed files for review" with the button that does it;
+          none when the upgrade changed nothing to propose but its stamp. */}
+      {run.state === "done" && proposable && <Propose scope="upgrade" onDone={workChanged} />}
     </section>
   );
 }

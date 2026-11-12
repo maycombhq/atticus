@@ -833,8 +833,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // it changes; the changes are files to propose for review like any other.
       // beta.23: every migration's dry run reads every record and question; Home asks this on
       // each load, so the answer is kept until a change is heard (watched-memo.ts).
-      .add("GET", "/api/upgrade", async () =>
-        keptAnswer(root, "upgrade", async () => {
+      .add("GET", "/api/upgrade", async () => {
+        const r = await keptAnswer(root, "upgrade", async () => {
           const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
           const c = await upgradeCheck(root);
           // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
@@ -846,8 +846,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             pending: c.pending,
           };
           return { status: 200, body };
-        }),
-      )
+        });
+        // Beta.27 review: read each time (a file in .index, which no watcher hears): what the
+        // upgrade's Propose would carry besides its stamp; none, and the panel offers no Propose.
+        const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
+        const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
+        return { ...r, body: { ...r.body, upgraded } };
+      })
       .add("POST", "/api/upgrade", async () => {
         const { newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");

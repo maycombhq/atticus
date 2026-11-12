@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { confirmed } from "../api/confirm.js";
 import type { Api } from "@maycombhq/core";
-import { api, type Loaded } from "../api/client.js";
+import { api, ApiError, type Loaded } from "../api/client.js";
 import { Propose } from "../app/propose.js";
 import { View } from "../app/ui.js";
 import { COPY } from "../copy.js";
@@ -96,19 +96,28 @@ export function SendOwnerQuestion({
   id,
   owner,
   again = false,
+  sentOn,
   onSent,
 }: {
   id: string;
   owner: string;
   /** Beta.27 review: already sent: sending again is the secondary choice; not, it is the main one. */
   again?: boolean;
+  /** The day it was sent, when known, for Send again's question. */
+  sentOn?: string;
   /** Review of the fix: sent, when (the card then says Sent). */
   onSent?: (at: string) => void;
 }) {
   const S = COPY.roleWork.send;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string }>();
-  const send = async () => {
+  // Review of the fix, round 2: the question's record says it was sent (another person's send,
+  // merged) though this page didn't know: the server refused, and Send again is offered.
+  const [already, setAlready] = useState(false);
+  // Send again asks first: it posts the same question to the owner once more.
+  const [asking, setAsking] = useState(false);
+  const isAgain = again || already;
+  const send = async (resend: boolean) => {
     setBusy(true);
     setNote(undefined);
     try {
@@ -117,10 +126,10 @@ export function SendOwnerQuestion({
         `/api/owner-questions/${encodeURIComponent(id)}/send`,
         {
           method: "POST",
-          body: c,
+          body: { ...c, ...(resend ? { again: true } : {}) },
         },
       );
-      if (r.state === "sent") onSent?.(new Date().toISOString());
+      if (r.state === "sent" || r.state === "step") onSent?.(new Date().toISOString());
       setNote(
         r.state === "sent"
           ? { ok: true, text: S.sent(owner) }
@@ -129,7 +138,10 @@ export function SendOwnerQuestion({
             : { ok: false, text: S.notSent(r.why ?? "") },
       );
     } catch (err) {
-      setNote({ ok: false, text: message(err) });
+      if (err instanceof ApiError && err.problem.status === 409) {
+        setAlready(true);
+        setNote({ ok: false, text: S.already(owner) });
+      } else setNote({ ok: false, text: message(err) });
     } finally {
       setBusy(false);
     }
@@ -138,12 +150,32 @@ export function SendOwnerQuestion({
     <div className="qs-group-btns">
       <button
         type="button"
-        className={again ? "btn" : "btn primary"}
-        disabled={busy}
-        onClick={() => void send()}
+        className={isAgain ? "btn" : "btn primary"}
+        disabled={busy || asking}
+        onClick={() => (isAgain ? setAsking(true) : void send(false))}
       >
-        {busy ? S.sending : again ? S.again(owner) : S.button(owner)}
+        {busy ? S.sending : isAgain ? S.again(owner) : S.button(owner)}
       </button>
+      {asking && (
+        <span role="group" aria-label={S.again(owner)} className="qs-group-btns">
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            {S.confirmAgain(owner, sentOn)}
+          </span>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              setAsking(false);
+              void send(true);
+            }}
+          >
+            {S.yesAgain}
+          </button>
+          <button type="button" className="btn" onClick={() => setAsking(false)}>
+            {S.cancel}
+          </button>
+        </span>
+      )}
       {note && (
         <span
           role={note.ok ? "status" : "alert"}
@@ -186,6 +218,9 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
   const q = p.q;
   // Beta.27 review: the team's name and the channel in words, and the state the API says.
   const who = ownerWords(q.owner, q.ownerName);
+  // Beta.27 review, round 2: a system nobody owns goes to the role it is routed to ("the
+  // architect"); "Nobody owns it" is for the line that says whose it is, never a recipient.
+  const to = q.owner === "unassigned" && q.routeTo ? O.toRole(q.routeTo) : who;
   const by = O.channels[q.channel] ?? q.channel;
   // Review of the fix: sent only when it was: a send on file (sentAt) or one from this card.
   const [sentNow, setSentNow] = useState<string>();
@@ -245,10 +280,10 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
       {shown.state !== "answered" && (
         <span className="qs-card-line">
           {shown.state === "overdue"
-            ? O.overdueTo(who, by, localDay(sentAt))
+            ? O.overdueTo(to, by, localDay(sentAt))
             : sentAt
-              ? O.sentTo(who, by, localDay(sentAt))
-              : O.notSentTo(who, by)}
+              ? O.sentTo(to, by, localDay(sentAt))
+              : O.notSentTo(to, by)}
         </span>
       )}
       {q.routeTo && <span className="qs-card-line">{O.routeTo(q.routeTo)}</span>}
@@ -272,8 +307,9 @@ export function OwnerQuestionCard(p: { q: Api.OwnerQuestionViewT; onAnswered: ()
       {shown.state !== "answered" && (
         <SendOwnerQuestion
           id={q.id}
-          owner={who}
+          owner={to}
           again={!!sentAt || shown.state === "overdue"}
+          {...(localDay(sentAt) ? { sentOn: localDay(sentAt)! } : {})}
           onSent={setSentNow}
         />
       )}

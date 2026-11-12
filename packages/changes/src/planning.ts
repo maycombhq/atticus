@@ -19,7 +19,10 @@ export const PLANNING_FILES = ["stories.md", "tasks.md", "requests.md"] as const
  * Windows saving the file) don't make it a person's.
  */
 export const isGenerated = (text: string): boolean =>
-  text.replace(/^\uFEFF/, "").trimStart().startsWith(GENERATED_MARK);
+  text
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .startsWith(GENERATED_MARK);
 
 /** Of `rels` (relative to the change folder `dir`), those that exist without the generated mark. */
 export async function personWritten(dir: string, rels: readonly string[]): Promise<string[]> {
@@ -33,26 +36,31 @@ export async function personWritten(dir: string, rels: readonly string[]): Promi
 
 /**
  * Beta.27 review: before a forced draft replaces files a person wrote, a copy of each, in the
- * change folder's `stage/<stage>-by-person/<n>/` (a new n each time, as the stage loop keeps a
- * person's edits). Returns that folder, metarepo-relative (`rel` is the change folder's), or
- * nothing when there was nothing to keep.
+ * change folder's `stage/<stage>-by-person/<n>/`. Returns that folder, metarepo-relative (`rel`
+ * is the change folder's), or nothing when there was nothing to keep. Review of the fix: the one
+ * numbering of those copies, the stage loop's too (it keeps a person's edits there before a
+ * redraft): n is the next one no copy took, and at least `atLeast` (the loop's iteration), so
+ * no copy ever lands in another's folder. A file the person deleted has nothing to copy.
  */
 export async function keepPersonWritten(
   dir: string,
   rel: string,
   stage: string,
   files: readonly string[],
+  o: { atLeast?: number } = {},
 ): Promise<string | undefined> {
   if (!files.length) return undefined;
   const base = join(dir, "stage", `${stage}-by-person`);
   const taken = (await readdir(base).catch(() => [] as string[]))
     .map((n) => Number(n))
     .filter((n) => Number.isInteger(n) && n > 0);
-  const n = Math.max(0, ...taken) + 1;
+  const n = Math.max(Math.max(0, ...taken) + 1, Math.floor(o.atLeast ?? 1));
   for (const f of files) {
     const dest = join(base, String(n), ...f.split("/"));
     await mkdir(dirname(dest), { recursive: true });
-    await copyFile(join(dir, ...f.split("/")), dest);
+    await copyFile(join(dir, ...f.split("/")), dest).catch((e: NodeJS.ErrnoException) => {
+      if (e.code !== "ENOENT") throw e;
+    });
   }
   return `${rel}/stage/${stage}-by-person/${n}/`;
 }

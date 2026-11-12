@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -511,15 +511,17 @@ const STAMP_REL = STAMP_FILE.split(sep).join("/");
 
 /**
  * Beta.27 review: each file under the given paths (a file, or a folder read whole), by its
- * content's hash, metarepo-relative and "/"-separated. A path that isn't there has none.
+ * content's hash, metarepo-relative and "/"-separated. A path that isn't there has none. Review
+ * of the fix: a link (symbolic, or a Windows junction) is skipped, never followed, so a link to
+ * a folder above can't loop and one out of the metarepo is never read.
  */
-async function contentOf(root: string, paths: string[]): Promise<Map<string, string>> {
+export async function contentOf(root: string, paths: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const walk = async (rel: string): Promise<void> => {
     if (out.has(rel)) return;
     const abs = join(root, ...rel.split("/"));
-    const s = await stat(abs).catch(() => undefined);
-    if (!s) return;
+    const s = await lstat(abs).catch(() => undefined);
+    if (!s || s.isSymbolicLink()) return;
     if (s.isDirectory()) {
       for (const e of (await readdir(abs)).sort()) await walk(`${rel}/${e}`);
       return;

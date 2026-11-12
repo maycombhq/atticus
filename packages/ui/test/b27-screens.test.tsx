@@ -13,6 +13,7 @@ import {
   ANNOUNCE_AFTER_MS,
   boxFocused,
   FIT_MIN_ZOOM,
+  keyboardFocus,
 } from "../src/screens/architecture/Canvas.js";
 import { WORDS } from "../src/screens/architecture/words.js";
 import { stageMark } from "../src/screens/work/Cockpit.js";
@@ -30,14 +31,15 @@ import { moreMenuKey, tabsOutOfView } from "../src/app/shell/TabStrip.js";
 import { manifestEmpty } from "../src/app/shell/Explorer.js";
 import { UpgradeOfferView } from "../src/app/upgrade.js";
 import { onboardingStep } from "../src/screens/work/next.js";
-import { noChangeTitle } from "../src/screens/work/RunNext.js";
+import { noChangeBody, noChangeTitle } from "../src/screens/work/RunNext.js";
 import { byStage, homeStatus, waitingWords } from "../src/screens/CommandCenter.js";
 import { phaseWord } from "../src/screens/home/HomePanels.js";
 import { BrokenChangesView } from "../src/screens/work/BrokenChanges.js";
 import { problemsOf } from "../src/app/shell/BottomPanel.js";
 import { estateLabels, pageLabel, pinnedItems } from "../src/app/shell/explorer-model.js";
-import { stateWords } from "../src/app/activity.js";
+import { isStopping, stateWords } from "../src/app/activity.js";
 import { nextCell } from "../src/screens/Across.js";
+import { nextStepWords, sentenceInAppWords } from "../src/app/app-words.js";
 
 /**
  * Beta.27 review of the screens, over invented Forge names: the stage state a person's planning
@@ -136,6 +138,38 @@ describe("4: one next step", () => {
       /aria-describedby=\{\s*s\.blockers\.length > 0 \|\| s\.stepFirst \? heldId/,
     );
     expect(src).not.toMatch(/title=\{\s*s\.blockers\.length > 0/);
+  });
+
+  it("says the step that comes first in the app's words on every page but At a glance (review of the fix)", () => {
+    const row = { change: "add-transfer-limit", changeTitle: "", changeState: "plan" };
+    const said = [
+      'Not ready to raise "Plan ready" yet: first, add-transfer-limit adds a new flow, and its starting spec adds it too.',
+      "Then run the change's stories stage again (atticus plan stories add-transfer-limit) so it modifies the seeded requirement (ADR 0156).",
+      "Raise each need, then record it with atticus needs done add-transfer-limit <item>.",
+      "Or run `atticus plan stories add-transfer-limit` again.",
+    ].join(" ");
+    const held = renderToStaticMarkup(<>{nextCell({ ...row, nextStep: said, stepFirst: true })}</>);
+    expect(held).not.toMatch(/atticus [a-z]/);
+    expect(held).not.toMatch(/\(ADR \d{4}\)/);
+    expect(held).toContain("so it modifies the seeded requirement.");
+    expect(held).toContain("then record it.");
+    expect(sentenceInAppWords("Atticus checks it (ADR 0101).")).toBe("Atticus checks it.");
+    expect(sentenceInAppWords("Write the brief: run atticus change feature x.")).toBe(
+      "Write the brief.",
+    );
+    // When nothing comes first, the sentence is as the server said it.
+    expect(nextStepWords('Ready to raise "Plan ready".')).toBe('Ready to raise "Plan ready".');
+    // Changes, the brief's Gate (and its held Raise hand-off), Across and Release say it so.
+    for (const [file, re] of [
+      ["../src/screens/Changes.tsx", /nextStepWords\(s\.nextStep, s\.stepFirst\)/],
+      ["../src/screens/know/Phase.tsx", /nextStepWords\(s\.nextStep, s\.stepFirst\)/],
+      ["../src/screens/know/Phase.tsx", /first: nextStepWords\(s\.nextStep, true\)/],
+      [
+        "../src/screens/run/Release.tsx",
+        /nextStepWords\(r\.status\.nextStep, r\.status\.stepFirst\)/,
+      ],
+    ] as const)
+      expect(readFileSync(new URL(file, import.meta.url), "utf8")).toMatch(re);
   });
 });
 
@@ -264,24 +298,65 @@ describe("8: a box reached by the keyboard shows its focus", () => {
         getAttribute: (a: string) => (a === "data-id" ? "ledger-api" : null),
       });
     const centred: string[] = [];
+    const keys = { keyboard: true };
     // Out of view (below): the wrapper's scroll is undone and the view pans to it.
     expect(
-      boxFocused(node({ left: 10, top: 500, right: 120, bottom: 540 }), stageEl, (id) =>
-        centred.push(id),
+      boxFocused(
+        node({ left: 10, top: 500, right: 120, bottom: 540 }),
+        stageEl,
+        (id) => centred.push(id),
+        keys,
       ),
     ).toBe(true);
     expect([wrapper.scrollTop, wrapper.scrollLeft]).toEqual([0, 0]);
     expect(centred).toEqual(["ledger-api"]);
+    // Review of the fix: a click's focus (no keyboard) puts the scroll back and never pans.
+    wrapper.scrollTop = 90;
+    expect(
+      boxFocused(node({ left: 10, top: 500, right: 120, bottom: 540 }), stageEl, (id) =>
+        centred.push(id),
+      ),
+    ).toBe(false);
+    expect(wrapper.scrollTop).toBe(0);
+    expect(centred).toEqual(["ledger-api"]);
     // In view: nothing moves.
     expect(
-      boxFocused(node({ left: 10, top: 10, right: 120, bottom: 50 }), stageEl, (id) =>
-        centred.push(id),
+      boxFocused(
+        node({ left: 10, top: 10, right: 120, bottom: 50 }),
+        stageEl,
+        (id) => centred.push(id),
+        keys,
       ),
     ).toBe(false);
     expect(centred).toEqual(["ledger-api"]);
     // Not a box (a button in the tools): left alone.
     const button = el({ closest: () => null });
-    expect(boxFocused(button, stageEl, () => centred.push("x"))).toBe(false);
+    expect(boxFocused(button, stageEl, () => centred.push("x"), keys)).toBe(false);
+  });
+
+  it("tells the keyboard's focus by :focus-visible, and the canvas pans only for it (review of the fix)", () => {
+    const el = (m: (s: string) => boolean) => ({ matches: m }) as unknown as Element;
+    expect(keyboardFocus(el((s) => s === ":focus-visible"))).toBe(true);
+    expect(keyboardFocus(el(() => false))).toBe(false);
+    // A browser (or jsdom) that can't parse :focus-visible: not the keyboard.
+    expect(
+      keyboardFocus(
+        el(() => {
+          throw new SyntaxError("unknown pseudo-class");
+        }),
+      ),
+    ).toBe(false);
+    expect(keyboardFocus({} as Element)).toBe(false);
+    const src = readFileSync(
+      new URL("../src/screens/architecture/Canvas.tsx", import.meta.url),
+      "utf8",
+    );
+    // Never during a drag or with a pointer down, and no animated pan mid-drag.
+    expect(src).toMatch(
+      /keyboard: !pointerDown\.current && !dragging\.current && keyboardFocus\(t\)/,
+    );
+    expect(src).toMatch(/onNodeDragStart=\{\(\) => \{\s*dragging\.current = true;/);
+    expect(src).toMatch(/if \(!i \|\| !n \|\| dragging\.current\) return;/);
   });
 
   it("announces the boxes out of view once the view settles, not at every step of a pan", () => {
@@ -359,6 +434,10 @@ describe("12: a change whose change.yaml doesn't read", () => {
     expect(noChangeTitle(0)).toBe(COPY.work.noChangeTitle);
     expect(noChangeTitle(1)).toBe("No change reads");
     expect(noChangeTitle(1, "Pick one")).toBe("Pick one");
+    // The words under the title agree with it.
+    expect(noChangeBody(1)).toBe(COPY.work.noChangeReadsBody);
+    expect(noChangeBody(1)).toMatch(/^No change reads/);
+    expect(noChangeBody(0)).toBe(COPY.work.noChangeYet);
   });
 });
 
@@ -374,8 +453,22 @@ describe("13: Questions opens on the kind that has questions", () => {
 
 describe("14: a scan that refused", () => {
   it("reads as refused, nothing written, never failed", () => {
-    expect(stateWords("done", "app", undefined, undefined, "refused")).toBe(COPY.activity.refused);
-    expect(stateWords("failed", "app")).toBe(COPY.activity.states.failed);
+    expect(stateWords({ state: "done", where: "app", outcome: "refused" })).toBe(
+      COPY.activity.refused,
+    );
+    expect(stateWords({ state: "failed", where: "app" })).toBe(COPY.activity.states.failed);
+    // Merge prep: fix/b27-plumbing's object form, its words for an app run's end and a stop.
+    expect(stateWords({ state: "done" })).toBe(COPY.activity.states.done);
+    expect(stateWords({ state: "ended", where: "app" })).toBe(COPY.activity.appClosedState);
+    expect(stateWords({ state: "running", stopping: true })).toBe(COPY.activity.stoppingState);
+    // Refused comes first, whatever else the entry says.
+    expect(stateWords({ state: "running", stopping: true, outcome: "refused" })).toBe(
+      COPY.activity.refused,
+    );
+    const e = { id: "job-1", state: "running" } as Parameters<typeof isStopping>[1];
+    expect(isStopping({ stopping: "job-1" }, e)).toBe(true);
+    expect(isStopping({}, { ...e, stopping: true })).toBe(true);
+    expect(isStopping({}, { ...e, state: "done", stopping: true })).toBe(false);
     expect(problemsOf({ entries: [] }).failed).toEqual([]);
   });
 });
@@ -399,6 +492,24 @@ describe("17: the upgrade panel", () => {
     );
     expect(done).toContain(esc(COPY.upgrade.done));
     expect(done).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
+    // Review of the fix: the upgrade keeps only its stamp to propose: no Propose, said why.
+    const stampOnly = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={{ ...view, pending: [], upgraded: [] }}
+        run={{ state: "done", lines: [] }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(stampOnly).toContain(esc(COPY.upgrade.doneStampOnly));
+    expect(stampOnly).not.toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
+    const withFiles = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={{ ...view, pending: [], upgraded: ["org-pack/runtime.yaml"] }}
+        run={{ state: "done", lines: [] }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(withFiles).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
   });
 });
 

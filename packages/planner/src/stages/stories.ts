@@ -43,6 +43,7 @@ import {
   writeFileAtomic,
   wroteThis,
   keepPersonWritten,
+  isGenerated,
   personWrittenPlanning,
   type ChangeContext,
 } from "@maycombhq/changes";
@@ -3713,7 +3714,7 @@ export async function writeStories(
   for (const f of await readdir(join(dir, "stories")).catch(() => [] as string[])) {
     if (keep.has(f) || !f.endsWith(".md")) continue;
     const text = await readFile(join(dir, "stories", f), "utf8");
-    if (!text.startsWith(GENERATED_MARK)) continue;
+    if (!isGenerated(text)) continue;
     const h = wrote.get(`stories/${f}`);
     if (h && ![...h].some((x) => wroteThis(`stories/${f}`, text, x))) {
       extras.notes?.push(
@@ -3733,10 +3734,7 @@ export async function writeStories(
   });
   // B-short: the task prompt files Atticus wrote before go; this run writes the current ones.
   for (const p of await readdir(join(dir, "tasks")).catch(() => [] as string[]))
-    if (
-      p.endsWith(".prompt.md") &&
-      (await readFile(join(dir, "tasks", p), "utf8")).startsWith(GENERATED_MARK)
-    )
+    if (p.endsWith(".prompt.md") && isGenerated(await readFile(join(dir, "tasks", p), "utf8")))
       await rm(join(dir, "tasks", p));
   // ADR 0006 addendum: the OpenSpec specs the stories make, and the proposal naming them.
   const spec = await openspecFiles(root, change, stories, a, extras.estate);

@@ -257,6 +257,10 @@ export function PickAChange({ bare = false }: { bare?: boolean }) {
 export const noChangeTitle = (broken: number, title?: string): string =>
   title ?? (broken > 0 ? COPY.work.noChangeReads : COPY.work.noChangeTitle);
 
+/** Review of the fix: the words under the title agree with it ("No change reads", or yet). */
+export const noChangeBody = (broken: number): string =>
+  broken > 0 ? COPY.work.noChangeReadsBody : COPY.work.noChangeYet;
+
 export function NoChangeYet({ title }: { title?: string }) {
   const W = COPY.work;
   const broken = useApi<Api.ChangeProblemsT>(CHANGE_PROBLEMS_URL);
@@ -267,7 +271,7 @@ export function NoChangeYet({ title }: { title?: string }) {
       <h2 id={id} className="h">
         {noChangeTitle(broken.state === "ready" ? broken.data.length : 0, title)}
       </h2>
-      <p className="work-why">{W.noChangeYet}</p>
+      <p className="work-why">{noChangeBody(broken.state === "ready" ? broken.data.length : 0)}</p>
       <BrokenChangesView of={broken} />
       <NewChange />
       <details className="work-terminal">

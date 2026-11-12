@@ -3,7 +3,13 @@ import { basename, join } from "node:path";
 import { parse, stringify } from "yaml";
 import { changesRelOf, type ChangeLifecycle } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
-import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import {
+  changeFolder,
+  changeStore,
+  isGenerated,
+  loadChangeContext,
+  writeFileAtomic,
+} from "@maycombhq/changes";
 import { changeInputSources } from "@maycombhq/intake";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
@@ -131,7 +137,9 @@ async function personStories(dir: string): Promise<{ file: string; text: string 
   for (const f of (await readdir(join(dir, "stories")).catch(() => [] as string[])).sort()) {
     if (!f.endsWith(".md")) continue;
     const text = await readFile(join(dir, "stories", f), "utf8");
-    if (!text.startsWith(GENERATED_MARK)) out.push({ file: `stories/${f}`, text });
+    // Review of the fix (beta.27): the generated mark as every reader tests it (a BOM, or
+    // whitespace before it, doesn't make the file a person's).
+    if (!isGenerated(text)) out.push({ file: `stories/${f}`, text });
   }
   return out;
 }

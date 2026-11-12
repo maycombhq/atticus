@@ -70,6 +70,24 @@ describe("planning files a person wrote", () => {
       `${rel}/stage/stories-by-person/2/`,
     );
     expect(await keepPersonWritten(dir, rel, "stories", [])).toBeUndefined();
+    // Review of the fix: the stage loop's copies share the numbering (at least its iteration),
+    // so a forced draft's copy and the loop's never land in one folder.
+    expect(await keepPersonWritten(dir, rel, "stories", ["stories.md"], { atLeast: 1 })).toBe(
+      `${rel}/stage/stories-by-person/3/`,
+    );
+    expect(await keepPersonWritten(dir, rel, "stories", ["stories.md"], { atLeast: 6 })).toBe(
+      `${rel}/stage/stories-by-person/6/`,
+    );
+    expect(await keepPersonWritten(dir, rel, "stories", ["stories.md"])).toBe(
+      `${rel}/stage/stories-by-person/7/`,
+    );
+    // The first copy is still what it was.
+    expect(await readFile(join(dir, "stage/stories-by-person/1/stories.md"), "utf8")).toBe(stories);
+    // A file the person deleted has nothing to copy; the others are kept.
+    expect(await keepPersonWritten(dir, rel, "stories", ["gone.md", "stories.md"])).toBe(
+      `${rel}/stage/stories-by-person/8/`,
+    );
+    expect(await readFile(join(dir, "stage/stories-by-person/8/stories.md"), "utf8")).toBe(stories);
   });
 
   it("stand for the stories stage's work, and the stages the change passed read as skipped", async () => {

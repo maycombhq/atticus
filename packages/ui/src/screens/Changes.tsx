@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, callAsJob, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
+import { nextStepWords } from "../app/app-words.js";
 import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
@@ -67,7 +68,8 @@ export interface Status {
   nextStep: string;
   /**
    * Beta.27 review (API 3.11.0): nothing in the gate's checks blocks, yet another step comes
-   * first, as At a glance says it (`nextStep` is At a glance's sentence too).
+   * first. `nextStep` then names that step's reason (At a glance says "the step below" instead),
+   * which the page says in the app's words (`nextStepWords`).
    */
   stepFirst?: boolean;
   risk: { level: string; score: number };
@@ -652,7 +654,7 @@ function Detail({ id }: { id: string }) {
                         {s.handoff && isManualLink(s.handoff.pr.url) ? (
                           <ManualHandoff phase={s.handoff.phase} />
                         ) : (
-                          s.nextStep
+                          nextStepWords(s.nextStep, s.stepFirst)
                         )}
                         {/* Beta.27 review: the step that comes first, with its button, is there. */}
                         {s.stepFirst && (

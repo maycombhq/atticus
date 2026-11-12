@@ -702,11 +702,15 @@ export function ArchitectureCanvas(p: {
   };
   const fitRef = useRef(fitNow);
   fitRef.current = fitNow;
+  /** A box is being dragged, or a pointer is down on the canvas (review of the fix). */
+  const dragging = useRef(false);
+  const pointerDown = useRef(false);
   /** The view panned to a box, at the zoom it has (a box Tab reached out of view). */
   const centerOn = (id: string) => {
     const i = rf.current;
     const n = i?.getInternalNode(id);
-    if (!i || !n) return;
+    // Review of the fix: never an animated pan while a box is dragged.
+    if (!i || !n || dragging.current) return;
     const { x, y } = n.internals.positionAbsolute;
     moved.current = true;
     void i.setCenter(x + (n.measured.width ?? 0) / 2, y + (n.measured.height ?? 0) / 2, {
@@ -912,12 +916,25 @@ export function ArchitectureCanvas(p: {
         className={`arch-canvas ${zoom < LABELS_FROM ? "far" : ""} ${lit ? "focusing" : ""}`}
         style={{ height: "100%", ...labelScale(zoom) }}
         aria-busy={state.state === "running"}
-        // Beta.27 review: a box Tab reaches out of view is panned to, never scrolled to.
+        // Beta.27 review: a box Tab reaches out of view is panned to, never scrolled to. Review
+        // of the fix: only the keyboard's focus pans; a click or a drag focuses a box too, and
+        // the view never moves under the pointer.
+        onPointerDownCapture={() => {
+          pointerDown.current = true;
+        }}
+        onPointerUpCapture={() => {
+          pointerDown.current = false;
+        }}
+        onPointerCancelCapture={() => {
+          pointerDown.current = false;
+        }}
         onFocusCapture={(e) => {
           const el = stage.current;
           if (!el) return;
           const t = e.target as Element;
-          boxFocused(t, el, centerOn);
+          boxFocused(t, el, centerOn, {
+            keyboard: !pointerDown.current && !dragging.current && keyboardFocus(t),
+          });
           // The browser may scroll the wrapper after the event: put it back on the next frame.
           requestAnimationFrame(() => boxFocused(t, el, () => undefined));
         }}
@@ -957,7 +974,11 @@ export function ArchitectureCanvas(p: {
             onNodeDoubleClick={(_, n) => {
               if (n.data.box.childCount > 0) p.onToggle(n.id);
             }}
+            onNodeDragStart={() => {
+              dragging.current = true;
+            }}
             onNodeDragStop={(_, n, dragged) => {
+              dragging.current = false;
               for (const d of dragged.length ? dragged : [n]) p.onMoved(d.id, d.position);
             }}
             nodesConnectable={!!p.onConnect}
@@ -1016,19 +1037,38 @@ export function ArchitectureCanvas(p: {
 }
 
 /**
+ * Review of the fix (beta.27): whether focus came from the keyboard, as the browser says it
+ * (`:focus-visible`: a click focuses a box without it). A browser that can't say: not.
+ */
+export function keyboardFocus(el: Element): boolean {
+  try {
+    return typeof el.matches === "function" && el.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Beta.27 review: Tab to a box outside the view made the browser scroll React Flow's
  * overflow-hidden wrapper to bring it in (React Flow 12.3 has no autoPanOnNodeFocus), so the
  * boxes and the pane under them went out of step until a reload. The scroll between the box and
- * the canvas is put back, and, when the box is out of view, `center` pans the view to it.
- * Whether it panned; nothing happens for focus on anything but a box.
+ * the canvas is put back on any focus, and, when the box is out of view and the keyboard brought
+ * focus there (`keyboard`, as the canvas tells it: never a click or a drag), `center` pans the
+ * view to it. Whether it panned; nothing happens for focus on anything but a box.
  */
-export function boxFocused(target: Element, stage: Element, center: (id: string) => void): boolean {
+export function boxFocused(
+  target: Element,
+  stage: Element,
+  center: (id: string) => void,
+  o: { keyboard?: boolean } = {},
+): boolean {
   const box = target.closest(".react-flow__node");
   if (!box || !stage.contains(box)) return false;
   for (let el = box.parentElement; el && el !== stage; el = el.parentElement) {
     if (el.scrollTop) el.scrollTop = 0;
     if (el.scrollLeft) el.scrollLeft = 0;
   }
+  if (!o.keyboard) return false;
   const r = box.getBoundingClientRect();
   const v = stage.getBoundingClientRect();
   const inView = r.left >= v.left && r.right <= v.right && r.top >= v.top && r.bottom <= v.bottom;

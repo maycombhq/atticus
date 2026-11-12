@@ -532,7 +532,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   in `files`) or `skipped`; a stage thread names
  *   `byPerson`. GET /api/change-problems lists the changes whose change.yaml doesn't read. An
  *   activity entry may say `outcome: refused`. An owner question carries `ownerName` and
- *   `sentAt`; propose takes scope `upgrade`. Additive only.
+ *   `sentAt` (from its own record's newest manual evidence, so every machine says Sent once the
+ *   record is merged); POST /api/owner-questions/{id}/send writes that record and takes `again`
+ *   (409 for a second live send without it); propose takes scope `upgrade`. Additive only.
  */
 export const API_VERSION = "3.11.0";
 export const DEFAULT_PORT = 4321;
@@ -3338,8 +3340,8 @@ export const OwnerQuestionView = z.object({
   /** 3.11.0 (beta.27 review): the owner's display name (teams.yaml), for a team named there. */
   ownerName: z.string().optional(),
   /**
-   * 3.11.0 (beta.27 review): when it was asked or sent (a send from this machine is on file),
-   * when that is. A gap's question with no `sentAt` wasn't sent, whatever `state` says (the
+   * 3.11.0 (beta.27 review): when it was asked or sent (a send is on file in the question's own
+   * record, catalog/curated/ownerquestion/<id>.yaml, for every machine), when that is. A gap's question with no `sentAt` wasn't sent, whatever `state` says (the
    * record's own state starts at `sent`).
    */
   sentAt: z.string().optional(),
@@ -4734,6 +4736,11 @@ export const UpgradeView = z.object({
   /** The Atticus that last upgraded it. */
   stamp: z.string().optional(),
   pending: z.array(z.object({ id: z.string(), summary: z.string(), files: z.array(z.string()) })),
+  /**
+   * 3.11.0 (beta.27 review): the paths the upgrades run here changed and nobody proposed or
+   * committed yet, besides the stamp: the upgrade panel offers its Propose only when one is.
+   */
+  upgraded: z.array(z.string()).optional(),
 });
 // ------------------------------------------------------------------ set up from the app (ADR 0190)
 
@@ -5482,7 +5489,15 @@ export type WorkItemSyncResultT = z.infer<typeof WorkItemSyncResult>;
  * person's confirmation (`owner-ask`, target the question's id). With manual notifications it is
  * a step for a person, as before.
  */
-export const SendOwnerAskRequest = z.strictObject({ confirmation: Confirmation.optional() });
+export const SendOwnerAskRequest = z.strictObject({
+  confirmation: Confirmation.optional(),
+  /**
+   * 3.11.0 (beta.27 review): the person chose Send again: a question whose own record says it
+   * was sent (by anyone, from any machine) is sent through a live notifier only then (409
+   * otherwise).
+   */
+  again: z.boolean().optional(),
+});
 export const SentOwnerAsk = z.object({
   /** sent: through the adapter; step: a manual step for a person; not-sent: why in `why`. */
   state: z.enum(["sent", "step", "not-sent"]),
@@ -6750,12 +6765,12 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "sendOwnerQuestion",
       summary:
-        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text",
+        "3.6.0 (ADR 0191): send the owner question through the notify adapter to its owner, on the person's `owner-ask` confirmation; with manual notifications it is a step for a person, and with none it says to copy the text. 3.11.0 (beta.27 review): a send (or a step) is written to the question's own record, catalog/curated/ownerquestion/<id>.yaml (`questionState: sent`, manual evidence first), and one whose record says sent is sent again through a live notifier only with `again` (409 otherwise)",
       tag: "questions",
       params: [p("id")],
       body: SendOwnerAskRequest,
       ok: { status: 200, schema: "SentOwnerAsk", description: "Sent, or why not" },
-      errors: [400, 403, 404],
+      errors: [400, 403, 404, 409],
     },
   },
   "/api/owner-questions/{id}/answer": {
