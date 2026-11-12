@@ -36,7 +36,16 @@ import {
   type Model,
 } from "./model.js";
 import { sut, todaysWriters, type Confirm, type Guard, type Outcome } from "./system.js";
-import { move, records, sameTree, type Pending, type Rec, type Snap, type World } from "./world.js";
+import {
+  move,
+  records,
+  repoOf,
+  sameTree,
+  type Pending,
+  type Rec,
+  type Snap,
+  type World,
+} from "./world.js";
 
 /**
  * The commands of ADR 0195 point 10, as plain data (so a shrunk counterexample can be committed
@@ -248,11 +257,11 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
     // once the retirement is shown to be one the current sources allow.
     if (ok && built && m.legacyJoins.length) {
       const text = after.sources.get("legacy/joins.json");
-      let kept = new Set<string>(m.legacyJoins.map((j) => j.id));
+      let kept = new Set<string>(m.legacyJoins.map((j) => `${j.kind}/${j.id}`));
       if (text !== undefined)
         try {
-          const slot = JSON.parse(text) as { records?: { id: string }[] };
-          kept = new Set((slot.records ?? []).map((r) => r.id));
+          const slot = JSON.parse(text) as { records?: { kind: string; id: string }[] };
+          kept = new Set((slot.records ?? []).map((r) => `${r.kind}/${r.id}`));
         } catch {
           // a joins.json that doesn't parse retires nothing here; the slot checks say so
         }
@@ -261,7 +270,7 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
       if (wrong.length && ctx.enabled.has("links-are-live"))
         throw new InvariantError(
           "links-are-live",
-          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => j.id).join(", ")}`,
+          `after ${this.desc.t}, legacy joins left joins.json though no changed current source derives them: ${wrong.map((j) => `${j.kind}/${j.id}`).join(", ")}`,
         );
     }
     const changed =
@@ -963,23 +972,33 @@ export async function act(
             m.facts.delete(r.slot);
             if (s) m.readers.set(r.slot, { ...s.obs, legacy: true });
           }
+          // Every record that goes to legacy/joins.json (the lossless invariant's rule): a
+          // cross-repo arrow, and any record with evidence from several repos or none.
           m.legacyJoins = [];
+          const slotOfRepo = new Map(m.repos.map((r) => [r.id, r.slot]));
           for (const rec of records(before.generated).values()) {
-            if (rec.kind !== "Interface") continue;
-            const a = m.slotOfEnd(String(rec.from));
-            const b = m.slotOfEnd(String(rec.to));
-            if (!a || !b || a.slot === b.slot) continue;
-            m.legacyJoins.push({
-              key: arrowKey(
-                a.base.component,
-                b.base.component,
-                rec.method ?? "EVENT",
-                String(rec.normalizedPath),
-              ),
-              id: rec.id,
-              from: a.slot,
-              to: b.slot,
-            });
+            const repos = [...repoOf(rec)];
+            const slots = repos.flatMap((x) => (slotOfRepo.has(x) ? [slotOfRepo.get(x)!] : []));
+            const a = rec.kind === "Interface" ? m.slotOfEnd(String(rec.from)) : undefined;
+            const b = rec.kind === "Interface" ? m.slotOfEnd(String(rec.to)) : undefined;
+            if (a && b && a.slot !== b.slot)
+              m.legacyJoins.push({
+                kind: rec.kind,
+                id: rec.id,
+                arrow: {
+                  key: arrowKey(
+                    a.base.component,
+                    b.base.component,
+                    rec.method ?? "EVENT",
+                    String(rec.normalizedPath),
+                  ),
+                  from: a.slot,
+                  to: b.slot,
+                },
+                repos: slots,
+              });
+            else if (repos.length !== 1)
+              m.legacyJoins.push({ kind: rec.kind, id: rec.id, repos: slots });
           }
           m.beta26 = false;
         },

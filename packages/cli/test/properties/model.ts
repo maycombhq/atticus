@@ -55,8 +55,9 @@ export interface Decision {
   /** The write count when it was added: its effect is checked after a later write. */
   since: number;
   from: "person" | "edits";
-  /** An assert drafted for a record a person added by hand. */
-  added?: boolean;
+  // No `added`: a record a person added by hand is never made a curated decision (ADR 0195
+  // addendum, CS2: "an added record can't be a curated decision (one changes or suppresses a
+  // record the build makes) and is said"); it stays a hand edit until it is discarded.
 }
 
 /** A file under catalog/generated/ a person changed, deleted or added by hand. */
@@ -73,13 +74,18 @@ export interface HandEdit {
   value?: Record<string, unknown>;
 }
 
-/** A cross-repo Interface `atticus upgrade` adopted into legacy/joins.json. */
+/**
+ * A record `atticus upgrade` adopted into legacy/joins.json: a cross-repo Interface (an arrow,
+ * with its ends), or any other record with evidence from several repos or none (a feature or a
+ * glossary term traced through several repos, an Interface whose evidence names two, a system).
+ */
 export interface LegacyJoin {
-  /** `from|to|method|path`, as `arrowKey` makes it. */
-  key: string;
+  kind: string;
   id: string;
-  from: number;
-  to: number;
+  /** A cross-repo arrow: `from|to|method|path`, as `arrowKey` makes it, and its ends' slots. */
+  arrow?: { key: string; from: number; to: number };
+  /** The slots of the repos its evidence names (none for a record with no evidence). */
+  repos: number[];
 }
 
 /** What changed since the last write: what may explain a record leaving the catalog. */
@@ -190,9 +196,16 @@ export class Model {
     return this.live().find((r) => r.hosts.includes(host));
   }
 
-  /** The legacy joins still in force: both repos the build reads (ADR point 6). */
+  /**
+   * The legacy joins still in force (ADR point 6): an arrow while both its repos are read, any
+   * other record while every repo its evidence names is.
+   */
   liveLegacy(): LegacyJoin[] {
-    return this.legacyJoins.filter((j) => this.isLive(j.from) && this.isLive(j.to));
+    return this.legacyJoins.filter((j) =>
+      j.arrow
+        ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
+        : j.repos.every((s) => this.isLive(s)),
+    );
   }
 
   /**
@@ -240,7 +253,7 @@ export class Model {
             );
         }
     }
-    if (withLegacy) for (const j of this.liveLegacy()) add(j.key, true);
+    if (withLegacy) for (const j of this.liveLegacy()) if (j.arrow) add(j.arrow.key, true);
     return { admitted, required };
   }
 
@@ -252,6 +265,15 @@ export class Model {
    * live caller to a live repo, legacy joins aside) and a repo at one end is read from a
    * current, non-legacy source; otherwise it is returned as wrongly retired. The others leave
    * the model: their arrow is a derived one from now on, and goes when its caller drops it.
+   *
+   * Any other legacy join (a feature, a term, an Interface whose evidence names two repos), the
+   * same way, by the ADR's line (point 6): "Once a slot or input that the derived record comes
+   * from has changed since the upgrade (against the slot's `inputs`), the derived record takes
+   * the id, and the build retires the legacy copy". What it comes from is the slots of the repos
+   * its evidence names: it may leave only once one of them is read from a current, non-legacy
+   * source (its slot changed since the upgrade). A curated decision or an answer changes no
+   * slot, so it retires nothing by itself. A record with no evidence names no repo: any repo
+   * read afresh may derive it. `kept` holds `<Kind>/<id>`.
    */
   retire(kept: ReadonlySet<string>): LegacyJoin[] {
     const derivable = this.arrows(false).admitted;
@@ -261,9 +283,13 @@ export class Model {
     };
     const wrong: LegacyJoin[] = [];
     const stay: LegacyJoin[] = [];
+    const live = new Set(this.liveLegacy());
     for (const j of this.legacyJoins) {
-      if (kept.has(j.id) || !this.isLive(j.from) || !this.isLive(j.to)) stay.push(j);
-      else if (derivable.has(j.key) && (fresh(j.from) || fresh(j.to))) continue;
+      const may = j.arrow
+        ? derivable.has(j.arrow.key) && (fresh(j.arrow.from) || fresh(j.arrow.to))
+        : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh);
+      if (kept.has(`${j.kind}/${j.id}`) || !live.has(j)) stay.push(j);
+      else if (may) continue;
       else {
         wrong.push(j);
         stay.push(j);
@@ -291,11 +317,9 @@ export class Model {
       for (const e of served(r.base, s.obs.code))
         out.add(endpointKey(r.base.component, e.method, e.path));
     }
-    for (const d of this.curated) {
-      if (!d.key) continue;
-      if (d.action === "suppress") out.delete(d.key);
-      if (d.action === "assert" && d.added) out.add(d.key);
-    }
+    // A decision never adds a record (ADR 0195 addendum, CS2: "an added record can't be a
+    // curated decision"): only a suppress changes which endpoints there are.
+    for (const d of this.curated) if (d.key && d.action === "suppress") out.delete(d.key);
     return out;
   }
 

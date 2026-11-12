@@ -825,10 +825,16 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     else if (!derivedKeys.has(key)) byKey.delete(key);
   }
   if (legacySlot) {
-    const changedSince = Object.entries(legacySlot.slot.inputs).some(([path, h]) => {
-      const now = currentHashOf(path, i, used);
-      return now !== h;
-    });
+    // ADR 0195 point 6: "Once a slot or input that the derived record comes from has changed
+    // since the upgrade (against the slot's `inputs`), the derived record takes the id". What a
+    // derived record comes from is its own sources in build.json: the slots of the repos its
+    // evidence names (the estate-wide `catalog/sources` hash and the build inputs every record
+    // lists are what a join may rest on, not what it comes from; with them, one curated decision
+    // or one answer would retire every legacy join). A slot new since the upgrade has changed.
+    const changedSince = (derived: CatalogRecord) =>
+      repoOfEvidence(derived).some((repo) =>
+        (used.get(repo) ?? []).some((x) => legacySlot.slot.inputs[x.path] !== x.sha256),
+      );
     const keep: CatalogRecord[] = [];
     for (const r of legacySlot.slot.records) {
       const key = `${r.kind}/${r.id}`;
@@ -841,7 +847,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         continue;
       }
       // Derived: a current input made it, not the legacy records the whole-catalog passes read.
-      if (derived && changedSince && !legacyCtx.has(key)) {
+      if (derived && !legacyCtx.has(key) && changedSince(derived)) {
         retired.push({ kind: r.kind, id: r.id, fields: differingFields(r, derived) });
         continue;
       }
@@ -1051,16 +1057,6 @@ function differingFields(a: CatalogRecord, b: CatalogRecord): string[] {
   return [...new Set([...Object.keys(x), ...Object.keys(y)])]
     .filter((k) => k !== "evidence" && JSON.stringify(x[k]) !== JSON.stringify(y[k]))
     .sort(cmpText);
-}
-
-/** The hash a path of joins.json's `inputs` has now: a slot's, or a build input's. */
-function currentHashOf(
-  path: string,
-  i: BuildInputs,
-  used: Map<string, { path: string; sha256: string }[]>,
-): string | undefined {
-  for (const xs of used.values()) for (const x of xs) if (x.path === path) return x.sha256;
-  return i.inputHashes.get(path);
 }
 
 /**
