@@ -754,6 +754,8 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   // ---- 5. the legacy records, as they are, until a current source takes over (point 6)
   const retired: RetiredJoin[] = [];
   let legacyJoins: string | undefined;
+  /** The joins joins.json still holds after this build (its retired ones out). */
+  let legacyKept: CatalogRecord[] | undefined;
   const legacySlot = i.slots.legacy && "slot" in i.slots.legacy ? i.slots.legacy : undefined;
   if (i.slots.legacy && !legacySlot)
     problems.push({
@@ -805,6 +807,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         ...legacySlot.slot,
         records: keep,
       });
+    legacyKept = keep;
   }
   records = [...byKey.values()].filter(
     (r) => !(legacySlot && isLegacyGone(r, legacySlot.slot, live, ends)),
@@ -897,6 +900,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     i,
     used,
     legacyJoins !== undefined ? sha(legacyJoins) : legacySlot ? legacySlot.sha : undefined,
+    legacyKept ?? [],
   );
   const stats = {
     records: out.length,
@@ -1001,16 +1005,13 @@ function manifestOf(
   i: BuildInputs,
   used: Map<string, { path: string; sha256: string }[]>,
   legacySha: string | undefined,
+  legacyKept: readonly CatalogRecord[],
 ): BuildManifestT {
   const all = [...used.values()].flat().sort((a, b) => cmpText(a.path, b.path));
   if (legacySha) all.push({ path: relOf(root, legacyJoinsPath(root)), sha256: legacySha });
   const allSlots = sha(all.map((x) => `${x.path}\u0000${x.sha256}`).join("\n"));
   const inputs = [...i.inputHashes].map(([path, sha256]) => ({ path, sha256 }));
-  const legacyKeys = new Set(
-    legacySha && i.slots.legacy && "slot" in i.slots.legacy
-      ? i.slots.legacy.slot.records.map((r) => `${r.kind}/${r.id}`)
-      : [],
-  );
+  const legacyKeys = new Set(legacySha ? legacyKept.map((r) => `${r.kind}/${r.id}`) : []);
   const genRel = relOf(root, generatedDirOf(root));
   const out: BuildManifestT["files"] = [];
   for (const r of records) {
@@ -1158,7 +1159,10 @@ export async function readBuildManifest(
 }
 
 /** Every record file under a catalog folder, with the hash of its bytes (line endings aside). */
-async function hashFiles(dir: string): Promise<Map<string, { sha: string; text: string }>> {
+/** A catalog folder's record files, by path under it: their text (LF) and its hash. */
+type DiskFiles = Map<string, { sha: string; text: string }>;
+
+async function hashFiles(dir: string): Promise<DiskFiles> {
   const out = new Map<string, { sha: string; text: string }>();
   async function walk(d: string, rel: string) {
     let entries;
@@ -1242,14 +1246,15 @@ export async function guardBuild(
     discardEdits?: number;
     /** The command, for the words of what to run again. */
     command: string;
-    /** Whether the manifests list any production repo (an empty catalog over a full one is fine then not). */
+    /** The target's record files as read already (buildAndWrite reads them once). */
+    onDisk?: DiskFiles;
   },
 ): Promise<GuardResult> {
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
   const last = await readBuildManifest(target.manifest);
-  const onDisk = await hashFiles(target.generated);
+  const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
   const again = (flag: string) => `${o.command} ${flag}`;
@@ -1323,8 +1328,15 @@ export async function guardBuild(
     for (const f of b.manifest.files)
       for (const s of f.sources) nowSources.add(`${s.path}\u0000${s.sha256}`);
     const oldRecords = new Map<string, CatalogRecord>();
-    const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
-    for (const r of cat.records) oldRecords.set(recordPath(r), r);
+    // The last build's records are read only when this one removes any (most builds don't).
+    const removing = last.manifest.files.some((f) => {
+      const p = strip(f.path);
+      return !b.files.has(p) && onDisk.has(p);
+    });
+    if (removing) {
+      const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
+      for (const r of cat.records) oldRecords.set(recordPath(r), r);
+    }
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
@@ -1431,10 +1443,14 @@ export async function guardBuild(
 
   // ---- no empty catalog over a full one
   const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
-  const hadCode = last.manifest
-    ? (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records.some(fromCode)
-    : false;
-  if (hadCode && !b.records.some(fromCode) && b.listed.length > 0) {
+  const emptyNow = !b.records.some(fromCode) && b.listed.length > 0;
+  const hadCode =
+    emptyNow && last.manifest
+      ? (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records.some(
+          fromCode,
+        )
+      : false;
+  if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
       `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again.`,
@@ -1596,6 +1612,8 @@ export async function writeBuiltCatalog(
     slots?: readonly SlotWrite[];
     guard: GuardResult;
     now?: Date;
+    /** The target's record files as read already (buildAndWrite reads them once). */
+    onDisk?: DiskFiles;
   },
 ): Promise<WriteResult> {
   if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
@@ -1606,7 +1624,7 @@ export async function writeBuiltCatalog(
   if (b.legacyJoins !== undefined && !slots.some((s) => s.path === legacyJoinsPath(root)))
     slots.push({ path: legacyJoinsPath(root), text: b.legacyJoins });
   // What changes: each record file, each slot, build.json.
-  const onDisk = await hashFiles(target.generated);
+  const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   const touched: { path: string; text: string | null }[] = [];
   for (const [p, text] of b.files)
     if (onDisk.get(p)?.text !== text)
@@ -1899,16 +1917,18 @@ export async function buildAndWrite(
         slots: await withFactsWrites(root, slotsAfter(root, i.slots, o.slots ?? [])),
       })),
     ));
+  // The target's record files, read once for the guards, the report and the write.
+  const onDisk = await hashFiles((o.target ?? baselineTarget(root)).generated);
   const guard = await guardBuild(build, {
     undoDir,
     command: o.command,
+    onDisk,
     ...(o.target ? { target: o.target } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
   });
   if (o.check) {
     const target = o.target ?? baselineTarget(root);
-    const onDisk = await hashFiles(target.generated);
     const same =
       onDisk.size === build.files.size &&
       [...build.files].every(([p, t]) => onDisk.get(p)?.sha === sha(t)) &&
@@ -1916,6 +1936,7 @@ export async function buildAndWrite(
     return { build, guard, upToDate: same };
   }
   const report = await buildReportOf(root, build, guard, {
+    onDisk,
     command: o.command,
     target: o.target ?? baselineTarget(root),
     ...(o.now ? { now: o.now } : {}),
@@ -1930,6 +1951,7 @@ export async function buildAndWrite(
       undoDir,
       command: o.command,
       guard,
+      onDisk,
       ...(o.slots ? { slots: o.slots } : {}),
       ...(o.target ? { target: o.target } : {}),
       ...(o.now ? { now: o.now } : {}),
@@ -2080,10 +2102,10 @@ async function buildReportOf(
   root: string,
   b: Build,
   guard: GuardResult,
-  o: { command: string; target: CatalogTarget; now?: Date },
+  o: { command: string; target: CatalogTarget; now?: Date; onDisk: DiskFiles },
 ): Promise<BuildReport> {
   const genRel = relOf(root, o.target.generated);
-  const onDisk = await hashFiles(o.target.generated);
+  const onDisk = o.onDisk;
   const byPath = new Map<string, CatalogRecord>();
   for (const r of b.records) byPath.set(recordPath(r), r);
   const file = (p: string): BuildReportFile => {

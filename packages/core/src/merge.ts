@@ -655,7 +655,12 @@ export function mergeCatalog(input: MergeInput): MergeResult {
           confidence: pc.length > 0 && sc.length > 0 ? "verified" : "inferred",
           from: p,
           to: s,
-          ...(ep ? { endpoint: ep.id } : {}),
+          // The topic's Endpoint: its definition's, or one either end of this pair serves. Another
+          // consumer's own endpoint for the topic (a facts entry) isn't this pair's (ADR 0195,
+          // locality: a repo's read changes only the joins it is part of).
+          ...(ep && (def.length > 0 || ep.component === p || ep.component === s)
+            ? { endpoint: ep.id }
+            : {}),
           via: "event-bus",
           normalizedPath: topic,
           sync: "async",
