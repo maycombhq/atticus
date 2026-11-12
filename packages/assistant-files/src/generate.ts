@@ -13,6 +13,7 @@ import {
 import { loadRepos, readChangeRepos } from "@maycombhq/workspace";
 import {
   renderAssistantFiles,
+  type Assistant,
   type OrgCommand,
   type Profile,
   type RenderedFile,
@@ -110,6 +111,11 @@ export interface GenerateOptions {
   dir?: string;
   force?: boolean;
   check?: boolean;
+  /**
+   * Review of fix/b27-copilot: only these assistants' files (of those runtime.yaml allows), as a
+   * copilot-acp run checks only what Copilot reads.
+   */
+  assistants?: readonly Assistant[];
 }
 
 export interface GenerateResult extends WriteReport {
@@ -184,7 +190,12 @@ export async function generateAssistantFiles(
     };
     if (!o.dir) dir = await worktreeFor(root, repo.id, o.change);
   }
-  const files = renderAssistantFiles({ orgPack, commands, profile });
+  const files = renderAssistantFiles({
+    orgPack,
+    commands,
+    profile,
+    ...(o.assistants ? { only: o.assistants } : {}),
+  });
   const report = await writeAssistantFiles(dir, files, {
     ...(o.force ? { force: true } : {}),
     ...(o.check ? { check: true } : {}),

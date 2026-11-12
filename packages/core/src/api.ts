@@ -5905,6 +5905,12 @@ export const CopilotRunCurrent = z.object({
       upToDate: z.boolean(),
       stale: z.array(z.string()),
       edited: z.array(z.string()),
+      /**
+       * 3.12.0 (beta.27, additive): of `stale`, the files shared with a person (CLAUDE.md,
+       * .github/copilot-instructions.md, ...) with no Atticus section yet, which the run adds
+       * its section to after the person's own lines; the dialog names them.
+       */
+      shared: z.array(z.string()).optional(),
     })
     .optional(),
 });

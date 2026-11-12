@@ -18,6 +18,12 @@ export interface WriteResult {
   action: WriteAction;
   /** In check mode nothing is written; `action` says what would happen. */
   written: boolean;
+  /**
+   * Review of fix/b27-copilot: a file shared with a person (CLAUDE.md,
+   * .github/copilot-instructions.md, GEMINI.md, AGENTS.md) with no Atticus section yet, which
+   * Atticus's section is added to after the person's own lines.
+   */
+  addsSection?: true;
 }
 
 export interface WriteReport {
@@ -57,7 +63,7 @@ function plan(
   f: RenderedFile,
   current: string | undefined,
   force: boolean,
-): { action: WriteAction; text?: string } {
+): { action: WriteAction; text?: string; addsSection?: true } {
   if (f.mode === "section") {
     const section = renderSection(f.content, f.source);
     if (current === undefined) return { action: "created", text: `${section}\n` };
@@ -71,7 +77,11 @@ function plan(
             : current.endsWith("\n")
               ? "\n"
               : "\n\n";
-      return { action: "updated", text: `${current}${sep}${section}\n` };
+      return {
+        action: "updated",
+        text: `${current}${sep}${section}\n`,
+        ...(current.trim() ? { addsSection: true as const } : {}),
+      };
     }
     if (sha256(s.inner) !== s.hash && !force) return { action: "kept-edited" };
     // Only the lines between the markers change; the person's lines around them stay as they are.
@@ -109,7 +119,12 @@ export async function writeAssistantFiles(
     const write = !o.check && p.text !== undefined;
     // A file that was CRLF stays CRLF: only Atticus's lines change, never the person's endings.
     if (write) await put(full, was?.crlf ? p.text!.replace(/\n/g, "\r\n") : p.text!);
-    results.push({ path: f.path, action: p.action, written: write });
+    results.push({
+      path: f.path,
+      action: p.action,
+      written: write,
+      ...(p.addsSection ? { addsSection: true as const } : {}),
+    });
   }
   return { results, upToDate: results.every((r) => r.action === "unchanged") };
 }

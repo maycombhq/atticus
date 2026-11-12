@@ -45,6 +45,8 @@ export interface RenderInput {
   orgPack: Pick<OrgPack, "skills" | "agents" | "runtime" | "sources">;
   commands: OrgCommand[];
   profile: Profile;
+  /** Only these assistants' files, of those runtime.yaml allows (a copilot-acp run's check). */
+  only?: readonly Assistant[];
 }
 
 export interface RenderedFile {
@@ -129,7 +131,9 @@ function instructionsSection(
 
 /** Render every assistant file for one profile, sorted by path. */
 export function renderAssistantFiles(input: RenderInput): RenderedFile[] {
-  const assistants = [...input.orgPack.runtime.assistants.allowed].sort() as Assistant[];
+  const assistants = ([...input.orgPack.runtime.assistants.allowed].sort() as Assistant[]).filter(
+    (a) => !input.only || input.only.includes(a),
+  );
   const p = input.profile;
   const forRepo = (repoTypes: readonly string[]) =>
     p.kind === "metarepo" || repoTypes.length === 0 || repoTypes.includes(p.repoType);

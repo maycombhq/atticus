@@ -80,11 +80,15 @@ parts. `--max-tokens` plans the repo again at another limit.
 
 Copilot reads the metarepo's assistant files (`.github/copilot-instructions.md`,
 `.github/prompts/`), whose first step checks that they are current. So before it starts a session
-the run checks them as `atticus assistant-files --check` does:
+the run checks them as `atticus assistant-files --check` does, Copilot's only (an edited
+`CLAUDE.md` or Claude Code command is no reason to refuse a Copilot run):
 
 - **missing or out of date**: the run writes them from the org pack, as `atticus assistant-files`
   does, and names them in the Console. They are generated files in the metarepo, a local write
-  like the facts: propose them for review with the facts.
+  like the facts: propose them for review with the facts. A file shared with a person
+  (`.github/copilot-instructions.md`) with no Atticus section yet gets the section after your own
+  lines, which stay as they are; the dialog and the Console name it ("It adds Atticus's section to
+  your .github/copilot-instructions.md").
 - **edited by hand** (or a file in the way that isn't Atticus's): only a person replaces those, so
   the run is refused before any session starts. Look at the file, then put back the generated text
   (`atticus assistant-files --force` writes it over the edits), and start the run again. The app's

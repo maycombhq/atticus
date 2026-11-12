@@ -232,3 +232,134 @@ describe("a repo the run stopped on (beta.27)", () => {
     expect(problemsOf({ entries: [] }).stopped).toEqual([]);
   });
 });
+
+/**
+ * Review of fix/b27-copilot (WCAG 2.4.3 focus order, 2.1.2 no keyboard trap): the focus is always
+ * somewhere inside the dialog. A stand-in for the page's document: each element given a ref gets
+ * a node, attached before the effects run (as React does), that takes the focus unless disabled.
+ */
+type FakeNode = { id: string; disabled: boolean; isConnected: boolean; focus(): void };
+function fakeDocument() {
+  const doc = {
+    activeElement: null as FakeNode | null,
+    body: { id: "body" },
+    getElementById: () => null,
+  };
+  const nodes = new Map<string, FakeNode>();
+  const attach = (tree: unknown) => {
+    for (const e of els(tree)) {
+      const ref = e.props.ref as { current: unknown } | undefined;
+      if (!ref || typeof ref !== "object" || !("current" in ref)) continue;
+      const id = String(e.props.id);
+      let n = nodes.get(id);
+      if (!n) {
+        n = {
+          id,
+          disabled: false,
+          isConnected: true,
+          focus() {
+            if (!this.disabled) doc.activeElement = this;
+          },
+        };
+        nodes.set(id, n);
+      }
+      n.disabled = e.props.disabled === true;
+      ref.current = n;
+    }
+    // A disabled element loses the focus to the page, as a browser does.
+    if (doc.activeElement?.disabled) doc.activeElement = doc.body as unknown as FakeNode;
+  };
+  return { doc, attach };
+}
+
+describe("where the dialog's focus goes (review of fix/b27-copilot)", () => {
+  let saved: unknown;
+  const withDocument = (doc: unknown) => {
+    saved = g.document;
+    g.document = doc;
+  };
+  afterAll(() => {
+    if (saved !== undefined) g.document = saved;
+  });
+  const focused = (doc: { activeElement: { id: string } | null }) => doc.activeElement?.id;
+  const edited: Api.CopilotRunCurrentT["assistantFiles"] = {
+    upToDate: false,
+    stale: [],
+    edited: [".github/prompts/atticus-map.prompt.md"],
+  };
+
+  it("goes to Not now when Start is off from the first (an edited assistant file)", () => {
+    const f = fakeDocument();
+    withDocument(f.doc);
+    const m = mount(
+      ConfirmRun,
+      {
+        ask: { kind: "stale" },
+        limit: { known: true, tokens: 64000, from: "runtime.yaml" },
+        assistantFiles: edited,
+        onClose: () => undefined,
+        onStarted: () => undefined,
+      },
+      { attach: f.attach },
+    );
+    expect(yes(m.tree)!.props.disabled).toBe(true);
+    expect(focused(f.doc)).toBe("run-dialog-no");
+    g.document = saved;
+  });
+
+  it("moves to Not now when a refresh turns Start off under it", () => {
+    const f = fakeDocument();
+    withDocument(f.doc);
+    const props: Parameters<typeof ConfirmRun>[0] = {
+      ask: { kind: "stale" },
+      limit: { known: true, tokens: 64000, from: "runtime.yaml" },
+      onClose: () => undefined,
+      onStarted: () => undefined,
+    };
+    const m = mount(ConfirmRun, props, { attach: f.attach });
+    expect(focused(f.doc)).toBe("run-dialog-yes");
+    props.assistantFiles = edited;
+    m.render();
+    expect(yes(m.tree)!.props.disabled).toBe(true);
+    expect(focused(f.doc)).toBe("run-dialog-no");
+    g.document = saved;
+  });
+
+  it("fills the limit field and moves to it when a refresh says the limit isn't known", () => {
+    const f = fakeDocument();
+    withDocument(f.doc);
+    const props: Parameters<typeof ConfirmRun>[0] = {
+      ask: { kind: "all" },
+      limit: { known: true, tokens: 64000, from: "runtime.yaml" },
+      onClose: () => undefined,
+      onStarted: () => undefined,
+    };
+    const m = mount(ConfirmRun, props, { attach: f.attach });
+    expect(field(m.tree)).toBeUndefined();
+    expect(focused(f.doc)).toBe("run-dialog-yes");
+    props.limit = { known: false, tokens: 128000, from: "last" };
+    m.render();
+    expect(field(m.tree)!.props.value).toBe("128000");
+    expect(focused(f.doc)).toBe("run-dialog-limit");
+    g.document = saved;
+  });
+
+  it("names the files of yours it adds Atticus's section to", () => {
+    const m = mount(ConfirmRun, {
+      ask: { kind: "stale" },
+      assistantFiles: {
+        upToDate: false,
+        stale: [".github/copilot-instructions.md", ".github/prompts/atticus-map.prompt.md"],
+        edited: [],
+        shared: [".github/copilot-instructions.md"],
+      },
+      onClose: () => undefined,
+      onStarted: () => undefined,
+    });
+    expect(text(m.tree)).toContain(T.confirm.files.stale(2));
+    expect(text(m.tree)).toContain(T.confirm.files.shared(".github/copilot-instructions.md"));
+    expect(T.confirm.files.shared(".github/copilot-instructions.md")).toBe(
+      "It adds Atticus's section to your .github/copilot-instructions.md, after your own lines, which it keeps as they are.",
+    );
+  });
+});

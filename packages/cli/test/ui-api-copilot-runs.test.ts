@@ -340,4 +340,67 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       await files.close();
     }
   });
+
+  it("names the files of a person's that the run adds Atticus's section to", async () => {
+    const files = await startServer({
+      root: await metarepo(RUNTIME_ACP),
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, {
+          start: starter,
+          flushMs: 1,
+          assistantFiles: async () => ({
+            results: [
+              {
+                path: ".github/copilot-instructions.md",
+                action: "updated",
+                written: false,
+                addsSection: true,
+              },
+              { path: ".github/prompts/atticus-map.prompt.md", action: "updated", written: false },
+            ],
+          }),
+        }),
+    });
+    try {
+      expect((await current(files)).assistantFiles).toEqual({
+        upToDate: false,
+        stale: [".github/copilot-instructions.md", ".github/prompts/atticus-map.prompt.md"],
+        edited: [],
+        shared: [".github/copilot-instructions.md"],
+      });
+    } finally {
+      await files.close();
+    }
+  });
+
+  it("keeps the limit given only for a run that starts: a step started meanwhile keeps none", async () => {
+    const root = await metarepo(RUNTIME_ACP);
+    let done: (() => void) | undefined;
+    const one = await startServer({
+      root,
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, {
+          start: starter,
+          flushMs: 1,
+          // While the start reads the assistant files, an AI step starts on this server.
+          assistantFiles: async () => {
+            if (!done) ctx.jobs.start("step", () => new Promise<void>((res) => (done = res)));
+            return current0(root);
+          },
+        }),
+    });
+    try {
+      const r = await call(one, "POST", "/api/copilot-runs", { kind: "all", maxTokens: 96_000 });
+      expect(r.status).toBe(409);
+      expect(String(r.body.detail)).toContain("An AI step started on this server meanwhile");
+      await expect(
+        readFile(join(root, ".atticus", "map-all", "limit.json"), "utf8"),
+      ).rejects.toThrow();
+    } finally {
+      done?.();
+      await one.close();
+    }
+  });
 });

@@ -352,12 +352,17 @@ export function ConfirmRun(p: {
   const [badLimit, setBadLimit] = useState(false);
   const edited = p.assistantFiles?.edited ?? [];
   const stale = p.assistantFiles?.stale ?? [];
+  const shared = p.assistantFiles?.shared ?? [];
+  // Start is off while an assistant file is edited by hand.
+  const blocked = edited.length > 0;
   const yes = useRef<HTMLButtonElement>(null);
+  const no = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    (field.current ?? yes.current)?.focus();
+    // Review of fix/b27-copilot (WCAG 2.4.3): never on a button that is off.
+    (field.current ?? (blocked ? no.current : yes.current) ?? box.current)?.focus();
     // Back where it was; that button is off once a run is under way, so then the Console's.
     return () => {
       const back =
@@ -367,6 +372,22 @@ export function ConfirmRun(p: {
       back?.focus?.();
     };
   }, []);
+  // Review of fix/b27-copilot: the limit asked for only once a refresh says it isn't known is
+  // filled with the value to offer, and takes the focus.
+  const asked = useRef(askLimit);
+  useEffect(() => {
+    if (askLimit && !asked.current) {
+      if (!tokens && p.limit?.tokens) setTokens(String(p.limit.tokens));
+      field.current?.focus();
+    }
+    asked.current = askLimit;
+  }, [askLimit]);
+  // A refresh that turns Start off under the focus (it goes to the page): Not now takes it.
+  useEffect(() => {
+    if (!blocked) return;
+    const at = document.activeElement;
+    if (!at || at === yes.current || at === document.body) no.current?.focus();
+  }, [blocked]);
   const named = (p.ask.repos ?? []).join(", ");
   // Stale or gaps narrowed to some repos says which.
   const what =
@@ -386,6 +407,8 @@ export function ConfirmRun(p: {
       return;
     }
     setBadLimit(false);
+    // Both buttons are off while it starts: the dialog holds the focus meanwhile.
+    box.current?.focus();
     setBusy(true);
     setError(undefined);
     const ask: StartAsk = maxTokens !== undefined ? { ...p.ask, maxTokens } : p.ask;
@@ -417,10 +440,18 @@ export function ConfirmRun(p: {
           "input:not([disabled]), button:not([disabled])",
         ),
       ];
-      if (!f.length) return;
+      // Nothing to move to while it starts: the focus stays on the dialog.
+      if (!f.length) {
+        e.preventDefault();
+        return;
+      }
       const first = f[0]!;
       const last = f[f.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
+      // On the dialog itself (while it started, or Start turned off): into it, either way.
+      if (document.activeElement === box.current) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -433,6 +464,8 @@ export function ConfirmRun(p: {
     <div className="run-dialog-back">
       <div
         ref={box}
+        id="run-dialog"
+        tabIndex={-1}
         className="run-dialog panel"
         role="dialog"
         aria-modal="true"
@@ -497,7 +530,15 @@ export function ConfirmRun(p: {
             </details>
           </div>
         ) : (
-          stale.length > 0 && <p className="work-say">{T.confirm.files.stale(stale.length)}</p>
+          stale.length > 0 && (
+            <>
+              <p className="work-say">{T.confirm.files.stale(stale.length)}</p>
+              {/* Review of fix/b27-copilot: a file of yours it adds to is named, not counted. */}
+              {shared.length > 0 && (
+                <p className="work-say">{T.confirm.files.shared(shared.join(", "))}</p>
+              )}
+            </>
+          )
         )}
         {error && (
           <p className="state error" role="alert">
@@ -505,11 +546,19 @@ export function ConfirmRun(p: {
           </p>
         )}
         <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" className="btn" onClick={p.onClose} disabled={busy}>
+          <button
+            ref={no}
+            id="run-dialog-no"
+            type="button"
+            className="btn"
+            onClick={p.onClose}
+            disabled={busy}
+          >
             {T.confirm.no}
           </button>
           <button
             ref={yes}
+            id="run-dialog-yes"
             type="button"
             className="btn primary"
             onClick={() => void go()}

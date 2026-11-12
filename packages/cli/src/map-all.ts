@@ -267,7 +267,11 @@ const lastLimitPath = (root: string) => join(root, ".atticus", "map-all", "limit
 export async function readLastLimit(root: string): Promise<number | undefined> {
   try {
     const j = JSON.parse(await readFile(lastLimitPath(root), "utf8")) as { maxTokens?: unknown };
-    return typeof j.maxTokens === "number" && Number.isInteger(j.maxTokens) && j.maxTokens >= 1000
+    // The bounds POST /api/copilot-runs takes (StartCopilotRunRequest.maxTokens).
+    return typeof j.maxTokens === "number" &&
+      Number.isInteger(j.maxTokens) &&
+      j.maxTokens >= 1000 &&
+      j.maxTokens <= 10_000_000
       ? j.maxTokens
       : undefined;
   } catch {
@@ -317,6 +321,12 @@ export function assistantFilesState(results: readonly WriteResult[]): {
   upToDate: boolean;
   stale: string[];
   edited: string[];
+  /**
+   * Review of fix/b27-copilot: of `stale`, the files shared with a person (CLAUDE.md,
+   * .github/copilot-instructions.md, ...) with no Atticus section yet: the run adds its section
+   * after their lines, and says so by name.
+   */
+  shared: string[];
 } {
   const stale = results
     .filter((r) => r.action === "created" || r.action === "updated")
@@ -324,8 +334,16 @@ export function assistantFilesState(results: readonly WriteResult[]): {
   const edited = results
     .filter((r) => r.action === "kept-edited" || r.action === "kept-not-generated")
     .map((r) => r.path);
-  return { upToDate: !stale.length && !edited.length, stale, edited };
+  const shared = results.filter((r) => r.action === "updated" && r.addsSection).map((r) => r.path);
+  return { upToDate: !stale.length && !edited.length, stale, edited, shared };
 }
+
+/** What a copilot-acp run checks and writes: Copilot's assistant files only (its sessions'). */
+export const COPILOT_FILES = ["copilot"] as const;
+
+/** The run's words for the shared files it added Atticus's section to, by name. */
+export const sharedFilesWords = (shared: readonly string[]): string =>
+  `It added Atticus's section to your ${shared.join(", ")}, after your own lines, which it keeps as they are.`;
 
 export const assistantFilesEditedWords = (edited: readonly string[]): string =>
   `${plural(edited.length, "assistant file")} ${edited.length === 1 ? "was" : "were"} edited by hand or ${edited.length === 1 ? "isn't" : "aren't"} Atticus's (${edited.slice(0, 5).join(", ")}${edited.length > 5 ? `, and ${edited.length - 5} more` : ""}), so atticus assistant-files keeps ${edited.length === 1 ? "it" : "them"} and every Copilot session would stop at its check: no session was started. Look at ${edited.length === 1 ? "it" : "them"}, then run atticus assistant-files --force (it replaces the edits), or put ${edited.length === 1 ? "it" : "them"} back as generated, and start the run again.`;
@@ -1270,7 +1288,10 @@ export async function mapAllCommand(
   if (mode === "copilot-acp" && plan.items.some((i) => i.parts.length)) {
     const files =
       deps.assistantFiles ??
-      ((r: string, f: { check: boolean }) => generateAssistantFiles(r, { check: f.check }));
+      ((r: string, f: { check: boolean }) =>
+        // Review of fix/b27-copilot: only what Copilot's sessions read; a Claude Code or Gemini
+        // file a person edited is no reason to refuse a Copilot run.
+        generateAssistantFiles(r, { check: f.check, assistants: COPILOT_FILES }));
     let now: ReturnType<typeof assistantFilesState> | undefined;
     try {
       now = assistantFilesState((await files(root, { check: true })).results);
@@ -1283,13 +1304,14 @@ export async function mapAllCommand(
     }
     if (now && !now.upToDate) {
       const wrote = (await files(root, { check: false })).results.filter((r) => r.written);
+      const shared = wrote.filter((r) => r.addsSection).map((r) => r.path);
       io.out(
         `The assistant files the sessions read were out of date: Atticus wrote ${plural(wrote.length, "file")} from the org pack first, as atticus assistant-files does (${wrote
           .slice(0, 5)
           .map((r) => r.path)
           .join(
             ", ",
-          )}${wrote.length > 5 ? `, and ${wrote.length - 5} more` : ""}). Commit them in a pull request.`,
+          )}${wrote.length > 5 ? `, and ${wrote.length - 5} more` : ""}).${shared.length ? ` ${sharedFilesWords(shared)}` : ""} Commit them in a pull request.`,
       );
     }
   }

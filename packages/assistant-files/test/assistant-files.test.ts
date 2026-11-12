@@ -219,6 +219,49 @@ describe("assistant files for the metarepo", () => {
     ).toBe("kept-edited");
   });
 
+  it("says which files are a person's that it adds its section to (no markers yet)", async () => {
+    const root = await metarepo();
+    await writeFile(join(root, "CLAUDE.md"), "# Working here\n\nUse pnpm.\n");
+    const r = await generateAssistantFiles(root, { check: true });
+    expect(r.results.find((x) => x.path === "CLAUDE.md")).toEqual({
+      path: "CLAUDE.md",
+      action: "updated",
+      written: false,
+      addsSection: true,
+    });
+    // A file it creates, or a section it only brings up to date, isn't one.
+    expect(r.results.find((x) => x.path === ".github/copilot-instructions.md")).toEqual({
+      path: ".github/copilot-instructions.md",
+      action: "created",
+      written: false,
+    });
+    await generateAssistantFiles(root);
+    expect(
+      (await generateAssistantFiles(root, { check: true })).results.some((x) => x.addsSection),
+    ).toBe(false);
+  });
+
+  it("checks and writes only the files of the assistants asked for", async () => {
+    const root = await metarepo();
+    // A Claude Code command the team wrote: not Copilot's, so a Copilot-only check never sees it.
+    await mkdir(join(root, ".claude/commands"), { recursive: true });
+    await writeFile(join(root, ".claude/commands/atticus-map.md"), "# The team's own\n");
+    const r = await generateAssistantFiles(root, { assistants: ["copilot"] });
+    expect(r.results.length).toBeGreaterThan(0);
+    expect(r.results.some((x) => x.path.startsWith(".claude/") || x.path === "CLAUDE.md")).toBe(
+      false,
+    );
+    expect(r.results.some((x) => x.path === ".github/prompts/atticus-map.prompt.md")).toBe(true);
+    expect(await read(root, ".claude/commands/atticus-map.md")).toBe("# The team's own\n");
+    await expect(read(root, "CLAUDE.md")).rejects.toThrow();
+    // An assistant runtime.yaml doesn't allow is never written for.
+    await writeFile(
+      join(root, "org-pack/runtime.yaml"),
+      "schemaVersion: 1\nassistants: { allowed: [claude-code], default: claude-code }\n",
+    );
+    expect((await generateAssistantFiles(root, { assistants: ["copilot"] })).results).toEqual([]);
+  });
+
   it("check mode writes nothing and says what is out of date", async () => {
     const root = await metarepo();
     const r = await generateAssistantFiles(root, { check: true });

@@ -5777,6 +5777,9 @@ export const COPY = {
           `Copilot's sessions would each stop at once: ${n === 1 ? `${files} was edited by hand, and only a person replaces it` : `${n.toLocaleString()} assistant files were edited by hand (${files}), and only a person replaces them`}. Put back the generated text, then start the run.`,
         editedHow:
           "In a terminal: atticus assistant-files --force writes the generated text over the edits.",
+        /** Review of fix/b27-copilot: a file shared with a person, named, never only counted. */
+        shared: (files: string) =>
+          `It adds Atticus's section to your ${files}, after your own lines, which it keeps as they are.`,
       },
     },
     notAllowed: "Copilot can't be started from here",

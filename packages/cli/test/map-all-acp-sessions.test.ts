@@ -7,7 +7,9 @@ import { stringify } from "yaml";
 import type { AcpSessionResult } from "@maycombhq/ai";
 import { VERIFY_MOVES, type AcpStep, type AcpStepRunner } from "../src/copilot-acp-steps.js";
 import {
+  LAST_LIMIT_REL,
   mapAllCommand,
+  readLastLimit,
   rejectionWords,
   type MapAllEvent,
   type MapAllPlan,
@@ -38,13 +40,13 @@ const write = (root: string, path: string, text: string) => {
 };
 
 /** runtime.yaml letting Atticus drive Copilot (version 3), with a model limit when given. */
-function runtimeWith(root: string, maxInput?: number) {
+function runtimeWith(root: string, maxInput?: number, allowed: string[] = ["copilot"]) {
   write(
     root,
     "org-pack/runtime.yaml",
     stringify({
       schemaVersion: 3,
-      assistants: { allowed: ["copilot"], default: "copilot" },
+      assistants: { allowed, default: "copilot" },
       modes: { allowed: ["hand-off", "copilot-acp"], default: "copilot-acp" },
       copilotAcp: { command: "copilot --acp", maxTurns: 100 },
       ...(maxInput
@@ -426,4 +428,67 @@ describe("the size a session plans at: a known limit beats the plan on file (rev
     await run(plain.root, p.runner, 2);
     expect(p.seen[0]!.line).toBe("/atticus-map forge-ledger");
   }, 90_000);
+});
+
+describe("the assistant files a Copilot run checks (review of fix/b27-copilot)", () => {
+  it("names the file of a person's it adds Atticus's section to", async () => {
+    const { root } = ledgerEstate();
+    const shared = {
+      path: ".github/copilot-instructions.md",
+      action: "updated" as const,
+      addsSection: true as const,
+    };
+    const s = sessions([async () => undefined, async () => undefined]);
+    const out: string[] = [];
+    await mapAllCommand(
+      root,
+      { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 1 },
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      {
+        acp: s.runner,
+        assistantFiles: async (_r, o) => ({ results: [{ ...shared, written: !o.check }] }),
+      },
+    );
+    expect(out).toContain(
+      "The assistant files the sessions read were out of date: Atticus wrote 1 file from the org pack first, as atticus assistant-files does (.github/copilot-instructions.md). It added Atticus's section to your .github/copilot-instructions.md, after your own lines, which it keeps as they are. Commit them in a pull request.",
+    );
+  });
+
+  it("checks only Copilot's: a Claude Code file the team wrote doesn't refuse the run", async () => {
+    const { root } = ledgerEstate();
+    runtimeWith(root, undefined, ["claude-code", "copilot"]);
+    write(root, ".claude/commands/atticus-map.md", "# The team's own\n");
+    const s = sessions([async () => undefined, async () => undefined]);
+    const out: string[] = [];
+    const code = await mapAllCommand(
+      root,
+      { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 1 },
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { acp: s.runner },
+    );
+    expect(code, out.join("\n")).toBe(0);
+    expect(s.seen).toHaveLength(1);
+    expect(readFileSync(join(root, ".claude/commands/atticus-map.md"), "utf8")).toBe(
+      "# The team's own\n",
+    );
+    expect(readFileSync(join(root, ".github/prompts/atticus-map.prompt.md"), "utf8")).toContain(
+      "atticus map",
+    );
+    expect(() => readFileSync(join(root, "CLAUDE.md"), "utf8")).toThrow();
+  }, 60_000);
+});
+
+describe("the limit kept on this machine (review of fix/b27-copilot)", () => {
+  it("is read back only within the bounds the API takes (1,000 to 10,000,000)", async () => {
+    const { root } = ledgerEstate();
+    for (const [maxTokens, back] of [
+      [128_000, 128_000],
+      [10_000_000, 10_000_000],
+      [10_000_001, undefined],
+      [999, undefined],
+    ] as const) {
+      write(root, LAST_LIMIT_REL, JSON.stringify({ schemaVersion: 1, maxTokens }));
+      expect(await readLastLimit(root)).toBe(back);
+    }
+  });
 });

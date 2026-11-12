@@ -54,8 +54,12 @@ interface Here {
   assistantFiles?: NonNullable<Api.CopilotRunCurrentT["assistantFiles"]>;
 }
 
+// Review of fix/b27-copilot: Copilot's files only, as the run checks them.
 const defaultCheck: AssistantFilesCheck = async (root) =>
-  (await import("@maycombhq/assistant-files")).generateAssistantFiles(root, { check: true });
+  (await import("@maycombhq/assistant-files")).generateAssistantFiles(root, {
+    check: true,
+    assistants: ["copilot"],
+  });
 
 /**
  * Whether the app may start Copilot here, and (beta.27) what its dialog needs: the model's limit
@@ -78,7 +82,11 @@ async function allowedHere(root: string, check: AssistantFilesCheck): Promise<He
         }
       : { known: false, ...(offer ? { tokens: offer.tokens, from: offer.from } : {}) };
     const files = await check(root)
-      .then((r) => assistantFilesState(r.results))
+      .then((r) => {
+        const { shared, ...s } = assistantFilesState(r.results);
+        // 3.12.0, additive: the files of a person's the run adds Atticus's section to, by name.
+        return shared.length ? { ...s, shared } : s;
+      })
       .catch(() => undefined);
     return {
       allowed,
@@ -221,15 +229,16 @@ export function uiCopilotRunRoutes(
             { code: "assistant-files-edited", files: a.assistantFiles.edited },
           );
         }
-        // beta.27: the limit given is kept on this machine, to fill the dialog next time.
+        // Checked again: a step may have started while the runtime was being read.
+        if (ctx.jobs.runningOf("step")?.state === "running")
+          throw conflict("An AI step started on this server meanwhile: wait for it to finish.");
+        // beta.27: the limit given is kept on this machine, to fill the dialog next time; only
+        // for a run that starts (review of fix/b27-copilot: never before the last refusal).
         if (b.data.maxTokens !== undefined) {
           const { saveLastLimit } = await import("./map-all.js");
           await saveLastLimit(ctx.root, b.data.maxTokens, now().getTime());
           allowed = undefined;
         }
-        // Checked again: a step may have started while the runtime was being read.
-        if (ctx.jobs.runningOf("step")?.state === "running")
-          throw conflict("An AI step started on this server meanwhile: wait for it to finish.");
         // Unique across restarts of the app's server, so a page kept open never mixes two runs.
         const runId = `copilot-run-${now().getTime().toString(36)}-${randomBytes(3).toString("hex")}-${++seq}`;
         const me = new CopilotRun({

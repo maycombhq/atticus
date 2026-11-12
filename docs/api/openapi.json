@@ -39547,6 +39547,12 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "shared": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
