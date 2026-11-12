@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
@@ -892,6 +893,9 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     writeFileSync(join(runningDirOf(root), "20261101-100000-4242-ab12.json"), "{not json");
     writeFileSync(join(runningDirOf(root), "20261101-100001-4242-ab13.json"), "null");
     writeFileSync(join(runningDirOf(root), "20261101-100002-4242-ab14.json"), "[1]");
+    // Not written for longer than goneRun's 7 days: no run is writing it, so nothing waits on it.
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    utimesSync(join(runningDirOf(root), "20261101-100000-4242-ab12.json"), old, old);
     expect(retitleTerminalRuns(root, (r) => runTitle(r.command, r.flags))).toBe(0);
     expect(readdirSync(runningDirOf(root)).sort()).toEqual([
       ".retitled-beta27",
@@ -936,6 +940,28 @@ describe("beta.27 re-review: the runs beta.26 kept are titled again once", () =>
     );
     expect(retitleTerminalRuns(root, short)).toBe(1);
     expect(read(root, live.runId).title).toBe("atticus map forge-ledger");
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
+  });
+
+  it("waits on a record half-written in place (beta.26 on Windows) and titles it once it is whole", async () => {
+    const root = await fresh();
+    // A live beta.26 run whose rename failed writes its record in place: read mid-write, it is
+    // empty or cut short. The mark waits, so the record is titled again once the run has ended.
+    const live = record("20261101-100000-4242-ab12", ["map", "forge-ledger", key]);
+    const cut = record("20261101-100100-4242-cd34", ["map", "forge-ledger", key]);
+    keep(root, [live, cut]);
+    const text = JSON.stringify(live);
+    writeFileSync(join(runningDirOf(root), `${live.runId}.json`), text.slice(0, 40));
+    writeFileSync(join(runningDirOf(root), `${cut.runId}.json`), "");
+    expect(retitleTerminalRuns(root, short)).toBe(0);
+    expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(false);
+    // The run ends: its record whole, with the key beta.26 kept in its title.
+    writeFileSync(join(runningDirOf(root), `${live.runId}.json`), text);
+    writeFileSync(join(runningDirOf(root), `${cut.runId}.json`), JSON.stringify(cut));
+    expect(retitleTerminalRuns(root, short)).toBe(2);
+    expect(read(root, live.runId).title).toBe("atticus map forge-ledger");
+    expect(JSON.stringify(read(root, live.runId))).not.toContain(key);
+    expect(JSON.stringify(read(root, cut.runId))).not.toContain(key);
     expect(existsSync(join(runningDirOf(root), RETITLED_MARK))).toBe(true);
   });
 

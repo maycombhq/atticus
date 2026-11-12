@@ -451,6 +451,8 @@ export const RETITLED_MARK = ".retitled-beta27";
 export const RETITLE_MAX_BYTES = 1024 * 1024;
 /** The most records the migration reads: beta.26 kept RUN_LOG_KEEP. */
 const RETITLE_MAX_RECORDS = 1000;
+/** How long a record that can't be read is waited on: goneRun's cap on a run of this machine. */
+const RETITLE_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
 /** The folders whose mark couldn't be written: not tried again by this process. */
 const retitleTried = new Set<string>();
 
@@ -493,7 +495,8 @@ function readSmallFile(file: string, max: number): string | undefined {
  * key back into its log). Only a regular file of at most RETITLE_MAX_BYTES is read (never a link,
  * a FIFO or a folder), a record whose process is still running is left to it (and the mark
  * waits, so the next command tries again; a run killed under beta.26 is titled again), a removal
- * that fails is tried again the same way, and a record is written
+ * that fails is tried again the same way, so is a record that can't be read or parsed while it
+ * was written in the last 7 days (half-written in place by a live run), and a record is written
  * beside itself and put in place, never through a link. A folder that can't be written is left
  * alone (nothing could change), and one whose mark can't be written isn't tried again by this
  * process. Never throws: a record that can't be read or written is left as it is.
@@ -529,12 +532,28 @@ export function retitleTerminalRuns(
   let later = false;
   const here = hostHash();
   const now = Date.now();
+  // Beta.27 re-review 5: a record that couldn't be read, parsed or written may be a live beta.26
+  // run's, written in place (its writeJson does that on Windows when the rename fails) and read
+  // half-written: the mark waits for it. Only a small regular file written in goneRun's 7 days
+  // is waited on (a link, a FIFO, a folder or a big file is no record beta.26 wrote, and one no
+  // run has written for longer is no run's), so the next command tries again, for 7 days at most.
+  const settling = (file: string) => {
+    try {
+      const st = lstatSync(file, { throwIfNoEntry: false });
+      return !!st?.isFile() && st.size <= RETITLE_MAX_BYTES && now - st.mtimeMs <= RETITLE_WAIT_MS;
+    } catch {
+      return false;
+    }
+  };
   for (const n of names) {
     const file = join(dir, n);
     const id = n.slice(0, -5);
     try {
       const text = readSmallFile(file, RETITLE_MAX_BYTES);
-      if (text === undefined) continue;
+      if (text === undefined) {
+        if (settling(file)) later = true;
+        continue;
+      }
       const raw = JSON.parse(text) as Record<string, unknown> | null;
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
       if (raw.state === "running") {
@@ -591,7 +610,8 @@ export function retitleTerminalRuns(
       writeJson(file, next);
       changed++;
     } catch {
-      // left as it is
+      // left as it is; tried again by the next command if a run may still be writing it
+      if (settling(file)) later = true;
     }
   }
   if (later) return changed;
