@@ -16,20 +16,13 @@ import {
   answerQuestion,
   interfaceId,
   listQuestions,
-  loadOrgPack,
   parseFacts,
   parseRecord,
   serializeRecord,
   type CatalogRecord,
   type FactsJoinResult,
 } from "@maycombhq/core";
-import {
-  estateRepos,
-  factsSnapshotWrites,
-  mergeEstate,
-  readCatalog,
-  writeCatalog,
-} from "@maycombhq/scanner";
+import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
@@ -578,12 +571,9 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       ),
     ).toBe(1);
     expect(readFileSync(factsFile).equals(bytes)).toBe(true);
-    // So a scan doesn't take the half-read repo from its facts: they aren't verified yet.
-    const { factsForScan } = await import("@maycombhq/scanner");
-    const op = await loadOrgPack(join(root, "org-pack"));
-    const used = await factsForScan(root, op, "forge-ledger", "0123abc", []);
-    expect(used.records).toBeUndefined();
-    expect(used.note).toMatch(/aren't verified yet/);
+    // So no build takes the half-read repo: a refused --write takes no facts snapshot (ADR 0195),
+    // and only a snapshot reaches the catalog.
+    expect(existsSync(join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"))).toBe(false);
   });
 
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
