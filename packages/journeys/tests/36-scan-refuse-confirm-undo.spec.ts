@@ -93,7 +93,9 @@ test("the Console shows the undo run from a terminal", async ({ page }) => {
   await expect(panel.getByText("atticus catalog undo --yes: done")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(panel.getByRole("log")).toContainText(/Put back \d+ files?/);
+  // The log is read after the run's line says done: a slow Windows runner takes longer than
+  // the default wait to show it.
+  await expect(panel.getByRole("log")).toContainText(/Put back \d+ files?/, { timeout: 15_000 });
 });
 
 // CS3 (ADR 0195 point 4 and "Plan for beta.27"): the app's confirm step lists the refused
