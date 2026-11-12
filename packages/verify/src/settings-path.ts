@@ -161,10 +161,11 @@ export function helperBuildsKey(
   if (segs.length < 2 || segs.join(".") !== key.trim()) return false;
   const last = segs[segs.length - 1]!;
   const prefix = segs.slice(0, -1);
-  const line = linesOf(cite.file)?.[cite.line - 1];
+  const fileLines = linesOf(cite.file);
+  const line = fileLines?.[cite.line - 1];
   if (line === undefined) return false;
   // what follows a `//` is comment; a line that is all comment is left to the comment check
-  const code = isCommentLine(line, cite.file)
+  const code = isCommentLine(line, cite.file, fileLines)
     ? line
     : line.replace(/\/\*.*?\*\//g, "").replace(/(^|\s)\/\/.*$/, "");
   // Beta.25 review: the segment is a whole string literal the code passes (`url("createWallet")`)

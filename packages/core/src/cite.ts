@@ -391,13 +391,28 @@ export function partsNamePath(lines: readonly string[], path: string): boolean {
  * that sets the default template (`MapDefaultControllerRoute()`), or a DRF `@action(` that sets no
  * `url_path=` (its path is the method's name). `[controller]` alone is not one: an attribute route
  * names its action in its own attribute, not by the method.
+ *
+ * A text may hold several lines, a window joined with `\n` (fifth review): a DRF `@action(` is
+ * read to its closing parenthesis, so a `url_path=` on a line below it, inside the call, makes it
+ * none; one the window doesn't close is read as far as the window goes.
  */
 export function declaresConventionalRoute(texts: readonly string[]): boolean {
   return texts.some(
-    (t) =>
-      /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t) ||
-      (/@action\s*\(/.test(t) && !/\burl_path\s*=/.test(t)),
+    (t) => /[{[]action(=\w*)?\??[}\]]|\bMapDefaultControllerRoute\b/i.test(t) || drfActionNamed(t),
   );
+}
+
+/** Whether a text holds a DRF `@action(…)` that sets no `url_path=` within its parentheses. */
+function drfActionNamed(t: string): boolean {
+  for (const m of t.matchAll(/@action\s*\(/g)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    for (; i < t.length && depth > 0; i++)
+      if (t[i] === "(") depth++;
+      else if (t[i] === ")") depth--;
+    if (!/\burl_path\s*=/.test(t.slice(m.index, i))) return true;
+  }
+  return false;
 }
 
 /** A comment line's text with its marker taken off (`// `, `/* `, `* `, `# `, `<!-- `, `-- `). */

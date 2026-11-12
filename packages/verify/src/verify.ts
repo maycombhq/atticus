@@ -1052,6 +1052,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     const parts = cite.with ?? [];
     const near = (ls: string[], n: number) => ls.slice(Math.max(0, n - 2), n + 1);
     const partLines: string[] = [];
+    // each part's window, joined, for what a call wrapped over its lines declares (fifth review)
+    const partWindows: string[] = [];
     for (const [i, p] of parts.entries()) {
       const pl = `${label} part ${i + 1}`;
       if (!insideRepo(p.file))
@@ -1119,9 +1121,11 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             ? `${pl} is written at ${p.file}:${p.line} (or the line either side) only in a comment; cite the code that does it`
             : `${pl} says "${p.value}", which ${p.file}:${p.line} (or the line either side) writes only in a comment; cite the code that does it`,
         };
-      partLines.push(
-        ...(/(^|\/)_redirects$/.test(p.file) ? partNear : partNear.filter((_, i) => !isComment[i])),
-      );
+      const kept = /(^|\/)_redirects$/.test(p.file)
+        ? partNear
+        : partNear.filter((_, i) => !isComment[i]);
+      partLines.push(...kept);
+      partWindows.push(kept.join("\n"));
     }
     // With parts, the claim is put together from code: the cited file's comment lines are read
     // as blank (review of ADR 0196), so a commented-out line beside the cite names nothing. The
@@ -1138,11 +1142,12 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // A conventional route (`{controller}/{action}`, `MapDefaultControllerRoute()`) is named by
     // its class and method: its action is the method's name (third review of ADR 0196).
     // Fourth review: the cite window's code lines too (a DRF `@action(` with no `url_path=`, a
-    // method's own `[Route("[action]")]`), never its comments.
+    // method's own `[Route("[action]")]`), never its comments. Fifth review: each window joined,
+    // so an `@action(` wrapped over lines is read to its close (`url_path=` on the next line).
     const conventional = declaresConventionalRoute([
       ...parts.map((p) => p.value),
-      ...partLines,
-      ...near(codeLines, cite.line),
+      ...partWindows,
+      near(codeLines, cite.line).join("\n"),
     ]);
     // Third review of ADR 0196: an HTTP route's piece that the parts don't name and only a
     // commented-out mapping in the cite window writes as a path is named by that comment, not by

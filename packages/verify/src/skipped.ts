@@ -1,6 +1,7 @@
 import { normalizePath, redactSecrets, type Fact } from "@maycombhq/core";
 import { DEFAULT_READ_RULES, type ReadRules } from "./conventions.js";
 import { readOpenApiDocument } from "@maycombhq/extractors";
+import { commentLexisOf, lexCommentLines } from "./comments.js";
 
 /**
  * R1: the lines the reader skipped, the cross-check ADR 0124 promised. Plain text patterns that
@@ -75,7 +76,8 @@ export function notReadForSkipped(path: string, rules: ReadRules = DEFAULT_READ_
  * - `c`: `//`, `/*` and a doc block's leading `*` (JavaScript, TypeScript, Java, Kotlin, Scala, C#,
  *   Go, Rust, Swift, C, C++, Dart…); `#` never (a C# directive, a C include, Rust's `#[`/`#!`, a
  *   JavaScript `#private` field are code).
- * - `php`: C's, and `#` but not PHP 8's `#[` attribute.
+ * - `php`: C's, and `#` but not PHP 8's `#[` attribute. A `.inc` file is PHP only when it holds
+ *   `<?php` near its start (`head`, fifth review), else C's.
  * - `sql`: `--` and `/*`.
  * - `xml`: `<!--` (XML, XAML, MSBuild, SVG, WSDL).
  * - anything else (HTML, whose scripts hold `//` comments, Markdown, Vue, Razor, Terraform, a
@@ -90,13 +92,14 @@ const HASH_NAME =
 const C_EXT =
   /\.(m?[jt]sx?|c[jt]s|mts|java|kt|kts|scala|sc|groovy|gradle|cs|csx|go|rs|swift|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|m|mm|dart|proto|scss|less|css|json5|jsonc|zig|sol|hx|fs|fsx)$/i;
 const C_NAME = /(^|\/)Jenkinsfile(\.[\w.-]+)?$/;
-const PHP_EXT = /\.(php|phtml|php[3-8]|phps|phpt|inc|module)$/i;
+const PHP_EXT = /\.(php|phtml|php[3-8]|phps|phpt|module)$/i;
 const SQL_EXT = /\.(sql|ddl|dml|pgsql|psql|plsql|hql|cql)$/i;
 const XML_EXT =
   /\.(xml|xaml|axaml|csproj|vbproj|fsproj|props|targets|nuspec|resx|xsd|xslt?|wsdl|plist|svg|config|tld|jspx)$/i;
 
-export function commentStyleOf(file: string): CommentStyle {
+export function commentStyleOf(file: string, head?: string): CommentStyle {
   if (PHP_EXT.test(file)) return "php";
+  if (/\.inc$/i.test(file)) return head !== undefined && /<\?php/i.test(head) ? "php" : "c";
   if (C_EXT.test(file) || C_NAME.test(file)) return "c";
   if (SQL_EXT.test(file)) return "sql";
   if (XML_EXT.test(file)) return "xml";
@@ -104,14 +107,28 @@ export function commentStyleOf(file: string): CommentStyle {
   return "generic";
 }
 
+/** A file's first characters, where a `.inc` file says `<?php`. */
+const headOf = (lines: readonly string[]) => {
+  let h = "";
+  for (let i = 0; i < lines.length && i < 5 && h.length < 512; i++) h += `${lines[i]}\n`;
+  return h;
+};
+
 /**
  * A line that is all comment, in its file's own markers (`commentStyleOf`). A shebang is no
  * comment, nor, where `#` is a comment, a C# or C directive in a file of no known type. A block
  * comment closed on the line with code after it (`/* istanbul ignore next *\/ router.get(...)`,
- * `<!-- a --> <route …>`) is code. `file` is the path of the file the line is in.
+ * `<!-- a --> <route …>`) is code. `file` is the path of the file the line is in, `lines` its lines
+ * when known (a `.inc` file is PHP only when it holds `<?php`). In a C-family or PHP file the line
+ * is read by the lexer (`lexCommentLines`) on its own, as `commentLinesOf` reads a file: its strings
+ * are strings, and a JSX comment `{/* … *\/}` is comment.
  */
-export const isCommentLine = (l: string, file: string) => {
-  const style = commentStyleOf(file);
+export const isCommentLine = (l: string, file: string, lines?: readonly string[]) =>
+  lineIsComment(l, file, commentStyleOf(file, lines && headOf(lines)));
+
+function lineIsComment(l: string, file: string, style: CommentStyle): boolean {
+  if (style === "c" || style === "php")
+    return lexCommentLines([l], commentLexisOf(file, style === "php"))[0]!;
   const marker =
     style !== "hash"
       ? COMMENT_OF[style]
@@ -121,7 +138,7 @@ export const isCommentLine = (l: string, file: string) => {
           ? PROPERTIES_COMMENT
           : COMMENT_OF.hash;
   return marker.test(l) && !(style === "xml" ? XML_THEN_CODE : BLOCK_THEN_CODE).test(l);
-};
+}
 
 const DIRECTIVE =
   "(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)";
@@ -267,39 +284,21 @@ function topicOf(s: string, context: boolean): string | undefined {
 }
 
 /**
- * Which of a file's lines are all comment: `isCommentLine`, and in a C-family file (`c`) a line
- * inside a block comment opened on a line above, unless code follows the block's close on it
- * (fourth review of ADR 0196: `/* removed:` then `   @GetMapping("/balances") *\/`, a line with no
- * leading `*`, read as code). A block opens as `candidatesIn` reads one, at the line's start or
- * after a space (so `"/api/*"` opens none), and never after a `//` that starts a line comment.
- * Python's docstrings are not read as comments (a canary comments out single lines only).
+ * Which of a file's lines are all comment. In a C-family or PHP file, by the lexer in one pass
+ * over the file (`lexCommentLines`, fifth review of ADR 0196): its state is kept across lines, so a
+ * line inside a block comment opened above is comment (fourth review: `/* removed:` then
+ * `   @GetMapping("/balances") *\/`), a `/*` in a string, a template literal, a raw string or after a
+ * line comment opens none (fifth review: `"rm -rf build /*"` read the rest of the file as comment),
+ * blocks nest where the language nests them, a JSX comment is comment, and a PHP doc block's
+ * annotation route is code. Any other file, line by line (`isCommentLine`). Python's docstrings
+ * are not read as comments (a canary comments out single lines only). Linear in the file's length;
+ * the verifier keeps it once per lines held.
  */
 export function commentLinesOf(file: string, lines: readonly string[]): boolean[] {
-  if (commentStyleOf(file) !== "c") return lines.map((l) => isCommentLine(l, file));
-  let inBlock = false;
-  return lines.map((raw) => {
-    const was = inBlock;
-    let s = raw;
-    let code = "";
-    for (;;) {
-      if (inBlock) {
-        const i = s.indexOf("*/");
-        if (i < 0) break;
-        s = s.slice(i + 2);
-        inBlock = false;
-      }
-      const m = /(^|\s)(\/\*|\/\/)/.exec(s);
-      if (!m) {
-        code += s;
-        break;
-      }
-      code += s.slice(0, m.index + m[1]!.length);
-      if (m[2] === "//") break;
-      s = s.slice(m.index + m[0].length);
-      inBlock = true;
-    }
-    return was ? !code.trim() : isCommentLine(raw, file);
-  });
+  const style = commentStyleOf(file, headOf(lines));
+  if (style === "c" || style === "php")
+    return lexCommentLines(lines, commentLexisOf(file, style === "php"));
+  return lines.map((l) => lineIsComment(l, file, style));
 }
 
 /** The line with its comments taken out; `inBlock` carries a block comment across lines. */
@@ -326,13 +325,18 @@ function codeOf(raw: string, state: { block?: "c" | "xml" }): string {
 /** Every path, URL and topic string a file's lines write outside comments and imports. */
 export function candidatesIn(path: string, lines: readonly string[]): Candidate[] {
   const out: Candidate[] = [];
+  const style = commentStyleOf(path, headOf(lines));
+  // a C-family or PHP file's text outside its comments, by the lexer (fifth review of ADR 0196:
+  // the regex read a `/*` in a string as a block's start, and the rest of the file as comment)
+  const lexed: string[] | undefined = style === "c" || style === "php" ? [] : undefined;
+  if (lexed) lexCommentLines(lines, commentLexisOf(path, style === "php"), lexed);
   const state: { block?: "c" | "xml" } = {};
   // How deep the line is in a build's repositories, distribution or SCM: XML elements and braces.
   let xmlDepth = 0;
   let braceDepth = 0;
   lines.forEach((raw, i) => {
-    const wasBlock = state.block !== undefined;
-    let code = codeOf(raw, state);
+    const wasBlock = lexed !== undefined || state.block !== undefined;
+    let code = lexed ? lexed[i]! : codeOf(raw, state);
     const inBuild = xmlDepth > 0 || braceDepth > 0;
     for (const m of code.matchAll(BUILD_BLOCK_TAG))
       if (!m[3]) xmlDepth = Math.max(0, xmlDepth + (m[1] ? -1 : 1));
@@ -344,7 +348,7 @@ export function candidatesIn(path: string, lines: readonly string[]): Candidate[
       );
     }
     if (!code.trim()) return;
-    if (!wasBlock && isCommentLine(raw, path)) return;
+    if (!wasBlock && lineIsComment(raw, path, style)) return;
     if (IMPORT_LINE.test(code) || IMPORT_CALL.test(code) || NAMESPACE_LINE.test(code)) return;
     // a trailing comment: `//` or `#` after a space (a URL's `://` has a colon before it)
     code = code.replace(/(^|[\s;,)}])\/\/.*$/, "$1").replace(/\s#\s.*$/, "");

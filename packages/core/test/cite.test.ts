@@ -412,6 +412,28 @@ describe("an HTTP route's piece only a commented-out mapping writes (third revie
     ])
       expect([t, declaresConventionalRoute([t])]).toEqual([t, false]);
   });
+  // Fifth review: a window is read joined, so an @action wrapped over lines is read whole: its
+  // url_path on the next line makes it no conventional route; a url_path after its close is
+  // another call's.
+  it("reads a DRF @action wrapped over the window's lines", async () => {
+    const { declaresConventionalRoute } = await import("../src/index.js");
+    const wrapped = ["    @action(detail=True,", "            url_path='recent')"];
+    expect(declaresConventionalRoute([wrapped.join("\n")])).toBe(false);
+    expect(
+      declaresConventionalRoute([
+        "    @action(\n        detail=False,\n        methods=['get'],\n    )",
+      ]),
+    ).toBe(true);
+    expect(
+      declaresConventionalRoute(["    @action(detail=True)\n    x = path(url_path='y')"]),
+    ).toBe(true);
+    // a call not closed in the window: what it shows has no url_path
+    expect(declaresConventionalRoute(["    @action(detail=True,"])).toBe(true);
+    // a second @action in the same window: either one with no url_path is conventional
+    expect(
+      declaresConventionalRoute(["@action(detail=True, url_path='a')\n@action(detail=False)"]),
+    ).toBe(true);
+  });
   it("reads a window's comment lines by their place, not their text", async () => {
     const { pathPieceOnlyInComment } = await import("../src/index.js");
     // the second line is inside a block comment: only the place says so

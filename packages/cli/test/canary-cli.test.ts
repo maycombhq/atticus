@@ -1050,7 +1050,7 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     const c = capture();
     expect(await canaryCheck(h.root, "forge-portal-bff", opts(h), c.io)).toBe(2);
     expect(c.err).toEqual([
-      "The run folder of forge-portal-bff's canary is gone (or isn't a real folder any more): its key is deleted. Plant it again: atticus canary plant forge-portal-bff.",
+      `The run folder of forge-portal-bff's canary isn't there any more: ${await realpath(h.scratch).then((t) => join(t, "atticus-reads"))} is gone (a restart or the system's cleaning of the temporary folder takes it). Its key is deleted. Plant it again: atticus canary plant forge-portal-bff. (A session that still sees that folder, such as a service with a /tmp of its own, deletes the run folder there with atticus canary clean --all.)`,
     ]);
     expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
     // score
@@ -1058,7 +1058,7 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     await wipe();
     const s = capture();
     expect(await canaryScore(h.root, "forge-portal-bff", opts(h), s.io)).toBe(2);
-    expect(s.err[0]).toMatch(/is gone .*its key is deleted/);
+    expect(s.err[0]).toMatch(/is gone .*Its key is deleted/);
     expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
     // clean, and clean --all: the key counted, its run folder already gone
     for (const how of [{ repo: "forge-portal-bff" }, { all: true }] as const) {
@@ -1084,24 +1084,111 @@ describe("atticus canary: the review's adversarial cases", { timeout: 60_000 }, 
     const p = capture();
     expect(await canaryPlant(h.root, "forge-portal-bff", opts(h), p.io), p.err.join("\n")).toBe(0);
     expect(p.out[0]).toBe(
-      "An earlier canary of forge-portal-bff wasn't scored: its copy was already gone, and its key is deleted.",
+      "An earlier canary of forge-portal-bff wasn't scored: its run folder wasn't there any more, and its key is deleted.",
     );
     const key = await keyOf(h, "forge-portal-bff");
     expect(await exists(runOf(h, key).run)).toBe(true);
-    // the whole temporary folder gone, from a key with its reads folder, and from one planted
-    // before keys kept it
-    await rm(h.scratch, { recursive: true, force: true });
-    expect(await canaryCheck(h.root, "forge-portal-bff", opts(h), capture().io)).toBe(2);
-    expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
-    expect(await plant()).toBe(0);
-    const raw = JSON.parse(await readFile(keyFile(h, "forge-portal-bff"), "utf8"));
-    delete raw.reads;
-    await writeFile(keyFile(h, "forge-portal-bff"), JSON.stringify(raw));
-    await rm(h.scratch, { recursive: true, force: true });
+    // fifth review: the whole temporary folder gone is no proof the run went (a drive not
+    // mounted looks the same), so that key is kept; see the test below
+  });
+
+  // Fifth review of ADR 0196: a reads folder that isn't there is no proof its run went. The run
+  // may be reached by another path (found by its name in this temporary folder's reads folder),
+  // on a drive not mounted now, or (a key an earlier version wrote, with no reads folder) under
+  // another TMPDIR. Only what was seen not to be there is said to be gone.
+  it("keeps a key whose run it can't place, and finds a run by its name in this temporary folder", async () => {
+    const h = await metarepo();
+    const R = "forge-portal-bff";
+    const setReads = async (reads: string | undefined) => {
+      const raw = JSON.parse(await readFile(keyFile(h, R), "utf8"));
+      if (reads === undefined) delete raw.reads;
+      else raw.reads = reads;
+      await writeFile(keyFile(h, R), JSON.stringify(raw));
+    };
+    // the key's reads folder isn't there, and the run is in this temporary folder's: found
+    await canaryPlant(h.root, R, opts(h), capture().io);
+    const { run, facts } = runOf(h, await keyOf(h, R));
+    await cp(join(FIX, "canaries/reads/forge-portal-bff.s1.jsonl"), facts);
+    await mkdir(join(h.top, "was-tmp"));
+    await setReads(join(h.top, "was-tmp", "atticus-reads"));
+    expect(await canaryCheck(h.root, R, opts(h), capture().io)).toBe(1);
+    expect(await exists(keyFile(h, R))).toBe(true);
+    const sc = capture();
+    expect(await canaryScore(h.root, R, opts(h), sc.io), sc.err.join("\n")).toBe(0);
+    expect(await exists(run)).toBe(false);
+    expect(await exists(keyFile(h, R))).toBe(false);
+
+    // a drive not mounted: neither the reads folder nor the folder it was made in is there, and
+    // the run isn't in this temporary folder's. Every command keeps the key and says how to go on.
+    await canaryPlant(h.root, R, opts(h), capture().io);
+    const away = runOf(h, await keyOf(h, R)).run;
+    const unmounted = join(h.top, "drive", "tmp", "atticus-reads");
+    await setReads(unmounted);
+    const elsewhere = opts(h, { scratch: join(h.top, "elsewhere") });
+    const kept = keyFile(h, R);
+    for (const cmd of [canaryCheck, canaryScore, canaryPlant]) {
+      const c = capture();
+      expect(await cmd(h.root, R, elsewhere, c.io)).toBe(2);
+      const said = c.err.join("\n");
+      expect(said).toContain(
+        `which can't be reached now (${dirname(unmounted)} isn't there either`,
+      );
+      expect(said).toContain(`the key is kept, at ${kept}`);
+      expect(said).toContain(`rm ${kept}`);
+      expect(said).not.toMatch(/already gone|key is deleted|copy is deleted/);
+    }
+    const cl = capture();
+    expect(await canaryClean(h.root, R, elsewhere, cl.io)).toBe(0);
+    expect(cl.out.join("\n")).toContain(`the key is kept, at ${kept}`);
+    expect(cl.out.join("\n")).not.toMatch(/already gone|Deleted/);
+    expect(await exists(kept)).toBe(true);
+    expect(await exists(away)).toBe(true);
+
+    // a key an earlier version wrote (no reads folder): under another temporary folder its run
+    // isn't found, and the key is kept; in its own temporary folder it is found and used
+    await setReads(undefined);
+    for (const cmd of [canaryCheck, canaryScore]) {
+      const c = capture();
+      expect(await cmd(h.root, R, elsewhere, c.io)).toBe(2);
+      const said = c.err.join("\n");
+      expect(said).toContain(
+        `The key of ${R}'s canary, at ${kept}, was written by an earlier version`,
+      );
+      expect(said).toContain(`rm ${kept}`);
+    }
     const legacy = capture();
-    expect(await canaryClean(h.root, "forge-portal-bff", opts(h), legacy.io)).toBe(0);
-    expect(legacy.out[0]).toMatch(/^Deleted 1 planted canary: 0 run folders and 1 key/);
-    expect(await exists(keyFile(h, "forge-portal-bff"))).toBe(false);
+    expect(await canaryClean(h.root, R, elsewhere, legacy.io)).toBe(0);
+    expect(legacy.out.join("\n")).toMatch(/was written by an earlier version/);
+    expect(await exists(kept)).toBe(true);
+    expect(await exists(away)).toBe(true);
+    const own = capture();
+    expect(await canaryClean(h.root, R, opts(h), own.io)).toBe(0);
+    expect(own.out).toEqual(["Deleted 1 planted canary: 1 run folder and 1 key."]);
+    expect(await exists(away)).toBe(false);
+
+    // the whole temporary folder gone, the key's reads folder with it: kept, as for a drive
+    await canaryPlant(h.root, R, opts(h), capture().io);
+    await rm(h.scratch, { recursive: true, force: true });
+    const c = capture();
+    expect(await canaryCheck(h.root, R, opts(h), c.io)).toBe(2);
+    expect(c.err.join("\n")).toMatch(/can't be reached now/);
+    expect(await exists(kept)).toBe(true);
+
+    // a link where the run folder was: nothing in it touched, the key deleted, and said so
+    await mkdir(readsOf(h), { recursive: true, mode: 0o700 });
+    await canaryPlant(h.root, R, opts(h), capture().io);
+    expect(await exists(kept)).toBe(true);
+    const k2 = await keyOf(h, R);
+    const target = join(h.top, "target");
+    await mkdir(target);
+    await rm(runOf(h, k2).run, { recursive: true });
+    await symlink(target, runOf(h, k2).run);
+    const ln = capture();
+    expect(await canaryClean(h.root, R, opts(h), ln.io)).toBe(0);
+    expect(ln.out).toEqual([
+      "Deleted 1 planted canary: 0 run folders and 1 key (1 wasn't a real folder (a link?), left as it was).",
+    ]);
+    expect(await exists(target)).toBe(true);
   });
 
   it("clean --all sweeps this metarepo's run folders no key names, wherever its keys said", async () => {
