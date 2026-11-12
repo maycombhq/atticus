@@ -14,11 +14,12 @@ export type Join = Api.HierJoinT;
 /** The most calls one POST /api/links/corrections corrects: the API's LINK_CORRECTIONS_MAX. */
 export const ARROW_CALLS_MAX = 5000;
 
-/** The call's own line: the caller's first code citation (the config that ties it comes after). */
-export function callerLine(j: Join): { repo: string; at: string } | undefined {
-  const c = j.caller.find((e) => e.repo && e.source === "code") ?? j.caller.find((e) => e.repo);
-  return c?.repo ? { repo: c.repo, at: c.at } : undefined;
-}
+/**
+ * The call's own line: the caller's first code citation (the config that ties it comes after).
+ * Review of beta.27: the first of `callerLines`, so a citation with no line number is no line here
+ * either, the same test everywhere (This link is wrong, the arrow, a proxy's routing).
+ */
+export const callerLine = (j: Join): { repo: string; at: string } | undefined => callerLines(j)[0];
 
 /** The call facts on the caller's line, from the repo's facts: what a correction is about. */
 export function callFactsOf(j: Join, v: FactsView | undefined): FactCite[] {
@@ -91,13 +92,15 @@ export const callKey = (c: { repo: string; fact: { id: string } }) => `${c.repo}
  * the link's path ticked at first. A link a person declared (`declared`) has no call in code: the
  * declaration is withdrawn instead. A link with no line of a caller's (`routing`, a gateway
  * proxy's routing) has none of its own: its proxy's forwarding call is shared by every caller of
- * the route, so it is never corrected from here. `none`: the caller's lines hold no call fact
- * loaded.
+ * the route, so it is never corrected from here. Review of beta.27: a link with no line of a
+ * caller's that is no proxy's routing (a built-in reader's, with no sided evidence) is
+ * `uncited`: its caller's repo is read again. `none`: the caller's lines hold no call fact loaded.
  */
 export type LinkBasis =
   | { kind: "calls"; calls: CallToCorrect[]; ask: CallToChoose[] }
   | { kind: "declared" }
   | { kind: "routing" }
+  | { kind: "uncited" }
   | { kind: "none" };
 
 /** A call's path is the link's: the same, or one ending with it at a segment (a base path's). */
@@ -113,7 +116,7 @@ function ofLinkPath(c: FactCite, path: string): boolean {
 export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefined): LinkBasis {
   if (j.how === "declared") return { kind: "declared" };
   const lines = callerLines(j);
-  if (!lines.length) return { kind: "routing" };
+  if (!lines.length) return isRoutingLink(j) ? { kind: "routing" } : { kind: "uncited" };
   const m = (x: string | undefined) => (x ?? "").toUpperCase();
   const path = j.path ? normalizePath(j.path) : undefined;
   const calls: CallToCorrect[] = [];
@@ -140,6 +143,211 @@ export function linkBasis(j: Join, viewOf: (repo: string) => FactsView | undefin
   return { kind: "calls", calls, ask };
 }
 
+/**
+ * A routing link's proxy lines: each hop's own line (its route's entry and its forwarding call,
+ * `source: gateway`) that names its repo, in the hops' order, once each. Review of beta.27: the
+ * config that ties a hop to its host and the infrastructure that exposes it are not the proxy's.
+ */
+function hopLines(j: Join): { repo: string; at: string }[] {
+  const seen = new Set<string>();
+  const out: { repo: string; at: string }[] = [];
+  for (const e of j.hops) {
+    if (e.source !== "gateway" || !e.repo || !splitAt(e.at)) continue;
+    const k = `${e.repo}\u0000${e.at}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ repo: e.repo, at: e.at });
+  }
+  return out;
+}
+
+/**
+ * Beta.27: a link a gateway proxy's routing made: no line of a caller's (joined by its path or
+ * the proxy's BasePath), so no call of its own to correct (`linkBasis`'s `routing`). Review of
+ * beta.27: only through a gateway (`gateway`) with a proxy's line (its hops'); a link with no line
+ * of a caller's and neither (a built-in reader's) is `uncited`.
+ */
+export const isRoutingLink = (j: Join): boolean =>
+  j.how !== "declared" &&
+  !j.dependency &&
+  j.gateway &&
+  hopLines(j).length > 0 &&
+  callerLines(j).length === 0;
+
+/** Review of beta.27: a link with no line of a caller's that is no proxy's routing. */
+export const isUncitedLink = (j: Join): boolean =>
+  j.how !== "declared" && !j.dependency && callerLines(j).length === 0 && !isRoutingLink(j);
+
+/**
+ * Review of beta.27: the repos to read again for the uncited links among `joins`: those their
+ * caller's evidence names, else the evidence placed at neither end (a built-in reader's).
+ */
+export const uncitedRepos = (joins: readonly Join[]): string[] => [
+  ...new Set(
+    joins
+      .filter(isUncitedLink)
+      .flatMap((j) => [...j.caller, ...j.other].flatMap((e) => (e.repo ? [e.repo] : []))),
+  ),
+];
+
+/** The proxy repos whose facts a routing link's actions read: its hops' own lines'. */
+export const proxyRepos = (joins: readonly Join[]): string[] => [
+  ...new Set(joins.filter(isRoutingLink).flatMap((j) => hopLines(j).map((l) => l.repo))),
+];
+
+/** An open question about where a proxy's route goes, and the proxy repo it is asked of. */
+export interface RouteQuestion {
+  id: string;
+  question: string;
+  repo: string;
+  /**
+   * Review of beta.27: when the arrow offers more than one, what tells this one apart, from its
+   * words: its path prefix (`/accounts/**`), else its host, else the question itself.
+   */
+  what?: string;
+}
+
+/** One forwarding line of a route: the proxy's call facts on it that are the route's. */
+interface Forwarding {
+  repo: string;
+  at: string;
+  calls: FactCite[];
+}
+
+/**
+ * Review of beta.27: the forwarding call's own line of a routing link's last hop (the one that
+ * reaches the link's target), and its call facts there. The hops' lines are walked in order, a
+ * hop of another proxy repo starting over, so a chain of gateways keeps only its last proxy's; a
+ * call on a line is the route's when it is `from` an entry on the hop's lines (two routes through
+ * one TargetEndpoint line), else every call there. None when that proxy's facts aren't read.
+ */
+function forwardingOf(j: Join, viewOf: (repo: string) => FactsView | undefined): Forwarding[] {
+  let proxy: string | undefined;
+  let unread = false;
+  let found: Forwarding[] = [];
+  const entries = new Set<string>();
+  for (const l of hopLines(j)) {
+    if (l.repo !== proxy) {
+      proxy = l.repo;
+      unread = false;
+      found = [];
+      entries.clear();
+    }
+    const v = viewOf(l.repo);
+    const at = splitAt(l.at)!;
+    if (!v) {
+      unread = true;
+      continue;
+    }
+    const hits = hitsAt(v, at.file, at.line).filter((h) => !h.step);
+    for (const h of hits) if (h.fact.kind === "entry") entries.add(h.fact.id);
+    const calls = [
+      ...new Map(
+        hits.filter((h) => h.fact.kind === "call").map((h) => [h.fact.id, h.fact]),
+      ).values(),
+    ];
+    if (!calls.length) continue;
+    const own = calls.filter((c) => c.claim.from !== undefined && entries.has(c.claim.from));
+    found.push({ repo: l.repo, at: `${at.file}:${at.line}`, calls: own.length ? own : calls });
+  }
+  return unread ? [] : found;
+}
+
+/** A targets question's words: the path prefix it asks under (`/accounts`), and its host. */
+function routeWords(question: string): { under?: string; host?: string } {
+  const under = /\bunder (\/[^\s?]*)/.exec(question)?.[1]?.replace(/\/?\*\*$/, "");
+  const host = /\b(?:forwards to|on|naming|through) ([^\s?]+)\??\s*$/.exec(question)?.[1];
+  return { ...(under !== undefined ? { under } : {}), ...(host ? { host } : {}) };
+}
+
+const segments = (p: string) => normalizePath(p).split("/").filter(Boolean);
+
+/** A path is under a prefix: the prefix's segments run on in it (after a proxy's base path too). */
+function isUnder(path: string, prefix: string): boolean {
+  const pre = segments(prefix);
+  const s = segments(path);
+  if (!pre.length) return true;
+  for (let i = 0; i + pre.length <= s.length; i++)
+    if (pre.every((x, k) => s[i + k] === x)) return true;
+  return false;
+}
+
+/**
+ * Of the open questions that cite a route's forwarding line, the route's own: when several do (a
+ * TargetEndpoint line every route of a host goes through), those whose path prefix the link's path
+ * is under, else those its forwarding calls' own paths are under (the prefix a question is asked
+ * with comes from them), and whose host its calls name. When several are cited and none fits,
+ * none is offered: another route's question is never the primary action.
+ */
+function ownQuestions(
+  j: Join,
+  qs: readonly FactsView["questions"][number][],
+  calls: readonly FactCite[],
+) {
+  if (qs.length < 2) return qs;
+  const own = calls.flatMap((c) => (c.claim.path ? [c.claim.path] : []));
+  const hosts = calls.flatMap((c) =>
+    [c.claim.base, c.claim.host, c.claim.to].filter((x): x is string => !!x),
+  );
+  const fitting = (paths: readonly string[]) =>
+    qs.filter((q) => {
+      const w = routeWords(q.question);
+      if (w.under === undefined) return false;
+      const under = w.under;
+      if (!paths.some((p) => isUnder(p, under))) return false;
+      return !w.host || !hosts.length || hosts.includes(w.host);
+    });
+  // The link's own path first (it tells two routes on one line apart), then the forwarding
+  // calls' paths (the prefix the question was asked with comes from them).
+  const byLink = j.path ? fitting([j.path]) : [];
+  return byLink.length ? byLink : fitting(own);
+}
+
+/**
+ * Beta.27: what does correct a link a proxy's routing made, of the routing links among `joins`:
+ * the open questions about where the route goes (a proxy's routes are asked once per host or path
+ * prefix, the question citing its forwarding call's line), and the forwarding line itself, whose
+ * facts take Correct this. Review of beta.27: only the forwarding call's own line of each link's
+ * last hop (`forwardingOf`), never its route's entry line (every route's), the config that ties
+ * it or another fact's line; a question only when it cites that line, and is the route's
+ * (`ownQuestions`). Each once; several questions each say what tells them apart (`what`). None
+ * when the proxy's facts hold no forwarding call there.
+ */
+export function routingActions(
+  joins: readonly Join[],
+  viewOf: (repo: string) => FactsView | undefined,
+): { questions: RouteQuestion[]; forwarding: { repo: string; at: string }[] } {
+  const questions = new Map<string, RouteQuestion>();
+  const forwarding = new Map<string, { repo: string; at: string }>();
+  for (const j of joins.filter(isRoutingLink)) {
+    const lines = forwardingOf(j, viewOf);
+    for (const l of lines) {
+      forwarding.set(`${l.repo}\u0000${l.at}`, { repo: l.repo, at: l.at });
+      const cited = (viewOf(l.repo)?.questions ?? []).filter((q) => q.evidence.includes(l.at));
+      for (const q of ownQuestions(j, cited, l.calls))
+        if (!questions.has(q.id))
+          questions.set(q.id, { id: q.id, question: q.question, repo: l.repo });
+    }
+  }
+  const qs = [...questions.values()];
+  if (qs.length < 2) return { questions: qs, forwarding: [...forwarding.values()] };
+  const words = new Map(qs.map((q) => [q.id, routeWords(q.question)]));
+  const under = (q: RouteQuestion) => {
+    const u = words.get(q.id)!.under;
+    return u === undefined ? undefined : `${u}/**`;
+  };
+  const host = (q: RouteQuestion) => words.get(q.id)!.host;
+  const alone = (q: RouteQuestion, f: (x: RouteQuestion) => string | undefined) =>
+    f(q) !== undefined && qs.filter((o) => f(o) === f(q)).length === 1;
+  return {
+    questions: qs.map((q) => ({
+      ...q,
+      what: alone(q, under) ? under(q)! : alone(q, host) ? host(q)! : q.question,
+    })),
+    forwarding: [...forwarding.values()],
+  };
+}
+
 /** The repos whose facts a link's correction reads: its caller's. */
 export const callerRepos = (joins: readonly Join[]): string[] => [
   ...new Set(joins.flatMap((j) => (j.how === "declared" ? [] : callerLines(j).map((l) => l.repo)))),
@@ -158,16 +366,20 @@ export function arrowCalls(
   missing: string[];
   declared: string[];
   routing: string[];
+  /** Review of beta.27: no line of a caller's, and no proxy's routing (`linkBasis`). */
+  uncited: string[];
 } {
   const calls = new Map<string, CallToCorrect>();
   const ask = new Map<string, CallToChoose>();
   const missing: string[] = [];
   const declared: string[] = [];
   const routing: string[] = [];
+  const uncited: string[] = [];
   for (const j of joins) {
     const b = linkBasis(j, viewOf);
     if (b.kind === "declared") declared.push(j.interface);
     else if (b.kind === "routing") routing.push(j.interface);
+    else if (b.kind === "uncited") uncited.push(j.interface);
     else if (b.kind === "none") missing.push(j.interface);
     else {
       for (const c of b.calls) if (!calls.has(callKey(c))) calls.set(callKey(c), c);
@@ -178,7 +390,14 @@ export function arrowCalls(
     }
   }
   for (const k of calls.keys()) ask.delete(k);
-  return { calls: [...calls.values()], ask: [...ask.values()], missing, declared, routing };
+  return {
+    calls: [...calls.values()],
+    ask: [...ask.values()],
+    missing,
+    declared,
+    routing,
+    uncited,
+  };
 }
 
 /** The calls ticked of those asked about (by `callKey`); until the person ticks, those of the path. */

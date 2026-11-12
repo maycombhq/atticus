@@ -263,6 +263,24 @@
   background: var(--inset);
   line-height: 1.5;
 }
+/* Beta.27: a proxy's routing link: what it is, then Answer where it goes and its forwarding. */
+.li-route-left,
+.li-route {
+  gap: 8px;
+}
+.li-route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.li-route-actions .btn {
+  height: 28px;
+}
+.li-terminal summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
 
 /* A form opens in place, in a box of its own, under the button that opened it. */
 .li-form.ev-correct {
