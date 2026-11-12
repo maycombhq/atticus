@@ -94,9 +94,27 @@ export async function planUpgradeToSlots(root: string): Promise<UpgradeSlotsPlan
   const listed = new Set(estateRepos(inputs.op).map((r) => r.id));
   const byRepo = new Map<string, CatalogRecord[]>();
   const joins: CatalogRecord[] = [];
+  // Each component's and system's repo, for an arrow's ends.
+  const endRepo = new Map<string, Set<string>>();
+  for (const r of old.records)
+    if (r.kind === "Component") {
+      const c = r as unknown as { id: string; repo?: string; system?: string };
+      for (const k of [c.id, c.system])
+        if (k && c.repo) endRepo.set(k, (endRepo.get(k) ?? new Set()).add(c.repo));
+    }
+  /** A cross-repo arrow: its ends are components or systems of different repos. */
+  const crossRepo = (r: CatalogRecord): boolean => {
+    if (r.kind !== "Interface") return false;
+    const x = r as unknown as { from?: string; to?: string };
+    const a = x.from ? endRepo.get(x.from) : undefined;
+    const b = x.to ? endRepo.get(x.to) : undefined;
+    return !!a && !!b && [...b].some((repo) => !a.has(repo));
+  };
   for (const r of old.records) {
     const repos = reposOf(r);
-    if (repos.length === 1 && listed.has(repos[0]!)) {
+    // A cross-repo arrow is a join whatever its evidence names (an arrow inferred from a call's
+    // host names only the caller): it stays until it is derived again (point 6).
+    if (repos.length === 1 && listed.has(repos[0]!) && !crossRepo(r)) {
       const xs = byRepo.get(repos[0]!) ?? [];
       xs.push(r);
       byRepo.set(repos[0]!, xs);
