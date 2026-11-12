@@ -1114,6 +1114,7 @@ export const COPY = {
       string,
       string
     >,
+    upgradeChange: (how: string, path: string) => `${how}: catalog/generated/${path}`,
     upgradeAccept: (n: number) => `Accept the ${n} ${n === 1 ? "change" : "changes"}…`,
     upgradeAcceptTitle: (n: number) =>
       `Accept ${n} ${n === 1 ? "change" : "changes"} of the first build`,

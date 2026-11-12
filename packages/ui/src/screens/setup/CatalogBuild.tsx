@@ -634,9 +634,7 @@ export function UpgradeChangesList(p: { changes: Api.CatalogUpgradeViewT["change
   return (
     <ul className="cb-list mono" aria-label={B.upgradeChangesCaption}>
       {p.changes.map((c) => (
-        <li key={c.path}>
-          {B.upgradeHow[c.how] ?? c.how}: catalog/generated/{c.path}
-        </li>
+        <li key={c.path}>{B.upgradeChange(B.upgradeHow[c.how] ?? c.how, c.path)}</li>
       ))}
     </ul>
   );
