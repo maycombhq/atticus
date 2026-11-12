@@ -528,6 +528,95 @@ describe("the code's stamp (ADR 0195 point 9)", () => {
     expect(other).toMatchObject({ why: expect.stringMatching(/@maycombhq\/scanner/) });
   });
 
+  /**
+   * The offline bundle's layout (ADR 0052: `pnpm deploy` of the CLI, scripts/bundle/inventory.mjs):
+   * the scanner and every @maycombhq package are real folders under node_modules, beside the
+   * third-party ones, and no build id is written into their code.
+   */
+  async function deployed() {
+    const root = await temp("atticus-stamp-deploy-");
+    const nm = join(root, "node_modules");
+    const pkg = (dir: string, m: object) =>
+      mkdir(dir, { recursive: true }).then(() =>
+        writeFile(join(dir, "package.json"), JSON.stringify(m)),
+      );
+    const scanner = join(nm, "@maycombhq/scanner");
+    const core = join(nm, "@maycombhq/core");
+    const yaml = join(nm, "yaml");
+    await pkg(join(root), { name: "@maycombhq/cli", version: "1.0.0" });
+    await pkg(scanner, {
+      name: "@maycombhq/scanner",
+      version: "1.0.0",
+      private: true,
+      main: "./dist/index.js",
+      files: ["dist"],
+      dependencies: { "@maycombhq/core": "1.0.0", yaml: "^2.9.1" },
+    });
+    await pkg(core, {
+      name: "@maycombhq/core",
+      version: "1.0.0",
+      main: "./dist/index.js",
+      files: ["dist"],
+      dependencies: { yaml: "^2.9.1" },
+    });
+    await pkg(yaml, { name: "yaml", version: "2.9.1" });
+    for (const [d, f, t] of [
+      [scanner, "dist/build-cache.js", "export {};\n"],
+      [scanner, "dist/index.js", "export {};\n"],
+      [core, "dist/index.js", "export const a = 1;\n"],
+    ] as const) {
+      await mkdir(dirname(join(d, f)), { recursive: true });
+      await writeFile(join(d, f), t);
+    }
+    const stampOf = (loadedAt?: number) =>
+      codeStampOf({
+        buildId: undefined,
+        moduleUrl: pathToFileURL(join(scanner, "dist/build-cache.js")).href,
+        ...(loadedAt === undefined ? {} : { loadedAt }),
+      });
+    return { root, scanner, core, yaml, stampOf };
+  }
+
+  it("installed by pnpm deploy (the offline bundle), hashes the files of every @maycombhq package, not their names and versions", async () => {
+    const d = await deployed();
+    const first = d.stampOf();
+    expect(first).toMatchObject({
+      from: "installed",
+      stamp: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(d.stampOf().stamp).toBe(first.stamp);
+    // A rebuilt bundle of the same version: the core's code changed, its version didn't.
+    await writeFile(join(d.core, "dist/index.js"), "export const a = 2;\n");
+    const second = d.stampOf();
+    expect(second.stamp).not.toBe(first.stamp);
+    await writeFile(join(d.scanner, "dist/index.js"), "export const b = 1;\n");
+    const third = d.stampOf();
+    expect(third.stamp).not.toBe(second.stamp);
+    // A third party is named by its version.
+    await writeFile(
+      join(d.yaml, "package.json"),
+      JSON.stringify({ name: "yaml", version: "2.9.2" }),
+    );
+    expect(d.stampOf().stamp).not.toBe(third.stamp);
+  });
+
+  it("is none when a package of ours has none of its code to hash (only its name and version)", async () => {
+    const d = await deployed();
+    await rm(join(d.core, "dist"), { recursive: true });
+    expect(d.stampOf()).toMatchObject({
+      why: expect.stringMatching(/@maycombhq\/core.*dist\/index\.js/),
+    });
+  });
+
+  it("is none when a file it hashes changed after the code loaded (a dist rebuilt under a running app)", async () => {
+    const d = await deployed();
+    const loadedAt = Date.now() - 60_000;
+    expect(d.stampOf(Date.now() + 60_000).stamp).toMatch(/^[0-9a-f]{64}$/);
+    const r = d.stampOf(loadedAt);
+    expect(r.stamp).toBeUndefined();
+    expect(r).toMatchObject({ why: expect.stringMatching(/changed since this code loaded/) });
+  });
+
   it(
     "with none, the cache is off: nothing is read from it or written to it",
     async () => {

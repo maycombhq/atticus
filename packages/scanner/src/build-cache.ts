@@ -58,22 +58,34 @@ declare const __ATTICUS_BUILD_ID__: unknown;
 const bundledBuildId = (): unknown =>
   typeof __ATTICUS_BUILD_ID__ === "undefined" ? undefined : __ATTICUS_BUILD_ID__;
 
-/** Where the code stamp came from, or why there is none (the cache is then off). */
+/**
+ * Where the code stamp came from, or why there is none (the cache is then off): the npm bundle's
+ * build id, a checkout's files, or the files of a `pnpm deploy` (the offline bundle, ADR 0052).
+ */
 export type CodeStamp =
-  { stamp: string; from: "bundle" | "checkout" } | { stamp?: undefined; why: string };
+  { stamp: string; from: "bundle" | "checkout" | "installed" } | { stamp?: undefined; why: string };
 
 /**
  * The stamp of the code that builds, so a cache made by other code is never used, even at the
- * same build version (an upgrade, a developer's build). Installed, the bundle's build id, which
- * changes with every release and every change to any file the package carries. In a checkout,
- * a hash of every workspace package the scanner reaches through its dependencies (each one's
- * package.json and the files it publishes, its dist folder among them, and the folder this
- * module runs from) and the name and version of every third-party package they reach (yaml,
- * zod and theirs). When neither can be worked out (a bundle whose id wasn't written, a module
- * run from a folder that isn't the scanner's package, a workspace dependency not found), there
- * is no stamp, and the cache is off: a stamp is never guessed.
+ * same build version (an upgrade, a developer's build, an offline bundle rebuilt at the same
+ * version). The npm bundle: its build id, which changes with every release and every change to
+ * any file the package carries. Otherwise (a checkout, or the offline bundle's `pnpm deploy`,
+ * where every package is a folder under node_modules and no build id is written): a hash of the
+ * files of every package of ours the scanner reaches through its dependencies (a workspace
+ * package, or an @maycombhq one under node_modules: each one's package.json and the files it
+ * publishes, its dist folder among them, and the folder this module runs from) and the name and
+ * version of every third-party package they reach (yaml, zod and theirs). Our own code is never
+ * stamped by its name and version alone. When none of this can be worked out (a bundle whose id
+ * wasn't written, a module run from a folder that isn't the scanner's package, a dependency of
+ * ours not found or without its code, a file of ours changed after `loadedAt`, when this code
+ * loaded), there is no stamp, and the cache is off: a stamp is never guessed.
  */
-export function codeStampOf(o: { buildId: unknown; moduleUrl: string }): CodeStamp {
+export function codeStampOf(o: {
+  buildId: unknown;
+  moduleUrl: string;
+  /** When the code that runs was loaded (ms): a file it hashes changed since isn't that code. */
+  loadedAt?: number;
+}): CodeStamp {
   const head = `${BUILD_VERSION}\u0000${SLOT_VERSION}\u0000${BUILD_CACHE_FORMAT}\u0000`;
   if (o.buildId !== undefined) {
     if (typeof o.buildId !== "string" || !/^[0-9a-f]{64}$/.test(o.buildId))
@@ -86,8 +98,11 @@ export function codeStampOf(o: { buildId: unknown; moduleUrl: string }): CodeSta
   } catch {
     return { why: `${o.moduleUrl} isn't a file` };
   }
-  const c = checkoutHash(here);
-  return "why" in c ? c : { stamp: sha(`${head}checkout\u0000${c.hash}`), from: "checkout" };
+  const c = checkoutHash(here, o.loadedAt);
+  if ("why" in c) return c;
+  // The label is in the stamp: a checkout's and a deploy's are never the same code.
+  const from = c.installed ? "installed" : "checkout";
+  return { stamp: sha(`${head}${from}\u0000${c.hash}`), from };
 }
 
 const SCANNER = "@maycombhq/scanner";
@@ -134,17 +149,34 @@ function packageFrom(name: string, from: string): string | undefined {
   }
 }
 
-const isThirdParty = (dir: string) => /[\\/]node_modules[\\/]/.test(dir);
+const underNodeModules = (dir: string) => /[\\/]node_modules[\\/]/.test(dir);
+/**
+ * Ours: a workspace package (its real folder outside node_modules), or one of our scope under
+ * node_modules (a `pnpm deploy`, the offline bundle): hashed by its files, never by its version.
+ */
+const isOurs = (dir: string, m: PackageJson) =>
+  !underNodeModules(dir) || (m.name ?? "").startsWith("@maycombhq/");
 
-function checkoutHash(here: string): { hash: string } | { why: string } {
+function checkoutHash(
+  here: string,
+  loadedAt?: number,
+): { hash: string; installed: boolean } | { why: string } {
   const start = nearestPackage(here);
   if (!start || start.m.name !== SCANNER)
     return { why: `${here} isn't in the ${SCANNER} package of a checkout` };
   const lines: string[] = [];
   const seen = new Set<string>();
   const queue: { dir: string; m: PackageJson }[] = [start];
-  const fileLines = (dir: string, extra: readonly string[]) => {
+  /** A file of ours changed after the code that runs was loaded: its path. */
+  let newer: string | undefined;
+  /**
+   * `running`: the folders whose files are the code that runs, checked against `loadedAt`. The
+   * scanner's own is the folder this module runs from (src/ under a test runner, whose dist a
+   * build may write meanwhile); every other package of ours runs from what it publishes.
+   */
+  const fileLines = (dir: string, extra: readonly string[], running: readonly string[]) => {
     const out: string[] = [];
+    const runs = (rel: string) => running.some((r) => rel === r || rel.startsWith(`${r}/`));
     const walk = (abs: string, rel: string) => {
       let st;
       try {
@@ -156,8 +188,10 @@ function checkoutHash(here: string): { hash: string } | { why: string } {
         for (const n of readdirSync(abs).sort(cmpText))
           if (n !== "node_modules" && !n.startsWith("."))
             walk(join(abs, n), rel ? `${rel}/${n}` : n);
-      } else if (st.isFile() && !/\.(map|d\.ts|tsbuildinfo)$/.test(rel))
+      } else if (st.isFile() && !/\.(map|d\.ts|tsbuildinfo)$/.test(rel)) {
+        if (loadedAt !== undefined && st.mtimeMs > loadedAt && runs(rel)) newer ??= abs;
         out.push(`${rel}\u0000${createHash("sha256").update(readFileSync(abs)).digest("hex")}`);
+      }
     };
     walk(join(dir, "package.json"), "package.json");
     for (const e of extra) walk(join(dir, e), e);
@@ -167,18 +201,26 @@ function checkoutHash(here: string): { hash: string } | { why: string } {
     const { dir, m } = queue.shift()!;
     if (seen.has(dir)) continue;
     seen.add(dir);
-    const third = isThirdParty(dir);
+    const third = !isOurs(dir, m);
     if (third) lines.push(`third\u0000${m.name ?? "?"}@${m.version ?? "?"}`);
     else {
-      const main = (m.main ?? "./dist/index.js").replace(/^\.\//, "").split("/")[0]!;
+      const mainPath = (m.main ?? "./dist/index.js").replace(/^\.\//, "");
+      const main = mainPath.split("/")[0]!;
       const entries = [...new Set([main, ...(m.files ?? []).map((f) => f.replace(/^\.\//, ""))])];
+      let running: readonly string[] = entries;
       // The folder this module runs from (src/ under a test runner) is the scanner's code too.
       if (dir === start.dir) {
         const r = relative(dir, here).split(sep).join("/");
-        if (r && !r.startsWith("..")) entries.push(r);
+        const inside = r !== "" && !r.startsWith("..");
+        if (inside) entries.push(r);
+        running = inside ? [r] : [];
       }
+      const own = fileLines(dir, entries, running);
+      // Its code, not only its package.json (whose name and version a rebuild keeps).
+      if (!own.some((l) => !l.startsWith("package.json\u0000")))
+        return { why: `${m.name ?? dir} has none of its code to hash (${mainPath} isn't there)` };
       lines.push(`workspace\u0000${m.name ?? "?"}@${m.version ?? "?"}`);
-      for (const l of fileLines(dir, entries)) lines.push(`  ${l}`);
+      for (const l of own) lines.push(`  ${l}`);
     }
     const deps = [
       ...Object.keys(m.dependencies ?? {}).map((n) => [n, false] as const),
@@ -188,7 +230,7 @@ function checkoutHash(here: string): { hash: string } | { why: string } {
       const at = packageFrom(name, dir);
       const dm = at ? readManifest(at) : undefined;
       if (!at || !dm) {
-        // A workspace package's dependency not found: the code that runs can't be named.
+        // A dependency of ours not found: the code that runs can't be named.
         if (!third && !optional) return { why: `${m.name ?? dir} needs ${name}, not found` };
         lines.push(`absent\u0000${m.name ?? "?"}\u0000${name}`);
         continue;
@@ -196,20 +238,38 @@ function checkoutHash(here: string): { hash: string } | { why: string } {
       queue.push({ dir: at, m: dm });
     }
   }
-  return { hash: sha(lines.join("\n")) };
+  if (newer)
+    return {
+      why: `${newer} changed since this code loaded (rebuilt under it): the code that runs isn't the code on disk`,
+    };
+  return { hash: sha(lines.join("\n")), installed: underNodeModules(start.dir) };
 }
+
+/**
+ * When this module was loaded: the stamp is worked out once, on the first build (hashing the
+ * code takes ~0.1 s, which a command that never builds shouldn't pay: most commands load the
+ * scanner), and a file it hashes that changed after this (a developer's dist rebuilt under a
+ * long-running `atticus ui`) means the code on disk isn't the code running, so there is no
+ * stamp and the cache is off for this process rather than kept under the newer code's stamp.
+ * The process's own clock, not Date (a test's fake time would date every file after it).
+ */
+const LOADED_AT = performance.timeOrigin + performance.now();
 
 let stamp: CodeStamp | undefined;
 /** This code's stamp (once per process), or undefined when there is none: the cache is off. */
 function codeStamp(): string | undefined {
   if (buildCacheHooks.stamp !== undefined) return buildCacheHooks.stamp ?? undefined;
-  stamp ??= codeStampOf({ buildId: bundledBuildId(), moduleUrl: import.meta.url });
+  stamp ??= codeStampInfo();
   return stamp.stamp;
 }
 
 /** This code's stamp and where it came from (a check of the bundle reads it). */
 export function codeStampInfo(): CodeStamp {
-  return codeStampOf({ buildId: bundledBuildId(), moduleUrl: import.meta.url });
+  return codeStampOf({
+    buildId: bundledBuildId(),
+    moduleUrl: import.meta.url,
+    loadedAt: LOADED_AT,
+  });
 }
 
 /** Whether the cache is used: not switched off, and the code that builds has a stamp. */

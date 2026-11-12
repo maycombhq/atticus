@@ -1,4 +1,3 @@
-import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -204,6 +203,21 @@ export interface BuildInputs {
 
 const sha = (text: string) => sha256Of(text);
 
+/** Bytes with each CRLF and lone CR as LF: what `text.replace(/\r\n?/g, "\n")` does to text. */
+function lfBytes(bytes: Buffer): Buffer {
+  if (!bytes.includes(0x0d)) return bytes;
+  const out = Buffer.allocUnsafe(bytes.length);
+  let n = 0;
+  for (let k = 0; k < bytes.length; k++) {
+    const b = bytes[k]!;
+    if (b === 0x0d) {
+      out[n++] = 0x0a;
+      if (bytes[k + 1] === 0x0a) k++;
+    } else out[n++] = b;
+  }
+  return out.subarray(0, n);
+}
+
 /**
  * A folder's files, hashed in path order: one hash for the folder, or none when it has none.
  * `pending` (absolute path to text, or null for a file to go) puts a command's writes in place of
@@ -224,13 +238,15 @@ async function treeHash(
     }
   const put = (r: string, text: string) =>
     lines.push(`${r}\u0000${sha(text.replace(/\r\n?/g, "\n"))}`);
-  // A text file is hashed as LF-normalised text, so a Windows checkout (core.autocrlf) records
-  // the hashes a Linux one does (ADR 0195 point 2); any other file (a PDF, an image: not UTF-8,
-  // or with a NUL, which git doesn't convert either) by its bytes, so bytes UTF-8 would read
-  // alike still differ.
+  // A text file is hashed with its line ends as LF, so a Windows checkout (core.autocrlf)
+  // records the hashes a Linux one does (ADR 0195 point 2). Text is what git converts: a file
+  // with no NUL, whatever its encoding (Latin-1 too), so the line ends are made LF in its bytes.
+  // Valid UTF-8 hashes exactly as its LF text did (CR and LF are those bytes in UTF-8 alone);
+  // a file with a NUL (a PDF, an image, which git doesn't convert) by its bytes as they are, so
+  // bytes UTF-8 would read alike still differ.
   const putBytes = (r: string, bytes: Buffer) => {
-    if (!bytes.includes(0) && isUtf8(bytes)) put(r, bytes.toString("utf8"));
-    else lines.push(`${r}\u0000${createHash("sha256").update(bytes).digest("hex")}`);
+    const lf = bytes.includes(0) ? bytes : lfBytes(bytes);
+    lines.push(`${r}\u0000${createHash("sha256").update(lf).digest("hex")}`);
   };
   async function walk(d: string, rel: string) {
     const entries = await readdir(d, { withFileTypes: true }).catch(() => []);

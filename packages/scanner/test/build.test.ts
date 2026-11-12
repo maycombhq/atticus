@@ -1,5 +1,6 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile, appendFile } from "node:fs/promises";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -658,4 +659,43 @@ describe("every build leaves its report, refusals included (CS3: the app reads i
     },
     T,
   );
+});
+
+describe("an input's hash is the same on a Windows checkout (ADR 0195 point 2, the review's S1)", () => {
+  /** inputs/ holding one file of these bytes: its hash, as the build records it. */
+  async function hashOf(root: string, bytes: Buffer): Promise<string | undefined> {
+    const dir = join(root, "inputs-s1");
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "notes.txt"), bytes);
+    return (await loadBuildInputs(root, { inputsDir: dir })).inputHashes.get("inputs-s1");
+  }
+  const crlf = (b: Buffer) => Buffer.from(b.toString("latin1").replace(/\n/g, "\r\n"), "latin1");
+  const line = (r: string, h: string) => `${r}\u0000${h}`;
+  const bytesHash = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+
+  it("a text file that isn't UTF-8 (Latin-1) but has no NUL hashes alike with CRLF and LF, as git converts it", async () => {
+    const root = await forge();
+    // "Café Forge\nNorthwind Pay\n" in Latin-1: é is the one byte 0xE9, not valid UTF-8.
+    const lf = Buffer.from("Café Forge\nNorthwind Pay\n", "latin1");
+    expect(lf.includes(0xe9)).toBe(true);
+    const a = await hashOf(root, lf);
+    expect(a).toBeDefined();
+    expect(await hashOf(root, crlf(lf))).toBe(a);
+    // Its hash is its LF bytes' hash.
+    expect(a).toBe(sha256Of(line("notes.txt", bytesHash(lf))));
+  });
+
+  it("valid UTF-8 text keeps exactly the hash it had (its LF text's), and a file with a NUL its bytes'", async () => {
+    const root = await forge();
+    const text = "Café Forge\r\nNorthwind Pay\r\n";
+    expect(await hashOf(root, Buffer.from(text, "utf8"))).toBe(
+      sha256Of(line("notes.txt", sha256Of(text.replace(/\r\n?/g, "\n")))),
+    );
+    const binary = Buffer.from([0x00, 0x0d, 0x0a, 0xe9, 0x0a]);
+    expect(await hashOf(root, binary)).toBe(sha256Of(line("notes.txt", bytesHash(binary))));
+    expect(await hashOf(root, Buffer.from([0x00, 0x0a, 0xe9, 0x0a]))).not.toBe(
+      await hashOf(root, binary),
+    );
+  });
 });
