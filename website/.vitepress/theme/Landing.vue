@@ -55,7 +55,7 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.27";
+const release = "2.0.0-beta.27.1";
 const news = [
   {
     body: "The catalog is built from each repo's own source: a scan replaces only what it read, nothing is removed or overwritten without being shown first, and the last five builds can be undone, from the app or a terminal.",

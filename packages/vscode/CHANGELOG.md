@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.28 (pre-release, with Atticus 2.0.0-beta.27.1)
+
+- **Ships with Atticus 2.0.0-beta.27.1.** No change of its own: the bundled app is beta.27.1's, and it still works with beta.27.
+
 ## 0.7.27 (pre-release, with Atticus 2.0.0-beta.27)
 
 - **Ships with Atticus 2.0.0-beta.27, and needs it.** The app in its tab reads beta.27's local API (3.12): Set up › Scans › Catalog builds (each repo's source, what the next build would do, confirm a removal by its count, undo, prune), the upgrade to source slots as a confirm step, Map › Trust's Readers found / facts say and canaries, one next step on every page, and Stop that stops a sync.
