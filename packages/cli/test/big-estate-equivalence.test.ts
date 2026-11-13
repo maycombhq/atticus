@@ -6,6 +6,7 @@ import { catalogDirOf, mapDirOf } from "@maycombhq/core";
 import {
   buildAndWrite,
   buildCacheHooks,
+  buildUndoDirOf,
   factsSnapshotWrites,
   forgetSerializedTexts,
   readCatalog,
@@ -170,9 +171,20 @@ describe("one read of the catalog a write (beta.28.1)", () => {
       expect(withRead.guard).toEqual(without.guard);
       // A change of one repo removes some of its records: the guard read the last build's.
       expect(withRead.guard.removals.length).toBeGreaterThan(0);
+      const manifest = join(catalogDirOf(root), "sources", "build.json");
+      const before = await readFile(manifest);
       const w = await buildAndWrite(root, { command, slots, read });
       expect(w.guard.refused).toBeUndefined();
       expect(w.catalog).toBeDefined();
+      // build.json is copied from the undo copy's next-build.json, and the undo copy keeps the
+      // build.json before, copied by the system: both byte for byte.
+      const copy = join(buildUndoDirOf(root), String(w.write!.undo));
+      const after = await readFile(manifest);
+      expect(after.equals(before)).toBe(false);
+      expect((await readFile(join(copy, "next-build.json"))).equals(after)).toBe(true);
+      expect(
+        (await readFile(join(copy, "files", "catalog", "sources", "build.json"))).equals(before),
+      ).toBe(true);
       expect(w.catalog).toEqual((await readCatalog(generated, { fresh: true })).records);
     }
     // A file touched after the read: nothing of the read is used, and the write says no catalog.

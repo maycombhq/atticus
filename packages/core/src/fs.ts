@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { keptFilesMayHaveChanged } from "./kept-files.js";
@@ -22,6 +23,26 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
     throw e;
   } finally {
     // beta.23: the files kept read (kept-files.ts) are checked again after any write.
+    keptFilesMayHaveChanged(path);
+  }
+}
+
+/**
+ * Copy a file the way `writeFileAtomic` writes one: to a temporary file beside the target, then
+ * renamed over it. The copy is made by the system (a copy-on-write clone where the file system
+ * has them, APFS, Btrfs or XFS; else a copy in the kernel), so the bytes never pass through
+ * JavaScript (beta.28.1: a 60-repo estate's build.json is 180 MB).
+ */
+export async function copyFileAtomic(from: string, path: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await copyFile(from, tmp, fsConstants.COPYFILE_FICLONE);
+    await renameRetrying(tmp, path);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  } finally {
     keptFilesMayHaveChanged(path);
   }
 }

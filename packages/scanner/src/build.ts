@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants, existsSync } from "node:fs";
+import { copyFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
@@ -10,6 +10,7 @@ import {
   applySharedMaps,
   catalogDirOf,
   cmpText,
+  copyFileAtomic,
   deserializeRecord,
   evidenceDirOf,
   evidenceRelOf,
@@ -2355,11 +2356,28 @@ export async function takeUndoCopy(
   } = {},
 ): Promise<number | undefined> {
   // The bytes as they are on disk (a Windows checkout's CRLF kept), compared as text.
-  const changes: { path: string; before: Buffer | null; after: string | null; input?: true }[] = [];
+  // `before` "copy": a file the caller read already, copied by the system, not read again
+  // (beta.28.1: build.json, 180 MB at 60 repos).
+  const changes: {
+    path: string;
+    before: Buffer | "copy" | null;
+    after: string | null;
+    input?: true;
+  }[] = [];
   for (const t of touched) {
     // A file the caller read already that the command leaves as it is isn't read again.
     const next = t.text === null ? null : t.text.replace(/\r\n?/g, "\n");
-    if (extra.known?.has(t.path) && (extra.known.get(t.path) ?? null) === next) continue;
+    if (extra.known?.has(t.path)) {
+      const was = extra.known.get(t.path) ?? null;
+      if (was === next) continue;
+      changes.push({
+        path: t.path,
+        before: was === null ? null : "copy",
+        after: next === null ? null : sha(next),
+        ...(t.input ? { input: t.input } : {}),
+      });
+      continue;
+    }
     const raw = await readFile(t.path).catch(() => undefined);
     const cur = raw?.toString("utf8").replace(/\r\n?/g, "\n");
     if ((cur ?? null) === next) continue;
@@ -2391,7 +2409,15 @@ export async function takeUndoCopy(
     if (c.before !== null) {
       const to = join(dir, "files", ...relOf(root, c.path).split("/"));
       await mkdir(dirname(to), { recursive: true });
-      await writeFile(to, c.before);
+      if (c.before !== "copy") await writeFile(to, c.before);
+      else
+        try {
+          await copyFile(c.path, to, fsConstants.COPYFILE_FICLONE);
+        } catch (e) {
+          // Gone since the caller read it: there is nothing to put back, as a read would find.
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+          c.before = null;
+        }
     }
   if (extra.nextManifest !== undefined)
     await writeFile(join(dir, "next-build.json"), extra.nextManifest, "utf8");
@@ -2480,7 +2506,19 @@ export async function writeBuiltCatalog(
   const w = await writeCatalog(target.generated, b.records, { texts: b.files, onDisk });
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
   const manifestNow = o.manifests ? o.manifests.onDisk : await readText(target.manifest);
-  if (manifestNow !== manifestText) await writeFileAtomic(target.manifest, manifestText);
+  if (manifestNow !== manifestText) {
+    // beta.28.1: the undo copy's next-build.json holds these bytes already (written just now,
+    // under the lock): build.json is a copy of it, made by the system, not written again.
+    const next = undo !== undefined ? join(o.undoDir, String(undo), "next-build.json") : undefined;
+    const same =
+      next !== undefined &&
+      (await stat(next).then(
+        (s) => s.size === Buffer.byteLength(manifestText, "utf8"),
+        () => false,
+      ));
+    if (same) await copyFileAtomic(next, target.manifest);
+    else await writeFileAtomic(target.manifest, manifestText);
+  }
   return {
     ...w,
     slots: wrote.sort(cmpText),
