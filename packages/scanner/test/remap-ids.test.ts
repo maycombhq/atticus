@@ -73,3 +73,21 @@ describe("remapIds looks prefixes up (beta.28.1) and gives what the walk gave", 
     }
   });
 });
+
+describe("remapIds on a big estate (beta.28.1)", () => {
+  it("renames 20,000 ids against a 20,000-entry map in well under a second of CPU", () => {
+    // The walk of the whole map for each id it doesn't hold was 400 million comparisons here.
+    const remap = new Map<string, string>();
+    for (let k = 0; k < 20_000; k++) remap.set(`svc-${k % 60}.call-${k}`, `if-${k}`);
+    const re = remapIds(remap);
+    const c = process.cpuUsage();
+    let renamed = 0;
+    for (let k = 0; k < 20_000; k++) {
+      if (re(`svc-${k % 60}.call-${k}.request`) !== `svc-${k % 60}.call-${k}.request`) renamed++;
+      re(`svc-${k % 60}.get-items-${k}`);
+    }
+    const used = process.cpuUsage(c);
+    expect(renamed).toBe(20_000);
+    expect((used.user + used.system) / 1e6).toBeLessThan(1);
+  });
+});

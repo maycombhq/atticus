@@ -71,7 +71,7 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
         buildAndWrite(root, { command: "atticus catalog build" }),
       );
       say(
-        `  records: ${cold.build.records.length}, refused: ${cold.guard.refused?.reason ?? "no"}`,
+        `  records: ${cold.build.records.length}, refused: ${cold.guard.refused?.reasons.join(", ") ?? "no"}`,
       );
     } else options = (await makeOptions())!;
     const r = 1;
