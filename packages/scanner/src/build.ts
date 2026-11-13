@@ -27,6 +27,7 @@ import {
   readSharedMaps,
   readTrafficFile,
   recordPath,
+  DECLARED_CALLER,
   registrableDomain,
   serializeRecord,
   sharedDirOf,
@@ -1054,11 +1055,16 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     // calls, so once every caller is read from facts since the upgrade and the read is complete,
     // the guess leaves: the call it guessed is either derived (and takes the id) or, if the facts
     // can't place it, a question, never an arrow. No callee or path matching is needed for it.
-    const lineless = (repo: string) => {
-      const mine = ev.filter((e) => e.side === "caller" && e.repo === repo);
-      return !mine.some((e) => e.source === "code" && !!e.path) || mine.some((e) => !e.path);
-    };
-    if (callers.every(lineless)) {
+    // A person's word is never a guess (the review): an asserted record, a declared caller or
+    // any evidence a person gave keeps the rule below, as does an arrow with a line of any
+    // source at a caller's end (a config or spec line is still a line of the caller's).
+    const personal =
+      r.confidence === "asserted" ||
+      (r.flags ?? []).includes(DECLARED_CALLER) ||
+      (r.evidence as { source?: string }[]).some((e) => e.source === "manual");
+    const lineless = (repo: string) =>
+      !ev.some((e) => e.side === "caller" && e.repo === repo && !!e.path);
+    if (!personal && callers.every(lineless)) {
       if (!callers.every((repo) => factsOf.has(repo) && sinceUpgrade(repo) && readWhole.has(repo)))
         return undefined;
       const repo = [...callers].sort(cmpText)[0]!;
@@ -1949,7 +1955,11 @@ export async function guardBuild(
       // A legacy join that left without being derived: the call its caller's facts read placed.
       const left = b.retired.find((x) => x.call && x.id === id && x.kind === (r?.kind ?? kind));
       if (left?.call) {
-        why.add(`its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`);
+        why.add(
+          left.call.how === "guess"
+            ? `a guess no complete read backs: ${decidingCallWords(left.call)}`
+            : `its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`,
+        );
         kinds.add("slot");
       }
       const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];
@@ -2913,7 +2923,7 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
   for (const x of r.build.retired)
     out.push(
       x.notJoined
-        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. Its caller is read from facts now, and ${x.call ? `they place the call elsewhere: ${decidingCallWords(x.call)}` : "they don't join it"}.`
+        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. ${x.call?.how === "guess" ? `${decidingCallWords(x.call)}` : `Its caller is read from facts now, and ${x.call ? `they place the call elsewhere: ${decidingCallWords(x.call)}` : "they don't join it"}`}.`
         : `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
     );
   for (const x of r.build.orphaned)
