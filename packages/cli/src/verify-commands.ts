@@ -40,6 +40,7 @@ import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 import { noCheckoutLine } from "./sync-next.js";
+import { APPLIED_WITH_LEFT_OUT, leftOutLines, leftOutOf } from "./verify-left-out.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -395,7 +396,15 @@ export async function verifyCommand(
   // file stays as it was, so the kept facts aren't stamped verified without the rest (a scan
   // would take the half-read repo from them). Without --write the check keeps its inner loop
   // (ADR 0124 A3b): the kept facts in canonical form, the rejected ones in <repo>.rejected.jsonl.
-  const refusedWrite = o.write === true && failed;
+  const keepFacts = o.write === true && failed;
+  // Beta.28.1 (field report 5): a rejected fact no longer blocks --write. The kept facts (a
+  // person's corrections and pairings with them) are written, each rejected fact left out, its
+  // last accepted copy kept in its place (verify-left-out.ts). Lines that aren't facts still
+  // refuse the write: nothing says what they backed.
+  const leftOut =
+    keepFacts && badLines.length === 0 ? await leftOutOf(root, repo, report) : undefined;
+  const partial = leftOut?.ok ? leftOut : undefined;
+  const refusedWrite = keepFacts && !partial;
   // Verify's own verdict ("The read is complete: every source file is read or reviewed"),
   // kept in the facts slot's meta as `readComplete` (ADR 0195 addendum "a legacy join its
   // caller's facts place elsewhere"): only a complete read retires an adopted arrow that cites
@@ -411,7 +420,7 @@ export async function verifyCommand(
     reviewedBad,
     slips,
     parsed.newer.flatMap((n) => (n.raw !== undefined ? [n.raw] : [])),
-    { keepFacts: refusedWrite },
+    { keepFacts },
   );
   // ADR 0141: the parts (or the one-session read) the facts now account for are stamped in the
   // read plan, so what a read took is on file; a stamp is never moved.
@@ -436,16 +445,16 @@ export async function verifyCommand(
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
   const n = report.rejected.length;
-  const rejectedNote = `Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
   if (o.json) {
     let written;
     let refusedBuild: unknown;
-    if (o.write && !failed) {
+    if (o.write && (!failed || partial)) {
       const { writeFactsIntoCatalog } = await import("./map-render-commands.js");
       written = await writeFactsIntoCatalog(
         root,
         repo,
-        report.accepted,
+        partial?.facts ?? report.accepted,
         {
           dir,
           command: `atticus verify ${repo} --write`,
@@ -474,13 +483,16 @@ export async function verifyCommand(
           },
           ...(reviewedBad.length ? { reviewedProblems: reviewedBad } : {}),
           ...(written ? { written } : {}),
+          ...(written && partial ? { leftOut: partial.leftOut } : {}),
           ...(refusedBuild ? { refused: refusedBuild } : {}),
         },
         null,
         2,
       ),
     );
-    return failed || refusedBuild ? 1 : 0;
+    if (refusedBuild) return 1;
+    if (written && partial) return APPLIED_WITH_LEFT_OUT;
+    return failed ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
   const cov = report.coverage;
@@ -578,13 +590,15 @@ export async function verifyCommand(
   if (failed) {
     // beta.27: a Copilot session took the move for its edit undone, and wrote the same facts again.
     // A fact of another commit stays in the facts file (round 40), so it isn't said moved.
-    if (!refusedWrite && report.rejected.some((r) => r.code !== "wrong-commit"))
+    if (!keepFacts && report.rejected.some((r) => r.code !== "wrong-commit"))
       io.out(
         `The rejected facts were moved out of ${rel}/${repo}.jsonl into ${rel}/${repo}.rejected.jsonl, each with why: nothing was undone, and the facts kept stay as they are.`,
       );
-    io.out(
-      `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact, question or reviewed line) and run atticus verify ${repo} again.`,
-    );
+    // Beta.28.1: a --write that goes ahead with facts left out says how to fix them once it wrote.
+    if (!partial)
+      io.out(
+        `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact, question or reviewed line) and run atticus verify ${repo} again.`,
+      );
   } else if (cov.unknown.length)
     io.out(
       `Next: read the ${cov.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml). A file you read and found nothing to record in goes in ${rel}/${repo}.reviewed.jsonl ({"path": "<file or glob>", "why": "..."} per line); generated code is excluded in org-pack/scan/${repo}.yaml.`,
@@ -702,7 +716,7 @@ export async function verifyCommand(
       "",
     );
   }
-  if (failed) {
+  if (failed && !partial) {
     if (o.write) io.err(rejectedNote);
     return 1;
   }
@@ -717,7 +731,7 @@ export async function verifyCommand(
   const written = await writeFactsIntoCatalog(
     root,
     repo,
-    report.accepted,
+    partial?.facts ?? report.accepted,
     {
       dir,
       command: `atticus verify ${repo} --write`,
@@ -730,5 +744,15 @@ export async function verifyCommand(
     },
     io,
   );
+  if (written && partial) {
+    for (const l of leftOutLines(
+      repo,
+      partial.leftOut,
+      { facts: `${rel}/${repo}.jsonl`, rejected: rejectedFile },
+      SHOWN,
+    ))
+      io.out(l);
+    return APPLIED_WITH_LEFT_OUT;
+  }
   return written ? 0 : 1;
 }

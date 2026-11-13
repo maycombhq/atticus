@@ -476,10 +476,11 @@ async function verify(
   return {
     outcome,
     confirm,
-    expect: ok ? { kind: "succeed" } : { kind: "refuse" },
+    // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
+    // fact it adds was never accepted, so the catalog is the clean read's.
+    expect: { kind: "succeed" },
     rerun: d,
     onSuccess: () => {
-      if (!ok) return;
       const was = m.facts.get(r.slot);
       if (!was || was.commit !== facts.commit || was.id !== facts.id) m.changes.slots.add(r.slot);
       m.facts.set(r.slot, facts);
