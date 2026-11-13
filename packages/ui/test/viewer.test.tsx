@@ -18,6 +18,12 @@ import {
   trapTab,
   MINIMAP_FROM,
   neighbourhood,
+  nextAsideWidth,
+  ASIDE_WIDTH,
+  dragAsideWidth,
+  isWideAside,
+  wideAsideWidth,
+  savedAsideWidth,
   panBy,
   searchNodes,
   ViewerToolbar,
@@ -259,6 +265,94 @@ describe("the viewer's controls", () => {
     expect(full).toContain(esc(V.fullScreenOn));
     // In full screen the stage fills the frame by CSS, not a fixed height.
     expect(full).not.toContain('style="height:640px"');
+  });
+});
+
+describe("the details beside the picture can be made wider (beta.28)", () => {
+  it("has a labelled handle to drag or step with keys, and a button to widen it at once", () => {
+    const out = html(
+      <DiagramFrame
+        title="Estate"
+        full={false}
+        height={640}
+        toolbar={<span />}
+        aside={<p>inspector</p>}
+        asideBeside
+        onKeyAction={noop}
+      >
+        <div className="arch-canvas" />
+      </DiagramFrame>,
+    );
+    expect(out).toContain('role="separator"');
+    expect(out).toContain('aria-orientation="vertical"');
+    expect(out).toContain(`aria-label="${esc(V.resizeDetails)}"`);
+    expect(out).toContain(`aria-valuemin="${ASIDE_WIDTH.min}"`);
+    expect(out).toContain("aria-valuemax=");
+    expect(out).toContain(esc(V.widenDetails));
+    // A toggle button: one name, its state in aria-pressed (the review).
+    expect(out).toContain('aria-pressed="false"');
+    expect(out).not.toContain(esc("Narrower details"));
+    // The header row keeps Wider details then the close button, in the order they are seen.
+    expect(out.indexOf(esc(V.widenDetails))).toBeLessThan(
+      out.indexOf(esc(V.hideDetails), out.indexOf('class="viewer-aside"')),
+    );
+  });
+
+  it("has no handle and no Wider details where the details lie over the picture", () => {
+    const out = html(
+      <DiagramFrame
+        title="Flow"
+        full={false}
+        height={640}
+        toolbar={<span />}
+        aside={<p>inspector</p>}
+        onKeyAction={noop}
+      >
+        <div className="arch-canvas" />
+      </DiagramFrame>,
+    );
+    expect(out).not.toContain('role="separator"');
+    expect(out).not.toContain(esc(V.widenDetails));
+  });
+
+  it("drags from the stage's right edge, within its bounds, and knows when it is wide", () => {
+    expect(dragAsideWidth(1000, 600, 760)).toBe(400);
+    expect(dragAsideWidth(1000, 950, 760)).toBe(ASIDE_WIDTH.min);
+    expect(dragAsideWidth(1000, 100, 760)).toBe(760);
+    expect(isWideAside(600, 1000)).toBe(true);
+    expect(isWideAside(340, 1000)).toBe(false);
+    expect(isWideAside(undefined, 1000)).toBe(false);
+    // Wider is never narrower than what is shown, even on a small stage (the review).
+    expect(wideAsideWidth(1240, 340)).toBe(600);
+    expect(wideAsideWidth(700, 340)).toBe(340 + ASIDE_WIDTH.step);
+    expect(wideAsideWidth(0, 200)).toBe(ASIDE_WIDTH.min);
+    expect(isWideAside(wideAsideWidth(700, 340), 700)).toBe(true);
+  });
+
+  it("reads a saved width only when it is a width, and never throws", () => {
+    const store = (v: string | null) => ({ getItem: () => v }) as unknown as Storage;
+    expect(savedAsideWidth(store("420"))).toBe(420);
+    expect(savedAsideWidth(store("abc"))).toBeUndefined();
+    expect(savedAsideWidth(store("12"))).toBeUndefined();
+    expect(savedAsideWidth(store(null))).toBeUndefined();
+    const broken = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    } as unknown as Storage;
+    expect(savedAsideWidth(broken)).toBeUndefined();
+  });
+
+  it("steps with the arrow keys, Home and End, never past its bounds", () => {
+    const max = 900;
+    // The details are at the right: Left widens them, Right narrows them.
+    expect(nextAsideWidth(340, "ArrowLeft", max)).toBe(340 + ASIDE_WIDTH.step);
+    expect(nextAsideWidth(340, "ArrowRight", max)).toBe(340 - ASIDE_WIDTH.step);
+    expect(nextAsideWidth(340, "Home", max)).toBe(ASIDE_WIDTH.min);
+    expect(nextAsideWidth(340, "End", max)).toBe(max);
+    expect(nextAsideWidth(ASIDE_WIDTH.min, "ArrowRight", max)).toBe(ASIDE_WIDTH.min);
+    expect(nextAsideWidth(max, "ArrowLeft", max)).toBe(max);
+    expect(nextAsideWidth(340, "Enter", max)).toBeUndefined();
   });
 });
 

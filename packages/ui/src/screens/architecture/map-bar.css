@@ -202,16 +202,45 @@
   flex: 0 0 min(340px, 40%);
   width: auto;
 }
+/* Beta.28: the handle between the picture and the details: drag it, or step it with the keys. */
+.viewer-stage.beside > .viewer-aside-resize {
+  flex: 0 0 8px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  border-radius: 4px;
+  z-index: 6;
+}
+.viewer-stage.beside > .viewer-aside-resize:hover,
+.viewer-stage.beside > .viewer-aside-resize:focus-visible {
+  background: var(--line-2);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Beta.28: a chosen width, never more than leaves the picture 240 px (a width saved on a
+   wider screen). */
+.viewer-stage.beside > .viewer-aside[style] {
+  flex-basis: min(var(--aside-w), calc(100% - 240px));
+}
+/* Wider details and the close button in a row, in the order they are seen and focused. */
+.viewer-aside-head {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: -4px -4px 4px 0;
+}
 .viewer-stage.beside > .viewer-aside-toggle {
   top: 8px;
   right: 8px;
 }
-.viewer-aside-close {
-  float: right;
-  margin: -4px -4px 4px 8px;
-}
 /* Under 1000 px wide (a narrow window, an editor's panel) the details lie over the picture. */
 @media (max-width: 999px) {
+  /* Lying over the picture, the details have no handle: Wider details still widens them. */
+  .viewer-stage.beside > .viewer-aside-resize {
+    display: none;
+  }
+  .viewer-stage.beside > .viewer-aside[style] {
+    width: min(var(--aside-w), calc(100% - 16px));
+  }
   .viewer-stage.beside > .viewer-aside {
     position: absolute;
     top: 8px;
