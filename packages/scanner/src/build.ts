@@ -1487,6 +1487,36 @@ function sourceWords(path: string, b: Build): string {
   return `an input changed (${path})`;
 }
 
+/**
+ * beta.28: the fields that say which thing a record is, whatever its id: a record of the same kind
+ * with the same values is the same thing under another id (a read that keys it otherwise). The
+ * references among them are compared through the components that came back under another id.
+ * A kind not listed is matched by its name, when it has one.
+ */
+const IDENTITY: Record<string, readonly string[]> = {
+  Component: ["repo", "path", "type"],
+  Interface: ["from", "to", "method", "normalizedPath"],
+  Endpoint: ["component", "endpointType", "method", "pathOrTopic"],
+  Setting: ["component", "key", "env"],
+  Column: ["table", "name"],
+  GatewayRoute: ["proxy", "basepath", "env"],
+};
+const REFS = new Set(["from", "to", "component"]);
+
+/** A record's identity as one string, or undefined when it has none to match by. */
+function identityOf(r: CatalogRecord, rekeyed: ReadonlyMap<string, string>): string | undefined {
+  const x = r as unknown as Record<string, unknown>;
+  const fields = IDENTITY[r.kind] ?? ["name"];
+  const vals = fields.map((f) => {
+    const v = x[f];
+    if (typeof v !== "string" || !v) return "";
+    return REFS.has(f) ? (rekeyed.get(v) ?? v) : v;
+  });
+  // A component is the same thing only where it is at a path; anything else needs a value.
+  if (r.kind === "Component" ? !vals[1] : vals.every((v) => !v)) return undefined;
+  return `${r.kind}\u0000${vals.join("\u0000")}`;
+}
+
 /** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
 const JOIN_DERIVED = new Set(["Interface", "Unresolved", "Capability", "GlossaryTerm"]);
 
@@ -1859,6 +1889,58 @@ export async function guardBuild(
           else newArrowsOf.set(a, [z]);
         }
     }
+    // beta.28: the records this build adds (none of the last build's paths), by the identity of
+    // what each is, so a removal can say what comes back in its place; and their count by repo.
+    // Components first: an arrow or an endpoint is compared through the component's new id.
+    const addedNow = b.records.filter((x) => !lastTails.has(recordPath(x)));
+    const addedBy = new Map<string, number>();
+    for (const x of addedNow)
+      for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
+    const rekeyed = new Map<string, string>();
+    const newById = new Map<string, CatalogRecord>();
+    if (oldRecords.size) {
+      const comps = new Map<string, string>();
+      for (const x of addedNow)
+        if (x.kind === "Component") {
+          const k = identityOf(x, rekeyed);
+          if (k) comps.set(k, x.id);
+        }
+      for (const r of oldRecords.values()) {
+        if (r.kind !== "Component" || b.files.has(recordPath(r))) continue;
+        const k = identityOf(r, rekeyed);
+        const to = k ? comps.get(k) : undefined;
+        if (to && to !== r.id) rekeyed.set(r.id, to);
+      }
+      for (const x of addedNow) {
+        const k = identityOf(x, rekeyed);
+        if (k && !newById.has(k)) newById.set(k, x);
+      }
+    }
+    // An arrow the build adds from the same caller, by the same method and path, to another end:
+    // the call it drew is drawn elsewhere now (one such arrow only, else it says nothing).
+    const arrowsFrom = new Map<string, CatalogRecord[]>();
+    for (const x of addedNow)
+      if (x.kind === "Interface") {
+        const i = x as unknown as { from?: string; method?: string; normalizedPath?: string };
+        const key = `${rekeyed.get(i.from ?? "") ?? i.from}\u0000${i.method ?? ""}\u0000${i.normalizedPath ?? ""}`;
+        arrowsFrom.set(key, [...(arrowsFrom.get(key) ?? []), x]);
+      }
+    const movedArrow = (r: CatalogRecord): { id: string; to: string } | undefined => {
+      const i = r as unknown as {
+        from?: string;
+        to?: string;
+        method?: string;
+        normalizedPath?: string;
+      };
+      const xs =
+        arrowsFrom.get(
+          `${rekeyed.get(i.from ?? "") ?? i.from}\u0000${i.method ?? ""}\u0000${i.normalizedPath ?? ""}`,
+        ) ?? [];
+      const x = xs.length === 1 ? (xs[0] as unknown as { id: string; to?: string }) : undefined;
+      return x?.to && x.to !== i.to ? { id: x.id, to: x.to } : undefined;
+    };
+    // The repos this build reads from their facts snapshot.
+    const fromFacts = new Set(b.sources.filter((x) => x.source === "facts").map((x) => x.repo));
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
     const liveNow = new Set(b.sources.map((s) => s.repo));
@@ -1962,13 +2044,29 @@ export async function guardBuild(
         );
         kinds.add("slot");
       }
+      // beta.28: what the removal is to this record, first, beside what changed (true of every
+      // record of the repo): the same thing back under another id, or no fact of the repo's read
+      // that makes it. Only for a removal something explains already: never a bug's excuse.
+      const own: string[] = [];
+      if (why.size && r) {
+        const k = identityOf(r, rekeyed);
+        const back = k ? newById.get(k) : undefined;
+        const moved = !back && r.kind === "Interface" ? movedArrow(r) : undefined;
+        if (back && back.id !== r.id) own.push(`comes back as ${back.kind}/${back.id}`);
+        else if (moved) own.push(`its call goes to ${moved.to} now (Interface/${moved.id})`);
+        else
+          // Only where the repo's read changed: a removal an answer makes is the answer's.
+          for (const repo of repos)
+            if (fromFacts.has(repo) && slotChanged(repo))
+              own.push(`no fact of ${repo}'s read makes it`);
+      }
       const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];
       const removal: Removal = {
         path: f.path,
         kind: r?.kind ?? kind ?? "",
         id,
         repos,
-        explainedBy: [...why].sort(cmpText),
+        explainedBy: [...own, ...[...why].sort(cmpText)],
         reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
@@ -1995,7 +2093,12 @@ export async function guardBuild(
       o.allowRemovals !== removals.length
     ) {
       reasons.push("large-removals");
-      const per = big.map(([repo, n]) => `${n} of ${repo}'s ${had.get(repo) ?? 0}`);
+      // beta.28: beside each repo's count, what the same build adds for it: a read switched to
+      // another source that keys its records otherwise removes and adds about as many.
+      const per = big.map(
+        ([repo, n]) =>
+          `${n} of ${repo}'s ${had.get(repo) ?? 0}${addedBy.get(repo) ? `, and adds ${addedBy.get(repo)}` : ""}`,
+      );
       lines.push(
         `This would remove ${removals.length} ${removals.length === 1 ? "record" : "records"}${per.length ? ` (${per.join(", ")})` : ""}, more than ${REMOVAL_LIMITS.share * 100}% of a repo's records or ${REMOVAL_LIMITS.count} in one build, so ${removals.length === 1 ? "it waits" : "they wait"} for you to confirm:`,
         ...removals
