@@ -129,7 +129,13 @@ export class CopilotRun {
   }
 
   /** How it ended: done, stopped by a person, or failed with the error said. */
-  finish(state: Exclude<Api.CopilotRunStateT, "running">, at: string, message?: string): NewLines {
+  /** `said` replaces the run's last line (beta.28: a Stop whose work is still ending says so). */
+  finish(
+    state: Exclude<Api.CopilotRunStateT, "running">,
+    at: string,
+    message?: string,
+    said?: string,
+  ): NewLines {
     const v = this.view;
     v.state = state;
     v.finishedAt = at;
@@ -141,11 +147,12 @@ export class CopilotRun {
       }
     this.current = "run";
     return this.push("run", [
-      state === "done"
-        ? "The run finished."
-        : state === "stopped"
-          ? "Stopped. The next run carries on from here."
-          : `The run stopped: ${message ?? "an error"}`,
+      said ??
+        (state === "done"
+          ? "The run finished."
+          : state === "stopped"
+            ? "Stopped. The next run carries on from here."
+            : `The run stopped: ${message ?? "an error"}`),
     ]);
   }
 

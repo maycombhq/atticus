@@ -409,8 +409,15 @@ export function uiCopilotRunRoutes(
             if (r0.view.state !== "running") return;
             // Shown stopped, its work still ending: said as it is, and no new run until it ends.
             ending = r0;
-            queue(r0.finish("stopped", now().toISOString()));
-            queue(r0.line(cutOff(phaseOf(lastEvent.get(r0)))));
+            // The cut-off line is the run's last word, not "the next run carries on" (the review).
+            queue(
+              r0.finish(
+                "stopped",
+                now().toISOString(),
+                undefined,
+                cutOff(phaseOf(lastEvent.get(r0))),
+              ),
+            );
             flush();
             if (run === r0) state();
             ctx.events.publish({ type: "file.changed", path: "facts" });

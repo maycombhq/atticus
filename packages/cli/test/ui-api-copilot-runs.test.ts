@@ -285,6 +285,8 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       expect(run.tabs[0]!.lines.at(-1)).toBe(
         "The run didn't end within a few seconds of Stop, so it is shown stopped here; it was last in a Copilot session (forge-ledger, part 1 of 6). Its work is still ending: a new run can start once it has.",
       );
+      // Never "the next run carries on" while a new run must wait (the review's line order).
+      expect(run.tabs[0]!.lines).not.toContain("Stopped. The next run carries on from here.");
       // A new run waits for it, and the refusal names the stopped run.
       const again = await call(stuck, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
       expect(again.status).toBe(409);
