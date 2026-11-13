@@ -14,6 +14,8 @@ When the paths aren't enough (a client builds its paths from constants, a gatewa
 
 **Preview** shows the lines that will be written and what the next `atticus verify <repo> --write` adds, moves and removes. **Write** appends one `link` line per pair to `facts/<repo>.corrections.jsonl`. The call's own fact stays exactly as read. The join reads the link and draws the line, flagged as paired by a person; when a later read renames the API, it is found again by its method and path, and when it is gone, the box says so.
 
+No call is hidden. A call the read ties to something that has no arrow drawn (its own component, or a link deleted on the canvas), or one left outside the estate to a target no box draws, is listed with the loose calls, saying where the read ties it. A call that has an arrow already is listed under **Move a call here**, saying where it goes now: pick an API of this box for it and Write, and its old arrow goes once the pairing is read (`atticus verify <repo> --write`). Those calls are never picked for you. When every call has an arrow, the panel says where they go and opens that list. **Edit the map**'s **Add a link** from a repo's box offers the same list.
+
 When the repo has an open target question, **All loose calls go there** answers it with `/**`, so calls read later follow it too.
 
 When one side has nothing on record, the panel says so and gives the command: `atticus map --all --gaps --repos <repo>` to read the calls, `atticus map --all --repos <repo>` to read the other repo, or `atticus intake add` for an outside system's spec.
@@ -26,7 +28,7 @@ On a repo's box, **Owner and system…** picks a team from roles.yaml and a syst
 
 **Add to the picture…** (above the canvas) lists the manifest's repos not read yet, each with a button to read it with Copilot (when the app can start Copilot) and the command, and adds a new vendor or another team's system to the profile, for review.
 
-On a system's box, **Declare a link…** says what the code can't show: the system publishes to a topic or queue, listens on one, or calls a gateway route (`METHOD /path`). It is written to the profile under the system's `topics` or `calls`, with your name and the date as the line's comment. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side, dashed and marked declared. A system whose repos are in the manifest needs no declaration: read its code.
+On a system's box, **Declare a link…** says what the code can't show: the system publishes to a topic or queue, listens on one, or calls a gateway route (`METHOD /path`). It is written to the profile under the system's `topics` or `calls`, with your name and the date as the line's comment. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side, dashed and marked declared. A system whose repos are in the manifest needs no declaration: read its code. A repo the manifest lists with no System of the profiles is drawn in a system of its own id; declaring a link from its box adds that System to the repo's platform profile first, in the same write, and the panel says so before you write it.
 
 ## Corrections, and Undo
 

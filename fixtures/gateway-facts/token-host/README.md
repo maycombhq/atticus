@@ -9,7 +9,7 @@ Beta.28.1, from a user's estate re-made with invented names: Forge is an invente
 
 `facts/` holds what a reader writes for each repo, as `/atticus-map` asks: each route an entry, each route's forwarding call with `host` the `<URL>` as written and `path` the URL's path and the route's suffix, cited on the `<Condition>` with the `<URL>` line in `cite.with`.
 
-What the join and the app must do with it (`packages/core/test/token-host-connect.test.ts`, `packages/cli/test/ui-api-links-token-host.test.ts`, `packages/ui/test/connect-token-host.test.tsx`):
+What the join and the app must do with it (`packages/core/test/token-host-connect.test.ts`, `packages/cli/test/ui-api-links-token-host.test.ts`, `packages/ui/test/connect.test.tsx`, `packages/ui/test/edit-map.test.tsx`, `packages/ui/test/declare.test.tsx`):
 
 - The join asks which repo answers on the token (`unknown-host`) for each forwarding call: no path guess, no outside placement, no arrow.
 - Connect to… from the proxy's box lists the four calls loose, with the service's entry each most likely is by its path's tail (the Spring variables in front are any segment), picked only where one entry is well ahead.

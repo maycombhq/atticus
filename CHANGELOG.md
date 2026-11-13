@@ -2,6 +2,21 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.1 (unreleased)
+
+### Fixed
+
+- **Connecting two boxes never dead-ends (field report 4).** A gateway proxy whose calls all went to a target host written as a deploy token nothing sets (`@forgeTargetUrl@/…`) had them filed so that **Connect to…** said "Every call of this repo joins something already: nothing loose to pair" while no arrow was drawn anywhere, and Edit the map's add and redirect had nothing to offer either. Now:
+  - The join asks which repo answers on a host written as a build or deploy token (`@name@`) that nothing sets, in any repo, for every call to it: it never guesses by the path, nor places the call outside.
+  - **Connect to…** hides no call. A call the join ties to something with no arrow drawn (its own component, or a link deleted on the canvas) is listed as loose, saying where the read ties it ("no arrow drawn"); one placed outside to a target no box draws is loose too, saying so. A call that has an arrow is listed under **Move a call here (N have an arrow already)**, saying where it goes now; picking an API for it pairs it here, and its old arrow goes once the pairing is read. Such a call is never picked or ticked for you. When every call has an arrow the panel says where they go (`forge-ledger (3), forge-risk (1)`) and opens that list; when every call is paired by a person it says how to undo one.
+  - **Edit the map**'s **Add a link** from a repo's box lists the same **Move a call here** rows below its loose calls (open when there are none), and warns that pairing one moves its arrow here; it says there is nothing to pair only when every call is paired by a person.
+  - Suggestions match an API whose path starts with path variables (Spring's `/{moduleName:.+}/{moduleApiVersion:.+}/instruments/…`) by the rest of its path, and prefer the API that writes more of the call's literals (`/instruments/ping` over `/instruments/{id}`).
+  - **Declare a link…** (and Edit the map's add) from the box of a repo the manifest lists with no System of the profiles no longer refuses with "No system of the profiles is <repo>": it adds that System to the repo's platform profile first, in the same write, and says so before writing and once written (and in the Console line of Apply my changes).
+
+### Changed
+
+- **Local API 3.14.0 (additive, C4).** `GET /api/links/candidates`: a call's `status` may be `joined` (an arrow is drawn for it; listed to move here) or `undrawn` (the join ties it to something no arrow is drawn for), and `joins` names the box it goes to now; a call placed `outside` to a target no box draws is listed with `joins`, where before it was left out. `FileChangeResult.created` (`{ system, file }`) names the System a declaration added to a profile first.
+
 ## 2.0.0-beta.28 (2026-11-13)
 
 ### Added
