@@ -1,4 +1,4 @@
-import { CancelledError } from "@maycombhq/core";
+import { CancelledError, commitCurrent } from "@maycombhq/core";
 
 /**
  * Beta.28.1 ("nothing slow runs silently", the owner's field report 1): a long piece of work
@@ -23,10 +23,21 @@ export interface WriteProgress {
   step(what: string): Promise<void>;
   /** A plain line (a count a step found). */
   say(line: string): void;
-  /** From here on Stop is no longer heard: what is written is written whole. */
+  /**
+   * Give way inside a step (a long pass's per-repo or per-chunk point): the step's heartbeat and
+   * the lines before it get out, and a Stop asked meanwhile stops here, until `commit()`.
+   */
+  tick(): Promise<void>;
+  /**
+   * From here on Stop is no longer heard: what is written is written whole. The job it runs in
+   * is told too (commitCurrent), so a later Stop ends it done, not stopped.
+   */
   commit(): void;
-  /** The heartbeat off, and the time it all took said (with `title`). */
-  end(): void;
+  /**
+   * The heartbeat off. `done`: the work did what it set out to (the write wrote), so the time it
+   * all took is said (with `title`); a stop, a refusal or nothing to write says no such line.
+   */
+  end(o?: { done?: boolean }): void;
 }
 
 export interface WriteProgressOptions {
@@ -36,7 +47,7 @@ export interface WriteProgressOptions {
   signal?: AbortSignal;
   /** Let the line out before the step's work (a macrotask by default). */
   yieldNow?: () => Promise<void>;
-  /** What the end's line says took the time ("The write took 2 min."); none, no end line. */
+  /** What the end's line says took the time ("The write took 2 min."), said by `end({ done })`. */
   title?: string;
   /** Nothing is said until the work has run this long (2 s); 0 says every step. */
   quietMs?: number;
@@ -68,6 +79,8 @@ export function writeProgress(
   let current: { what: string; at: number } | undefined;
   let beat: ReturnType<typeof setInterval> | undefined;
   let committed = false;
+  /** The job it runs in heard the commit: it says a late Stop itself (TOO_LATE). */
+  let jobSays = false;
   let stopSaid = false;
   let ended = false;
   const quiet = o.quietMs ?? writeProgressHooks.quietMs ?? 2_000;
@@ -103,7 +116,7 @@ export function writeProgress(
           stopBeat();
           throw new CancelledError();
         }
-        if (!stopSaid) {
+        if (!stopSaid && !jobSays) {
           stopSaid = true;
           say(
             "Stop heard, but the catalog is being written: the write finishes first, so the catalog, its contracts and its specs stay in step.",
@@ -132,15 +145,23 @@ export function writeProgress(
       await yieldNow();
     },
     say,
+    async tick() {
+      if (o.signal?.aborted && !committed) {
+        stopBeat();
+        throw new CancelledError();
+      }
+      await yieldNow();
+    },
     commit() {
       committed = true;
+      jobSays = commitCurrent();
     },
-    end() {
+    end(e = {}) {
       if (ended) return;
       stopBeat();
       if (quietTimer !== undefined) clearTimeout(quietTimer);
       ended = true;
-      if (o.title) say(`${o.title} took ${durationWords(Date.now() - began)}.`);
+      if (o.title && e.done) say(`${o.title} took ${durationWords(Date.now() - began)}.`);
     },
   };
 }

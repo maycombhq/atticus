@@ -1,10 +1,14 @@
-import { appendFile, cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { estateFacts, estateJoinOf } from "@maycombhq/scanner";
+import { TOO_LATE } from "@maycombhq/server";
+import { estateJoinOnFile, stampOf } from "../src/contract-check-files.js";
 import { uiFactsRoutes } from "../src/ui-api-facts.js";
 import { linksJobHooks, pairingsOf, uiLinkRoutes } from "../src/ui-api-links.js";
 
@@ -206,6 +210,8 @@ describe("Connect's reads as jobs (beta.28.1, API 3.14.0)", () => {
       steps: {
         step: async (w) => void steps.push(w),
         say: (l) => void said.push(l),
+        tick: async () => undefined,
+        commit: () => undefined,
       },
     });
     expect(p.corrections).toHaveLength(1);
@@ -227,5 +233,67 @@ describe("Connect's reads as jobs (beta.28.1, API 3.14.0)", () => {
     expect(
       ((await srv.jobs.settle(none)).result as { problem: { status: number } }).problem.status,
     ).toBe(404);
+  });
+
+  it("a pairing hears Stop up to its write's step; nothing is written then", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let reached!: () => void;
+    const at = new Promise<void>((r) => (reached = r));
+    linksJobHooks.onStep = async (what) => {
+      if (what.startsWith("Reading forge-partner-gateway's APIs")) {
+        reached();
+        await held;
+      }
+    };
+    const id = started(await call("POST", "/api/links/connect", { ...PAIR, job: true }));
+    await at;
+    await call("POST", `/api/jobs/${id}/cancel`);
+    release();
+    expect((await srv.jobs.settle(id)).state).toBe("cancelled");
+    await expect(
+      readFile(join(root, "facts/forge-billing.corrections.jsonl"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("past the pairing's write step a Stop is too late: the job ends done, the pairing written", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let reached!: () => void;
+    const at = new Promise<void>((r) => (reached = r));
+    // Held at the write's step, the Stop comes as the step ends (after its check): the commit
+    // that follows says it is too late.
+    linksJobHooks.onStep = async (what) => {
+      if (what.startsWith("Writing the pairing")) {
+        reached();
+        await held;
+      }
+    };
+    const id = started(await call("POST", "/api/links/connect", { ...PAIR, job: true }));
+    await at;
+    await call("POST", `/api/jobs/${id}/cancel`);
+    release();
+    const j = await srv.jobs.settle(id);
+    // The hold was inside the step after its check: Stop is heard at the commit, too late.
+    expect(j.state).toBe("done");
+    expect(linesOf(id)).toContain(TOO_LATE);
+    const text = await readFile(join(root, "facts/forge-billing.corrections.jsonl"), "utf8");
+    expect(text).toContain("call.post.capture-charge");
+    await rm(join(root, "facts/forge-billing.corrections.jsonl"));
+  });
+
+  it("two reads of the same estate share one join under way", async () => {
+    await writeFile(join(root, "facts/zz-touched-2.txt"), "a file the stamp reads again\n");
+    const op = await loadOrgPack(orgPackDirOf(root));
+    const estate = await estateFacts(root, op, "");
+    const stamp = await stampOf(root);
+    const [a, b] = await Promise.all([
+      estateJoinOnFile(root, op, estate, stamp),
+      estateJoinOnFile(root, op, estate, stamp),
+    ]);
+    expect(a).toBe(b);
+    expect(a).toEqual(
+      estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets),
+    );
   });
 });

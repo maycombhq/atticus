@@ -77,14 +77,11 @@ export function uiModelRunRoutes(
   const runStep: StepRunner =
     deps.runStep ??
     (async (args) => {
-      const { main } = await import("./main.js");
+      const { main, capturedIo } = await import("./main.js");
       const out: string[] = [];
       const err: string[] = [];
-      const code = await main(
-        [...args, "--root", root],
-        { out: (l) => out.push(l), err: (l) => err.push(l) },
-        { quiet: true },
-      );
+      // Beta.28.1 (the review): progress to the job's Console, never into out or err.
+      const code = await main([...args, "--root", root], capturedIo(out, err), { quiet: true });
       return { code, out, err };
     });
   return (

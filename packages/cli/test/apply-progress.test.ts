@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { CancelledError, parseRecord, withSignal } from "@maycombhq/core";
 import { BUILD_PASSES, buildCacheHooks, readCatalog } from "@maycombhq/scanner";
+import { JobManager, TOO_LATE, type Job } from "@maycombhq/server";
+import { capturedIo, main } from "../src/main.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import { writeProgressHooks } from "../src/write-progress.js";
 import { seedReadersSlots, verifyConfirmed } from "./seed-slots.js";
@@ -183,6 +185,97 @@ describe("Apply's write stage says each step (beta.28.1)", () => {
       expect(s.progress.filter((l) => l.startsWith("Stop heard"))).toHaveLength(1);
       expect(stepsOf(s.progress)).toContain("Writing specs");
       expect(stepsOf(s.progress)).toContain("Rendering the map");
+    },
+    T,
+  );
+});
+
+/** A verify --write run as the app runs it: a job, its progress on the job's lines. */
+async function asJob(
+  root: string,
+  stopAt: (line: string) => boolean,
+): Promise<{ job: Job; lines: string[]; out: string[]; err: string[] }> {
+  const jobs = new JobManager(() => undefined);
+  const out: string[] = [];
+  const err: string[] = [];
+  let id = "";
+  const job = jobs.start("work", async () => {
+    const io = capturedIo(out, err);
+    const code = await main(
+      [
+        "verify",
+        "forge-ledger",
+        "--write",
+        "--commit",
+        "0123abc",
+        "--dir",
+        opts(root).dir,
+        "--root",
+        root,
+      ],
+      {
+        ...io,
+        progress: (l) => {
+          io.progress!(l);
+          if (stopAt(l)) jobs.cancel(id);
+        },
+      },
+      { quiet: true },
+    );
+    return { result: { code } };
+  });
+  id = job.id;
+  const done = await jobs.settle(job.id, T);
+  return { job: done, lines: jobs.linesOf(job.id)?.lines ?? [], out, err };
+}
+
+describe("Apply as a job (the review of beta.28.1)", () => {
+  it(
+    "a Stop once the catalog is being written is too late: the job ends done and says so",
+    async () => {
+      const root = await metarepo();
+      const r = await asJob(root, (l) => l.startsWith("Writing the catalog ("));
+      expect(r.job.state).toBe("done");
+      expect((r.job.result as { code: number }).code).toBe(0);
+      expect(r.lines).toContain(TOO_LATE);
+      expect(r.lines.some((l) => l.startsWith("Rendering the map"))).toBe(true);
+      expect(r.lines.some((l) => l.startsWith("Stop heard"))).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "a Stop after the commit is too late too: the write goes on to its end",
+    async () => {
+      const root = await metarepo();
+      const r = await asJob(root, (l) => l.startsWith("Writing contracts"));
+      expect(r.job.state).toBe("done");
+      expect(r.lines).toContain(TOO_LATE);
+      expect(r.lines.some((l) => l.startsWith("Writing specs"))).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "progress goes to the job's lines, never into what the command answers (out, err)",
+    async () => {
+      const root = await metarepo();
+      const r = await asJob(root, () => false);
+      expect(r.job.state).toBe("done");
+      expect(stepsOf(r.lines)).toContain("Writing specs");
+      expect([...r.out, ...r.err].some((l) => /… \(.* in\)$/.test(l))).toBe(false);
+      expect(r.err.some((l) => l.startsWith("The write took"))).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "a Stop before the commit ends the job stopped, with no end line",
+    async () => {
+      const root = await metarepo();
+      const r = await asJob(root, (l) => l.startsWith("Building the catalog: pass 3 "));
+      expect(r.job.state).toBe("cancelled");
+      expect(r.lines.some((l) => l.startsWith("The write took"))).toBe(false);
     },
     T,
   );

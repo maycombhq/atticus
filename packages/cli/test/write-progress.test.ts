@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CancelledError } from "@maycombhq/core";
+import { CancelledError, withCommit } from "@maycombhq/core";
 import { durationWords, writeProgress } from "../src/write-progress.js";
 
 /**
@@ -45,7 +45,7 @@ describe("writeProgress", () => {
     await p.step("Building the catalog: pass 1 of 8 (each repo's source)");
     vi.advanceTimersByTime(12_000);
     await p.step("Writing contracts");
-    p.end();
+    p.end({ done: true });
     expect(lines).toEqual([
       "Loading the catalog… (0 s in)",
       "The catalog on file: 98,412 records.",
@@ -77,7 +77,7 @@ describe("writeProgress", () => {
     expect(lines.at(-1)).toBe("Writing specs… (1 min in)");
     vi.advanceTimersByTime(10_000);
     expect(lines.at(-1)).toBe("Still writing specs: 30 s on this step (1 min 30 s in).");
-    p.end();
+    p.end({ done: true });
     vi.advanceTimersByTime(120_000);
     // Nothing after the end: the heartbeat is off.
     expect(lines.at(-1)).toBe("The write took 1 min 30 s.");
@@ -94,7 +94,7 @@ describe("writeProgress", () => {
     await p.step("Loading the catalog");
     order.push("work");
     expect(order).toEqual(["line Loading the catalog… (0 s in)", "yield", "work"]);
-    p.end();
+    p.end({ done: true });
   });
 
   it("stops at the next step once Stop is asked, before the commit", async () => {
@@ -110,7 +110,7 @@ describe("writeProgress", () => {
     await expect(p.step("Building the catalog")).rejects.toBeInstanceOf(CancelledError);
     // The step it stopped at isn't said as started.
     expect(lines).toEqual(["Loading the catalog… (0 s in)"]);
-    p.end();
+    p.end({ done: true });
   });
 
   it("after the commit, a Stop is said once and the write goes on", async () => {
@@ -127,7 +127,7 @@ describe("writeProgress", () => {
     ctl.abort();
     await p.step("Writing contracts");
     await p.step("Writing specs");
-    p.end();
+    p.end({ done: true });
     expect(lines.filter((l) => l.startsWith("Stop heard"))).toHaveLength(1);
     expect(lines).toContain("Writing specs… (0 s in)");
   });
@@ -138,7 +138,7 @@ describe("writeProgress", () => {
     await q.step("Loading the catalog");
     vi.advanceTimersByTime(500);
     await q.step("Writing specs");
-    q.end();
+    q.end({ done: true });
     vi.advanceTimersByTime(5_000);
     expect(quick).toEqual([]);
 
@@ -153,7 +153,7 @@ describe("writeProgress", () => {
       "Building the catalog: pass 2 of 8 (the framework models and the estate join)… (2 s in)",
     ]);
     await p.step("Writing specs");
-    p.end();
+    p.end({ done: true });
     expect(slow.slice(1)).toEqual(["Writing specs… (2 s in)", "The write took 2 s."]);
   });
 
@@ -165,7 +165,7 @@ describe("writeProgress", () => {
     vi.setSystemTime(Date.now() + 5_000);
     await p.step("Writing specs");
     expect(lines).toEqual(["Writing specs… (5 s in)"]);
-    p.end();
+    p.end({ done: true });
   });
 
   it("never fails the work when printing throws", async () => {
@@ -176,6 +176,47 @@ describe("writeProgress", () => {
       { yieldNow: noYield, quietMs: 0 },
     );
     await expect(p.step("Loading the catalog")).resolves.toBeUndefined();
+    p.end({ done: true });
+  });
+
+  it("says no end line when the work didn't finish (a Stop, a refusal, nothing to write)", async () => {
+    const lines: string[] = [];
+    const p = writeProgress((l) => lines.push(l), {
+      yieldNow: noYield,
+      quietMs: 0,
+      title: "The write",
+    });
+    await p.step("Loading the catalog");
     p.end();
+    expect(lines).toEqual(["Loading the catalog… (0 s in)"]);
+  });
+
+  it("tick gives way inside a step, and stops there on Stop until the commit", async () => {
+    const ctl = new AbortController();
+    let gave = 0;
+    const p = writeProgress(() => undefined, {
+      yieldNow: async () => void gave++,
+      quietMs: 0,
+      signal: ctl.signal,
+    });
+    await p.step("Building the catalog: pass 2 of 8 (the framework models and the estate join)");
+    await p.tick();
+    expect(gave).toBe(2);
+    ctl.abort();
+    await expect(p.tick()).rejects.toBeInstanceOf(CancelledError);
+    const q = writeProgress(() => undefined, { yieldNow: noYield, signal: ctl.signal });
+    q.commit();
+    await expect(q.tick()).resolves.toBeUndefined();
+  });
+
+  it("commit tells the job it runs in (a later Stop is too late)", async () => {
+    let told = 0;
+    await withCommit(
+      () => void told++,
+      async () => {
+        writeProgress(() => undefined, { yieldNow: noYield }).commit();
+      },
+    );
+    expect(told).toBe(1);
   });
 });

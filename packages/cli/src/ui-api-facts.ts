@@ -400,10 +400,10 @@ export function uiFactsRoutes(
         if (fact && !FactId.safeParse(fact).success)
           throw badRequest(`${JSON.stringify(fact)} isn't a fact id.`);
         const { verifyWritePreview } = await import("./verify-preview.js");
-        const work = async (step?: (what: string) => Promise<void>) => {
+        const work = async (s?: { step(what: string): Promise<void>; tick(): Promise<void> }) => {
           const v = await verifyWritePreview(ctx.root, repo, {
             ...(fact ? { fact } : {}),
-            ...(step ? { step } : {}),
+            ...(s ? { step: (what: string) => s.step(what), tick: () => s.tick() } : {}),
           });
           if (!v)
             throw notFound(
@@ -416,7 +416,7 @@ export function uiFactsRoutes(
         if (["1", "true"].includes(query.get("job") ?? "")) {
           const { linksJob } = await import("./ui-api-links.js");
           return linksJob(ctx, `Previewing the next Apply of ${repo}`, "The preview", (s) =>
-            work((what) => s.step(what)),
+            work(s),
           );
         }
         return { status: 200, body: await work() };

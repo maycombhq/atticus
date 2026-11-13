@@ -133,6 +133,8 @@ export async function verifyWritePreview(
      * and awaited: a job's progress, which may stop the preview there. It only listens.
      */
     step?: (what: string) => Promise<void>;
+    /** Beta.28.1 (the review): awaited inside the build's long passes (a Stop may throw). */
+    tick?: () => Promise<void>;
   } = {},
 ): Promise<View | undefined> {
   const step = o.step ?? (() => Promise.resolve());
@@ -252,6 +254,7 @@ export async function verifyWritePreview(
     ...(report.coverage.unknown.length === 0 ? { readComplete: true } : {}),
     ...(o.extra?.length ? { extraPairs: pairsFromCorrections(report.accepted, o.extra) } : {}),
     ...(o.step ? { step } : {}),
+    ...(o.tick ? { tick: o.tick } : {}),
   });
   await step("Working out what changes");
   const catalogRel = layoutOf(root).catalog.replace(/\/+$/, "");

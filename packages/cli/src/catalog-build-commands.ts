@@ -5,6 +5,7 @@ import {
   acquireLock,
   catalogDirOf,
   cmpText,
+  commitCurrent,
   declareLink,
   deserializeRecord,
   LockHeldError,
@@ -1375,6 +1376,9 @@ export async function applyMapEdits(
       }
     }
     io.out(`${n} change${n === 1 ? "" : "s"} saved. Building the catalog once, with all of them.`);
+    // Beta.28.1 (the review): the changes are written, so a Stop from here is too late: the job
+    // ends done (saying so), never "stopped" with its changes saved.
+    commitCurrent();
     await mapEditHooks.beforeBuild?.();
     const c = await buildAfterDecisions(root, targets, io, { inputs, pending });
     built = c === 0;

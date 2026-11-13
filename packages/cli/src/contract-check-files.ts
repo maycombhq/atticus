@@ -37,6 +37,7 @@ import {
   componentRenames,
   estateFacts,
   estateJoinOf,
+  estateJoinOfAsync,
   hostAliases,
   joinReposOf,
   outsideProfileSystems,
@@ -348,16 +349,58 @@ export async function estateJoinOnFile(
    * Beta.28.1: told when the join is worked out (not kept from the last read), with how many
    * repos it joins, and awaited, so a read the person waits on says why it takes a while.
    */
-  o: { onWork?: (repos: number) => void | Promise<void> } = {},
+  o: {
+    onWork?: (repos: number) => void | Promise<void>;
+    /**
+     * Beta.28.1 (the review): awaited while the join is worked out, every JOIN_TICK_MS; a throw
+     * (a Stop) ends this caller's wait, while the join goes on for the others and is kept.
+     */
+    tick?: () => Promise<void>;
+  } = {},
 ): Promise<FactsJoinResult> {
   const at = stamp ?? (await stampOf(root));
   const hit = await readCached<FactsJoinResult>(root, "estate-join", at);
   if (hit) return hit;
   await o.onWork?.(estate.repos.length);
-  await breathe();
-  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
-  await writeCached(root, "estate-join", at, join);
-  return join;
+  // Beta.28.1 (the review): two readers of the same stamp share one join under way, and it
+  // gives way as it works (estateJoinOfAsync), so the server answers and lines get out.
+  const key = `${root}\u0000${at}`;
+  let work = joinsUnderWay.get(key);
+  if (!work) {
+    work = (async () => {
+      await breathe();
+      const join = await estateJoinOfAsync(
+        op,
+        estate.repos,
+        breathe,
+        estate.targets,
+        estate.pairs,
+        estate.aiTargets,
+      );
+      await writeCached(root, "estate-join", at, join);
+      return join;
+    })().finally(() => joinsUnderWay.delete(key));
+    joinsUnderWay.set(key, work);
+  }
+  return o.tick ? waitTicking(work, o.tick) : work;
+}
+
+/** The estate joins being worked out, by root and stamp (estateJoinOnFile). */
+const joinsUnderWay = new Map<string, Promise<FactsJoinResult>>();
+/** How often a caller waiting on a join under way is ticked (its heartbeat, its Stop). */
+const JOIN_TICK_MS = 50;
+
+async function waitTicking<T>(work: Promise<T>, tick: () => Promise<void>): Promise<T> {
+  let done = false;
+  work.then(
+    () => (done = true),
+    () => (done = true),
+  );
+  while (!done) {
+    await tick();
+    if (!done) await new Promise((r) => setTimeout(r, JOIN_TICK_MS));
+  }
+  return work;
 }
 
 /** The check as it is kept on disk: its per-system findings as entries. */

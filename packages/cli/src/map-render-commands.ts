@@ -516,6 +516,12 @@ export async function projectFactsIntoCatalog(
      * may stop the work there. It only listens.
      */
     step?: (what: string) => Promise<void>;
+    /**
+     * Beta.28.1 (the review): awaited where a long pass gives way (each repo projected, inside the
+     * estate join): the heartbeat and the lines get out there, and a Stop may throw. It only
+     * listens: the build is the same with it or without it.
+     */
+    tick?: () => Promise<void>;
   } = {},
 ) {
   const step = given.step ?? (() => Promise.resolve());
@@ -552,9 +558,12 @@ export async function projectFactsIntoCatalog(
       slots: await withSlotWrites(root, inputs.slots, snap),
       ...(given.extraPairs ? { extraPairs: new Map([[repo, given.extraPairs]]) } : {}),
     },
-    given.step
-      ? { onPass: (n, of, what) => step(`Building the catalog: pass ${n} of ${of} (${what})`) }
-      : {},
+    {
+      ...(given.step
+        ? { onPass: (n, of, what) => step(`Building the catalog: pass ${n} of ${of} (${what})`) }
+        : {}),
+      ...(given.tick ? { tick: given.tick } : {}),
+    },
   );
   await step("Comparing the build with the catalog on file");
   const mine = build.facts.get(repo);
@@ -714,6 +723,7 @@ export async function writeFactsIntoCatalog(
       commit: snapshotCommit,
       ...(o.readComplete ? { readComplete: true } : {}),
       step: (what) => progress.step(what),
+      tick: () => progress.tick(),
     });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
@@ -1084,7 +1094,7 @@ export async function writeFactsIntoCatalog(
     for (const l of lines) io.out(l);
     await progress.step("Rendering the map");
     const map = await renderRepoMap(root, repo, io);
-    progress.end();
+    progress.end({ done: true });
     return {
       written,
       flows: flowPaths,

@@ -61,8 +61,17 @@ const quiet = { out: () => undefined, err: () => undefined };
 export interface LinkSteps {
   step(what: string): Promise<void>;
   say(line: string): void;
+  /** Give way inside a step (the estate join): its line gets out, and Stop is heard there. */
+  tick(): Promise<void>;
+  /** The write has started: a Stop from here is too late (the job ends done). */
+  commit(): void;
 }
-const SILENT: LinkSteps = { step: () => Promise.resolve(), say: () => undefined };
+const SILENT: LinkSteps = {
+  step: () => Promise.resolve(),
+  say: () => undefined,
+  tick: () => Promise.resolve(),
+  commit: () => undefined,
+};
 
 /** Tests hold a job at a step (to press Stop there). */
 export const linksJobHooks: { onStep?: (what: string) => Promise<void> } = {};
@@ -81,19 +90,24 @@ export function linksJob(
     const signal = currentSignal();
     const p = writeProgress(
       (l) => {
-        c?.line(l);
+        // Beta.28.1 (the review): at once, not in the next batch of lines.
+        c?.line(l, { now: true });
         c?.progress(0, 1, l);
       },
       { quietMs: 0, title: end, ...(signal ? { signal } : {}) },
     );
     try {
-      return await work({
+      const answer = await work({
         step: async (what) => {
           await p.step(what);
           await linksJobHooks.onStep?.(what);
         },
         say: (l) => p.say(l),
+        tick: () => p.tick(),
+        commit: () => p.commit(),
       });
+      p.end({ done: true });
+      return answer;
     } finally {
       p.end();
     }
@@ -216,6 +230,7 @@ async function context(
     await s.step("Joining the estate's calls and APIs");
     let worked = false;
     join0 = await estateJoinOnFile(root, op, estate, stamp, {
+      tick: () => s.tick(),
       onWork: async (n) => {
         worked = true;
         s.say(
@@ -424,6 +439,7 @@ export function uiLinkRoutes(
             const v = await verifyWritePreview(ctx.root, from, {
               extra: corrections,
               step: (what) => s.step(what),
+              tick: () => s.tick(),
             });
             return {
               status: 200,
@@ -438,7 +454,10 @@ export function uiLinkRoutes(
               } satisfies Api.ConnectLinksResultT,
             };
           }
-          // Past here the pairing writes: whole, never stopped half way.
+          // Past here the pairing writes: whole, never stopped half way. The last point Stop is
+          // heard is this step; after it a Stop is too late, and the job ends done.
+          await s.step(`Writing the pairing to ${rel}`);
+          s.commit();
           if (lines.length) {
             await mkdir(factsDirOf(ctx.root), { recursive: true });
             const file = join(factsDirOf(ctx.root), `${from}.corrections.jsonl`);
