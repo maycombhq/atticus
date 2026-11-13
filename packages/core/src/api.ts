@@ -611,7 +611,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   answer 202 JobAccepted at once; the job prints each step (its progress message is the last
  *   line it said), Stop (POST /api/jobs/{jobId}/cancel) ends it between steps, and its result's
  *   `answer` is the answer the request gives without `job` (or `problem`, refused). Without
- *   `job`, both answer as before. Additive only.
+ *   `job`, both answer as before. GET /api/facts/{repo}/preview takes `job=1` the same way (the
+ *   panel after a correction). Additive only.
  */
 export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
@@ -7680,8 +7681,17 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "After a correction: the commands to run (atticus verify <repo> --write, then the git steps with the exact files) and what that write will change in the facts and the catalog (links moved, added, removed; facts dropped or edited), computed in-process without writing (ADR 0149)",
       tag: "workspace",
-      params: [p("repo"), q("fact", str, "The fact corrected, for the branch and commit message")],
+      params: [
+        p("repo"),
+        q("fact", str, "The fact corrected, for the branch and commit message"),
+        q(
+          "job",
+          str,
+          "3.14.0: 1 runs the preview as a job (202 JobAccepted; its steps are its lines, Stop ends it between them, its result `answer` is this view or `problem`)",
+        ),
+      ],
       ok: { status: 200, schema: "VerifyPreviewView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job=1`)" },
       errors: [400, 404],
     },
   },

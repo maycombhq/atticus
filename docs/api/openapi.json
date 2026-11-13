@@ -7114,6 +7114,15 @@
             },
             "description": "The fact corrected, for the branch and commit message",
             "required": false
+          },
+          {
+            "name": "job",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "3.14.0: 1 runs the preview as a job (202 JobAccepted; its steps are its lines, Stop ends it between them, its result `answer` is this view or `problem`)",
+            "required": false
           }
         ],
         "responses": {
@@ -7123,6 +7132,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VerifyPreviewView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job=1`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }

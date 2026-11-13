@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { linksJobHooks, uiLinkRoutes } from "../src/ui-api-links.js";
+import { uiFactsRoutes } from "../src/ui-api-facts.js";
+import { linksJobHooks, pairingsOf, uiLinkRoutes } from "../src/ui-api-links.js";
 
 /**
  * Beta.28.1 (the owner's field reports 2 and 3, local API 3.14.0, additive): the Connect panel's
@@ -56,7 +57,8 @@ beforeAll(async () => {
     root,
     port: 0,
     user: "pat",
-    extend: (r, ctx) => uiLinkRoutes(r, ctx, { now: () => new Date("2026-11-06T12:00:00.000Z") }),
+    extend: (r, ctx) =>
+      uiFactsRoutes(uiLinkRoutes(r, ctx, { now: () => new Date("2026-11-06T12:00:00.000Z") }), ctx),
   });
 });
 afterAll(() => srv?.close());
@@ -193,5 +195,37 @@ describe("Connect's reads as jobs (beta.28.1, API 3.14.0)", () => {
     await call("POST", `/api/jobs/${id}/cancel`);
     release();
     expect((await srv.jobs.settle(id)).state).toBe("cancelled");
+  });
+
+  it("a pairing reads A's calls and B's APIs, never the estate's join (Edit the map's Apply)", async () => {
+    const steps: string[] = [];
+    const said: string[] = [];
+    const p = await pairingsOf(root, PAIR, {
+      by: "pat",
+      at: "2026-11-06T12:00:00.000Z",
+      steps: {
+        step: async (w) => void steps.push(w),
+        say: (l) => void said.push(l),
+      },
+    });
+    expect(p.corrections).toHaveLength(1);
+    expect(steps).toEqual(["Reading the estate's facts", "Reading forge-partner-gateway's APIs"]);
+    expect(said).toEqual([]);
+  });
+
+  it("the preview after a correction as a job: the same answer, its steps as lines", async () => {
+    const path = "/api/facts/forge-billing/preview?fact=call.post.capture-charge";
+    const plain = (await call("GET", path)).body;
+    const id = started(await call("GET", `${path}&job=1`));
+    const j = await srv.jobs.settle(id);
+    expect(j.state).toBe("done");
+    expect(j.title).toBe("Previewing the next Apply of forge-billing");
+    expect((j.result as { answer: unknown }).answer).toEqual(plain);
+    expect(linesOf(id).length).toBeGreaterThan(0);
+    // No facts: the job's problem is the 404 the read gives.
+    const none = started(await call("GET", "/api/facts/forge-nothing/preview?job=1"));
+    expect(
+      ((await srv.jobs.settle(none)).result as { problem: { status: number } }).problem.status,
+    ).toBe(404);
   });
 });

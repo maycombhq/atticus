@@ -400,12 +400,26 @@ export function uiFactsRoutes(
         if (fact && !FactId.safeParse(fact).success)
           throw badRequest(`${JSON.stringify(fact)} isn't a fact id.`);
         const { verifyWritePreview } = await import("./verify-preview.js");
-        const v = await verifyWritePreview(ctx.root, repo, fact ? { fact } : {});
-        if (!v)
-          throw notFound(
-            `There are no facts for ${repo} at ${factsRelOf(ctx.root)}/${repo}.jsonl.`,
+        const work = async (step?: (what: string) => Promise<void>) => {
+          const v = await verifyWritePreview(ctx.root, repo, {
+            ...(fact ? { fact } : {}),
+            ...(step ? { step } : {}),
+          });
+          if (!v)
+            throw notFound(
+              `There are no facts for ${repo} at ${factsRelOf(ctx.root)}/${repo}.jsonl.`,
+            );
+          return v;
+        };
+        // Beta.28.1 (API 3.14.0): asked as a job (`job=1`), 202 at once; its steps are its lines,
+        // Stop is heard between them, and the job's result `answer` is this view.
+        if (["1", "true"].includes(query.get("job") ?? "")) {
+          const { linksJob } = await import("./ui-api-links.js");
+          return linksJob(ctx, `Previewing the next Apply of ${repo}`, "The preview", (s) =>
+            work((what) => s.step(what)),
           );
-        return { status: 200, body: v };
+        }
+        return { status: 200, body: await work() };
       })
       .add("POST", "/api/facts/{repo}/corrections", async ({ params, body }) => {
         // Round 3: the repo as the estate spells it, as the batch takes it.

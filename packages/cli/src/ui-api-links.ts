@@ -67,8 +67,11 @@ const SILENT: LinkSteps = { step: () => Promise.resolve(), say: () => undefined 
 /** Tests hold a job at a step (to press Stop there). */
 export const linksJobHooks: { onStep?: (what: string) => Promise<void> } = {};
 
-/** Work answered as a job, its steps printed and Stop heard between them (API 3.14.0). */
-function linksJob(
+/**
+ * Work answered as a job, its steps printed and Stop heard between them (API 3.14.0): the
+ * Connect panel's reads here, and the facts' preview of the next Apply (ui-api-facts.ts).
+ */
+export function linksJob(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   end: string,
@@ -190,7 +193,14 @@ async function boxApis(
   };
 }
 
-async function context(root: string, from: string, to: Api.LinkBoxT, s: LinkSteps = SILENT) {
+async function context(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  s: LinkSteps = SILENT,
+  /** Beta.28.1: false skips the estate's join (a pairing reads only A's calls and B's APIs). */
+  o: { join?: boolean } = {},
+) {
   if (!REPO.test(from)) throw badRequest(`${JSON.stringify(from)} isn't a repo name.`);
   if (to.repo && to.repo === from)
     throw badRequest("Pick another box: a box can't call itself here.");
@@ -201,19 +211,22 @@ async function context(root: string, from: string, to: Api.LinkBoxT, s: LinkStep
   await s.step("Reading the estate's facts");
   const stamp = await stampOf(root);
   const estate = await estateFacts(root, op, "");
-  await s.step("Joining the estate's calls and APIs");
-  let worked = false;
-  const join0 = await estateJoinOnFile(root, op, estate, stamp, {
-    onWork: async (n) => {
-      worked = true;
-      s.say(
-        `Joining the calls and APIs of ${n} repos: the estate changed since the last read, so this takes a while on a large estate.`,
-      );
-      // The line leaves before the join keeps the thread.
-      await new Promise<void>((r) => setImmediate(r));
-    },
-  });
-  if (!worked) s.say("The estate's join is up to date: kept from the last read.");
+  let join0: Awaited<ReturnType<typeof estateJoinOnFile>> | undefined;
+  if (o.join !== false) {
+    await s.step("Joining the estate's calls and APIs");
+    let worked = false;
+    join0 = await estateJoinOnFile(root, op, estate, stamp, {
+      onWork: async (n) => {
+        worked = true;
+        s.say(
+          `Joining the calls and APIs of ${n} repos: the estate changed since the last read, so this takes a while on a large estate.`,
+        );
+        // The line leaves before the join keeps the thread.
+        await new Promise<void>((r) => setImmediate(r));
+      },
+    });
+    if (!worked) s.say("The estate's join is up to date: kept from the last read.");
+  }
   const facts = estate.repos.find((r) => r.repo === from)?.facts ?? [];
   await s.step(`Reading ${boxWords(to)}'s APIs`);
   const b = await boxApis(root, op, estate, to);
@@ -249,7 +262,8 @@ export async function candidatesOf(
   const cands = linkCandidates({
     from,
     facts: c.facts,
-    join: c.join,
+    // Asked with the join (context's default).
+    join: c.join!,
     apis: c.b.apis,
     pairs: c.pairs,
     to,
@@ -286,7 +300,9 @@ export async function pairingsOf(
   o: { by: string; at: string; steps?: LinkSteps },
 ): Promise<{ corrections: FactCorrection[]; rel: string; file: string; target: string }> {
   const { from, to, pairs } = req;
-  const c = await context(root, from, to, o.steps);
+  // Beta.28.1: a pairing needs A's calls and B's APIs, never the estate's join (Edit the map's
+  // Apply checked every pairing with a whole-estate join it then threw away).
+  const c = await context(root, from, to, o.steps, { join: false });
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
