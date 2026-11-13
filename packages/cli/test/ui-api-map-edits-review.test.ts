@@ -119,6 +119,42 @@ describe("Edit the map, the review of beta.28", () => {
     writeFileSync(PROFILE(), base);
   }, 240_000);
 
+  it("leaves a profile a teammate wrote between two of this run's writes to it, and names it", async () => {
+    const base = readFileSync(PROFILE(), "utf8");
+    // The third change fails at its write (declared by hand between the check and the writes).
+    const hand = base.replace(
+      "    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n",
+      `    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n    calls:\n      - { route: ${POST} } # by hand\n`,
+    );
+    listHooks.afterList = async () => writeFileSync(PROFILE(), hand);
+    // Between this run's first and second write to the profile, a teammate's line lands in it.
+    mapEditHooks.beforeWrite = async (i) => {
+      if (i === 1)
+        writeFileSync(PROFILE(), readFileSync(PROFILE(), "utf8") + "# a teammate's line\n");
+    };
+    const failed = await e.job("/api/map/edits", {
+      edits: [
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: GET } },
+        {
+          kind: "add",
+          add: { kind: "topic", system: "northwind-pay", topic: "nw.settled", side: "publishes" },
+        },
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: POST } },
+      ],
+    });
+    mapEditHooks.beforeWrite = undefined;
+    listHooks.afterList = undefined;
+    expect(failed.state).toBe("failed");
+    const edits = failed.result?.edits as { state: string; message?: string }[];
+    // Not taken back: putting the bytes from before this run back would drop the teammate's line.
+    expect(edits.map((x) => x.state)).toEqual(["saved", "saved", "failed"]);
+    expect(edits[0]!.message).toMatch(/couldn't be taken back: .*profile\.yaml changed since/);
+    const now = readFileSync(PROFILE(), "utf8");
+    expect(now).toContain("# a teammate's line");
+    expect(now).toContain(`route: ${GET}`);
+    writeFileSync(PROFILE(), base);
+  }, 240_000);
+
   it("keeps another writer's lines that land before this run's write when it takes it back", async () => {
     const base = readFileSync(PROFILE(), "utf8");
     const corr = join(root, "facts", `${PROXY}.corrections.jsonl`);

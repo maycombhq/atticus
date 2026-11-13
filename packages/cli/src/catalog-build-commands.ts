@@ -1217,13 +1217,23 @@ export async function applyMapEdits(
     // ("new"), or the lines appended to a corrections file ("append"), and the changes that wrote
     // it.
     type Wrote =
-      | { how: "replace"; before: string; wrote: string; edits: Set<number> }
+      | {
+          how: "replace";
+          before: string;
+          wrote: string;
+          edits: Set<number>;
+          /** Another writer wrote it between two of this run's writes (the third review). */
+          between?: true;
+        }
       | { how: "new"; wrote: string; edits: Set<number> }
-      | { how: "append"; lines: string[]; edits: Set<number> };
+      | { how: "append"; lines: string[]; edits: Set<number>; created?: true };
     const files = new Map<string, Wrote>();
     const replaced = (f: string, i: number, r: { before: string; wrote?: string }) => {
       const x = files.get(f);
       if (x?.how === "replace") {
+        // This write started from bytes this run didn't leave: someone wrote in between, so
+        // the bytes from before the run are no longer this run's to put back.
+        if (r.before !== x.wrote) x.between = true;
         x.wrote = r.wrote ?? x.wrote;
         x.edits.add(i);
       } else
@@ -1281,12 +1291,18 @@ export async function applyMapEdits(
           const p = await pairingsOf(root, e.pair, { by, at });
           const lines = p.corrections.map(correctionLine);
           await mkdir(factsDirOf(root), { recursive: true });
-          await appendLines(p.file, lines);
+          const appended = await appendLines(p.file, lines);
           const x = files.get(p.file);
           if (x?.how === "append") {
             x.lines.push(...lines);
             x.edits.add(i);
-          } else files.set(p.file, { how: "append", lines: [...lines], edits: new Set([i]) });
+          } else
+            files.set(p.file, {
+              how: "append",
+              lines: [...lines],
+              edits: new Set([i]),
+              ...(appended.before === null ? { created: true as const } : {}),
+            });
           inputs.add(p.rel);
           io.out(
             `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
@@ -1318,9 +1334,15 @@ export async function applyMapEdits(
         const changedSince: string[] = [];
         for (const [f, x] of files) {
           try {
-            if (x.how === "replace") await writeFileIfUnchanged(f, x.wrote, x.before);
-            else if (x.how === "append") await removeCorrectionLines(f, x.lines);
-            else if ((await readFile(f, "utf8").catch(() => null)) === x.wrote)
+            if (x.how === "replace") {
+              if (x.between) throw new FileChangedError(f);
+              await writeFileIfUnchanged(f, x.wrote, x.before);
+            } else if (x.how === "append") {
+              await removeCorrectionLines(f, x.lines);
+              // A file this run made, nothing else in it now: gone, as it was.
+              if (x.created && (await readFile(f, "utf8").catch(() => null))?.trim() === "")
+                await rm(f, { force: true });
+            } else if ((await readFile(f, "utf8").catch(() => null)) === x.wrote)
               await rm(f, { force: true });
             else throw new FileChangedError(f);
           } catch (e2) {
