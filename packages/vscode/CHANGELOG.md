@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.29 (pre-release, with Atticus 2.0.0-beta.28)
+
+- **Ships with Atticus 2.0.0-beta.28, and needs it.** The app in its tab reads beta.28's local API (3.13): Edit the map (delete, add and redirect arrows, then one Apply that builds once), Delete this link on every arrow, details beside the Map you can make wider, and Stop that ends a Copilot run within seconds.
+
 ## 0.7.28 (pre-release, with Atticus 2.0.0-beta.27.1)
 
 - **Ships with Atticus 2.0.0-beta.27.1.** No change of its own: the bundled app is beta.27.1's, and it still works with beta.27.
