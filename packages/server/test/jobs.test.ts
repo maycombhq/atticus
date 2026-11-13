@@ -1,6 +1,6 @@
 import { currentSignal, throwIfCancelled } from "@maycombhq/core";
 import { describe, expect, it } from "vitest";
-import { JobManager } from "../src/jobs.js";
+import { CLOSED, JobManager, TOO_LATE } from "../src/jobs.js";
 import { EventHub } from "../src/server.js";
 
 /** Cancel stops the work, through the job's signal (ADR 0119). */
@@ -176,5 +176,61 @@ describe("EventHub listeners (ADR 0119)", () => {
     stop();
     hub.publish({ type: "index.rebuilt" });
     expect(heard).toEqual(["file.changed"]);
+  });
+});
+
+/** Beta.28.1: the commit point (the review and the re-review). */
+describe("JobManager commit", () => {
+  it("a Stop past the commit is too late: said, the work goes on, and the job ends done", async () => {
+    const jobs = new JobManager(() => undefined);
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    let aborted = false;
+    const job = jobs.start("work", async (c) => {
+      c.commit();
+      await held;
+      aborted = c.signal.aborted;
+      return {};
+    });
+    expect(jobs.cancel(job.id)).toBe(true);
+    go();
+    const done = await jobs.settle(job.id);
+    expect(done.state).toBe("done");
+    expect(aborted).toBe(false);
+    expect(jobs.linesOf(job.id)?.lines).toContain(TOO_LATE);
+  });
+
+  it("a Stop before the commit that the work didn't hear is said too late at the commit", async () => {
+    const jobs = new JobManager(() => undefined);
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    const job = jobs.start("work", async (c) => {
+      await held;
+      c.commit();
+      return {};
+    });
+    jobs.cancel(job.id);
+    go();
+    expect((await jobs.settle(job.id)).state).toBe("done");
+    expect(jobs.linesOf(job.id)?.lines).toContain(TOO_LATE);
+  });
+
+  it("closing the app past a job's commit says no Stop after its record ended", async () => {
+    const recorded: string[] = [];
+    const jobs = new JobManager(() => undefined, undefined, {
+      record: () => ({ line: (l) => void recorded.push(l), end: () => undefined }),
+    });
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    const job = jobs.start("work", async (c) => {
+      c.commit();
+      await held;
+      return {};
+    });
+    jobs.closeAll();
+    expect(recorded.at(-1)).toBe(CLOSED);
+    expect(jobs.linesOf(job.id)?.lines).not.toContain(TOO_LATE);
+    go();
+    await jobs.settle(job.id);
   });
 });

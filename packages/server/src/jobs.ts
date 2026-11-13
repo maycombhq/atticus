@@ -433,7 +433,9 @@ export class JobManager {
         r.end("cancelled", "app-closed");
       });
       this.recorders.delete(j.id);
-      this.cancel(j.id);
+      // Beta.28.1 (the re-review): past its commit point a Stop is too late and would only say
+      // so after its record ended; the work finishes, or ends with the process.
+      if (!this.committedIds.has(j.id)) this.cancel(j.id);
     }
   }
 
