@@ -545,7 +545,9 @@ export async function stopJob(jobId: string): Promise<void> {
  */
 export async function getAsJob<T>(path: string, o: JobFollow = {}): Promise<T> {
   const asked = `${path}${path.includes("?") ? "&" : "?"}job=1`;
-  const r = await api<unknown>(asked, o.signal ? { signal: o.signal } : {});
+  // Not cut short by `signal`: the job's id always arrives, so a page that went meanwhile can let
+  // go of it (readAsJob stops it); following it ends at once once the signal aborted.
+  const r = await api<unknown>(asked);
   const jobId = r && typeof r === "object" ? (r as { jobId?: unknown }).jobId : undefined;
   if (typeof jobId !== "string") return r as T;
   return followAnswer<T>(jobId, o, false);
@@ -827,10 +829,14 @@ export function readAsJob<T>(
     if (!signal.aborted) f();
   };
   let mine: string | undefined;
-  let ended = false;
-  const leave = () => {
-    if (mine && !ended) void stopJob(mine).catch(() => undefined);
+  let released = false;
+  // Let go of the job: the last reader that leaves while it runs stops it (`stop`).
+  const release = (stop: boolean) => {
+    if (!mine || released) return;
+    released = true;
+    releaseJob(mine, stop);
   };
+  const leave = () => release(true);
   signal.addEventListener("abort", leave, { once: true });
   return getAsJob<T>(path, {
     signal,
@@ -838,7 +844,10 @@ export function readAsJob<T>(
     onLine: (l) => live(() => on.onLine?.(l)),
     onJob: (id) => {
       mine = id;
-      live(() => on.onJob?.(id));
+      holdJob(id);
+      // The page went before the server named the job: let go of it now.
+      if (signal.aborted) return leave();
+      on.onJob?.(id);
     },
   })
     .catch((e: unknown) => {
@@ -846,10 +855,27 @@ export function readAsJob<T>(
       throw e;
     })
     .finally(() => {
-      ended = true;
+      release(false);
       signal.removeEventListener("abort", leave);
       live(() => on.onEnd?.());
     });
+}
+
+/**
+ * Beta.28.1 (the re-review): how many reads follow each job. Two panels whose `?job=1` reads
+ * were one request (readCoalescer) share its job: one that goes stops nothing while another
+ * still waits on it.
+ */
+const jobReaders = new Map<string, number>();
+const holdJob = (id: string) => jobReaders.set(id, (jobReaders.get(id) ?? 0) + 1);
+function releaseJob(id: string, stop: boolean): void {
+  const n = (jobReaders.get(id) ?? 1) - 1;
+  if (n > 0) {
+    jobReaders.set(id, n);
+    return;
+  }
+  jobReaders.delete(id);
+  if (stop) void stopJob(id).catch(() => undefined);
 }
 
 /** useJobRead's answer: useApi's, with the job's last line, its Stop, and whether it stopped. */

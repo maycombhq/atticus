@@ -222,6 +222,47 @@ describe("a read nobody waits on any more is stopped (the review of beta.28.1)",
     );
   });
 
+  it("two panels on one job: the first that goes stops nothing, the last one stops it", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const calls = serve((path) =>
+      path.startsWith("/api/links/candidates")
+        ? { status: 202, body: { jobId: "job-13" } }
+        : path.endsWith("/cancel")
+          ? { status: 200, body: {} }
+          : running("Joining the estate's calls and APIs"),
+    );
+    const a = new AbortController();
+    const b = new AbortController();
+    const path = "/api/links/candidates?from=a&to=c";
+    const wait = () => held;
+    const ra = readAsJob(path, a.signal, {}, wait).catch((x: unknown) => x);
+    const rb = readAsJob(path, b.signal, {}, wait).catch((x: unknown) => x);
+    await new Promise((r) => setTimeout(r, 10));
+    a.abort();
+    const cancels = () => calls.filter((c) => c.path === "/api/jobs/job-13/cancel").length;
+    expect(cancels()).toBe(0);
+    b.abort();
+    expect(cancels()).toBe(1);
+    release();
+    await Promise.all([ra, rb]);
+  });
+
+  it("a page that went before the server named the job stops it once named", async () => {
+    const calls = serve((path) =>
+      path.startsWith("/api/y")
+        ? { status: 202, body: { jobId: "job-14" } }
+        : path.endsWith("/cancel")
+          ? { status: 200, body: {} }
+          : running("Reading the estate's facts"),
+    );
+    const ctl = new AbortController();
+    const r = readAsJob("/api/y", ctl.signal, {}, now).catch((x: unknown) => x);
+    ctl.abort();
+    expect(((await r) as Error).name).toBe("AbortError");
+    expect(calls.some((c) => c.path === "/api/jobs/job-14/cancel")).toBe(true);
+  });
+
   it("a read that ended is never stopped afterwards", async () => {
     const calls = serve((path) =>
       path.startsWith("/api/x")
