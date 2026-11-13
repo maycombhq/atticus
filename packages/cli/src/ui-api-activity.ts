@@ -413,11 +413,16 @@ export function uiActivityRoutes(
   });
 
   // ---------------------------------------------------------------- live: the jobs
-  // Lines go out in small batches per job, so a chatty scan doesn't flood the socket.
+  // Lines go out in small batches per job, so a chatty scan doesn't flood the socket. Beta.28.1:
+  // a line after a quiet spell goes out at once (the batch's leading edge), so a progress line
+  // printed before work that keeps the thread busy (a build's pass) reaches the Console before
+  // that work, not when it ends; the lines close behind it are batched as before.
   const pending = new Map<string, { at: number; lines: string[] }>();
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastFlush = 0;
   const flush = () => {
     flushTimer = undefined;
+    lastFlush = Date.now();
     for (const [id, p] of pending) ctx.events.publish({ type: "activity.lines", id, ...p });
     pending.clear();
   };
@@ -428,7 +433,8 @@ export function uiActivityRoutes(
       const p = pending.get(e.id);
       if (p) p.lines.push(...c.lines);
       else pending.set(e.id, { at: c.at, lines: [...c.lines] });
-      flushTimer ??= setTimeout(flush, 100);
+      if (flushTimer === undefined && Date.now() - lastFlush >= 100) flush();
+      else flushTimer ??= setTimeout(flush, 100);
       return;
     }
     if (pending.has(e.id)) flush();

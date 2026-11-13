@@ -125,6 +125,39 @@ describe("the Console's list (ADR 0187)", () => {
     expect(await tracked({} as never, "x", async () => 1)).toBe(1);
   });
 
+  it("sends a job's first line after a quiet spell at once, before work that keeps the thread busy (beta.28.1)", async () => {
+    // A write's progress line, then a long computation (the estate join) with no break: the line
+    // must leave before it, not when the computation ends.
+    await new Promise((r) => setTimeout(r, 150));
+    let heardBeforeBusy = false;
+    const job = srv.jobs.start(
+      "local",
+      async (c) => {
+        await new Promise((r) => setTimeout(r, 150));
+        c.line(
+          "Building the catalog: pass 2 of 8 (the framework models and the estate join)… (3 s in)",
+        );
+        heardBeforeBusy = events.some(
+          (x) =>
+            x.type === "activity.lines" &&
+            x.id === job.id &&
+            x.lines.some((l) => l.startsWith("Building the catalog: pass 2 of 8")),
+        );
+        c.line("more");
+        c.line("and more");
+      },
+      { title: "Applying to forge-ledger" },
+    );
+    await srv.jobs.settle(job.id);
+    expect(heardBeforeBusy).toBe(true);
+    // The lines after it, close behind, still go out (batched).
+    await until(() =>
+      events.some(
+        (x) => x.type === "activity.lines" && x.id === job.id && x.lines.includes("and more"),
+      ),
+    );
+  });
+
   it("shows a command run in a terminal, tails its lines live, and how it ended", async () => {
     const rec = startTerminalRun(root, {
       positionals: ["map", "forge-ledger"],
