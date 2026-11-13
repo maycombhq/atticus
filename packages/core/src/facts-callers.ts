@@ -435,28 +435,6 @@ export function callerRecords(
 ): CatalogRecord[] {
   const facts = new Map<string, Fact>();
   for (const r of repos) for (const f of r.facts) facts.set(key(r.repo, f.id), f);
-  // beta.28.1: each route looked through every join and every fact (at 60 repos and 30
-  // proxies, 1,200 routes by 140,000 facts): both by the route now, each in the order the
-  // search found them.
-  /** The joins of calls made from each entry, by key(the join's call repo, the entry). */
-  const joinsFrom = new Map<string, FactsJoinResult["joins"]>();
-  for (const j of join.joins) {
-    const c = facts.get(key(j.call.repo, j.call.fact));
-    if (c?.kind !== "call" || c.from === undefined) continue;
-    const k = key(j.call.repo, c.from);
-    const l = joinsFrom.get(k);
-    if (l) l.push(j);
-    else joinsFrom.set(k, [j]);
-  }
-  /** The calls made from each entry, by key(the call's repo, the entry). */
-  const callsFrom = new Map<string, Fact[]>();
-  for (const f of facts.values()) {
-    if (f.kind !== "call" || f.from === undefined) continue;
-    const k = key(f.repo, f.from);
-    const l = callsFrom.get(k);
-    if (l) l.push(f);
-    else callsFrom.set(k, [f]);
-  }
   const only = o.only ? new Set(o.only) : undefined;
   const have = new Map((o.existing ?? []).map((r) => [`${r.kind}|${r.id}`, r] as const));
   const out = new Map<string, CatalogRecord>();
@@ -477,7 +455,10 @@ export function callerRecords(
     const scopes = (route.scopes ?? []).map((s) => s.value);
     const products = rc.named.filter((n) => n.as === "product").map((n) => n.name);
     // Where the route forwards: the service (or the next gateway) its forwarding calls all join.
-    const forwards = joinsFrom.get(key(rc.route.repo, route.id)) ?? [];
+    const forwards = join.joins.filter((j) => {
+      const c = facts.get(key(j.call.repo, j.call.fact));
+      return j.call.repo === rc.route.repo && c?.kind === "call" && c.from === route.id;
+    });
     const target =
       forwards.length &&
       forwards.every(
@@ -509,7 +490,8 @@ export function callerRecords(
           ...(route.scopes ?? []).map(gev),
           // The forwarding calls, joined or not: a gateway's own call into the service is how the
           // critic finds the route a changed operation is carried by.
-          ...[...(callsFrom.get(key(rc.route.repo, route.id)) ?? [])]
+          ...[...facts.values()]
+            .filter((f) => f.kind === "call" && f.repo === rc.route.repo && f.from === route.id)
             .sort((a, b) => cmp(a.id, b.id))
             .map((f) => gev(f.cite)),
         ]),

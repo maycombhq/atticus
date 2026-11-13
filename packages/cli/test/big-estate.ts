@@ -39,6 +39,12 @@ export interface BigEstateOptions {
   gateways?: number;
   /** Routes per gateway proxy. */
   routes?: number;
+  /**
+   * Clusters of repos (repo r in cluster r mod clusters): calls stay in a repo's cluster and each
+   * cluster's paths use nouns of its own, so each cluster's flows are features of their own (with
+   * one, the default, the estate's flows are one feature). Each cluster needs two repos or more.
+   */
+  clusters?: number;
 }
 
 export const BIG_COMMIT = "1111aaa";
@@ -77,8 +83,13 @@ const hostOf = (r: number) => `${bigRepoId(r)}.forge.example`;
 export const bigGatewayId = (g: number) => `forge-gw-${pad(g)}`;
 const GATEWAY_HOST = "gw.forge.example";
 const basePathOf = (g: number) => `/svc-${pad(g)}/1.0`;
-const entryPath = (r: number, k: number) =>
-  `/v1/${NOUNS[(r + k) % NOUNS.length]}s/{id}/${NOUNS[(r * 3 + k * 7) % NOUNS.length]}-${k}`;
+/** The nouns repo r's paths use: all of them, or its cluster's own (`clusters`). */
+const nounsOf = (r: number, clusters: number) =>
+  clusters > 1 ? NOUNS.filter((_, i) => i % clusters === r % clusters) : NOUNS;
+const entryPath = (r: number, k: number, clusters = 1) => {
+  const ns = nounsOf(r, clusters);
+  return `/v1/${ns[(r + k) % ns.length]}s/{id}/${ns[(r * 3 + k * 7) % ns.length]}-${k}`;
+};
 
 /** mulberry32, as packages/synth. */
 function prng(seed: number): () => number {
@@ -119,7 +130,8 @@ export function bigRepoFacts(
   const moved = (k: number) => edit > 0 && k % 97 === edit % 97;
   for (let k = 0; k < o.entries; k++) {
     const method = METHODS[k % 4]!;
-    const path = moved(k) ? `${entryPath(r, k)}-v${edit + 1}` : entryPath(r, k);
+    const at = entryPath(r, k, o.clusters);
+    const path = moved(k) ? `${at}-v${edit + 1}` : at;
     const file = `src/main/java/forge/web/${NOUNS[k % NOUNS.length]![0]!.toUpperCase()}${NOUNS[k % NOUNS.length]!.slice(1)}Controller${Math.floor(k / 40)}.java`;
     const c = cited(files, file, `    @${ANNOTATION[method]}("${path}")`);
     const id = `e-${k}`;
@@ -159,17 +171,23 @@ export function bigRepoFacts(
     let path: string;
     let method: string;
     if (kind < 0.85) {
-      const to = (r + 1 + Math.floor(rnd() * (o.repos - 1))) % o.repos;
+      // Another repo of its cluster (every other repo, with one cluster).
+      const c = o.clusters;
+      const mates = Math.ceil((o.repos - (r % c)) / c);
+      const to =
+        c > 1
+          ? (r % c) + c * ((Math.floor(r / c) + 1 + Math.floor(rnd() * (mates - 1))) % mates)
+          : (r + 1 + Math.floor(rnd() * (o.repos - 1))) % o.repos;
       const e = Math.floor(rnd() * o.entries);
       host = hostOf(to);
-      path = entryPath(to, e);
+      path = entryPath(to, e, c);
       method = METHODS[e % 4]!;
       // Through the gateway: a route of the proxy that fronts the service (no draw without
       // gateways, so an estate without them is the one it always was).
       if (to < o.gateways && rnd() < 0.5) {
         const k = e % o.routes;
         host = GATEWAY_HOST;
-        path = basePathOf(to) + entryPath(to, k);
+        path = basePathOf(to) + entryPath(to, k, c);
         method = METHODS[k % 4]!;
       }
     } else if (kind < 0.95) {
@@ -241,6 +259,7 @@ const defaults = (o: BigEstateOptions) => ({
   seed: o.seed ?? 1,
   gateways: Math.min(o.gateways ?? 0, o.repos ?? 60),
   routes: Math.min(o.routes ?? 40, o.entries ?? 360),
+  clusters: o.clusters ?? 1,
 });
 
 /** Gateway proxy g's facts: its routes, each forwarding to the deploy token, and the token. */
@@ -256,7 +275,7 @@ export function bigGatewayFacts(g: number, o: ReturnType<typeof defaults>): Fact
   const te = cited(files, "apiproxy/targets/TE-Service.xml", `<URL>${token}</URL>`);
   for (let k = 0; k < o.routes; k++) {
     const method = METHODS[k % 4]!;
-    const suffix = entryPath(g, k);
+    const suffix = entryPath(g, k, o.clusters);
     const cond = `<Condition>(proxy.pathsuffix MatchesPath "${suffix.replace(/\{id\}/g, "*")}") and (request.verb = "${method}")</Condition>`;
     const c = cited(files, "apiproxy/proxies/default.xml", cond);
     const cite = { ...c, value: suffix.replace(/\{id\}/g, "*"), quote: cond };

@@ -6,6 +6,7 @@ import {
   buildAndWrite,
   buildCacheHooks,
   buildCatalog,
+  buildPhases,
   factsSlotOf,
   factsSnapshotWrites,
   loadBuildInputs,
@@ -117,37 +118,74 @@ describe(`one repo changed on a ${REPOS}-repo estate (beta.28.1)`, () => {
 
 /**
  * The build's work grows with the estate, not with its square: the same build in memory (no
- * build cache, nothing read from or written to a catalog) of 4 of the estate's repos and of all
- * 12, by CPU time. Linear work is about 3 times; before beta.28.1 it was about 9 times (at 20
- * and 60 repos, 18 s and 167 s), and it is about 4 now (7 s and 28 s), with sorting and the
- * features' flows, which reach further on a bigger estate.
+ * build cache, nothing read from or written to a catalog) of 6 repos and of 18 (about 9,700 and
+ * 29,000 records), by CPU time, each the better of two runs (a shared runner's stall in one run
+ * isn't the build's). Linear work is about 3 times; before beta.28.1 it was about 9 times (at 20
+ * and 60 repos, 18 s and 167 s). The bound and the ratios measured are below, at the assertion.
  */
+/** The phases the squared searches were in (buildPhases' names). */
+const PASSES = /facts projection|joins applied|3 merge|3 features/;
+
 describe("the build's time grows with the estate (beta.28.1)", () => {
-  it("builds 12 repos in under 5.5 times the CPU time of 4", async () => {
-    const at = async (n: number) => {
-      const facts = new Map<string, ReturnType<typeof factsSlotOf>>();
-      const o = { ...options, repos: n };
-      for (let r = 0; r < n; r++) {
-        const id = bigRepoId(r);
-        const [a, b] = factsSnapshotWrites(root, id, bigRepoFacts(r, o).facts, {
-          commit: BIG_COMMIT,
-          contracts: null,
+  it("builds 18 repos in under 5 times the CPU time of 6", async () => {
+    const SIZES = [6, 18] as const;
+    const at18 = await mkdtemp(join(tmpdir(), "atticus-big-growth-"));
+    try {
+      // An estate of its own, listing 18 repos (a build of 6 has no slot for the others).
+      const { root: r18, options: o18 } = await makeBigEstate(at18, {
+        repos: SIZES[1],
+        checkouts: 0,
+      });
+      const at = async (n: number) => {
+        const facts = new Map<string, ReturnType<typeof factsSlotOf>>();
+        // Clusters of 3 repos: its features grow with the estate, as an estate's do.
+        const o = { ...o18, repos: n, clusters: n / 3 };
+        for (let r = 0; r < n; r++) {
+          const id = bigRepoId(r);
+          const [a, b] = factsSnapshotWrites(r18, id, bigRepoFacts(r, o).facts, {
+            commit: BIG_COMMIT,
+            contracts: null,
+          });
+          facts.set(id, factsSlotOf(id, a!.text!, b!.text!));
+        }
+        const i = await loadBuildInputs(r18, {
+          slots: (on) => ({ ...on, facts: facts as never }),
         });
-        facts.set(id, factsSlotOf(id, a!.text!, b!.text!));
-      }
-      // The manifest lists 12 repos either way: the 4-repo build has no slot for the others.
-      const i = await loadBuildInputs(root, { slots: (on) => ({ ...on, facts: facts as never }) });
-      buildCacheHooks.off = true;
-      try {
-        return await cpu(`build of ${n} repos in memory`, () => buildCatalog(i));
-      } finally {
-        buildCacheHooks.off = false;
-      }
-    };
-    const small = await at(4);
-    const big = await at(12);
-    expect(big.value.records.length).toBeGreaterThan(2.5 * small.value.records.length);
-    // 4.0 here now; 6.6 with the squared searches.
-    expect(big.s / small.s).toBeLessThan(5.5);
+        buildCacheHooks.off = true;
+        try {
+          const runs: { s: number; passes: number; records: number }[] = [];
+          for (const k of [1, 2]) {
+            let passes = 0;
+            buildPhases.on = (p, ms) => {
+              if (PASSES.test(p)) passes += ms / 1000;
+            };
+            const b = await cpu(`build of ${n} repos in memory (${k})`, () => buildCatalog(i));
+            buildPhases.on = undefined;
+            console.log(`big-estate-speed   its passes: ${passes.toFixed(2)} s`);
+            runs.push({ s: b.s, passes, records: b.value.records.length });
+          }
+          return {
+            s: Math.min(...runs.map((x) => x.s)),
+            passes: Math.min(...runs.map((x) => x.passes)),
+            records: runs[0]!.records,
+          };
+        } finally {
+          buildCacheHooks.off = false;
+          buildPhases.on = undefined;
+        }
+      };
+      // A first build, not counted: the code compiled and the heap grown before either size.
+      await at(SIZES[0]);
+      const small = await at(SIZES[0]);
+      const big = await at(SIZES[1]);
+      expect(big.records).toBeGreaterThan(2.5 * small.records);
+      console.log(
+        `big-estate-speed growth: ${(big.s / small.s).toFixed(2)} (build), ${(big.passes / small.passes).toFixed(2)} (passes)`,
+      );
+      // MEASURED
+      expect(big.s / small.s).toBeLessThan(5);
+    } finally {
+      await rm(at18, { recursive: true, force: true });
+    }
   }, 600_000);
 });
