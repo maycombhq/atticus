@@ -1,4 +1,11 @@
-import { maskSecretShapes, printToCurrent, withPrinter, withSignal } from "@maycombhq/core";
+import {
+  maskSecretShapes,
+  printToCurrent,
+  withCommit,
+  withPrinter,
+  withSignal,
+  type PrintOptions,
+} from "@maycombhq/core";
 
 /**
  * Long work (scans, syncs, reconciles, intake) runs as a job (ADR 0015): the call returns 202 with
@@ -39,8 +46,17 @@ export interface Job {
 
 export interface JobControl {
   progress(done: number, total: number, message: string): void;
-  /** Print a line to the job's Console entry (ADR 0187). */
-  line(text: string): void;
+  /**
+   * Print a line to the job's Console entry (ADR 0187). `now` (beta.28.1): a progress line, sent
+   * at once rather than in the next batch.
+   */
+  line(text: string, o?: PrintOptions): void;
+  /**
+   * Beta.28.1: the work has started writing. A Stop after this is too late: the job ends done,
+   * saying the Stop came after the write; a Stop asked before it that the work didn't hear is
+   * said the same way.
+   */
+  commit(): void;
   readonly cancelled: boolean;
   /**
    * Beta.27 review: the job's signal, aborted on Stop. Work that starts a process (git, a
@@ -88,6 +104,9 @@ export const STOPPING = "Stopping…";
 export const STOPPED = "Stopped.";
 /** What a job's record says when the app closed while it ran. */
 export const CLOSED = "Stopped when the app closed.";
+/** Beta.28.1: Stop asked once the work had started writing. */
+export const TOO_LATE =
+  "Stop came after the write had started: it finishes, so what it writes stays whole.";
 
 export type JobWork = (
   c: JobControl,
@@ -110,7 +129,9 @@ export interface JobStartOptions {
 }
 
 export type JobChange =
-  { type: "state"; job: Job } | { type: "lines"; job: Job; at: number; lines: string[] };
+  | { type: "state"; job: Job }
+  /** `now` (beta.28.1): a progress line, for the Console at once. */
+  | { type: "lines"; job: Job; at: number; lines: string[]; now?: boolean };
 
 /** Print a line to the job this code runs in, if it runs in one (ADR 0187). */
 export const jobLine = (line: string): void => printToCurrent(line);
@@ -126,6 +147,8 @@ export class JobManager {
   private metas = new Map<string, Record<string, string>>();
   private listeners = new Set<(c: JobChange) => void>();
   private ends = new Map<string, () => void>();
+  /** Jobs past their commit point (beta.28.1): a Stop now is too late. */
+  private committedIds = new Set<string>();
   private recorders = new Map<string, JobRecorder>();
   /** Each run log record this manager made, and its job. */
   private runIds = new Map<string, string>();
@@ -197,7 +220,7 @@ export class JobManager {
     }
   }
 
-  private print(job: Job, text: string) {
+  private print(job: Job, text: string, o?: PrintOptions) {
     const p = this.printed.get(job.id);
     if (!p) return;
     this.recorded(job.id, (r) => r.line(String(text)));
@@ -213,7 +236,7 @@ export class JobManager {
       p.lines.splice(0, drop);
       p.from += drop;
     }
-    this.tell({ type: "lines", job, at, lines });
+    this.tell({ type: "lines", job, at, lines, ...(o?.now ? { now: true } : {}) });
   }
 
   /** Tell a job's recorder, never failing the job (a recorder that throws is dropped). */
@@ -277,7 +300,16 @@ export class JobManager {
     const abort = new AbortController();
     this.aborts.set(id, abort);
     const cancelled = this.cancelledIds;
-    const line = (text: string) => this.print(job, text);
+    const line = (text: string, lo?: PrintOptions) => this.print(job, text, lo);
+    const commit = () => {
+      if (this.committedIds.has(id)) return;
+      this.committedIds.add(id);
+      // A Stop asked before the work heard it: too late now, said as such.
+      if (cancelled.delete(id)) {
+        delete job.stopping;
+        line(TOO_LATE);
+      }
+    };
     const control: JobControl = {
       progress: (done, total, given) => {
         // Stopping, it says so until it ends, whatever step it reaches meanwhile.
@@ -287,6 +319,7 @@ export class JobManager {
         this.tell({ type: "state", job });
       },
       line,
+      commit,
       get cancelled() {
         return cancelled.has(id);
       },
@@ -295,7 +328,9 @@ export class JobManager {
     this.tell({ type: "state", job });
     void (async () => {
       try {
-        const out = await withPrinter(line, () => withSignal(abort.signal, () => work(control)));
+        const out = await withPrinter(line, () =>
+          withSignal(abort.signal, () => withCommit(commit, () => work(control))),
+        );
         if (out?.result) job.result = out.result;
         if (out?.errors?.length) job.errors.push(...out.errors);
         job.state = this.cancelledIds.has(id) ? "cancelled" : job.errors.length ? "failed" : "done";
@@ -307,6 +342,7 @@ export class JobManager {
         }
       }
       this.aborts.delete(id);
+      this.committedIds.delete(id);
       // Printed nothing as it ran: what it ended with is its lines.
       const p = this.printed.get(id);
       if (p && p.from + p.lines.length === 0) {
@@ -369,6 +405,11 @@ export class JobManager {
     const j = this.jobs.get(id);
     if (!j || j.state !== "running") return false;
     if (j.stopping) return true;
+    // Beta.28.1: past the work's commit point, Stop is too late: said, and the work goes on.
+    if (this.committedIds.has(id)) {
+      this.print(j, TOO_LATE);
+      return true;
+    }
     this.cancelledIds.add(id);
     j.stopping = true;
     j.progress = { ...j.progress, message: STOPPING };
