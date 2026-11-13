@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { Session } from "node:inspector/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "vitest";
@@ -27,10 +28,26 @@ const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(
 async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
   const phases: [string, number][] = [];
   buildPhases.on = (p, ms) => phases.push([p, ms]);
+  // ATTICUS_BENCH_PROF=<words of a label>: a CPU profile of that phase, beside the estate.
+  const prof = process.env.ATTICUS_BENCH_PROF;
+  const session = prof && label.includes(prof) ? new Session() : undefined;
+  if (session) {
+    session.connect();
+    await session.post("Profiler.enable");
+    await session.post("Profiler.start");
+  }
   const t = performance.now();
   try {
     return await run();
   } finally {
+    if (session) {
+      const { profile } = await session.post("Profiler.stop");
+      await writeFile(
+        join(process.env.ATTICUS_BENCH_DIR ?? tmpdir(), `bench-${prof}.cpuprofile`),
+        JSON.stringify(profile),
+      );
+      session.disconnect();
+    }
     buildPhases.on = undefined;
     say(`${label}: ${((performance.now() - t) / 1000).toFixed(2)} s`);
     const sum = new Map<string, number>();

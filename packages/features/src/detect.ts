@@ -504,6 +504,11 @@ export class Tracer {
     return k;
   }
 
+  /** How many numbers `indexOf` has given. */
+  size(): number {
+    return this.ids.length;
+  }
+
   /** The id of a number `indexOf` gave. */
   idOf(k: number): string {
     return this.ids[k]!;
@@ -642,17 +647,19 @@ class Groups {
     }
     return r;
   }
-  join(a: string, b: string): void {
+  /** Join two ids' groups; false when they are one already, or pinned to two features. */
+  join(a: string, b: string): boolean {
     const ra = this.find(a);
     const rb = this.find(b);
-    if (ra === rb) return;
+    if (ra === rb) return false;
     const pa = this.pins.get(ra);
     const pb = this.pins.get(rb);
-    if (pa && pb && pa !== pb) return;
+    if (pa && pb && pa !== pb) return false;
     const [root, child] = ra < rb ? [ra, rb] : [rb, ra];
     this.parent.set(child, root);
     const pin = pa ?? pb;
     if (pin) this.pins.set(root, pin);
+    return true;
   }
   groups(): string[][] {
     const out = new Map<string, string[]>();
@@ -789,50 +796,84 @@ export function detectFeaturesWithReport(
         visits: f.visits!,
         hops: f.hops!,
       });
-  /** The entry points, by their number in the traces. */
-  const entryAt = new Map<number, string>();
-  for (const e of list) entryAt.set(tracer.indexOf(e.id), e.id);
-
+  // beta.28.1 (field report 6): at 60 repos the flows reach some 50 million records, half of
+  // them entry points, so this pass works by number: each entry point by its place in `list`,
+  // the groups' parts mirrored by a union-find of those numbers that joins exactly when `groups`
+  // does, so a join of two already in one group (a no-op in `groups`) is skipped. The groups,
+  // and so the features, are what joining every hit gave.
+  /** Each traced number's entry point, by its place in `list` (-1: none). */
+  const entryNo = new Int32Array(tracer.size()).fill(-1);
+  const placeOf = new Map<string, number>();
+  list.forEach((e, n) => {
+    entryNo[tracer.indexOf(e.id)] = n;
+    placeOf.set(e.id, n);
+  });
   const groups = new Groups(
     list.map((e) => e.id),
     (id) => pins.get(id),
   );
-  // An entry point another flow passes through is part of that flow's feature.
-  /** The flows that reach each entry point, by entry id (in flow order). */
-  const reachers = new Map<string, string[]>();
   const joining = new Set(["endpoint", "consumer", "pinned"]);
-  for (const f of traced.values()) {
-    const hit: string[] = [];
-    for (const k of f.reached) {
-      const r = entryAt.get(k);
-      if (r !== undefined) {
-        hit.push(r);
-        const l = reachers.get(r);
-        if (l) l.push(f.entry.id);
-        else reachers.set(r, [f.entry.id]);
-      }
+  const joins = Uint8Array.from(list, (e) => (joining.has(e.kind) ? 1 : 0));
+  const part = Int32Array.from(list, (_, n) => n);
+  const partOf = (n: number): number => {
+    let r = n;
+    while (part[r] !== r) r = part[r]!;
+    for (let y = n; y !== r;) {
+      const next = part[y]!;
+      part[y] = r;
+      y = next;
     }
+    return r;
+  };
+  /** Join two entry points' groups (by place), as `groups.join` of their ids. */
+  const joinAt = (a: number, b: number) => {
+    const pa = partOf(a);
+    const pb = partOf(b);
+    if (pa === pb) return;
+    if (groups.join(list[a]!.id, list[b]!.id)) part[pb] = pa;
+  };
+  // An entry point another flow passes through is part of that flow's feature.
+  const traces = list.map((e) => traced.get(e.id)!);
+  traces.forEach((f, n) => {
     // With no pins the groups don't depend on the order of the joins (each is a connected
     // part, rooted at its least id), so only pinned groups need them in id order.
-    for (const r of pins.size ? hit.sort() : hit)
-      if (r !== f.entry.id && joining.has(entries.get(r)!.kind)) groups.join(f.entry.id, r);
-  }
+    if (pins.size) {
+      const hit: string[] = [];
+      for (const k of f.reached) if (entryNo[k]! >= 0) hit.push(list[entryNo[k]!]!.id);
+      for (const r of hit.sort()) {
+        const m = placeOf.get(r)!;
+        if (m !== n && joins[m]) joinAt(n, m);
+      }
+    } else
+      for (const k of f.reached) {
+        const m = entryNo[k]!;
+        if (m >= 0 && m !== n && joins[m]) joinAt(n, m);
+      }
+  });
   // Flows about the same primary resource are one feature.
   const bySlug = new Map<string, string>();
   for (const e of list) {
     const s = slugOf(e.resource);
     const first = bySlug.get(s);
-    if (first) groups.join(first, e.id);
+    if (first) joinAt(placeOf.get(first)!, placeOf.get(e.id)!);
     else bySlug.set(s, e.id);
   }
+  // Read once every group is joined: a member's group as `groups()` gives it.
+  /** The entry points another member of their group's flow passes through, by place. */
+  const reachedByOther = new Uint8Array(list.length);
+  traces.forEach((f, n) => {
+    const own = partOf(n);
+    for (const k of f.reached) {
+      const m = entryNo[k]!;
+      if (m >= 0 && m !== n && partOf(m) === own) reachedByOther[m] = 1;
+    }
+  });
 
   const built: { id: string; pinned: boolean; members: string[]; resource: string[] }[] = [];
   for (const members of groups.groups()) {
     const pin = members.map((m) => pins.get(m)).find(Boolean);
     // outermost first: the entry points no other member's flow passes through
-    const inGroup = new Set(members);
-    const reachedByOthers = (m: string) =>
-      (reachers.get(m) ?? []).some((x) => x !== m && inGroup.has(x));
+    const reachedByOthers = (m: string) => reachedByOther[placeOf.get(m)!] === 1;
     const outer = members.filter((m) => !reachedByOthers(m)).sort();
     const inner = members.filter((m) => reachedByOthers(m)).sort();
     let resource = entries.get(members[0]!)!.resource;

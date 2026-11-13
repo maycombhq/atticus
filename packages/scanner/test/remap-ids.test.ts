@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { RecordId } from "@maycombhq/core";
 import { remapIds } from "../src/facts-catalog.js";
@@ -32,5 +33,43 @@ describe("remapIds: ids that follow a renamed record", () => {
     expect(remapIds(new Map([["svc.call-status", long]]))("svc.call-status.request")).toBe(req);
     // The record itself fits already and keeps its name.
     expect(re("svc.call-status")).toBe(long);
+  });
+});
+
+/** remapIds as it was before beta.28.1: a walk of the whole map, the first prefix in its order. */
+function walked(remap: ReadonlyMap<string, string>): (id: string) => string {
+  return (id) => {
+    const exact = remap.get(id);
+    if (exact) return exact;
+    for (const [from, to] of remap)
+      if (id.startsWith(`${from}.`)) {
+        const out = to + id.slice(from.length);
+        if (out.length <= 120) return out;
+        const hash = createHash("sha256").update(out, "utf8").digest("hex").slice(0, 16);
+        return `${out.slice(0, 120 - hash.length - 1).replace(/[-._]+$/, "")}.${hash}`;
+      }
+    return id;
+  };
+}
+
+describe("remapIds looks prefixes up (beta.28.1) and gives what the walk gave", () => {
+  it("over many maps with nested, empty and long names, in every order", () => {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const parts = ["a", "b", "svc", "call-b", "x", "", "request", "get-x"];
+    const pick = () => parts[Math.floor(rnd() * parts.length)]!;
+    const idOf = () => Array.from({ length: 1 + Math.floor(rnd() * 4) }, pick).join(".");
+    for (let n = 0; n < 400; n++) {
+      const remap = new Map<string, string>();
+      for (let k = 0; k < 1 + Math.floor(rnd() * 8); k++)
+        remap.set(idOf(), rnd() < 0.1 ? "" : rnd() < 0.2 ? long : idOf());
+      const fast = remapIds(remap);
+      const slow = walked(remap);
+      for (let k = 0; k < 30; k++) {
+        const id = idOf();
+        expect(fast(id), `${id} in ${JSON.stringify([...remap])}`).toBe(slow(id));
+      }
+      for (const key of remap.keys()) expect(fast(`${key}.request`)).toBe(slow(`${key}.request`));
+    }
   });
 });
