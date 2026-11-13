@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   Api,
   answerQuestion,
+  currentSignal,
   correctionLine,
   factsDirOf,
   factsRelOf,
@@ -32,9 +33,11 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { answerAsJob } from "./ui-api-activity.js";
 import { estateJoinOnFile, stampOf } from "./contract-check-files.js";
 import { appendLines, safeMessage } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
+import { writeProgress } from "./write-progress.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call. Box A's calls that join nothing and box B's APIs,
@@ -48,6 +51,56 @@ const REPO = /^[A-Za-z0-9._-]{1,200}$/;
 const SPECS = new Set(["openapi", "swagger"]);
 
 const quiet = { out: () => undefined, err: () => undefined };
+
+/**
+ * Beta.28.1 (the owner's field reports 2 and 3): what a read the person waits on is doing, said
+ * step by step (the Connect panel's candidates, the pairing preview). Asked as a job, each step
+ * is a line of the job (its last also its progress message, which the panel shows under its
+ * spinner) and Stop is heard between steps; asked without, nothing is said.
+ */
+export interface LinkSteps {
+  step(what: string): Promise<void>;
+  say(line: string): void;
+}
+const SILENT: LinkSteps = { step: () => Promise.resolve(), say: () => undefined };
+
+/** Tests hold a job at a step (to press Stop there). */
+export const linksJobHooks: { onStep?: (what: string) => Promise<void> } = {};
+
+/** Work answered as a job, its steps printed and Stop heard between them (API 3.14.0). */
+function linksJob(
+  ctx: Pick<ServerContext, "jobs">,
+  title: string,
+  end: string,
+  work: (s: LinkSteps) => Promise<Record<string, unknown>>,
+) {
+  return answerAsJob(ctx, title, async (c) => {
+    const signal = currentSignal();
+    const p = writeProgress(
+      (l) => {
+        c?.line(l);
+        c?.progress(0, 1, l);
+      },
+      { quietMs: 0, title: end, ...(signal ? { signal } : {}) },
+    );
+    try {
+      return await work({
+        step: async (what) => {
+          await p.step(what);
+          await linksJobHooks.onStep?.(what);
+        },
+        say: (l) => p.say(l),
+      });
+    } finally {
+      p.end();
+    }
+  });
+}
+
+/** `job=1` on a GET (`job: true` in a body): answered as a job. */
+const asksJob = (query: URLSearchParams) => ["1", "true"].includes(query.get("job") ?? "");
+const boxWords = (to: Api.LinkBoxT) => to.repo ?? to.system!;
+
 const JOINABLE_CALL = new Set(["rest", "soap", "grpc", "graphql"]);
 
 /** A's settings with a value, by key, for a call's `${key}` (a URL's path, not its host). */
@@ -137,7 +190,7 @@ async function boxApis(
   };
 }
 
-async function context(root: string, from: string, to: Api.LinkBoxT) {
+async function context(root: string, from: string, to: Api.LinkBoxT, s: LinkSteps = SILENT) {
   if (!REPO.test(from)) throw badRequest(`${JSON.stringify(from)} isn't a repo name.`);
   if (to.repo && to.repo === from)
     throw badRequest("Pick another box: a box can't call itself here.");
@@ -145,10 +198,24 @@ async function context(root: string, from: string, to: Api.LinkBoxT) {
   if (!estateRepos(op).some((r) => r.id === from))
     throw notFound(`No repo of the manifest is ${from}.`);
   // The stamp before the files are read: a write landing meanwhile can't save an old join new.
+  await s.step("Reading the estate's facts");
   const stamp = await stampOf(root);
   const estate = await estateFacts(root, op, "");
-  const join0 = await estateJoinOnFile(root, op, estate, stamp);
+  await s.step("Joining the estate's calls and APIs");
+  let worked = false;
+  const join0 = await estateJoinOnFile(root, op, estate, stamp, {
+    onWork: async (n) => {
+      worked = true;
+      s.say(
+        `Joining the calls and APIs of ${n} repos: the estate changed since the last read, so this takes a while on a large estate.`,
+      );
+      // The line leaves before the join keeps the thread.
+      await new Promise<void>((r) => setImmediate(r));
+    },
+  });
+  if (!worked) s.say("The estate's join is up to date: kept from the last read.");
   const facts = estate.repos.find((r) => r.repo === from)?.facts ?? [];
+  await s.step(`Reading ${boxWords(to)}'s APIs`);
   const b = await boxApis(root, op, estate, to);
   return { op, estate, join: join0, facts, b, pairs: estate.pairs[from] ?? {} };
 }
@@ -175,8 +242,10 @@ export async function candidatesOf(
   root: string,
   from: string,
   to: Api.LinkBoxT,
+  s: LinkSteps = SILENT,
 ): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
-  const c = await context(root, from, to);
+  const c = await context(root, from, to, s);
+  await s.step(`Matching ${from}'s calls with them`);
   const cands = linkCandidates({
     from,
     facts: c.facts,
@@ -214,10 +283,10 @@ export async function candidatesOf(
 export async function pairingsOf(
   root: string,
   req: { from: string; to: Api.LinkBoxT; pairs: readonly { call: string; api: string }[] },
-  o: { by: string; at: string },
+  o: { by: string; at: string; steps?: LinkSteps },
 ): Promise<{ corrections: FactCorrection[]; rel: string; file: string; target: string }> {
   const { from, to, pairs } = req;
-  const c = await context(root, from, to);
+  const c = await context(root, from, to, o.steps);
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
@@ -281,6 +350,14 @@ export function uiLinkRoutes(
     r
       .add("GET", "/api/links/candidates", async ({ query }) => {
         const { from, to } = boxesOf(query);
+        // 3.14.0: asked as a job, 202 at once; the job's result `answer` is this view.
+        if (asksJob(query))
+          return linksJob(
+            ctx,
+            `Reading the calls and APIs: ${from} → ${boxWords(to)}`,
+            "The read",
+            async (s) => (await candidatesOf(ctx.root, from, to, s)).view,
+          );
         return { status: 200, body: (await candidatesOf(ctx.root, from, to)).view };
       })
       .add("POST", "/api/links/connect", async ({ body }) => {
@@ -295,81 +372,98 @@ export function uiLinkRoutes(
         const { from, to, pairs, rule, preview } = b.data;
         if (!pairs.length && !rule)
           throw badRequest("Pick at least one pair, or the rule for all.");
-        const at = now().toISOString();
-        const { corrections } = await pairingsOf(
-          ctx.root,
-          { from, to, pairs },
-          { by: ctx.user, at },
-        );
-        let ruleOut: Api.ConnectLinksResultT["rule"];
-        const q = rule ? await openRuleQuestion(ctx.root, from) : undefined;
-        if (rule && !q)
-          throw conflict(
-            `${from} has no open target question to answer for all its calls: pair them one by one.`,
+        // 3.14.0: asked as a job (`job: true`), 202 at once; the job's result `answer` is the
+        // result below, or its `problem`; its steps are its lines, and Stop is heard between them.
+        const go = async (s: LinkSteps) => {
+          const at = now().toISOString();
+          const { corrections } = await pairingsOf(
+            ctx.root,
+            { from, to, pairs },
+            { by: ctx.user, at, steps: s },
           );
-        const target = to.repo ?? to.system!;
-        if (q) ruleOut = { question: q.id, match: "/**", target };
-        const rel = `${factsRelOf(ctx.root)}/${from}.corrections.jsonl`;
-        const lines = corrections.map(correctionLine);
-        const verify = `atticus verify ${from} --write`;
-        const commit = `git add ${rel}${q ? ` ${questionsRelOf(ctx.root)}/` : ""}\ngit commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
-        // The rule's answer is worked out before anything is previewed or written: a problem with it refuses
-        // the whole request, never leaving the pairings written and the person told it failed.
-        let answer: { text: string } | undefined;
-        if (q) {
-          const { targetAnswerOf } = await import("./target-answer.js");
-          const t = await targetAnswerOf(ctx.root, q, target);
-          if ("problem" in t) throw new HttpError(422, "Atticus can't do that yet", t.problem);
-          answer = t;
-        }
-        if (preview) {
-          const { verifyWritePreview } = await import("./verify-preview.js");
-          const v = await verifyWritePreview(ctx.root, from, { extra: corrections });
+          let ruleOut: Api.ConnectLinksResultT["rule"];
+          const q = rule ? await openRuleQuestion(ctx.root, from) : undefined;
+          if (rule && !q)
+            throw conflict(
+              `${from} has no open target question to answer for all its calls: pair them one by one.`,
+            );
+          const target = to.repo ?? to.system!;
+          if (q) ruleOut = { question: q.id, match: "/**", target };
+          const rel = `${factsRelOf(ctx.root)}/${from}.corrections.jsonl`;
+          const lines = corrections.map(correctionLine);
+          const verify = `atticus verify ${from} --write`;
+          const commit = `git add ${rel}${q ? ` ${questionsRelOf(ctx.root)}/` : ""}\ngit commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
+          // The rule's answer is worked out before anything is previewed or written: a problem with it refuses
+          // the whole request, never leaving the pairings written and the person told it failed.
+          let answer: { text: string } | undefined;
+          if (q) {
+            const { targetAnswerOf } = await import("./target-answer.js");
+            const t = await targetAnswerOf(ctx.root, q, target);
+            if ("problem" in t) throw new HttpError(422, "Atticus can't do that yet", t.problem);
+            answer = t;
+          }
+          if (preview) {
+            const { verifyWritePreview } = await import("./verify-preview.js");
+            await s.step(`Previewing the next Apply of ${from}`);
+            const v = await verifyWritePreview(ctx.root, from, {
+              extra: corrections,
+              step: (what) => s.step(what),
+            });
+            return {
+              status: 200,
+              body: {
+                written: false,
+                file: rel,
+                lines,
+                ...(ruleOut ? { rule: ruleOut } : {}),
+                ...(v ? { preview: v } : {}),
+                verify,
+                commit,
+              } satisfies Api.ConnectLinksResultT,
+            };
+          }
+          // Past here the pairing writes: whole, never stopped half way.
+          if (lines.length) {
+            await mkdir(factsDirOf(ctx.root), { recursive: true });
+            const file = join(factsDirOf(ctx.root), `${from}.corrections.jsonl`);
+            await appendLines(file, lines);
+            ctx.events.publish({ type: "file.changed", path: rel });
+          }
+          if (q && answer) {
+            try {
+              await answerQuestion(ctx.root, q.id, {
+                text: answer.text,
+                match: "/**",
+                by: ctx.user,
+                at,
+              });
+              ctx.events.publish({ type: "file.changed", path: questionsRelOf(ctx.root) });
+            } catch (e) {
+              if (e instanceof QuestionError)
+                throw new HttpError(422, "Atticus can't do that yet", e.message);
+              throw e;
+            }
+          }
           return {
             status: 200,
             body: {
-              written: false,
+              written: true,
               file: rel,
               lines,
               ...(ruleOut ? { rule: ruleOut } : {}),
-              ...(v ? { preview: v } : {}),
               verify,
               commit,
             } satisfies Api.ConnectLinksResultT,
           };
-        }
-        if (lines.length) {
-          await mkdir(factsDirOf(ctx.root), { recursive: true });
-          const file = join(factsDirOf(ctx.root), `${from}.corrections.jsonl`);
-          await appendLines(file, lines);
-          ctx.events.publish({ type: "file.changed", path: rel });
-        }
-        if (q && answer) {
-          try {
-            await answerQuestion(ctx.root, q.id, {
-              text: answer.text,
-              match: "/**",
-              by: ctx.user,
-              at,
-            });
-            ctx.events.publish({ type: "file.changed", path: questionsRelOf(ctx.root) });
-          } catch (e) {
-            if (e instanceof QuestionError)
-              throw new HttpError(422, "Atticus can't do that yet", e.message);
-            throw e;
-          }
-        }
-        return {
-          status: 200,
-          body: {
-            written: true,
-            file: rel,
-            lines,
-            ...(ruleOut ? { rule: ruleOut } : {}),
-            verify,
-            commit,
-          } satisfies Api.ConnectLinksResultT,
         };
+        if (b.data.job)
+          return linksJob(
+            ctx,
+            `${preview ? "Working out what changes" : "Pairing the calls"}: ${from} → ${boxWords(to)}`,
+            preview ? "The preview" : "The pairing",
+            async (s) => (await go(s)).body,
+          );
+        return go(SILENT);
       })
       // G4 (ADR 0176): "Make this a rule for every repo of this type?" after a pairing.
       .add("POST", "/api/reading-rules/from-pairing", async ({ body }) => {

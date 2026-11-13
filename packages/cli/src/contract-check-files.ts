@@ -344,10 +344,16 @@ export async function estateJoinOnFile(
     aiTargets?: Parameters<typeof estateJoinOf>[4];
   },
   stamp?: string,
+  /**
+   * Beta.28.1: told when the join is worked out (not kept from the last read), with how many
+   * repos it joins, and awaited, so a read the person waits on says why it takes a while.
+   */
+  o: { onWork?: (repos: number) => void | Promise<void> } = {},
 ): Promise<FactsJoinResult> {
   const at = stamp ?? (await stampOf(root));
   const hit = await readCached<FactsJoinResult>(root, "estate-join", at);
   if (hit) return hit;
+  await o.onWork?.(estate.repos.length);
   await breathe();
   const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
   await writeCached(root, "estate-join", at, join);

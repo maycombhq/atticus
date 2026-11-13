@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.13.0",
+    "version": "3.14.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -11285,6 +11285,15 @@
             },
             "description": "Box B: an outside system of the profile (instead of to)",
             "required": false
+          },
+          {
+            "name": "job",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "3.14.0: 1 runs the read as a job (202 JobAccepted; its steps are its lines, Stop ends it between them, its result `answer` is this view or `problem`)",
+            "required": false
           }
         ],
         "responses": {
@@ -11294,6 +11303,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LinkCandidatesView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job=1`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
@@ -11334,7 +11353,7 @@
     "/api/links/connect": {
       "post": {
         "operationId": "connectLinks",
-        "summary": "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes",
+        "summary": "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes. 3.14.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is this result, or `problem`",
         "tags": [
           "views"
         ],
@@ -11390,6 +11409,9 @@
                   },
                   "preview": {
                     "type": "boolean"
+                  },
+                  "job": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -11407,6 +11429,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConnectLinksResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job: true`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }

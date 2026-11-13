@@ -1,0 +1,9 @@
+
+ RUN  v5.0.5 /home/claude/wt-281a/packages/cli
+
+
+ Test Files  4 passed (4)
+      Tests  26 passed (26)
+   Start at  11:40:36
+   Duration  23.28s (tests 49%, import 36%, transform 15%)
+

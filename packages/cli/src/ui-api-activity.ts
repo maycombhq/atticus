@@ -88,7 +88,8 @@ export function tracked<T>(
 export function answerAsJob(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
-  work: () => Promise<Record<string, unknown>>,
+  /** Beta.28.1: told the job's control, to print its steps and say its last as its progress. */
+  work: (c?: JobControl) => Promise<Record<string, unknown>>,
   o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): { status: 202; body: { jobId: string } } {
   const opts: JobStartOptions = {
@@ -98,9 +99,9 @@ export function answerAsJob(
   };
   const job = ctx.jobs.start(
     o.kind ?? "work",
-    async () => {
+    async (c) => {
       try {
-        const answer = await work();
+        const answer = await work(c);
         const lines = Array.isArray(answer.lines) ? answer.lines.map(String) : [];
         return { result: { answer, lines } };
       } catch (e) {
