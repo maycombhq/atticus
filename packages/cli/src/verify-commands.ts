@@ -404,7 +404,6 @@ export async function verifyCommand(
   const leftOut =
     keepFacts && badLines.length === 0 ? await leftOutOf(root, repo, report) : undefined;
   const partial = leftOut?.ok ? leftOut : undefined;
-  const refusedWrite = keepFacts && !partial;
   // Verify's own verdict ("The read is complete: every source file is read or reviewed"),
   // kept in the facts slot's meta as `readComplete` (ADR 0195 addendum "a legacy join its
   // caller's facts place elsewhere"): only a complete read retires an adopted arrow that cites

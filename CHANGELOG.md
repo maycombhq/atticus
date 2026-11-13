@@ -2,6 +2,13 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.1 (unreleased)
+
+### Fixed
+
+- **One rejected fact no longer blocks `atticus verify <repo> --write` (field report 5).** The kept facts (a person's corrections and pairings with them) are written, and each rejected fact is left out, named with the facts file to fix and the source line to read again (`left out: <id> (<code>): fix it in facts/<repo>.jsonl, reading <file>:<line> again`); `--json` lists them under `leftOut`. A rejected fact never takes away what it backed: when the last accepted write (the repo's facts snapshot) holds a fact of that id, that copy is written again in its place, so the build removes nothing the rejection alone would remove. The exit code is 3 (written, with facts left out), so a script tells it from a failure (1); the app's Apply and a read's own Apply take it as applied. A line that isn't a fact, or a snapshot that doesn't read, still refuses the write and writes nothing.
+- **A setting written as a deploy token is checked where the token is set.** A YAML or properties value of `@NAME@`, `${NAME}` or `${NAME:default}` was rejected as "something other than the value claimed" before `cite.with` was looked at. The token as written is kept; a resolved value is kept when a `cite.with` line sets NAME to it (a pom property, `NAME=v`, `NAME: v`, `-DNAME=v`, a bundle config.json entry) or it is the placeholder's own default; otherwise the rejection names the token. `/atticus-map` says so in one sentence.
+
 ## 2.0.0-beta.28 (2026-11-13)
 
 ### Added
