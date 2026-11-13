@@ -1488,25 +1488,30 @@ function sourceWords(path: string, b: Build): string {
 }
 
 /**
- * beta.28: the fields that say which thing a record is, whatever its id: a record of the same kind
- * with the same values is the same thing under another id (a read that keys it otherwise). The
- * references among them are compared through the components that came back under another id.
- * A kind not listed is matched by its name, when it has one.
+ * beta.28: the fields that say which thing a record is, whatever its id, for the kinds whose
+ * fields can say it; a kind not listed is never matched. References are compared through the
+ * components that came back under another id.
  */
 const IDENTITY: Record<string, readonly string[]> = {
   Component: ["repo", "path", "type"],
-  Interface: ["from", "to", "method", "normalizedPath"],
+  Interface: ["from", "to", "via", "direction", "method", "normalizedPath"],
   Endpoint: ["component", "endpointType", "method", "pathOrTopic"],
   Setting: ["component", "key", "env"],
+  Table: ["dataStore", "name"],
   Column: ["table", "name"],
   GatewayRoute: ["proxy", "basepath", "env"],
+  ObservabilityAsset: ["component", "assetKind", "name"],
 };
 const REFS = new Set(["from", "to", "component"]);
 
-/** A record's identity as one string, or undefined when it has none to match by. */
-function identityOf(r: CatalogRecord, rekeyed: ReadonlyMap<string, string>): string | undefined {
+/** A record's identity as one string, or undefined when its kind has none to match by. */
+function identityOf(
+  r: CatalogRecord,
+  rekeyed: ReadonlyMap<string, string>,
+  fields: readonly string[] | undefined = IDENTITY[r.kind],
+): string | undefined {
+  if (!fields) return undefined;
   const x = r as unknown as Record<string, unknown>;
-  const fields = IDENTITY[r.kind] ?? ["name"];
   const vals = fields.map((f) => {
     const v = x[f];
     if (typeof v !== "string" || !v) return "";
@@ -1515,6 +1520,69 @@ function identityOf(r: CatalogRecord, rekeyed: ReadonlyMap<string, string>): str
   // A component is the same thing only where it is at a path; anything else needs a value.
   if (r.kind === "Component" ? !vals[1] : vals.every((v) => !v)) return undefined;
   return `${r.kind}\u0000${vals.join("\u0000")}`;
+}
+
+/** An arrow by its caller and what it calls, not where it goes. */
+const CALL = ["from", "via", "direction", "method", "normalizedPath"] as const;
+
+/**
+ * beta.28: what each record of the last build that this build removes is to this build, when
+ * that is known, as words by `<Kind>/<id>`: `comes back as <Kind>/<id>` where exactly one record
+ * of the last build and exactly one of this build have its identity and they differ in id, or,
+ * for an arrow, `its call goes to <to> now (Interface/<id>)` where exactly one arrow of each makes
+ * the same call. Anything with more than one candidate on either side says nothing, so the words
+ * don't depend on the order of the records.
+ */
+export function rekeyedWords(
+  before: readonly CatalogRecord[],
+  after: readonly CatalogRecord[],
+): Map<string, string> {
+  const key = (r: CatalogRecord) => `${r.kind}/${r.id}`;
+  const was = new Set(before.map(key));
+  const now = new Set(after.map(key));
+  const gone = before.filter((r) => !now.has(key(r)));
+  /** The record each identity is unique to, on one side (undefined where two share it). */
+  const unique = (rs: readonly CatalogRecord[], k: (r: CatalogRecord) => string | undefined) => {
+    const m = new Map<string, CatalogRecord | undefined>();
+    for (const r of rs) {
+      const i = k(r);
+      if (i !== undefined) m.set(i, m.has(i) ? undefined : r);
+    }
+    return m;
+  };
+  const out = new Map<string, string>();
+  const none = new Map<string, string>();
+  // Components first: the others' references go through the components' new ids.
+  const rekeyed = new Map<string, string>();
+  const comps = (rs: readonly CatalogRecord[]) => rs.filter((r) => r.kind === "Component");
+  const oldC = unique(comps(before), (r) => identityOf(r, none));
+  const newC = unique(comps(after), (r) => identityOf(r, none));
+  for (const r of comps(gone)) {
+    const i = identityOf(r, none);
+    const x = i === undefined ? undefined : newC.get(i);
+    if (i === undefined || !x || oldC.get(i) !== r || was.has(key(x))) continue;
+    rekeyed.set(r.id, x.id);
+  }
+  const oldK = unique(before, (r) => identityOf(r, rekeyed));
+  const newK = unique(after, (r) => identityOf(r, rekeyed));
+  const arrows = (rs: readonly CatalogRecord[]) => rs.filter((r) => r.kind === "Interface");
+  const oldA = unique(arrows(before), (r) => identityOf(r, rekeyed, CALL));
+  const newA = unique(arrows(after), (r) => identityOf(r, rekeyed, CALL));
+  for (const r of gone) {
+    const i = identityOf(r, rekeyed);
+    const x = i === undefined ? undefined : newK.get(i);
+    if (i !== undefined && x && oldK.get(i) === r && !was.has(key(x))) {
+      out.set(key(r), `comes back as ${x.kind}/${x.id}`);
+      continue;
+    }
+    if (r.kind !== "Interface") continue;
+    const c = identityOf(r, rekeyed, CALL);
+    const y = c === undefined ? undefined : newA.get(c);
+    const to = (y as unknown as { to?: string } | undefined)?.to;
+    if (c !== undefined && y && oldA.get(c) === r && !was.has(key(y)) && to)
+      out.set(key(r), `its call goes to ${to} now (Interface/${y.id})`);
+  }
+  return out;
 }
 
 /** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
@@ -1896,49 +1964,10 @@ export async function guardBuild(
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
-    const rekeyed = new Map<string, string>();
-    const newById = new Map<string, CatalogRecord>();
-    if (oldRecords.size) {
-      const comps = new Map<string, string>();
-      for (const x of addedNow)
-        if (x.kind === "Component") {
-          const k = identityOf(x, rekeyed);
-          if (k) comps.set(k, x.id);
-        }
-      for (const r of oldRecords.values()) {
-        if (r.kind !== "Component" || b.files.has(recordPath(r))) continue;
-        const k = identityOf(r, rekeyed);
-        const to = k ? comps.get(k) : undefined;
-        if (to && to !== r.id) rekeyed.set(r.id, to);
-      }
-      for (const x of addedNow) {
-        const k = identityOf(x, rekeyed);
-        if (k && !newById.has(k)) newById.set(k, x);
-      }
-    }
-    // An arrow the build adds from the same caller, by the same method and path, to another end:
-    // the call it drew is drawn elsewhere now (one such arrow only, else it says nothing).
-    const arrowsFrom = new Map<string, CatalogRecord[]>();
-    for (const x of addedNow)
-      if (x.kind === "Interface") {
-        const i = x as unknown as { from?: string; method?: string; normalizedPath?: string };
-        const key = `${rekeyed.get(i.from ?? "") ?? i.from}\u0000${i.method ?? ""}\u0000${i.normalizedPath ?? ""}`;
-        arrowsFrom.set(key, [...(arrowsFrom.get(key) ?? []), x]);
-      }
-    const movedArrow = (r: CatalogRecord): { id: string; to: string } | undefined => {
-      const i = r as unknown as {
-        from?: string;
-        to?: string;
-        method?: string;
-        normalizedPath?: string;
-      };
-      const xs =
-        arrowsFrom.get(
-          `${rekeyed.get(i.from ?? "") ?? i.from}\u0000${i.method ?? ""}\u0000${i.normalizedPath ?? ""}`,
-        ) ?? [];
-      const x = xs.length === 1 ? (xs[0] as unknown as { id: string; to?: string }) : undefined;
-      return x?.to && x.to !== i.to ? { id: x.id, to: x.to } : undefined;
-    };
+    // What each record removed is to this build, where that is known.
+    const rekeyedTo = oldRecords.size
+      ? rekeyedWords([...oldRecords.values()], b.records)
+      : new Map<string, string>();
     // The repos this build reads from their facts snapshot.
     const fromFacts = new Set(b.sources.filter((x) => x.source === "facts").map((x) => x.repo));
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
@@ -2049,13 +2078,11 @@ export async function guardBuild(
       // that makes it. Only for a removal something explains already: never a bug's excuse.
       const own: string[] = [];
       if (why.size && r) {
-        const k = identityOf(r, rekeyed);
-        const back = k ? newById.get(k) : undefined;
-        const moved = !back && r.kind === "Interface" ? movedArrow(r) : undefined;
-        if (back && back.id !== r.id) own.push(`comes back as ${back.kind}/${back.id}`);
-        else if (moved) own.push(`its call goes to ${moved.to} now (Interface/${moved.id})`);
-        else
-          // Only where the repo's read changed: a removal an answer makes is the answer's.
+        const back = rekeyedTo.get(`${r.kind}/${r.id}`);
+        if (back) own.push(back);
+        // Only where the repo's read changed and nothing else is why: not a removal an answer,
+        // a curated decision or a call the join placed elsewhere makes, nor one a join derives.
+        else if (!kinds.has("curated") && !left?.call && !JOIN_DERIVED.has(r.kind))
           for (const repo of repos)
             if (fromFacts.has(repo) && slotChanged(repo))
               own.push(`no fact of ${repo}'s read makes it`);
