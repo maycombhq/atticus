@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { COPY } from "../copy.js";
 
 const W = COPY.app.jobWait;
@@ -18,11 +19,10 @@ export function JobWait(p: {
       <p role="status" aria-busy="true" className="ev-say" style={{ margin: 0 }}>
         {p.what}
       </p>
-      {p.line && (
-        <p className="ev-say mono" aria-live="polite" style={{ margin: 0 }}>
-          {W.now(p.line)}
-        </p>
-      )}
+      {/* Kept mounted, empty until the first line: a screen reader hears each line as it comes. */}
+      <p className="ev-say mono" aria-live="polite" style={{ margin: 0 }}>
+        {p.line ? W.now(p.line) : ""}
+      </p>
       {p.onStop && (
         <div className="row" style={{ gap: 6 }}>
           <button
@@ -41,16 +41,24 @@ export function JobWait(p: {
   );
 }
 
-/** A wait the person stopped: said so, with Start it again (beta.28.1). */
+/**
+ * A wait the person stopped: said so, with Start it again (beta.28.1). The keyboard lands on
+ * Start it again (the Stop it pressed is gone), or on the note when there is none.
+ */
 export function JobStoppedNote(p: { onAgain?: (() => void) | undefined }) {
+  const again = useRef<HTMLButtonElement | null>(null);
+  const note = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    (again.current ?? note.current)?.focus();
+  }, []);
   return (
     <div className="stack" style={{ gap: 4 }}>
-      <p role="status" className="ev-say" style={{ margin: 0 }}>
+      <p role="status" className="ev-say" style={{ margin: 0 }} tabIndex={-1} ref={note}>
         {W.stopped}
       </p>
       {p.onAgain && (
         <div className="row" style={{ gap: 6 }}>
-          <button type="button" className="btn" onClick={p.onAgain}>
+          <button type="button" className="btn" onClick={p.onAgain} ref={again}>
             {W.again}
           </button>
         </div>

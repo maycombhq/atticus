@@ -435,9 +435,11 @@ export async function api<T>(
     quiet?: boolean;
     /** A GET whose answer must be of a read sent after this ask (readCoalescer's `after`). */
     after?: boolean;
+    /** Beta.28.1 (the review): a POST that writes nothing (a preview): no page hears a write. */
+    readOnly?: boolean;
   } = {},
 ): Promise<T> {
-  const write = !!o.method && o.method !== "GET";
+  const write = !!o.method && o.method !== "GET" && !o.readOnly;
   if (!write && o.body === undefined) {
     // Beta.27 re-review: quiet or not is each caller's own: the shared read is counted for none,
     // and each caller who isn't quiet counts toward the loading bar while it waits (a quiet
@@ -494,10 +496,14 @@ export async function callAsJob<T>(
   o: ((ms: number) => Promise<void>) | JobFollow = {},
 ): Promise<T> {
   const f: JobFollow = typeof o === "function" ? { wait: o } : o;
-  const r = await api<unknown>(path, { method: "POST", body: { ...body, job: true } });
+  const r = await api<unknown>(path, {
+    method: "POST",
+    body: { ...body, job: true },
+    ...(f.write === false ? { readOnly: true } : {}),
+  });
   const jobId = r && typeof r === "object" ? (r as { jobId?: unknown }).jobId : undefined;
   if (typeof jobId !== "string") return r as T;
-  return followAnswer<T>(jobId, f, true);
+  return followAnswer<T>(jobId, f, f.write ?? true);
 }
 
 /**
@@ -511,6 +517,11 @@ export interface JobFollow {
   onLine?: (line: string) => void;
   signal?: AbortSignal;
   wait?: (ms: number) => Promise<void>;
+  /**
+   * callAsJob only (beta.28.1, the review): false for a POST that writes nothing (a preview): its
+   * end tells no page a write happened, and a Stop is JobStopped, as a read's is. Default true.
+   */
+  write?: boolean;
 }
 
 /** A job the person stopped: it ended between steps with no answer (beta.28.1). */
@@ -796,6 +807,51 @@ export interface JobWaitParts {
   stopped?: boolean;
 }
 
+/**
+ * useJobRead's read: getAsJob, its line and job told while the page still waits (`signal` not
+ * aborted). Beta.28.1 (the review): a read nobody waits on any more (the panel closed, another
+ * box picked, read again) is stopped, so jobs don't pile up; a read is safe to stop.
+ */
+export function readAsJob<T>(
+  path: string,
+  signal: AbortSignal,
+  on: {
+    onLine?: (line: string) => void;
+    onJob?: (jobId: string) => void;
+    onStopped?: () => void;
+    onEnd?: () => void;
+  } = {},
+  wait?: (ms: number) => Promise<void>,
+): Promise<T> {
+  const live = (f: () => void) => {
+    if (!signal.aborted) f();
+  };
+  let mine: string | undefined;
+  let ended = false;
+  const leave = () => {
+    if (mine && !ended) void stopJob(mine).catch(() => undefined);
+  };
+  signal.addEventListener("abort", leave, { once: true });
+  return getAsJob<T>(path, {
+    signal,
+    ...(wait ? { wait } : {}),
+    onLine: (l) => live(() => on.onLine?.(l)),
+    onJob: (id) => {
+      mine = id;
+      live(() => on.onJob?.(id));
+    },
+  })
+    .catch((e: unknown) => {
+      if (e instanceof JobStopped) live(() => on.onStopped?.());
+      throw e;
+    })
+    .finally(() => {
+      ended = true;
+      signal.removeEventListener("abort", leave);
+      live(() => on.onEnd?.());
+    });
+}
+
 /** useJobRead's answer: useApi's, with the job's last line, its Stop, and whether it stopped. */
 export type JobRead<T> = ReturnType<typeof useApi<T>> & {
   /** The job's last line while the read runs (what it is doing now). */
@@ -821,19 +877,12 @@ export function useJobRead<T>(path: string | undefined, o: { view?: string } = {
     setLine(undefined);
     setStopped(false);
     setStopping(false);
-    const live = (f: () => void) => {
-      if (!signal.aborted) f();
-    };
-    return getAsJob<T>(p, {
-      signal,
-      onLine: (l) => live(() => setLine(l)),
-      onJob: (id) => live(() => setJobId(id)),
-    })
-      .catch((e: unknown) => {
-        if (e instanceof JobStopped) live(() => setStopped(true));
-        throw e;
-      })
-      .finally(() => live(() => setJobId(undefined)));
+    return readAsJob<T>(p, signal, {
+      onLine: setLine,
+      onJob: setJobId,
+      onStopped: () => setStopped(true),
+      onEnd: () => setJobId(undefined),
+    });
   }, []);
   const r = useApi<T>(path, { load, ...(o.view ? { view: o.view } : {}) });
   const running = r.state === "loading" || r.refreshing;

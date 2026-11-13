@@ -229,7 +229,12 @@ export function Pairing(p: {
     p.post ??
     ((body: Api.ConnectLinksRequestT, follow?: JobFollow) =>
       body.preview
-        ? callAsJob<Api.ConnectLinksResultT>("/api/links/connect", { ...body }, follow ?? {})
+        ? // A preview writes nothing: its end is no write, and its Stop is JobStopped.
+          callAsJob<Api.ConnectLinksResultT>(
+            "/api/links/connect",
+            { ...body },
+            { ...follow, write: false },
+          )
         : api<Api.ConnectLinksResultT>("/api/links/connect", { method: "POST", body }));
   // Beta.28.1: the preview's job, while it runs: its last line, and Stop.
   const [wait, setWait] = useState<{ job?: string; line?: string; stopping?: boolean }>();

@@ -281,6 +281,9 @@ export function correctBody(
   return { body: { item: d.item, api: f.api.trim(), repo: f.repo.trim(), ...tail } };
 }
 
+/** How long a typed repo waits for the typing to pause before its APIs are read (beta.28.1). */
+export const TYPED_REPO_MS = 400;
+
 const candidatesPath = (from: string, repo: string) =>
   `/api/links/candidates?from=${encodeURIComponent(from)}&to=${encodeURIComponent(repo)}`;
 
@@ -319,19 +322,32 @@ export function CorrectDecision(p: {
   const [preview, setPreview] = useState<{ r: Api.CorrectDecisionResultT; asked: string }>();
   const [saved, setSaved] = useState<Api.CorrectDecisionResultT | undefined>();
   const done = useRef<HTMLDivElement | null>(null);
-  // Beta.28.1: read as a job: the wait says each step and has Stop (a join can take minutes).
-  const loaded = useJobRead<Api.LinkCandidatesViewT>(
-    p.apis || d.kind !== "link" || f.pick !== "api" || !f.repo.trim()
-      ? undefined
-      : candidatesPath(d.repo, f.repo.trim()),
-  );
-  const apis: (Loaded<Api.LinkCandidatesViewT> & JobWaitParts) | undefined =
-    p.apis ?? (f.pick === "api" && f.repo.trim() ? loaded : undefined);
   // Ninth UX walk: the repo is picked from the estate's repos, not typed (typed if they don't load).
   const repoList = useApi<{ id: string }[]>(
     p.repos || d.kind !== "link" ? undefined : "/api/repos",
   );
   const repos = p.repos ?? (d.kind === "link" ? repoList : undefined);
+  // Beta.28.1: read as a job: the wait says each step and has Stop (a join can take minutes).
+  // The review: a repo typed (the repos didn't load) is read once the typing pauses, not a job
+  // a key; one picked from the list is read at once.
+  const typed = f.repo.trim();
+  const [readRepo, setReadRepo] = useState(typed);
+  const fromList = repos?.state === "ready";
+  useEffect(() => {
+    if (fromList || typed === "") {
+      setReadRepo(typed);
+      return;
+    }
+    const t = setTimeout(() => setReadRepo(typed), TYPED_REPO_MS);
+    return () => clearTimeout(t);
+  }, [typed, fromList]);
+  const loaded = useJobRead<Api.LinkCandidatesViewT>(
+    p.apis || d.kind !== "link" || f.pick !== "api" || !readRepo || readRepo !== typed
+      ? undefined
+      : candidatesPath(d.repo, readRepo),
+  );
+  const apis: (Loaded<Api.LinkCandidatesViewT> & JobWaitParts) | undefined =
+    p.apis ?? (f.pick === "api" && f.repo.trim() ? loaded : undefined);
   const repoIds =
     repos?.state === "ready"
       ? [...new Set([...repos.data.map((r) => r.id), ...(f.repo ? [f.repo] : [])])].sort((a, b) =>

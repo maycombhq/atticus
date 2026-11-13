@@ -1,6 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, callAsJob, getAsJob, JobStopped, stopJob } from "../src/api/client.js";
+import {
+  ApiError,
+  callAsJob,
+  getAsJob,
+  JobStopped,
+  onWrote,
+  readAsJob,
+  stopJob,
+} from "../src/api/client.js";
 import { CorrectionNextPanel } from "../src/app/correction-next.js";
 import { JobStoppedNote, JobWait } from "../src/app/job-wait.js";
 import { COPY } from "../src/copy.js";
@@ -149,6 +157,84 @@ describe("a read the person waits on, as a job", () => {
   });
 });
 
+describe("a preview as a job writes nothing (the review of beta.28.1)", () => {
+  it("callAsJob with write false: a Stop is JobStopped, and no page hears a write", async () => {
+    let heard = 0;
+    const off = onWrote(() => heard++);
+    try {
+      serve((path) =>
+        path === "/api/links/connect"
+          ? { status: 202, body: { jobId: "job-8" } }
+          : { status: 200, body: { state: "cancelled", errors: [] } },
+      );
+      const e = await callAsJob(
+        "/api/links/connect",
+        { preview: true },
+        { wait: now, write: false },
+      ).catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(JobStopped);
+      serve((path) =>
+        path === "/api/links/connect"
+          ? { status: 202, body: { jobId: "job-9" } }
+          : { status: 200, body: { state: "done", errors: [], result: { answer: { ok: 3 } } } },
+      );
+      expect(
+        await callAsJob("/api/links/connect", { preview: true }, { wait: now, write: false }),
+      ).toEqual({ ok: 3 });
+      expect(heard).toBe(0);
+      // A write as a job is heard as one, and its Stop keeps its problem (its callers read one).
+      serve((path) =>
+        path === "/api/x"
+          ? { status: 202, body: { jobId: "job-10" } }
+          : { status: 200, body: { state: "done", errors: [], result: { answer: {} } } },
+      );
+      await callAsJob("/api/x", {}, { wait: now });
+      expect(heard).toBeGreaterThan(0);
+    } finally {
+      off();
+    }
+  });
+});
+
+describe("a read nobody waits on any more is stopped (the review of beta.28.1)", () => {
+  it("the panel goes while its read runs: the job is stopped", async () => {
+    const calls = serve((path) =>
+      path.startsWith("/api/links/candidates")
+        ? { status: 202, body: { jobId: "job-11" } }
+        : path.endsWith("/cancel")
+          ? { status: 200, body: {} }
+          : running("Joining the estate's calls and APIs"),
+    );
+    const ctl = new AbortController();
+    const lines: string[] = [];
+    const e = await readAsJob(
+      "/api/links/candidates?from=a&to=b",
+      ctl.signal,
+      {
+        onLine: (l) => lines.push(l),
+      },
+      async () => ctl.abort(),
+    ).catch((x: unknown) => x);
+    expect((e as Error).name).toBe("AbortError");
+    expect(lines).toEqual(["Joining the estate's calls and APIs"]);
+    expect(calls.some((c) => c.path === "/api/jobs/job-11/cancel" && c.method === "POST")).toBe(
+      true,
+    );
+  });
+
+  it("a read that ended is never stopped afterwards", async () => {
+    const calls = serve((path) =>
+      path.startsWith("/api/x")
+        ? { status: 202, body: { jobId: "job-12" } }
+        : { status: 200, body: { state: "done", errors: [], result: { answer: { ok: 4 } } } },
+    );
+    const ctl = new AbortController();
+    expect(await readAsJob("/api/x", ctl.signal, {}, now)).toEqual({ ok: 4 });
+    ctl.abort();
+    expect(calls.some((c) => c.path.endsWith("/cancel"))).toBe(false);
+  });
+});
+
 describe("the wait as the page shows it", () => {
   it("JobWait: the wait's words, the job's last line, and a labelled Stop", () => {
     const out = renderToStaticMarkup(
@@ -171,6 +257,8 @@ describe("the wait as the page shows it", () => {
     const bare = renderToStaticMarkup(<JobWait what="Reading…" />);
     expect(bare).not.toContain("<button");
     expect(bare).not.toContain(esc(W.now("")));
+    // The live region is there, empty, before the first line: a screen reader hears each line.
+    expect(bare).toContain('aria-live="polite"');
   });
 
   it("JobStoppedNote: says it was stopped and nothing changed, with Start it again", () => {

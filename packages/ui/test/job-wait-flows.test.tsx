@@ -20,7 +20,7 @@ const { COPY } = await import("../src/copy.js");
 const { JobStopped } = await import("../src/api/client.js");
 const { JobStoppedNote, JobWait } = await import("../src/app/job-wait.js");
 const { Pairing } = await import("../src/screens/architecture/Connect.js");
-const { CorrectDecision } = await import("../src/app/decisions.js");
+const { CorrectDecision, TYPED_REPO_MS } = await import("../src/app/decisions.js");
 
 afterEach(() => vi.unstubAllGlobals());
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -142,5 +142,86 @@ describe("Correct on a pairing: the candidates' wait", () => {
     expect(w[0]!.props.what).toBe(COPY.decisions.apisLoading);
     expect(w[0]!.props.line).toBe("Joining the estate's calls and APIs");
     expect(w[0]!.props.onStop).toBe(stop);
+  });
+});
+
+describe("where the keyboard goes after Stop (the review of beta.28.1)", () => {
+  const attachFocus = (focused: string[]) => (tree: unknown) => {
+    for (const e of all(tree)) {
+      const ref = e.props.ref as { current: unknown } | undefined;
+      if (ref && typeof ref === "object" && "current" in ref)
+        ref.current = { focus: () => focused.push(String(e.type)) };
+    }
+  };
+
+  it("lands on Start it again, the button that takes the place of Stop", () => {
+    const focused: string[] = [];
+    mount(JobStoppedNote as never, { onAgain: () => undefined } as never, {
+      attach: attachFocus(focused),
+    });
+    expect(focused).toEqual(["button"]);
+  });
+
+  it("lands on the note when there is nothing to start again", () => {
+    const focused: string[] = [];
+    mount(JobStoppedNote as never, {} as never, { attach: attachFocus(focused) });
+    expect(focused).toEqual(["p"]);
+  });
+});
+
+describe("Correct on a pairing: a typed repo (the review of beta.28.1)", () => {
+  it("is read once the typing pauses, not a job a key", async () => {
+    vi.useFakeTimers();
+    try {
+      const asked: string[] = [];
+      vi.stubGlobal("document", { querySelector: () => null });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (path: string) => {
+          asked.push(path);
+          return new Response(JSON.stringify({ jobId: "job-1" }), {
+            status: 202,
+            headers: { "content-type": "application/json" },
+          });
+        }),
+      );
+      const m = mount(
+        CorrectDecision as never,
+        {
+          d: {
+            kind: "link",
+            item: "link:forge-billing:call.a",
+            repo: "forge-billing",
+            what: "w",
+            decided: "e1",
+            to: { repo: "", path: "/a", method: "GET" },
+            runtime: "copilot-acp",
+            run: "run-1",
+            at: "2026-11-08T10:15:00Z",
+            cites: [],
+          },
+          // The repos didn't load: the repo is typed.
+          repos: { state: "error", error: "offline" },
+          onClose: () => undefined,
+        } as never,
+      );
+      const field = () =>
+        all(m.tree).find((e) => e.type === "input" && String(e.props.id).endsWith("-repo"))!;
+      for (const v of ["f", "fo", "forge-gw"]) {
+        (field().props.onChange as (e: unknown) => void)({ target: { value: v } });
+        m.render();
+        vi.advanceTimersByTime(100);
+        m.render();
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked.filter((p) => p.startsWith("/api/links/candidates"))).toEqual([]);
+      vi.advanceTimersByTime(TYPED_REPO_MS);
+      m.render();
+      await vi.advanceTimersByTimeAsync(0);
+      const reads = asked.filter((p) => p.startsWith("/api/links/candidates"));
+      expect(reads).toEqual(["/api/links/candidates?from=forge-billing&to=forge-gw&job=1"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
