@@ -306,10 +306,21 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
     // it is read from facts.
     expect(left.filter((l) => l.startsWith("forge-checkout's call at "))).toHaveLength(2);
     expect(left.filter((l) => !l.startsWith("forge-checkout's call at ")).sort()).toEqual([
-      `no GET /refunds/{} call in ${PROXY}'s complete read`,
       `no call at apiproxy/proxies/default.xml:7 in ${PROXY}'s read`,
       `${PROXY}'s call at apiproxy/proxies/default.xml:10 is left to devapi.northwind-pay.example, outside the estate`,
       `${PROXY}'s call at apiproxy/proxies/default.xml:4 is left to devapi.northwind-pay.example, outside the estate`,
+    ]);
+    // The arrow that had lost its caller's line is said as what it was: a guess (beta.27.1).
+    expect(
+      said.filter((l) =>
+        /^A legacy join left catalog\/sources\/legacy\/joins\.json: Interface\/if-[0-9a-f]+\. GET \/refunds\/\{\} was a guess with no line of /.test(
+          l,
+        ),
+      ),
+    ).toEqual([
+      expect.stringContaining(
+        `GET /refunds/{} was a guess with no line of ${PROXY}'s, and ${PROXY}'s read is complete.`,
+      ),
     ]);
     expect(said.filter((l) => /^ {2}removed Interface\/if-/.test(l))).toHaveLength(6);
     // The build report the Catalog builds page reads says the same for each removal.
@@ -323,6 +334,122 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
     // The two calls left are drawn to the vendor (the review), and the checkout's calls to the
     // proxy as the join makes them now: four arrows in, six out.
     expect(said.some((l) => /Links: .*Interfaces \+4 -6\b/.test(l))).toBe(true);
+  }, 240_000);
+
+  it("takes away every adopted guess with no line of the proxy's once the proxy's read is complete, its callees still legacy (beta.27.1)", async () => {
+    // A beta.26 metarepo whose path-guessed arrows cite no line of the proxy's (the user's case:
+    // "No line cited at this end"), adopted by the upgrade; the services they go to never read
+    // from facts since.
+    const root = metarepo(pathGuessed());
+    for (const r of Object.keys(COMMIT)) await verify(root, r);
+    rmSync(join(root, "catalog", "sources"), { recursive: true, force: true });
+    rmSync(join(root, ".atticus"), { recursive: true, force: true });
+    const dir = join(root, "catalog", "generated", "interface");
+    let stripped = 0;
+    for (const f of readdirSync(dir)) {
+      const r = parse(readFileSync(join(dir, f), "utf8")) as Iface;
+      if (r.from !== "northwind-pay-proxy") continue;
+      const only = { ...r, evidence: r.evidence.filter((e) => e.side !== "caller") };
+      expect(parseRecord(only).ok).toBe(true);
+      writeFileSync(join(dir, f), serializeRecord(only as CatalogRecord));
+      stripped++;
+    }
+    expect(stripped).toBe(GUESSED.length);
+    const up = { out: [] as string[], err: [] as string[] };
+    const code = await main(["upgrade", "--yes", "--root", root], {
+      out: (l) => up.out.push(l),
+      err: (l) => up.err.push(l),
+    });
+    expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
+    expect(await fromProxy(root)).toEqual(GUESSED);
+
+    // A read in parts (config.json only) isn't the whole truth: the guesses stay.
+    writeFileSync(
+      join(root, "facts", `${PROXY}.jsonl`),
+      lines(factsOf(PROXY))
+        .filter((l) => l.includes('"kind":"config"'))
+        .join("\n") + "\n",
+    );
+    expect(
+      (await verify(root, PROXY)).split("\n").filter((l) => /^A legacy join left/.test(l)),
+    ).toEqual([]);
+    expect(await fromProxy(root)).toEqual(GUESSED);
+
+    // The read whole and complete: every guess leaves, each said as a guess, though no service
+    // it pointed at is read from facts.
+    writeFileSync(join(root, "facts", `${PROXY}.jsonl`), factsOf(PROXY));
+    writeFileSync(join(root, "facts", `${PROXY}.reviewed.jsonl`), REVIEWED);
+    const said = (await verify(root, PROXY)).split("\n");
+    expect(said).toContainEqual(expect.stringMatching(/^The read is complete: /));
+    const left = said.filter((l) => /^A legacy join left/.test(l));
+    expect(left).toHaveLength(GUESSED.length);
+    for (const l of left)
+      expect(l).toMatch(
+        new RegExp(
+          `^A legacy join left catalog/sources/legacy/joins\\.json: Interface/if-[0-9a-f]+\\. [A-Z]+ /\\S+ was a guess with no line of ${PROXY}'s, and ${PROXY}'s read is complete\\.$`,
+        ),
+      );
+    // The build report says each as a guess, never as a call placed elsewhere.
+    const report = await lastBuildOf(root);
+    const why = (report?.removed ?? []).flatMap((x) => x.explainedBy);
+    expect(why.filter((w) => w.startsWith("a guess no complete read backs: "))).toHaveLength(
+      GUESSED.length,
+    );
+    expect(why.filter((w) => w.startsWith("its caller's facts place the call elsewhere"))).toEqual(
+      [],
+    );
+    expect(await fromProxy(root)).toEqual(ALL_TO_VENDOR);
+  }, 240_000);
+
+  it("never takes a person's word or an arrow with a line of the caller's for a guess (beta.27.1, the review)", async () => {
+    const root = metarepo(pathGuessed());
+    for (const r of Object.keys(COMMIT)) await verify(root, r);
+    rmSync(join(root, "catalog", "sources"), { recursive: true, force: true });
+    rmSync(join(root, ".atticus"), { recursive: true, force: true });
+    const dir = join(root, "catalog", "generated", "interface");
+    const kept: string[] = [];
+    let n = 0;
+    for (const f of readdirSync(dir).sort()) {
+      const r = parse(readFileSync(join(dir, f), "utf8")) as Iface & Record<string, unknown>;
+      if (r.from !== "northwind-pay-proxy") continue;
+      const callerLine = r.evidence.find((e) => e.side === "caller");
+      const callee = r.evidence.filter((e) => e.side !== "caller");
+      // The first: a person asserted it. The second: a line of the caller's that isn't code,
+      // beside an evidence with no path. The rest: plain guesses with nothing of the caller's.
+      const only =
+        n === 0
+          ? { ...r, confidence: "asserted", evidence: [...callee, { source: "manual", by: "pat" }] }
+          : n === 1
+            ? {
+                ...r,
+                evidence: [
+                  ...callee,
+                  { ...callerLine, source: "config" },
+                  { source: "manual", side: "caller", repo: PROXY, by: "pat" },
+                ],
+              }
+            : { ...r, evidence: callee };
+      expect(parseRecord(only).ok, JSON.stringify(parseRecord(only))).toBe(true);
+      writeFileSync(join(dir, f), serializeRecord(only as CatalogRecord));
+      if (n < 2) kept.push(f);
+      n++;
+    }
+    expect(n).toBe(GUESSED.length);
+    const up = { out: [] as string[], err: [] as string[] };
+    const code = await main(["upgrade", "--yes", "--root", root], {
+      out: (l) => up.out.push(l),
+      err: (l) => up.err.push(l),
+    });
+    expect(code, [...up.out, ...up.err].join("\n")).toBe(0);
+
+    writeFileSync(join(root, "facts", `${PROXY}.jsonl`), factsOf(PROXY));
+    writeFileSync(join(root, "facts", `${PROXY}.reviewed.jsonl`), REVIEWED);
+    const said = (await verify(root, PROXY)).split("\n");
+    expect(said).toContainEqual(expect.stringMatching(/^The read is complete: /));
+    expect(
+      said.filter((l) => /^A legacy join left .* was a guess with no line of /.test(l)),
+    ).toHaveLength(GUESSED.length - 2);
+    for (const f of kept) expect(readdirSync(dir), f).toContain(f);
   }, 240_000);
 
   it("keeps the adopted arrows while a repo the join doesn't read lists a host in the domain their calls are left to (the review)", async () => {

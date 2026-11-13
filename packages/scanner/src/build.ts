@@ -27,6 +27,7 @@ import {
   readSharedMaps,
   readTrafficFile,
   recordPath,
+  DECLARED_CALLER,
   registrableDomain,
   serializeRecord,
   sharedDirOf,
@@ -547,11 +548,12 @@ export interface RetiredJoin {
    * The call that decided it (ADR 0195 addendum "a legacy join its caller's facts place
    * elsewhere"): the caller repo's call at `file:line` joined to an entry, or left to a system
    * outside the estate; or `gone`, no call at the arrow's caller line (`at`), or none with its
-   * method and path (`call`) in a complete read.
+   * method and path (`call`) in a complete read; or `guess` (beta.27.1), an arrow that cites no
+   * line of its caller's, the caller's read complete.
    */
   call?: {
     repo: string;
-    how: "joined" | "outside" | "gone";
+    how: "joined" | "outside" | "gone" | "guess";
     at?: string;
     /** The entry or system it is joined or left to. */
     to?: string;
@@ -566,6 +568,8 @@ export function decidingCallWords(c: NonNullable<RetiredJoin["call"]>): string {
     return `${c.repo}'s call at ${c.at} is joined to ${c.to ?? "another entry"}`;
   if (c.how === "outside")
     return `${c.repo}'s call at ${c.at} is left to ${c.to}, outside the estate`;
+  if (c.how === "guess")
+    return `${c.call} was a guess with no line of ${c.repo}'s, and ${c.repo}'s read is complete`;
   return c.at
     ? `no call at ${c.at} in ${c.repo}'s read`
     : `no ${c.call} call in ${c.repo}'s complete read`;
@@ -1040,17 +1044,38 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     };
     if (!x.method || r.via === "event-bus" || r.via === "mq") return undefined;
     const ev = r.evidence as CallerEv[];
+    // Its callers: the repos its caller evidence names; else its end's one repo, if one.
+    const named = [...new Set(ev.flatMap((e) => (e.side === "caller" && e.repo ? [e.repo] : [])))];
+    const fromEnd = x.from ? (ends.get(x.from) ?? []) : [];
+    const callers = named.length ? named : fromEnd.length === 1 ? fromEnd : [];
+    if (!callers.length) return undefined;
+    // Beta.27.1 (owner, 2026-11-12, ADR 0195 addendum "a guess never outlives a complete read"):
+    // an adopted arrow that cites no code line at its caller's end is a guess (beta.26 paired it
+    // by its path). A complete facts read of its caller is the whole truth of what that repo
+    // calls, so once every caller is read from facts since the upgrade and the read is complete,
+    // the guess leaves: the call it guessed is either derived (and takes the id) or, if the facts
+    // can't place it, a question, never an arrow. No callee or path matching is needed for it.
+    // A person's word is never a guess (the review): an asserted record, a declared caller or
+    // any evidence a person gave keeps the rule below, as does an arrow with a line of any
+    // source at a caller's end (a config or spec line is still a line of the caller's).
+    const personal =
+      r.confidence === "asserted" ||
+      (r.flags ?? []).includes(DECLARED_CALLER) ||
+      (r.evidence as { source?: string }[]).some((e) => e.source === "manual");
+    const lineless = (repo: string) =>
+      !ev.some((e) => e.side === "caller" && e.repo === repo && !!e.path);
+    if (!personal && callers.every(lineless)) {
+      if (!callers.every((repo) => factsOf.has(repo) && sinceUpgrade(repo) && readWhole.has(repo)))
+        return undefined;
+      const repo = [...callers].sort(cmpText)[0]!;
+      return { repo, how: "guess", call: `${x.method} ${x.normalizedPath ?? ""}`.trim() };
+    }
     // A callee still read from readers or legacy: the join can't place the call with it.
     const callees = [
       ...new Set(ev.flatMap((e) => (e.side === "callee" && e.repo ? [e.repo] : []))),
     ];
     const calleeRepos = callees.length ? callees : x.to ? (ends.get(x.to) ?? []) : [];
     if (calleeRepos.some((repo) => live.has(repo) && !factsOf.has(repo))) return undefined;
-    // Its callers: the repos its caller evidence names; else its end's one repo, if one.
-    const named = [...new Set(ev.flatMap((e) => (e.side === "caller" && e.repo ? [e.repo] : [])))];
-    const fromEnd = x.from ? (ends.get(x.from) ?? []) : [];
-    const callers = named.length ? named : fromEnd.length === 1 ? fromEnd : [];
-    if (!callers.length) return undefined;
     let deciding: RetiredJoin["call"];
     for (const repo of [...callers].sort(cmpText)) {
       const facts = factsOf.get(repo);
@@ -1930,7 +1955,11 @@ export async function guardBuild(
       // A legacy join that left without being derived: the call its caller's facts read placed.
       const left = b.retired.find((x) => x.call && x.id === id && x.kind === (r?.kind ?? kind));
       if (left?.call) {
-        why.add(`its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`);
+        why.add(
+          left.call.how === "guess"
+            ? `a guess no complete read backs: ${decidingCallWords(left.call)}`
+            : `its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`,
+        );
         kinds.add("slot");
       }
       const order: RemovalReason[] = ["manifest", "archived", "curated", "slot", "input", "build"];
@@ -2894,7 +2923,7 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
   for (const x of r.build.retired)
     out.push(
       x.notJoined
-        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. Its caller is read from facts now, and ${x.call ? `they place the call elsewhere: ${decidingCallWords(x.call)}` : "they don't join it"}.`
+        ? `A legacy join left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}. ${x.call?.how === "guess" ? `${decidingCallWords(x.call)}` : `Its caller is read from facts now, and ${x.call ? `they place the call elsewhere: ${decidingCallWords(x.call)}` : "they don't join it"}`}.`
         : `A legacy join was derived again and left catalog/sources/legacy/joins.json: ${x.kind}/${x.id}${x.fields.length ? ` (it differed in ${x.fields.join(", ")})` : ""}.`,
     );
   for (const x of r.build.orphaned)

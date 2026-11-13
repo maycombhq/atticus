@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.27.1 (unreleased)
+
+### Fixed
+
+- **A guess never outlives a complete read (ADR 0195 addendum).** An arrow adopted from a beta.26 catalog that cites no line of its caller's (beta.26 paired it by a route's path) now leaves as soon as its caller is read from facts and that read is complete, whatever its callee is read from and however the caller's routes are written. Before, such an arrow stayed while the services it pointed at were still on their old read, and stayed for good when the proxy's route was a wildcard (`/payments/*`) and the arrow's path a parameter (`/payments/{}`). Each is listed as a removal with its reason, and `atticus catalog undo` takes it back.
+
 ## 2.0.0-beta.27 (2026-11-12)
 
 ### Added

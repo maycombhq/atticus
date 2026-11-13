@@ -379,8 +379,11 @@ export class Model {
     const [, , method, path] = j.arrow.key.split("|");
     if (method === "EVENT") return false;
     const s = this.source(j.arrow.from);
+    // Beta.27.1 (owner, 2026-11-12): an arrow with no line at its caller's end is a guess, and a
+    // complete facts read of its caller is the whole truth of what it calls: it may leave then,
+    // whatever its callee is read from and wherever the read's calls go.
+    if (j.lineless) return s?.from === "facts" && !s.obs.code.unread;
     if (s?.from !== "facts" || this.source(j.arrow.to)?.from !== "facts") return false;
-    if (j.lineless && s.obs.code.unread) return false;
     return s.obs.code.calls
       .filter((c) => c.method === method && c.path === path)
       .every((c) => {
