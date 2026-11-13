@@ -7,11 +7,18 @@ import { RunsContext, type Ctx } from "../src/app/copilot-runs.js";
 import { JobFailed } from "../src/app/job.js";
 import { COPY } from "../src/copy.js";
 import { revealOf } from "../src/screens/architecture/Architecture.js";
-import { CATALOG_BUILDS_HREF, RefusalLink } from "../src/app/propose.js";
+import {
+  applyRefused,
+  CATALOG_BUILDS_HREF,
+  RefusalLink,
+  ResultsInPanel,
+  stepLines,
+} from "../src/app/propose.js";
 import {
   AddLinkForm,
   addOf,
   applyStaged,
+  drawsAnother,
   pairOf,
   pairRowsForAdd,
   pairRowsForRedirect,
@@ -709,6 +716,40 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     expect(lined.rows[0]!.api).toBe("entry.get.refund-status-id");
   });
 
+  it("picks no call for a lineless arrow when two of the repo's calls have its method and path", () => {
+    const two = {
+      ...FACTS,
+      facts: [
+        ...FACTS.facts,
+        {
+          ...FACTS.facts[0]!,
+          id: "call.get.refunds-id-again",
+          cite: { ...FACTS.facts[0]!.cite, line: 40 },
+        },
+      ],
+    } as Api.RepoFactsViewT;
+    const r = pairRowsForRedirect(two, LINELESS, APIS);
+    expect(r.lineless).toBe(true);
+    expect(r.ambiguous).toBe(true);
+    expect(r.rows.every((x) => x.api === "")).toBe(true);
+    expect(E.add.linelessAmbiguous("northwind_pay_1-0")).toContain("none is picked");
+    // One of them: picked, and not ambiguous.
+    expect(pairRowsForRedirect(FACTS, LINELESS, APIS).ambiguous).toBe(false);
+  });
+
+  it("warns when a call picked already draws another arrow", () => {
+    const { rows } = pairRowsForRedirect(FACTS, LINELESS, APIS);
+    // GET /refunds/{id} isn't loose: it draws an arrow already.
+    expect(drawsAnother(rows, new Set(["call.post.refunds"]), LINELESS).map((r) => r.call)).toEqual(
+      ["call.get.refunds-id"],
+    );
+    // A lined arrow's own call doesn't count as another arrow.
+    const lined = { ...LINELESS, callerLines: ["apiproxy/proxies/default.xml:13"] };
+    const own = pairRowsForRedirect(FACTS, lined, APIS).rows;
+    expect(drawsAnother(own, new Set(), lined)).toEqual([]);
+    expect(E.add.drawsAnother("GET /refunds/{id}")).toContain("already draws another arrow");
+  });
+
   it("stages the pairing as a redirect and sends exactly Connect to…'s pairs", () => {
     const { rows } = pairRowsForRedirect(FACTS, LINELESS, APIS);
     const pair = pairOf("northwind_pay_1-0", { repo: "forge-checkout" }, rows)!;
@@ -822,5 +863,37 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     expect(fromRepo).toContain(esc(E.add.pairIntro));
     expect(fromRepo).toContain(esc(E.add.toPick));
     expect(fromRepo).not.toContain(esc(E.add.kind));
+  });
+});
+
+describe("results in the canvas's narrow panel (the re-review of beta.28)", () => {
+  const refused = {
+    reasons: ["large-removals" as const],
+    message: "waits",
+    removals: [{ id: "if-a", kind: "Interface", path: "interface/if-a.yaml", reasons: ["slot"] }],
+    allowRemovals: 1,
+    command: "atticus verify forge-web --write --allow-removals 1",
+  } as unknown as Api.BuildRefusalViewT;
+  const ok = async () => undefined;
+
+  it("confirms a refused verify Apply in place: a refused verify writes nothing to confirm elsewhere", () => {
+    const page = html(
+      <ResultsInPanel.Provider value={true}>
+        {applyRefused({ refused, onAllowRemovals: ok, onCurate: ok, onDiscard: ok })}
+      </ResultsInPanel.Provider>,
+    );
+    expect(page).toContain(esc(COPY.catalogBuild.refusedTitle));
+    // Its own confirm, a button here, never a link away to a page with nothing to confirm.
+    expect(page).not.toContain(CATALOG_BUILDS_HREF);
+    expect(page).not.toContain("<a ");
+    expect(page).toMatch(/<button type="button" class="btn primary">[^<]+<\/button>/);
+  });
+
+  it("folds what a step printed under one line, in full outside the panel", () => {
+    const folded = html(<>{stepLines(["a", "b"], true)}</>);
+    expect(folded).toContain("<details");
+    expect(folded).toContain(esc(COPY.panelResults.printed(2)));
+    expect(folded).toContain("a\nb");
+    expect(html(<>{stepLines(["a"], false)}</>)).not.toContain("<details");
   });
 });

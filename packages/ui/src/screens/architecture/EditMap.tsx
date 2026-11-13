@@ -6,7 +6,7 @@ import { RunWithCopilot, useCopilotRuns, type StartAsk } from "../../app/copilot
 import { followJob, JobFailed } from "../../app/job.js";
 import { RefusalLink } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
-import { linkInterfaces, whyNot } from "./DeleteLink.js";
+import { linkJoins, whyNot } from "./DeleteLink.js";
 import {
   addKeys,
   countsWords,
@@ -140,9 +140,17 @@ export function StageLink(p: {
   const read = async (then: (d: StagedDelete) => void) => {
     if (p.link.count > (p.link.joins?.length ?? 0) && p.callsPath) setNow({ state: "reading" });
     try {
-      const interfaces = await linkInterfaces(p.link, p.callsPath);
+      const joins = await linkJoins(p.link, p.callsPath);
+      const interfaces = [...new Set(joins.map((j) => j.interface))];
       setNow({ state: "idle" });
-      const d = stagedDeleteOf(p.link, p.from, p.to, interfaces, p.fromRepo);
+      // Its callers' lines and shapes from every call read, not the view's first 20.
+      const d = stagedDeleteOf(
+        { ...p.link, joins: [...joins] },
+        p.from,
+        p.to,
+        interfaces,
+        p.fromRepo,
+      );
       const also = p.alsoOf?.(interfaces) ?? [];
       then(also.length ? { ...d, also } : d);
     } catch (e) {
@@ -258,36 +266,60 @@ export function pairRowsForRedirect(
   facts: Api.RepoFactsViewT,
   d: StagedDelete,
   apis: readonly Api.LinkCandidatesViewT["apis"][number][],
-): { rows: PairRow[]; lineless: boolean } {
+): { rows: PairRow[]; lineless: boolean; ambiguous: boolean } {
   const lineless = !d.callerLines?.length;
   const lines = new Set(d.callerLines ?? []);
-  const shapes = (d.shapes ?? []).map((s) => `${(s.method ?? "").toUpperCase()} ${normal(s.path)}`);
-  const rows = facts.facts
-    .filter((f) => f.kind === "call")
-    .map((f) => {
-      const at = `${f.cite.file}:${f.cite.line}`;
-      const method = (f.claim.method ?? "").toUpperCase();
-      const picked = lineless
-        ? shapes.includes(`${method} ${normal(f.claim.path)}`)
-        : lines.has(at);
-      const same = apis.filter(
-        (a) => (a.method ?? "").toUpperCase() === method && normal(a.path) === normal(f.claim.path),
-      );
-      const api = !picked
-        ? ""
-        : apis.length === 1
-          ? apis[0]!.id
-          : same.length === 1
-            ? same[0]!.id
-            : "";
-      return { call: f.id, label: f.label, at, api, picked };
-    });
+  const calls = facts.facts.filter((f) => f.kind === "call");
+  const shapeOf = (method?: string, path?: string) =>
+    `${(method ?? "").toUpperCase()} ${normal(path)}`;
+  // A lineless arrow's calls by method and path: picked only where exactly one call of the repo
+  // has that shape (the review of beta.28); with two or more, none, and the form says so.
+  const byShape = new Map<string, string[]>();
+  for (const f of calls) {
+    const k = shapeOf(f.claim.method, f.claim.path);
+    byShape.set(k, [...(byShape.get(k) ?? []), f.id]);
+  }
+  const shapes = [...new Set((d.shapes ?? []).map((x) => shapeOf(x.method, x.path)))];
+  const sure = new Set(
+    shapes.flatMap((k) => (byShape.get(k)?.length === 1 ? byShape.get(k)! : [])),
+  );
+  const ambiguous = lineless && shapes.some((k) => (byShape.get(k)?.length ?? 0) > 1);
+  const rows = calls.map((f) => {
+    const at = `${f.cite.file}:${f.cite.line}`;
+    const method = (f.claim.method ?? "").toUpperCase();
+    const picked = lineless ? sure.has(f.id) : lines.has(at);
+    const same = apis.filter(
+      (a) => (a.method ?? "").toUpperCase() === method && normal(a.path) === normal(f.claim.path),
+    );
+    const api = !picked
+      ? ""
+      : apis.length === 1
+        ? apis[0]!.id
+        : same.length === 1
+          ? same[0]!.id
+          : "";
+    return { call: f.id, label: f.label, at, api, picked };
+  });
   // The arrow's calls first.
   rows.sort((a, b) => Number(b.picked) - Number(a.picked));
   return {
     rows: rows.map(({ picked: _picked, ...r }) => r),
     lineless,
+    ambiguous,
   };
+}
+
+/**
+ * The calls picked that already draw another arrow (not loose for Connect to…, and not this
+ * arrow's own): pairing one moves that arrow too, which the form says.
+ */
+export function drawsAnother(
+  rows: readonly PairRow[],
+  loose: ReadonlySet<string>,
+  d?: StagedDelete,
+): PairRow[] {
+  const own = new Set(d?.callerLines ?? []);
+  return rows.filter((r) => r.api && !loose.has(r.call) && !own.has(r.at));
 }
 
 /** The pairing the rows say, or none when no call has an API picked. */
@@ -402,9 +434,22 @@ function PairFields(p: {
     <>
       {made.lineless && (
         <p className="ev-say" role="note" style={{ margin: 0 }}>
-          {E.add.lineless(p.fromLabel)}
+          {"ambiguous" in made && made.ambiguous
+            ? E.add.linelessAmbiguous(p.fromLabel)
+            : E.add.lineless(p.fromLabel)}
         </p>
       )}
+      {(() => {
+        const loose = new Set(
+          cands.data.calls.filter((x) => x.status !== "paired").map((x) => x.fact),
+        );
+        const moved = drawsAnother(p.rows, loose, p.redirect);
+        return moved.length ? (
+          <p className="ev-say" role="note" style={{ margin: 0 }}>
+            {E.add.drawsAnother(moved.map((r) => r.label).join(", "))}
+          </p>
+        ) : null;
+      })()}
       <PairRowsView
         caption={p.redirect ? E.add.redirectCalls(p.fromLabel) : E.add.calls(p.fromLabel)}
         rows={p.rows}

@@ -33,14 +33,17 @@ export function appendLines(
   lines: readonly string[],
   /** How long to wait for a lock another process holds (the shared lock's own wait by default). */
   o: { waitMs?: number } = {},
-): Promise<void> {
+): Promise<{ before: string | null }> {
   return withSharedFileLock(
     file,
     async () => {
-      const now = await readFile(file, "utf8").catch(() => "");
+      // Beta.28: what it started from, read under the lock (null: the file wasn't there).
+      const was = await readFile(file, "utf8").catch(() => null);
+      const now = was ?? "";
       const eol = /\r\n/.test(now) ? "\r\n" : "\n";
       const lead = now && !now.endsWith("\n") ? eol : "";
       await appendFile(file, lead + lines.map((l) => `${l}${eol}`).join(""), "utf8");
+      return { before: was };
     },
     o,
   );

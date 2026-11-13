@@ -76,7 +76,26 @@ export async function checkMapEdits(
         staged.add(key);
       }
       try {
-        await pairingsOf(root, p, { by: "preview", at: new Date(0).toISOString() });
+        const made = await pairingsOf(root, p, { by: "preview", at: new Date(0).toISOString() });
+        // A lined arrow's redirect pairs the calls the arrow is: each pair's call cites one of
+        // the deleted Interfaces' caller lines (a lineless arrow's are the person's pick).
+        if (e.kind === "redirect") {
+          const lines = new Set(
+            e.delete.interfaces.flatMap((id) => {
+              const i = byId.get(id);
+              return (i?.evidence ?? [])
+                .filter((x) => x.side === "caller" && x.repo === p.from && x.path && x.line)
+                .map((x) => `${x.path}:${x.line}`);
+            }),
+          );
+          const others = lines.size
+            ? made.corrections.filter((c) => !lines.has(`${c.target.file}:${c.target.line}`))
+            : [];
+          if (others.length)
+            said.push(
+              `${others.map((c) => `${c.fact} (${c.target.file}:${c.target.line})`).join(", ")} ${others.length === 1 ? "isn't a call" : "aren't calls"} of the arrow ${e.delete.from} → ${e.delete.to}: a redirect moves the arrow's own calls. Add a link for the others.`,
+            );
+        }
       } catch (err) {
         if (!(err instanceof HttpError)) throw err;
         said.push(err.detail ?? err.title);

@@ -187,6 +187,16 @@ describe("Deleted links, with Bring back", () => {
     only?: ReadonlySet<string>,
   ) => html(<DeletedLinksList of={of} back={back} only={only} onBack={noop} />);
 
+  it("labels a redirect's old link, and one the build no longer makes, in words", () => {
+    const page = list({
+      state: "ready",
+      data: { links: [{ ...ITEM, redirect: true, gone: true }] },
+    });
+    expect(page).toContain(esc(L.redirected));
+    expect(page).toContain(esc(L.gone));
+    expect(list({ state: "ready", data: { links: [ITEM] } })).not.toContain(esc(L.redirected));
+  });
+
   it("has loading, error and empty states", () => {
     expect(list({ state: "loading" })).toContain(esc(L.loading));
     const err = list({ state: "error", error: "no catalog" });
