@@ -418,6 +418,16 @@ export const EXAMPLES: Example[] = [
     ],
   ),
   seq(
+    "readers-never-destroy-facts",
+    "a fact of the ledger's accepted read, cited on a wrong line in its next read, is left out and its earlier copy stands in: the ledger keeps GET /accounts (beta.28.1)",
+    [
+      { t: "scan" },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "verify-write", slot: 0, ok: true, later: 0 },
+    ],
+    [byAssistant("the ledger's GET /accounts", getAccounts)],
+  ),
+  seq(
     "curation-survives",
     "a suppress of a ledger endpoint survives a scan and a verify --write of the ledger, each removal confirmed with its count",
     [

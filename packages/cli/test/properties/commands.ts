@@ -20,6 +20,7 @@ import {
   resolve,
   sketchArb,
   writeManifest,
+  renderFacts,
   writeRead,
   type Code,
   type Sketch,
@@ -73,7 +74,12 @@ export type Desc =
   | { t: "scan-nothing" }
   /** A commit in the repo: its code as a sketch (generated) or as written (the examples). */
   | { t: "change-code"; slot: number; sketch?: Sketch; code?: Code }
-  | { t: "verify-write"; slot: number; ok: boolean }
+  /**
+   * `verify <repo> --write`; `ok: false` adds a fact the code doesn't hold. `later` (beta.28.1,
+   * the review): the read accepted last time again, with its fact at `later` (mod its count)
+   * cited on a line that doesn't say it: rejected now, its earlier copy stands in, nothing goes.
+   */
+  | { t: "verify-write"; slot: number; ok: boolean; later?: number }
   | { t: "verify-live"; slot: number }
   /** A person answers which repo serves a repo's legacy host: another repo, the repo itself, or none. */
   | { t: "answer"; host: number; to: number | "self" | "none" }
@@ -464,7 +470,17 @@ async function verify(
   const r = live(m, d.slot);
   if (!r) return undefined;
   const ok = d.t === "verify-live" || d.ok;
-  await writeRead(w.root, r.base, r.id, r.code, r.commit, { broken: !ok });
+  const later = d.t === "verify-write" ? d.later : undefined;
+  if (later !== undefined) {
+    // Only a read accepted before, at this commit and under this id, and with a fact to break.
+    const was = m.facts.get(r.slot);
+    if (!was || was.commit !== r.commit || was.id !== r.id) return undefined;
+    if (!renderFacts(r.base, r.id, r.code, r.commit).trim()) return undefined;
+  }
+  await writeRead(w.root, r.base, r.id, r.code, r.commit, {
+    broken: !ok,
+    ...(later !== undefined ? { later } : {}),
+  });
   const write = d.t === "verify-write";
   const outcome = await sut().verify(w.root, r.id, {
     write,
@@ -1156,6 +1172,17 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
     d(fc.constant({ t: "scan-nothing" })),
     ...times(3, d(fc.record({ t: fc.constant("change-code" as const), slot, sketch: sketchArb }))),
     ...times(3, d(fc.record({ t: fc.constant("verify-write" as const), slot, ok: fc.boolean() }))),
+    ...times(
+      2,
+      d(
+        fc.record({
+          t: fc.constant("verify-write" as const),
+          slot,
+          ok: fc.constant(true),
+          later: fc.nat(8),
+        }),
+      ),
+    ),
     d(fc.record({ t: fc.constant("verify-live" as const), slot })),
     ...times(
       2,

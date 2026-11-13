@@ -20,9 +20,11 @@ import {
   parseRecord,
   serializeRecord,
   type CatalogRecord,
+  type Fact,
   type FactsJoinResult,
 } from "@maycombhq/core";
 import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
+import { factRefs } from "@maycombhq/verify";
 import { main } from "../src/main.js";
 import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
@@ -641,10 +643,34 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const gone = io();
     const code = await write(root, gone);
     const after = files(generated);
-    // Its dependants are rejected for naming it, and kept; the endpoint itself goes.
-    expect(code).toBe(3);
+    // Its dependants are rejected for naming it. Their earlier copies aren't written back (the
+    // review of beta.28.1: they'd name a fact the snapshot no longer holds), so what they backed
+    // goes with the endpoint, and each one's line names the fact it lost, not its own source line.
+    expect(code, gone.out.join("\n") + gone.err.join("\n")).toBe(3);
     expect(after["endpoint/ledger-api.post-entry.yaml"]).toBeUndefined();
     expect(gone.out.join("\n")).toMatch(/removed Endpoint\/ledger-api\.post-entry/);
+    const said = gone.out.join("\n");
+    expect(said).toMatch(
+      /left out: \S+ \(dangling-ref\): it names e-post-entry, which the read no longer has/,
+    );
+    expect(said).not.toMatch(/\(dangling-ref\): fix it in .* again/);
+    expect(said).not.toMatch(/its earlier copy stays/);
+    // The snapshot names no fact it doesn't hold.
+    const snap = readFileSync(
+      join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Fact);
+    const held = new Set(snap.map((f) => f.id));
+    expect(
+      snap.flatMap((f) =>
+        factRefs(f)
+          .filter((r) => !held.has(r.id))
+          .map((r) => `${f.id}->${r.id}`),
+      ),
+    ).toEqual([]);
   });
 
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {

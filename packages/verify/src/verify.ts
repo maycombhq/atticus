@@ -870,7 +870,8 @@ export function staleMessage(f: Fact, s: StaleCite, commit: string): string {
   return `${f.kind} ${f.id} cites ${s.file}, which was ${how} since commit ${f.commit}; read it again at ${commit}, then ${then}`;
 }
 
-function refsOf(f: Fact): { field: string; id: string }[] {
+/** The ids of other facts a fact names (a call's `from`, a flow's steps…), each with its field. */
+export function factRefs(f: Fact): { field: string; id: string }[] {
   const out: { field: string; id: string }[] = [];
   const add = (field: string, id: string | undefined) => {
     if (id !== undefined) out.push({ field, id });
@@ -1607,7 +1608,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const ids = new Set(facts.map((f) => f.id));
   for (const f of facts) {
     if (other.has(f.id)) continue;
-    for (const d of refsOf(f).filter((r) => !ids.has(r.id)))
+    for (const d of factRefs(f).filter((r) => !ids.has(r.id)))
       problem(
         f,
         "dangling-ref",
@@ -1697,7 +1698,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     changed = false;
     for (const f of facts) {
       if (rejected.has(f.id)) continue;
-      const r = refsOf(f).find((x) => rejected.has(x.id));
+      const r = factRefs(f).find((x) => rejected.has(x.id));
       if (r) {
         const quiet = quietFact(f, lineAt);
         rejected.set(f.id, {
