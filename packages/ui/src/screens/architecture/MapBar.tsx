@@ -23,6 +23,8 @@ const PATHS = {
   tidy: "M2 2 H6 V6 H2 Z M8 2 H12 V6 H8 Z M2 8 H6 V12 H2 Z M8 8 H12 V12 H8 Z",
   reset: "M3.2 5 A4.2 4.2 0 1 1 3 8.5 M3 2 V5 H6",
   legend: "M2 3.5 H3.5 M6 3.5 H12 M2 7 H3.5 M6 7 H12 M2 10.5 H3.5 M6 10.5 H12",
+  // Beta.28: Edit the map (a pencil).
+  edit: "M2.5 11.5 L3 9 L9.5 2.5 L11.5 4.5 L5 11 Z M8 4 L10 6",
 } as const;
 
 /** An icon drawn, never read: the button it is on carries the words. */

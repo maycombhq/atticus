@@ -342,6 +342,9 @@ describe("the toggle and the link panel", () => {
     const off = html(<EditMapToggle on={false} count={0} onToggle={noop} />);
     expect(off).toContain('aria-pressed="false"');
     expect(off).toContain(`aria-label="${esc(E.toggle)}"`);
+    // An icon in the map's one row of controls, named in words (beta.28 CI: the bar wrapped).
+    expect(off).toContain(`title="${esc(E.toggle)}"`);
+    expect(off).not.toContain(`>${esc(E.toggle)}<`);
     const on = html(<EditMapToggle on count={3} onToggle={noop} />);
     expect(on).toContain('aria-pressed="true"');
     expect(on).toContain(`aria-label="${esc(E.toggleOf(3))}"`);

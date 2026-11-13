@@ -57,10 +57,10 @@
   min-width: 52px;
   font-size: 10px;
 }
-/* Find is short until it is used. */
+/* Find is short until it is used (beta.28: shorter still, for Edit the map in the same row). */
 .arch-bar-view .viewer-find .field {
   height: 30px;
-  width: 130px;
+  width: 92px;
   transition: width 0.12s ease;
 }
 .arch-bar-view .viewer-find .field:focus,

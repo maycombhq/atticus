@@ -7,6 +7,7 @@ import { followJob, JobFailed } from "../../app/job.js";
 import { RefusalLink } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
+import { MapIcon } from "./MapBar.js";
 import {
   addKeys,
   countsWords,
@@ -43,7 +44,8 @@ export function EditMapToggle(p: { on: boolean; count: number; onToggle(): void 
       title={E.toggleOf(p.count)}
       onClick={p.onToggle}
     >
-      {E.toggle}
+      {/* An icon in the map's one row of controls (the bar keeps one row); its name in words. */}
+      <MapIcon d="edit" />
       {p.count > 0 && (
         <span className="chip arch-edit-count" aria-hidden="true">
           {p.count}

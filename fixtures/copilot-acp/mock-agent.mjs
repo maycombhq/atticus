@@ -21,6 +21,7 @@
 //   { "stop": "<stopReason>" }                         ends the turn with that reason
 //   { "exit": <code> }                                 the process ends there, answering nothing
 //   { "kill": "<signal>" }                             the process sends itself that signal
+//                                                      (SIGINT on Windows: exits 0xC000013A)
 // A session may have "exitAfter": true: the process ends just after it answers its first prompt
 // (a server that ends between turns).
 // "startMs" in the script: how long the process waits before it answers `initialize` (a slow
@@ -138,6 +139,9 @@ async function play(steps) {
     else if (s.stop !== undefined) return s.stop;
     else if (s.kill !== undefined) {
       log({ event: "kill", signal: s.kill });
+      // Windows has no signal a process can send itself: Ctrl+C ends a console process with
+      // STATUS_CONTROL_C_EXIT (0xC000013A), so that is how the stand-in ends there.
+      if (process.platform === "win32" && s.kill === "SIGINT") process.exit(-1073741510);
       process.kill(process.pid, s.kill);
       await sleep(5000);
     } else if (s.exit !== undefined) {
