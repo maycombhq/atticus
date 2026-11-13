@@ -11,6 +11,7 @@ import {
   applyUndo,
   buildAndWrite,
   buildCatalog,
+  BUILD_VERSION,
   buildWriteHooks,
   factsSnapshotWrites,
   keepCatalogsInMemory,
@@ -255,6 +256,46 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       expect(r.guard.refused?.unexplained?.map((x) => x.path)).toEqual([ghost.path]);
       expect(r.guard.refused?.message).toMatch(/That is a bug/);
       expect(await snap(root)).toEqual(before);
+    },
+    T,
+  );
+
+  // Beta.28.1 (field report 4, the review): the join asks about a host written as a deploy token
+  // nothing sets, where beta.28 guessed an arrow by the call's path. The same slots then give
+  // fewer arrows, which only the build's own version explains.
+  it(
+    "an arrow the last build (beta.27.3) drew and this one (beta.28.1) doesn't is explained by the build",
+    async () => {
+      expect(BUILD_VERSION).toBe("2.0.0-beta.28.1");
+      const root = await forge();
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      const path = join(root, "catalog/sources/build.json");
+      const m = JSON.parse(await readFile(path, "utf8")) as {
+        buildVersion: string;
+        files: { path: string; sha256: string; sources: unknown[] }[];
+      };
+      const one = m.files.find((f) => f.path.includes("/interface/"))!;
+      const text = (await readFile(join(root, one.path), "utf8")).replace(
+        /^id: (.*)$/m,
+        "id: $1-guessed",
+      );
+      const was = /^id: (.*)$/m.exec(text)![1]!;
+      const ghost = {
+        ...one,
+        path: `catalog/generated/interface/${was}.yaml`,
+        sha256: sha256Of(text),
+      };
+      m.buildVersion = "2.0.0-beta.27.3";
+      m.files.push(ghost);
+      m.files.sort((x, y) => (x.path < y.path ? -1 : 1));
+      await writeFile(path, JSON.stringify(m, null, 2) + "\n");
+      await writeFile(join(root, ghost.path), text);
+      const r = await buildAndWrite(root, { command: "atticus catalog build", allowRemovals: 1 });
+      expect(r.guard.refused?.reasons ?? []).not.toContain("unexplained-removals");
+      const report = await readBuildReport(root);
+      const gone = (report?.removed ?? []).find((x) => x.id === was);
+      expect(gone?.reasons).toContain("build");
+      expect(gone?.explainedBy).toContain("the build changed (2.0.0-beta.27.3 to 2.0.0-beta.28.1)");
     },
     T,
   );
