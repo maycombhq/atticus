@@ -189,9 +189,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // only when it lists modules (review of beta.25; not in the core: an 8000-token batch's room),
     // and when a config.json token set by its name was told how to record and a token target
     // URL to stay in every forwarding call's host (beta.27, a user's proxy), and when a setting
-    // written as a build token was told to keep the token or cite where it is set (beta.28.1).
+    // written as a build token was told to keep the token or cite where it is set (beta.28.1;
+    // only for config and deploy files: an 8000-token batch of code has no room for it).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "5341df329aa06d42609ec1eec098ca68095d3de5614bd52310fcc33033a59867",
+      "28cd55d4c135e1d90dc5977d4a1e4c4cfb9be61380d1ab43f88a021259cbff62",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

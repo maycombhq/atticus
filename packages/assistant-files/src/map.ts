@@ -440,8 +440,8 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: "A config fact's `key` is the setting's full name: a YAML or properties key's whole dotted path (`gateway.url`, `livenessProbe.httpGet.path`, not `url` or `path`), a `:` or `__` key as written, or a flag; two settings in one file never share a key.",
     },
     {
-      when: ["backend", "frontend", "deploy", "config"],
-      text: "A setting written as a build or deploy token (`@FORGE_SCHEMA@`, filled in when the build copies its resources) has the token as written for its `value`, unless you cite the line that sets it (a pom's `<properties>` entry, a `-D` flag, a CI or deploy properties line) in `cite.with` and claim the value that line sets.",
+      when: ["deploy", "config"],
+      text: "A setting written as a deploy token (`@NAME@`) claims the token, or the value a line in `cite.with` sets NAME to.",
     },
     {
       when: ["deploy", "config"],
