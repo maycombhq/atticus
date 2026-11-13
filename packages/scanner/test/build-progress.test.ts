@@ -90,6 +90,46 @@ describe("the build says its passes and steps (beta.28.1)", () => {
   );
 
   it(
+    "gives way inside the long passes (tick): the same catalog, and a throw there stops it",
+    async () => {
+      const root = await forge();
+      buildCacheHooks.off = true;
+      try {
+        // Ticks heard, by the pass they came in.
+        const ticks = new Map<number, number>();
+        let at = 0;
+        const withTick = await buildCatalog(await loadBuildInputs(root), {
+          onPass: (n) => {
+            at = n;
+          },
+          tick: async () => {
+            ticks.set(at, (ticks.get(at) ?? 0) + 1);
+            await new Promise((r) => setImmediate(r));
+          },
+        });
+        // The estate projection and join (pass 2), and each repo's flows (pass 7).
+        expect(ticks.get(2)).toBeGreaterThan(0);
+        expect(ticks.get(7)).toBeGreaterThan(0);
+        const without = await buildCatalog(await loadBuildInputs(root));
+        expect([...withTick.files]).toEqual([...without.files]);
+        // A Stop heard at a tick of pass 2 ends the build there: pass 3 never starts.
+        const stop = new Error("stopped");
+        const passes: number[] = [];
+        await expect(
+          buildCatalog(await loadBuildInputs(root), {
+            onPass: (n) => void passes.push(n),
+            tick: () => Promise.reject(stop),
+          }),
+        ).rejects.toBe(stop);
+        expect(passes).toEqual([1, 2]);
+      } finally {
+        buildCacheHooks.off = false;
+      }
+    },
+    T,
+  );
+
+  it(
     "buildAndWrite says its steps before the write, with the files it writes",
     async () => {
       const root = await forge();

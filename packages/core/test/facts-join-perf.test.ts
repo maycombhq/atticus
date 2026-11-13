@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { joinFacts, type Fact, type JoinRepo } from "../src/index.js";
+import {
+  JOIN_YIELD_EVERY,
+  joinFacts,
+  joinFactsAsync,
+  type Fact,
+  type JoinRepo,
+} from "../src/index.js";
 
 /**
  * The join at an estate's size (review of beta.24): 40 repos of 250 entries, calls and settings
@@ -90,4 +96,18 @@ describe("the join at an estate's size", () => {
     },
     120_000,
   );
+
+  it("gives way every JOIN_YIELD_EVERY calls when asked (joinFactsAsync), with the same join", async () => {
+    // Beta.28.1 (the review): a long join lets a heartbeat, a line or a Stop through.
+    const repos = syntheticEstate(6, 120);
+    let ticks = 0;
+    const given = await joinFactsAsync({ repos }, async () => {
+      ticks++;
+      await new Promise((r) => setImmediate(r));
+    });
+    expect(ticks).toBe(Math.floor((6 * 120) / JOIN_YIELD_EVERY));
+    expect(given).toEqual(joinFacts({ repos }));
+    const stop = new Error("stopped");
+    await expect(joinFactsAsync({ repos }, () => Promise.reject(stop))).rejects.toBe(stop);
+  });
 });

@@ -6,7 +6,9 @@ import {
   hostMatches,
   joinCallers,
   joinConventions,
-  joinFacts,
+  joinFactsSteps,
+  runSteps,
+  runStepsAsync,
   joinTerms,
   NO_TARGET,
   normalizePath,
@@ -89,6 +91,26 @@ export function factsEstateRecords(
   op: OrgPack,
   given: readonly FactsEstateRepo[],
 ): FactsEstateProjection {
+  return runSteps(factsEstateRecordsSteps(op, given));
+}
+
+/**
+ * Beta.28.1: factsEstateRecords giving way after each repo it projects and inside the estate
+ * join (joinFactsSteps), so a build that awaits `tick` there (the write's progress) lets its
+ * heartbeat, its lines and a Stop through. The same projection either way.
+ */
+export function factsEstateRecordsAsync(
+  op: OrgPack,
+  given: readonly FactsEstateRepo[],
+  tick: () => Promise<void>,
+): Promise<FactsEstateProjection> {
+  return runStepsAsync(factsEstateRecordsSteps(op, given), tick);
+}
+
+function* factsEstateRecordsSteps(
+  op: OrgPack,
+  given: readonly FactsEstateRepo[],
+): Generator<void, FactsEstateProjection, void> {
   // A prototype is compared with the estate, never part of it (ADR 0133).
   const list = [...given]
     .filter((x) => !isPrototypeRepo(op, x.repo))
@@ -113,13 +135,14 @@ export function factsEstateRecords(
       targets: r.targets ?? {},
     });
     records.push(...p.newRecords);
+    yield;
   }
   const repos = joinReposOf(
     op,
     list.map((r) => ({ repo: r.repo, facts: per.get(r.repo)!.facts })),
     renames,
   );
-  const whole = joinFacts({
+  const whole = yield* joinFactsSteps({
     repos,
     targets: Object.fromEntries(list.map((r) => [r.repo, r.targets ?? {}])),
     pairs: Object.fromEntries(list.map((r) => [r.repo, r.pairs ?? {}])),

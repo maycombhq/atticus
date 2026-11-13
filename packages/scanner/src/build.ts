@@ -72,6 +72,7 @@ import {
   answerMissesOf,
   factsEstateAfterMerge,
   factsEstateRecords,
+  factsEstateRecordsAsync,
   withFactsEstateJoins,
   withoutHeardListeners,
   type FactsEstateProjection,
@@ -700,6 +701,12 @@ export const BUILD_PASSES = [
  */
 export interface BuildProgress {
   onPass?: (pass: number, of: number, what: string) => void | Promise<void>;
+  /**
+   * Awaited where a long pass may give way (after each repo's projection, inside the estate join,
+   * after each repo's flows): the caller lets its lines and heartbeat out there, and may stop the
+   * build by throwing. It only listens: the build is the same with it or without it.
+   */
+  tick?: () => Promise<void>;
 }
 
 export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {}): Promise<Build> {
@@ -815,7 +822,9 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   let projection: FactsEstateProjection | undefined;
   let code: CatalogRecord[];
   if (factRepos.length) {
-    projection = factsEstateRecords(op, factRepos);
+    projection = progress.tick
+      ? await factsEstateRecordsAsync(op, factRepos, progress.tick)
+      : factsEstateRecords(op, factRepos);
     code = applyPipelineModels([...readerRecords, ...projection.records], frameworks);
     code = withFactsEstateJoins(code, op, projection);
   } else code = applyPipelineModels(readerRecords, frameworks);
@@ -1287,6 +1296,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
         targets: p.targets,
         projectionIssues: p.projected.issues.filter((iss) => iss.code !== "unresolved-target"),
       });
+      await progress.tick?.();
     }
   }
 
