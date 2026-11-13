@@ -249,14 +249,17 @@ const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").repla
 
 /** An add's rows: the repo's calls that join nothing yet (Connect to…'s), its suggestion picked. */
 export function pairRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
-  return c.calls
-    .filter((x) => x.status !== "paired")
-    .map((x) => ({
-      call: x.fact,
-      label: `${x.method ? `${x.method} ` : ""}${x.path}`,
-      at: x.at,
-      api: x.confident && x.suggestion ? x.suggestion.api : "",
-    }));
+  return (
+    c.calls
+      // A call with an arrow already is moved by Redirect this link…, not added again (3.14).
+      .filter((x) => x.status !== "paired" && x.status !== "joined")
+      .map((x) => ({
+        call: x.fact,
+        label: `${x.method ? `${x.method} ` : ""}${x.path}`,
+        at: x.at,
+        api: x.confident && x.suggestion ? x.suggestion.api : "",
+      }))
+  );
 }
 
 /**
@@ -443,7 +446,9 @@ function PairFields(p: {
       )}
       {(() => {
         const loose = new Set(
-          cands.data.calls.filter((x) => x.status !== "paired").map((x) => x.fact),
+          cands.data.calls
+            .filter((x) => x.status !== "paired" && x.status !== "joined")
+            .map((x) => x.fact),
         );
         const moved = drawsAnother(p.rows, loose, p.redirect);
         return moved.length ? (

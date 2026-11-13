@@ -16,7 +16,17 @@ export type LooseStatus =
   | "outside"
   | "unresolved"
   /** Already paired by a person with an API of this box. */
-  | "paired";
+  | "paired"
+  /**
+   * Beta.28.1: the join ties it to another box (or this one) and an arrow is drawn for it:
+   * listed so it can be moved here from the same panel, never ticked unseen.
+   */
+  | "joined"
+  /**
+   * Beta.28.1: the join ties it to something, and no arrow is drawn for it (its own component,
+   * or no Interface of it on the canvas): as loose as a call that joins nothing.
+   */
+  | "undrawn";
 
 export interface CandidateApi {
   /** The entry's fact id, or the operation's id in the spec. */
@@ -43,6 +53,11 @@ export interface CandidateCall {
   why?: string;
   /** For paired: the API it is paired with. */
   paired?: string;
+  /**
+   * Beta.28.1: the box the join ties it to now (a repo, or an outside target), for a call that
+   * is joined, undrawn or outside: where it goes, or would go, before it is moved.
+   */
+  joins?: string;
   suggestion?: { api: string; score: number; why: SuggestWhy };
   /** The APIs it most likely is, best first (at most three); the first is `suggestion`. */
   suggestions?: { api: string; score: number; why: SuggestWhy }[];
@@ -159,8 +174,23 @@ function pathScore(
   // A path that is only a setting (`${forge.uris.cancel}`) has no shape to compare: its words do.
   const shaped = a.some((x) => !isWild(x)) && b.some((x) => !isWild(x));
   if (a.length && a.join("/") === b.join("/")) return { score: k, why: "same-path" };
-  if (shaped && a.length === b.length && a.every((x, i) => eq(x, b[i]!)))
-    return { score: 0.75 * k, why: "parameter" };
+  if (shaped && a.length === b.length && a.every((x, i) => eq(x, b[i]!))) {
+    // Beta.28.1: an API whose path starts with variables (Spring's `/{moduleName:.+}/{v:.+}/…`,
+    // a module's name and version taken from the path) is the call when the rest is the same,
+    // segment for segment, literal for literal and variable for variable: its tail.
+    const lead = b.findIndex((x) => !isWild(x));
+    if (
+      lead > 0 &&
+      a.slice(0, lead).every((x) => !isWild(x)) &&
+      a.slice(lead).every((x, i) => isWild(x) === isWild(b[lead + i]!))
+    )
+      return { score: 0.9 * k, why: "prefix" };
+    // The same shape: the more of the call's literals the API writes too, the likelier it is
+    // (`/instruments/ping` over `/instruments/{id}`); every one the same is as before.
+    const lits = a.filter((x) => !isWild(x)).length;
+    const same = a.filter((x, i) => !isWild(x) && x === b[i]).length;
+    return { score: (0.55 + 0.2 * (lits ? same / lits : 1)) * k, why: "parameter" };
+  }
   const tail = (long: string[], short: string[]) =>
     short.length > 0 &&
     long.length > short.length &&
@@ -192,10 +222,27 @@ export function linkCandidates(o: {
   to: { repo?: string; system?: string };
   /** A's settings by key (its config facts with a value), to fill a call's `${key}` in. */
   settings?: Readonly<Record<string, string>>;
+  /**
+   * Beta.28.1: whether the canvas draws a join's arrow (its Interface is in the catalog). A join
+   * of a call to its own component is never drawn, whatever this says. Default: every other is.
+   */
+  drawn?: (j: FactsJoinResult["joins"][number]) => boolean;
+  /**
+   * Beta.28.1: whether the canvas draws a call placed outside the estate to this target (an
+   * outside system of the profile takes it). Default: none is, so the call is listed loose.
+   */
+  drawnOutside?: (target: string) => boolean;
 }): LinkCandidates {
-  const joined = new Set(
-    o.join.joins.filter((j) => j.call.repo === o.from).map((j) => j.call.fact),
-  );
+  const isDrawn = (j: FactsJoinResult["joins"][number]) =>
+    j.entry.component !== j.call.component && (o.drawn ? o.drawn(j) : true);
+  // Each of A's joined calls: the box it goes to, and whether any of its arrows is drawn.
+  const joined = new Map<string, { to: string; drawn: boolean }>();
+  for (const j of o.join.joins) {
+    if (j.call.repo !== o.from) continue;
+    const was = joined.get(j.call.fact);
+    const d = isDrawn(j);
+    if (!was || (d && !was.drawn)) joined.set(j.call.fact, { to: j.entry.repo, drawn: d });
+  }
   const status = new Map<string, { status: LooseStatus; why?: string }>();
   for (const a of o.join.asks)
     if (a.call.repo === o.from)
@@ -205,8 +252,12 @@ export function linkCandidates(o: {
   for (const l of o.join.left ?? [])
     if (l.call.repo === o.from && !status.has(l.call.fact))
       status.set(l.call.fact, { status: "left", why: l.reason });
+  const outsideTo = new Map<string, string>();
   for (const x of o.join.outside ?? [])
-    if (x.call.repo === o.from) status.set(x.call.fact, { status: "outside", why: x.target });
+    if (x.call.repo === o.from) {
+      status.set(x.call.fact, { status: "outside", why: x.target });
+      outsideTo.set(x.call.fact, x.target);
+    }
   const pairedHere = (id: string) => {
     const p = o.pairs?.[id];
     // Round 48: a person's "none" is no pairing.
@@ -218,11 +269,6 @@ export function linkCandidates(o: {
   for (const f of o.facts) {
     if (f.kind !== "call" || !JOINABLE.has(f.callType)) continue;
     const p = pairedHere(f.id);
-    // A call another box joins is not loose; one paired with this box is listed, to undo.
-    if (joined.has(f.id) && !p) continue;
-    // A call left to another outside system by name stays as it is, unless this is that system.
-    const s = status.get(f.id);
-    if (!p && s?.status === "outside" && s.why !== o.to.system) continue;
     const base = {
       fact: f.id,
       callType: f.callType,
@@ -241,6 +287,20 @@ export function linkCandidates(o: {
       calls.push({ ...base, status: "paired", ...(api ? { paired: api.id } : {}) });
       continue;
     }
+    // Beta.28.1 (field report 4): no call is hidden. One the join ties to something is listed
+    // as movable when its arrow is drawn, and as loose when it isn't; one placed outside to a
+    // target no box draws is loose too (it was left out, and Connect said nothing was loose).
+    const j = joined.get(f.id);
+    const out = outsideTo.get(f.id);
+    const s: { status: LooseStatus; why?: string } | undefined = j
+      ? j.drawn
+        ? { status: "joined" }
+        : { status: "undrawn", why: j.to }
+      : out !== undefined && out !== o.to.system && o.drawnOutside?.(out)
+        ? { status: "joined" }
+        : status.get(f.id);
+    const now = j?.to ?? out;
+    const movable = s?.status === "joined";
     const scored = o.apis
       .map((a) => ({ a, s: pairScore(f, a, o.settings) }))
       .filter(
@@ -255,7 +315,9 @@ export function linkCandidates(o: {
       score: Math.round(x.s.score * 100) / 100,
       why: x.s.why,
     }));
+    // A call with an arrow already is moved only by a person's look: never confident.
     const confident =
+      !movable &&
       !!best &&
       best.s.score >= CONFIDENT_AT &&
       (scored[1] === undefined || best.s.score - scored[1].s.score >= CONFIDENT_LEAD);
@@ -263,6 +325,7 @@ export function linkCandidates(o: {
       ...base,
       status: s?.status ?? "unresolved",
       ...(s?.why ? { why: s.why } : {}),
+      ...(now !== undefined ? { joins: now } : {}),
       ...(best ? { suggestion: top[0]! } : {}),
       ...(top.length ? { suggestions: top } : {}),
       ...(confident ? { confident: true } : {}),

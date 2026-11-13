@@ -5687,7 +5687,7 @@ export const COPY = {
     dropSameRepo:
       "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
     intro:
-      "Pair this repo's calls that join nothing with the other box's APIs. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
+      "Pair this repo's calls that have no arrow with the other box's APIs, or move one that has. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
     pickBox: "The other box",
     pickBoxNone: "Pick a repo or a system",
     loading: "Reading the calls and APIs…",
@@ -5715,7 +5715,27 @@ export const COPY = {
         `${name}'s facts are read but not all verified, so its APIs aren't on the map yet. Verify them first:`,
       "no-spec": (name: string) => `${name} has no spec on file. Add its OpenAPI file:`,
     } as Record<string, (name: string) => string>,
-    noLoose: "Every call of this repo joins something already: nothing loose to pair.",
+    /**
+     * Beta.28.1 (field report 4): said only when every call has an arrow drawn, with where they
+     * go; each is still listed below, to move here.
+     */
+    noLoose: (where: string) =>
+      `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
+    allPaired: (to: string) =>
+      `Every call of this repo is paired with ${to} by a person already: undo one from its line in the corrections to pair it again.`,
+    /** One box the calls go to now, and how many: `forge-ledger (3)`. */
+    linkedTo: (box: string, n: number) => `${box} (${n})`,
+    /** The calls that have an arrow elsewhere, to move to this box. */
+    moveTitle: (n: number) =>
+      n === 1
+        ? "Move a call here (1 has an arrow already)"
+        : `Move a call here (${n} have an arrow already)`,
+    moveCaption: (from: string, to: string) =>
+      `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
+    /** Where a call goes now (a joined, undrawn or outside call). */
+    joinsNow: (box: string) => `goes to ${box} now`,
+    undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,
+    outsideWhy: (target: string) => `left outside the estate, to ${target}, which no box draws`,
     calls: "Calls that join nothing",
     caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
     col: { pick: "Pair", call: "Call", line: "Line", status: "Now", api: "API" },
@@ -5735,6 +5755,8 @@ export const COPY = {
       outside: "outside",
       unresolved: "not joined",
       paired: "paired by a person",
+      joined: "has an arrow",
+      undrawn: "no arrow drawn",
     } as Record<string, string>,
     why: {
       "same-path": "same path",

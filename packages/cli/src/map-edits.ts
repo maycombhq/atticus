@@ -11,6 +11,7 @@ import {
 } from "@maycombhq/core";
 import { estateRepos, factsSlotPaths, readCatalog } from "@maycombhq/scanner";
 import { HttpError } from "@maycombhq/server";
+import { systemToCreate } from "./ui-api-declared.js";
 import { pairingsOf } from "./ui-api-links.js";
 
 /**
@@ -119,7 +120,12 @@ export async function checkMapEdits(
             a.kind === "call"
               ? { kind: "call", system: a.system, route: a.route }
               : { kind: "topic", system: a.system, topic: a.topic, side: a.side },
-            { by: "preview", at: new Date(0).toISOString(), preview: true },
+            {
+              by: "preview",
+              at: new Date(0).toISOString(),
+              preview: true,
+              ...((c) => (c ? { create: c } : {}))(systemToCreate(op, a.system)),
+            },
           );
         } catch (err) {
           if (!(err instanceof DeclareError)) throw err;

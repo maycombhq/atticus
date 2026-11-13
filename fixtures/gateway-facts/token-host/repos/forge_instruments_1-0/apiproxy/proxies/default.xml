@@ -1,0 +1,22 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="Ping">
+      <Condition>(proxy.pathsuffix MatchesPath "/ping") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="CreateInstrument">
+      <Condition>(proxy.pathsuffix MatchesPath "/") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="RetrieveInstrument">
+      <Condition>(proxy.pathsuffix MatchesPath "/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="InstrumentStatus">
+      <Condition>(proxy.pathsuffix MatchesPath "/*/status") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/instruments/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="instruments">
+    <TargetEndpoint>TE-Instruments</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

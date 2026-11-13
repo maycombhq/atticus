@@ -606,8 +606,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `problems` by place, nothing written), writes them, then builds once, as one local job whose
  *   result is `MapEditsResult` (with the caller repos they touch). A problem may carry
  *   `problems`. Additive only.
+ * 3.14.0 (beta.28.1, field report 4): connecting two boxes never dead-ends. GET
+ *   /api/links/candidates lists every call of A: one that has an arrow drawn is `joined` (with
+ *   `joins`, the box it goes to), to move from the same panel; one the join ties to something no
+ *   arrow is drawn for is `undrawn`, as loose as one that joins nothing; one placed outside to a
+ *   target no box draws is listed `outside` with `joins`, where before it was left out. POST
+ *   /api/declared-links (and Edit the map's adds) from a box no System of the profiles is (a repo
+ *   the manifest lists with no System) adds that System to the repo's profile first, and says so
+ *   (`created`). Additive only.
  */
-export const API_VERSION = "3.13.0";
+export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -5209,9 +5217,24 @@ export const CandidateCallView = z.object({
   method: z.string().optional(),
   path: z.string(),
   at: z.string(),
-  status: z.enum(["asked", "missed", "left", "outside", "unresolved", "paired"]),
+  /**
+   * 3.14: `joined`, a call with an arrow drawn already, listed so it can be moved to this box;
+   * `undrawn`, a call the join ties to something no arrow is drawn for, as loose as any.
+   */
+  status: z.enum([
+    "asked",
+    "missed",
+    "left",
+    "outside",
+    "unresolved",
+    "paired",
+    "joined",
+    "undrawn",
+  ]),
   why: z.string().optional(),
   paired: z.string().optional(),
+  /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
+  joins: z.string().optional(),
   suggestion: CandidateSuggestion.optional(),
   /** 2.57: the APIs it most likely is, best first, at most three. */
   suggestions: z.array(CandidateSuggestion).max(3).optional(),
@@ -5792,6 +5815,11 @@ export const FileChangeResult = z.object({
   files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
   verify: z.string(),
   commit: z.string(),
+  /**
+   * 3.14: the System added to a profile first, for a declaration from a box no profile had (a
+   * repo the manifest lists with no System): the person is told it was added, and where.
+   */
+  created: z.object({ system: z.string(), file: z.string() }).optional(),
 });
 /**
  * ADR 0179: a stroke drawn on the canvas for a change (a call, a topic, a table, a step removed

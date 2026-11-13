@@ -1,8 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
   answerQuestion,
+  catalogDirOf,
   correctionLine,
   factsDirOf,
   factsRelOf,
@@ -170,6 +171,51 @@ export function boxesOf(query: URLSearchParams): { from: string; to: Api.LinkBox
   return { from, to };
 }
 
+/**
+ * Beta.28.1 (field report 4): which of A's joins the canvas draws: its Interface is a record of
+ * the catalog (generated or curated). Before any catalog is built nothing can be said, and every
+ * join counts as drawn (the first build draws them). A join of a call to its own component is
+ * never drawn (linkCandidates says so), nor one whose link was deleted on the canvas.
+ */
+async function drawnJoins(
+  root: string,
+  joins: readonly { call: { repo: string }; interface: string }[],
+  from: string,
+): Promise<((j: { interface: string }) => boolean) | undefined> {
+  const dir = catalogDirOf(root);
+  const there = (p: string) =>
+    access(p).then(
+      () => true,
+      () => false,
+    );
+  if (!(await there(join(dir, "generated", "interface")))) return undefined;
+  const ids = [...new Set(joins.filter((j) => j.call.repo === from).map((j) => j.interface))];
+  const drawn = new Set<string>();
+  await Promise.all(
+    ids.map(async (id) => {
+      // A link deleted on the canvas (its person's suppress, Delete this link's) is drawn no more.
+      if (await there(join(dir, "curated", "curateddecision", `cd-link-delete-${id}.yaml`)))
+        return;
+      if (
+        (await there(join(dir, "generated", "interface", `${id}.yaml`))) ||
+        (await there(join(dir, "curated", "interface", `${id}.yaml`)))
+      )
+        drawn.add(id);
+    }),
+  );
+  return (j) => drawn.has(j.interface);
+}
+
+/** The outside targets the canvas draws a box for: an outside system of the profile, by any name. */
+function outsideDrawnOf(op: Awaited<ReturnType<typeof loadOrgPack>>): (t: string) => boolean {
+  const names = new Set(
+    outsideProfileSystems(op).flatMap((s) =>
+      [s.id, s.name, ...(s.aliases ?? [])].filter(Boolean).map((n) => n.toLowerCase()),
+    ),
+  );
+  return (t) => names.has(t.toLowerCase());
+}
+
 /** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
 export async function candidatesOf(
   root: string,
@@ -177,6 +223,7 @@ export async function candidatesOf(
   to: Api.LinkBoxT,
 ): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
   const c = await context(root, from, to);
+  const drawn = await drawnJoins(root, c.join.joins, from);
   const cands = linkCandidates({
     from,
     facts: c.facts,
@@ -185,9 +232,11 @@ export async function candidatesOf(
     pairs: c.pairs,
     to,
     settings: settingsOf(c.facts),
+    ...(drawn ? { drawn } : {}),
+    drawnOutside: outsideDrawnOf(c.op),
   });
   const q = await openRuleQuestion(root, from);
-  const loose = cands.calls.filter((x) => x.status !== "paired").length;
+  const loose = cands.calls.filter((x) => x.status !== "paired" && x.status !== "joined").length;
   const view: Api.LinkCandidatesViewT = {
     from,
     to,

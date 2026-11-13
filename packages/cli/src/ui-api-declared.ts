@@ -6,6 +6,7 @@ import {
   declaredOf,
   declareLink,
   DeclareError,
+  factIdPart,
   factsDirOf,
   factsRelOf,
   FileChangedError,
@@ -14,6 +15,7 @@ import {
   parseCorrections,
   undeclareLink,
   type FactCorrection,
+  type OrgPack,
 } from "@maycombhq/core";
 import { estateRepos, targetPicker } from "@maycombhq/scanner";
 import {
@@ -49,6 +51,22 @@ const says = (c: FactCorrection): string => {
     .join(", ");
   return `${what}: ${[set, c.line ? `line ${c.line}` : ""].filter(Boolean).join(", ")}`;
 };
+
+/**
+ * Beta.28.1 (field report 4): the System a declaration from this box needs added first, when no
+ * profile has it: the box the canvas draws for a repo the manifest lists with no System of the
+ * profiles (its id the manifest's `system`, else the repo's), in that repo's platform's profile,
+ * owned by the repo's team. Undefined for a system a profile has, or one no repo is drawn in.
+ */
+export function systemToCreate(
+  op: OrgPack,
+  system: string,
+): { platform: string; owner?: string } | undefined {
+  if (op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === system)))
+    return undefined;
+  const r = estateRepos(op).find((x) => (x.system ?? factIdPart(x.id)) === system);
+  return r ? { platform: r.platform, ...(r.owner ? { owner: r.owner } : {}) } : undefined;
+}
 
 export function uiDeclaredRoutes(
   r: Router,
@@ -166,10 +184,12 @@ export function uiDeclaredRoutes(
         );
       try {
         const { preview, ...d } = b.data;
+        const create = systemToCreate(op, d.system);
         const res = await declareLink(ctx.root, d, {
           by: ctx.user,
           at: now().toISOString(),
           ...(preview ? { preview } : {}),
+          ...(create ? { create } : {}),
         });
         if (res.written) ctx.events.publish({ type: "file.changed", path: res.rel });
         const what = d.kind === "topic" ? `${d.side} ${d.topic}` : `calls ${d.route}`;
@@ -178,6 +198,7 @@ export function uiDeclaredRoutes(
           body: {
             written: res.written,
             files: [{ file: res.rel, changes: res.changes }],
+            ...(res.created ? { created: { system: res.created, file: res.rel } } : {}),
             verify: "atticus verify --all --write",
             commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
           } satisfies Api.FileChangeResultT,

@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { boxOf } from "../src/screens/architecture/Architecture.js";
-import { initialPicks, Pairing, pairsOf } from "../src/screens/architecture/Connect.js";
+import {
+  initialPicks,
+  linkedWords,
+  Pairing,
+  pairsOf,
+} from "../src/screens/architecture/Connect.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call, as the canvas's panel shows it: the likeliest
@@ -187,6 +192,86 @@ describe("the panel", () => {
         ),
       ),
     ).toContain(C.noApis["no-spec"]!("Northwind Pay"));
+  });
+});
+
+describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () => {
+  const box = { repo: "forge-instruments" };
+  const joined: Api.LinkCandidatesViewT = {
+    from: "forge_instruments_1-0",
+    to: { repo: "forge-instruments" },
+    toName: "forge-instruments",
+    calls: [
+      {
+        fact: "call.get.instruments-ping",
+        callType: "rest",
+        method: "GET",
+        path: "/instruments/ping",
+        at: "src/proxy/targets/default.xml:12",
+        status: "joined",
+        joins: "forge-ledger",
+        suggestion: { api: "e-ping", score: 0.9, why: "same-path" },
+      },
+      {
+        fact: "call.post.instruments",
+        callType: "rest",
+        method: "POST",
+        path: "/instruments",
+        at: "src/proxy/targets/default.xml:20",
+        status: "joined",
+        joins: "forge-ledger",
+      },
+    ],
+    apis: [{ id: "e-ping", kind: "route", method: "GET", path: "/instruments/ping" }],
+  };
+
+  it("never picks a call that has an arrow: moving it is the person's choice", () => {
+    expect(initialPicks(joined)).toEqual({ picked: {}, ticked: new Set() });
+  });
+
+  it("says where the calls go, and lists each to move here, never a dead end", () => {
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing from="forge_instruments_1-0" box={box} cands={{ state: "ready", data: joined }} />,
+      ),
+    );
+    expect(out).toContain(C.noLoose("forge-ledger (2)"));
+    expect(out).toContain(C.moveTitle(2));
+    expect(out).toContain(C.joinsNow("forge-ledger"));
+    expect(out).toContain(`aria-label="${C.col.api}: GET /instruments/ping"`);
+    expect(out).toContain(C.preview);
+    expect(out).not.toContain(C.caption("forge_instruments_1-0", "forge-instruments"));
+  });
+
+  it("lists a call with no arrow drawn as loose, and says why", () => {
+    const undrawn = {
+      ...joined,
+      calls: [{ ...joined.calls[0]!, status: "undrawn" as const, joins: "forge-ledger" }],
+    };
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing
+          from="forge_instruments_1-0"
+          box={box}
+          cands={{ state: "ready", data: undrawn }}
+        />,
+      ),
+    );
+    expect(out).toContain(C.caption("forge_instruments_1-0", "forge-instruments"));
+    expect(out).toContain(C.undrawnWhy("forge-ledger"));
+    expect(out).not.toContain(C.moveTitle(1));
+    expect(initialPicks(undrawn).picked).toEqual({ "call.get.instruments-ping": "e-ping" });
+  });
+
+  it("names each box the calls go to, with how many", () => {
+    expect(
+      linkedWords([
+        { joins: "forge-risk" },
+        { joins: "forge-ledger" },
+        { joins: "forge-risk" },
+        {},
+      ]),
+    ).toBe("forge-ledger (1), forge-risk (2)");
   });
 });
 

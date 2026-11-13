@@ -97,7 +97,18 @@ export const declaredComment = (by: string, at: string, side?: "publishes" | "li
 export async function declareLink(
   root: string,
   d: Declared,
-  o: { by: string; at: string; preview?: boolean },
+  o: {
+    by: string;
+    at: string;
+    preview?: boolean;
+    /**
+     * Beta.28.1 (field report 4): a system no profile has yet, which the canvas draws for a repo
+     * the manifest lists with no System of the profiles (the box takes the repo's id, or the
+     * manifest's `system`): added to its platform's profile in the same write, so a person
+     * declaring a link from that box never has to make the System first.
+     */
+    create?: { platform: string; name?: string; owner?: string };
+  },
 ): Promise<{
   rel: string;
   changes: LineChange[];
@@ -106,8 +117,13 @@ export async function declareLink(
   before: string;
   /** The bytes it wrote (what a take-back expects to find). */
   wrote?: string;
+  /** Beta.28.1: the system added to the profile first (`create`), when it had none. */
+  created?: string;
 }> {
-  const found = await systemNode(root, d.system);
+  const found: (NonNullable<Awaited<ReturnType<typeof systemNode>>> & {
+    created?: true;
+    disk?: string;
+  }) | undefined = (await systemNode(root, d.system)) ?? (await newSystemNode(root, d.system, o.create));
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol } = found;
   const doc = parseDocument(d.kind === "topic" ? migrateProfileText(text).text : text);
@@ -142,11 +158,62 @@ export async function declareLink(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  const changes = changedLines(text, after);
-  if (o.preview) return { rel, changes, written: false, before: raw };
+  // Against the file as it is on disk: a system added first is one of the lines it changes.
+  const changes = changedLines(found.created ? found.disk! : text, after);
+  const created = found.created ? { created: d.system } : {};
+  if (o.preview) return { rel, changes, written: false, before: raw, ...created };
   const wrote = inEol(after, eol);
   await writeFileIfUnchanged(path, raw, wrote);
-  return { rel, changes, written: true, before: raw, wrote };
+  return { rel, changes, written: true, before: raw, wrote, ...created };
+}
+
+/**
+ * The profile of `create.platform` with the system added at the end of its systems (a product
+ * system of the estate, its owner the repo's), as `systemNode` gives one; nothing is written
+ * here. Undefined without `create`, or when that platform has no profile folder.
+ */
+async function newSystemNode(
+  root: string,
+  system: string,
+  create: { platform: string; name?: string; owner?: string } | undefined,
+): Promise<
+  | (NonNullable<Awaited<ReturnType<typeof systemNode>>> & { created: true; disk: string })
+  | undefined
+> {
+  if (!create) return undefined;
+  const f = (await profilesOf(root)).find((x) =>
+    x.rel.endsWith(`/profiles/${create.platform}/profile.yaml`),
+  );
+  if (!f) return undefined;
+  const raw = await readFile(f.path, "utf8").catch(() => undefined);
+  if (raw === undefined) return undefined;
+  const eol = eolOf(raw);
+  const disk = lfOnly(raw);
+  const doc = parseDocument(disk);
+  let seq = doc.get("systems");
+  if (!isSeq(seq)) {
+    doc.set("systems", doc.createNode([]));
+    seq = doc.get("systems");
+  }
+  if (!isSeq(seq)) return undefined;
+  // An empty `systems: []` opens out into a block list, as a hand-written profile has.
+  if (seq.items.length === 0) seq.flow = false;
+  seq.add(
+    doc.createNode({
+      id: system,
+      name: create.name ?? system,
+      boundary: "product",
+      ...(create.owner ? { owner: create.owner } : {}),
+      aliases: [],
+    }),
+  );
+  const text = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const again = parseDocument(text);
+  const node = (again.get("systems") as { items: unknown[] }).items.find(
+    (x) => isMap(x) && x.get("id") === system,
+  );
+  if (!isMap(node)) return undefined;
+  return { ...f, raw, text, eol, doc: again, node, created: true, disk };
 }
 
 /**

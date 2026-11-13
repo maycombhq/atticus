@@ -2618,7 +2618,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       }
       const forwarding = isForwarding(call);
       const namesHost = !!(f.host || f.base || token);
-      if (forwarding && namesHost) {
+      // Beta.28.1 (field report 4): a host written as a build or deploy token (`@name@`, set by
+      // Maven filtering or a gateway's deploy step) that nothing sets is asked about too, in any
+      // repo: no file the join reads says where it goes, so a path guess would be an arrow no
+      // line cites (the owner's direction: arrows come from a cited line or a person).
+      const deployToken = !!f.host && TOKEN_FORMS[0]!.test(f.host);
+      if (namesHost && (forwarding || deployToken)) {
         // A gateway forwards to the host its target names, never to whichever service serves the
         // path: a host nothing resolves is asked about (beta.27: a token only its `<URL>` part
         // writes too; it was joined by its path before, a guess, and nothing was asked).

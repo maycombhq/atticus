@@ -7,7 +7,9 @@ import {
   cmpText,
   declareLink,
   deserializeRecord,
+  loadOrgPack,
   LockHeldError,
+  orgPackDirOf,
   parseRecord,
   recordPath,
   serializeRecord,
@@ -1313,9 +1315,19 @@ export async function applyMapEdits(
             a.kind === "call"
               ? ({ kind: "call", system: a.system, route: a.route } as const)
               : ({ kind: "topic", system: a.system, topic: a.topic, side: a.side } as const);
-          const res = await declareLink(root, d, { by, at });
+          const { systemToCreate } = await import("./ui-api-declared.js");
+          const create = systemToCreate(
+            await loadOrgPack(orgPackDirOf(root)),
+            a.system,
+          );
+          const res = await declareLink(root, d, { by, at, ...(create ? { create } : {}) });
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
+          // Beta.28.1: a box no System of the profiles was gets one first, said.
+          if (res.created)
+            io.out(
+              `${said}: added the system ${res.created} to ${res.rel} (no profile had it), for the link to be declared on.`,
+            );
           io.out(`${said}: declared in ${res.rel}.`);
         }
         outcomes[i]!.state = "saved";
