@@ -38,6 +38,7 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
     await session.post("Profiler.start");
   }
   const t = performance.now();
+  const c = process.cpuUsage();
   try {
     return await run();
   } finally {
@@ -50,7 +51,10 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
       session.disconnect();
     }
     buildPhases.on = undefined;
-    say(`${label}: ${((performance.now() - t) / 1000).toFixed(2)} s`);
+    const used = process.cpuUsage(c);
+    say(
+      `${label}: ${((performance.now() - t) / 1000).toFixed(2)} s (${((used.user + used.system) / 1e6).toFixed(1)} CPU s)`,
+    );
     const sum = new Map<string, number>();
     for (const [p, ms] of phases) sum.set(p, (sum.get(p) ?? 0) + ms);
     for (const [p, ms] of sum) if (ms >= 50) say(`  ${p}: ${(ms / 1000).toFixed(2)} s`);

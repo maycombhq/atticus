@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.1 (unreleased)
+
+### Fixed
+
+- **One repo's `verify <repo> --write` and the pairing preview no longer take minutes on a large estate (field report 6).** The build searched the whole estate for each record in three places (after the merge, an endpoint's and a loose call's records; the ids that follow a renamed record; a repo's projection) and grouped the features' flows by id, so its time grew with the square of the estate: at 60 repos and 97,000 records one changed repo took 209 s, its preview 207 s. Each search is an index now that keeps the first match in the same order, the features' grouping works by number, the guards read the catalog's files 32 at once, and the preview reads the parses kept on disk (it parsed every record file). The same commit gives the same bytes: a test compares random single-repo writes on generated estates byte for byte with a build from scratch, and `big-estate-speed.test.ts` pins the write, the Connect panel's read and the preview by CPU time. At 60 repos the write is about 57 CPU s now, not yet the 15 s budget: what is left is listed in ADR 0195's addendum of 2026-11-13.
+
 ## 2.0.0-beta.28 (2026-11-13)
 
 ### Added
