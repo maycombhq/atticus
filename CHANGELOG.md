@@ -2,6 +2,19 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.1 (unreleased)
+
+### Fixed
+
+- **Nothing slow runs silently (the owner's field reports 2 and 3).** The Connect panel's read of the calls and APIs, Edit the map's pairing fields, Correct on a pairing, the Connect panel's **Preview** and the panel after a correction (what the next Apply changes) now run as local jobs. While you wait, the panel shows what the job is doing now (reading the estate's facts, joining the calls and APIs, and saying when the join has to be worked out again for N repos, reading the other box's APIs, matching, each step of the preview) and a **Stop** button. Stop ends the job at its next step and the panel says it was stopped and nothing was changed, with **Start it again**. The same lines are in the Console.
+- **`atticus verify <repo> --write` says each step.** The write stage prints a line as each step starts, with the time so far, including the catalog build's eight passes one by one; a step still running after 30 seconds says so. Work that ends within 2 seconds still prints nothing. Stop is heard between steps until the catalog is being written; after that the write finishes and says why it ignored the Stop.
+- **The Console shows a job's first line after a quiet spell at once**, instead of holding it until the next busy step ends.
+- **Edit the map's Apply and Connect's pairing no longer work out the estate's join**, which they didn't use: checking a pairing reads only the caller's calls and the other box's APIs.
+
+### Changed
+
+- **Local API 3.14.0 (additive).** `GET /api/links/candidates` and `GET /api/facts/{repo}/preview` take `job=1`, and `POST /api/links/connect` takes `job: true`: each answers `202` with a job id at once; the job prints each step (its progress message is its last line), `POST /api/jobs/{jobId}/cancel` ends it between steps, and its result's `answer` is what the request answers without `job` (or `problem`, refused). Without `job`, each answers as before.
+
 ## 2.0.0-beta.28 (2026-11-13)
 
 ### Added
