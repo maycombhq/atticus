@@ -491,24 +491,81 @@ export function writtenOf(e: unknown): { repo: string; file: string }[] {
 export async function callAsJob<T>(
   path: string,
   body: Record<string, unknown> = {},
-  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  o: ((ms: number) => Promise<void>) | JobFollow = {},
 ): Promise<T> {
+  const f: JobFollow = typeof o === "function" ? { wait: o } : o;
   const r = await api<unknown>(path, { method: "POST", body: { ...body, job: true } });
   const jobId = r && typeof r === "object" ? (r as { jobId?: unknown }).jobId : undefined;
   if (typeof jobId !== "string") return r as T;
+  return followAnswer<T>(jobId, f, true);
+}
+
+/**
+ * Beta.28.1 (the owner's field reports 2 and 3): how a page follows a job it waits on. `onJob`
+ * hears its id at once (for Stop, stopJob); `onLine` each new last line it printed (its progress
+ * message), so the page says what it is doing; `signal` ends the following (the page went), not
+ * the job. `wait` is tests' own clock.
+ */
+export interface JobFollow {
+  onJob?: (jobId: string) => void;
+  onLine?: (line: string) => void;
+  signal?: AbortSignal;
+  wait?: (ms: number) => Promise<void>;
+}
+
+/** A job the person stopped: it ended between steps with no answer (beta.28.1). */
+export class JobStopped extends Error {
+  constructor() {
+    super(COPY.app.jobEnded("cancelled", ""));
+    this.name = "JobStopped";
+  }
+}
+
+/** Stop a job (POST /api/jobs/{jobId}/cancel): it ends at its next step (beta.28.1). */
+export async function stopJob(jobId: string): Promise<void> {
+  await api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: {} });
+}
+
+/**
+ * Beta.28.1 (local API 3.14.0): a read the person waits on, asked as a job (`job=1`): the server
+ * answers 202 at once and the job says each step, so the page shows what it is doing and offers
+ * Stop. Resolves with the answer the read gives without `job`; a refusal throws its problem, a
+ * Stop JobStopped. A server that answers the read itself (an older one) is answered as it is.
+ */
+export async function getAsJob<T>(path: string, o: JobFollow = {}): Promise<T> {
+  const asked = `${path}${path.includes("?") ? "&" : "?"}job=1`;
+  const r = await api<unknown>(asked, o.signal ? { signal: o.signal } : {});
+  const jobId = r && typeof r === "object" ? (r as { jobId?: unknown }).jobId : undefined;
+  if (typeof jobId !== "string") return r as T;
+  return followAnswer<T>(jobId, o, false);
+}
+
+async function followAnswer<T>(jobId: string, o: JobFollow, write: boolean): Promise<T> {
+  const wait = o.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  o.onJob?.(jobId);
+  let said = "";
   for (;;) {
+    if (o.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const j = await api<{
       state: string;
       errors?: string[];
+      progress?: { message?: string };
       result?: { answer?: unknown; problem?: Problem; lines?: string[] };
     }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+    const line = j.progress?.message ?? "";
+    if (line && line !== said) {
+      said = line;
+      o.onLine?.(line);
+    }
     if (j.state !== "running" && j.state !== "queued") {
       if (j.state === "done" && j.result && "answer" in j.result) {
-        wrote.dispatchEvent(new Event(WROTE));
+        if (write) wrote.dispatchEvent(new Event(WROTE));
         return j.result.answer as T;
       }
       const p = j.result?.problem;
       if (p) throw new ApiError(problemOf(p, typeof p.status === "number" ? p.status : 422, ""));
+      // A read stopped says so as itself; a write keeps its problem (its callers read one).
+      if (j.state === "cancelled" && !write) throw new JobStopped();
       const words = (j.result?.lines?.length ? j.result.lines : (j.errors ?? [])).join(" ");
       throw new ApiError({
         type: "about:blank",
@@ -728,6 +785,72 @@ export function useApi<T>(
   // A reload of the same path keeps what is shown; another path (or none) is loading.
   const s: Loaded<T> = held.for === view && view !== undefined ? held.s : { state: "loading" };
   return { ...s, reload, refreshing, ...(at !== undefined ? { at } : {}) };
+}
+
+/** What a JobRead adds to a Loaded, for a panel that takes either (tests pass a plain state). */
+export interface JobWaitParts {
+  reload?: () => void;
+  line?: string | undefined;
+  stop?: (() => void) | undefined;
+  stopping?: boolean;
+  stopped?: boolean;
+}
+
+/** useJobRead's answer: useApi's, with the job's last line, its Stop, and whether it stopped. */
+export type JobRead<T> = ReturnType<typeof useApi<T>> & {
+  /** The job's last line while the read runs (what it is doing now). */
+  line?: string;
+  /** Stops the job under way (absent once it ended, or before the server named it). */
+  stop?: () => void;
+  stopping: boolean;
+  /** The person stopped it: the read ended with no answer (state "error"). */
+  stopped: boolean;
+};
+
+/**
+ * Beta.28.1: useApi for a read the person waits on that can take minutes (the Connect panel's
+ * calls and APIs, a preview of the next Apply): asked as a job (getAsJob), so the page shows its
+ * last line and a Stop. A server that answers the read itself is read as before.
+ */
+export function useJobRead<T>(path: string | undefined, o: { view?: string } = {}): JobRead<T> {
+  const [line, setLine] = useState<string | undefined>();
+  const [jobId, setJobId] = useState<string | undefined>();
+  const [stopped, setStopped] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const load = useCallback((p: string, signal: AbortSignal) => {
+    setLine(undefined);
+    setStopped(false);
+    setStopping(false);
+    const live = (f: () => void) => {
+      if (!signal.aborted) f();
+    };
+    return getAsJob<T>(p, {
+      signal,
+      onLine: (l) => live(() => setLine(l)),
+      onJob: (id) => live(() => setJobId(id)),
+    })
+      .catch((e: unknown) => {
+        if (e instanceof JobStopped) live(() => setStopped(true));
+        throw e;
+      })
+      .finally(() => live(() => setJobId(undefined)));
+  }, []);
+  const r = useApi<T>(path, { load, ...(o.view ? { view: o.view } : {}) });
+  const running = r.state === "loading" || r.refreshing;
+  const stop =
+    jobId && running
+      ? () => {
+          setStopping(true);
+          void stopJob(jobId).catch(() => setStopping(false));
+        }
+      : undefined;
+  return {
+    ...r,
+    ...(line && running ? { line } : {}),
+    ...(stop ? { stop } : {}),
+    stopping: stopping && running,
+    stopped: stopped && r.state === "error",
+  };
 }
 
 export type LiveEvent = { type: string } & Record<string, unknown>;

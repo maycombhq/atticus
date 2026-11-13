@@ -1,7 +1,8 @@
 import { useId } from "react";
 import { ApplyAndPropose } from "./propose.js";
 import type { Api } from "@maycombhq/core";
-import { useApi, type Loaded } from "../api/client.js";
+import { useJobRead, type JobWaitParts, type Loaded } from "../api/client.js";
+import { JobStoppedNote, JobWait } from "./job-wait.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
 import { CodeFigure } from "./ui.js";
@@ -104,7 +105,8 @@ export function CorrectionNextPanel(p: {
   /** The file the app wrote and the line it appended, from the correction's result. */
   file: string;
   line?: string | undefined;
-  preview: Loaded<Preview>;
+  /** Beta.28.1: read as a job, its last line and Stop while it runs (tests pass a state). */
+  preview: Loaded<Preview> & JobWaitParts;
   /** ADR 0183: Apply and Propose for review run from here. */
   repo?: string | undefined;
 }) {
@@ -120,11 +122,17 @@ export function CorrectionNextPanel(p: {
       {p.repo && <ApplyAndPropose scope="corrections" repo={p.repo} />}
       <h5 className="hud">{N.stepsTitle}</h5>
       {p.preview.state === "loading" && (
-        <p role="status" aria-busy="true" className="ev-say">
-          {N.loading}
-        </p>
+        <JobWait
+          what={N.loading}
+          line={p.preview.line}
+          onStop={p.preview.stop}
+          stopping={!!p.preview.stopping}
+        />
       )}
-      {p.preview.state === "error" && (
+      {p.preview.state === "error" && p.preview.stopped && (
+        <JobStoppedNote onAgain={p.preview.reload} />
+      )}
+      {p.preview.state === "error" && !p.preview.stopped && (
         <p role="alert" className="state error" style={{ margin: 0 }}>
           {N.failed(p.preview.error)}
         </p>
@@ -156,7 +164,8 @@ export function CorrectionNextPanel(p: {
 
 /** The panel for a correction just written: reads the preview from the local API. */
 export function CorrectionNext(p: { repo: string; result: Api.FactCorrectionResultT }) {
-  const preview = useApi<Preview>(
+  // Beta.28.1: read as a job: the wait says each step of the preview and has Stop.
+  const preview = useJobRead<Preview>(
     `/api/facts/${encodeURIComponent(p.repo)}/preview?fact=${encodeURIComponent(p.result.correction.fact)}`,
   );
   return (

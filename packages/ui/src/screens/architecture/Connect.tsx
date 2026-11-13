@@ -1,6 +1,17 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
+import {
+  api,
+  ApiError,
+  callAsJob,
+  JobStopped,
+  stopJob,
+  useJobRead,
+  type JobFollow,
+  type JobWaitParts,
+  type Loaded,
+} from "../../api/client.js";
+import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { appStep, WrittenNext } from "../../app/app-step.js";
@@ -87,7 +98,8 @@ export function ConnectPanel(p: {
   const [to, setTo] = useState<string>(p.initial ? key(p.initial.box) : "");
   const boxes = boxesWith(p.boxes, p.initial);
   const box = boxes.find((b) => key(b.box) === to)?.box;
-  const cands = useApi<Api.LinkCandidatesViewT>(box ? candidatesPath(p.from, box) : undefined);
+  // Beta.28.1: read as a job, so the wait says each step and has Stop (a join can take minutes).
+  const cands = useJobRead<Api.LinkCandidatesViewT>(box ? candidatesPath(p.from, box) : undefined);
   const head = usePopupFocus<HTMLHeadingElement>();
   const toLabel = boxes.find((b) => key(b.box) === to)?.label;
   return (
@@ -167,9 +179,13 @@ export function undoneWords(w: Pick<Api.ConnectLinksResultT, "rule">): string {
 export function Pairing(p: {
   from: string;
   box: Api.LinkBoxT;
-  cands: Loaded<Api.LinkCandidatesViewT> & { reload?: () => void };
-  /** Tests pass their own; the app calls the local API. */
-  post?: (body: Api.ConnectLinksRequestT) => Promise<Api.ConnectLinksResultT>;
+  /** Beta.28.1: read as a job, its last line and Stop while it runs. */
+  cands: Loaded<Api.LinkCandidatesViewT> & JobWaitParts;
+  /**
+   * Tests pass their own; the app calls the local API. A preview is asked as a job (beta.28.1):
+   * `follow` hears its steps and its id, for Stop.
+   */
+  post?: (body: Api.ConnectLinksRequestT, follow?: JobFollow) => Promise<Api.ConnectLinksResultT>;
   match?: MatchIo;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
@@ -211,8 +227,13 @@ export function Pairing(p: {
   const pairs = pairsOf(picked, ticked);
   const post =
     p.post ??
-    ((body: Api.ConnectLinksRequestT) =>
-      api<Api.ConnectLinksResultT>("/api/links/connect", { method: "POST", body }));
+    ((body: Api.ConnectLinksRequestT, follow?: JobFollow) =>
+      body.preview
+        ? callAsJob<Api.ConnectLinksResultT>("/api/links/connect", { ...body }, follow ?? {})
+        : api<Api.ConnectLinksResultT>("/api/links/connect", { method: "POST", body }));
+  // Beta.28.1: the preview's job, while it runs: its last line, and Stop.
+  const [wait, setWait] = useState<{ job?: string; line?: string; stopping?: boolean }>();
+  const [stoppedPreview, setStoppedPreview] = useState(false);
   // What the person picked now: Confirm writes only what was previewed, nothing changed since.
   const asked = JSON.stringify({ pairs, rule: !!rule });
   const [previewed, setPreviewed] = useState<string | undefined>();
@@ -224,15 +245,23 @@ export function Pairing(p: {
     }
     setBusy(mode);
     setError(undefined);
+    setStoppedPreview(false);
     const sentAsked = asked;
+    if (mode === "preview") setWait({});
     try {
-      const r = await post({
-        from: p.from,
-        to: p.box,
-        pairs,
-        ...(rule ? { rule: true } : {}),
-        ...(mode === "preview" ? { preview: true } : {}),
-      });
+      const r = await post(
+        {
+          from: p.from,
+          to: p.box,
+          pairs,
+          ...(rule ? { rule: true } : {}),
+          ...(mode === "preview" ? { preview: true } : {}),
+        },
+        {
+          onJob: (job) => setWait((w) => ({ ...w, job })),
+          onLine: (line) => setWait((w) => ({ ...w, line })),
+        },
+      );
       if (mode === "preview") {
         setPreview(r);
         // The picks as they were sent, not as they are when the answer comes.
@@ -244,10 +273,18 @@ export function Pairing(p: {
         p.cands.reload?.();
       }
     } catch (e) {
-      setError(errorOf(e));
+      if (e instanceof JobStopped) setStoppedPreview(true);
+      else setError(errorOf(e));
     } finally {
       setBusy(undefined);
+      setWait(undefined);
     }
+  };
+  const stopPreview = () => {
+    const job = wait?.job;
+    if (!job) return;
+    setWait((w) => ({ ...w, stopping: true }));
+    void stopJob(job).catch(() => setWait((w) => (w ? { ...w, stopping: false } : w)));
   };
   const undo = async () => {
     if (!written || undoing) return;
@@ -276,10 +313,15 @@ export function Pairing(p: {
 
   if (p.cands.state === "loading")
     return (
-      <p role="status" aria-busy="true" className="ev-say">
-        {C.loading}
-      </p>
+      <JobWait
+        what={C.loading}
+        line={p.cands.line}
+        onStop={p.cands.stop}
+        stopping={!!p.cands.stopping}
+      />
     );
+  if (p.cands.state === "error" && p.cands.stopped)
+    return <JobStoppedNote onAgain={p.cands.reload} />;
   if (p.cands.state === "error")
     return (
       <p role="alert" className="state error">
@@ -480,6 +522,15 @@ export function Pairing(p: {
           </button>
         </div>
       )}
+      {busy === "preview" && wait && (
+        <JobWait
+          what={C.previewing}
+          line={wait.line}
+          onStop={wait.job ? stopPreview : undefined}
+          stopping={!!wait.stopping}
+        />
+      )}
+      {stoppedPreview && <JobStoppedNote />}
       {preview && previewed === asked && (
         <CorrectionNextPanel
           file={preview.file}
