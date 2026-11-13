@@ -5330,6 +5330,9 @@ export const COPY = {
         `${from} → ${to}, ${n} call${n === 1 ? "" : "s"}`,
       by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
       back: "Bring back",
+      /** The review of beta.28: a redirect's old link, and one the build no longer makes. */
+      redirected: "redirected (its new link was added with it)",
+      gone: "no longer in the code read: Bring back draws nothing",
       backOf: (from: string, to: string) => `Bring back the link ${from} → ${to}`,
       backing: "Bringing it back and building the catalog…",
       backDone: (from: string, to: string) => `${from} → ${to} is back on the map.`,
@@ -5346,6 +5349,7 @@ export const COPY = {
     waitsBuild: "Saved. The catalog build waits for you on Catalog builds.",
     reviewRemovals: (n: number) => `Review the ${n} removal${n === 1 ? "" : "s"}`,
     reviewBuild: "Review the build",
+    printed: (n: number) => `What it printed (${n} line${n === 1 ? "" : "s"})`,
   },
   /**
    * Beta.28 (the owner's ask of 2026-11-12: "delete arrows and add arrows in one go and click a
@@ -5434,6 +5438,10 @@ export const COPY = {
       redirectCalls: (from: string) => `${from}'s calls this arrow is, each with where it goes now`,
       lineless: (from: string) =>
         `This arrow cites no line of ${from}'s, so the call it is isn't known from the map. Pick ${from}'s call it is (the ones with its method and path are picked for you); the pairing cites that call's own line.`,
+      linelessAmbiguous: (from: string) =>
+        `This arrow cites no line of ${from}'s, and more than one of ${from}'s calls has its method and path, so none is picked for you: pick the call it is. The pairing cites that call's own line.`,
+      drawsAnother: (calls: string) =>
+        `${calls} already draw${calls.includes(",") ? "" : "s"} another arrow: pairing it moves that arrow here too.`,
       redirectNoRepo:
         "This arrow doesn't start in a repo's box, so its calls can't be paired again here. Delete it, then add the link from a system's box.",
     },

@@ -22,6 +22,7 @@ import {
 let e: LinkEstate;
 let root: string;
 let lineless: Iface;
+let lined: Iface;
 const correctionsText = () => {
   try {
     return readFileSync(join(root, "facts", `${PROXY}.corrections.jsonl`), "utf8");
@@ -44,7 +45,7 @@ const REDIRECT = () => ({
 
 beforeAll(async () => {
   e = await linkEstate("atticus-map-edits-pair-");
-  ({ root, lineless } = e);
+  ({ root, lineless, lined } = e);
 }, 300_000);
 afterAll(async () => {
   await e?.close();
@@ -82,6 +83,45 @@ describe("Edit the map from a repo's box: Connect to…'s pairing (beta.28)", ()
     expect(correctionsText()).toBe("");
   });
 
+  it("refuses a lined arrow's redirect that pairs a call that isn't the arrow's", async () => {
+    // The lined arrow is the proxy's POST /payments (default.xml:7); GET /refunds/{id} isn't it.
+    const r = await e.call("/api/map/edits", "POST", {
+      edits: [
+        {
+          kind: "redirect",
+          delete: { interfaces: [lined.id], from: "northwind-pay-proxy", to: "payments-api" },
+          pair: {
+            from: PROXY,
+            to: { repo: "forge-checkout" },
+            pairs: [{ call: CALL, api: REFUND_STATUS_ENTRY }],
+          },
+        },
+      ],
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(422);
+    const problems = r.body.problems as { edit: number; message: string }[];
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.message).toContain(`${CALL} (apiproxy/proxies/default.xml:13)`);
+    // Its own call is fine.
+    const ok = await e.call("/api/map/edits", "POST", {
+      edits: [
+        {
+          kind: "redirect",
+          delete: { interfaces: [lined.id], from: "northwind-pay-proxy", to: "payments-api" },
+          pair: {
+            from: PROXY,
+            to: { repo: "forge-checkout" },
+            pairs: [{ call: "call.post.payments", api: REFUND_STATUS_ENTRY }],
+          },
+        },
+        { kind: "delete", delete: { interfaces: [], from: "a", to: "b" } },
+      ],
+    });
+    // Only the empty delete (kept there so nothing is written) is a problem.
+    expect((ok.body.problems as { edit: number }[]).map((x) => x.edit)).toEqual([1]);
+    expect(correctionsText()).toBe("");
+  });
+
   it("redirects a lineless adopted arrow to another repo: a suppress and a pairing, one build", async () => {
     const before = await lastBuild();
     const ended = await e.job("/api/map/edits", { edits: [REDIRECT()] });
@@ -93,6 +133,9 @@ describe("Edit the map from a repo's box: Connect to…'s pairing (beta.28)", ()
     expect(ended.result?.waitsOn).toEqual(["forge-checkout"]);
     expect(await lastBuild()).toBe(before + 1);
     expect((await e.interfaces()).some((i) => i.id === lineless.id)).toBe(false);
+    // Deleted links says the old link was redirected, not just deleted.
+    const listed = (await e.call("/api/links/deleted")).body.links as { redirect?: boolean }[];
+    expect(listed.map((l) => l.redirect)).toEqual([true]);
     // Connect to…'s line, exactly: the call's own cited line, linked to the checkout's entry.
     const lines = correctionsText().split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);

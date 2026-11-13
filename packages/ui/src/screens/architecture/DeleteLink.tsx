@@ -166,6 +166,15 @@ export async function linkInterfaces(
   callsPath?: string,
   get: (path: string) => Promise<Api.GraphEdgeCallsViewT> = (path) => api(path),
 ): Promise<string[]> {
+  return [...new Set((await linkJoins(link, callsPath, get)).map((j) => j.interface))];
+}
+
+/** Every call behind a link, read in full (as `linkInterfaces`), each with its lines. */
+export async function linkJoins(
+  link: Api.HierEdgeT,
+  callsPath?: string,
+  get: (path: string) => Promise<Api.GraphEdgeCallsViewT> = (path) => api(path),
+): Promise<readonly Api.HierJoinT[]> {
   const shown = link.joins ?? [];
   let joins: readonly Api.HierJoinT[] = shown;
   if (link.count > shown.length) {
@@ -175,7 +184,7 @@ export async function linkInterfaces(
   }
   if (!joins.length) throw new Error(D.none);
   if (!joins.every((j) => INTERFACE_ID.test(j.interface))) throw new Error(D.mixed);
-  return [...new Set(joins.map((j) => j.interface))];
+  return joins;
 }
 
 /** Delete this link, with its state: every Interface on the link, then the job. */
@@ -305,6 +314,8 @@ export function DeletedLinksList(p: {
         {links.map((l, i) => (
           <li key={l.decisions[0]?.id ?? i}>
             {L.item(l.from, l.to, l.calls || l.decisions.length)}
+            {l.redirect && <span className="hud"> · {L.redirected}</span>}
+            {l.gone && <span className="hud"> · {L.gone}</span>}
             {l.by && <span className="hud"> · {L.by(l.by, l.at)}</span>}{" "}
             <button
               type="button"

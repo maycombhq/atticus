@@ -2067,6 +2067,8 @@ export const DeletedLinksView = z.object({
       at: z.string(),
       /** No Interface of it would be drawn now even without the suppress (its code moved on). */
       gone: z.boolean().optional(),
+      /** Taken away by a redirect of Edit the map, its new link added in the same change. */
+      redirect: z.boolean().optional(),
       /** One curated suppress per Interface, in catalog/curated/curateddecision/. */
       decisions: z.array(
         z.object({

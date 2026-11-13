@@ -848,7 +848,9 @@ async function writeDecision(
   curatedDir: string,
   decision: Record<string, unknown>,
   o: { idBase: string; reason: string; by: string; at: string },
-): Promise<{ written: string; id: string } | { kept: string } | { problem: string }> {
+): Promise<
+  { written: string; id: string; bytes: string } | { kept: string } | { problem: string }
+> {
   const placed = await decisionFor(curatedDir, slug(o.idBase), decision, o.at);
   if ("keep" in placed)
     return { kept: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}` };
@@ -866,8 +868,9 @@ async function writeDecision(
   if (!record.ok) return { problem: record.issues.map((i) => i.message).join("; ") };
   const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
   await mkdir(dirname(full), { recursive: true });
-  await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
-  return { written: posix(relative(root, full)), id: placed.id };
+  const bytes = serializeRecord(record.record as CatalogRecord);
+  await writeFileAtomic(full, bytes);
+  return { written: posix(relative(root, full)), id: placed.id, bytes };
 }
 
 /**
@@ -974,6 +977,8 @@ interface DeletedLink {
   at: string;
   /** Beta.28 review: no Interface of it would be drawn now even without the suppress. */
   gone?: boolean;
+  /** Taken away by a redirect (Edit the map), its new link added in the same change. */
+  redirect?: boolean;
   decisions: { id: string; target: string; file: string; gone?: boolean }[];
 }
 
@@ -999,7 +1004,15 @@ export async function deletedLinks(
     const by = String(d.by ?? "");
     const at = String(d.at ?? "");
     const key = m.group ? `g\u0000${m.group}` : `${String(d.reason)}\u0000${by}\u0000${at}`;
-    const g = groups.get(key) ?? { from: m.from, to: m.to, calls: m.calls, by, at, decisions: [] };
+    const g = groups.get(key) ?? {
+      from: m.from,
+      to: m.to,
+      calls: m.calls,
+      by,
+      at,
+      ...(m.group?.startsWith("r-") ? { redirect: true } : {}),
+      decisions: [],
+    };
     const target = String(d.target);
     g.decisions.push({
       id: String(d.id),
@@ -1059,6 +1072,10 @@ export async function buildAfterDecisions(
     r.reasons[0] === "large-removals" &&
     removals.length > 0 &&
     removals.every((x) => targets.has(x.id) || byInput(x));
+  // The knock-on removals the person's changes make (a feature a declaration changes), said.
+  if (ours)
+    for (const x of removals.filter((y) => !targets.has(y.id)))
+      io.out(`Also takes away ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}.`);
   return catalogBuild(
     root,
     {
@@ -1144,8 +1161,13 @@ export function mapEditWords(e: Api.MapEditT): string {
   return `redirect ${e.delete.from} → ${e.delete.to} to: ${addWords(e)}`;
 }
 
-/** Test hooks: run under the lock once the changes are written, just before the build. */
-export const mapEditHooks: { beforeBuild?: () => Promise<void> } = {};
+/** Test hooks, under the lock: around each change's writes, and once they are all written. */
+export const mapEditHooks: {
+  beforeBuild?: () => Promise<void>;
+  /** Before each change's writes, and after them (a test's other writer landing). */
+  beforeWrite?: (i: number) => Promise<void>;
+  afterWrite?: (i: number) => Promise<void>;
+} = {};
 
 /**
  * Edit the map's Apply my changes (beta.28, the owner's ask of 2026-11-12: "delete arrows and add
@@ -1189,41 +1211,47 @@ export async function applyMapEdits(
       ).guard.removals.map((x) => x.id),
     );
     const inputs = new Set<string>();
-    // Each file this run writes: its bytes before the first write (null: it wasn't there), what
-    // this run last wrote to it, and the changes that wrote it.
-    const files = new Map<
-      string,
-      { before: string | null; wrote: string | null; edits: Set<number> }
-    >();
-    const read = (f: string) => readFile(f, "utf8").catch(() => null);
-    const before = async (f: string, i: number, known?: string | null) => {
-      const x = files.get(f) ?? {
-        before: known !== undefined ? known : await read(f),
-        wrote: null,
-        edits: new Set<number>(),
-      };
-      x.edits.add(i);
-      files.set(f, x);
-    };
-    const after = async (f: string) => {
-      files.get(f)!.wrote = await read(f);
+    // Each file this run writes, as each writer read it under its own lock or check (never read
+    // apart from the write, so another writer's change landing first is kept): a profile's bytes
+    // before this run's first write and after its last ("replace"), a new decision's bytes
+    // ("new"), or the lines appended to a corrections file ("append"), and the changes that wrote
+    // it.
+    type Wrote =
+      | { how: "replace"; before: string; wrote: string; edits: Set<number> }
+      | { how: "new"; wrote: string; edits: Set<number> }
+      | { how: "append"; lines: string[]; edits: Set<number> };
+    const files = new Map<string, Wrote>();
+    const replaced = (f: string, i: number, r: { before: string; wrote?: string }) => {
+      const x = files.get(f);
+      if (x?.how === "replace") {
+        x.wrote = r.wrote ?? x.wrote;
+        x.edits.add(i);
+      } else
+        files.set(f, {
+          how: "replace",
+          before: r.before,
+          wrote: r.wrote ?? r.before,
+          edits: new Set([i]),
+        });
     };
     for (const [i, e] of o.edits.entries()) {
       const said = `Change ${i + 1} of ${n}, ${mapEditWords(e)}`;
       try {
+        await mapEditHooks.beforeWrite?.(i);
         if (e.kind !== "add") {
           const d = e.delete;
           const ids = [...new Set(d.interfaces)];
-          const group = `d-${stamp}-${i + 1}`;
+          // A redirect's suppresses say so in Deleted links (its new link is the other half).
+          const group = `${e.kind === "redirect" ? "r" : "d"}-${stamp}-${i + 1}`;
           const reason = linkDeleteReason(d.from, d.to, ids.length, group);
           for (const target of ids) {
             // A link a person declared on the canvas: the declaration goes, not a suppress of it.
             const decl = await canvasDeclarationOf(root, byId.get(target));
             if (decl) {
-              const profile = await declarationFile(root, decl.system);
-              if (profile) await before(profile, i);
               const res = await undeclareLink(root, decl);
-              if (profile) await after(profile);
+              replaced(join(root, ...res.rel.split("/")), i, res);
+              // The build names the org pack as one input: a teammate's change to it pending
+              // before this run is never confirmed (`pending`).
               inputs.add("org-pack");
               io.out(
                 `${said}: withdrew ${decl.value} from ${decl.system}'s declarations in ${res.rel}.`,
@@ -1240,8 +1268,7 @@ export async function applyMapEdits(
             if ("problem" in w) throw new Error(`Interface/${target}: ${w.problem}`);
             if ("written" in w) {
               const file = join(root, ...w.written.split("/"));
-              await before(file, i, null);
-              await after(file);
+              files.set(file, { how: "new", wrote: w.bytes, edits: new Set([i]) });
               io.out(`${said}: wrote ${w.written}, the person's suppress of Interface/${target}.`);
             } else io.out(`${said}: ${w.kept} suppresses Interface/${target} already.`);
             targets.add(target);
@@ -1254,9 +1281,12 @@ export async function applyMapEdits(
           const p = await pairingsOf(root, e.pair, { by, at });
           const lines = p.corrections.map(correctionLine);
           await mkdir(factsDirOf(root), { recursive: true });
-          await before(p.file, i);
           await appendLines(p.file, lines);
-          await after(p.file);
+          const x = files.get(p.file);
+          if (x?.how === "append") {
+            x.lines.push(...lines);
+            x.edits.add(i);
+          } else files.set(p.file, { how: "append", lines: [...lines], edits: new Set([i]) });
           inputs.add(p.rel);
           io.out(
             `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
@@ -1267,39 +1297,41 @@ export async function applyMapEdits(
             a.kind === "call"
               ? ({ kind: "call", system: a.system, route: a.route } as const)
               : ({ kind: "topic", system: a.system, topic: a.topic, side: a.side } as const);
-          const look = await declareLink(root, d, { by, at, preview: true });
-          const profile = join(root, ...look.rel.split("/"));
-          await before(profile, i);
           const res = await declareLink(root, d, { by, at });
-          await after(profile);
+          replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
           io.out(`${said}: declared in ${res.rel}.`);
         }
         outcomes[i]!.state = "saved";
+        await mapEditHooks.afterWrite?.(i);
       } catch (err) {
         const why = err instanceof Error ? err.message : String(err);
         outcomes[i] = { ...outcomes[i]!, state: "failed", message: why };
         io.err(`${said}: not saved: ${why}`);
-        // Every file put back as it was before this run, while it is still as this run left it.
+        // Every file taken back while it is still as this run left it: a profile put back only
+        // if nobody wrote it since (checked as it is written), a new decision removed only if it
+        // is as written, a corrections file's own lines removed under its lock (any other line
+        // kept). A file changed since is left as it is, and named.
+        const { removeCorrectionLines } = await import("./ui-api-links.js");
+        const { FileChangedError, writeFileIfUnchanged } = await import("@maycombhq/core");
         const kept = new Set<number>();
         const changedSince: string[] = [];
         for (const [f, x] of files) {
-          const now = await read(f);
-          if (now !== x.wrote && !(x.wrote === null && now === x.before)) {
+          try {
+            if (x.how === "replace") await writeFileIfUnchanged(f, x.wrote, x.before);
+            else if (x.how === "append") await removeCorrectionLines(f, x.lines);
+            else if ((await readFile(f, "utf8").catch(() => null)) === x.wrote)
+              await rm(f, { force: true });
+            else throw new FileChangedError(f);
+          } catch (e2) {
+            if (!(e2 instanceof FileChangedError)) throw e2;
             changedSince.push(posix(relative(root, f)));
             for (const k of x.edits) kept.add(k);
-            continue;
           }
-          if (x.before === null) await rm(f, { force: true });
-          else await writeFileAtomic(f, x.before);
         }
-        // A change before it that wrote nothing (its suppresses were on file already) leaves
-        // nothing behind either.
+        // One outcome per change: the one that failed keeps its own; one before it is taken back,
+        // unless a file it wrote changed since (left as it is, and said).
         for (let k = 0; k < i; k++)
-          if (outcomes[k]!.state === "saved")
-            outcomes[k] = { ...outcomes[k]!, state: "taken-back" };
-        for (const k of new Set([...files.values()].flatMap((x) => [...x.edits]))) {
-          if (k === i) continue;
           outcomes[k] = kept.has(k)
             ? {
                 ...outcomes[k]!,
@@ -1307,10 +1339,14 @@ export async function applyMapEdits(
                 message: `couldn't be taken back: ${changedSince.join(", ")} changed since`,
               }
             : { ...outcomes[k]!, state: "taken-back" };
-        }
+        if (kept.has(i))
+          outcomes[i] = {
+            ...outcomes[i]!,
+            message: `${why} (what it wrote first couldn't be taken back: ${changedSince.join(", ")} changed since)`,
+          };
         io.err(
           changedSince.length
-            ? `Nothing was built. ${changedSince.join(", ")} changed while this ran, so ${kept.size === 1 ? "one change" : `${kept.size} changes`} written there couldn't be taken back: look at ${changedSince.length === 1 ? "it" : "them"}, then fix change ${i + 1} (or remove it from your changes) and apply again.`
+            ? `Nothing was built. ${changedSince.join(", ")} changed while this ran, so what was written there couldn't be taken back and is left as it is: look at ${changedSince.length === 1 ? "it" : "them"}, then fix change ${i + 1} (or remove it from your changes) and apply again.`
             : `Nothing was built. Every change written before it was taken back, each file as it was; fix change ${i + 1} (or remove it from your changes) and apply again.`,
         );
         return 1;
@@ -1368,11 +1404,4 @@ export async function canvasDeclarationOf(
     if (these.length === 1) return { kind: "topic", system, value: these[0]!.value };
   }
   return undefined;
-}
-
-/** The profile file a system's declarations are in, from the metarepo's root. */
-async function declarationFile(root: string, system: string): Promise<string | undefined> {
-  const { declaredOf } = await import("@maycombhq/core");
-  const rel = (await declaredOf(root, system)).rel;
-  return rel ? join(root, ...rel.split("/")) : undefined;
 }

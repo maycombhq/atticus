@@ -1,8 +1,16 @@
 import { useState } from "react";
 import { api } from "../api/client.js";
 import { COPY } from "../copy.js";
+import { ShowInConsole } from "./activity.js";
 import { Note, useAction } from "../screens/know/common.js";
-import { ApplyAll, ApplyAndPropose, followJob, useResultsInPanel, workChanged } from "./propose.js";
+import {
+  ApplyAll,
+  ApplyAndPropose,
+  followJob,
+  stepLines,
+  useResultsInPanel,
+  workChanged,
+} from "./propose.js";
 // Home's pending list offers it too; it lives beside Apply and Propose.
 export { ApplyAll };
 import { RunStep, stepArgs } from "./runstep.js";
@@ -162,7 +170,8 @@ export function AppStepFor({
 export function CallButton({ step }: { step: CallStep }) {
   const act = useAction();
   const [lines, setLines] = useState<string[]>();
-  // Beta.28: in a narrow panel the lines are the Console's, not stacked here.
+  const [jobId, setJobId] = useState<string | undefined>();
+  // Beta.28: in a narrow panel the lines are folded, and the Console has them in full.
   const inPanel = useResultsInPanel();
   return (
     <div className="stack" style={{ gap: 6 }}>
@@ -180,7 +189,7 @@ export function CallButton({ step }: { step: CallStep }) {
             void act.run(async () => {
               try {
                 if (step.method === "POST") {
-                  const r = await followJob(step.path, step.body ?? {});
+                  const r = await followJob(step.path, step.body ?? {}, undefined, setJobId);
                   setLines(r.lines);
                 } else {
                   await api(step.path, { method: step.method, body: step.body ?? {} });
@@ -196,13 +205,10 @@ export function CallButton({ step }: { step: CallStep }) {
         >
           {act.busy ? step.working : step.label}
         </button>
+        {inPanel && <ShowInConsole id={jobId} />}
       </div>
       <Note note={act.note} />
-      {!inPanel && lines && lines.length > 0 && (
-        <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
-          {lines.join("\n")}
-        </pre>
-      )}
+      {lines && lines.length > 0 && stepLines(lines, inPanel)}
     </div>
   );
 }

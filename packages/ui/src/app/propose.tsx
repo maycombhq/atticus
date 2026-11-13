@@ -41,10 +41,31 @@ export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
 export const ResultsInPanel = createContext(false);
 export const useResultsInPanel = () => useContext(ResultsInPanel);
 
+/** What a step printed: in full, or (in a narrow panel) folded under one line. */
+export function stepLines(lines: readonly string[], folded: boolean) {
+  const pre = (
+    <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
+      {lines.join("\n")}
+    </pre>
+  );
+  return folded ? (
+    <details className="work-terminal">
+      <summary>{COPY.panelResults.printed(lines.length)}</summary>
+      {pre}
+    </details>
+  ) : (
+    pre
+  );
+}
+
 /** Where a refused build is reviewed and confirmed, full width. */
 export const CATALOG_BUILDS_HREF = "#/catalog-builds";
 
-/** A refused build in a narrow panel: one line, and the page that lists and confirms it. */
+/**
+ * Edit the map's refused build in a narrow panel: one line, and the page that lists and confirms
+ * it (the changes are saved, so the build waits there). Not for a refused verify, which writes
+ * nothing: that one is confirmed in place (ApplyRefused).
+ */
 export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
   const R = COPY.panelResults;
   const n = refused.removals?.length ?? refused.allowRemovals ?? 0;
@@ -181,43 +202,55 @@ export function ApplyAndPropose(p: {
             {(apply.busy || (inPanel && applied)) && <ShowInConsole id={jobId} />}
           </div>
           <Note note={apply.note} />
-          {!inPanel && applied && applied.length > 0 && (
-            <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
-              {applied.join("\n")}
-            </pre>
-          )}
+          {applied && applied.length > 0 && stepLines(applied, inPanel)}
           {next && <SyncFirst repos={next.repos} />}
-          {refused && inPanel && <RefusalLink refused={refused} />}
-          {refused && !inPanel && (
-            <RefusalView
-              refused={refused}
-              confirmLabel={P.confirmApply}
-              onAllowRemovals={(n) =>
+          {refused &&
+            applyRefused({
+              refused,
+              onAllowRemovals: (n) =>
                 apply.run(
                   () => applyWith({ allowRemovals: n, ...planOf(refused) }),
                   P.applied(p.repo!),
-                )
-              }
-              // ADR 0195 point 4: Make it curated is the supported way for a hand edit, as on
-              // Catalog builds; then Apply again builds with the edits kept.
-              onCurate={async (n) => {
+                ),
+              onCurate: async (n) => {
                 await curateListedEdits(refused, n, P.editsChanged);
                 setRefused(undefined);
                 setApplied([P.curatedApplyAgain(p.repo!)]);
                 workChanged();
-              }}
-              onDiscard={(n) =>
+              },
+              onDiscard: (n) =>
                 apply.run(
                   () => applyWith({ discardEdits: n, ...planOf(refused) }),
                   P.applied(p.repo!),
-                )
-              }
-            />
-          )}
+                ),
+            })}
         </div>
       )}
       {!p.noPropose && <Propose scope={p.scope} />}
     </div>
+  );
+}
+
+/**
+ * A refused Apply (`verify <repo> --write`), confirmed where it was asked, in a narrow panel too:
+ * a refused verify writes nothing, so Catalog builds has no build of it to confirm (the review of
+ * beta.28). Make it curated is the supported way for a hand edit (ADR 0195 point 4), as on
+ * Catalog builds; then Apply again builds with the edits kept.
+ */
+export function applyRefused(p: {
+  refused: Api.BuildRefusalViewT;
+  onAllowRemovals: (n: number) => Promise<void>;
+  onCurate: (n: number) => Promise<void>;
+  onDiscard: (n: number) => Promise<void>;
+}) {
+  return (
+    <RefusalView
+      refused={p.refused}
+      confirmLabel={P.confirmApply}
+      onAllowRemovals={p.onAllowRemovals}
+      onCurate={p.onCurate}
+      onDiscard={p.onDiscard}
+    />
   );
 }
 
@@ -482,11 +515,7 @@ export function ApplyAll({
         {(held.running || (inPanel && held.lines)) && <ShowInConsole id={held.jobId} />}
       </div>
       <Note note={held.note} />
-      {!inPanel && held.lines && held.lines.length > 0 && (
-        <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
-          {held.lines.join("\n")}
-        </pre>
-      )}
+      {held.lines && held.lines.length > 0 && stepLines(held.lines, inPanel)}
       {held.next && <SyncFirst repos={held.next.repos} />}
       {!noPropose && <Propose scope="work" />}
     </div>

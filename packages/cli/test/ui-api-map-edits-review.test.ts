@@ -84,6 +84,85 @@ describe("Edit the map, the review of beta.28", () => {
     writeFileSync(PROFILE(), base);
   }, 240_000);
 
+  it("leaves a file another writer changed after this run's write, and names it", async () => {
+    const base = readFileSync(PROFILE(), "utf8");
+    listHooks.afterList = undefined;
+    // Just after the first change is written, a teammate declares the second one by hand in
+    // the same file: the second fails at its write, and the file isn't this run's to put back.
+    mapEditHooks.afterWrite = async (i) => {
+      if (i !== 0) return;
+      const now = readFileSync(PROFILE(), "utf8");
+      writeFileSync(
+        PROFILE(),
+        now.replace(
+          `        # declared by pat`,
+          `      - { route: ${POST} } # a teammate's\n        # declared by pat`,
+        ),
+      );
+    };
+    const ended = await e.job("/api/map/edits", {
+      edits: [
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: GET } },
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: POST } },
+      ],
+    });
+    mapEditHooks.afterWrite = undefined;
+    expect(ended.state).toBe("failed");
+    const edits = ended.result?.edits as { state: string; message?: string }[];
+    expect(edits.map((x) => x.state)).toEqual(["saved", "failed"]);
+    expect(edits[0]!.message).toMatch(/couldn't be taken back: .*profile\.yaml changed since/);
+    expect(ended.result?.lines.join("\n")).toContain("couldn't be taken back and is left as it is");
+    // Left as the teammate left it: their line and this run's first change both there.
+    const now = readFileSync(PROFILE(), "utf8");
+    expect(now).toContain("# a teammate's");
+    expect(now).toContain(`route: ${GET}`);
+    writeFileSync(PROFILE(), base);
+  }, 240_000);
+
+  it("keeps another writer's lines that land before this run's write when it takes it back", async () => {
+    const base = readFileSync(PROFILE(), "utf8");
+    const corr = join(root, "facts", `${PROXY}.corrections.jsonl`);
+    const theirs = JSON.stringify({ note: "a teammate's correction line (invented)" });
+    // The third change fails at its write (declared by hand between the check and the writes).
+    const hand = base.replace(
+      "    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n",
+      `    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n    calls:\n      - { route: ${POST} } # by hand\n`,
+    );
+    listHooks.afterList = async () => writeFileSync(PROFILE(), hand);
+    // Just before each write, a teammate's line lands in the file it writes.
+    mapEditHooks.beforeWrite = async (i) => {
+      if (i === 0)
+        writeFileSync(PROFILE(), readFileSync(PROFILE(), "utf8") + "# a teammate's line\n");
+      if (i === 1) writeFileSync(corr, theirs + "\n");
+    };
+    const failed = await e.job("/api/map/edits", {
+      edits: [
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: GET } },
+        {
+          kind: "add",
+          pair: {
+            from: PROXY,
+            to: { repo: "forge-checkout" },
+            pairs: [{ call: "call.get.refunds-id", api: "entry.get.refund-status-id" }],
+          },
+        },
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: POST } },
+      ],
+    });
+    mapEditHooks.beforeWrite = undefined;
+    expect(failed.state).toBe("failed");
+    expect((failed.result?.edits as { state: string }[]).map((x) => x.state)).toEqual([
+      "taken-back",
+      "taken-back",
+      "failed",
+    ]);
+    // The teammates' lines survive; only this run's are gone.
+    expect(readFileSync(PROFILE(), "utf8")).toBe(hand + "# a teammate's line\n");
+    expect(readFileSync(corr, "utf8")).toBe(theirs + "\n");
+    rmSync(corr);
+    writeFileSync(PROFILE(), base);
+  }, 240_000);
+
   it("confirms only its own removals: a teammate's pending suppress leaves the build refused", async () => {
     // A teammate's suppress of another arrow, pulled in and not built yet.
     mkdirSync(DECISIONS(), { recursive: true });
@@ -203,6 +282,8 @@ describe("Edit the map, the review of beta.28", () => {
       edits: [{ kind: "add", add: { kind: "call", system: "northwind-pay", route: GET } }],
     });
     expect(added.result?.code, added.result?.lines.join("\n")).toBe(0);
+    // The knock-on removal the declaration makes (a feature it changes) is said.
+    expect(added.result?.lines.join("\n")).toMatch(/Also takes away Capability\//);
     const declared = (await e.interfaces()).find(
       (i) => i.from === "northwind-pay" && i.method === "GET",
     )!;

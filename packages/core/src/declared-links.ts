@@ -98,7 +98,15 @@ export async function declareLink(
   root: string,
   d: Declared,
   o: { by: string; at: string; preview?: boolean },
-): Promise<{ rel: string; changes: LineChange[]; written: boolean }> {
+): Promise<{
+  rel: string;
+  changes: LineChange[];
+  written: boolean;
+  /** Beta.28: the file's bytes this write started from (what a take-back puts back). */
+  before: string;
+  /** The bytes it wrote (what a take-back expects to find). */
+  wrote?: string;
+}> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol } = found;
@@ -135,9 +143,10 @@ export async function declareLink(
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   const changes = changedLines(text, after);
-  if (o.preview) return { rel, changes, written: false };
-  await writeFileIfUnchanged(path, raw, inEol(after, eol));
-  return { rel, changes, written: true };
+  if (o.preview) return { rel, changes, written: false, before: raw };
+  const wrote = inEol(after, eol);
+  await writeFileIfUnchanged(path, raw, wrote);
+  return { rel, changes, written: true, before: raw, wrote };
 }
 
 /**
@@ -148,7 +157,7 @@ export async function declareLink(
 export async function undeclareLink(
   root: string,
   d: { kind: "topic" | "call"; system: string; value: string },
-): Promise<{ rel: string; changes: LineChange[] }> {
+): Promise<{ rel: string; changes: LineChange[]; before: string; wrote: string }> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol, node } = found;
@@ -180,8 +189,9 @@ export async function undeclareLink(
       "invalid",
       `${rel}: the declaration of ${d.value} isn't laid out as Declare writes it, so Atticus leaves the file alone: remove it there by hand.`,
     );
-  await writeFileIfUnchanged(path, raw, inEol(after, eol));
-  return { rel, changes: changedLines(text, after) };
+  const wrote = inEol(after, eol);
+  await writeFileIfUnchanged(path, raw, wrote);
+  return { rel, changes: changedLines(text, after), before: raw, wrote };
 }
 
 /**
