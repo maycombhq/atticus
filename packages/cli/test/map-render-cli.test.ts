@@ -26,7 +26,13 @@ import {
 import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
 import { factRefs } from "@maycombhq/verify";
 import { main } from "../src/main.js";
-import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
+import {
+  joinLines,
+  linkChanges,
+  linkLines,
+  mapRenderCommand,
+  writeFactsIntoCatalog,
+} from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
 import { confirmed, seedReadersSlots } from "./seed-slots.js";
 import { verifyCommand as verifyCommandRaw } from "../src/verify-commands.js";
@@ -728,6 +734,30 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       generated: files(join(root, "catalog", "generated")),
       sources: files(join(root, "catalog", "sources")),
     }).toEqual(before);
+  });
+
+  it("the spec header names the snapshot's commit, not the oldest commit among its facts (the review's nit)", async () => {
+    const root = await metarepo();
+    const p = parseFacts(readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8"));
+    if (!p.ok) throw new Error("bad facts");
+    // An earlier copy written back from an older read carries its own commit.
+    const facts = p.facts.map((f, i) => (i === 0 ? { ...f, commit: "0000aaa" } : f));
+    const o = io();
+    await writeFactsIntoCatalog(
+      root,
+      "forge-ledger",
+      facts,
+      {
+        dir: join(root, "workspace", "forge-ledger"),
+        command: "atticus verify forge-ledger --write",
+        commit: "0123abc",
+        allowRemovals: 1,
+      },
+      o.io,
+    );
+    expect(readFileSync(join(root, "specs", "forge-ledger", "spec.yaml"), "utf8")).toMatch(
+      /^commit: 0123abc$/m,
+    );
   });
 
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
