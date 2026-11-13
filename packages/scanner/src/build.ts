@@ -588,6 +588,13 @@ export interface Build {
   listed: string[];
   /** Repos whose slots are on disk but the manifests no longer list, or list archived (point 4). */
   orphaned: { repo: string; why: "not-listed" | "archived"; files: string[] }[];
+  /**
+   * Beta.28.1 (the review's B2): each legacy arrow end no slot names now, and the repos the
+   * joins slot's inputs say it can be of (they had a slot at the upgrade and have none now).
+   * The guard explains such an arrow's removal by them: their slot pruned, they are out of the
+   * manifests (a rename rewrites the inputs, so a renamed repo isn't one of them).
+   */
+  unslottedEnds?: Map<string, string[]>;
   facts: Map<string, FactsRepoBuild>;
   retired: RetiredJoin[];
   /** joins.json as it is after this build (the retired entries out), when it changed. */
@@ -965,6 +972,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         i.slots,
       )
     : ends;
+  const unslottedEnds = new Map([...goneEnds].filter(([end]) => !ends.has(end)));
   // Beta.27 (a user's Map), narrowed by its review and as the owner approved it on 2026-11-12
   // (ADR 0195 addendum "a legacy join its caller's facts place elsewhere"): an adopted call
   // arrow (never a topic's or a queue's) leaves without being derived only when the facts read
@@ -1345,6 +1353,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     sources,
     listed: [...listed].sort(cmpText),
     orphaned,
+    ...(unslottedEnds.size ? { unslottedEnds } : {}),
     facts,
     retired,
     ...(legacyJoins !== undefined ? { legacyJoins } : {}),
@@ -2075,12 +2084,18 @@ export async function guardBuild(
           }
         }
       }
-      for (const repo of new Set([...repos, ...(r ? endsGone(r, oldEnds, liveNow) : [])]))
+      const unslotted = r ? endsGone(r, b.unslottedEnds ?? new Map(), liveNow) : [];
+      for (const repo of new Set([
+        ...repos,
+        ...(r ? endsGone(r, oldEnds, liveNow) : []),
+        ...unslotted,
+      ]))
         if (repoGone(repo)) {
           const archived = b.listed.includes(repo);
           // A repo whose slots are kept (orphaned) was archived or taken out of the manifests; one
-          // whose slots went with it was renamed, its slots written under the new name.
-          if (!archived && !b.orphaned.some((o) => o.repo === repo)) {
+          // whose slots went with it was renamed, its slots written under the new name, unless
+          // the joins slot's inputs still name it (a prune took its orphaned slot: B2).
+          if (!archived && !b.orphaned.some((o) => o.repo === repo) && !unslotted.includes(repo)) {
             why.add(`${repo}'s slot is gone (the repo was renamed)`);
             kinds.add("slot");
             continue;

@@ -621,6 +621,136 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
   );
 
   it(
+    "a catalog beta.28 wrote with the dangling legacy arrows builds in beta.28.1, their removal explained by the manifest (the review's B2)",
+    async () => {
+      // On beta.28 a remove, a prune and a confirmed build left the legacy arrows to the ledger
+      // with their callee gone. Made here by hiding the ledger's slot from the joins slot's
+      // inputs for that one build (as beta.28 read them), then putting the inputs back and
+      // build.json as that build wrote it (the joins slot's hash, and beta.28's build version).
+      const root = await beta26();
+      const { writeFileSync } = await import("node:fs");
+      const ledgerApis = new Set(
+        Object.entries(generated(root))
+          .filter(([p, t]) => p.startsWith("component/") && /^repo: forge-ledger$/m.test(t))
+          .map(([p]) => p.slice("component/".length, -".yaml".length)),
+      );
+      const names = (t: string) =>
+        [...ledgerApis].some((c) => new RegExp(`^(from|to): ${c}$`, "m").test(t));
+      for (const [p, t] of Object.entries(generated(root))) {
+        if (!p.startsWith("interface/") || !names(t)) continue;
+        const r = parseYaml(t) as { evidence: { repo?: string }[] };
+        const kept = r.evidence.filter((e) => e.repo !== "forge-ledger");
+        if (kept.length)
+          writeFileSync(
+            join(root, "catalog/generated", p),
+            serializeRecord({ ...r, evidence: kept } as unknown as CatalogRecord),
+          );
+      }
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+      writeFileSync(
+        manifest,
+        readFileSync(manifest, "utf8").replace(/^ {2}- id: forge-ledger\n(?: {4}.*\n|\n)*/m, ""),
+      );
+      expect((await run(["catalog", "prune", "--root", root, "--yes"])).code).toBe(0);
+      const joinsPath = join(root, "catalog/sources/legacy/joins.json");
+      const joins = readFileSync(joinsPath, "utf8");
+      const hidden = joins.replace(
+        /\n\s*"catalog\/sources\/readers\/forge-ledger\.json": "[0-9a-f]{64}",?/,
+        "",
+      );
+      expect(hidden).not.toBe(joins);
+      writeFileSync(joinsPath, hidden);
+      const old = JSON.parse((await run(["catalog", "build", "--root", root, "--json"])).out) as {
+        refused: { allowRemovals: number };
+      };
+      expect(
+        (
+          await run([
+            "catalog",
+            "build",
+            "--root",
+            root,
+            "--allow-removals",
+            String(old.refused.allowRemovals),
+          ])
+        ).code,
+      ).toBe(0);
+      const dangling = Object.entries(generated(root)).filter(
+        ([p, t]) => p.startsWith("interface/") && names(t),
+      );
+      expect(dangling.length, "beta.28 left the arrows to the ledger").toBeGreaterThan(0);
+      writeFileSync(joinsPath, joins);
+      const { createHash } = await import("node:crypto");
+      const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+      const bj = join(root, "catalog/sources/build.json");
+      const text = readFileSync(bj, "utf8");
+      // The estate's hash of every slot used (build.ts manifestOf): the slots, then joins.json.
+      const m = JSON.parse(text) as { files: { sources: { path: string; sha256: string }[] }[] };
+      const slots = new Map<string, string>();
+      for (const f of m.files)
+        for (const x of f.sources)
+          if (/^catalog\/sources\/(readers|facts)\//.test(x.path)) slots.set(x.path, x.sha256);
+      const estate = (j: string) =>
+        sha(
+          [
+            ...[...slots].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+            [
+              joinsPath
+                .slice(root.length + 1)
+                .split("\\")
+                .join("/"),
+              sha(j),
+            ],
+          ]
+            .map(([path, h]) => `${path}\u0000${h}`)
+            .join("\n"),
+        );
+      expect(text).toContain(estate(hidden));
+      writeFileSync(
+        bj,
+        text
+          .split(sha(hidden))
+          .join(sha(joins))
+          .split(estate(hidden))
+          .join(estate(joins))
+          .replace(/"buildVersion": "[^"]+"/, '"buildVersion": "2.0.0-beta.27.3"'),
+      );
+      // Beta.28.1 builds: the arrows leave, explained, never an unexplained removal.
+      const now = await run(["catalog", "build", "--root", root, "--json"]);
+      const r = JSON.parse(now.out) as {
+        refused?: {
+          reasons: string[];
+          allowRemovals?: number;
+          removals: { kind: string; id: string; explainedBy: string[] }[];
+        };
+      };
+      expect(r.refused?.reasons ?? []).not.toContain("unexplained-removals");
+      for (const [p] of dangling) {
+        const id = p.slice("interface/".length, -".yaml".length);
+        const x = r.refused?.removals.find((y) => y.kind === "Interface" && y.id === id);
+          console.log("B2", id, JSON.stringify(x), JSON.stringify(r.refused?.reasons));
+        expect(x?.explainedBy, id).toContain("forge-ledger isn't in the manifests any more");
+      }
+      if (r.refused?.allowRemovals !== undefined)
+        expect(
+          (
+            await run([
+              "catalog",
+              "build",
+              "--root",
+              root,
+              "--allow-removals",
+              String(r.refused.allowRemovals),
+            ])
+          ).code,
+        ).toBe(0);
+      for (const [p] of dangling) expect(generated(root)[p], p).toBeUndefined();
+    },
+    T,
+  );
+
+  it(
     "catalog prune lists a removed repo's slot and removes only it, and only with --yes",
     async () => {
       const root = await scanned();
