@@ -363,8 +363,9 @@ async function resumeOnce(
     return { next: r.prepared.runId, lines: r.prepared.lines };
   // ADR 0188: a read of a repo (`atticus map <repo>`) whose last batch is in is put on the map
   // here, as `atticus verify <repo> --write` does in a terminal: the facts checked again, the
-  // kept ones in the catalog, the flows in specs/ and the map drawn. Nothing is written to the
-  // catalog while a fact is rejected; verify says which, in the lines Done shows.
+  // kept ones in the catalog, the flows in specs/ and the map drawn. Beta.28.1: a rejected fact
+  // is left out and the rest written (exit 3, still applied); verify says which, and the file to
+  // fix it in, in the lines Done shows.
   const repo = mapRepoOf(words);
   if (repo && !r.prepared.runId) {
     const v = await runStep(["verify", repo, "--write"]);

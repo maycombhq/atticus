@@ -673,6 +673,40 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     ).toEqual([]);
   });
 
+  it("--write with `whole` (map --all's reads in progress) refuses while a fact is rejected, building nothing (the review's S6)", async () => {
+    const root = await metarepo();
+    expect(await write(root)).toBe(0);
+    const bad = readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!;
+    const facts = join(root, "facts", "forge-ledger.jsonl");
+    writeFileSync(facts, readFileSync(facts, "utf8") + bad + "\n");
+    const was = {
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+      facts: readFileSync(facts, "utf8"),
+    };
+    const o = io();
+    const code = await verifyCommand(
+      root,
+      "forge-ledger",
+      {
+        commit: "0123abc",
+        dir: join(root, "workspace", "forge-ledger"),
+        write: true,
+        whole: true,
+      },
+      o.io,
+    );
+    expect(code).toBe(1);
+    expect(o.out.join("\n")).not.toMatch(/^Applied to/m);
+    expect({
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+      facts: readFileSync(facts, "utf8"),
+    }).toEqual(was);
+    // Without it, the same read writes with the fact left out.
+    expect(await write(root)).toBe(3);
+  });
+
   it("a reviewed line refused, with no fact rejected, still refuses --write and writes nothing (the review's S4)", async () => {
     const root = await metarepo();
     expect(await write(root)).toBe(0);

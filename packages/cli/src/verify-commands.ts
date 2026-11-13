@@ -77,6 +77,12 @@ export interface VerifyCommandOptions {
    * (ADR 0124, A3b), only when nothing is rejected.
    */
   write?: boolean;
+  /**
+   * With --write: write only a whole read (the review of beta.28.1, S6): a rejected fact refuses
+   * the write and nothing is built, as before beta.28.1. `atticus map --all` passes it while a
+   * read is in progress, so each retry of a part with rejections doesn't build the catalog.
+   */
+  whole?: boolean;
   /** With --write: list every record changed and flow written, not only the counts. */
   verbose?: boolean;
   /** With --write: `--allow-removals <count>`, `--discard-edits <count>` (ADR 0195 point 4). */
@@ -404,7 +410,7 @@ export async function verifyCommand(
   // questions or reviewed lines refused with no fact rejected, as before; with facts left out,
   // they are said beside them.
   const leftOut =
-    keepFacts && badLines.length === 0 && report.rejected.length > 0
+    keepFacts && !o.whole && badLines.length === 0 && report.rejected.length > 0
       ? await leftOutOf(root, repo, report)
       : undefined;
   const partial = leftOut?.ok ? leftOut : undefined;
