@@ -266,6 +266,31 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     ]);
   });
 
+  // Beta.28.1 (the review of field report 4, S1): a base whose setting is a deploy token nothing
+  // sets (`forge.limits.url: "@forgeLimitsUrl@"` in a Spring yml, filled in by Maven) names no
+  // host any file says: the call is asked about, never joined by its path to an entry serving it.
+  it("asks about a call whose base setting is a deploy token nothing sets, never joins it by its path", () => {
+    const yml = fact("forge-web", "cfg-limits", "config", {
+      key: "forge.limits.url",
+      value: "@forgeLimitsUrl@",
+      cite: { file: "src/main/resources/application.yml", line: 4, value: "@forgeLimitsUrl@" },
+    });
+    for (const base of ["forge.limits.url", "${forge.limits.url}", "@forgeLimitsUrl@/v1"]) {
+      const out = joinFacts({
+        repos: [
+          { repo: "forge-web", facts: [getLimit({ base }), yml] },
+          { ...limits, hosts: [] },
+        ],
+      });
+      expect(out.joins, base).toEqual([]);
+      expect(
+        out.asks.map((a) => [a.call.fact, a.reason]),
+        base,
+      ).toEqual([["c-get-limit", "unknown-host"]]);
+      expect(out.asks[0]!.host, base).toContain("@forgeLimitsUrl@");
+    }
+  });
+
   it("reads a call's path written as a setting, from the repo's application.properties", () => {
     // `@Value("${forge-remote.uris.download-limit}")` as the path, the base a config key: the
     // path the settings give it joins, as if written in the code. A whole URL gives the host too.
