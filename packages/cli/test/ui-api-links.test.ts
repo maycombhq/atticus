@@ -86,10 +86,12 @@ describe("connect two boxes (ADR 0174, G1)", () => {
         why: "names-alike",
       },
     });
-    // A call the join already ties to the gateway isn't loose: it is listed to move (3.14), with
-    // where it goes now, and never picked for the person.
+    // A call the join already ties to the gateway isn't loose (3.14), and says where it goes.
     const tied = v.calls.find((c) => c.fact === "call.post.partners-northwind-charges");
-    expect(tied?.status).toBe("joined");
+    // To the gateway's own box: it goes here already (S2), with the route, never suggested.
+    expect(tied?.status).toBe("here");
+    expect(tied?.now).toBeDefined();
+    expect(tied?.suggestion).toBeUndefined();
     expect(tied?.joins).toBe("forge-partner-gateway");
     expect(v.noCalls).toBeUndefined();
   });
@@ -214,6 +216,24 @@ describe("connect two boxes (ADR 0174, G1)", () => {
     ).toBe(404);
     expect((await call("POST", "/api/links/connect", { ...base, pairs: [] })).status).toBe(400);
     expect((await call("POST", "/api/links/connect", { ...base, rule: true })).status).toBe(409);
+  });
+
+  it("refuses pairing a call with the API it goes to already (the review of beta.28.1, S2)", async () => {
+    const v = Api.LinkCandidatesView.parse(
+      (await call("GET", "/api/links/candidates?from=forge-billing&to=forge-partner-gateway")).body,
+    );
+    const tied = v.calls.find((c) => c.fact === "call.post.partners-northwind-charges")!;
+    const file = join(root, "facts/forge-billing.corrections.jsonl");
+    const before = await readFile(file, "utf8").catch(() => "");
+    const r = await call("POST", "/api/links/connect", {
+      from: "forge-billing",
+      to: { repo: "forge-partner-gateway" },
+      pairs: [{ call: tied.fact, api: tied.now }],
+      preview: true,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+    expect(JSON.stringify(r.body)).toContain("already");
+    expect(await readFile(file, "utf8").catch(() => "")).toBe(before);
   });
 
   it("puts a pairing on a line of its own after a hand edit with no final newline, and Undo keeps CRLF", async () => {

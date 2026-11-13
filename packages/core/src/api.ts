@@ -610,7 +610,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/links/candidates lists every call of A: one that has an arrow drawn is `joined` (with
  *   `joins`, the box it goes to), to move from the same panel; one the join ties to something no
  *   arrow is drawn for is `undrawn`, as loose as one that joins nothing; one placed outside to a
- *   target no box draws is listed `outside` with `joins`, where before it was left out. POST
+ *   target no box draws is listed `outside` with `joins`, where before it was left out; one with
+ *   an arrow to this very box is `here` (`now`, its API: a pairing with that API is refused,
+ *   409); one a person paired with the box it goes to says who (`pairedBy`). POST
  *   /api/declared-links (and Edit the map's adds) from a box no System of the profiles is (a repo
  *   the manifest lists with no System) adds that System to the repo's profile first, and says so
  *   (`created`). Additive only.
@@ -5219,7 +5221,8 @@ export const CandidateCallView = z.object({
   at: z.string(),
   /**
    * 3.14: `joined`, a call with an arrow drawn already, listed so it can be moved to this box;
-   * `undrawn`, a call the join ties to something no arrow is drawn for, as loose as any.
+   * `undrawn`, a call the join ties to something no arrow is drawn for, as loose as any;
+   * `here`, a call with an arrow to this very box (`now` its API), never suggested again.
    */
   status: z.enum([
     "asked",
@@ -5230,11 +5233,16 @@ export const CandidateCallView = z.object({
     "paired",
     "joined",
     "undrawn",
+    "here",
   ]),
   why: z.string().optional(),
   paired: z.string().optional(),
   /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
   joins: z.string().optional(),
+  /** 3.14: for `here`, the API of this box the call goes to now. */
+  now: z.string().optional(),
+  /** 3.14: who paired the call with the box it goes to now, when a person did. */
+  pairedBy: z.string().optional(),
   suggestion: CandidateSuggestion.optional(),
   /** 2.57: the APIs it most likely is, best first, at most three. */
   suggestions: z.array(CandidateSuggestion).max(3).optional(),

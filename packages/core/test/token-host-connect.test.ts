@@ -165,6 +165,25 @@ describe("the join: a forwarding call to a token host nothing sets is asked, nev
   });
 });
 
+describe("two proxies to the same token host (N5)", () => {
+  it("asks about each proxy's calls on its own, the question naming its repo", () => {
+    const twin = "forge_instruments_2-0";
+    const base = estate();
+    const p = base.find((r) => r.repo === PROXY)!;
+    const repos: JoinRepo[] = [
+      ...base,
+      { ...p, repo: twin, facts: p.facts.map((f) => ({ ...f, repo: twin }) as Fact) },
+    ];
+    const out = joinFacts({ repos, explain: true });
+    expect(out.joins.filter((j) => j.call.repo === PROXY || j.call.repo === twin)).toEqual([]);
+    for (const r of [PROXY, twin]) {
+      const asks = out.asks.filter((a) => a.call.repo === r);
+      expect(asks.map((a) => a.call.fact).sort(), r).toEqual(CALLS);
+      for (const a of asks) expect(a.question).toBe(forwardHostQuestion(URL, r));
+    }
+  });
+});
+
 describe("how likely a call is an API, past Spring's path variables", () => {
   it("matches the tail after `{name:regex}` segments, and a literal over a variable", () => {
     const ping = pairScore(
@@ -240,6 +259,87 @@ describe("Connect to… from the proxy's box", () => {
     // Paired with this very box: listed paired, to undo, as before.
     const here = cands(out, { pairs: pairs[PROXY] });
     expect(here.calls.map((x) => x.status)).toEqual(Array(4).fill("paired"));
+  });
+
+  // The review of beta.28.1 (S2): a call already going to the box being connected is no call to
+  // "move here": it says it goes here already, with the API it goes to, and is never suggested.
+  it("says a call joined to this very box goes here already, with its API, never as one to move", () => {
+    const pairs = {
+      [PROXY]: Object.fromEntries(
+        CALLS.map((c) => [c, { repo: SERVICE, entry: MEANT[c]!, path: "/x", by: "pat" }]),
+      ),
+    };
+    const out = joinFacts({ repos: estate(), pairs, explain: true });
+    // The join ties them to the service, by a pairing that isn't on file for this view (a host,
+    // a rule): to the service's box, each goes here already.
+    const here = cands(out, { drawn: () => true });
+    expect(here.calls.map((x) => [x.fact, x.status, x.joins, x.now]).sort()).toEqual(
+      CALLS.map((c) => [c, "here", SERVICE, MEANT[c]]),
+    );
+    expect(here.calls.some((x) => x.confident || x.suggestion)).toBe(false);
+    // A system's box whose repos the call goes to: here too.
+    const viaSystem = cands(out, {
+      drawn: () => true,
+      to: { system: "instruments" },
+      inBox: (repo) => repo === SERVICE,
+    });
+    expect(viaSystem.calls.map((x) => x.status)).toEqual(Array(4).fill("here"));
+    // Placed outside to the outside system being connected, and drawn: here.
+    const targets = { [PROXY]: Object.fromEntries(CALLS.map((c) => [c, "Northwind Instruments"])) };
+    const outside = cands(joinFacts({ repos: estate(), targets, explain: true }), {
+      to: { system: "Northwind Instruments" },
+      drawnOutside: () => true,
+    });
+    expect(outside.calls.map((x) => [x.status, x.joins])).toEqual(
+      Array(4).fill(["here", "Northwind Instruments"]),
+    );
+  });
+
+  // N3: a call a person paired with another box says so, to warn before it is replaced.
+  it("says a call with an arrow was paired by a person with the other box", () => {
+    const pairs = {
+      [PROXY]: Object.fromEntries(
+        CALLS.map((c) => [c, { repo: SERVICE, entry: MEANT[c]!, path: "/x", by: "pat" }]),
+      ),
+    };
+    const out = joinFacts({ repos: estate(), pairs, explain: true });
+    const c = cands(out, { drawn: () => true, pairs: pairs[PROXY], to: { repo: "forge-other" } });
+    expect(c.calls.map((x) => [x.status, x.joins, x.pairedBy])).toEqual(
+      Array(4).fill(["joined", SERVICE, "pat"]),
+    );
+  });
+
+  // N5: a call a person paired with an outside system, connected from a repo's box.
+  it("says a call paired with an outside system by a person goes there, and who paired it", () => {
+    const pairs = {
+      [PROXY]: Object.fromEntries(
+        CALLS.map((c) => [c, { system: "northwind-ledger", path: "/x", by: "sam" }]),
+      ),
+    };
+    const out = joinFacts({ repos: estate(), pairs, explain: true });
+    expect(fromProxy(out).outside.length).toBe(4);
+    const c = cands(out, { pairs: pairs[PROXY], drawnOutside: () => true });
+    expect(c.calls.map((x) => [x.status, x.joins, x.pairedBy])).toEqual(
+      Array(4).fill(["joined", "northwind-ledger", "sam"]),
+    );
+    // Not drawn: loose, still saying who paired it where.
+    const loose = cands(out, { pairs: pairs[PROXY] });
+    expect(loose.calls.map((x) => [x.status, x.pairedBy])).toEqual(
+      Array(4).fill(["outside", "sam"]),
+    );
+  });
+
+  // N5: two APIs as likely as each other is no suggestion.
+  it("suggests nothing when two APIs score the same, and lists both", () => {
+    const twin: CandidateApi[] = [
+      { id: "a", kind: "entry", method: "GET", path: "/{x}/{y}/instruments/ping" },
+      { id: "b", kind: "entry", method: "GET", path: "/{p}/{q}/instruments/ping" },
+    ];
+    const c = cands(joinFacts({ repos: estate(), explain: true }), { apis: twin });
+    const ping = c.calls.find((x) => x.fact === "call.get.instruments-ping")!;
+    expect(ping.suggestion).toBeUndefined();
+    expect(ping.confident).toBeUndefined();
+    expect(ping.suggestions?.map((x) => x.api).sort()).toEqual(["a", "b"]);
   });
 
   it("a join of a call to its own component is never an arrow: loose", () => {

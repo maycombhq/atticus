@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { Api, type CatalogRecord } from "@maycombhq/core";
-import { keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
+import { Api, parseRecord, serializeRecord, type CatalogRecord } from "@maycombhq/core";
+import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { verifyConfirmed as verifyCommand } from "./seed-slots.js";
@@ -148,11 +148,40 @@ describe("Connect to… from a proxy whose target host is a token (field report 
     )!;
     const dir = join(root, "catalog", "curated", "curateddecision");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `cd-link-delete-${one.id}.yaml`), "kind: CuratedDecision\n");
-    const v = await candidates("system=northwind-ledger");
-    const ping = v.calls.find((c) => c.fact === "call.get.instruments-ping")!;
-    expect([ping.status, ping.joins]).toEqual(["undrawn", SERVICE]);
-    rmSync(join(dir, `cd-link-delete-${one.id}.yaml`));
+    // The review (S4): a person's suppress, whatever its id (a second delete's `-2`), not the
+    // name of a file; one that isn't current any more takes nothing away.
+    const decision = (status: "current" | "retired") => ({
+      kind: "CuratedDecision" as const,
+      schemaVersion: 5,
+      id: `cd-link-delete-${one.id}-2`,
+      status,
+      confidence: "asserted" as const,
+      evidence: [],
+      target: one.id,
+      action: "suppress" as const,
+      value: null,
+      reason: "Deleted on the canvas.",
+      by: "pat",
+      at: "2026-11-13T10:00:00Z",
+    });
+    const file = join(dir, `cd-link-delete-${one.id}-2.yaml`);
+    const ping = async () =>
+      (await candidates("system=northwind-ledger")).calls.find(
+        (c) => c.fact === "call.get.instruments-ping",
+      )!;
+    for (const [status, want] of [
+      ["current", "undrawn"],
+      ["retired", "joined"],
+    ] as const) {
+      const d = decision(status);
+      expect(parseRecord(d).ok, JSON.stringify(parseRecord(d))).toBe(true);
+      writeFileSync(file, serializeRecord(d as CatalogRecord));
+      forgetCatalogs();
+      const p = await ping();
+      expect([p.status, p.joins], status).toEqual([want, SERVICE]);
+    }
+    rmSync(file);
+    forgetCatalogs();
   });
 });
 
@@ -200,4 +229,89 @@ describe("Declare a link… from a box no System of the profiles is (field repor
     });
     expect(r.status).toBe(404);
   });
+});
+
+describe("a call placed outside to a literal host (the review of beta.28.1, S4)", () => {
+  const FILE = "src/main/java/forge/instruments/LedgerClient.java";
+  const LEDGER = "call.post.ledger-entries";
+  const fromService = async (q: string) => {
+    const r = await call(`/api/links/candidates?from=${SERVICE}&${q}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return Api.LinkCandidatesView.parse(r.body).calls.find((c) => c.fact === LEDGER)!;
+  };
+  const citedInCatalog = async () =>
+    (await interfaces()).some((i) =>
+      i.evidence.some((e) => e.repo === SERVICE && e.path === FILE && e.line === 4),
+    );
+
+  it("is drawn exactly when the built catalog has an arrow citing its line", async () => {
+    writeFileSync(
+      join(root, "workspace", SERVICE, ...FILE.split("/")),
+      [
+        "package forge.instruments;",
+        "",
+        "class LedgerClient {",
+        '  static final String URL = "https://api.northwind-ledger.example/ledger/v1/entries";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const fact = {
+      kind: "call",
+      id: LEDGER,
+      repo: SERVICE,
+      commit: COMMIT[SERVICE],
+      callType: "rest",
+      method: "POST",
+      path: "/ledger/v1/entries",
+      host: "https://api.northwind-ledger.example",
+      cite: {
+        file: FILE,
+        line: 4,
+        value: "https://api.northwind-ledger.example/ledger/v1/entries",
+        quote:
+          'static final String URL = "https://api.northwind-ledger.example/ledger/v1/entries";',
+      },
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+    };
+    const facts = join(root, "facts", `${SERVICE}.jsonl`);
+    writeFileSync(facts, `${readFileSync(facts, "utf8")}${JSON.stringify(fact)}\n`);
+    await verify(SERVICE);
+    forgetCatalogs();
+    const loose = await fromService(`to=${PROXY}`);
+    // A host no repo of the estate answers on: the join asks, while the catalog draws the arrow
+    // to the vendor of its name (Northwind Ledger, added to the profile above). Connect says
+    // what the canvas shows: an arrow, to that box, never "loose".
+    expect(await citedInCatalog()).toBe(true);
+    expect([loose.status, loose.joins]).toEqual(["joined", "northwind-ledger"]);
+
+    // The profile names the vendor by that host: the build draws its box and the arrow.
+    const profile = join(root, "org-pack", "profiles", "forge", "profile.yaml");
+    if (!readFileSync(profile, "utf8").includes("id: northwind-ledger"))
+      writeFileSync(
+        profile,
+        readFileSync(profile, "utf8").replace(
+          "environments:",
+          "  - { id: northwind-ledger, name: Northwind Ledger, boundary: vendor, aliases: [] }\nenvironments:",
+        ),
+      );
+    writeFileSync(
+      profile,
+      readFileSync(profile, "utf8").replace(
+        "name: Northwind Ledger, boundary: vendor, aliases: []",
+        "name: Northwind Ledger, boundary: vendor, aliases: [api.northwind-ledger.example]",
+      ),
+    );
+    await verify(SERVICE);
+    forgetCatalogs();
+    const drawn = await citedInCatalog();
+    const moved = await fromService(`to=${PROXY}`);
+    expect(moved.joins).toBe("northwind-ledger");
+    expect(moved.status).toBe(drawn ? "joined" : "outside");
+    // Connected to that vendor's own box, a drawn call goes there already.
+    const here = await fromService("system=northwind-ledger");
+    expect(here.status).toBe(drawn ? "here" : "outside");
+  }, 300_000);
 });

@@ -26,7 +26,13 @@ export type LooseStatus =
    * Beta.28.1: the join ties it to something, and no arrow is drawn for it (its own component,
    * or no Interface of it on the canvas): as loose as a call that joins nothing.
    */
-  | "undrawn";
+  | "undrawn"
+  /**
+   * The review of beta.28.1 (S2): the join ties it to this very box and an arrow is drawn for it
+   * (`now` the API it goes to): it goes here already, so nothing is suggested for it, and a
+   * pairing with the API it goes to would be a redundant line (refused).
+   */
+  | "here";
 
 export interface CandidateApi {
   /** The entry's fact id, or the operation's id in the spec. */
@@ -58,6 +64,13 @@ export interface CandidateCall {
    * is joined, undrawn or outside: where it goes, or would go, before it is moved.
    */
   joins?: string;
+  /** For here: the API of this box it goes to now (an entry's fact id), when the join names one. */
+  now?: string;
+  /**
+   * The review of beta.28.1 (N3): who paired it with the box it goes to now (another box): a
+   * pairing here replaces that person's word, which the panel says before it is written.
+   */
+  pairedBy?: string;
   suggestion?: { api: string; score: number; why: SuggestWhy };
   /** The APIs it most likely is, best first (at most three); the first is `suggestion`. */
   suggestions?: { api: string; score: number; why: SuggestWhy }[];
@@ -231,18 +244,32 @@ export function linkCandidates(o: {
    * Beta.28.1: whether the canvas draws a call placed outside the estate to this target (an
    * outside system of the profile takes it). Default: none is, so the call is listed loose.
    */
-  drawnOutside?: (target: string) => boolean;
+  drawnOutside?: (target: string, call: string) => boolean;
+  /**
+   * Whether a repo, a component or a system is drawn in the box connected to (a repo's own id,
+   * its components; a system's repos and their components). Default: the box's own id only.
+   */
+  inBox?: (name: string) => boolean;
+  /**
+   * The review of beta.28.1 (S4): the box the built catalog draws a call's arrow to (an
+   * Interface current in it citing the call's line), for a call the join doesn't place: the
+   * canvas is what the person sees, so a drawn call is never listed as loose.
+   */
+  drawnTo?: (call: string) => string | undefined;
 }): LinkCandidates {
   const isDrawn = (j: FactsJoinResult["joins"][number]) =>
     j.entry.component !== j.call.component && (o.drawn ? o.drawn(j) : true);
   // Each of A's joined calls: the box it goes to, and whether any of its arrows is drawn.
-  const joined = new Map<string, { to: string; drawn: boolean }>();
+  const joined = new Map<string, { to: string; drawn: boolean; entry: string }>();
   for (const j of o.join.joins) {
     if (j.call.repo !== o.from) continue;
     const was = joined.get(j.call.fact);
     const d = isDrawn(j);
-    if (!was || (d && !was.drawn)) joined.set(j.call.fact, { to: j.entry.repo, drawn: d });
+    if (!was || (d && !was.drawn))
+      joined.set(j.call.fact, { to: j.entry.repo, drawn: d, entry: j.entry.fact });
   }
+  // This very box: the repo connected to, or a repo drawn in the system connected to.
+  const isHere = (name: string) => name === (o.to.repo ?? o.to.system) || !!o.inBox?.(name);
   const status = new Map<string, { status: LooseStatus; why?: string }>();
   for (const a of o.join.asks)
     if (a.call.repo === o.from)
@@ -292,15 +319,26 @@ export function linkCandidates(o: {
     // target no box draws is loose too (it was left out, and Connect said nothing was loose).
     const j = joined.get(f.id);
     const out = outsideTo.get(f.id);
+    const outDrawn = out !== undefined && !!o.drawnOutside?.(out, f.id);
+    // The box the canvas draws its arrow to, by name: for a call placed outside, the target's
+    // box (an outside system its host names); for one the join doesn't place, any.
+    const drawnBox = !j ? o.drawnTo?.(f.id) : undefined;
+    const elsewhere = out === undefined ? drawnBox : undefined;
     const s: { status: LooseStatus; why?: string } | undefined = j
       ? j.drawn
-        ? { status: "joined" }
+        ? { status: isHere(j.to) ? "here" : "joined" }
         : { status: "undrawn", why: j.to }
-      : out !== undefined && out !== o.to.system && o.drawnOutside?.(out)
-        ? { status: "joined" }
-        : status.get(f.id);
-    const now = j?.to ?? out;
-    const movable = s?.status === "joined";
+      : outDrawn
+        ? { status: isHere(out!) || (!!drawnBox && isHere(drawnBox)) ? "here" : "joined" }
+        : elsewhere !== undefined
+          ? { status: isHere(elsewhere) ? "here" : "joined" }
+          : status.get(f.id);
+    const nowHere = s?.status === "here" && j ? j.entry : undefined;
+    // N3: a person's pairing with the box it goes to now (never this one: that is `paired`).
+    const by = o.pairs?.[f.id];
+    const pairedBy = by && !by.none && (j || out !== undefined) ? by.by : undefined;
+    const now = j?.to ?? (outDrawn ? (drawnBox ?? out) : out) ?? elsewhere;
+    const movable = s?.status === "joined" || s?.status === "here";
     const scored = o.apis
       .map((a) => ({ a, s: pairScore(f, a, o.settings) }))
       .filter(
@@ -309,7 +347,11 @@ export function linkCandidates(o: {
       )
       .sort((x, y) => y.s.score - x.s.score || (x.a.id < y.a.id ? -1 : 1));
     // Two APIs as likely as each other is no suggestion: the person picks (from the top three).
-    const best = scored[0] && scored[1]?.s.score !== scored[0].s.score ? scored[0] : undefined;
+    // A call going here already is suggested nothing: it is the API it goes to.
+    const best =
+      s?.status !== "here" && scored[0] && scored[1]?.s.score !== scored[0].s.score
+        ? scored[0]
+        : undefined;
     const top = scored.slice(0, 3).map((x) => ({
       api: x.a.id,
       score: Math.round(x.s.score * 100) / 100,
@@ -326,6 +368,8 @@ export function linkCandidates(o: {
       status: s?.status ?? "unresolved",
       ...(s?.why ? { why: s.why } : {}),
       ...(now !== undefined ? { joins: now } : {}),
+      ...(nowHere ? { now: nowHere } : {}),
+      ...(pairedBy ? { pairedBy } : {}),
       ...(best ? { suggestion: top[0]! } : {}),
       ...(top.length ? { suggestions: top } : {}),
       ...(confident ? { confident: true } : {}),

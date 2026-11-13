@@ -21,10 +21,11 @@ import {
   writeFileAtomic,
   questionsRelOf,
   type CandidateApi,
+  type CatalogRecord,
   type Fact,
 } from "@maycombhq/core";
 import { readVendorSpec } from "@maycombhq/intake";
-import { estateFacts, estateRepos, outsideProfileSystems } from "@maycombhq/scanner";
+import { estateFacts, estateRepos, outsideProfileSystems, readCatalog } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -172,47 +173,111 @@ export function boxesOf(query: URLSearchParams): { from: string; to: Api.LinkBox
 }
 
 /**
- * Beta.28.1 (field report 4): which of A's joins the canvas draws: its Interface is a record of
- * the catalog (generated or curated). Before any catalog is built nothing can be said, and every
- * join counts as drawn (the first build draws them). A join of a call to its own component is
- * never drawn (linkCandidates says so), nor one whose link was deleted on the canvas.
+ * Beta.28.1 (field report 4, the review's S4): which of A's calls the canvas draws, from the
+ * built catalog: an Interface current in it (generated or curated) whose id is the join's, or
+ * whose caller's evidence cites the call's line (a call placed outside included), and that no
+ * current suppress of a person's takes away (Delete this link's, whatever its id, `-2` too).
+ * Before any catalog is built nothing can be said, and undefined says so: every join counts as
+ * drawn (the first build draws them). A join of a call to its own component is never drawn
+ * (linkCandidates says so).
  */
-async function drawnJoins(
+export async function drawnOf(
   root: string,
-  joins: readonly { call: { repo: string }; interface: string }[],
   from: string,
-): Promise<((j: { interface: string }) => boolean) | undefined> {
+  facts: readonly Fact[],
+): Promise<
+  | {
+      join: (j: { interface: string; call: { at: string } }) => boolean;
+      outside: (target: string, call: string) => boolean;
+      /** The box a call's arrow goes to, for one the join doesn't place. */
+      to: (call: string) => string | undefined;
+    }
+  | undefined
+> {
   const dir = catalogDirOf(root);
-  const there = (p: string) =>
-    access(p).then(
-      () => true,
-      () => false,
-    );
-  if (!(await there(join(dir, "generated", "interface")))) return undefined;
-  const ids = [...new Set(joins.filter((j) => j.call.repo === from).map((j) => j.interface))];
-  const drawn = new Set<string>();
-  await Promise.all(
-    ids.map(async (id) => {
-      // A link deleted on the canvas (its person's suppress, Delete this link's) is drawn no more.
-      if (await there(join(dir, "curated", "curateddecision", `cd-link-delete-${id}.yaml`))) return;
-      if (
-        (await there(join(dir, "generated", "interface", `${id}.yaml`))) ||
-        (await there(join(dir, "curated", "interface", `${id}.yaml`)))
-      )
-        drawn.add(id);
-    }),
+  const built = await access(join(dir, "generated")).then(
+    () => true,
+    () => false,
   );
-  return (j) => drawn.has(j.interface);
+  if (!built) return undefined;
+  const read = (d: string) =>
+    readCatalog(join(dir, d), { cacheRoot: root }).then(
+      (c) => c.records,
+      () => [] as CatalogRecord[],
+    );
+  const [gen, cur] = await Promise.all([read("generated"), read("curated")]);
+  const suppressed = new Set<string>();
+  for (const r of cur) {
+    const d = r as unknown as Record<string, unknown>;
+    if (
+      d.kind === "CuratedDecision" &&
+      d.action === "suppress" &&
+      (d.status ?? "current") === "current" &&
+      (d.value ?? null) === null &&
+      typeof d.target === "string"
+    )
+      suppressed.add(d.target);
+  }
+  const ids = new Set<string>();
+  const lines = new Map<string, string>();
+  for (const r of [...gen, ...cur]) {
+    if (r.kind !== "Interface" || suppressed.has(r.id)) continue;
+    if (((r as { status?: string }).status ?? "current") !== "current") continue;
+    ids.add(r.id);
+    for (const e of r.evidence ?? [])
+      if (e.repo === from && e.side !== "callee" && e.path && e.line !== undefined) {
+        const k = `${e.path}:${e.line}`;
+        // The first by id, so the box said is the same on every read.
+        if (!lines.has(k)) lines.set(k, (r as { to: string }).to);
+      }
+  }
+  const at = new Map(
+    facts.flatMap((f) => (f.kind === "call" ? [[f.id, `${f.cite.file}:${f.cite.line}`]] : [])),
+  );
+  return {
+    join: (j) => ids.has(j.interface) || lines.has(j.call.at),
+    outside: (_t, call) => {
+      const a = at.get(call);
+      return !!a && lines.has(a);
+    },
+    to: (call) => {
+      const a = at.get(call);
+      return a ? lines.get(a) : undefined;
+    },
+  };
 }
 
-/** The outside targets the canvas draws a box for: an outside system of the profile, by any name. */
-function outsideDrawnOf(op: Awaited<ReturnType<typeof loadOrgPack>>): (t: string) => boolean {
-  const names = new Set(
-    outsideProfileSystems(op).flatMap((s) =>
-      [s.id, s.name, ...(s.aliases ?? [])].filter(Boolean).map((n) => n.toLowerCase()),
-    ),
+/**
+ * What the canvas draws in the box connected to: a repo and its component, or a system's repos
+ * (the manifest's system; a repo with none is drawn in a system of its own id) and theirs.
+ */
+function inBoxOf(op: Awaited<ReturnType<typeof loadOrgPack>>, to: Api.LinkBoxT) {
+  const repos = estateRepos(op).filter((r) =>
+    to.repo ? r.id === to.repo : (r.system ?? r.id) === to.system,
   );
-  return (t) => names.has(t.toLowerCase());
+  const names = new Set(repos.flatMap((r) => [r.id, ...(r.component ? [r.component] : [])]));
+  return (name: string) => names.has(name);
+}
+
+async function candidatesIn(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  c: Awaited<ReturnType<typeof context>>,
+) {
+  const drawn = await drawnOf(root, from, c.facts);
+  const inBox = inBoxOf(c.op, to);
+  return linkCandidates({
+    from,
+    facts: c.facts,
+    join: c.join,
+    apis: c.b.apis,
+    pairs: c.pairs,
+    to,
+    settings: settingsOf(c.facts),
+    ...(drawn ? { drawn: drawn.join, drawnOutside: drawn.outside, drawnTo: drawn.to } : {}),
+    inBox,
+  });
 }
 
 /** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
@@ -222,20 +287,11 @@ export async function candidatesOf(
   to: Api.LinkBoxT,
 ): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
   const c = await context(root, from, to);
-  const drawn = await drawnJoins(root, c.join.joins, from);
-  const cands = linkCandidates({
-    from,
-    facts: c.facts,
-    join: c.join,
-    apis: c.b.apis,
-    pairs: c.pairs,
-    to,
-    settings: settingsOf(c.facts),
-    ...(drawn ? { drawn } : {}),
-    drawnOutside: outsideDrawnOf(c.op),
-  });
+  const cands = await candidatesIn(root, from, to, c);
   const q = await openRuleQuestion(root, from);
-  const loose = cands.calls.filter((x) => x.status !== "paired" && x.status !== "joined").length;
+  const loose = cands.calls.filter(
+    (x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here",
+  ).length;
   const view: Api.LinkCandidatesViewT = {
     from,
     to,
@@ -269,7 +325,20 @@ export async function pairingsOf(
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
+  // The review of beta.28.1 (S2): a call that goes to that very API with an arrow already would
+  // be a redundant line: refused, nothing written.
+  const here = pairs.length
+    ? new Map(
+        (await candidatesIn(root, from, to, c)).calls
+          .filter((x) => x.status === "here")
+          .map((x) => [x.fact, x.now] as const),
+      )
+    : new Map<string, string | undefined>();
   for (const p of pairs) {
+    if (here.has(p.call) && (here.get(p.call) === undefined || here.get(p.call) === p.api))
+      throw conflict(
+        `${p.call} goes to ${c.b.name}'s ${p.api} already, with an arrow: there is nothing to pair.`,
+      );
     const f = calls.get(p.call);
     if (!f)
       throw c.estate.unverified.includes(from)
