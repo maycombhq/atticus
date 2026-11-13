@@ -400,9 +400,13 @@ export async function verifyCommand(
   // Beta.28.1 (field report 5): a rejected fact no longer blocks --write. The kept facts (a
   // person's corrections and pairings with them) are written, each rejected fact left out, its
   // last accepted copy kept in its place (verify-left-out.ts). Lines that aren't facts still
-  // refuse the write: nothing says what they backed.
+  // refuse the write: nothing says what they backed. The review of beta.28.1 (S4): so do
+  // questions or reviewed lines refused with no fact rejected, as before; with facts left out,
+  // they are said beside them.
   const leftOut =
-    keepFacts && badLines.length === 0 ? await leftOutOf(root, repo, report) : undefined;
+    keepFacts && badLines.length === 0 && report.rejected.length > 0
+      ? await leftOutOf(root, repo, report)
+      : undefined;
   const partial = leftOut?.ok ? leftOut : undefined;
   // Verify's own verdict ("The read is complete: every source file is read or reviewed"),
   // kept in the facts slot's meta as `readComplete` (ADR 0195 addendum "a legacy join its
@@ -749,6 +753,7 @@ export async function verifyCommand(
       partial.leftOut,
       { facts: `${rel}/${repo}.jsonl`, rejected: rejectedFile },
       SHOWN,
+      qProblems.length + reviewedBad.length,
     ))
       io.out(l);
     return APPLIED_WITH_LEFT_OUT;

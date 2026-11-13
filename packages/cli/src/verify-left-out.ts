@@ -101,12 +101,10 @@ export function leftOutLines(
   leftOut: readonly LeftOutFact[],
   files: { facts: string; rejected: string },
   shown: number,
+  /** Questions or reviewed lines refused beside them (written the same: the facts are). */
+  alsoRefused = 0,
 ): string[] {
   const n = leftOut.length;
-  if (!n)
-    return [
-      `Applied to ${repo}; some of its questions or reviewed lines were refused (each with why in ${files.rejected}): fix them and run atticus verify ${repo} again.`,
-    ];
   const kept = leftOut.filter((l) => l.kept).length;
   const out = [
     `Applied to ${repo} with ${n} ${n === 1 ? "fact" : "facts"} left out (rejected; ${kept ? `${kept} kept as the last Apply wrote ${kept === 1 ? "it" : "them"}, so nothing ${kept === 1 ? "it backs is" : "they back is"} removed` : leftOut.some((l) => l.had && l.lost?.length) ? "none kept: a fact one names is gone, so what they back is removed with it" : "none was in the catalog before"}):`,
@@ -118,6 +116,10 @@ export function leftOutLines(
         : `  left out: ${l.id} (${l.code}): fix it in ${files.facts}, reading ${l.file}:${l.line} again${l.kept ? " (its earlier copy stays in the catalog)" : ""}`,
     );
   if (n > shown) out.push(`  ... and ${n - shown} more (all in ${files.rejected})`);
+  if (alsoRefused)
+    out.push(
+      `  ${alsoRefused} ${alsoRefused === 1 ? "question or reviewed line was" : "questions or reviewed lines were"} refused too (listed above, each with why in ${files.rejected}).`,
+    );
   out.push(
     `Each one's reason is in ${files.rejected}. Fix them and run atticus verify ${repo} --write again to put them in.`,
   );

@@ -673,6 +673,29 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     ).toEqual([]);
   });
 
+  it("a reviewed line refused, with no fact rejected, still refuses --write and writes nothing (the review's S4)", async () => {
+    const root = await metarepo();
+    expect(await write(root)).toBe(0);
+    const before = {
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+    };
+    writeFileSync(
+      join(root, "facts", "forge-ledger.reviewed.jsonl"),
+      `${JSON.stringify({ path: "src/main/java/forge/ledger/NotThere.java", why: "nothing to record" })}\n`,
+    );
+    const o = io();
+    const code = await write(root, o);
+    const said = o.out.join("\n") + o.err.join("\n");
+    expect(said).toMatch(/reviewed/);
+    expect(code, said).toBe(1);
+    expect(said).not.toMatch(/^Applied to/m);
+    expect({
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+    }).toEqual(before);
+  });
+
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
     const root = await metarepo(
       readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
