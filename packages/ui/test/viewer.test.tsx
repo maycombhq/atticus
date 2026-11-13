@@ -22,6 +22,7 @@ import {
   ASIDE_WIDTH,
   dragAsideWidth,
   isWideAside,
+  wideAsideWidth,
   savedAsideWidth,
   panBy,
   searchNodes,
@@ -321,6 +322,11 @@ describe("the details beside the picture can be made wider (beta.28)", () => {
     expect(isWideAside(600, 1000)).toBe(true);
     expect(isWideAside(340, 1000)).toBe(false);
     expect(isWideAside(undefined, 1000)).toBe(false);
+    // Wider is never narrower than what is shown, even on a small stage (the review).
+    expect(wideAsideWidth(1240, 340)).toBe(600);
+    expect(wideAsideWidth(700, 340)).toBe(340 + ASIDE_WIDTH.step);
+    expect(wideAsideWidth(0, 200)).toBe(ASIDE_WIDTH.min);
+    expect(isWideAside(wideAsideWidth(700, 340), 700)).toBe(true);
   });
 
   it("reads a saved width only when it is a width, and never throws", () => {

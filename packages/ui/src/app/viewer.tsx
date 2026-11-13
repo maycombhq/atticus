@@ -60,6 +60,12 @@ export function isWideAside(w: number | undefined, stageW: number): boolean {
   return w !== undefined && stageW > 0 && w >= (stageW - ASIDE_WIDTH.keep) * ASIDE_WIDTH.wide - 1;
 }
 
+/** The width Wider details gives: 60% of the room, never narrower than what is shown now. */
+export function wideAsideWidth(stageW: number, shownW: number): number {
+  const room = Math.max(ASIDE_WIDTH.min, stageW - ASIDE_WIDTH.keep);
+  return Math.max(Math.round(room * ASIDE_WIDTH.wide), shownW + ASIDE_WIDTH.step, ASIDE_WIDTH.min);
+}
+
 /** The width this viewer last chose (a per-viewer convenience: none, or a bad one, is none). */
 export function savedAsideWidth(
   store: Storage | undefined = globalThis.localStorage,
@@ -645,10 +651,11 @@ export function DiagramFrame(p: {
   // Measured, not read in render (the review): the stage's width and the details' own.
   const [stageW, setStageW] = useState(0);
   const [shownW, setShownW] = useState<number>(ASIDE_WIDTH.min);
+  const resizable = !!p.aside && !!p.asideBeside;
   useEffect(() => {
     const stage = stageRef.current;
     const aside = asideRef.current;
-    if (!stage || typeof ResizeObserver === "undefined") return;
+    if (!resizable || !stage || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       setStageW(Math.round(stage.getBoundingClientRect().width));
       if (aside && !aside.hidden) setShownW(Math.round(aside.getBoundingClientRect().width));
@@ -658,15 +665,19 @@ export function DiagramFrame(p: {
     ro.observe(stage);
     if (aside) ro.observe(aside);
     return () => ro.disconnect();
-  }, []);
+  }, [resizable]);
   const maxAside = Math.max(ASIDE_WIDTH.min, stageW - ASIDE_WIDTH.keep);
+  // What is drawn: a width saved on a wider screen is held to this stage (the review).
+  const nowAside = Math.round(
+    stageW > 0 ? Math.min(asideW ?? shownW, maxAside) : (asideW ?? shownW),
+  );
   const chooseAside = (n: number | undefined) => {
     setAsideW(n);
     saveAsideWidth(n);
   };
   const wideNow = isWideAside(asideW, stageW);
   const onHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const n = nextAsideWidth(asideW ?? shownW, e.key, maxAside);
+    const n = nextAsideWidth(nowAside, e.key, maxAside);
     if (n === undefined) {
       // Up and Down on the handle don't pan the picture behind it either.
       if (e.key === "ArrowUp" || e.key === "ArrowDown") e.stopPropagation();
@@ -833,8 +844,8 @@ export function DiagramFrame(p: {
                 aria-label={T.resizeDetails}
                 aria-valuemin={ASIDE_WIDTH.min}
                 aria-valuemax={maxAside}
-                aria-valuenow={Math.round(asideW ?? shownW)}
-                aria-valuetext={`${Math.round(asideW ?? shownW)} px`}
+                aria-valuenow={nowAside}
+                aria-valuetext={`${nowAside} px`}
                 onKeyDown={onHandleKey}
                 onPointerDown={onHandleDown}
                 onDoubleClick={() => chooseAside(undefined)}
@@ -857,9 +868,7 @@ export function DiagramFrame(p: {
                   type="button"
                   className="btn viewer-btn viewer-aside-widen"
                   aria-pressed={wideNow}
-                  onClick={() =>
-                    chooseAside(wideNow ? undefined : Math.round(maxAside * ASIDE_WIDTH.wide))
-                  }
+                  onClick={() => chooseAside(wideNow ? undefined : wideAsideWidth(stageW, shownW))}
                 >
                   {T.widenDetails}
                 </button>
