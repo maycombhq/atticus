@@ -120,10 +120,13 @@ export async function declareLink(
   /** Beta.28.1: the system added to the profile first (`create`), when it had none. */
   created?: string;
 }> {
-  const found: (NonNullable<Awaited<ReturnType<typeof systemNode>>> & {
-    created?: true;
-    disk?: string;
-  }) | undefined = (await systemNode(root, d.system)) ?? (await newSystemNode(root, d.system, o.create));
+  const found:
+    | (NonNullable<Awaited<ReturnType<typeof systemNode>>> & {
+        created?: true;
+        disk?: string;
+      })
+    | undefined =
+    (await systemNode(root, d.system)) ?? (await newSystemNode(root, d.system, o.create));
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol } = found;
   const doc = parseDocument(d.kind === "topic" ? migrateProfileText(text).text : text);

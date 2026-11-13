@@ -143,7 +143,12 @@ describe("the join: a forwarding call to a token host nothing sets is asked, nev
         ...f.cite,
         file: f.cite.file.replace("apiproxy/", "src/gateway/"),
         ...(f.cite.with
-          ? { with: f.cite.with.map((w) => ({ ...w, file: w.file.replace("apiproxy/", "src/gateway/") })) }
+          ? {
+              with: f.cite.with.map((w) => ({
+                ...w,
+                file: w.file.replace("apiproxy/", "src/gateway/"),
+              })),
+            }
           : {}),
       },
     });
@@ -193,9 +198,7 @@ describe("Connect to… from the proxy's box", () => {
 
   it("lists every asked call loose, each with the service's entry it is, sure of each", () => {
     const c = cands(joinFacts({ repos: estate(), explain: true }));
-    expect(c.calls.map((x) => [x.fact, x.status]).sort()).toEqual(
-      CALLS.map((x) => [x, "asked"]),
-    );
+    expect(c.calls.map((x) => [x.fact, x.status]).sort()).toEqual(CALLS.map((x) => [x, "asked"]));
     for (const x of c.calls) {
       expect(x.suggestion?.api, x.fact).toBe(MEANT[x.fact]);
       expect(x.confident, x.fact).toBe(true);
@@ -222,24 +225,17 @@ describe("Connect to… from the proxy's box", () => {
   it("lists a call joined to something no arrow draws as loose, and one with an arrow as movable", () => {
     const pairs = {
       [PROXY]: Object.fromEntries(
-        CALLS.map((c) => [
-          c,
-          { repo: SERVICE, entry: MEANT[c]!, path: "/x", by: "pat" },
-        ]),
+        CALLS.map((c) => [c, { repo: SERVICE, entry: MEANT[c]!, path: "/x", by: "pat" }]),
       ),
     };
     const out = joinFacts({ repos: estate(), pairs, explain: true });
     expect(fromProxy(out).joins.length).toBe(4);
     // No Interface of these on the canvas yet (the catalog not built since): loose, said where.
     const none = cands(out, { drawn: () => false, to: { repo: "forge-other" } });
-    expect(none.calls.map((x) => [x.status, x.joins])).toEqual(
-      Array(4).fill(["undrawn", SERVICE]),
-    );
+    expect(none.calls.map((x) => [x.status, x.joins])).toEqual(Array(4).fill(["undrawn", SERVICE]));
     // Drawn: listed as joined, to move them to this box, never ticked for it unseen.
     const moved = cands(out, { drawn: () => true, to: { repo: "forge-other" } });
-    expect(moved.calls.map((x) => [x.status, x.joins])).toEqual(
-      Array(4).fill(["joined", SERVICE]),
-    );
+    expect(moved.calls.map((x) => [x.status, x.joins])).toEqual(Array(4).fill(["joined", SERVICE]));
     expect(moved.calls.some((x) => x.confident)).toBe(false);
     // Paired with this very box: listed paired, to undo, as before.
     const here = cands(out, { pairs: pairs[PROXY] });

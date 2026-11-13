@@ -1316,10 +1316,7 @@ export async function applyMapEdits(
               ? ({ kind: "call", system: a.system, route: a.route } as const)
               : ({ kind: "topic", system: a.system, topic: a.topic, side: a.side } as const);
           const { systemToCreate } = await import("./ui-api-declared.js");
-          const create = systemToCreate(
-            await loadOrgPack(orgPackDirOf(root)),
-            a.system,
-          );
+          const create = systemToCreate(await loadOrgPack(orgPackDirOf(root)), a.system);
           const res = await declareLink(root, d, { by, at, ...(create ? { create } : {}) });
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");

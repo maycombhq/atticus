@@ -143,7 +143,8 @@ describe("Connect to… from a proxy whose target host is a token (field report 
 
   it("lists a call whose arrow was deleted on the canvas as loose (undrawn), with where it went", async () => {
     const one = (await interfaces()).find(
-      (i) => i.from === "instruments-proxy" && i.method === "GET" && i.normalizedPath?.endsWith("/ping"),
+      (i) =>
+        i.from === "instruments-proxy" && i.method === "GET" && i.normalizedPath?.endsWith("/ping"),
     )!;
     const dir = join(root, "catalog", "curated", "curateddecision");
     mkdirSync(dir, { recursive: true });

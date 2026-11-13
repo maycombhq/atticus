@@ -194,8 +194,7 @@ async function drawnJoins(
   await Promise.all(
     ids.map(async (id) => {
       // A link deleted on the canvas (its person's suppress, Delete this link's) is drawn no more.
-      if (await there(join(dir, "curated", "curateddecision", `cd-link-delete-${id}.yaml`)))
-        return;
+      if (await there(join(dir, "curated", "curateddecision", `cd-link-delete-${id}.yaml`))) return;
       if (
         (await there(join(dir, "generated", "interface", `${id}.yaml`))) ||
         (await there(join(dir, "curated", "interface", `${id}.yaml`)))
